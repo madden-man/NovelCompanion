@@ -1,6 +1,6 @@
 # SPEC: novel companion desktop app
 
-Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A21 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
+Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A22 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
 
 Each criterion has an ID (for example `FT-4`). A criterion passes only when there is a named automated test or a recorded manual check for it in `PROGRESS.md`.
 
@@ -8,7 +8,7 @@ Each criterion has an ID (for example `FT-4`). A criterion passes only when ther
 
 ## 1. Purpose and scope
 
-A single-user desktop app that holds the story bible for a novel and produces a focused brief before each writing session. The app is general `[A16]`: it holds any number of bibles (one per novel, each its own database, switched in settings), and nothing about a particular book is written into code. The first bible, and the example used throughout this spec and the tests' spirit, is East Winds (2025 to 2100, the Sullivan and Li families, San Francisco and Jinan in Shandong `[A1]`).
+A single-user desktop app that holds the story bible for a novel and produces a focused brief before each writing session. The app is general `[A16]`: it holds any number of bibles (one per novel, all inside the single database `novel_companion`, switched in settings), and nothing about a particular book is written into code. The first bible, and the example used throughout this spec and the tests' spirit, is East Winds (2025 to 2100, the Sullivan and Li families, San Francisco and Jinan in Shandong `[A1]`).
 
 **In scope:** storing and editing all story knowledge, a visual family tree, timeline and age calculations, session briefs, continuity checks, Claude running inside the app, import from Excel and Word, Google Drive import and backup.
 
@@ -34,7 +34,7 @@ Defaults; Phase 0 may amend them with a stated reason.
 - **ARCH-5** `[A2]` The MongoDB connection string, Drive tokens, and any API key are stored in the macOS keychain, never in the database, logs, exports, or the repository.
 - **ARCH-6** `[A2]` The app needs a connection to the MongoDB deployment. When it cannot connect, it says so in plain language, offers to open the most recent local snapshot read-only, and never pretends a write succeeded. Claude and Drive are the only features that need any other network access.
 - **ARCH-7** No telemetry or analytics of any kind.
-- **ARCH-8** `[A16]` Multiple bibles. Each bible is one MongoDB database on the configured cluster; the app lists them, creates a new empty one, and switches between them. Every list in section 4 that has defaults (families, communities, union types, categories, eras, romanization systems) is seeded per bible on creation and editable per `ED-8`; the East Winds values arrive through import, not from code.
+- **ARCH-8** `[A16]` `[A22]` Multiple bibles. The app uses exactly one database, `novel_companion`, and never reads or writes any other database on the cluster. Inside it, a `bibles` collection registers each bible, and each bible's data lives in its own collections named `<bibleId>.<collection>` (for example `eastwinds.characters`), so bibles share nothing. The app lists bibles, creates a new empty one, and switches between them. Every list in section 4 that has defaults (families, communities, union types, categories, eras, romanization systems) is seeded per bible on creation and editable per `ED-8`; the East Winds values arrive through import, not from code.
 
 ## 4. Data model
 
@@ -347,7 +347,7 @@ The spec is not changed to make a failing criterion pass. If a criterion turns o
 
 ## 10. Decisions for Phase 0
 
-Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the store), database `bible` on cluster0, Shandong, the Pacific States Compact premise over PEU secession, and requiring the Claude Code CLI to be signed in for Claude features. Dawn's and Xuan's birth years are left to the importer's open questions (`IM-7`). The connection string is in the macOS keychain under service `novel-companion-mongodb`, account `novel-companion`. Items below that said "to confirm" are now confirmed.
+Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the store), the single database `novel_companion` on cluster0 (`A22`), Shandong, the Pacific States Compact premise over PEU secession, and requiring the Claude Code CLI to be signed in for Claude features. Dawn's and Xuan's birth years are left to the importer's open questions (`IM-7`). The connection string is in the macOS keychain under service `novel-companion-mongodb`, account `novel-companion`. Items below that said "to confirm" are now confirmed.
 
 1. **Operating system:** macOS (this Mac runs macOS 14). The only packaging target for `NF-4`.
 2. **Claude authentication:** Claude subscription through the Claude Agent SDK (`A3`). To confirm: this requires the Claude Code CLI installed and signed in on the Mac.
@@ -382,3 +382,4 @@ Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the sto
 | A19 | 5.13 AI-1, AI-2, AI-4; ST-1; DB-4; M6 | No chat panel. Claude runs only inside briefs, continuity prose checks, summaries, and import proposals. Claude never drafts prose and no control or setting can ask it to. | Tommy, 2026-10-10: "take out the claude panel, i don't need to ask you questions directly" and "remove any box that will allow claude to draft prose, that should not exist anywhere in the app." |
 | A20 | CC-3, CC-4, DB-1, DB-4 | Alignment check: Claude (Opus) reads any chapter or the whole manuscript on demand and compares it to the entries and the stored plot. Each finding resolves as Manuscript wins (one-click prepared change set to the bible, shown as a diff, undoable) or Rewrite recommended (exact lines and what must change, no prose) or Dismiss. Rewrite tasks on the dashboard. | Tommy, 2026-10-10: "allow claude to read the manuscript at any point and check how well it aligns with the plot... either allow me to override what's in the supplement tool and automatically update it, or recommend rewrite on whatever section is misaligned, even showing specific lines. this should use opus too." |
 | A21 | 5.13 AI-1, AI-2, AI-4; DB-4; M6 | The question panel is back (read-only tools, proposals only through the queue). The prose ban from A19 stays absolute and now covers the panel: a prose request is declined. | Tommy, 2026-10-10: "add back the claude question panel, that was a good idea." |
+| A22 | 1, ARCH-8, 10 | One database only, `novel_companion`; bibles are prefixed collection sets inside it. | Tommy, 2026-10-10: "don't use bible, use novel_companion exclusively." |

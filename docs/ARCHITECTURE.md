@@ -9,7 +9,7 @@ Binding for every builder. `SPEC.md` says what; this file says how. Change it on
 | Shell | Electron (current stable), `electron-vite` for main, preload, and renderer builds | ARCH-1; one toolchain for all three processes |
 | Language | TypeScript, `strict: true`, ESM everywhere | |
 | Renderer | React 19, no router library (a small in-app section switcher), plain CSS with the token system from `mockups/shared/theme.css` | Matches the approved mockups |
-| Database | MongoDB Atlas through the official `mongodb` Node driver (6.x). One database per bible (ARCH-8). | ARCH-2, A2 |
+| Database | MongoDB Atlas through the official `mongodb` Node driver (6.x). Exactly one database, `novel_companion`; each bible is a prefixed set of collections inside it, registered in `bibles` (ARCH-8, A22). The app never touches any other database on the cluster. | ARCH-2, A2 |
 | Validation | `zod` schemas in `src/shared/schema/` are the single definition of every entity; the driver stores what zod accepts | ED-10 field warnings come from the same schemas |
 | Read model | `src/main/readmodel/`: in-memory maps of every collection, loaded on connect, updated by the one write path | NF-1 timeline and tree queries never hit the network |
 | Search | `minisearch` with a custom tokenizer: Latin words plus CJK character bigrams; index rebuilt from the read model and patched on writes | ARCH-2, SR-1, GL-2 |
