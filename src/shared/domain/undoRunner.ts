@@ -52,6 +52,24 @@ export function editCommand(
   };
 }
 
+/** PL-3: a reorder changes one number on several entries; undo puts the old numbers back. */
+export function reorderCommand(
+  label: string,
+  collection: EntryCollection,
+  field: string,
+  changes: readonly { id: string; before: number; after: number }[],
+): UndoCommand {
+  const step = (from: 'before' | 'after', to: 'before' | 'after'): Op[] =>
+    changes.map((c) => ({
+      kind: 'update',
+      collection,
+      id: c.id,
+      patch: { [field]: c[to] },
+      expect: { [field]: c[from] },
+    }));
+  return { label, undo: step('after', 'before'), redo: step('before', 'after') };
+}
+
 export function createCommand(collection: EntryCollection, id: string, title: string): UndoCommand {
   return {
     label: `Created ${title}`,

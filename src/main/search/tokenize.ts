@@ -8,8 +8,16 @@
 const CJK = '\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}';
 const RUNS = new RegExp(`([${CJK}]+)|((?:(?![${CJK}])[\\p{L}\\p{M}\\p{N}])+)`, 'gu');
 
+/** Romanization with tone numbers, such as xiao3xi1 or gwong2dung1: letters then a digit, repeated. */
+const TONE_NUMBERED = /^(?:[a-z]{2,7}[0-5])+$/;
+
+/**
+ * Lowercase a word and drop tone marks. A word made of syllables with tone
+ * numbers also loses the numbers, so xiao3 and xiǎo both find xiǎo (GL-2).
+ */
 export function foldLatin(word: string): string {
-  return word.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const folded = word.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return TONE_NUMBERED.test(folded) ? folded.replace(/[0-5]/g, '') : folded;
 }
 
 function bigrams(run: string): string[] {

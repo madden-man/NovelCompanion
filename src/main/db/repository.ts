@@ -39,6 +39,8 @@ import type { CollectionDocs } from '../../shared/domain/lists';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
+import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/romanization';
+import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
@@ -1177,6 +1179,59 @@ export class Repository {
     }));
     await this.commit(changes);
     return changes.length;
+  }
+
+  // Plot reorder (PL-3) and romanization settings (GL-1).
+
+  /**
+   * Reorder chapters (reading order) or beats (order within an arc) in one
+   * transaction. Only the order field changes; story years are untouched.
+   * Each moved entry gets a revision, so each step can be undone.
+   */
+  async reorder(
+    collection: 'chapters' | 'plotBeats',
+    moves: { id: string; value: number }[],
+  ): Promise<StoredDoc[]> {
+    const field = collection === 'chapters' ? 'readingOrder' : 'order';
+    const changes: Change[] = [];
+    for (const m of moves) {
+      const prior = await this.current(collection, m.id);
+      changes.push({
+        ...this.buildUpdate(collection, prior, { [field]: m.value }),
+        note: collection === 'chapters' ? 'Reordered chapters' : 'Reordered beats',
+      });
+    }
+    if (changes.length) await this.commit(changes);
+    return changes.map((c) => c.next);
+  }
+
+  /** One romanization system per language (GL-1). Stored in meta, not an entry. */
+  romanizationSettings(): RomanizationSettings {
+    return settingsFromMeta(this.model.get('meta', ROMANIZATION_META_ID));
+  }
+
+  async setRomanization(
+    languageId: string,
+    systemId: string | null,
+  ): Promise<RomanizationSettings> {
+    const languages = this.model.get('lists', 'languages') as ListDoc | undefined;
+    const systems = this.model.get('lists', 'romanizationSystems') as ListDoc | undefined;
+    if (!languages?.items.some((i) => i.id === languageId)) {
+      throw new RepositoryError('That language is not in the Languages list.');
+    }
+    if (systemId !== null && !systems?.items.some((i) => i.id === systemId)) {
+      throw new RepositoryError('That romanization system is not in the list.');
+    }
+    // An empty string records "no system" so the default does not apply.
+    const next = { ...this.romanizationSettings(), [languageId]: systemId ?? '' };
+    const doc: StoredDoc = { _id: ROMANIZATION_META_ID, systems: next };
+    await this.bible
+      .collection<StoredDoc>('meta')
+      .replaceOne({ _id: ROMANIZATION_META_ID }, doc, { upsert: true });
+    this.model.put('meta', doc);
+    // Glossary warnings depend on this, so views reload.
+    this.emitter.emit('lists');
+    return next;
   }
 
   /** Stored tree positions keyed by character ID (FT-10), or null when none are stored. */

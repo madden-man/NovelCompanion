@@ -1007,20 +1007,27 @@ table.compact th {
   left: 0;
   top: 100%;
   z-index: 20;
-  margin-top: 4px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 8em;
+  max-width: 280px;
   background: var(--fg);
   color: var(--bg);
   font-family: var(--font-body);
   font-size: 0.8rem;
   font-weight: 500;
-  padding: 4px 8px;
+  padding: 6px 8px;
   border-radius: 6px;
-  white-space: nowrap;
+  white-space: normal;
   box-shadow: var(--shadow);
 }
+.zh-linked {
+  cursor: pointer;
+  border-bottom-style: solid;
+}
 .zh-run:hover .zh-tip,
-.zh-run:focus .zh-tip {
-  display: block;
+.zh-run:focus-within .zh-tip {
+  display: flex;
 }
 @media (max-width: 1100px) {
   .ws-tree-area {
@@ -1320,4 +1327,236 @@ tr.is-story-year td {
 }
 .tl-filters .field select {
   max-width: 220px;
+}
+
+/* M4: outline grid, place tree, glossary cards. Colors come only from theme tokens. */
+.zh-tip .btn {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--border);
+}
+.ol-scroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  max-height: 60vh;
+}
+.ol-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.ol-grid {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 100%;
+}
+.ol-row {
+  display: grid;
+  grid-template-columns: 220px auto;
+  border-bottom: 1px solid var(--border);
+  align-items: stretch;
+}
+.ol-row.selected {
+  background: var(--accent-soft);
+}
+.ol-row.over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+.ol-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-2);
+}
+.ol-open {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ol-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ol-label {
+  box-sizing: border-box;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  width: 220px;
+  background: inherit;
+  background-color: var(--surface);
+  border-right: 1px solid var(--border);
+  color: var(--fg);
+  font-weight: 600;
+}
+.ol-head .ol-label {
+  background-color: var(--surface-2);
+  cursor: default;
+}
+.ol-row.selected .ol-label {
+  background-color: var(--accent-soft);
+}
+.ol-label[draggable='true'] {
+  cursor: grab;
+}
+.ol-no {
+  color: var(--fg-2);
+  min-width: 1.6em;
+}
+.ol-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ol-track {
+  position: relative;
+  height: 34px;
+}
+.ol-head .ol-track {
+  height: 48px;
+}
+.ol-year {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.ol-year.now {
+  color: var(--fg);
+  font-weight: 700;
+}
+.ol-group {
+  position: sticky;
+  left: 0;
+  padding: 4px 8px;
+  font-weight: 700;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  width: 100%;
+}
+.ol-group.part {
+  padding-left: 20px;
+  font-weight: 600;
+}
+.ol-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+.ol-cursor.swatch {
+  position: static;
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  vertical-align: middle;
+}
+.ol-mark {
+  position: absolute;
+  top: 16px;
+  height: 14px;
+  border-radius: 7px;
+  box-sizing: border-box;
+}
+.ol-mark.primary {
+  background: var(--fg);
+  border: 2px solid var(--fg);
+}
+.ol-mark.backstory {
+  background: transparent;
+  border: 2px solid var(--fg);
+}
+.ol-mark.swatch {
+  position: static;
+  display: inline-block;
+  width: 24px;
+  vertical-align: middle;
+}
+.ol-arc {
+  position: absolute;
+  height: 5px;
+  border-radius: 3px;
+  border: 1px solid var(--series-4);
+  background: var(--series-4-soft);
+  box-sizing: border-box;
+}
+.ol-arc.series-1 {
+  border-color: var(--series-1);
+  background: var(--series-1-soft);
+}
+.ol-arc.series-2 {
+  border-color: var(--series-2);
+  background: var(--series-2-soft);
+}
+.ol-arc.series-3 {
+  border-color: var(--series-3);
+  background: var(--series-3-soft);
+}
+.ol-arc.swatch {
+  position: static;
+  display: inline-block;
+  width: 24px;
+  vertical-align: middle;
+}
+.ol-legend {
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--fg-2);
+}
+.beat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.beat-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: grab;
+}
+.place-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.place-tree li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.culture-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.zh-html p {
+  margin: 0 0 0.5em;
 }

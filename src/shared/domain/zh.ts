@@ -36,11 +36,36 @@ export function zhPieces(text: string, terms: readonly ZhTerm[]): ZhPiece[] {
     let run = m[0];
     while (run) {
       const { term, length } = match(run, terms);
-      out.push({ kind: 'zh', text: run.slice(0, length), term });
-      run = run.slice(length);
+      if (term) {
+        out.push({ kind: 'zh', text: run.slice(0, length), term });
+        run = run.slice(length);
+        continue;
+      }
+      // No term starts here: the characters up to the next term form one run to add to the glossary.
+      let next = 1;
+      while (next < run.length && !match(run.slice(next), terms).term) next++;
+      out.push({ kind: 'zh', text: run.slice(0, next), term: null });
+      run = run.slice(next);
     }
     last = start + m[0].length;
   }
   if (last < text.length) out.push({ kind: 'text', text: text.slice(last) });
   return out;
+}
+
+/**
+ * One line of glossary detail for a name, for places that cannot show a hover
+ * card, such as tree nodes (GL-3): "晓曦 xiǎoxī: dawn light". Empty when no
+ * character in the text has a glossary term.
+ */
+export function zhHint(text: string, terms: readonly ZhTerm[]): string {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const p of zhPieces(text, terms)) {
+    if (p.kind !== 'zh' || !p.term || seen.has(p.term.id)) continue;
+    seen.add(p.term.id);
+    const detail = [p.term.romanization, p.term.meaning].filter(Boolean).join(': ');
+    parts.push(detail ? `${p.term.characters} ${detail}` : p.term.characters);
+  }
+  return parts.join('; ');
 }

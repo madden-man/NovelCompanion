@@ -37,6 +37,8 @@ import { createCommand, deleteCommand, editCommand } from '../../../../shared/do
 import type { UndoCommand } from '../../../../shared/domain/undoRunner';
 import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
+import { useGlossary } from '../Zh';
+import { zhHint } from '../../../../shared/domain/zh';
 import { EmbeddedEditor, UndoPanel } from '../editor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
@@ -95,6 +97,8 @@ function addCommand(label: string, plan: PlannedEntry[]): UndoCommand {
 
 interface NodeProps {
   person: TreePerson;
+  /** Glossary detail for the Chinese name, shown as the node tooltip and read aloud (GL-3). */
+  hint: string;
   x: number;
   y: number;
   year: number;
@@ -111,7 +115,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
   const s = lifeState(p.person, p.year);
   const years = lifeYears(p.person);
   const label = p.person.chinese ? `${p.person.name} ${p.person.chinese}` : p.person.name;
-  const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${p.person.status}, ${stateText(s)}`;
+  const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${p.person.status}, ${stateText(s)}${p.hint ? `, ${p.hint}` : ''}`;
   const onKey = (e: ReactKeyboardEvent) => {
     const k = treeNodeKey(e.key, p.branch);
     if (!k) return;
@@ -204,6 +208,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const story = useStoryTime();
   const year = story.year;
   const families = useEntries('families');
+  const glossary = useGlossary();
   const [data, setData] = useState<TreeData | null>(null);
   const [filterKey, setFilterKey] = useState('all');
   const [lineage, setLineage] = useState('');
@@ -636,6 +641,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
                   <TreeNode
                     key={p.id}
                     person={p}
+                    hint={zhHint(p.chinese, glossary)}
                     x={at.x}
                     y={at.y}
                     year={year}

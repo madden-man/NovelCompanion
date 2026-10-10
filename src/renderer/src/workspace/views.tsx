@@ -12,6 +12,7 @@ import { call, plainError } from '../api';
 import { useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
+import { Zh } from './Zh';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 
@@ -83,7 +84,9 @@ export function EntryList(props: {
                 aria-current={props.selected === entry._id ? 'true' : undefined}
                 onClick={() => props.onSelect(entry._id)}
               >
-                <span className="entry-title">{entryTitle(entry)}</span>
+                <span className="entry-title">
+                  <Zh text={entryTitle(entry)} actions={false} />
+                </span>
                 <span className="row tight">
                   {typeof entry.status === 'string' && (
                     <span className={`chip ${entry.status}`}>{entry.status}</span>

@@ -392,6 +392,100 @@ const ChartFiltersWire = z.strictObject({
   categoryId: z.string().min(1).nullable().default(null),
 });
 
+const OutlineStrandWire = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  primary: z.boolean(),
+  startYear: z.number(),
+  endYear: z.number(),
+});
+
+const OutlineWire = z.strictObject({
+  order: z.enum(['reading', 'story']),
+  years: z.array(z.number()),
+  cursorYear: z.number().nullable(),
+  rows: z.array(
+    z.union([
+      z.strictObject({ kind: z.enum(['book', 'part']), id: z.string(), title: z.string() }),
+      z.strictObject({
+        kind: z.literal('chapter'),
+        id: z.string(),
+        title: z.string(),
+        readingOrder: z.number(),
+        partId: z.string(),
+        storyYear: z.number().nullable(),
+        written: z.boolean(),
+        strands: z.array(OutlineStrandWire),
+        arcSpans: z.array(
+          z.strictObject({
+            arcId: z.string(),
+            name: z.string(),
+            scope: z.string(),
+            color: z.string(),
+            from: z.number(),
+            to: z.number(),
+          }),
+        ),
+      }),
+    ]),
+  ),
+});
+
+const ChapterPageWire = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  readingOrder: z.number(),
+  storyYear: z.number().nullable(),
+  written: z.boolean(),
+  arcs: z.array(z.strictObject({ id: z.string(), name: z.string() })),
+  strands: z.array(
+    z.strictObject({
+      id: z.string(),
+      label: z.string(),
+      primary: z.boolean(),
+      startYear: z.number(),
+      endYear: z.number().nullable(),
+      pov: z.strictObject({ id: z.string(), name: z.string() }).nullable(),
+      characters: z.array(
+        z.strictObject({ id: z.string(), name: z.string(), state: LifeStateWire }),
+      ),
+      places: z.array(z.strictObject({ id: z.string(), name: z.string() })),
+    }),
+  ),
+  beats: z.array(
+    z.strictObject({
+      id: z.string(),
+      title: z.string(),
+      year: z.number().nullable(),
+      description: z.string(),
+      arcs: z.array(z.string()),
+    }),
+  ),
+  themes: z.array(z.strictObject({ id: z.string(), title: z.string(), note: z.string() })),
+  factsInPlay: z.array(
+    z.strictObject({
+      factId: z.string(),
+      fact: z.string(),
+      characterId: z.string(),
+      character: z.string(),
+      note: z.string(),
+    }),
+  ),
+});
+
+const RomanizationWire = z.strictObject({
+  languages: z.array(
+    z.strictObject({
+      id: z.string(),
+      label: z.string(),
+      /** The system item ID in force for this language, or null for none. */
+      systemId: z.string().nullable(),
+      kind: z.enum(['pinyin', 'jyutping']).nullable(),
+    }),
+  ),
+  systems: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+});
+
 const RevisionSummary = z.strictObject({
   _id: z.string(),
   op: z.enum(['create', 'update', 'softDelete', 'restore']),
@@ -789,6 +883,81 @@ export const contract = {
       baseModifiedAt: z.string().min(1),
     }),
     response: WithWarnings,
+  },
+  /** PL-2: the outline grid, in reading order or story-year order, with the story-time cursor. */
+  'outline.get': {
+    request: z.strictObject({
+      order: z.enum(['reading', 'story']).default('reading'),
+      cursorYear: z.int().min(-10000).max(10000).nullable().default(null),
+    }),
+    response: OutlineWire,
+  },
+  /** PL-4: one chapter with its beats, characters and ages, places, themes, and facts in play. */
+  'chapter.page': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ page: ChapterPageWire }),
+  },
+  /**
+   * PL-3: move a chapter within its part, or a beat within an arc. Only the
+   * order field changes, never a story year. Returns what changed, for undo.
+   */
+  'plot.reorder': {
+    request: z.union([
+      z.strictObject({
+        kind: z.literal('chapters'),
+        groupId: EntryId,
+        movedId: EntryId,
+        toIndex: z.int().min(0).max(5000),
+      }),
+      z.strictObject({
+        kind: z.literal('beats'),
+        groupId: EntryId,
+        movedId: EntryId,
+        toIndex: z.int().min(0).max(5000),
+      }),
+    ]),
+    response: z.strictObject({
+      field: z.enum(['readingOrder', 'order']),
+      changes: z.array(z.strictObject({ id: z.string(), before: z.number(), after: z.number() })),
+    }),
+  },
+  /** CU-2: the cultural entries of a community that apply in a year. */
+  'culture.entriesFor': {
+    request: z.strictObject({
+      communityId: z.string().min(1),
+      year: z.int().min(-10000).max(10000),
+    }),
+    response: z.strictObject({ entries: z.array(WireEntry) }),
+  },
+  /** PC-1: a place in a year, with the places it sits in and the places inside it. */
+  'place.describe': {
+    request: z.strictObject({ id: EntryId, year: z.int().min(-10000).max(10000) }),
+    response: z.strictObject({
+      id: z.string(),
+      path: z.string(),
+      description: z
+        .strictObject({
+          startYear: z.number().nullable(),
+          endYear: z.number().nullable(),
+          text: z.string(),
+        })
+        .nullable(),
+      children: z.array(z.strictObject({ id: z.string(), title: z.string() })),
+    }),
+  },
+  /** GL-1: the romanization system for each language, and the choices available. */
+  'romanization.get': { request: z.strictObject({}), response: RomanizationWire },
+  'romanization.set': {
+    request: z.strictObject({
+      languageId: z.string().min(1),
+      systemId: z.string().min(1).nullable(),
+    }),
+    response: RomanizationWire,
+  },
+  /** GL-1: check a romanization against its language's system, for a form before it saves. */
+  'romanization.check': {
+    request: z.strictObject({ languageId: z.string().min(1), text: z.string().max(500) }),
+    response: z.strictObject({ ok: z.boolean(), message: z.string() }),
   },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {

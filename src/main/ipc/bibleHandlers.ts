@@ -25,6 +25,9 @@ import {
   timelineChart,
   yearForAge,
 } from '../../shared/domain/timeline';
+import { chapterPage, outlineGrid, reorder } from '../../shared/domain/outline';
+import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
+import { systemFor, termProblem } from '../../shared/domain/romanization';
 import type { ListDoc } from '../../shared/schema';
 
 /** Channels that act on the open bible. */
@@ -67,7 +70,15 @@ export type BibleChannel =
   | 'timeline.livedThrough'
   | 'timeline.compare'
   | 'timeline.chart'
-  | 'timeline.eraCoverage';
+  | 'timeline.eraCoverage'
+  | 'outline.get'
+  | 'chapter.page'
+  | 'plot.reorder'
+  | 'culture.entriesFor'
+  | 'place.describe'
+  | 'romanization.get'
+  | 'romanization.set'
+  | 'romanization.check';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -119,6 +130,20 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
   const position = () => {
     const { model, repo } = session();
     return positionYear(repo.storyTime(), model.all('chapters'));
+  };
+
+  const romanization = () => {
+    const { model, repo } = session();
+    const settings = repo.romanizationSettings();
+    const systems = model.get('lists', 'romanizationSystems') as ListDoc | undefined;
+    const languages = model.get('lists', 'languages') as ListDoc | undefined;
+    return {
+      languages: (languages?.items ?? []).map((l) => {
+        const sys = systemFor(l.id, settings, systems);
+        return { id: l.id, label: l.label, systemId: sys?.id ?? null, kind: sys?.kind ?? null };
+      }),
+      systems: (systems?.items ?? []).map((i) => ({ id: i.id, label: i.label })),
+    };
   };
 
   const proposalView = (id: string) => {
@@ -298,6 +323,84 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     'timeline.eraCoverage': () => {
       const coverage = eraCoverage(eraSpans(session().model));
       return { coverage, messages: coverageMessages(coverage) };
+    },
+    'outline.get': ({ order, cursorYear }) => {
+      const { model, repo } = session();
+      // The cursor follows the story time; the caller may pass another year.
+      const cursor = cursorYear ?? repo.storyTime()?.year ?? null;
+      return outlineGrid(model, { order, cursorYear: cursor });
+    },
+    'chapter.page': ({ id }) => {
+      const page = chapterPage(session().model, id);
+      if (!page) throw new Error(`No chapter has the ID ${id}.`);
+      return { page };
+    },
+    'plot.reorder': async (req) => {
+      const { model, repo } = session();
+      const field = req.kind === 'chapters' ? ('readingOrder' as const) : ('order' as const);
+      const group = (
+        req.kind === 'chapters'
+          ? model.all('chapters').filter((c) => c.partId === req.groupId)
+          : model
+              .all('plotBeats')
+              .filter((b) => Array.isArray(b.arcIds) && b.arcIds.includes(req.groupId))
+      )
+        .filter((d) => !d.deletedAt)
+        .sort(
+          (a, b) =>
+            Number(a[field] ?? 0) - Number(b[field] ?? 0) ||
+            String(a.title).localeCompare(String(b.title)),
+        );
+      if (!group.some((d) => d._id === req.movedId)) {
+        throw new Error('That item is not in this group.');
+      }
+      const moves = reorder(
+        group.map((d) => ({ id: d._id, value: Number(d[field] ?? 0) })),
+        req.movedId,
+        req.toIndex,
+        req.kind === 'chapters' ? 'reuse' : 'sequence',
+      );
+      const before = new Map(group.map((d) => [d._id, Number(d[field] ?? 0)]));
+      await repo.reorder(req.kind === 'chapters' ? 'chapters' : 'plotBeats', moves);
+      return {
+        field,
+        changes: moves.map((m) => ({ id: m.id, before: before.get(m.id) ?? 0, after: m.value })),
+      };
+    },
+    'culture.entriesFor': ({ communityId, year }) => ({
+      entries: entriesFor(session().model.all('culturalEntries'), communityId, year).map(wire),
+    }),
+    'place.describe': ({ id, year }) => {
+      const { model } = session();
+      const place = model.get('places', id);
+      if (!place || place.deletedAt) throw new Error(`No place has the ID ${id}.`);
+      const places = model.all('places');
+      return {
+        id,
+        path: placePath(places, id),
+        description: descriptionFor(place as { descriptions?: never }, year),
+        children: places
+          .filter((p) => !p.deletedAt && p.parentId === id)
+          .map((p) => ({ id: p._id, title: entryTitle(p) }))
+          .sort((a, b) => a.title.localeCompare(b.title)),
+      };
+    },
+    'romanization.get': () => romanization(),
+    'romanization.set': async ({ languageId, systemId }) => {
+      await session().repo.setRomanization(languageId, systemId);
+      return romanization();
+    },
+    'romanization.check': ({ languageId, text }) => {
+      const { model, repo } = session();
+      const systems = model.get('lists', 'romanizationSystems') as ListDoc | undefined;
+      const problem = termProblem(
+        { language: languageId, romanization: text },
+        repo.romanizationSettings(),
+        systems,
+      );
+      return problem
+        ? { ok: false, message: problem }
+        : { ok: true, message: 'Follows the system.' };
     },
     'entry.update': async ({ collection, id, patch }) => {
       const entry = (await session().repo.update(collection, id, patch as never)) as StoredDoc;

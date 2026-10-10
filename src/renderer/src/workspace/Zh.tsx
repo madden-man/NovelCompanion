@@ -1,7 +1,16 @@
-import { useId, useMemo } from 'react';
+import { createContext, useContext, useId, useMemo, useState } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
+import { createCommand } from '../../../shared/domain/undoRunner';
 import { zhPieces } from '../../../shared/domain/zh';
 import type { ZhTerm } from '../../../shared/domain/zh';
-import { useEntries } from './data';
+import type { EntryCollection } from '../../../shared/schema';
+import { call, plainError } from '../api';
+import { useEntries, useList } from './data';
+import { useUndo } from './undo';
+
+/** Opens an entry in its section; the workspace provides it so a name can link to its term (GL-3). */
+const NavContext = createContext<((collection: EntryCollection, id: string) => void) | null>(null);
+export const ZhNavProvider = NavContext.Provider;
 
 /** Glossary terms as the matcher wants them. */
 export function useGlossary(): ZhTerm[] {
@@ -18,28 +27,100 @@ export function useGlossary(): ZhTerm[] {
   );
 }
 
-function ZhRun({ text, term }: { text: string; term: ZhTerm | null }) {
+function ZhRun(props: { text: string; term: ZhTerm | null; actions: boolean }) {
+  const { text, term, actions } = props;
   const tipId = useId();
-  const tip = term
-    ? `${term.romanization || 'No romanization yet'}: ${term.meaning || 'no meaning yet'}`
-    : 'Not in the glossary yet.';
+  const nav = useContext(NavContext);
+  const undo = useUndo();
+  const languages = useList('languages');
+  const [message, setMessage] = useState<string | null>(null);
+  const linked = actions && term !== null && nav !== null;
+
+  const open = () => {
+    if (linked) nav('glossaryTerms', term.id);
+  };
+
+  const add = async () => {
+    setMessage(null);
+    try {
+      const language =
+        languages?.items.find((i) => i.id === 'mandarin')?.id ??
+        languages?.items[0]?.id ??
+        'mandarin';
+      const { entry } = await call('entry.create', {
+        collection: 'glossaryTerms',
+        data: { title: text, characters: text, language, status: 'idea' },
+      });
+      undo.record(createCommand('glossaryTerms', entry._id, text));
+      nav?.('glossaryTerms', entry._id);
+    } catch (e) {
+      setMessage(plainError(e));
+    }
+  };
+
+  const onKey = (e: KeyboardEvent) => {
+    if (linked && e.key === 'Enter' && e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    }
+  };
+
   return (
-    <span className="zh-run" tabIndex={0} aria-describedby={tipId} data-testid="zh">
-      <span className="zh-chars" lang="zh">
+    <span
+      className="zh-run"
+      tabIndex={0}
+      role={linked ? 'link' : undefined}
+      aria-describedby={tipId}
+      data-testid="zh"
+      data-term={term?.id}
+      onClick={
+        linked
+          ? (e) => {
+              e.stopPropagation();
+              open();
+            }
+          : undefined
+      }
+      onKeyDown={onKey}
+    >
+      <span className={`zh-chars${linked ? ' zh-linked' : ''}`} lang="zh">
         {text}
       </span>
       <span className="zh-tip" role="tooltip" id={tipId}>
-        {tip}
+        {term ? (
+          <span>{`${term.romanization || 'No romanization yet'}: ${term.meaning || 'no meaning yet'}`}</span>
+        ) : (
+          <>
+            <span>Not in the glossary yet.</span>
+            {actions && nav && (
+              <button
+                type="button"
+                className="btn small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void add();
+                }}
+              >
+                Add to glossary
+              </button>
+            )}
+            {message && <span role="alert">{message}</span>}
+          </>
+        )}
       </span>
     </span>
   );
 }
 
 /**
- * Text with its Chinese characters shown as characters; hovering or focusing
- * a run shows the romanization and meaning from the glossary (GL-3, M2 stub).
+ * Text with its Chinese characters shown as characters. Hovering or focusing
+ * a run shows the romanization and meaning from the glossary term (the exact
+ * term first, then the longest term the run starts with). A run with a term
+ * links to it; a run without one offers "Add to glossary" (GL-3). Where the
+ * text sits inside a button, pass `actions={false}` to keep only the hover card.
  */
-export function Zh({ text }: { text: string }) {
+export function Zh({ text, actions = true }: { text: string; actions?: boolean }) {
   const terms = useGlossary();
   const pieces = useMemo(() => zhPieces(text, terms), [text, terms]);
   return (
@@ -48,9 +129,38 @@ export function Zh({ text }: { text: string }) {
         p.kind === 'text' ? (
           <span key={i}>{p.text}</span>
         ) : (
-          <ZhRun key={i} text={p.text} term={p.term} />
+          <ZhRun key={i} text={p.text} term={p.term} actions={actions} />
         ),
       )}
     </>
   );
+}
+
+const BLOCKS = new Set(['p', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'div']);
+const INLINE = new Set(['em', 'strong', 'i', 'b', 'u', 'span']);
+
+function renderNode(node: Node, key: string): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return <Zh key={key} text={node.textContent ?? ''} />;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = node as Element;
+  const tag = el.tagName.toLowerCase();
+  const kids = Array.from(el.childNodes).map((n, i) => renderNode(n, `${key}.${i}`));
+  if (tag === 'br' || tag === 'hr') return tag === 'br' ? <br key={key} /> : <hr key={key} />;
+  if (BLOCKS.has(tag) || INLINE.has(tag)) {
+    const Tag = tag as 'p';
+    return <Tag key={key}>{kids}</Tag>;
+  }
+  return <span key={key}>{kids}</span>;
+}
+
+/**
+ * Stored rich text shown read-only with its Chinese runs wrapped (GL-3).
+ * Only plain structure survives: paragraphs, lists, headings, emphasis.
+ */
+export function ZhHtml({ html }: { html: string }) {
+  const nodes = useMemo(() => {
+    const body = new DOMParser().parseFromString(html, 'text/html').body;
+    return Array.from(body.childNodes);
+  }, [html]);
+  return <div className="zh-html">{nodes.map((n, i) => renderNode(n, String(i)))}</div>;
 }

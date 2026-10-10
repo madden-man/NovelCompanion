@@ -13,12 +13,19 @@ import { YearView } from './timeline/YearView';
 import { CompareView } from './timeline/CompareView';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
+import { CultureView, PlacesView, RomanizationView } from './culture';
+import { OutlineView } from './plot';
+import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 
 type View =
   | { kind: 'section'; collection: EntryCollection; selected: string | null; creating: boolean }
   | { kind: 'tree' }
   | { kind: 'timeline' }
+  | { kind: 'outline' }
+  | { kind: 'culture' }
+  | { kind: 'places' }
+  | { kind: 'romanization' }
   | { kind: 'year' }
   | { kind: 'compare' }
   | { kind: 'trash' }
@@ -59,95 +66,121 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   );
 
   return (
-    <div className="ws-frame" data-testid="workspace">
-      <nav className="rail ws-rail" aria-label="Sections">
-        {GROUPS.map((g) => (
-          <div key={g} className="rail-group">
-            <span className="eyebrow">{g}</span>
-            {g === 'People' && (
+    <ZhNavProvider value={open}>
+      <div className="ws-frame" data-testid="workspace">
+        <nav className="rail ws-rail" aria-label="Sections">
+          {GROUPS.map((g) => (
+            <div key={g} className="rail-group">
+              <span className="eyebrow">{g}</span>
+              {g === 'People' && (
+                <>
+                  {railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
+                  {railButton('Year view', view.kind === 'year', () => setView({ kind: 'year' }))}
+                  {railButton('Compare', view.kind === 'compare', () =>
+                    setView({ kind: 'compare' }),
+                  )}
+                </>
+              )}
+              {g === 'Story' &&
+                railButton('Outline', view.kind === 'outline', () => setView({ kind: 'outline' }))}
+              {g === 'World' && (
+                <>
+                  {railButton('Timeline', view.kind === 'timeline', () =>
+                    setView({ kind: 'timeline' }),
+                  )}
+                  {railButton('Culture by year', view.kind === 'culture', () =>
+                    setView({ kind: 'culture' }),
+                  )}
+                  {railButton('Place tree', view.kind === 'places', () =>
+                    setView({ kind: 'places' }),
+                  )}
+                  {railButton('Romanization', view.kind === 'romanization', () =>
+                    setView({ kind: 'romanization' }),
+                  )}
+                </>
+              )}
+              {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
+                railButton(
+                  collectionInfo[c].plural,
+                  view.kind === 'section' && view.collection === c,
+                  () =>
+                    setView({ kind: 'section', collection: c, selected: null, creating: false }),
+                ),
+              )}
+            </div>
+          ))}
+          <div className="rail-group">
+            <span className="eyebrow">Manage</span>
+            {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
+            {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
+            {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
+            {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
+          </div>
+        </nav>
+        {view.kind === 'section' ? (
+          <>
+            <EntryList
+              collection={view.collection}
+              selected={view.selected}
+              onSelect={(id) => open(view.collection, id)}
+              onNew={() => setView({ ...view, selected: null, creating: true })}
+            />
+            {view.creating ? (
               <>
-                {railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
-                {railButton('Year view', view.kind === 'year', () => setView({ kind: 'year' }))}
-                {railButton('Compare', view.kind === 'compare', () => setView({ kind: 'compare' }))}
+                <NewEntryForm
+                  key={view.collection}
+                  collection={view.collection}
+                  onCreated={(id) => open(view.collection, id)}
+                  onCancel={() => setView({ ...view, creating: false })}
+                />
+                <SideInspector />
+              </>
+            ) : view.selected ? (
+              <EntryPane
+                key={`${view.collection}:${view.selected}`}
+                collection={view.collection}
+                id={view.selected}
+                onOpen={open}
+                onClosed={() => setView({ ...view, selected: null })}
+              />
+            ) : (
+              <>
+                <div className="ws-editor empty-editor">
+                  <p className="lede">
+                    Pick an entry to edit it, or make a new{' '}
+                    {collectionInfo[view.collection].singular.toLowerCase()}.
+                  </p>
+                </div>
+                <SideInspector />
               </>
             )}
-            {g === 'World' &&
-              railButton('Timeline', view.kind === 'timeline', () => setView({ kind: 'timeline' }))}
-            {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
-              railButton(
-                collectionInfo[c].plural,
-                view.kind === 'section' && view.collection === c,
-                () => setView({ kind: 'section', collection: c, selected: null, creating: false }),
-              ),
-            )}
-          </div>
-        ))}
-        <div className="rail-group">
-          <span className="eyebrow">Manage</span>
-          {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
-          {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
-          {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
-          {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
-        </div>
-      </nav>
-      {view.kind === 'section' ? (
-        <>
-          <EntryList
-            collection={view.collection}
-            selected={view.selected}
-            onSelect={(id) => open(view.collection, id)}
-            onNew={() => setView({ ...view, selected: null, creating: true })}
-          />
-          {view.creating ? (
-            <>
-              <NewEntryForm
-                key={view.collection}
-                collection={view.collection}
-                onCreated={(id) => open(view.collection, id)}
-                onCancel={() => setView({ ...view, creating: false })}
-              />
-              <SideInspector />
-            </>
-          ) : view.selected ? (
-            <EntryPane
-              key={`${view.collection}:${view.selected}`}
-              collection={view.collection}
-              id={view.selected}
-              onOpen={open}
-              onClosed={() => setView({ ...view, selected: null })}
-            />
-          ) : (
-            <>
-              <div className="ws-editor empty-editor">
-                <p className="lede">
-                  Pick an entry to edit it, or make a new{' '}
-                  {collectionInfo[view.collection].singular.toLowerCase()}.
-                </p>
-              </div>
-              <SideInspector />
-            </>
-          )}
-        </>
-      ) : view.kind === 'tree' ? (
-        <TreeView onOpen={open} />
-      ) : view.kind === 'timeline' ? (
-        <TimelineView />
-      ) : (
-        <>
-          <div className="ws-wide-area">
-            {view.kind === 'trash' && <TrashView onOpen={open} />}
-            {view.kind === 'lists' && <ListsView />}
-            {view.kind === 'review' && <ReviewQueue />}
-            {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
-            {view.kind === 'year' && <YearView />}
-            {view.kind === 'compare' && <CompareView />}
-          </div>
-          <SideInspector />
-        </>
-      )}
-      <StatusBar />
-      <StoryTimeGate />
-    </div>
+          </>
+        ) : view.kind === 'tree' ? (
+          <TreeView onOpen={open} />
+        ) : view.kind === 'timeline' ? (
+          <TimelineView />
+        ) : view.kind === 'outline' ? (
+          <OutlineView />
+        ) : (
+          <>
+            <div className="ws-wide-area">
+              {view.kind === 'trash' && <TrashView onOpen={open} />}
+              {view.kind === 'lists' && <ListsView />}
+              {view.kind === 'review' && <ReviewQueue />}
+              {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
+              {view.kind === 'year' && <YearView />}
+              {view.kind === 'compare' && <CompareView />}
+              {view.kind === 'culture' && <CultureView onOpen={open} />}
+              {view.kind === 'places' && <PlacesView onOpen={open} />}
+              {view.kind === 'romanization' && <RomanizationView onOpen={open} />}
+            </div>
+            <SideInspector />
+          </>
+        )}
+        <StatusBar />
+        <StoryTimeGate />
+      </div>
+    </ZhNavProvider>
   );
 }
 

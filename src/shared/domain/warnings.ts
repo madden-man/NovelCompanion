@@ -24,6 +24,7 @@ import { compareStoryDates, formatStoryDate, isImpossibleDate, yearOf } from './
 import { isPlainObject, joinPath } from './paths';
 import type { Doc } from './paths';
 import { outgoingRefs } from './refs';
+import { ROMANIZATION_META_ID, settingsFromMeta, termProblem } from './romanization';
 import type { CustomSpecs } from './refs';
 
 export interface FieldWarning {
@@ -301,6 +302,19 @@ function chapterChecks(doc: Doc, out: FieldWarning[]): void {
   }
 }
 
+/** GL-1: a romanization that does not follow the language's system is flagged, never blocked. */
+function glossaryChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  const problem = termProblem(
+    {
+      language: typeof doc.language === 'string' ? doc.language : '',
+      romanization: typeof doc.romanization === 'string' ? doc.romanization : '',
+    },
+    settingsFromMeta(ctx.get('meta', ROMANIZATION_META_ID)),
+    ctx.list('romanizationSystems'),
+  );
+  if (problem) out.push({ path: 'romanization', code: 'romanization-system', message: problem });
+}
+
 function worldEventChecks(doc: Doc, out: FieldWarning[]): void {
   const cmp = compareStoryDates(asDate(doc.end), asDate(doc.start));
   if (cmp !== null && cmp < 0) {
@@ -351,6 +365,9 @@ export function computeWarnings(
       break;
     case 'worldEvents':
       worldEventChecks(doc, out);
+      break;
+    case 'glossaryTerms':
+      glossaryChecks(doc, ctx, out);
       break;
     case 'openQuestions':
       openQuestionChecks(doc, out);

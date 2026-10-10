@@ -101,7 +101,7 @@ export type GlossaryTerm = z.infer<typeof GlossaryTerm>;
 export const glossaryTermFields: FieldSpec[] = [
   ...commonFields,
   f.text('characters', 'Term in characters', { required: true }),
-  f.text('romanization', 'Romanization'),
+  f.text('romanization', 'Romanization', { warnings: ['romanization-system'] }),
   f.listItem('language', 'Language', 'languages', { required: true }),
   f.longText('meaning', 'Meaning'),
   f.longText('usageNote', 'Usage note'),

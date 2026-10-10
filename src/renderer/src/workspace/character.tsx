@@ -58,7 +58,7 @@ export function CharacterSummary(props: {
   const open = (id: string) => props.onOpen('characters', id);
   const person = (id: string, name: string) => (
     <button type="button" className="link-btn" onClick={() => open(id)}>
-      <Zh text={name} />
+      <Zh text={name} actions={false} />
     </button>
   );
 
