@@ -122,6 +122,19 @@ test('TM-2 the dialog shows everyone in the year, the era, the events, and the s
   await closeDialog();
 });
 
+test('NF-2 Tab inside the open Story Time dialog never leaves it', async () => {
+  await openDialog();
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press(i % 2 === 0 ? 'Tab' : 'Shift+Tab');
+    expect(await dialog().evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  }
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab');
+    expect(await dialog().evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  }
+  await closeDialog();
+});
+
 test('TM-4 anchors: "Iris Hale-Zhou is 9" gives 2040, +10 steps to 2050, and a strand sets its year', async () => {
   await openDialog();
   await dialog().getByTestId('time-year').fill('2000');

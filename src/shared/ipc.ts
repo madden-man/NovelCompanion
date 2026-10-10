@@ -222,7 +222,14 @@ const CharacterPageWire = z.strictObject({
     readingOrder: z.number().nullable(),
     state: LifeStateWire.nullable(),
   }),
-  storyTime: z.strictObject({ year: z.number(), state: LifeStateWire }).nullable(),
+  storyTime: z
+    .strictObject({
+      year: z.number(),
+      month: z.number().optional(),
+      day: z.number().optional(),
+      state: LifeStateWire,
+    })
+    .nullable(),
   knowledgeYear: z.number().nullable(),
   timeline: z.array(
     z.strictObject({

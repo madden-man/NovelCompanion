@@ -37,6 +37,7 @@ import {
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
+import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
@@ -1141,21 +1142,10 @@ export class Repository {
         'This chapter changed after you saw the change, so nothing was written. Look at the change again.',
       );
     }
-    const strands = (Array.isArray(prior.strands) ? prior.strands : []) as {
-      id: string;
-      label: string;
-      startYear: number;
-      endYear: number | null;
-    }[];
-    const strand = strands.find((st) => st.id === strandId);
-    if (!strand) throw new RepositoryError('That strand is no longer in this chapter.');
-    // A range keeps its length; a single year stays a single year.
-    const shift = year - strand.startYear;
-    const next = strands.map((st) =>
-      st.id === strandId
-        ? { ...st, startYear: year, endYear: st.endYear === null ? null : st.endYear + shift }
-        : st,
-    );
+    const strands = (Array.isArray(prior.strands) ? prior.strands : []) as object[];
+    const shifted = shiftStrand(strands, strandId, year);
+    if (!shifted) throw new RepositoryError('That strand is no longer in this chapter.');
+    const { strand, next } = shifted;
     const change = this.buildUpdate('chapters', prior, { strands: next });
     change.note = `Set the ${strand.label} strand year to ${year} from the story time`;
     await this.commit([change]);

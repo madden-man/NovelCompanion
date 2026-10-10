@@ -7,6 +7,7 @@ import type { Handler } from './validate';
 import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
 import { characterPage } from '../../shared/domain/character';
 import { positionYear } from '../../shared/domain/position';
+import { shiftStrand } from '../../shared/domain/strands';
 import { itemPath } from '../../shared/domain/lists';
 import {
   characterName,
@@ -220,24 +221,18 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
       if (!time) throw new Error('Set a story time first.');
       const ch = model.get('chapters', chapterId);
       if (!ch || ch.deletedAt) throw new Error(`No chapter has the ID ${chapterId}.`);
-      const strand = (
-        ch.strands as { id: string; label: string; startYear: number; endYear: number | null }[]
-      ).find((st) => st.id === strandId);
-      if (!strand) throw new Error('That strand is not in this chapter.');
-      const shift = time.year - strand.startYear;
+      const shifted = shiftStrand(ch.strands as object[], strandId, time.year);
+      if (!shifted) throw new Error('That strand is not in this chapter.');
       return {
         chapterId,
         chapterTitle: entryTitle(ch),
         strandId,
-        strandLabel: strand.label,
+        strandLabel: shifted.strand.label,
         year: time.year,
-        from: { startYear: strand.startYear, endYear: strand.endYear },
-        to: {
-          startYear: time.year,
-          endYear: strand.endYear === null ? null : strand.endYear + shift,
-        },
+        from: shifted.from,
+        to: shifted.to,
         baseModifiedAt: String(ch.modifiedAt),
-        unchanged: shift === 0,
+        unchanged: shifted.unchanged,
       };
     },
     'storyTime.promote': async ({ chapterId, strandId, baseModifiedAt }) => {

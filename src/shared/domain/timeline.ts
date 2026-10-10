@@ -210,6 +210,15 @@ export interface LivedThrough {
   events: LivedEvent[];
 }
 
+/** True when the death is a full date and the event starts later in the same year. */
+function diedAfter(death: StoryDate | null | undefined, e: EventSpan): boolean {
+  if (!isKnown(death) || death.month === undefined || death.day === undefined) return false;
+  if (!e.start || !isKnown(e.start) || e.startYear !== death.year) return false;
+  if (e.start.month === undefined) return false;
+  if (e.start.month !== death.month) return e.start.month > death.month;
+  return e.start.day !== undefined && e.start.day > death.day;
+}
+
 /**
  * TL-5: the world events a character has lived through by a year or date,
  * with their age at each. An event counts when it overlaps the lifetime and
@@ -238,6 +247,8 @@ export function livedThrough(
     if (!begunBy(e, at)) continue;
     if (e.endYear < born) continue;
     if (died !== null && e.startYear > died) continue;
+    // Within the death year, an event that starts after a full death date is after death.
+    if (diedAfter(span.death, e)) continue;
     const metAt: StoryMoment =
       e.startYear >= born && e.start && isKnown(e.start) ? (e.start as KnownDate) : born;
     const st = lifeState(span, metAt);

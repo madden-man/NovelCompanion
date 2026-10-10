@@ -5,6 +5,7 @@ import { call, plainError } from '../../api';
 import { useEntries } from '../data';
 import { formatMoment, useStoryTime } from '../storyTime';
 import { Zh } from '../Zh';
+import { useFocusTrap } from '../focusTrap';
 import { FamilyChips, StateText, span, useFamilies, useYearView } from './common';
 
 type Preview = Response<'storyTime.promotePreview'>;
@@ -69,6 +70,8 @@ export function StoryTimeDialog() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const yearInput = useRef<HTMLInputElement>(null);
   const opener = useRef<Element | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const ids = {
     title: useId(),
     year: useId(),
@@ -197,6 +200,7 @@ export function StoryTimeDialog() {
       }}
     >
       <div
+        ref={dialogRef}
         className="dialog stack"
         role="dialog"
         aria-modal="true"

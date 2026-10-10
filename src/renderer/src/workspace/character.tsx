@@ -3,7 +3,7 @@ import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
 import { call } from '../api';
 import { useList, useStore } from './data';
-import { useStoryTime } from './storyTime';
+import { formatMoment, useStoryTime } from './storyTime';
 import { Zh } from './Zh';
 
 type Page = Response<'character.page'>['page'];
@@ -35,7 +35,8 @@ export function CharacterSummary(props: {
   const [error, setError] = useState(false);
   const unionLabel = useLabel('unionTypes');
   const linkLabel = useLabel('parentLinkTypes');
-  const storyYear = story.stored?.time?.year ?? null;
+  const st = story.stored?.time;
+  const storyKey = st ? formatMoment(st) : null;
 
   useEffect(() => {
     let live = true;
@@ -49,7 +50,7 @@ export function CharacterSummary(props: {
     return () => {
       live = false;
     };
-  }, [props.id, version, storyYear]);
+  }, [props.id, version, storyKey]);
 
   if (error) return null;
   if (!page) return <p aria-live="polite">Loading the character page.</p>;
@@ -86,7 +87,7 @@ export function CharacterSummary(props: {
           </p>
           {page.storyTime && (
             <p className="char-age" data-testid="char-age-story">
-              {`Age at story time (year ${page.storyTime.year}): ${ageWords(page.storyTime.state)}`}
+              {`Age at story time (${page.storyTime.month !== undefined ? formatMoment(page.storyTime) : `year ${page.storyTime.year}`}): ${ageWords(page.storyTime.state)}`}
             </p>
           )}
         </div>

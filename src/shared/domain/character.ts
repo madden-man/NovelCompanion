@@ -57,8 +57,8 @@ export interface CharacterPage {
     readingOrder: number | null;
     state: LifeState | null;
   };
-  /** The story time, when one is set (TM-3). */
-  storyTime: { year: number; state: LifeState } | null;
+  /** The story time, when one is set (TM-3): a year, or a full date judged exactly. */
+  storyTime: { year: number; month?: number; day?: number; state: LifeState } | null;
   /** The year "what they know" is judged at: the story time, else the current position. */
   knowledgeYear: number | null;
   timeline: TimelineItem[];
@@ -105,11 +105,27 @@ function eventYears(e: Doc): [number, number] | null {
   return [s, end ?? s];
 }
 
+/**
+ * The state at the story time. A full date (month and day) is judged exactly,
+ * as the Story Time dialog judges it, so the page and the dialog agree before
+ * a birthday; a year or a year and month uses year arithmetic (TL-3).
+ */
+export function storyTimeState(
+  life: { birth: StoryDate | null; death: StoryDate | null },
+  t: { year: number; month?: number; day?: number },
+): { year: number; month?: number; day?: number; state: LifeState } {
+  if (t.month !== undefined && t.day !== undefined) {
+    const at = { year: t.year, month: t.month, day: t.day };
+    return { ...at, state: lifeState(life, at) };
+  }
+  return { year: t.year, state: lifeState(life, t.year) };
+}
+
 export function characterPage(
   data: PageData,
   id: string,
   current: Position,
-  storyTime: { year: number } | null = null,
+  storyTime: { year: number; month?: number; day?: number } | null = null,
 ): CharacterPage | null {
   const knowledgeYear = storyTime?.year ?? current.year;
   const chars = data.all('characters');
@@ -313,7 +329,7 @@ export function characterPage(
         : null,
       state: current.year === null ? null : lifeState(life, current.year),
     },
-    storyTime: storyTime ? { year: storyTime.year, state: lifeState(life, storyTime.year) } : null,
+    storyTime: storyTime ? storyTimeState(life, storyTime) : null,
     knowledgeYear,
     timeline,
     relatives: {
