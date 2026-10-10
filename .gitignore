@@ -1,0 +1,15 @@
+# Private material: the repo is public. Never commit the novel's sources or the plot read-out.
+source-material/
+docs/PHASE0-FINDINGS.md
+docs/SOURCE-MANIFEST.md
+
+node_modules/
+dist/
+out/
+release/
+.DS_Store
+*.log
+.env
+.env.*
+coverage/
+snapshots/
