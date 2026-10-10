@@ -133,7 +133,9 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       const el = focusedTextField();
       savedValue.current = el ? { el, value: el.value, nativeUndone: false } : null;
     };
-    const off = window.api.on('app.command', ({ command: c }) => command(c));
+    const off = window.api.on('app.command', ({ command: c }) => {
+      if (c === 'undo' || c === 'redo') command(c);
+    });
     // Fallback for key presses that reach the page directly.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;

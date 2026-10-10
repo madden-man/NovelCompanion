@@ -6,13 +6,21 @@ import { DataProvider } from './data';
 import { EntryPane, UndoPanel } from './editor';
 import { ReviewQueue } from './review';
 import { UndoProvider } from './undo';
-import { StoryTimeProvider } from './storyTime';
+import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
+import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
+import { TimelineView } from './timeline/TimelineView';
+import { YearView } from './timeline/YearView';
+import { CompareView } from './timeline/CompareView';
+import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 
 type View =
   | { kind: 'section'; collection: EntryCollection; selected: string | null; creating: boolean }
   | { kind: 'tree' }
+  | { kind: 'timeline' }
+  | { kind: 'year' }
+  | { kind: 'compare' }
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
@@ -56,8 +64,15 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         {GROUPS.map((g) => (
           <div key={g} className="rail-group">
             <span className="eyebrow">{g}</span>
-            {g === 'People' &&
-              railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
+            {g === 'People' && (
+              <>
+                {railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
+                {railButton('Year view', view.kind === 'year', () => setView({ kind: 'year' }))}
+                {railButton('Compare', view.kind === 'compare', () => setView({ kind: 'compare' }))}
+              </>
+            )}
+            {g === 'World' &&
+              railButton('Timeline', view.kind === 'timeline', () => setView({ kind: 'timeline' }))}
             {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
               railButton(
                 collectionInfo[c].plural,
@@ -115,6 +130,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         </>
       ) : view.kind === 'tree' ? (
         <TreeView onOpen={open} />
+      ) : view.kind === 'timeline' ? (
+        <TimelineView />
       ) : (
         <>
           <div className="ws-wide-area">
@@ -122,11 +139,44 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {view.kind === 'lists' && <ListsView />}
             {view.kind === 'review' && <ReviewQueue />}
             {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
+            {view.kind === 'year' && <YearView />}
+            {view.kind === 'compare' && <CompareView />}
           </div>
           <SideInspector />
         </>
       )}
+      <StatusBar />
+      <StoryTimeGate />
     </div>
+  );
+}
+
+function StoryTimeGate() {
+  const story = useStoryTime();
+  return story.dialogOpen ? <StoryTimeDialog /> : null;
+}
+
+/** TM-3: the current story time, its era, and the chapter being written, on every screen. */
+function StatusBar() {
+  const story = useStoryTime();
+  const time = story.time ?? { year: story.year };
+  const view = useYearView(time);
+  const strands = useStrandOptions();
+  const strand = strands.find(
+    (s) => s.chapterId === story.time?.chapterId && s.strandId === story.time?.strandId,
+  );
+  return (
+    <footer className="statusbar ws-status" aria-label="Status" data-testid="status-bar">
+      <span data-testid="status-time">
+        <strong>Story time {formatMoment(time)}</strong>
+        {view?.era ? `, ${view.era.name}` : ''}
+        {story.time ? '' : ' (from the current position, not set)'}
+      </span>
+      {strand && <span data-testid="status-strand">Writing: {strand.label}</span>}
+      <button type="button" className="btn small" onClick={story.openDialog}>
+        Story time <kbd>Cmd T</kbd>
+      </button>
+    </footer>
   );
 }
 

@@ -36,6 +36,7 @@ import {
   tagsUsed,
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
+import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
@@ -1095,11 +1096,16 @@ export class Repository {
   storyTime(): StoryTimeValue | null {
     const doc = this.model.get('meta', STORY_TIME_ID);
     if (!doc || typeof doc.year !== 'number') return null;
-    return StoryTimeValue.parse({
+    const r = StoryTimeValue.safeParse({
       year: doc.year,
       ...(typeof doc.month === 'number' ? { month: doc.month } : {}),
-      ...(typeof doc.day === 'number' ? { day: doc.day } : {}),
+      ...(typeof doc.month === 'number' && typeof doc.day === 'number' ? { day: doc.day } : {}),
+      ...(typeof doc.chapterId === 'string' ? { chapterId: doc.chapterId } : {}),
+      ...(typeof doc.chapterId === 'string' && typeof doc.strandId === 'string'
+        ? { strandId: doc.strandId }
+        : {}),
     });
+    return r.success ? r.data : { year: doc.year };
   }
 
   /** Set or clear the story time. It writes only the meta document, never an entry (TM-5). */
@@ -1115,6 +1121,72 @@ export class Repository {
     }
     this.emitter.emit('storyTime');
     return this.storyTime();
+  }
+
+  /**
+   * TM-5: promote a year into one chapter strand, an explicit action the
+   * person confirms after seeing the change (ED-7). It goes through the one
+   * write path with a revision note. Refused when the chapter changed after
+   * the person saw the change.
+   */
+  async setStrandYear(
+    chapterId: string,
+    strandId: string,
+    year: number,
+    baseModifiedAt: string,
+  ): Promise<StoredDoc> {
+    const prior = await this.current('chapters', chapterId);
+    if (prior.modifiedAt !== baseModifiedAt) {
+      throw new RepositoryError(
+        'This chapter changed after you saw the change, so nothing was written. Look at the change again.',
+      );
+    }
+    const strands = (Array.isArray(prior.strands) ? prior.strands : []) as {
+      id: string;
+      label: string;
+      startYear: number;
+      endYear: number | null;
+    }[];
+    const strand = strands.find((st) => st.id === strandId);
+    if (!strand) throw new RepositoryError('That strand is no longer in this chapter.');
+    // A range keeps its length; a single year stays a single year.
+    const shift = year - strand.startYear;
+    const next = strands.map((st) =>
+      st.id === strandId
+        ? { ...st, startYear: year, endYear: st.endYear === null ? null : st.endYear + shift }
+        : st,
+    );
+    const change = this.buildUpdate('chapters', prior, { strands: next });
+    change.note = `Set the ${strand.label} strand year to ${year} from the story time`;
+    await this.commit([change]);
+    return change.next;
+  }
+
+  /**
+   * WE-2: give a new bible its default eras, copied from the `eraDefaults`
+   * list into era state entries through the write path. Does nothing when
+   * the bible already has eras, in the trash or not.
+   */
+  async seedDefaultEras(): Promise<number> {
+    if (this.model.all('eraStates').length > 0) return 0;
+    const list = this.model.get('lists', 'eraDefaults') as ListDoc | undefined;
+    const ranges = (list?.items ?? [])
+      .map(eraRangeFromItem)
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    if (!ranges.length) return 0;
+    const changes = ranges.map((r) => ({
+      ...this.buildCreate('eraStates', {
+        title: r.name,
+        name: r.name,
+        status: 'planned',
+        provenance: 'invented',
+        startYear: r.startYear,
+        endYear: r.endYear,
+      }),
+      note: 'Default era for a new bible',
+    }));
+    await this.commit(changes);
+    return changes.length;
   }
 
   /** Stored tree positions keyed by character ID (FT-10), or null when none are stored. */

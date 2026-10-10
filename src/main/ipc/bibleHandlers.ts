@@ -7,6 +7,24 @@ import type { Handler } from './validate';
 import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
 import { characterPage } from '../../shared/domain/character';
 import { positionYear } from '../../shared/domain/position';
+import { itemPath } from '../../shared/domain/lists';
+import {
+  characterName,
+  compare,
+  coverageMessages,
+  eraCoverage,
+  eraFor,
+  eraSpans,
+  erasFor,
+  eventsIn,
+  everyoneIn,
+  filterChart,
+  livedThrough,
+  strandsIn,
+  timelineChart,
+  yearForAge,
+} from '../../shared/domain/timeline';
+import type { ListDoc } from '../../shared/schema';
 
 /** Channels that act on the open bible. */
 export type BibleChannel =
@@ -40,7 +58,15 @@ export type BibleChannel =
   | 'tree.savePositions'
   | 'character.page'
   | 'storyTime.get'
-  | 'storyTime.set';
+  | 'storyTime.set'
+  | 'storyTime.anchorAge'
+  | 'storyTime.promotePreview'
+  | 'storyTime.promote'
+  | 'timeline.year'
+  | 'timeline.livedThrough'
+  | 'timeline.compare'
+  | 'timeline.chart'
+  | 'timeline.eraCoverage';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -48,6 +74,15 @@ export type TestChannel = 'test.propose';
 export type BibleHandlers = { [C in BibleChannel]: Handler<C> };
 
 export const NO_BIBLE = 'Open a bible first.';
+
+const isFullMoment = (m: {
+  month?: number;
+  day?: number;
+}): m is {
+  year: number;
+  month: number;
+  day: number;
+} => m.month !== undefined && m.day !== undefined;
 
 /**
  * Handlers for every bible channel, independent of Electron so the
@@ -169,6 +204,105 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     'storyTime.set': async ({ time }) => {
       const saved = await session().repo.setStoryTime(time);
       return { time: saved, position: position() };
+    },
+    'storyTime.anchorAge': ({ characterId, age }) => {
+      const c = session().model.get('characters', characterId);
+      if (!c || c.deletedAt) throw new Error(`No character has the ID ${characterId}.`);
+      const year = yearForAge(c, age);
+      const name = characterName(c, characterId);
+      return year === null
+        ? { year, message: `${name} has no known birth year, so no year can be computed.` }
+        : { year, message: `${name} is ${age} in ${year}.` };
+    },
+    'storyTime.promotePreview': ({ chapterId, strandId }) => {
+      const { model, repo } = session();
+      const time = repo.storyTime();
+      if (!time) throw new Error('Set a story time first.');
+      const ch = model.get('chapters', chapterId);
+      if (!ch || ch.deletedAt) throw new Error(`No chapter has the ID ${chapterId}.`);
+      const strand = (
+        ch.strands as { id: string; label: string; startYear: number; endYear: number | null }[]
+      ).find((st) => st.id === strandId);
+      if (!strand) throw new Error('That strand is not in this chapter.');
+      const shift = time.year - strand.startYear;
+      return {
+        chapterId,
+        chapterTitle: entryTitle(ch),
+        strandId,
+        strandLabel: strand.label,
+        year: time.year,
+        from: { startYear: strand.startYear, endYear: strand.endYear },
+        to: {
+          startYear: time.year,
+          endYear: strand.endYear === null ? null : strand.endYear + shift,
+        },
+        baseModifiedAt: String(ch.modifiedAt),
+        unchanged: shift === 0,
+      };
+    },
+    'storyTime.promote': async ({ chapterId, strandId, baseModifiedAt }) => {
+      const { repo } = session();
+      const time = repo.storyTime();
+      if (!time) throw new Error('Set a story time first.');
+      const entry = await repo.setStrandYear(chapterId, strandId, time.year, baseModifiedAt);
+      return withWarnings('chapters', entry);
+    },
+    'timeline.year': ({ at }) => {
+      const { model, repo } = session();
+      const moment = at ?? storyMoment();
+      const year = moment.year;
+      const groups = everyoneIn(model, isFullMoment(moment) ? moment : year);
+      return {
+        ...groups,
+        at: moment,
+        era: eraFor(model, year),
+        eras: erasFor(model, year),
+        events: eventsIn(model, year),
+        strands: strandsIn(model, year),
+      };
+      function storyMoment() {
+        const t = repo.storyTime();
+        if (t) {
+          return {
+            year: t.year,
+            ...(t.month !== undefined ? { month: t.month } : {}),
+            ...(t.month !== undefined && t.day !== undefined ? { day: t.day } : {}),
+          };
+        }
+        return { year: position().year ?? new Date().getFullYear() };
+      }
+    },
+    'timeline.livedThrough': ({ characterId, year }) => {
+      const { model } = session();
+      const lived = livedThrough(model, characterId, year);
+      if (!lived) throw new Error(`No character has the ID ${characterId}.`);
+      const cats = model.get('lists', 'eventCategories') as ListDoc | undefined;
+      return {
+        ...lived,
+        events: lived.events.map((e) => ({
+          ...e,
+          categoryPath: cats ? itemPath(cats, e.categoryId) || e.categoryId : e.categoryId,
+        })),
+      };
+    },
+    'timeline.compare': ({ a, b, from, to, step }) => {
+      const { model } = session();
+      for (const id of [a, b]) {
+        if (!model.get('characters', id)) throw new Error(`No character has the ID ${id}.`);
+      }
+      return { rows: compare(model, a, b, from, to, step) };
+    },
+    'timeline.chart': ({ filters }) => {
+      const { model } = session();
+      const chart = filterChart(timelineChart(model), filters, {
+        places: model.all('places'),
+        categories: model.get('lists', 'eventCategories') as ListDoc | undefined,
+      });
+      return { ...chart, coverage: eraCoverage(eraSpans(model)) };
+    },
+    'timeline.eraCoverage': () => {
+      const coverage = eraCoverage(eraSpans(session().model));
+      return { coverage, messages: coverageMessages(coverage) };
     },
     'entry.update': async ({ collection, id, patch }) => {
       const entry = (await session().repo.update(collection, id, patch as never)) as StoredDoc;

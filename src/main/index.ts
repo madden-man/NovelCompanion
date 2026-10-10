@@ -49,7 +49,14 @@ function createWindow(): BrowserWindow {
   // so one key press is one app-level undo everywhere, text fields included.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || input.alt || !(input.meta || input.control)) return;
-    if (input.key.toLowerCase() !== 'z') return;
+    const key = input.key.toLowerCase();
+    // TM-1: Cmd+T opens the Story Time dialog from every screen.
+    if (key === 't' && !input.shift) {
+      event.preventDefault();
+      win.webContents.send(wireEvent('app.command'), { command: 'storyTime' });
+      return;
+    }
+    if (key !== 'z') return;
     event.preventDefault();
     win.webContents.send(wireEvent('app.command'), { command: input.shift ? 'redo' : 'undo' });
   });

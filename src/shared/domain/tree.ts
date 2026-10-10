@@ -710,6 +710,14 @@ export interface LinkEdge {
   childId: string;
 }
 
+/** How far below a low union line its end-year label sits; the view draws text 6 above this point. */
+export const UNION_LABEL_BELOW = 20;
+
+/** The union line for partners in one row with people between them: below the row. */
+export function lowUnionLine(L: NodePos, R: NodePos): { x1: number; x2: number; y: number } {
+  return { x1: L.x + NODE_W - 20, x2: R.x + 20, y: L.y + NODE_H + 12 };
+}
+
 export function treeEdges(
   g: TreeGraph,
   layout: TreeLayout,
@@ -730,10 +738,16 @@ export function treeEdges(
     if (L.y === R.y) {
       const x1 = L.x + NODE_W;
       const x2 = R.x;
-      if (adjacent(L, R)) path = `M${x1},${my} L${x2},${my}`;
-      else
-        path = `M${x1 - 20},${L.y + NODE_H} L${x1 - 20},${L.y + NODE_H + 12} L${x2 + 20},${L.y + NODE_H + 12} L${x2 + 20},${R.y + NODE_H}`;
-      label = { x: (x1 + x2) / 2, y: my };
+      if (adjacent(L, R)) {
+        path = `M${x1},${my} L${x2},${my}`;
+        label = { x: (x1 + x2) / 2, y: my };
+      } else {
+        // Partners with people between them: the line runs below the row, and
+        // the end-year label sits under that line, clear of every node.
+        const low = lowUnionLine(L, R);
+        path = `M${low.x1},${L.y + NODE_H} L${low.x1},${low.y} L${low.x2},${low.y} L${low.x2},${R.y + NODE_H}`;
+        label = { x: (low.x1 + low.x2) / 2, y: low.y + UNION_LABEL_BELOW };
+      }
     } else {
       const [T, D] = A.y < B.y ? [A, B] : [B, A];
       path = `M${T.x + NODE_W - 16},${T.y + NODE_H} L${T.x + NODE_W - 16},${D.y - 24} L${D.x + 16},${D.y - 24} L${D.x + 16},${D.y}`;
@@ -764,9 +778,18 @@ export function treeEdges(
         if (!la || !lb || la.type !== lb.type || done.has(la.id) || done.has(lb.id)) continue;
         const A = pos.get(u.a) as NodePos;
         const B = pos.get(u.b) as NodePos;
-        if (!adjacent(A, B)) continue;
-        const mx = (Math.min(A.x, B.x) + NODE_W + Math.max(A.x, B.x)) / 2;
-        const my = A.y + NODE_H / 2;
+        if (A.y !== B.y) continue;
+        let mx: number;
+        let my: number;
+        if (adjacent(A, B)) {
+          mx = (Math.min(A.x, B.x) + NODE_W + Math.max(A.x, B.x)) / 2;
+          my = A.y + NODE_H / 2;
+        } else {
+          // The child hangs from the midpoint of the union line routed below the row.
+          const low = lowUnionLine(A.x <= B.x ? A : B, A.x <= B.x ? B : A);
+          mx = (low.x1 + low.x2) / 2;
+          my = low.y;
+        }
         links.push({
           ids: [la.id, lb.id],
           type: la.type,
@@ -1172,4 +1195,15 @@ export function planLinkExisting(
     req.type,
     req.status,
   );
+}
+
+/**
+ * NF-2 keys on a focused tree node: Enter or Space collapses or expands the
+ * branch when the person has one, and opens the inspector otherwise. I opens
+ * the inspector for anyone.
+ */
+export function treeNodeKey(key: string, hasBranch: boolean): 'toggle' | 'inspect' | null {
+  if (key === 'Enter' || key === ' ') return hasBranch ? 'toggle' : 'inspect';
+  if (key === 'i' || key === 'I') return 'inspect';
+  return null;
 }

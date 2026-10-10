@@ -30,6 +30,13 @@ export const LIST_IDS = [
 export type ListId = (typeof LIST_IDS)[number];
 
 /**
+ * Lists in the `lists` collection that configure the bible rather than name
+ * choices: `eraDefaults` holds the default era ranges a new bible copies into
+ * era states (WE-2). They are not shown on the Lists screen.
+ */
+export const CONFIG_LIST_IDS = ['eraDefaults'] as const;
+
+/**
  * Lists the app shows and renames alongside the stored ones, but whose items
  * are entries or definitions: family names, custom section names, and era
  * names with their ranges (ED-8).

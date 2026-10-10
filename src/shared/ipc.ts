@@ -286,6 +286,105 @@ const CharacterPageWire = z.strictObject({
   ),
 });
 
+const Moment = z.strictObject({
+  year: z.int().min(-10000).max(10000),
+  month: z.int().min(1).max(12).optional(),
+  day: z.int().min(1).max(31).optional(),
+});
+
+const EraWire = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  startYear: z.number(),
+  endYear: z.number(),
+  technology: z.string(),
+  climate: z.string(),
+  economy: z.string(),
+  politics: z.string(),
+  dailyLife: z.string(),
+});
+
+const EventWire = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  start: StoryDateWire.nullable(),
+  end: StoryDateWire.nullable(),
+  startYear: z.number(),
+  endYear: z.number(),
+  reality: z.string(),
+  categoryId: z.string(),
+  regions: z.array(z.string()),
+  placeIds: z.array(z.string()),
+  characterIds: z.array(z.string()),
+  formative: z.boolean(),
+  status: z.string(),
+});
+
+const ChartEventWire = EventWire.extend({ categoryPath: z.string(), categoryRoot: z.string() });
+
+const StrandWire = z.strictObject({
+  chapterId: z.string(),
+  chapterTitle: z.string(),
+  readingOrder: z.number().nullable(),
+  chapterStatus: z.string(),
+  written: z.boolean(),
+  strandId: z.string(),
+  label: z.string(),
+  primary: z.boolean(),
+  startYear: z.number(),
+  endYear: z.number(),
+  povCharacterId: z.string().nullable(),
+  characterIds: z.array(z.string()),
+  placeIds: z.array(z.string()),
+});
+
+const CoverageWire = z.strictObject({
+  from: z.number(),
+  to: z.number(),
+  gaps: z.array(z.strictObject({ from: z.number(), to: z.number() })),
+  overlaps: z.array(
+    z.strictObject({
+      ids: z.tuple([z.string(), z.string()]),
+      names: z.tuple([z.string(), z.string()]),
+      from: z.number(),
+      to: z.number(),
+    }),
+  ),
+  backwards: z.array(z.strictObject({ id: z.string(), name: z.string() })),
+});
+
+const PersonInYearWire = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  chinese: z.string(),
+  familyIds: z.array(z.string()),
+  status: z.string(),
+  birthYear: z.number().nullable(),
+  state: LifeStateWire,
+});
+
+const YearViewWire = z.strictObject({
+  year: z.number(),
+  at: Moment,
+  alive: z.array(z.strictObject({ id: z.string(), age: z.number(), dyingThisYear: z.boolean() })),
+  dead: z.array(z.strictObject({ id: z.string(), deathYear: z.number() })),
+  unborn: z.array(z.string()),
+  unknown: z.array(z.string()),
+  rows: z.array(PersonInYearWire),
+  era: EraWire.nullable(),
+  /** Every era covering the year; more than one is an overlap (WE-2). */
+  eras: z.array(EraWire),
+  events: z.array(EventWire),
+  strands: z.array(StrandWire),
+});
+
+const ChartFiltersWire = z.strictObject({
+  familyId: z.string().min(1).nullable().default(null),
+  placeId: z.string().min(1).nullable().default(null),
+  status: z.string().min(1).nullable().default(null),
+  categoryId: z.string().min(1).nullable().default(null),
+});
+
 const RevisionSummary = z.strictObject({
   _id: z.string(),
   op: z.enum(['create', 'update', 'softDelete', 'restore']),
@@ -577,6 +676,113 @@ export const contract = {
     request: z.strictObject({ time: StoryTimeValue.nullable() }),
     response: StoryTimeResponse,
   },
+  /**
+   * TL-2, TM-2, WE-3: everyone's state at a year or date, the era, the events
+   * of that year, and the strands in it. Without a year, the story time.
+   */
+  'timeline.year': {
+    request: z.strictObject({ at: Moment.optional() }),
+    response: YearViewWire,
+  },
+  /** TL-5: the world events a character has lived through by a year, with ages. */
+  'timeline.livedThrough': {
+    request: z.strictObject({ characterId: EntryId, year: z.int().min(-10000).max(10000) }),
+    response: z.strictObject({
+      characterId: z.string(),
+      year: z.number(),
+      birthKnown: z.boolean(),
+      state: LifeStateWire,
+      events: z.array(
+        z.strictObject({
+          id: z.string(),
+          title: z.string(),
+          startYear: z.number(),
+          endYear: z.number(),
+          year: z.number(),
+          age: z.number(),
+          categoryId: z.string(),
+          categoryPath: z.string(),
+          formative: z.boolean(),
+        }),
+      ),
+    }),
+  },
+  /** TL-7: two characters side by side across a year range, every year or every five. */
+  'timeline.compare': {
+    request: z.strictObject({
+      a: EntryId,
+      b: EntryId,
+      from: z.int().min(-10000).max(10000),
+      to: z.int().min(-10000).max(10000),
+      step: z.union([z.literal(1), z.literal(5)]),
+    }),
+    response: z.strictObject({
+      rows: z.array(
+        z.strictObject({
+          year: z.number(),
+          a: LifeStateWire,
+          b: LifeStateWire,
+          gap: z.number().nullable(),
+        }),
+      ),
+    }),
+  },
+  /** TL-6: everything the timeline draws, with the filters applied in main. */
+  'timeline.chart': {
+    request: z.strictObject({ filters: ChartFiltersWire.default(ChartFiltersWire.parse({})) }),
+    response: z.strictObject({
+      eras: z.array(EraWire),
+      events: z.array(ChartEventWire),
+      strands: z.array(StrandWire),
+      lifespans: z.array(
+        z.strictObject({
+          id: z.string(),
+          name: z.string(),
+          status: z.string(),
+          familyIds: z.array(z.string()),
+          placeNames: z.array(z.string()),
+          birthYear: z.number(),
+          deathYear: z.number().nullable(),
+        }),
+      ),
+      undrawn: z.array(z.strictObject({ id: z.string(), name: z.string() })),
+      coverage: CoverageWire,
+    }),
+  },
+  /** WE-2: era gaps and overlaps across 2025 to 2100, in plain words. Never blocking. */
+  'timeline.eraCoverage': {
+    request: z.strictObject({}),
+    response: z.strictObject({ coverage: CoverageWire, messages: z.array(z.string()) }),
+  },
+  /** TM-4: the year a character is an age. Null with a reason when the birth is unknown. */
+  'storyTime.anchorAge': {
+    request: z.strictObject({ characterId: EntryId, age: z.int().min(0).max(300) }),
+    response: z.strictObject({ year: z.number().nullable(), message: z.string() }),
+  },
+  /** TM-5: what "Use as strand year" would change, shown before it is written (ED-7). */
+  'storyTime.promotePreview': {
+    request: z.strictObject({ chapterId: EntryId, strandId: EntryId }),
+    response: z.strictObject({
+      chapterId: z.string(),
+      chapterTitle: z.string(),
+      strandId: z.string(),
+      strandLabel: z.string(),
+      year: z.number(),
+      from: z.strictObject({ startYear: z.number(), endYear: z.number().nullable() }),
+      to: z.strictObject({ startYear: z.number(), endYear: z.number().nullable() }),
+      baseModifiedAt: z.string(),
+      unchanged: z.boolean(),
+    }),
+  },
+  /** TM-5: write the story time year into the strand, after the person approved the change. */
+  'storyTime.promote': {
+    request: z.strictObject({
+      chapterId: EntryId,
+      strandId: EntryId,
+      baseModifiedAt: z.string().min(1),
+    }),
+    response: WithWarnings,
+  },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {
     request: z.strictObject({ url: z.string().min(1).max(2000) }),
@@ -607,8 +813,8 @@ export const events = {
     id: z.string(),
     op: z.enum(['create', 'update', 'softDelete', 'restore']),
   }),
-  /** Cmd+Z and Shift+Cmd+Z, caught in main before the page or the menu sees them (ED-3). */
-  'app.command': z.strictObject({ command: z.enum(['undo', 'redo']) }),
+  /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
+  'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */
   'lists.changed': z.strictObject({ bible: z.string() }),

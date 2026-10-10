@@ -24,6 +24,7 @@ import {
   planLinkExisting,
   placeLayout,
   treeEdges,
+  treeNodeKey,
 } from '../../../../shared/domain/tree';
 import type {
   PlannedEntry,
@@ -112,10 +113,11 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
   const label = p.person.chinese ? `${p.person.name} ${p.person.chinese}` : p.person.name;
   const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${p.person.status}, ${stateText(s)}`;
   const onKey = (e: ReactKeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      p.onSelect(p.person.id);
-    }
+    const k = treeNodeKey(e.key, p.branch);
+    if (!k) return;
+    e.preventDefault();
+    if (k === 'toggle') p.onToggle(p.person.id);
+    else p.onSelect(p.person.id);
   };
   const stripes = p.colors.length ? p.colors : ['none'];
   const h = NODE_H / stripes.length;
@@ -127,6 +129,8 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       role="button"
       aria-label={aria}
       aria-pressed={p.selected}
+      aria-expanded={p.branch ? !p.collapsed : undefined}
+      aria-keyshortcuts={p.branch ? 'Enter Space I' : 'Enter Space'}
       data-person={p.person.id}
       data-state={s.state === 'alive' && s.dyingThisYear ? 'dying' : s.state}
       data-age={s.state === 'alive' ? s.age : undefined}
@@ -748,6 +752,10 @@ function Legend({ families }: { families: { id: string; name: string; color: str
       ))}
       <span className="example-note">
         Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.
+      </span>
+      <span className="example-note" data-testid="tree-keys">
+        Keys on a person: Enter or Space collapses or expands their branch when they have one, and
+        opens the inspector when they do not. I opens the inspector for anyone.
       </span>
     </div>
   );

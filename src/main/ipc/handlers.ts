@@ -1,7 +1,7 @@
 import { BrowserWindow, app, shell } from 'electron';
-import { connect, createBible, listBibles } from '../db';
+import { connect, listBibles } from '../db';
 import type { Store } from '../db';
-import { openBibleSession } from '../db/session';
+import { createBibleWithDefaults, openBibleSession } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
 import { mongoUri } from '../secrets';
@@ -71,7 +71,7 @@ async function bibleList(): Promise<Response<'bible.list'>> {
 
 async function bibleCreate(slug: string, name: string): Promise<Response<'bible.create'>> {
   const s = await requireStore();
-  const handle = await createBible(s, slug, name);
+  const { handle } = await createBibleWithDefaults(s, slug, name);
   const record = (await listBibles(s)).find((b) => b._id === handle.id);
   broadcast('bibles.changed', { current: currentSummary() });
   return { bible: { id: handle.id, name: record?.name ?? name } };

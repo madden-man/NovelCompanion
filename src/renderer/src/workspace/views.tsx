@@ -56,6 +56,7 @@ export function EntryList(props: {
           New {info.singular.toLowerCase()}
         </button>
       </div>
+      {collection === 'eraStates' && <EraCoverage />}
       <label htmlFor={filterId} className="sr-only">
         Filter {info.plural.toLowerCase()}
       </label>
@@ -99,6 +100,38 @@ export function EntryList(props: {
         </ul>
       )}
     </section>
+  );
+}
+
+/** WE-2: gaps and overlaps in the eras from 2025 to 2100. A flag, never a block. */
+function EraCoverage() {
+  const { version } = useStore();
+  const [messages, setMessages] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void call('timeline.eraCoverage', {}).then((r) => {
+      if (live) setMessages(r.messages);
+    });
+    return () => {
+      live = false;
+    };
+  }, [version]);
+  if (messages === null) return null;
+  if (messages.length === 0) {
+    return (
+      <p className="example-note" data-testid="era-coverage-ok">
+        The eras cover 2025 to 2100 with no gaps or overlaps.
+      </p>
+    );
+  }
+  return (
+    <div className="callout warn stack tight" role="status" data-testid="era-coverage">
+      <strong>Era coverage</strong>
+      {messages.map((m) => (
+        <span key={m}>{m}</span>
+      ))}
+      <span>These are flags only. Every era still saves.</span>
+    </div>
   );
 }
 

@@ -1066,3 +1066,258 @@ div.field {
 .tnode-toggle:focus-visible circle {
   stroke-width: 3;
 }
+
+/* M3: story time dialog, status bar, year view, compare, timeline. Colors come only from theme tokens. */
+.tl-life.fam-series-1 {
+  fill: var(--series-1);
+}
+.tl-life.fam-series-2 {
+  fill: var(--series-2);
+}
+.tl-life.fam-series-3 {
+  fill: var(--series-3);
+}
+.tl-life.fam-series-4 {
+  fill: var(--series-4);
+}
+.tl-life.fam-none {
+  fill: var(--fg-3);
+}
+.chip.fam.fam-none {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.ws-status {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  color: var(--fg);
+}
+.ws-status strong {
+  color: var(--fg);
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in oklab, var(--fg) 30%, transparent);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow: auto;
+}
+.dialog {
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  width: min(980px, 100%);
+  padding: 16px;
+}
+.dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.dialog-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+.time-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+.time-now {
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 500;
+  color: var(--time);
+  line-height: 1;
+}
+.year-input {
+  width: 7em;
+}
+.date-input {
+  width: 4.5em;
+}
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.two-col h3 {
+  margin: 0;
+}
+.st {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.st::before {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sc, var(--fg-3));
+}
+.st.alive {
+  --sc: var(--good);
+}
+.st.dying {
+  --sc: var(--serious);
+}
+.st.dead {
+  --sc: var(--fg-3);
+}
+.st.unborn {
+  --sc: var(--series-4);
+}
+.st.unknown {
+  --sc: var(--warning);
+}
+.confirm-change {
+  border-color: var(--time);
+}
+tr.is-story-year td {
+  background: var(--time-soft);
+}
+.tl-frame {
+  position: relative;
+  flex: none;
+}
+.tl-lanes {
+  position: absolute;
+  left: 1px;
+  top: 0;
+  pointer-events: none;
+}
+.tl-lanes span {
+  position: absolute;
+  left: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg);
+  background: color-mix(in oklab, var(--chart-surface) 85%, transparent);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.tl-wrap {
+  position: relative;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chart-surface);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tl-svg {
+  display: block;
+  font-family: var(--font-body);
+}
+.tl-text {
+  font-size: 11px;
+  fill: var(--fg);
+}
+.tl-text.sec {
+  fill: var(--fg-2);
+}
+.tl-lane {
+  font-weight: 700;
+}
+.tl-grid {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.tl-axis {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.tl-era {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.tl-ev-dot {
+  fill: var(--fg-2);
+  stroke: var(--chart-surface);
+  stroke-width: 1;
+}
+.tl-ev-dot.formative {
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+.tl-ev-range {
+  stroke: var(--fg-2);
+  stroke-width: 2;
+}
+.tl-chap-p {
+  fill: var(--planned);
+}
+.tl-chap-b {
+  fill: var(--chart-surface);
+  stroke: var(--planned);
+  stroke-width: 2;
+}
+.tl-chap-link {
+  stroke: var(--planned);
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+.tl-cursor {
+  stroke: var(--time);
+  stroke-width: 2;
+}
+.tl-cursor-label {
+  fill: var(--fg);
+  font-weight: 700;
+}
+.tl-mark {
+  cursor: pointer;
+  outline: none;
+}
+.tl-mark:hover .tl-ev-dot,
+.tl-mark:focus-visible .tl-ev-dot {
+  stroke: var(--fg);
+  stroke-width: 2;
+}
+.tl-mark:focus-visible .tl-era,
+.tl-mark:focus-visible .tl-chap-p,
+.tl-mark:focus-visible .tl-chap-b,
+.tl-mark:focus-visible .tl-life,
+.tl-mark.selected .tl-era,
+.tl-mark.selected .tl-life {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.tl-mark:focus-visible .tl-ev-dot,
+.tl-mark.selected .tl-ev-dot {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  width: max-content;
+  max-width: 280px;
+  z-index: 10;
+  box-shadow: var(--shadow);
+}
+.tooltip strong {
+  color: var(--bg);
+}
+.tl-filters .field select {
+  max-width: 220px;
+}

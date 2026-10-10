@@ -14,7 +14,7 @@ import type { Store } from '../../src/main/db';
 import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
 import type { Migration } from '../../src/main/db/migrations';
 import { openBibleSession } from '../../src/main/db/session';
-import { ENTRY_COLLECTIONS, LIST_IDS, ListDoc } from '../../src/shared/schema';
+import { CONFIG_LIST_IDS, ENTRY_COLLECTIONS, LIST_IDS, ListDoc } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 
 let store: Store;
@@ -52,7 +52,7 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     expect(indexes.map((i) => i.key)).toContainEqual({ entryId: 1, at: 1 });
 
     const lists = await bible.collection<ListDoc>('lists').find({}).toArray();
-    expect(lists.map((l) => l._id).sort()).toEqual([...LIST_IDS].sort());
+    expect(lists.map((l) => l._id).sort()).toEqual([...LIST_IDS, ...CONFIG_LIST_IDS].sort());
     for (const l of lists) expect(ListDoc.safeParse(l).success).toBe(true);
     const items = (id: string) => lists.find((l) => l._id === id)!.items.map((i) => i.id);
     expect(items('unionTypes')).toEqual(['married', 'partnered', 'other']);
