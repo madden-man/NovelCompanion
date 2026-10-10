@@ -1,0 +1,54 @@
+[
+  {
+    "_id": "CU1",
+    "title": "Mid-Autumn mooncakes",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "body": "Families exchange boxes of lotus seed mooncakes at work and at home.",
+    "communityId": "guangzhou",
+    "startYear": 1980,
+    "endYear": 2039,
+    "generationNotes": "Grandparents insist on homemade; parents buy boxed sets."
+  },
+  {
+    "_id": "CU2",
+    "title": "Mid-Autumn mooncakes",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "body": "Printed mooncakes ordered from apps, eaten on video calls with relatives abroad.",
+    "communityId": "guangzhou",
+    "startYear": 2040,
+    "endYear": 2100,
+    "generationNotes": "Young people send digital red envelopes instead."
+  },
+  {
+    "_id": "CU3",
+    "title": "Sunday ferry picnics",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "body": "Families ride the river ferry and eat on the far bank.",
+    "communityId": "portland",
+    "startYear": 2000,
+    "endYear": 2034,
+    "generationNotes": "Stopped after the 2034 flood."
+  },
+  {
+    "_id": "CU4",
+    "title": "Flood memorial walk",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "body": "Each January people walk the old waterline with lanterns.",
+    "communityId": "portland",
+    "startYear": 2035,
+    "endYear": 2100,
+    "generationNotes": "Children born after 2040 treat it as a festival."
+  }
+]

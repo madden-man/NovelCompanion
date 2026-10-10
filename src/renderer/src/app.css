@@ -1,0 +1,25 @@
+.shell {
+  max-width: 880px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-block: 24px;
+}
+.bible-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fg);
+}
+.bible-list li {
+  padding-block: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.bible-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bible-list .id {
+  color: var(--fg-2);
+}

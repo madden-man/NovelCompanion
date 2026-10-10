@@ -1,0 +1,222 @@
+[
+  {
+    "_id": "H1",
+    "title": "Margaret Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Margaret Hale",
+      "order": "family-last",
+      "birthName": "Margaret Doyle",
+      "marriedName": "Margaret Hale",
+      "nicknames": ["Maggie"],
+      "calledBy": [{ "characterId": "H5", "name": "Gran" }]
+    },
+    "birth": { "year": 1958 },
+    "death": { "year": 2041 },
+    "birthplace": "Portland, Oregon",
+    "familyIds": ["FAM-HALE"],
+    "backstory": "A schoolteacher who kept every letter the family ever sent.",
+    "voiceNotes": [
+      { "at": { "age": 70 }, "text": "Speaks in short, dry sentences and never raises her voice." }
+    ],
+    "links": []
+  },
+  {
+    "_id": "H2",
+    "title": "Peter Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Peter Hale", "order": "family-last" },
+    "birth": { "year": 1956 },
+    "death": { "year": 2030 },
+    "birthplace": "Portland, Oregon",
+    "familyIds": ["FAM-HALE"],
+    "backstory": "A ferry mechanic who died the year before his granddaughter was born."
+  },
+  {
+    "_id": "H3",
+    "title": "Daniel Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Daniel Hale", "order": "family-last", "nicknames": ["Dan"] },
+    "birth": { "year": 1985 },
+    "death": null,
+    "birthplace": "Portland, Oregon",
+    "familyIds": ["FAM-HALE"],
+    "backstory": "An engineer who met Zhou Lan at a conference in 2026."
+  },
+  {
+    "_id": "H4",
+    "title": "Ruth Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Ruth Hale", "order": "family-last" },
+    "birth": { "year": 1990 },
+    "death": { "year": 2067 },
+    "birthplace": "Portland, Oregon",
+    "familyIds": ["FAM-HALE"],
+    "backstory": "A nurse who adopted Sam in 2015."
+  },
+  {
+    "_id": "H5",
+    "title": "Iris Hale-Zhou",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Iris Hale-Zhou",
+      "chinese": "晓曦",
+      "romanization": "Xiǎoxī",
+      "order": "family-last",
+      "nicknames": ["Xiaoxi"]
+    },
+    "birth": { "year": 2031, "month": 3, "day": 14 },
+    "death": null,
+    "birthplace": "Portland, Oregon",
+    "familyIds": ["FAM-HALE", "FAM-ZHOU"],
+    "backstory": "Raised between two families and two languages.",
+    "voiceNotes": [
+      { "at": { "year": 2060 }, "text": "Guarded after learning the truth about the letter." }
+    ]
+  },
+  {
+    "_id": "H6",
+    "title": "Sam Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Sam Hale", "order": "family-last" },
+    "birth": { "year": 2012 },
+    "death": null,
+    "familyIds": ["FAM-HALE"],
+    "backstory": "Adopted by Ruth at three years old."
+  },
+  {
+    "_id": "Z1",
+    "title": "Zhou Meiling",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Zhou Meiling",
+      "chinese": "周美玲",
+      "romanization": "Zhōu Měilíng",
+      "order": "family-first"
+    },
+    "birth": { "year": 1962 },
+    "death": { "year": 2050 },
+    "birthplace": "Guangzhou",
+    "familyIds": ["FAM-ZHOU"],
+    "backstory": "Ran a tea shop near the Pearl River for thirty years."
+  },
+  {
+    "_id": "Z2",
+    "title": "Zhou Wei",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Zhou Wei",
+      "chinese": "周伟",
+      "romanization": "Zhōu Wěi",
+      "order": "family-first"
+    },
+    "birth": { "year": 1960 },
+    "death": { "year": 2055 },
+    "birthplace": "Guangzhou",
+    "familyIds": ["FAM-ZHOU"]
+  },
+  {
+    "_id": "Z3",
+    "title": "Zhou Lan",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Zhou Lan",
+      "chinese": "周兰",
+      "romanization": "Zhōu Lán",
+      "order": "family-first",
+      "marriedName": "Lan Hale"
+    },
+    "birth": { "year": 1988 },
+    "death": null,
+    "birthplace": "Guangzhou",
+    "familyIds": ["FAM-ZHOU"],
+    "backstory": "Raised in Guangzhou. Moved to Portland in 2027.",
+    "placesLived": [
+      { "place": "Guangzhou", "startYear": 1988, "endYear": 2027 },
+      { "place": "Portland, Oregon", "startYear": 2027, "endYear": null }
+    ]
+  },
+  {
+    "_id": "Z4",
+    "title": "Zhou Jun",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": {
+      "full": "Zhou Jun",
+      "chinese": "周军",
+      "romanization": "Zhōu Jūn",
+      "order": "family-first"
+    },
+    "birth": { "year": 1993 },
+    "death": { "year": 2070 },
+    "birthplace": "Guangzhou",
+    "familyIds": ["FAM-ZHOU"]
+  },
+  {
+    "_id": "X1",
+    "title": "Tomas Reyes",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Tomas Reyes", "order": "family-last" },
+    "birth": { "year": 2030 },
+    "death": null,
+    "familyIds": [],
+    "backstory": "A sound engineer with no family in the story."
+  },
+  {
+    "_id": "Z5",
+    "title": "Noor Zhou",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "Noor Zhou", "order": "family-last" },
+    "birth": { "year": 2058 },
+    "death": null,
+    "familyIds": ["FAM-ZHOU"]
+  },
+  {
+    "_id": "U1",
+    "title": "The Archivist",
+    "status": "idea",
+    "provenance": null,
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "names": { "full": "The Archivist", "order": "family-last" },
+    "birth": { "unknown": true },
+    "death": null,
+    "familyIds": [],
+    "backstory": "Nobody knows when the Archivist was born."
+  }
+]

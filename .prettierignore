@@ -1,0 +1,15 @@
+node_modules
+out
+dist
+release
+coverage
+package-lock.json
+source-material
+mockups
+docs
+SPEC.md
+BUILD-PROMPT.md
+PROGRESS.md
+fixtures/files
+test-results
+playwright-report

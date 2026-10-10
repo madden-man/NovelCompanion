@@ -1,0 +1,23 @@
+appId: com.maddenman.novelcompanion
+productName: Novel Companion
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - '**/*.node'
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.productivity
+  # Unsigned (ad hoc) until a Developer ID is available (NF-4, A15).
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+dmg:
+  title: Novel Companion
+publish: null
+npmRebuild: false

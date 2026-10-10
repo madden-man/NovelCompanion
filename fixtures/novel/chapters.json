@@ -1,0 +1,244 @@
+[
+  {
+    "_id": "CH1",
+    "title": "The Archivist's Door",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT1",
+    "readingOrder": 1,
+    "strands": [
+      {
+        "id": "CH1-present",
+        "label": "present",
+        "startYear": 2075,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H5",
+        "characterIds": ["H5", "Z5", "U1"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [],
+    "written": true,
+    "manuscriptText": "<p>Iris was forty-four the winter she brought Noor to the archive. The Archivist opened the door before they knocked.</p><p><em>You are late,</em> the Archivist said, as if they had been expected for years.</p>",
+    "summary": "Iris and Noor visit the Archivist.",
+    "sourceFile": "chapter-01.docx",
+    "links": [{ "targetId": "E9", "kind": "happened" }]
+  },
+  {
+    "_id": "CH2",
+    "title": "Two Kitchens",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT1",
+    "readingOrder": 2,
+    "strands": [
+      {
+        "id": "CH2-present",
+        "label": "present",
+        "startYear": 2045,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H3",
+        "characterIds": ["H3", "Z3", "H5"],
+        "placeIds": []
+      },
+      {
+        "id": "CH2-backstory",
+        "label": "backstory",
+        "startYear": 2032,
+        "endYear": null,
+        "primary": false,
+        "povCharacterId": "Z3",
+        "characterIds": ["Z3", "Z1", "H5"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [],
+    "written": true,
+    "manuscriptText": "<p>Daniel burned the rice again while Iris did her homework at the counter.</p><hr /><p>Thirteen years earlier, Meiling held the baby and sang the song her own mother had sung.</p>",
+    "summary": "A family dinner in 2045, and Meiling meeting baby Iris in 2032.",
+    "sourceFile": "chapter-02.docx"
+  },
+  {
+    "_id": "CH3",
+    "title": "Wedding Weather",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT1",
+    "readingOrder": 3,
+    "strands": [
+      {
+        "id": "CH3-present",
+        "label": "present",
+        "startYear": 2029,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H3",
+        "characterIds": ["H3", "Z3", "H1", "H2", "Z1", "Z2"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [
+      {
+        "factId": "F1",
+        "characterId": "Z3",
+        "note": "Lan hides her mother's old letters from Daniel."
+      }
+    ],
+    "written": true,
+    "manuscriptText": "<p>It rained on the wedding, and Peter said that was lucky. Meiling said nothing at all.</p>",
+    "summary": "Daniel and Lan marry in the rain.",
+    "sourceFile": "chapter-03.docx"
+  },
+  {
+    "_id": "CH4",
+    "title": "After the Funeral",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT1",
+    "readingOrder": 4,
+    "strands": [
+      {
+        "id": "CH4-present",
+        "label": "present",
+        "startYear": 2032,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H1",
+        "characterIds": ["H1", "H2", "H3", "H4"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [],
+    "written": true,
+    "manuscriptText": "<p>Margaret sorted the casseroles by who had brought them. Ruth stood in the doorway and did not offer to help.</p>",
+    "summary": "The Hales gather at the house.",
+    "sourceFile": "chapter-04.docx"
+  },
+  {
+    "_id": "CH5",
+    "title": "Candles",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT2",
+    "readingOrder": 5,
+    "strands": [
+      {
+        "id": "CH5-present",
+        "label": "present",
+        "startYear": 2040,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H4",
+        "characterIds": ["H1", "H4", "H6"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [],
+    "written": true,
+    "manuscriptText": "<p>Ruth counted the candles twice. Her mother was seventy and still refused to let anyone else light them.</p><p>Sam held the matches and waited.</p>",
+    "summary": "Margaret's birthday.",
+    "sourceFile": "chapter-05.docx"
+  },
+  {
+    "_id": "CH6",
+    "title": "The Letter",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT2",
+    "readingOrder": 6,
+    "strands": [
+      {
+        "id": "CH6-present",
+        "label": "present",
+        "startYear": 2045,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "H5",
+        "characterIds": ["H5", "H3"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [
+      { "factId": "F2", "characterId": "H5", "note": "Iris asks Daniel about his uncle." }
+    ],
+    "written": false,
+    "manuscriptText": "<p>Iris asked her father about the uncle nobody mentioned. Outside, the old flood line was still painted on the wall.</p>",
+    "summary": "Iris starts asking questions.",
+    "sourceFile": null,
+    "links": [
+      { "targetId": "E3", "kind": "happened" },
+      { "targetId": "E10", "kind": "happened" }
+    ]
+  },
+  {
+    "_id": "CH7",
+    "title": "Rain in Guangzhou",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT2",
+    "readingOrder": 7,
+    "strands": [
+      {
+        "id": "CH7-present",
+        "label": "present",
+        "startYear": 2060,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "Z3",
+        "characterIds": ["Z3", "H5", "X1"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [
+      { "factId": "F1", "characterId": "Z3", "note": "Lan finally shows Iris the letters." }
+    ],
+    "written": false,
+    "manuscriptText": "<p>Lan had grown up in Shanghai, and the rain there had always come sideways. She told Iris and Tomas about it while they waited out the storm.</p>",
+    "summary": "Lan takes Iris and Tomas back to China.",
+    "sourceFile": null
+  },
+  {
+    "_id": "CH8",
+    "title": "Noor",
+    "status": "idea",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partId": "PT2",
+    "readingOrder": 8,
+    "strands": [
+      {
+        "id": "CH8-present",
+        "label": "present",
+        "startYear": 2085,
+        "endYear": null,
+        "primary": true,
+        "povCharacterId": "Z5",
+        "characterIds": ["Z5", "H5"],
+        "placeIds": []
+      }
+    ],
+    "factsInPlay": [],
+    "written": false,
+    "manuscriptText": "<p>Noor taught her mother to talk to the house robot without shouting.</p>",
+    "summary": "Noor and Iris, older.",
+    "sourceFile": null,
+    "links": [{ "targetId": "E9", "kind": "happened" }]
+  }
+]

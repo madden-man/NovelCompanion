@@ -10,3 +10,5 @@ release/
 .env.*
 coverage/
 snapshots/
+test-results/
+playwright-report/

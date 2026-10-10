@@ -1,0 +1,80 @@
+import { join } from 'node:path';
+import { BrowserWindow, app, session } from 'electron';
+import { applyContentSecurityPolicy } from './csp';
+import { closeStore, openExternal, registerHandlers } from './ipc/handlers';
+
+const APP_NAME = 'Novel Companion';
+
+/** The renderer may load only the bundled app (or the dev server in development). */
+function isAllowedUrl(url: string): boolean {
+  if (url.startsWith('file://') || url.startsWith('devtools://')) return true;
+  const dev = process.env.ELECTRON_RENDERER_URL;
+  if (app.isPackaged || dev === undefined) return false;
+  // Development only: the Vite dev server and its hot reload socket.
+  const target = new URL(url);
+  return ['http:', 'ws:'].includes(target.protocol) && target.host === new URL(dev).host;
+}
+
+function lockDownSession(): void {
+  // ARCH-1: the renderer makes no network requests of its own.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: !isAllowedUrl(details.url) });
+  });
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
+}
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    title: APP_NAME,
+    width: 1200,
+    height: 800,
+    minWidth: 360,
+    show: false,
+    backgroundColor: '#f3f5f7',
+    webPreferences: {
+      preload: join(import.meta.dirname, '../preload/index.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      spellcheck: false,
+    },
+  });
+  win.once('ready-to-show', () => win.show());
+  // New windows are never created. Allowlisted links open in the system browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedUrl(url)) event.preventDefault();
+  });
+  const dev = process.env.ELECTRON_RENDERER_URL;
+  if (!app.isPackaged && dev) void win.loadURL(dev);
+  else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
+  return win;
+}
+
+app.setName(APP_NAME);
+
+const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
+
+void app.whenReady().then(() => {
+  lockDownSession();
+  applyContentSecurityPolicy(isDev);
+  registerHandlers();
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('will-quit', () => {
+  void closeStore();
+});

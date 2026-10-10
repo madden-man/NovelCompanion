@@ -1,0 +1,39 @@
+[
+  {
+    "_id": "CE1",
+    "title": "Meiling's lotus seed mooncakes",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "sectionId": "CS-RECIPES",
+    "values": {
+      "origin": "Guangzhou",
+      "method": "Soak the seeds overnight, then cook the paste slowly for three hours.",
+      "firstCooked": 1980,
+      "occasion": "Holiday",
+      "cook": "Z1"
+    },
+    "links": [
+      { "targetId": "Z1", "kind": "cook" },
+      { "targetId": "GL5", "kind": "glossary" }
+    ]
+  },
+  {
+    "_id": "CE2",
+    "title": "Peter's ferry chowder",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "sectionId": "CS-RECIPES",
+    "values": {
+      "origin": "Portland, Oregon",
+      "method": "Clams, potatoes, and too much pepper.",
+      "firstCooked": 1985,
+      "occasion": "Everyday",
+      "cook": "H2"
+    },
+    "links": [{ "targetId": "H2", "kind": "cook" }]
+  }
+]

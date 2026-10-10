@@ -1,0 +1,23 @@
+[
+  {
+    "_id": "communities",
+    "label": "Communities",
+    "items": [
+      { "id": "portland", "label": "Portland, Oregon", "parentId": null },
+      { "id": "guangzhou", "label": "Guangzhou", "parentId": null }
+    ]
+  },
+  {
+    "_id": "eventCategories",
+    "label": "Event categories",
+    "items": [
+      { "id": "technology", "label": "Technology", "parentId": null },
+      { "id": "robotics", "label": "Robotics", "parentId": "technology" },
+      { "id": "energy", "label": "Energy", "parentId": "technology" },
+      { "id": "climate", "label": "Climate", "parentId": null },
+      { "id": "geopolitics", "label": "Geopolitics", "parentId": null },
+      { "id": "economy", "label": "Economy", "parentId": null },
+      { "id": "culture", "label": "Culture", "parentId": null }
+    ]
+  }
+]

@@ -1,0 +1,12 @@
+[
+  {
+    "_id": "BK1",
+    "title": "Tide Lines",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "number": 1,
+    "summary": "Two families, one river, seventy years."
+  }
+]

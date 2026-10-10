@@ -1,0 +1,67 @@
+[
+  {
+    "_id": "GL1",
+    "title": "晓曦",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "characters": "晓曦",
+    "romanization": "xiǎoxī",
+    "language": "mandarin",
+    "meaning": "dawn light",
+    "usageNote": "Iris's Chinese name, given by her grandmother Meiling."
+  },
+  {
+    "_id": "GL2",
+    "title": "周美玲",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "characters": "周美玲",
+    "romanization": "Zhōu Měilíng",
+    "language": "mandarin",
+    "meaning": "Zhou Meiling, a personal name",
+    "usageNote": "Family name first."
+  },
+  {
+    "_id": "GL3",
+    "title": "团圆",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "characters": "团圆",
+    "romanization": "tuányuán",
+    "language": "mandarin",
+    "meaning": "family reunion",
+    "usageNote": "Said at the Mid-Autumn table."
+  },
+  {
+    "_id": "GL4",
+    "title": "外婆",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "characters": "外婆",
+    "romanization": "wàipó",
+    "language": "mandarin",
+    "meaning": "maternal grandmother",
+    "usageNote": "What Iris calls Meiling."
+  },
+  {
+    "_id": "GL5",
+    "title": "月饼",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "characters": "月饼",
+    "romanization": "yuèbǐng",
+    "language": "mandarin",
+    "meaning": "mooncake",
+    "usageNote": "Eaten at the Mid-Autumn Festival."
+  }
+]

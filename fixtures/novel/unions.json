@@ -1,0 +1,54 @@
+[
+  {
+    "_id": "UN-H1-H2",
+    "title": "Margaret and Peter Hale",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partnerIds": ["H1", "H2"],
+    "type": "married",
+    "startYear": 1982,
+    "endYear": 2030,
+    "endReason": "death"
+  },
+  {
+    "_id": "UN-Z1-Z2",
+    "title": "Zhou Meiling and Zhou Wei",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partnerIds": ["Z1", "Z2"],
+    "type": "partnered",
+    "startYear": null,
+    "endYear": null,
+    "endReason": ""
+  },
+  {
+    "_id": "UN-H3-Z3",
+    "title": "Daniel Hale and Zhou Lan",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partnerIds": ["H3", "Z3"],
+    "type": "married",
+    "startYear": 2029,
+    "endYear": null,
+    "endReason": ""
+  },
+  {
+    "_id": "UN-H5-X1",
+    "title": "Iris Hale-Zhou and Tomas Reyes",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "partnerIds": ["H5", "X1"],
+    "type": "partnered",
+    "startYear": 2056,
+    "endYear": 2064,
+    "endReason": "separated"
+  }
+]

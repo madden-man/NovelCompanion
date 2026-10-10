@@ -1,0 +1,41 @@
+[
+  {
+    "_id": "K1",
+    "title": "Lan learns about the engagement",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "factId": "F1",
+    "characterId": "Z3",
+    "yearLearned": 2028,
+    "chapterLearnedId": null,
+    "how": "Meiling tells her the night before the wedding."
+  },
+  {
+    "_id": "K2",
+    "title": "Iris reads Peter's letter",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "factId": "F2",
+    "characterId": "H5",
+    "yearLearned": 2060,
+    "chapterLearnedId": "CH7",
+    "how": "She finds it in Margaret's boxes."
+  },
+  {
+    "_id": "K3",
+    "title": "Ruth reads Peter's letter",
+    "status": "planned",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "factId": "F2",
+    "characterId": "H4",
+    "yearLearned": 2041,
+    "chapterLearnedId": null,
+    "how": "Margaret gives it to her before she dies."
+  }
+]
