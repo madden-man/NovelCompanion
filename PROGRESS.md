@@ -28,14 +28,35 @@ Open notes from review (carried into M1): close the MongoClient when `connect()`
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| ED-1 | pending | |
-| ED-2 | pending | |
-| ED-3 | pending | |
-| ED-4 | pending | |
-| ED-5 | pending | |
-| ED-6 | pending | |
-| ED-7 | pending | |
-| ED-8 | pending | |
-| ED-9 | pending | |
-| ED-10 | pending | |
-| T-5 | pending | |
+| ED-1 | pass | `tests/unit/manifest.test.ts` "ED-1 every section 4 entity is a collection with an editable manifest" (22 collections); `tests/integration/editing.test.ts` "ED-1 %s: create, read, update, trash, restore, each with a revision" per collection; `tests/e2e/editing.spec.ts` "ED-1 every field of every entity can be created and changed through the editor". Reviewed independently 2026-10-10. |
+| ED-2 | pass | `tests/e2e/editing.spec.ts` "ED-2 a change saves on its own within one second, with no save button, and shows Saved" (elapsed under 1000 ms), "ED-2 continuous typing still saves within one second of the first change". Reviewed independently 2026-10-10. |
+| ED-3 | pass | `tests/e2e/editing.spec.ts` "ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z" (all 51 undone and redone), "ED-3 tree edits undo to the start and redo to the end" (MongoDB asserted at both ends), "ED-3 Cmd+Z in a text field with unsaved typing undoes the typing"; `tests/integration/undo.test.ts`; `tests/unit/undo-runner.test.ts` (stale steps skipped). First review failed (redo partial, no tree edits); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| ED-4 | pass | `tests/e2e/editing.spec.ts` "ED-4 the history drawer compares any revision with the current entry and restores it"; `tests/integration/editing.test.ts` ED-4 history, diff, restore, IPC channels. Reviewed independently 2026-10-10. |
+| ED-5 | pass | `tests/e2e/editing.spec.ts` "ED-5 deleting lists what links here, moves it to the trash, and restores it with its links"; integration "ED-5 a deleted entry goes to the trash and comes back with its links intact". Reviewed independently 2026-10-10. |
+| ED-6 | pass | `tests/e2e/editing.spec.ts` "ED-6 generated content and imported content are edited like any other field" (summary, manuscript text, brief, finding). Reviewed independently 2026-10-10. |
+| ED-7 | pass | `tests/integration/editing.test.ts` "ED-7 a proposal changes nothing in MongoDB until approved, and approval is recorded on the proposal and a revision" (collection queried directly, revision counts), "ED-7 a proposal whose entry changed since is refused plainly, and approves after comparing again"; `tests/e2e/editing.spec.ts` ED-7 review queue approve, reject, stale refusal. First review failed (no IPC or UI); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| ED-8 | pass | `tests/integration/editing.test.ts` "ED-8 renaming a tag updates every entry using it in one transaction, each with a revision", "ED-8 a rename that fails part way changes nothing", custom choice rename cascade and in-use refusals; `tests/e2e/editing.spec.ts` "ED-8 renaming a tag on the Lists screen updates every entry that uses it", "ED-8 renaming a union type changes the name every union shows". Reviewed independently 2026-10-10. |
+| ED-9 | pass | `tests/e2e/editing.spec.ts` "ED-9 typing @ in a long text field searches, inserts a link, and the target shows Linked from"; integration ED-9 backlinks. Reviewed independently 2026-10-10. |
+| ED-10 | pass | `tests/unit/warnings.test.ts` (15 ED-10 tests); `tests/integration/editing.test.ts` "ED-10 a death before birth saves and every read returns the warning", KN-2, era range, stale custom value; `tests/e2e/editing.spec.ts` "ED-10 a death date before the birth date is flagged at the field in plain words and still saves". Reviewed independently 2026-10-10. |
+| T-5 | pass | `tests/e2e/editing.spec.ts` "T-5 every field of every entity is set through window.api and persists after the app restarts" (manifest-driven, Electron relaunched); `tests/unit/manifest.test.ts` "T-5 every schema field has a manifest entry and every manifest entry is a schema field, at every depth"; `tests/integration/t5.test.ts`. Reviewed independently 2026-10-10. |
+
+Open notes from review (carried into M2): `rejectProposal` ignores `matchedCount`; `markSaved` in `undo.tsx` resets the focused field rather than the saved field.
+
+## M2: characters and family tree
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| CH-1 | pending | |
+| CH-2 | pending | |
+| CH-3 | pending | |
+| CH-4 | pending | |
+| FT-1 | pending | |
+| FT-2 | pending | |
+| FT-3 | pending | |
+| FT-4 | pending | |
+| FT-5 | pending | |
+| FT-6 | pending | |
+| FT-7 | pending | |
+| FT-8 | pending | |
+| FT-9 | pending | |
+| FT-10 | pending | |
