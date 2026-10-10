@@ -28,6 +28,10 @@ import {
 import { chapterPage, outlineGrid, reorder } from '../../shared/domain/outline';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { systemFor, termProblem } from '../../shared/domain/romanization';
+import { factPage, knownBy, whoKnows } from '../../shared/domain/knowledge';
+import { latestLog } from '../../shared/domain/sessionLog';
+import { compileFilters } from '../../shared/domain/searchFilters';
+import { entrySnippet } from '../search';
 import type { ListDoc } from '../../shared/schema';
 
 /** Channels that act on the open bible. */
@@ -51,6 +55,10 @@ export type BibleChannel =
   | 'lists.addItem'
   | 'lists.removeItem'
   | 'search.query'
+  | 'fact.page'
+  | 'knowledge.whoKnows'
+  | 'knowledge.knownBy'
+  | 'sessionLog.latest'
   | 'proposal.list'
   | 'proposal.diff'
   | 'proposal.approve'
@@ -466,18 +474,72 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
       await session().repo.removeListItem(listId, itemId);
       return { ok: true as const };
     },
-    'search.query': ({ query, collections, limit }) => {
+    'search.query': ({ query, collections, filters, limit }) => {
       const { search, model } = session();
-      const hits = search
-        .search(query)
+      // `collections` (the link picker) and `filters.sections` both narrow the sections.
+      const asked = [collections, filters?.sections].filter(
+        (l): l is EntryCollection[] => !!l?.length,
+      );
+      const sections = asked.length
+        ? (asked[0] as EntryCollection[]).filter((c) => asked.every((l) => l.includes(c)))
+        : undefined;
+      if (sections && sections.length === 0) return { hits: [], total: 0 };
+      const accepts = compileFilters(
+        { ...filters, sections: sections ?? [] },
+        {
+          get: (c, id) => model.get(c, id),
+          places: model.all('places').filter((p) => !p.deletedAt),
+          customSpecs: (id) => model.customSpecs(id),
+        },
+      );
+      const matched = search
+        .search(query, ({ collection, id }) => {
+          if (!isEntryCollection(collection)) return false;
+          const doc = model.get(collection, id);
+          return doc !== undefined && !doc.deletedAt && accepts(collection, doc);
+        })
         .filter((h): h is typeof h & { collection: EntryCollection } =>
           isEntryCollection(h.collection),
-        )
-        .filter((h) => !collections || collections.includes(h.collection))
-        .filter((h) => !model.get(h.collection, h.id)?.deletedAt)
-        .slice(0, limit)
-        .map((h) => ({ ...h, title: entryTitle(model.get(h.collection, h.id)) }));
-      return { hits };
+        );
+      const hits = matched.slice(0, limit).map((h) => {
+        const doc = model.get(h.collection, h.id) as StoredDoc;
+        return {
+          ...h,
+          title: entryTitle(doc),
+          status: typeof doc.status === 'string' ? doc.status : null,
+          provenance: typeof doc.provenance === 'string' ? doc.provenance : null,
+          snippet: entrySnippet(doc),
+        };
+      });
+      return { hits, total: matched.length };
+    },
+    'fact.page': ({ id }) => {
+      const page = factPage(session().model, id);
+      if (!page) throw new Error(`No fact has the ID ${id}.`);
+      return { page };
+    },
+    'knowledge.whoKnows': ({ factId, year }) => ({
+      knowers: whoKnows(session().model, factId, year),
+    }),
+    'knowledge.knownBy': ({ characterId, year }) => ({
+      facts: knownBy(session().model, characterId, year),
+    }),
+    'sessionLog.latest': () => {
+      const { model } = session();
+      const log = latestLog(model.all('sessionLogs'));
+      if (!log) return { log: null };
+      const chapterId = typeof log.chapterId === 'string' && log.chapterId ? log.chapterId : null;
+      const chapter = chapterId ? model.get('chapters', chapterId) : undefined;
+      return {
+        log: {
+          id: String(log._id),
+          date: String(log.date ?? ''),
+          chapterId,
+          chapter: chapter && !chapter.deletedAt ? entryTitle(chapter) : null,
+          stoppedAt: String(log.stoppedAt ?? ''),
+          notes: String(log.notes ?? ''),
+        },
+      };
     },
   };
 }

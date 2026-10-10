@@ -8,10 +8,22 @@ import type { Invoke } from '../helpers/t5';
 
 const ROOT = join(import.meta.dirname, '../..');
 
-export async function launch(uri: string): Promise<{ app: ElectronApplication; page: Page }> {
+/**
+ * Start the built app against a local MongoDB. The "Where did you stop?" prompt
+ * (SL-1) is off unless a test turns it on, so closing the app never waits on a person.
+ */
+export async function launch(
+  uri: string,
+  env: Record<string, string> = {},
+): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [ROOT],
-    env: { ...process.env, NOVEL_COMPANION_TEST_MONGODB_URI: uri },
+    env: {
+      ...process.env,
+      NOVEL_COMPANION_TEST_MONGODB_URI: uri,
+      NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
+      ...env,
+    },
   });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

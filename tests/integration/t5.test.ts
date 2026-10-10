@@ -6,7 +6,7 @@ import type { OpenBible } from '../../src/main/db/session';
 import { ENTRY_COLLECTIONS, editableFields, manifests } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
-import { t5Verify, t5Write } from '../helpers/t5';
+import { ALL_KINDS_SECTION, t5Verify, t5Write } from '../helpers/t5';
 import type { T5Plan } from '../helpers/t5';
 
 let store: Store;
@@ -34,6 +34,39 @@ describe('T-5 editing coverage through the IPC layer', () => {
     for (const item of plan.items) {
       expect(item.fields).toEqual(editableFields(manifests[item.collection]).map((s) => s.name));
     }
+  });
+
+  test('T-5 the walk reaches every M4 manifest: knowledge, themes, questions, log, custom sections, and custom entries', () => {
+    const m4 = [
+      'facts',
+      'knowledgeRecords',
+      'themes',
+      'openQuestions',
+      'sessionLogs',
+      'briefs',
+      'customSections',
+      'customEntries',
+      'places',
+      'glossaryTerms',
+      'culturalEntries',
+      'arcs',
+      'plotBeats',
+    ] as const;
+    for (const c of m4) {
+      const item = plan.items.find((i) => i.collection === c);
+      expect(item, `${c} is in the T-5 plan`).toBeDefined();
+      expect(item!.fields.length).toBeGreaterThan(0);
+      for (const name of item!.fields) expect(item!.expected).toHaveProperty(name);
+    }
+    // Nested fields are walked too: theme appearances, facts in play, place descriptions.
+    const expected = (c: string) => plan.items.find((i) => i.collection === c)!.expected;
+    expect(expected('themes').appearances).toHaveLength(1);
+    expect(expected('chapters').factsInPlay).toHaveLength(1);
+    expect(expected('places').descriptions).toHaveLength(1);
+    // A custom entry is written with a value for every field kind of its section.
+    expect(Object.keys(expected('customEntries').values as object).sort()).toEqual(
+      ALL_KINDS_SECTION.map((f) => f.id).sort(),
+    );
   });
 
   test('T-5 every value persists when the bible is reopened on a fresh connection', async () => {

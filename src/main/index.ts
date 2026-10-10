@@ -1,7 +1,13 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
-import { closeStore, openExternal, registerHandlers } from './ipc/handlers';
+import {
+  closeStore,
+  hasOpenBible,
+  onCloseDecision,
+  openExternal,
+  registerHandlers,
+} from './ipc/handlers';
 import { wireEvent } from '../shared/ipc';
 
 const APP_NAME = 'Novel Companion';
@@ -26,7 +32,13 @@ function lockDownSession(): void {
   );
 }
 
+/** Tests turn the prompt off so closing the app does not wait on a person. */
+const skipStopPrompt = !app.isPackaged && process.env.NOVEL_COMPANION_SKIP_STOP_PROMPT === '1';
+let closeApproved = false;
+let quitPending = false;
+
 function createWindow(): BrowserWindow {
+  closeApproved = false;
   const win = new BrowserWindow({
     title: APP_NAME,
     width: 1200,
@@ -44,6 +56,24 @@ function createWindow(): BrowserWindow {
     },
   });
   win.once('ready-to-show', () => win.show());
+  // SL-1: closing the window or quitting asks "Where did you stop?" first. The
+  // page answers through `app.confirmClose`; an empty answer still closes.
+  win.on('close', (event) => {
+    if (closeApproved || skipStopPrompt || !hasOpenBible()) return;
+    const wc = win.webContents;
+    if (wc.isDestroyed() || wc.isCrashed() || wc.isLoading()) return;
+    event.preventDefault();
+    win.webContents.send(wireEvent('app.closeRequested'), { hasBible: true });
+  });
+  onCloseDecision((proceed) => {
+    if (!proceed) {
+      quitPending = false;
+      return;
+    }
+    closeApproved = true;
+    if (quitPending) app.quit();
+    else if (!win.isDestroyed()) win.close();
+  });
   // ED-3: undo and redo are the app's own command stacks, replayed through
   // the write path. Catch the keys here, before the page or the Edit menu,
   // so one key press is one app-level undo everywhere, text fields included.
@@ -90,6 +120,10 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  quitPending = true;
 });
 
 app.on('will-quit', () => {

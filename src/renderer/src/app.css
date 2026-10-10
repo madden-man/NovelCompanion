@@ -1560,3 +1560,27 @@ tr.is-story-year td {
 .zh-html p {
   margin: 0 0 0.5em;
 }
+.rail-search {
+  padding: 0 0 8px;
+}
+.rail-search input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.stop-dialog {
+  width: min(520px, 100%);
+  margin-top: 8vh;
+}
+.stop-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.launch-panel {
+  margin-bottom: 12px;
+}
+.search-results .entry-row {
+  border: 1px solid var(--border);
+}
+.chip[data-state='decided'] {
+  background: var(--accent-soft);
+}

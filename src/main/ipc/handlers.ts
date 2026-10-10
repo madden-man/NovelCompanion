@@ -46,6 +46,18 @@ function broadcast<E extends EventName>(event: E, payload: EventPayload<E>): voi
 const currentSummary = () =>
   current ? { id: current.session.handle.id, name: current.name } : null;
 
+let closeDecision: ((proceed: boolean) => void) | null = null;
+
+/** SL-1: main registers what happens when the stop prompt is answered or cancelled. */
+export function onCloseDecision(fn: (proceed: boolean) => void): void {
+  closeDecision = fn;
+}
+
+/** True when a bible is open, so closing the app should ask where the writing stopped. */
+export function hasOpenBible(): boolean {
+  return current !== null;
+}
+
 export async function closeStore(): Promise<void> {
   current?.unsubscribe();
   current = null;
@@ -119,6 +131,10 @@ export function registerHandlers(): void {
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
   handle('tree.export', (req) => exportTree(req));
+  handle('app.confirmClose', ({ proceed }) => {
+    closeDecision?.(proceed);
+    return { ok: true as const };
+  });
   const handlers = bibleHandlers(() => current?.session ?? null);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);

@@ -8,8 +8,11 @@ import { blankEntry } from '../../../shared/domain/blank';
 import { fieldIssues } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import { itemPath } from '../../../shared/domain/lists';
+import { filterQuestions, questionCounts } from '../../../shared/domain/questions';
+import type { QuestionFilter } from '../../../shared/domain/questions';
+import { logsNewestFirst } from '../../../shared/domain/sessionLog';
 import { call, plainError } from '../api';
-import { useStore } from './data';
+import { useEntries, useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
@@ -24,13 +27,20 @@ export function EntryList(props: {
   selected: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** CS-2: show only the entries of one custom section. */
+  sectionId?: string | null;
 }) {
-  const { collection } = props;
+  const { collection, sectionId } = props;
   const { version } = useStore();
   const [entries, setEntries] = useState<Listed[] | null>(null);
   const [filter, setFilter] = useState('');
+  const [state, setState] = useState<QuestionFilter>('all');
   const info = collectionInfo[collection];
   const filterId = useId();
+  const stateId = useId();
+  const sections = useEntries('customSections');
+  const section = sectionId ? sections.find((s) => s._id === sectionId) : undefined;
+  const heading = section ? String(section.name ?? entryTitle(section)) : info.plural;
 
   useEffect(() => {
     let live = true;
@@ -42,21 +52,49 @@ export function EntryList(props: {
     };
   }, [collection, version]);
 
+  const counts = useMemo(() => questionCounts((entries ?? []).map((e) => e.entry)), [entries]);
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return (entries ?? [])
-      .filter((e) => !q || entryTitle(e.entry).toLowerCase().includes(q))
-      .sort((a, b) => entryTitle(a.entry).localeCompare(entryTitle(b.entry)));
-  }, [entries, filter]);
+    let rows = (entries ?? []).filter((e) => !sectionId || e.entry.sectionId === sectionId);
+    if (collection === 'openQuestions') {
+      const keep = new Set(
+        filterQuestions(
+          rows.map((r) => r.entry),
+          state,
+        ).map((e) => e._id),
+      );
+      rows = rows.filter((r) => keep.has(r.entry._id));
+    }
+    rows = rows.filter((e) => !q || entryTitle(e.entry).toLowerCase().includes(q));
+    if (collection === 'sessionLogs') {
+      const order = new Map(logsNewestFirst(rows.map((r) => r.entry)).map((e, i) => [e._id, i]));
+      return rows.sort((a, b) => (order.get(a.entry._id) ?? 0) - (order.get(b.entry._id) ?? 0));
+    }
+    return rows.sort((a, b) => entryTitle(a.entry).localeCompare(entryTitle(b.entry)));
+  }, [entries, filter, state, collection, sectionId]);
 
   return (
     <section className="ws-list" aria-labelledby="list-title">
       <div className="list-head">
-        <h2 id="list-title">{info.plural}</h2>
+        <h2 id="list-title">{heading}</h2>
         <button type="button" className="btn primary small" onClick={props.onNew}>
-          New {info.singular.toLowerCase()}
+          {section ? `New entry in ${heading}` : `New ${info.singular.toLowerCase()}`}
         </button>
       </div>
+      {collection === 'openQuestions' && (
+        <div className="field">
+          <label htmlFor={stateId}>Show questions</label>
+          <select
+            id={stateId}
+            value={state}
+            onChange={(e) => setState(e.target.value as QuestionFilter)}
+          >
+            <option value="all">All ({counts.open + counts.decided})</option>
+            <option value="open">Open ({counts.open})</option>
+            <option value="decided">Decided ({counts.decided})</option>
+          </select>
+        </div>
+      )}
       {collection === 'eraStates' && <EraCoverage />}
       <label htmlFor={filterId} className="sr-only">
         Filter {info.plural.toLowerCase()}
@@ -88,6 +126,11 @@ export function EntryList(props: {
                   <Zh text={entryTitle(entry)} actions={false} />
                 </span>
                 <span className="row tight">
+                  {collection === 'openQuestions' && (
+                    <span className="chip" data-state={String(entry.state ?? 'open')}>
+                      {entry.state === 'decided' ? 'decided' : 'open'}
+                    </span>
+                  )}
                   {typeof entry.status === 'string' && (
                     <span className={`chip ${entry.status}`}>{entry.status}</span>
                   )}
@@ -143,12 +186,18 @@ export function NewEntryForm(props: {
   collection: EntryCollection;
   onCreated: (id: string) => void;
   onCancel: () => void;
+  /** Fields already decided, such as the section of a new custom entry (CS-2). They are not asked for. */
+  preset?: Record<string, unknown>;
 }) {
-  const { collection } = props;
+  const { collection, preset } = props;
   const undo = useUndo();
   const manifest = manifests[collection];
-  const required = manifest.filter((s) => s.required && s.kind !== 'system');
-  const [draft, setDraft] = useState<Entry>(() => blankEntry(manifest) as Entry);
+  const required = manifest.filter(
+    (s) => s.required && s.kind !== 'system' && !(preset && s.name in preset),
+  );
+  const [draft, setDraft] = useState<Entry>(
+    () => ({ ...blankEntry(manifest), ...preset }) as Entry,
+  );
   const [issues, setIssues] = useState<FieldIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

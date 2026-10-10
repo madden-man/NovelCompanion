@@ -17,7 +17,11 @@ test.beforeAll(async () => {
   server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   app = await electron.launch({
     args: [ROOT],
-    env: { ...process.env, NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri() },
+    env: {
+      ...process.env,
+      NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri(),
+      NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
+    },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

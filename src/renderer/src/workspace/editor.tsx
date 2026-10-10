@@ -21,6 +21,7 @@ import { formatTime } from './format';
 import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterSummary } from './character';
+import { FactSummary } from './knowledge';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
 
@@ -367,6 +368,7 @@ export function EntryPane(props: {
           </p>
         )}
         {collection === 'characters' && <CharacterSummary id={id} onOpen={props.onOpen} />}
+        {collection === 'facts' && <FactSummary id={id} onOpen={props.onOpen} />}
         <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
           {editableFields(manifest).map((spec) => (
             <Field

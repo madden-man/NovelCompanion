@@ -8,6 +8,7 @@ import type { StoryDate } from '../schema/common';
 import { ageAt, lifeState, lifeYears } from './ages';
 import type { LifeState } from './ages';
 import { isKnown, yearOf } from './dates';
+import { isKnownBy } from './knowledge';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import type { Position } from './position';
@@ -286,7 +287,7 @@ export function characterPage(
         chapterId: chId,
         chapter: chId ? title(chapterById.get(chId), chId) : null,
         how: str(k.how),
-        knownAtPosition: y === null || knowledgeYear === null ? null : y <= knowledgeYear,
+        knownAtPosition: isKnownBy(y, knowledgeYear),
       };
     })
     .sort((a, b) => (a.yearLearned ?? Infinity) - (b.yearLearned ?? Infinity));

@@ -44,6 +44,8 @@ interface Undo {
   notice: string | null;
   /** Editors register a flush so a pending autosave lands before an undo. */
   registerFlush(fn: () => Promise<void>): () => void;
+  /** Write every pending autosave now, for example before the app closes. */
+  flush(): Promise<void>;
   /**
    * Editors call this after a save with the stored entry. The focused field's
    * saved value changes only when that field belongs to the saved entry, and
@@ -180,9 +182,10 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       ...snapshot,
       notice,
       registerFlush,
+      flush: flushAll,
       markSaved,
     }),
-    [record, step, notice, registerFlush, markSaved, snapshot],
+    [record, step, notice, registerFlush, flushAll, markSaved, snapshot],
   );
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;

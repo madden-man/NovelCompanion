@@ -19,6 +19,8 @@ export interface SearchHit {
   score: number;
 }
 
+export type HitFilter = (hit: { collection: string; id: string }) => boolean;
+
 const BODY_FIELDS = [
   'body',
   'summary',
@@ -58,6 +60,35 @@ function collectStrings(value: unknown, out: string[]): void {
   }
 }
 
+/** Keys that hold IDs or system values, never words a person typed. */
+const NOT_TEXT_KEY = /^(_?id|kind|type|scope|state|sectionId|.*Ids?)$/;
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** Text inside nested fields: place descriptions, theme notes, strand labels, custom values. */
+function collectText(value: unknown, out: string[]): void {
+  if (typeof value === 'string') {
+    if (!ULID.test(value)) out.push(stripTags(value));
+  } else if (Array.isArray(value)) value.forEach((v) => collectText(v, out));
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (!NOT_TEXT_KEY.test(k)) collectText(v, out);
+    }
+  }
+}
+
+const NESTED_TEXT_FIELDS = ['descriptions', 'appearances', 'factsInPlay', 'strands', 'values'];
+
+/** The first words of an entry's text, for a result row. */
+export function entrySnippet(doc: StoredDoc, max = 140): string {
+  for (const f of BODY_FIELDS) {
+    const v = doc[f];
+    if (typeof v !== 'string') continue;
+    const text = stripTags(v).replace(/\s+/g, ' ').trim();
+    if (text) return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
+  }
+  return '';
+}
+
 function toIndexed(collection: string, doc: StoredDoc): IndexedDoc {
   const body: string[] = [];
   for (const f of BODY_FIELDS) {
@@ -66,6 +97,8 @@ function toIndexed(collection: string, doc: StoredDoc): IndexedDoc {
   }
   const names: string[] = [];
   collectStrings(doc.names, names);
+  collectStrings(doc.tags, names);
+  for (const f of NESTED_TEXT_FIELDS) collectText(doc[f], body);
   for (const f of ['name', 'characters', 'romanization']) {
     const v = doc[f];
     if (typeof v === 'string') names.push(v);
@@ -122,9 +155,20 @@ export class SearchIndex {
     if (this.mini.has(key)) this.mini.discard(key);
   }
 
-  search(query: string): SearchHit[] {
+  /**
+   * Entries that match every word, best first; when none match every word,
+   * those that match any word. `accept` drops hits before they are ranked
+   * into the result (SR-2 filters).
+   */
+  search(query: string, accept?: HitFilter): SearchHit[] {
     if (!query.trim()) return [];
-    return this.mini.search(query).map((r) => ({
+    const filter = accept
+      ? (r: { collection?: unknown; id?: unknown }) =>
+          accept({ collection: String(r.collection), id: String(r.id) })
+      : undefined;
+    let results = this.mini.search(query, { combineWith: 'AND', filter });
+    if (results.length === 0) results = this.mini.search(query, { combineWith: 'OR', filter });
+    return results.map((r) => ({
       collection: String(r.collection),
       id: String(r.id),
       title: String(r.title),

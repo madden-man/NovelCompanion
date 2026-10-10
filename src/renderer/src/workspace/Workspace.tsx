@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
-import { DataProvider } from './data';
+import { DataProvider, useEntries } from './data';
 import { EntryPane, UndoPanel } from './editor';
+import { LaunchPanel, StopPrompt } from './session';
+import { SearchView } from './search';
 import { ReviewQueue } from './review';
 import { UndoProvider } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
@@ -19,7 +21,15 @@ import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 
 type View =
-  | { kind: 'section'; collection: EntryCollection; selected: string | null; creating: boolean }
+  | {
+      kind: 'section';
+      collection: EntryCollection;
+      selected: string | null;
+      creating: boolean;
+      /** CS-2: a custom section whose entries are listed and created here. */
+      sectionId?: string;
+    }
+  | { kind: 'search' }
   | { kind: 'tree' }
   | { kind: 'timeline' }
   | { kind: 'outline' }
@@ -56,6 +66,9 @@ function Frame({ bibles }: { bibles: ReactNode }) {
     creating: false,
   });
 
+  const [query, setQuery] = useState('');
+  const customSections = useEntries('customSections');
+
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
 
@@ -67,8 +80,26 @@ function Frame({ bibles }: { bibles: ReactNode }) {
 
   return (
     <ZhNavProvider value={open}>
+      <LaunchPanel />
+      <StopPrompt />
       <div className="ws-frame" data-testid="workspace">
         <nav className="rail ws-rail" aria-label="Sections">
+          <div className="field rail-search">
+            <label className="sr-only" htmlFor="rail-search">
+              Search the bible
+            </label>
+            <input
+              id="rail-search"
+              type="search"
+              placeholder="Search the bible"
+              autoComplete="off"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setView({ kind: 'search' });
+              }}
+            />
+          </div>
           {GROUPS.map((g) => (
             <div key={g} className="rail-group">
               <span className="eyebrow">{g}</span>
@@ -102,15 +133,36 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
                 railButton(
                   collectionInfo[c].plural,
-                  view.kind === 'section' && view.collection === c,
+                  view.kind === 'section' && view.collection === c && !view.sectionId,
                   () =>
                     setView({ kind: 'section', collection: c, selected: null, creating: false }),
                 ),
               )}
+              {g === 'Custom' &&
+                customSections
+                  .filter((sec) => sec.deletedAt === undefined)
+                  .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+                  .map((sec) =>
+                    railButton(
+                      String(sec.name),
+                      view.kind === 'section' && view.sectionId === sec._id,
+                      () =>
+                        setView({
+                          kind: 'section',
+                          collection: 'customEntries',
+                          selected: null,
+                          creating: false,
+                          sectionId: sec._id,
+                        }),
+                    ),
+                  )}
             </div>
           ))}
           <div className="rail-group">
             <span className="eyebrow">Manage</span>
+            {railButton('Search and filters', view.kind === 'search', () =>
+              setView({ kind: 'search' }),
+            )}
             {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
             {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
             {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
@@ -121,16 +173,18 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           <>
             <EntryList
               collection={view.collection}
+              sectionId={view.sectionId}
               selected={view.selected}
-              onSelect={(id) => open(view.collection, id)}
+              onSelect={(id) => setView({ ...view, selected: id, creating: false })}
               onNew={() => setView({ ...view, selected: null, creating: true })}
             />
             {view.creating ? (
               <>
                 <NewEntryForm
-                  key={view.collection}
+                  key={`${view.collection}:${view.sectionId ?? ''}`}
                   collection={view.collection}
-                  onCreated={(id) => open(view.collection, id)}
+                  preset={view.sectionId ? { sectionId: view.sectionId } : undefined}
+                  onCreated={(id) => setView({ ...view, selected: id, creating: false })}
                   onCancel={() => setView({ ...view, creating: false })}
                 />
                 <SideInspector />
@@ -154,6 +208,13 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 <SideInspector />
               </>
             )}
+          </>
+        ) : view.kind === 'search' ? (
+          <>
+            <div className="ws-wide-area">
+              <SearchView query={query} onQuery={setQuery} onOpen={open} />
+            </div>
+            <SideInspector />
           </>
         ) : view.kind === 'tree' ? (
           <TreeView onOpen={open} />

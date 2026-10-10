@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { BibleName, BibleSlug } from './bible';
-import { ENTRY_COLLECTIONS, ListIdParam, Proposal, entrySchemas } from './schema';
+import {
+  ENTRY_COLLECTIONS,
+  ListIdParam,
+  Proposal,
+  Provenance,
+  Status,
+  entrySchemas,
+} from './schema';
 import { StoryTimeValue } from './storyTime';
 import type { EntryCollection } from './schema';
 
@@ -431,6 +438,53 @@ const OutlineWire = z.strictObject({
   ),
 });
 
+const Year = z.int().min(-10000).max(10000);
+
+const SearchFiltersWire = z.strictObject({
+  sections: z.array(CollectionName).optional(),
+  status: z.array(Status).optional(),
+  provenance: z.array(Provenance).optional(),
+  familyId: EntryId.nullable().optional(),
+  placeId: EntryId.nullable().optional(),
+  tag: z.string().min(1).max(100).nullable().optional(),
+  yearFrom: Year.nullable().optional(),
+  yearTo: Year.nullable().optional(),
+});
+
+const KnowerWire = z.strictObject({
+  recordId: z.string(),
+  characterId: z.string(),
+  name: z.string(),
+  yearLearned: z.number().nullable(),
+  chapterLearnedId: z.string().nullable(),
+  how: z.string(),
+});
+
+const KnownFactWire = z.strictObject({
+  recordId: z.string(),
+  factId: z.string(),
+  fact: z.string(),
+  yearLearned: z.number(),
+  chapterLearnedId: z.string().nullable(),
+  how: z.string(),
+});
+
+const FactPageWire = z.strictObject({
+  id: z.string(),
+  title: z.string(),
+  body: z.string(),
+  knowers: z.array(KnowerWire.extend({ chapter: z.string().nullable() })),
+  inPlay: z.array(
+    z.strictObject({
+      chapterId: z.string(),
+      chapter: z.string(),
+      characterId: z.string(),
+      character: z.string(),
+      note: z.string(),
+    }),
+  ),
+});
+
 const ChapterPageWire = z.strictObject({
   id: z.string(),
   title: z.string(),
@@ -657,11 +711,16 @@ export const contract = {
     request: z.strictObject({ listId: ListIdParam, itemId: z.string().min(1) }),
     response: z.strictObject({ ok: z.literal(true) }),
   },
-  /** Search the open bible (ARCH-2); used by the `@` link picker (ED-9). */
+  /**
+   * Search the open bible (ARCH-2, SR-1, SR-2); also used by the `@` link
+   * picker (ED-9). Filters narrow the matches by section, status,
+   * provenance, family, place, tag, and a year range.
+   */
   'search.query': {
     request: z.strictObject({
       query: z.string().max(200),
       collections: z.array(CollectionName).optional(),
+      filters: SearchFiltersWire.optional(),
       limit: z.int().min(1).max(100).default(20),
     }),
     response: z.strictObject({
@@ -671,9 +730,50 @@ export const contract = {
           id: z.string(),
           title: z.string(),
           score: z.number(),
+          status: z.string().nullable().default(null),
+          provenance: z.string().nullable().default(null),
+          snippet: z.string().default(''),
         }),
       ),
+      /** How many entries matched before the limit cut the list. */
+      total: z.int().min(0).default(0),
     }),
+  },
+  /** KN-1, KN-3: a fact with who learns it and when, and the chapters that act on it. */
+  'fact.page': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ page: FactPageWire }),
+  },
+  /** KN-1: who has learned a fact, optionally by a year. */
+  'knowledge.whoKnows': {
+    request: z.strictObject({ factId: EntryId, year: Year.optional() }),
+    response: z.strictObject({ knowers: z.array(KnowerWire) }),
+  },
+  /** KN-1: the facts a character has learned by a year. */
+  'knowledge.knownBy': {
+    request: z.strictObject({ characterId: EntryId, year: Year }),
+    response: z.strictObject({ facts: z.array(KnownFactWire) }),
+  },
+  /** SL-1: the newest session log with a note, for the launch panel. */
+  'sessionLog.latest': {
+    request: z.strictObject({}),
+    response: z.strictObject({
+      log: z
+        .strictObject({
+          id: z.string(),
+          date: z.string(),
+          chapterId: z.string().nullable(),
+          chapter: z.string().nullable(),
+          stoppedAt: z.string(),
+          notes: z.string(),
+        })
+        .nullable(),
+    }),
+  },
+  /** SL-1: the stop prompt is answered (or skipped); main closes the window (or quits) when `proceed` is true, and stays open when it is false. */
+  'app.confirmClose': {
+    request: z.strictObject({ proceed: z.boolean() }),
+    response: z.strictObject({ ok: z.literal(true) }),
   },
   /** The review queue (ED-7): proposals with their diff against the live entry. */
   'proposal.list': {
@@ -991,6 +1091,8 @@ export const events = {
   }),
   /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),
+  /** SL-1: the window is closing or the app is quitting; ask "Where did you stop?" first. */
+  'app.closeRequested': z.strictObject({ hasBible: z.boolean() }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */
   'lists.changed': z.strictObject({ bible: z.string() }),
