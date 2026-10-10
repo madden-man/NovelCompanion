@@ -1,0 +1,368 @@
+/**
+ * Field warnings (ED-10). Pure functions over plain objects: they never block
+ * a write, and every read returns them so the editor can show each one at its
+ * field with a plain explanation. The checks come from the field manifests
+ * (ranges, references, list items) plus the per-entity rules that need only
+ * the entry and the entries it names: death before birth, years outside a
+ * lifetime, KN-2 learning before birth, and the FT-6 parent-age and
+ * born-after-death checks. Tree-wide FT-6 checks (overlapping unions, a child
+ * born before a union) need the whole tree and arrive with it in M2.
+ */
+import type { StoryDate } from '../schema/common';
+import type { FieldSpec } from '../schema/manifest';
+import type { ListDoc } from '../schema/lists';
+import {
+  compareStoryDates,
+  dayNumber,
+  formatStoryDate,
+  isImpossibleDate,
+  isKnown,
+  yearOf,
+} from './dates';
+import { isPlainObject, joinPath } from './paths';
+import type { Doc } from './paths';
+import { outgoingRefs } from './refs';
+import type { CustomSpecs } from './refs';
+
+export interface FieldWarning {
+  /** Dotted path of the field, for example `death` or `voiceNotes.0.at`. */
+  path: string;
+  code: string;
+  message: string;
+}
+
+/** What the checks may look up: other entries, lists, and custom section fields. */
+export interface WarningContext {
+  get(collection: string, id: string): Doc | undefined;
+  /** Find an entry in any collection, for links and `*` targets. */
+  find(id: string): { collection: string; doc: Doc } | undefined;
+  list(listId: string): ListDoc | undefined;
+  customSpecs?: CustomSpecs;
+}
+
+const MIN_PARENT_AGE = 12;
+const MAX_PARENT_AGE = 60;
+
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function asDate(v: unknown): StoryDate | null {
+  return isPlainObject(v) ? (v as StoryDate) : null;
+}
+
+function titleOf(doc: Doc | undefined): string {
+  const t = doc?.title ?? doc?.name;
+  return typeof t === 'string' && t.trim() ? t : 'that entry';
+}
+
+/** Range, date, and list checks that come straight from the manifest. */
+function manifestChecks(
+  specs: readonly FieldSpec[],
+  value: Doc,
+  base: string,
+  ctx: WarningContext,
+  out: FieldWarning[],
+): void {
+  for (const s of specs) {
+    const v = value[s.name];
+    const path = joinPath(base, s.name);
+    if (s.rangeEnd) {
+      const start = num(v);
+      const end = num(value[s.rangeEnd]);
+      if (start !== null && end !== null && end < start) {
+        out.push({
+          path: joinPath(base, s.rangeEnd),
+          code: 'range-end-before-start',
+          message: `This range ends in ${end}, before it starts in ${start}.`,
+        });
+      }
+    }
+    if (s.kind === 'storyDate' && isImpossibleDate(asDate(v))) {
+      out.push({
+        path,
+        code: 'impossible-date',
+        message: `${formatStoryDate(asDate(v))} is not a real date: that month has fewer days.`,
+      });
+    }
+    if (s.kind === 'listItem' && typeof v === 'string' && s.listId) {
+      const list = ctx.list(s.listId);
+      if (list && !list.items.some((i) => i.id === v)) {
+        out.push({
+          path,
+          code: 'unknown-list-item',
+          message: `"${v}" is not in the ${list.label} list. Add it there or pick another.`,
+        });
+      }
+    }
+    if (s.kind === 'refPair' && Array.isArray(v) && v.length === 2 && v[0] === v[1]) {
+      out.push({ path, code: 'same-twice', message: 'The same entry is chosen twice.' });
+    }
+    if (s.kind === 'object' && s.fields && isPlainObject(v)) {
+      manifestChecks(s.fields, v, path, ctx, out);
+    }
+    if (s.kind === 'objectList' && s.fields && Array.isArray(v)) {
+      const fields = s.fields;
+      v.forEach((item, i) => {
+        if (isPlainObject(item)) manifestChecks(fields, item, joinPath(path, i), ctx, out);
+      });
+    }
+    if (s.kind === 'customValues' && isPlainObject(v)) {
+      const sectionId = value.sectionId;
+      const sub = typeof sectionId === 'string' ? ctx.customSpecs?.(sectionId) : undefined;
+      if (sub) manifestChecks(sub, v, path, ctx, out);
+    }
+  }
+}
+
+/** References to entries that do not exist or are in the trash. */
+function referenceChecks(
+  manifest: readonly FieldSpec[],
+  doc: Doc,
+  ctx: WarningContext,
+  out: FieldWarning[],
+): void {
+  for (const ref of outgoingRefs(manifest, doc, ctx.customSpecs)) {
+    const found = ref.target.includes('*')
+      ? ctx.find(ref.targetId)?.doc
+      : ref.target.map((c) => ctx.get(c, ref.targetId)).find(Boolean);
+    // Links point at whole entries; report them on the links field itself.
+    const path = ref.path.replace(/^links\.\d+$/, 'links');
+    if (!found) {
+      out.push({
+        path,
+        code: 'missing-target',
+        message: `No entry has the ID ${ref.targetId}. It may have been deleted for good.`,
+      });
+    } else if (found.deletedAt) {
+      out.push({
+        path,
+        code: 'missing-target',
+        message: `${titleOf(found)} is in the trash. Restore it or pick another.`,
+      });
+    } else if (ref.targetId === doc._id && path === 'parentId') {
+      out.push({ path, code: 'self-reference', message: 'A place cannot sit inside itself.' });
+    }
+  }
+}
+
+function characterChecks(doc: Doc, out: FieldWarning[]): void {
+  const birth = asDate(doc.birth);
+  const death = asDate(doc.death);
+  const cmp = compareStoryDates(death, birth);
+  if (cmp !== null && cmp < 0) {
+    out.push({
+      path: 'death',
+      code: 'death-before-birth',
+      message: `The death date ${formatStoryDate(death)} is before the birth date ${formatStoryDate(birth)}. It still saves.`,
+    });
+  }
+  const born = yearOf(birth);
+  const died = yearOf(death);
+  const notes = Array.isArray(doc.voiceNotes) ? doc.voiceNotes : [];
+  notes.forEach((n, i) => {
+    const at = isPlainObject(n) && isPlainObject(n.at) ? n.at : null;
+    const path = `voiceNotes.${i}.at`;
+    const year = num(at?.year);
+    const age = num(at?.age);
+    if (year !== null && born !== null && year < born) {
+      out.push({
+        path,
+        code: 'outside-lifetime',
+        message: `${year} is before this character is born in ${born}.`,
+      });
+    } else if (year !== null && died !== null && year > died) {
+      out.push({
+        path,
+        code: 'outside-lifetime',
+        message: `${year} is after this character dies in ${died}.`,
+      });
+    }
+    if (age !== null && born !== null && died !== null && age > died - born) {
+      out.push({
+        path,
+        code: 'outside-lifetime',
+        message: `This character dies at ${died - born}, so they never reach ${age}.`,
+      });
+    }
+  });
+  const places = Array.isArray(doc.placesLived) ? doc.placesLived : [];
+  places.forEach((p, i) => {
+    if (!isPlainObject(p)) return;
+    const from = num(p.startYear);
+    const to = num(p.endYear);
+    if (from !== null && born !== null && from < born) {
+      out.push({
+        path: `placesLived.${i}.startYear`,
+        code: 'outside-lifetime',
+        message: `${from} is before this character is born in ${born}.`,
+      });
+    }
+    if (to !== null && died !== null && to > died) {
+      out.push({
+        path: `placesLived.${i}.endYear`,
+        code: 'outside-lifetime',
+        message: `${to} is after this character dies in ${died}.`,
+      });
+    }
+  });
+}
+
+/** FT-6 parent age at the child's birth, and a child born over a year after the parent died. */
+function parentLinkChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  const parent = typeof doc.parentId === 'string' ? ctx.get('characters', doc.parentId) : undefined;
+  const child = typeof doc.childId === 'string' ? ctx.get('characters', doc.childId) : undefined;
+  if (!parent || !child) return;
+  const pBirth = asDate(parent.birth);
+  const cBirth = asDate(child.birth);
+  const pDeath = asDate(parent.death);
+  const pBorn = yearOf(pBirth);
+  const cBorn = yearOf(cBirth);
+  if (pBorn !== null && cBorn !== null) {
+    const age = cBorn - pBorn;
+    if (age < MIN_PARENT_AGE) {
+      out.push({
+        path: 'parentId',
+        code: 'parent-age',
+        message: `${titleOf(parent)} would be ${age} when ${titleOf(child)} is born, under ${MIN_PARENT_AGE}.`,
+      });
+    } else if (age > MAX_PARENT_AGE) {
+      out.push({
+        path: 'parentId',
+        code: 'parent-age',
+        message: `${titleOf(parent)} would be ${age} when ${titleOf(child)} is born, over ${MAX_PARENT_AGE}.`,
+      });
+    }
+  }
+  if (isKnown(pDeath) && isKnown(cBirth)) {
+    const dd = dayNumber(pDeath);
+    const cd = dayNumber(cBirth);
+    const tooLate = dd !== null && cd !== null ? cd - dd > 366 : cBirth.year > pDeath.year + 1;
+    if (tooLate) {
+      out.push({
+        path: 'childId',
+        code: 'born-after-parent-death',
+        message: `${titleOf(child)} is born in ${cBirth.year}, more than a year after ${titleOf(parent)} dies in ${pDeath.year}.`,
+      });
+    }
+  }
+}
+
+function unionChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  const start = num(doc.startYear);
+  if (start === null || !Array.isArray(doc.partnerIds)) return;
+  for (const id of doc.partnerIds) {
+    const p = typeof id === 'string' ? ctx.get('characters', id) : undefined;
+    const born = yearOf(asDate(p?.birth));
+    if (p && born !== null && start < born) {
+      out.push({
+        path: 'startYear',
+        code: 'union-before-birth',
+        message: `This union starts in ${start}, before ${titleOf(p)} is born in ${born}.`,
+      });
+    }
+  }
+}
+
+/** KN-2: a character cannot learn a fact before they are born. */
+function knowledgeChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  const year = num(doc.yearLearned);
+  const who =
+    typeof doc.characterId === 'string' ? ctx.get('characters', doc.characterId) : undefined;
+  if (year === null || !who) return;
+  const born = yearOf(asDate(who.birth));
+  const died = yearOf(asDate(who.death));
+  if (born !== null && year < born) {
+    out.push({
+      path: 'yearLearned',
+      code: 'learned-before-birth',
+      message: `${titleOf(who)} is born in ${born}, so they cannot learn this in ${year}.`,
+    });
+  }
+  if (died !== null && year > died) {
+    out.push({
+      path: 'yearLearned',
+      code: 'learned-after-death',
+      message: `${titleOf(who)} dies in ${died}, so they cannot learn this in ${year}.`,
+    });
+  }
+}
+
+function chapterChecks(doc: Doc, out: FieldWarning[]): void {
+  const strands = Array.isArray(doc.strands) ? doc.strands : [];
+  const primaries = strands.filter((s) => isPlainObject(s) && s.primary === true).length;
+  if (strands.length > 0 && primaries !== 1) {
+    out.push({
+      path: 'strands',
+      code: 'primary-strand-count',
+      message:
+        primaries === 0
+          ? 'No strand is primary. Mark one so the chapter has a story year.'
+          : `${primaries} strands are primary. Mark only one; the first is used until then.`,
+    });
+  }
+}
+
+function worldEventChecks(doc: Doc, out: FieldWarning[]): void {
+  const cmp = compareStoryDates(asDate(doc.end), asDate(doc.start));
+  if (cmp !== null && cmp < 0) {
+    out.push({
+      path: 'end',
+      code: 'range-end-before-start',
+      message: `This event ends ${formatStoryDate(asDate(doc.end))}, before it starts ${formatStoryDate(asDate(doc.start))}.`,
+    });
+  }
+}
+
+function openQuestionChecks(doc: Doc, out: FieldWarning[]): void {
+  if (doc.state === 'decided' && !String(doc.decision ?? '').trim()) {
+    out.push({
+      path: 'decision',
+      code: 'decided-without-decision',
+      message: 'This question is marked decided, but no decision is written down.',
+    });
+  }
+}
+
+/** Every warning for one entry. Never throws for odd data; it only reports. */
+export function computeWarnings(
+  collection: string,
+  manifest: readonly FieldSpec[],
+  doc: Doc,
+  ctx: WarningContext,
+): FieldWarning[] {
+  const out: FieldWarning[] = [];
+  manifestChecks(manifest, doc, '', ctx, out);
+  referenceChecks(manifest, doc, ctx, out);
+  switch (collection) {
+    case 'characters':
+      characterChecks(doc, out);
+      break;
+    case 'parentLinks':
+      parentLinkChecks(doc, ctx, out);
+      break;
+    case 'unions':
+      unionChecks(doc, ctx, out);
+      break;
+    case 'knowledgeRecords':
+      knowledgeChecks(doc, ctx, out);
+      break;
+    case 'chapters':
+      chapterChecks(doc, out);
+      break;
+    case 'worldEvents':
+      worldEventChecks(doc, out);
+      break;
+    case 'openQuestions':
+      openQuestionChecks(doc, out);
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
+/** The warnings for one field path and everything under it. */
+export function warningsAt(warnings: readonly FieldWarning[], path: string): FieldWarning[] {
+  return warnings.filter((w) => w.path === path || w.path.startsWith(`${path}.`));
+}

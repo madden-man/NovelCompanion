@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
 import { closeStore, openExternal, registerHandlers } from './ipc/handlers';
+import { wireEvent } from '../shared/ipc';
 
 const APP_NAME = 'Novel Companion';
 
@@ -43,6 +44,15 @@ function createWindow(): BrowserWindow {
     },
   });
   win.once('ready-to-show', () => win.show());
+  // ED-3: undo and redo are the app's own command stacks, replayed through
+  // the write path. Catch the keys here, before the page or the Edit menu,
+  // so one key press is one app-level undo everywhere, text fields included.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || !(input.meta || input.control)) return;
+    if (input.key.toLowerCase() !== 'z') return;
+    event.preventDefault();
+    win.webContents.send(wireEvent('app.command'), { command: input.shift ? 'redo' : 'undo' });
+  });
   // New windows are never created. Allowlisted links open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     void openExternal(url);

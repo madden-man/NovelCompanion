@@ -8,6 +8,9 @@ import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
+import { BIBLE_CHANNELS, bibleHandlers } from './bibleHandlers';
+import type { BibleChannel } from './bibleHandlers';
+import type { Handler } from './validate';
 
 let store: Store | null = null;
 let current: { session: OpenBible; name: string; unsubscribe: () => void } | null = null;
@@ -20,9 +23,11 @@ async function getStore(): Promise<{ ok: true; store: Store } | { ok: false; mes
   const lookup = mongoUri(process.env, { isPackaged: app.isPackaged });
   if (!lookup.ok) return lookup;
   try {
+    // connect() closes its own client when it fails, so nothing is left open.
     store = await connect(lookup.uri);
     return { ok: true, store };
   } catch {
+    store = null;
     return { ok: false, message: UNREACHABLE };
   }
 }
@@ -77,7 +82,12 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
   const session = await openBibleSession(s, slug);
   current?.unsubscribe();
-  const unsubscribe = session.repo.onChange((e) => broadcast('bible.changed', e));
+  const offChange = session.repo.onChange((e) => broadcast('bible.changed', e));
+  const offLists = session.repo.onListsChange(() => broadcast('lists.changed', { bible: slug }));
+  const unsubscribe = () => {
+    offChange();
+    offLists();
+  };
   current = { session, name: record.name, unsubscribe };
   const bible = { id: slug, name: record.name };
   broadcast('bibles.changed', { current: bible });
@@ -99,4 +109,8 @@ export function registerHandlers(): void {
   handle('bible.create', ({ slug, name }) => bibleCreate(slug, name));
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
+  const handlers = bibleHandlers(() => current?.session ?? null);
+  for (const channel of BIBLE_CHANNELS) {
+    handle(channel, handlers[channel] as Handler<BibleChannel>);
+  }
 }

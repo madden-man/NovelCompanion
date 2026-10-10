@@ -28,6 +28,22 @@ const BODY_FIELDS = [
   'usageNote',
   'generationNotes',
   'notes',
+  'sourceNote',
+  'description',
+  'worldContext',
+  'experienceNote',
+  'technology',
+  'climate',
+  'economy',
+  'politics',
+  'dailyLife',
+  'question',
+  'decision',
+  'stoppedAt',
+  'content',
+  'text',
+  'quote',
+  'how',
 ];
 
 function stripTags(html: string): string {

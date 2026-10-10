@@ -2,15 +2,11 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Response } from '../../shared/ipc';
 import { BIBLE_SLUG_RULE, BibleSlug, slugify } from '../../shared/bible';
+import { plainError } from './api';
+import { Workspace } from './workspace/Workspace';
 
 type BibleList = Response<'bible.list'>;
 type Bible = Response<'bible.open'>['bible'];
-
-/** Main's errors arrive wrapped by Electron; keep only the plain message. */
-function plainError(e: unknown): string {
-  const text = e instanceof Error ? e.message : String(e);
-  return text.replace(/^Error invoking remote method '[^']*': (Error: )?/, '');
-}
 
 export function App() {
   const [list, setList] = useState<BibleList | null>(null);
@@ -48,9 +44,19 @@ export function App() {
     }
   };
 
+  const bibles = (
+    <>
+      <section className="panel stack" aria-labelledby="bibles-heading">
+        <h2 id="bibles-heading">Bibles</h2>
+        <BibleSwitcher list={list} current={current} onOpen={open} />
+      </section>
+      {list?.connection === 'connected' && <NewBible onError={setError} />}
+    </>
+  );
+
   return (
-    <main className="shell">
-      <header className="stack">
+    <main className={current ? 'shell wide' : 'shell'}>
+      <header className={current ? 'app-head' : 'stack'}>
         <h1>Novel Companion</h1>
         {current ? (
           <p className="lede">
@@ -65,11 +71,7 @@ export function App() {
           {error}
         </p>
       )}
-      <section className="panel stack" aria-labelledby="bibles-heading">
-        <h2 id="bibles-heading">Bibles</h2>
-        <BibleSwitcher list={list} current={current} onOpen={open} />
-      </section>
-      {list?.connection === 'connected' && <NewBible onError={setError} />}
+      {current ? <Workspace bibleId={current.id} bibles={bibles} /> : bibles}
     </main>
   );
 }

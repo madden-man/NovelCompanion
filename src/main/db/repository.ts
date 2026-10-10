@@ -2,9 +2,39 @@ import { EventEmitter } from 'node:events';
 import { monotonicFactory } from 'ulid';
 import type { ClientSession, Collection, Document } from 'mongodb';
 import { z } from 'zod';
-import { entrySchemas, isEntryCollection } from '../../shared/schema';
-import type { EntryCollection, EntryInput, EntryOf } from '../../shared/schema';
-import type { ReadModel, StoredDoc } from '../readmodel';
+import {
+  DERIVED_LIST_IDS,
+  FIXED_ITEM_LISTS,
+  LIST_IDS,
+  ListDoc,
+  Proposal,
+  entrySchemas,
+  entryTitle,
+  isEntryCollection,
+  manifests,
+} from '../../shared/schema';
+import type {
+  AnyListId,
+  DerivedListId,
+  EntryCollection,
+  EntryInput,
+  EntryOf,
+  ListItem,
+} from '../../shared/schema';
+import { customValueIssues } from '../../shared/domain/customValues';
+import { contentOf, diffEntries } from '../../shared/domain/diff';
+import type { FieldChange } from '../../shared/domain/diff';
+import {
+  countListUsage,
+  derivedRename,
+  newItemId,
+  renameCascade,
+  tagsUsed,
+} from '../../shared/domain/lists';
+import type { CollectionDocs } from '../../shared/domain/lists';
+import { computeWarnings } from '../../shared/domain/warnings';
+import type { FieldWarning } from '../../shared/domain/warnings';
+import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
 
@@ -25,7 +55,33 @@ export interface Revision {
   at: string;
   /** The full document before this write, or null for a create. */
   prior: StoredDoc | null;
+  /** Why the write happened when it was not a plain edit, in plain words. */
+  note?: string;
+  /** The approved proposal that made this write (ED-7). */
+  proposalId?: string;
 }
+
+/** A revision as the history drawer lists it: the entry as it stood after that write. */
+export interface RevisionView {
+  _id: string;
+  op: ChangeOp;
+  at: string;
+  note: string | null;
+  proposalId: string | null;
+  snapshot: StoredDoc;
+}
+
+export interface ListView {
+  _id: AnyListId;
+  label: string;
+  /** Derived lists hold entries; their items are renamed through those entries. */
+  derived: boolean;
+  /** Items can be renamed but not added or removed. */
+  fixedItems: boolean;
+  items: ListViewItem[];
+}
+
+export type ListViewItem = ListItem & { usage: number; detail?: string };
 
 export class RepositoryError extends Error {
   override name = 'RepositoryError';
@@ -50,11 +106,23 @@ type Patch<C extends EntryCollection> = Partial<
   Omit<EntryInput<C>, '_id' | 'createdAt' | 'modifiedAt' | 'deletedAt'>
 >;
 
+interface Change {
+  collection: EntryCollection;
+  op: ChangeOp;
+  next: StoredDoc;
+  prior: StoredDoc | null;
+  note?: string;
+  proposalId?: string;
+}
+
 const newId = monotonicFactory();
+
+const isDerived = (id: string): id is DerivedListId =>
+  (DERIVED_LIST_IDS as readonly string[]).includes(id);
 
 /**
  * The one write path (ARCHITECTURE rule 2). Every mutation validates with zod,
- * writes the entry and its revision in one transaction, updates the read
+ * writes the entries and their revisions in one transaction, updates the read
  * model, patches the search index, and emits a change event.
  */
 export class Repository {
@@ -76,6 +144,12 @@ export class Repository {
     return () => this.emitter.off('change', listener);
   }
 
+  /** Lists changed: a rename, an added item, or a tag first used. */
+  onListsChange(listener: () => void): () => void {
+    this.emitter.on('lists', listener);
+    return () => this.emitter.off('lists', listener);
+  }
+
   private collection(c: EntryCollection): Collection<StoredDoc> {
     return this.bible.collection<StoredDoc>(c);
   }
@@ -88,7 +162,31 @@ export class Repository {
         result.error.issues,
       );
     }
-    return result.data as EntryOf<C>;
+    const data = result.data as EntryOf<C>;
+    this.checkShape(c, data as unknown as StoredDoc);
+    return data;
+  }
+
+  /** Shape rules that need other data: custom values must fit their section (CS-1). */
+  private checkShape(c: EntryCollection, doc: StoredDoc): void {
+    const fail = (message: string) => {
+      throw new ValidationError(message, [
+        { code: 'custom', message, path: [], input: doc } as z.core.$ZodIssue,
+      ]);
+    };
+    if (c === 'customEntries') {
+      const section = this.model.get('customSections', String(doc.sectionId));
+      if (!section) return fail(`There is no custom section with the ID ${String(doc.sectionId)}.`);
+      const issues = customValueIssues(
+        section as never,
+        (doc.values ?? {}) as Record<string, unknown>,
+      );
+      if (issues.length) fail(`This custom entry is not valid: ${issues.join(' ')}`);
+    }
+    if (c === 'customSections') {
+      const ids = (doc.fields as { id: string }[]).map((f) => f.id);
+      if (new Set(ids).size !== ids.length) fail('Two fields in this section share an ID.');
+    }
   }
 
   private assertCollection(c: string): asserts c is EntryCollection {
@@ -108,38 +206,95 @@ export class Repository {
     }
   }
 
-  private async writeWithRevision(
-    c: EntryCollection,
-    op: ChangeOp,
-    next: StoredDoc,
-    prior: StoredDoc | null,
-  ): Promise<void> {
-    const revision: Revision = {
-      _id: newId(),
-      collection: c,
-      entryId: next._id,
-      op,
-      at: next.modifiedAt as string,
-      prior,
-    };
-    await this.transact(async (session) => {
-      if (prior === null) {
-        await this.collection(c).insertOne(next, { session });
-      } else {
-        const res = await this.collection(c).replaceOne(
-          { _id: prior._id, modifiedAt: prior.modifiedAt } as Document,
-          next,
-          { session },
-        );
-        if (res.matchedCount !== 1) {
-          throw new RepositoryError('This entry changed somewhere else. Reload it and try again.');
-        }
+  /** Tag labels the changes use that the tags list does not have yet. */
+  private newTags(changes: Change[]): ListItem[] {
+    const tags = this.model.get('lists', 'tags') as ListDoc | undefined;
+    const known = new Set((tags?.items ?? []).map((i) => i.label));
+    const draft: ListDoc = { _id: 'tags', label: 'Tags', items: [...(tags?.items ?? [])] };
+    const out: ListItem[] = [];
+    for (const ch of changes) {
+      for (const label of tagsUsed(manifests[ch.collection], ch.next, this.customSpecs)) {
+        if (known.has(label)) continue;
+        known.add(label);
+        const item = { id: newItemId(draft, label), label, parentId: null };
+        draft.items.push(item);
+        out.push(item);
       }
-      await this.bible.collection<Revision>('revisions').insertOne(revision, { session });
+    }
+    return out;
+  }
+
+  /**
+   * Write every change and its revision in one transaction, then update the
+   * read model and search index and announce each change. `extra` runs inside
+   * the same transaction for list and proposal updates.
+   */
+  private async commit(
+    changes: Change[],
+    extra?: (session: ClientSession) => Promise<void>,
+    listsAfter: ListDoc[] = [],
+  ): Promise<void> {
+    const addTags = this.newTags(changes);
+    const listUpdates = [...listsAfter];
+    if (addTags.length) {
+      const base =
+        listUpdates.find((l) => l._id === 'tags') ??
+        (this.model.get('lists', 'tags') as ListDoc | undefined) ??
+        ({ _id: 'tags', label: 'Tags', items: [] } as ListDoc);
+      const merged = { ...base, items: [...base.items, ...addTags] };
+      const i = listUpdates.findIndex((l) => l._id === 'tags');
+      if (i >= 0) listUpdates[i] = merged;
+      else listUpdates.push(merged);
+    }
+    await this.transact(async (session) => {
+      for (const ch of changes) {
+        if (ch.prior === null) {
+          await this.collection(ch.collection).insertOne(ch.next, { session });
+        } else {
+          const res = await this.collection(ch.collection).replaceOne(
+            { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
+            ch.next,
+            { session },
+          );
+          if (res.matchedCount !== 1) {
+            throw new RepositoryError(
+              'This entry changed somewhere else. Reload it and try again.',
+            );
+          }
+        }
+        const revision: Revision = {
+          _id: newId(),
+          collection: ch.collection,
+          entryId: ch.next._id,
+          op: ch.op,
+          at: ch.next.modifiedAt as string,
+          prior: ch.prior,
+          ...(ch.note ? { note: ch.note } : {}),
+          ...(ch.proposalId ? { proposalId: ch.proposalId } : {}),
+        };
+        await this.bible.collection<Revision>('revisions').insertOne(revision, { session });
+      }
+      for (const list of listUpdates) {
+        await this.bible
+          .collection<ListDoc>('lists')
+          .replaceOne({ _id: list._id }, list, { session, upsert: true });
+      }
+      await extra?.(session);
     });
-    this.model.put(c, next);
-    this.index.upsert(c, next);
-    this.emitter.emit('change', { bible: this.bible.id, collection: c, id: next._id, op });
+    for (const list of listUpdates) this.model.put('lists', list as unknown as StoredDoc);
+    for (const ch of changes) {
+      this.model.put(ch.collection, ch.next);
+      this.index.upsert(ch.collection, ch.next);
+    }
+    for (const ch of changes) {
+      this.emitter.emit('change', {
+        bible: this.bible.id,
+        collection: ch.collection,
+        id: ch.next._id,
+        op: ch.op,
+      });
+    }
+    if (listUpdates.length) this.emitter.emit('lists');
   }
 
   private async current(c: EntryCollection, id: string): Promise<StoredDoc> {
@@ -157,22 +312,7 @@ export class Repository {
     return at;
   }
 
-  async create<C extends EntryCollection>(c: C, input: CreateInput<C>): Promise<EntryOf<C>> {
-    this.assertCollection(c);
-    const at = this.now().toISOString();
-    const doc = this.validate(c, {
-      ...input,
-      _id: input._id ?? newId(),
-      createdAt: at,
-      modifiedAt: at,
-    });
-    await this.writeWithRevision(c, 'create', doc as StoredDoc, null);
-    return doc;
-  }
-
-  async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
-    this.assertCollection(c);
-    const prior = await this.current(c, id);
+  private stripSystem(patch: Record<string, unknown>): Record<string, unknown> {
     // Identity, creation time, and trash state change only through their own paths.
     const {
       _id: _ignoredId,
@@ -180,21 +320,60 @@ export class Repository {
       modifiedAt: _ignoredModified,
       deletedAt: _ignoredDeleted,
       ...rest
-    } = patch as Record<string, unknown>;
-    const doc = this.validate(c, { ...prior, ...rest, modifiedAt: this.stamp(prior) });
-    await this.writeWithRevision(c, 'update', doc as StoredDoc, prior);
-    return doc;
+    } = patch;
+    return rest;
+  }
+
+  private buildCreate<C extends EntryCollection>(c: C, input: Record<string, unknown>): Change {
+    const at = this.now().toISOString();
+    const rest = this.stripSystem(input);
+    const id = typeof input._id === 'string' && input._id ? input._id : newId();
+    const doc = this.validate(c, { ...rest, _id: id, createdAt: at, modifiedAt: at });
+    if (this.model.get(c, id)) throw new RepositoryError(`An entry with the ID ${id} exists.`);
+    return { collection: c, op: 'create', next: doc as StoredDoc, prior: null };
+  }
+
+  private buildUpdate(
+    c: EntryCollection,
+    prior: StoredDoc,
+    patch: Record<string, unknown>,
+  ): Change {
+    const doc = this.validate(c, {
+      ...prior,
+      ...this.stripSystem(patch),
+      modifiedAt: this.stamp(prior),
+    });
+    return { collection: c, op: 'update', next: doc as StoredDoc, prior };
+  }
+
+  private buildSoftDelete(c: EntryCollection, prior: StoredDoc): Change {
+    if (prior.deletedAt) throw new RepositoryError('This entry is already in the trash.');
+    const at = this.stamp(prior);
+    const doc = this.validate(c, { ...prior, deletedAt: at, modifiedAt: at });
+    return { collection: c, op: 'softDelete', next: doc as StoredDoc, prior };
+  }
+
+  async create<C extends EntryCollection>(c: C, input: CreateInput<C>): Promise<EntryOf<C>> {
+    this.assertCollection(c);
+    const change = this.buildCreate(c, input as Record<string, unknown>);
+    await this.commit([change]);
+    return change.next as EntryOf<C>;
+  }
+
+  async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
+    this.assertCollection(c);
+    const prior = await this.current(c, id);
+    const change = this.buildUpdate(c, prior, patch as Record<string, unknown>);
+    await this.commit([change]);
+    return change.next as EntryOf<C>;
   }
 
   /** Move to the trash (ED-5). Links are kept so a restore brings them back. */
   async softDelete<C extends EntryCollection>(c: C, id: string): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const prior = await this.current(c, id);
-    if (prior.deletedAt) throw new RepositoryError('This entry is already in the trash.');
-    const at = this.stamp(prior);
-    const doc = this.validate(c, { ...prior, deletedAt: at, modifiedAt: at });
-    await this.writeWithRevision(c, 'softDelete', doc as StoredDoc, prior);
-    return doc;
+    const change = this.buildSoftDelete(c, await this.current(c, id));
+    await this.commit([change]);
+    return change.next as EntryOf<C>;
   }
 
   async restore<C extends EntryCollection>(c: C, id: string): Promise<EntryOf<C>> {
@@ -203,7 +382,7 @@ export class Repository {
     if (!prior.deletedAt) throw new RepositoryError('This entry is not in the trash.');
     const { deletedAt: _cleared, ...rest } = prior;
     const doc = this.validate(c, { ...rest, modifiedAt: this.stamp(prior) });
-    await this.writeWithRevision(c, 'restore', doc as StoredDoc, prior);
+    await this.commit([{ collection: c, op: 'restore', next: doc as StoredDoc, prior }]);
     return doc;
   }
 
@@ -216,15 +395,54 @@ export class Repository {
     this.assertCollection(c);
     const doc = this.model.get(c, id);
     if (!doc || (doc.deletedAt && !opts.includeDeleted)) return undefined;
-    return this.validate(c, doc);
+    return doc as EntryOf<C>;
   }
 
-  list<C extends EntryCollection>(c: C, opts: { includeDeleted?: boolean } = {}): EntryOf<C>[] {
+  list<C extends EntryCollection>(
+    c: C,
+    opts: { includeDeleted?: boolean; onlyDeleted?: boolean } = {},
+  ): EntryOf<C>[] {
     this.assertCollection(c);
     return this.model
       .all(c)
-      .filter((d) => opts.includeDeleted || !d.deletedAt)
-      .map((d) => this.validate(c, d));
+      .filter((d) =>
+        opts.onlyDeleted ? Boolean(d.deletedAt) : opts.includeDeleted || !d.deletedAt,
+      ) as EntryOf<C>[];
+  }
+
+  /** Every entry in the trash, newest first (ED-5). */
+  trash(): { collection: EntryCollection; entry: StoredDoc }[] {
+    const out: { collection: EntryCollection; entry: StoredDoc }[] = [];
+    for (const c of Object.keys(entrySchemas) as EntryCollection[]) {
+      for (const d of this.model.all(c)) if (d.deletedAt) out.push({ collection: c, entry: d });
+    }
+    return out.sort((a, b) => String(b.entry.deletedAt).localeCompare(String(a.entry.deletedAt)));
+  }
+
+  private readonly customSpecs = (sectionId: string) => this.model.customSpecs(sectionId);
+
+  /** Field warnings for an entry (ED-10). They never block a write. */
+  warnings(c: EntryCollection, doc: StoredDoc): FieldWarning[] {
+    return computeWarnings(c, manifests[c], doc, {
+      get: (col, id) => this.model.get(col, id),
+      find: (id) => this.model.find(id),
+      list: (id) => this.model.get('lists', id) as ListDoc | undefined,
+      customSpecs: this.customSpecs,
+    });
+  }
+
+  /** Entries that refer to this one, through links or reference fields (ED-9). */
+  backlinks(id: string, opts: { includeDeleted?: boolean } = {}): Backlink[] {
+    return this.model.backlinks(id, opts);
+  }
+
+  /** What deleting an entry would leave pointing at the trash (ED-5). */
+  linkedFrom(id: string): { count: number; entries: (Backlink & { title: string })[] } {
+    const entries = this.model.backlinks(id).map((b) => ({
+      ...b,
+      title: entryTitle(this.model.get(b.collection, b.id)),
+    }));
+    return { count: new Set(entries.map((e) => `${e.collection}:${e.id}`)).size, entries };
   }
 
   async revisions(c: EntryCollection, id: string): Promise<Revision[]> {
@@ -233,5 +451,361 @@ export class Repository {
       .find({ collection: c, entryId: id })
       .sort({ _id: 1 })
       .toArray();
+  }
+
+  /**
+   * The history of one entry, newest first, each with the entry as it stood
+   * after that write (ED-4). A revision holds the document before its write,
+   * so the state after write N is the prior of write N+1, or the current one.
+   */
+  async history(c: EntryCollection, id: string): Promise<RevisionView[]> {
+    this.assertCollection(c);
+    const current = await this.current(c, id);
+    const revs = await this.revisions(c, id);
+    return revs
+      .map((r, i) => ({
+        _id: r._id,
+        op: r.op,
+        at: r.at,
+        note: r.note ?? null,
+        proposalId: r.proposalId ?? null,
+        snapshot: revs[i + 1]?.prior ?? current,
+      }))
+      .reverse();
+  }
+
+  private async revision(c: EntryCollection, id: string, revisionId: string) {
+    const view = (await this.history(c, id)).find((r) => r._id === revisionId);
+    if (!view) throw new RepositoryError('That revision does not belong to this entry.');
+    return view;
+  }
+
+  /** A side-by-side comparison of one revision with the current entry (ED-4). */
+  async revisionDiff(
+    c: EntryCollection,
+    id: string,
+    revisionId: string,
+  ): Promise<{ revision: RevisionView; current: StoredDoc; changes: FieldChange[] }> {
+    const revision = await this.revision(c, id, revisionId);
+    const current = await this.current(c, id);
+    return { revision, current, changes: diffEntries(revision.snapshot, current) };
+  }
+
+  /** Bring back the content of an earlier revision as a new write (ED-4). Trash state is kept. */
+  async restoreRevision<C extends EntryCollection>(
+    c: C,
+    id: string,
+    revisionId: string,
+  ): Promise<EntryOf<C>> {
+    const revision = await this.revision(c, id, revisionId);
+    const prior = await this.current(c, id);
+    const doc = this.validate(c, {
+      ...contentOf(revision.snapshot),
+      _id: prior._id,
+      createdAt: prior.createdAt,
+      modifiedAt: this.stamp(prior),
+      ...(prior.deletedAt ? { deletedAt: prior.deletedAt } : {}),
+    });
+    await this.commit([
+      {
+        collection: c,
+        op: 'update',
+        next: doc as StoredDoc,
+        prior,
+        note: `Restored the version from ${revision.at}`,
+      },
+    ]);
+    return doc;
+  }
+
+  // ---------- lists (ED-8) ----------
+
+  private allDocs(): CollectionDocs[] {
+    return (Object.keys(entrySchemas) as EntryCollection[]).map((c) => ({
+      collection: c,
+      manifest: manifests[c],
+      docs: this.model.all(c),
+    }));
+  }
+
+  private storedList(listId: string): ListDoc {
+    const doc = this.model.get('lists', listId);
+    if (!doc) throw new RepositoryError(`There is no list called ${listId}.`);
+    return ListDoc.parse(doc);
+  }
+
+  private derivedItems(listId: DerivedListId): ListViewItem[] {
+    const live = (c: EntryCollection) => this.model.all(c).filter((d) => !d.deletedAt);
+    if (listId === 'families') {
+      return live('families').map((d) => ({
+        id: d._id,
+        label: String(d.name),
+        parentId: null,
+        usage: this.model.backlinks(d._id).length,
+      }));
+    }
+    if (listId === 'sectionNames') {
+      return live('customSections').map((d) => ({
+        id: d._id,
+        label: String(d.name),
+        parentId: null,
+        usage: live('customEntries').filter((e) => e.sectionId === d._id).length,
+      }));
+    }
+    return live('eraStates')
+      .sort((a, b) => Number(a.startYear) - Number(b.startYear))
+      .map((d) => ({
+        id: d._id,
+        label: String(d.name),
+        parentId: null,
+        usage: this.model.backlinks(d._id).length,
+        detail: `${String(d.startYear)} to ${String(d.endYear)}`,
+      }));
+  }
+
+  /** Every editable list with how many entries use each item. */
+  lists(): ListView[] {
+    const all = this.allDocs();
+    const stored: ListView[] = LIST_IDS.filter((id) => this.model.get('lists', id)).map((id) => {
+      const list = this.storedList(id);
+      return {
+        _id: id,
+        label: list.label,
+        derived: false,
+        fixedItems: FIXED_ITEM_LISTS.includes(id),
+        items: list.items.map((item) => ({
+          ...item,
+          usage: countListUsage(id, item, all, this.customSpecs),
+        })),
+      };
+    });
+    const labels: Record<DerivedListId, string> = {
+      families: 'Families',
+      sectionNames: 'Section names',
+      eraRanges: 'Era names and ranges',
+    };
+    const derived: ListView[] = DERIVED_LIST_IDS.map((id) => ({
+      _id: id,
+      label: labels[id],
+      derived: true,
+      fixedItems: true,
+      items: this.derivedItems(id),
+    }));
+    return [...stored, ...derived];
+  }
+
+  /**
+   * Rename a list item and update every entry that uses it, in one
+   * transaction with a revision for each entry (ED-8).
+   */
+  async renameListItem(
+    listId: string,
+    itemId: string,
+    label: string,
+  ): Promise<{ updated: number; from: string }> {
+    const to = label.trim();
+    if (!to) throw new RepositoryError('A list item needs a name.');
+    if (isDerived(listId)) {
+      const collection =
+        listId === 'families'
+          ? 'families'
+          : listId === 'sectionNames'
+            ? 'customSections'
+            : 'eraStates';
+      const prior = await this.current(collection, itemId);
+      const from = String(prior.name);
+      const { patch } = derivedRename(listId, prior, to);
+      await this.commit([
+        { ...this.buildUpdate(collection, prior, patch), note: `Renamed ${from} to ${to}` },
+      ]);
+      return { updated: 1, from };
+    }
+    const list = this.storedList(listId);
+    const item = list.items.find((i) => i.id === itemId);
+    if (!item) throw new RepositoryError(`The ${list.label} list has no item ${itemId}.`);
+    const from = item.label;
+    if (from === to) return { updated: 0, from };
+    const clash = list.items.find((i) => i.id !== itemId && i.label === to);
+    if (clash && listId !== 'tags') {
+      throw new RepositoryError(`The ${list.label} list already has an item called ${to}.`);
+    }
+    // Renaming a tag onto an existing tag merges the two.
+    const items = clash
+      ? list.items.filter((i) => i.id !== itemId)
+      : list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
+    const patches = renameCascade(listId, from, to, this.allDocs(), this.customSpecs);
+    const changes: Change[] = [];
+    for (const p of patches) {
+      const collection = p.collection as EntryCollection;
+      const prior = await this.current(collection, p.id);
+      changes.push({
+        ...this.buildUpdate(collection, prior, p.patch),
+        note: `Renamed ${from} to ${to} in ${list.label}`,
+      });
+    }
+    await this.commit(changes, undefined, [{ ...list, items }]);
+    return { updated: changes.length, from };
+  }
+
+  async addListItem(
+    listId: string,
+    label: string,
+    parentId: string | null = null,
+  ): Promise<ListItem> {
+    if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
+      throw new RepositoryError('Items in this list come from the entries themselves.');
+    }
+    const name = label.trim();
+    if (!name) throw new RepositoryError('A list item needs a name.');
+    const list = this.storedList(listId);
+    if (list.items.some((i) => i.label === name)) {
+      throw new RepositoryError(`The ${list.label} list already has an item called ${name}.`);
+    }
+    if (parentId && !list.items.some((i) => i.id === parentId)) {
+      throw new RepositoryError('The parent item is not in this list.');
+    }
+    const item: ListItem = { id: newItemId(list, name), label: name, parentId };
+    await this.commit([], undefined, [{ ...list, items: [...list.items, item] }]);
+    return item;
+  }
+
+  /** Remove an unused item. An item in use is kept, and the message says how many use it. */
+  async removeListItem(listId: string, itemId: string): Promise<void> {
+    if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
+      throw new RepositoryError('Items in this list come from the entries themselves.');
+    }
+    const list = this.storedList(listId);
+    const item = list.items.find((i) => i.id === itemId);
+    if (!item) throw new RepositoryError(`The ${list.label} list has no item ${itemId}.`);
+    const usage = countListUsage(listId, item, this.allDocs(), this.customSpecs);
+    if (usage > 0) {
+      throw new RepositoryError(
+        `${usage} ${usage === 1 ? 'entry uses' : 'entries use'} ${item.label}. Change them first, or rename the item instead.`,
+      );
+    }
+    if (list.items.some((i) => i.parentId === itemId)) {
+      throw new RepositoryError(`${item.label} has items under it. Move or remove them first.`);
+    }
+    await this.commit([], undefined, [
+      { ...list, items: list.items.filter((i) => i.id !== itemId) },
+    ]);
+  }
+
+  // ---------- proposals (ED-7) ----------
+
+  private proposals() {
+    return this.bible.collection<Proposal>('proposals');
+  }
+
+  /** Record a change for approval. Nothing in the bible changes. */
+  async propose(input: {
+    source: Proposal['source'];
+    op: Proposal['op'];
+    collection: string;
+    targetId?: string | null;
+    data?: Record<string, unknown>;
+    reason?: string;
+  }): Promise<Proposal> {
+    this.assertCollection(input.collection);
+    const target = input.targetId ? this.model.get(input.collection, input.targetId) : undefined;
+    if (input.op !== 'create' && !target) {
+      throw new RepositoryError(`No ${input.collection} entry has the ID ${input.targetId}.`);
+    }
+    const proposal = Proposal.parse({
+      _id: newId(),
+      source: input.source,
+      op: input.op,
+      collection: input.collection,
+      targetId: input.targetId ?? null,
+      data: input.data ?? {},
+      baseModifiedAt: target ? target.modifiedAt : null,
+      reason: input.reason ?? '',
+      createdAt: this.now().toISOString(),
+    });
+    await this.proposals().insertOne(proposal);
+    this.model.put('proposals', proposal as unknown as StoredDoc);
+    return proposal;
+  }
+
+  listProposals(state?: Proposal['state']): Proposal[] {
+    return (this.model.all('proposals') as unknown as Proposal[])
+      .filter((p) => !state || p.state === state)
+      .sort((a, b) => a._id.localeCompare(b._id));
+  }
+
+  /** What a proposal would change, against the entry as it is now. */
+  proposalDiff(id: string): { proposal: Proposal; changes: FieldChange[]; conflict: boolean } {
+    const proposal = this.proposal(id);
+    const c = proposal.collection as EntryCollection;
+    const current = proposal.targetId ? (this.model.get(c, proposal.targetId) ?? null) : null;
+    const after =
+      proposal.op === 'delete' ? null : { ...(current ?? {}), ...this.stripSystem(proposal.data) };
+    const conflict =
+      proposal.baseModifiedAt !== null && current?.modifiedAt !== proposal.baseModifiedAt;
+    return { proposal, changes: diffEntries(current, after), conflict };
+  }
+
+  private proposal(id: string): Proposal {
+    const p = this.model.get('proposals', id);
+    if (!p) throw new RepositoryError(`There is no proposal with the ID ${id}.`);
+    return Proposal.parse(p);
+  }
+
+  /**
+   * Apply an approved proposal through the write path and record the approval
+   * on the proposal and on the entry's revision, in one transaction (ED-7).
+   * `edits` replaces the proposed data when the person changed it first.
+   */
+  async applyProposal(id: string, edits?: Record<string, unknown>): Promise<Proposal> {
+    const proposal = this.proposal(id);
+    if (proposal.state !== 'pending') {
+      throw new RepositoryError(`This proposal is already ${proposal.state}.`);
+    }
+    const c = proposal.collection as EntryCollection;
+    this.assertCollection(c);
+    const data = edits ?? proposal.data;
+    let change: Change;
+    if (proposal.op === 'create') {
+      change = this.buildCreate(c, { ...data, _id: proposal.targetId ?? data._id });
+    } else {
+      const prior = await this.current(c, String(proposal.targetId));
+      change =
+        proposal.op === 'update'
+          ? this.buildUpdate(c, prior, data)
+          : this.buildSoftDelete(c, prior);
+    }
+    change.note = `Approved a proposal from ${proposal.source}`;
+    change.proposalId = proposal._id;
+    const decided: Proposal = {
+      ...proposal,
+      state: 'approved',
+      decidedAt: this.now().toISOString(),
+      edited: edits !== undefined,
+      appliedEntryId: change.next._id,
+      data,
+    };
+    await this.commit([change], async (session) => {
+      const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided, {
+        session,
+      });
+      if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    });
+    this.model.put('proposals', decided as unknown as StoredDoc);
+    return decided;
+  }
+
+  async rejectProposal(id: string): Promise<Proposal> {
+    const proposal = this.proposal(id);
+    if (proposal.state !== 'pending') {
+      throw new RepositoryError(`This proposal is already ${proposal.state}.`);
+    }
+    const decided: Proposal = {
+      ...proposal,
+      state: 'rejected',
+      decidedAt: this.now().toISOString(),
+    };
+    await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
+    this.model.put('proposals', decided as unknown as StoredDoc);
+    return decided;
   }
 }

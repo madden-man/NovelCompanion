@@ -62,9 +62,11 @@ export function entry<Shape extends z.ZodRawShape>(shape: Shape) {
   return EntryBase.extend(shape);
 }
 
-/** An optional year range, used by era states, cultural entries, and places lived. */
-export const YearRange = z
-  .strictObject({ startYear: Year.nullable(), endYear: Year.nullable() })
-  .refine((r) => r.startYear === null || r.endYear === null || r.endYear >= r.startYear, {
-    message: 'The end year is before the start year',
-  });
+/**
+ * An optional year range, used by era states, cultural entries, and places
+ * lived. An end before the start is a warning (ED-10), never a rejection.
+ */
+export const YearRange = z.strictObject({ startYear: Year.nullable(), endYear: Year.nullable() });
+
+/** A real-world calendar date, YYYY-MM-DD, for session logs. */
+export const CalendarDate = z.iso.date();

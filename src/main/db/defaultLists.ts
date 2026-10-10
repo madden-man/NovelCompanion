@@ -56,5 +56,16 @@ export function defaultLists(): ListDoc[] {
       label: 'Romanization systems',
       items: [item('mandarin', 'Hanyu Pinyin'), item('cantonese', 'Jyutping')],
     },
+    {
+      _id: 'languages',
+      label: 'Languages',
+      items: [
+        item('mandarin', 'Mandarin'),
+        item('cantonese', 'Cantonese'),
+        item('english', 'English'),
+      ],
+    },
+    /** Tags are added as entries use them, and renamed here (ED-8). */
+    { _id: 'tags', label: 'Tags', items: [] },
   ];
 }

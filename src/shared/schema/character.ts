@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { Id, StoryDate, Year, entry } from './common';
+import { commonFields, f, yearRange } from './manifest';
+import type { FieldSpec } from './manifest';
 
 /** CH-2 names. */
 export const Names = z.strictObject({
@@ -38,3 +40,76 @@ export const Character = entry({
   placesLived: z.array(PlaceLived).default([]),
 });
 export type Character = z.infer<typeof Character>;
+
+export const characterFields: FieldSpec[] = [
+  ...commonFields,
+  f.object(
+    'names',
+    'Names',
+    [
+      f.text('full', 'Full name', { required: true }),
+      f.text('chinese', 'Name in Chinese characters'),
+      f.text('romanization', 'Romanization'),
+      f.enum(
+        'order',
+        'Name order',
+        [
+          { value: 'family-last', label: 'Family name last' },
+          { value: 'family-first', label: 'Family name first' },
+        ],
+        { hint: 'Chinese names usually put the family name first.' },
+      ),
+      f.text('birthName', 'Birth name'),
+      f.text('marriedName', 'Married name'),
+      f.strings('nicknames', 'Nicknames'),
+      f.objectList(
+        'calledBy',
+        'What others call them',
+        [
+          f.ref('characterId', 'Character', ['characters'], { required: true }),
+          f.text('name', 'Calls them', { required: true }),
+        ],
+        { itemLabel: 'name' },
+      ),
+    ],
+    { required: true },
+  ),
+  f.storyDate('birth', 'Birth', {
+    required: true,
+    warnings: ['impossible-date'],
+    hint: 'A full date, a year, or unknown.',
+  }),
+  f.storyDate('death', 'Death', {
+    nullable: true,
+    warnings: ['death-before-birth', 'impossible-date'],
+    hint: 'Leave blank if the character is not recorded as dead.',
+  }),
+  f.text('birthplace', 'Birthplace'),
+  f.refs('familyIds', 'Families', ['families']),
+  f.longText('backstory', 'Backstory'),
+  f.objectList(
+    'voiceNotes',
+    'Voice notes',
+    [
+      f.yearOrAge('at', 'At year or age', {
+        required: true,
+        warnings: ['outside-lifetime'],
+      }),
+      f.longText('text', 'Note', { required: true }),
+    ],
+    { itemLabel: 'text' },
+  ),
+  f.objectList(
+    'placesLived',
+    'Places lived',
+    [
+      f.text('place', 'Place', { required: true }),
+      ...yearRange('startYear', 'endYear', ['From', 'To']).map((s) => ({
+        ...s,
+        required: true,
+        warnings: [...s.warnings, 'outside-lifetime'],
+      })),
+    ],
+    { itemLabel: 'place' },
+  ),
+];

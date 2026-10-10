@@ -1,19 +1,20 @@
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 const ROOT = join(import.meta.dirname, '../..');
 
-let server: MongoMemoryServer;
+let server: MongoMemoryReplSet;
 let app: ElectronApplication;
 let page: Page;
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  // A local MongoDB, so the app never reads the keychain or reaches Atlas.
-  server = await MongoMemoryServer.create();
+  // A local MongoDB replica set (the write path uses transactions), so the
+  // app never reads the keychain or reaches Atlas.
+  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   app = await electron.launch({
     args: [ROOT],
     env: { ...process.env, NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri() },
@@ -176,6 +177,11 @@ test('ARCH-8 opening a bible makes it current and shows its name in the window',
 });
 
 test('ARCH-8 a second bible made with the New bible form can be switched to', async () => {
+  // With a bible open, the bible list and the New bible form live under Bibles in the rail.
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Bibles' })
+    .click();
   await page.getByLabel('Name').fill('East Winds');
   await expect(page.getByLabel('ID')).toHaveValue('east-winds');
   await page.getByRole('button', { name: 'Create bible' }).click();
@@ -189,6 +195,10 @@ test('ARCH-8 a second bible made with the New bible form can be switched to', as
     bible: { id: 'east-winds', name: 'East Winds' },
   });
 
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Bibles' })
+    .click();
   await page.getByRole('button', { name: 'Open Tide Lines' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines');
   expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual({

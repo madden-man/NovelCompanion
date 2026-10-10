@@ -1,3 +1,6 @@
+import { customFieldSpecs, isEntryCollection, manifests } from '../../shared/schema';
+import type { CustomSection, FieldSpec } from '../../shared/schema';
+import { outgoingRefs } from '../../shared/domain/refs';
 import type { BibleHandle } from '../db/bibles';
 
 export interface StoredDoc {
@@ -25,10 +28,13 @@ const NOT_LOADED = new Set(['revisions']);
  */
 export class ReadModel {
   private readonly maps = new Map<string, Map<string, StoredDoc>>();
+  /** target ID to the entries that refer to it; rebuilt after a write when next asked. */
+  private reverse: Map<string, { collection: string; id: string; kind: string }[]> | null = null;
 
   /** Load every collection of one bible (its prefixed collections only). */
   async load(bible: BibleHandle): Promise<void> {
     this.maps.clear();
+    this.reverse = null;
     const names = (await bible.collectionNames()).filter((n) => !NOT_LOADED.has(n));
     await Promise.all(
       names.map(async (name) => {
@@ -56,14 +62,26 @@ export class ReadModel {
 
   put(collection: string, doc: StoredDoc): void {
     this.map(collection).set(doc._id, doc);
+    this.reverse = null;
   }
 
   remove(collection: string, id: string): void {
     this.maps.get(collection)?.delete(id);
+    this.reverse = null;
   }
 
   get(collection: string, id: string): StoredDoc | undefined {
     return this.maps.get(collection)?.get(id);
+  }
+
+  /** Find an entry by ID in any entry collection. */
+  find(id: string): { collection: string; doc: StoredDoc } | undefined {
+    for (const [collection, docs] of this.maps) {
+      if (!isEntryCollection(collection)) continue;
+      const doc = docs.get(id);
+      if (doc) return { collection, doc };
+    }
+    return undefined;
   }
 
   all(collection: string): StoredDoc[] {
@@ -74,19 +92,45 @@ export class ReadModel {
     return this.maps.get(collection)?.size ?? 0;
   }
 
-  /** Entries whose `links` point at `targetId` (ARCHITECTURE rule 4). */
-  backlinks(targetId: string): Backlink[] {
-    const out: Backlink[] = [];
+  /** The specs of a custom section's own fields, for custom entries. */
+  customSpecs(sectionId: string): FieldSpec[] | undefined {
+    const section = this.get('customSections', sectionId) as CustomSection | undefined;
+    return section ? customFieldSpecs(section) : undefined;
+  }
+
+  private buildReverse() {
+    const reverse = new Map<string, { collection: string; id: string; kind: string }[]>();
+    const custom = (id: string) => this.customSpecs(id);
     for (const [collection, docs] of this.maps) {
+      if (!isEntryCollection(collection)) continue;
+      const manifest = manifests[collection];
       for (const doc of docs.values()) {
-        const links = Array.isArray(doc.links)
-          ? (doc.links as { targetId: string; kind: string }[])
-          : [];
-        for (const l of links) {
-          if (l.targetId === targetId) out.push({ collection, id: doc._id, kind: l.kind });
+        for (const ref of outgoingRefs(manifest, doc, custom)) {
+          let list = reverse.get(ref.targetId);
+          if (!list) reverse.set(ref.targetId, (list = []));
+          if (
+            !list.some(
+              (b) => b.collection === collection && b.id === doc._id && b.kind === ref.kind,
+            )
+          ) {
+            list.push({ collection, id: doc._id, kind: ref.kind });
+          }
         }
       }
     }
-    return out;
+    return reverse;
+  }
+
+  /**
+   * Entries that refer to `targetId` through their links or any reference
+   * field (ARCHITECTURE rule 4, ED-9). Entries in the trash are left out
+   * unless asked for, so "Linked from" shows only live entries.
+   */
+  backlinks(targetId: string, opts: { includeDeleted?: boolean } = {}): Backlink[] {
+    this.reverse ??= this.buildReverse();
+    return (this.reverse.get(targetId) ?? [])
+      .filter((b) => b.id !== targetId)
+      .filter((b) => opts.includeDeleted || !this.get(b.collection, b.id)?.deletedAt)
+      .map((b) => ({ ...b }));
   }
 }

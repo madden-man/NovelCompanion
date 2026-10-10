@@ -1,7 +1,24 @@
-import { ENTRY_COLLECTIONS } from '../../../shared/schema';
 import type { BibleHandle } from '../bibles';
 import { defaultLists } from '../defaultLists';
 import type { Migration } from './types';
+
+/** The entry collections as they stood when this migration was written. Migrations never change. */
+const M0_COLLECTIONS = [
+  'characters',
+  'families',
+  'unions',
+  'parentLinks',
+  'worldEvents',
+  'eraStates',
+  'culturalEntries',
+  'glossaryTerms',
+  'books',
+  'parts',
+  'chapters',
+  'facts',
+  'knowledgeRecords',
+  'customEntries',
+];
 
 /** Prefixed collections, indexes, and the default lists every new bible starts with (ARCH-8). */
 export const initial: Migration = {
@@ -9,7 +26,7 @@ export const initial: Migration = {
   name: 'initial collections, indexes, and default lists',
   async up(bible: BibleHandle) {
     const existing = new Set(await bible.collectionNames());
-    for (const name of [...ENTRY_COLLECTIONS, 'lists', 'customSections', 'revisions']) {
+    for (const name of [...M0_COLLECTIONS, 'lists', 'customSections', 'revisions']) {
       if (!existing.has(name)) await bible.db.createCollection(bible.qualified(name));
     }
     await bible.collection('revisions').createIndex({ entryId: 1, at: 1 });

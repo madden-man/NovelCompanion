@@ -21,6 +21,12 @@ export async function connect(uri: string, options: MongoClientOptions = {}): Pr
     appName: 'novel-companion',
     ...options,
   });
-  await client.connect();
+  try {
+    await client.connect();
+  } catch (e) {
+    // A failed connect can leave monitors and sockets open; release them.
+    await client.close().catch(() => undefined);
+    throw e;
+  }
   return { client, db: client.db(DATABASE_NAME), close: () => client.close() };
 }

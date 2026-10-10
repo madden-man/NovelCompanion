@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { Id, StoryDate, Year, entry } from './common';
+import { commonFields, f, yearRange } from './manifest';
+import type { FieldSpec } from './manifest';
 
 /** World event (A8): a date or year, or a range when `end` is set. */
 export const WorldEvent = entry({
@@ -15,7 +17,33 @@ export const WorldEvent = entry({
 });
 export type WorldEvent = z.infer<typeof WorldEvent>;
 
-/** Era state (was decade state, A8): any year range. */
+export const worldEventFields: FieldSpec[] = [
+  ...commonFields,
+  f.storyDate('start', 'Date or start', { required: true, warnings: ['impossible-date'] }),
+  f.storyDate('end', 'End', {
+    nullable: true,
+    warnings: ['range-end-before-start', 'impossible-date'],
+    hint: 'Leave blank for a single date or year.',
+  }),
+  f.enum(
+    'reality',
+    'Real or invented',
+    [
+      { value: 'real', label: 'Real' },
+      { value: 'invented', label: 'Invented' },
+    ],
+    { required: true },
+  ),
+  f.listItem('categoryId', 'Category', 'eventCategories', { required: true }),
+  f.strings('regions', 'Regions'),
+  f.refs('placeIds', 'Places', ['places']),
+  f.refs('characterIds', 'Characters affected', ['characters']),
+  f.boolean('formative', 'Formative', {
+    hint: 'Formative events reach briefs for anyone who lived through them.',
+  }),
+];
+
+/** Era state (was decade state, A8): any year range. An end before the start is a warning. */
 export const EraState = entry({
   name: z.string().min(1),
   startYear: Year,
@@ -25,8 +53,22 @@ export const EraState = entry({
   economy: z.string().default(''),
   politics: z.string().default(''),
   dailyLife: z.string().default(''),
-}).refine((e) => e.endYear >= e.startYear, { message: 'The era ends before it starts' });
+});
 export type EraState = z.infer<typeof EraState>;
+
+export const eraStateFields: FieldSpec[] = [
+  ...commonFields,
+  f.text('name', 'Era name', { required: true }),
+  ...yearRange('startYear', 'endYear', ['Start year', 'End year'], {
+    startRequired: true,
+    nullable: false,
+  }).map((s) => ({ ...s, required: true })),
+  f.longText('technology', 'Technology'),
+  f.longText('climate', 'Climate'),
+  f.longText('economy', 'Economy'),
+  f.longText('politics', 'Politics'),
+  f.longText('dailyLife', 'Daily life'),
+];
 
 /** Cultural entry (CU-1): a community list item ID and the years it applies to. */
 export const CulturalEntry = entry({
@@ -37,6 +79,16 @@ export const CulturalEntry = entry({
 });
 export type CulturalEntry = z.infer<typeof CulturalEntry>;
 
+export const culturalEntryFields: FieldSpec[] = [
+  ...commonFields,
+  f.listItem('communityId', 'Community', 'communities', { required: true }),
+  ...yearRange('startYear', 'endYear', ['Applies from', 'Applies to']).map((s) => ({
+    ...s,
+    required: true,
+  })),
+  f.longText('generationNotes', 'Generation notes'),
+];
+
 export const GlossaryTerm = entry({
   characters: z.string().min(1),
   romanization: z.string().default(''),
@@ -45,3 +97,46 @@ export const GlossaryTerm = entry({
   usageNote: z.string().default(''),
 });
 export type GlossaryTerm = z.infer<typeof GlossaryTerm>;
+
+export const glossaryTermFields: FieldSpec[] = [
+  ...commonFields,
+  f.text('characters', 'Term in characters', { required: true }),
+  f.text('romanization', 'Romanization'),
+  f.listItem('language', 'Language', 'languages', { required: true }),
+  f.longText('meaning', 'Meaning'),
+  f.longText('usageNote', 'Usage note'),
+];
+
+/** A description of a place for a span of years (PC-1). */
+export const PlaceDescription = z.strictObject({
+  startYear: Year.nullable(),
+  endYear: Year.nullable(),
+  text: z.string(),
+});
+
+/** Places nest: city, district, building (PC-1). */
+export const Place = entry({
+  parentId: Id.nullable().default(null),
+  communityId: z.string().nullable().default(null),
+  descriptions: z.array(PlaceDescription).default([]),
+});
+export type Place = z.infer<typeof Place>;
+
+export const placeFields: FieldSpec[] = [
+  ...commonFields,
+  f.ref('parentId', 'Inside', ['places'], {
+    nullable: true,
+    warnings: ['missing-target', 'self-reference'],
+    hint: 'The larger place this one sits in.',
+  }),
+  f.listItem('communityId', 'Community', 'communities', { nullable: true }),
+  f.objectList(
+    'descriptions',
+    'Descriptions by year',
+    [
+      ...yearRange('startYear', 'endYear').map((s) => ({ ...s, required: true })),
+      f.longText('text', 'Description', { required: true }),
+    ],
+    { itemLabel: 'text' },
+  ),
+];

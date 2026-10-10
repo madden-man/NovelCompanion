@@ -1,7 +1,122 @@
 import { z } from 'zod';
 import { BibleName, BibleSlug } from './bible';
+import { AnyListIdSchema, ENTRY_COLLECTIONS, entrySchemas } from './schema';
+import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
+
+export const CollectionName = z.enum(ENTRY_COLLECTIONS as [EntryCollection, ...EntryCollection[]]);
+
+const EntryId = z.string().min(1).max(64);
+
+/** An entry as it travels to the renderer. Main has already validated it with its schema. */
+export const WireEntry = z.looseObject({ _id: z.string().min(1), modifiedAt: z.string() });
+export type WireEntry = z.output<typeof WireEntry>;
+
+export const WireWarning = z.strictObject({
+  path: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+
+const WireBacklink = z.strictObject({
+  collection: CollectionName,
+  id: z.string(),
+  kind: z.string(),
+  title: z.string(),
+});
+
+const WithWarnings = z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) });
+
+const SYSTEM_FIELDS = ['createdAt', 'modifiedAt', 'deletedAt'];
+const PLACEHOLDER_TIME = '2000-01-01T00:00:00.000Z';
+
+/** Check a whole new entry against its collection's schema, as the write path will. */
+function checkNewEntry(
+  v: { collection: EntryCollection; data: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  for (const k of SYSTEM_FIELDS) {
+    if (k in v.data)
+      ctx.addIssue({ code: 'custom', path: ['data', k], message: `${k} is set by the app` });
+  }
+  const r = entrySchemas[v.collection].safeParse({
+    ...v.data,
+    _id: typeof v.data._id === 'string' ? v.data._id : 'NEW',
+    createdAt: PLACEHOLDER_TIME,
+    modifiedAt: PLACEHOLDER_TIME,
+  });
+  if (!r.success) {
+    for (const issue of r.error.issues) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data', ...issue.path.map(String)],
+        message: issue.message,
+      });
+    }
+  }
+}
+
+/** Check each field of a patch against its collection's schema. */
+function checkPatch(
+  v: { collection: EntryCollection; patch: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const shape = (entrySchemas[v.collection] as unknown as { shape: Record<string, z.ZodType> })
+    .shape;
+  for (const [k, value] of Object.entries(v.patch)) {
+    if (k === '_id' || SYSTEM_FIELDS.includes(k)) {
+      ctx.addIssue({ code: 'custom', path: ['patch', k], message: `${k} is set by the app` });
+      continue;
+    }
+    const field = shape[k];
+    if (!field) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['patch', k],
+        message: `${v.collection} has no field ${k}`,
+      });
+      continue;
+    }
+    const r = field.safeParse(value);
+    if (!r.success) {
+      for (const issue of r.error.issues) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['patch', k, ...issue.path.map(String)],
+          message: issue.message,
+        });
+      }
+    }
+  }
+}
+
+const EntryRef = z.strictObject({ collection: CollectionName, id: EntryId });
+
+export const WireListItem = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  parentId: z.string().nullable(),
+  usage: z.int().min(0),
+  detail: z.string().optional(),
+});
+
+export const WireList = z.strictObject({
+  _id: AnyListIdSchema,
+  label: z.string(),
+  derived: z.boolean(),
+  fixedItems: z.boolean(),
+  items: z.array(WireListItem),
+});
+export type WireList = z.output<typeof WireList>;
+
+const RevisionSummary = z.strictObject({
+  _id: z.string(),
+  op: z.enum(['create', 'update', 'softDelete', 'restore']),
+  at: z.string(),
+  note: z.string().nullable(),
+  proposalId: z.string().nullable(),
+});
 
 /**
  * The IPC contract (ARCHITECTURE rule 3). Every channel the renderer can call
@@ -36,6 +151,137 @@ export const contract = {
     request: z.strictObject({}),
     response: z.strictObject({ bible: BibleSummary.nullable() }),
   },
+  /** Entries in one collection, each with its field warnings (ED-10). */
+  'entry.list': {
+    request: z.strictObject({
+      collection: CollectionName,
+      trash: z.enum(['exclude', 'only', 'include']).default('exclude'),
+    }),
+    response: z.strictObject({ entries: z.array(WithWarnings) }),
+  },
+  /** One entry with its warnings and what links to it (ED-9, ED-10). */
+  'entry.get': {
+    request: EntryRef,
+    response: z.strictObject({
+      entry: WireEntry,
+      warnings: z.array(WireWarning),
+      backlinks: z.array(WireBacklink),
+    }),
+  },
+  'entry.create': {
+    request: z
+      .strictObject({ collection: CollectionName, data: z.record(z.string(), z.unknown()) })
+      .superRefine(checkNewEntry),
+    response: WithWarnings,
+  },
+  /** Change some fields. Warnings come back; they never block the write (ED-10). */
+  'entry.update': {
+    request: z
+      .strictObject({
+        collection: CollectionName,
+        id: EntryId,
+        patch: z.record(z.string(), z.unknown()),
+      })
+      .superRefine(checkPatch),
+    response: WithWarnings,
+  },
+  /** Move an entry to the trash (ED-5). */
+  'entry.delete': { request: EntryRef, response: WithWarnings },
+  'entry.restore': { request: EntryRef, response: WithWarnings },
+  /** What links to an entry, shown before it is deleted (ED-5). */
+  'entry.linkedFrom': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ count: z.int().min(0), entries: z.array(WireBacklink) }),
+  },
+  'entry.backlinks': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ backlinks: z.array(WireBacklink) }),
+  },
+  /** Titles and sections for entry IDs, for link chips that may point anywhere. */
+  'entry.lookup': {
+    request: z.strictObject({ ids: z.array(EntryId).max(500) }),
+    response: z.strictObject({
+      entries: z.array(
+        z.strictObject({
+          id: z.string(),
+          collection: CollectionName,
+          title: z.string(),
+          inTrash: z.boolean(),
+        }),
+      ),
+    }),
+  },
+  'trash.list': {
+    request: z.strictObject({}),
+    response: z.strictObject({
+      entries: z.array(z.strictObject({ collection: CollectionName, entry: WireEntry })),
+    }),
+  },
+  /** Revision history of one entry, newest first (ED-4). */
+  'revisions.list': {
+    request: EntryRef,
+    response: z.strictObject({ revisions: z.array(RevisionSummary) }),
+  },
+  'revisions.diff': {
+    request: EntryRef.extend({ revisionId: z.string().min(1) }),
+    response: z.strictObject({
+      revision: RevisionSummary.extend({ snapshot: WireEntry }),
+      current: WireEntry,
+      changes: z.array(
+        z.strictObject({ path: z.string(), before: z.unknown(), after: z.unknown() }),
+      ),
+    }),
+  },
+  'revisions.restore': {
+    request: EntryRef.extend({ revisionId: z.string().min(1) }),
+    response: WithWarnings,
+  },
+  /** Every editable list with usage counts (ED-8). */
+  'lists.get': {
+    request: z.strictObject({}),
+    response: z.strictObject({ lists: z.array(WireList) }),
+  },
+  /** Rename an item and every entry that uses it, in one transaction (ED-8). */
+  'lists.rename': {
+    request: z.strictObject({
+      listId: AnyListIdSchema,
+      itemId: z.string().min(1),
+      label: z.string().trim().min(1, 'A list item needs a name.').max(200),
+    }),
+    response: z.strictObject({ updated: z.int().min(0), from: z.string() }),
+  },
+  'lists.addItem': {
+    request: z.strictObject({
+      listId: AnyListIdSchema,
+      label: z.string().trim().min(1, 'A list item needs a name.').max(200),
+      parentId: z.string().min(1).nullable().default(null),
+    }),
+    response: z.strictObject({
+      item: z.strictObject({ id: z.string(), label: z.string(), parentId: z.string().nullable() }),
+    }),
+  },
+  'lists.removeItem': {
+    request: z.strictObject({ listId: AnyListIdSchema, itemId: z.string().min(1) }),
+    response: z.strictObject({ ok: z.literal(true) }),
+  },
+  /** Search the open bible (ARCH-2); used by the `@` link picker (ED-9). */
+  'search.query': {
+    request: z.strictObject({
+      query: z.string().max(200),
+      collections: z.array(CollectionName).optional(),
+      limit: z.int().min(1).max(100).default(20),
+    }),
+    response: z.strictObject({
+      hits: z.array(
+        z.strictObject({
+          collection: CollectionName,
+          id: z.string(),
+          title: z.string(),
+          score: z.number(),
+        }),
+      ),
+    }),
+  },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {
     request: z.strictObject({ url: z.string().min(1).max(2000) }),
@@ -66,6 +312,10 @@ export const events = {
     id: z.string(),
     op: z.enum(['create', 'update', 'softDelete', 'restore']),
   }),
+  /** Cmd+Z and Shift+Cmd+Z, caught in main before the page or the menu sees them (ED-3). */
+  'app.command': z.strictObject({ command: z.enum(['undo', 'redo']) }),
+  /** A list changed: an item added, renamed, or removed, or a new tag. */
+  'lists.changed': z.strictObject({ bible: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;
