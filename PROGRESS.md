@@ -67,18 +67,47 @@ Open notes from review (carried into M3): union end-year label can overlap a nod
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| TL-1 | pending | |
-| TL-2 | pending | |
-| TL-3 | pending | |
-| TL-4 | pending | |
-| TL-5 | pending | |
-| TL-6 | pending | |
-| TL-7 | pending | |
-| WE-1 | pending | |
-| WE-2 | pending | |
-| WE-3 | pending | |
-| TM-1 | pending | |
-| TM-2 | pending | |
-| TM-3 | pending | |
-| TM-4 | pending | |
-| TM-5 | pending | |
+| TL-1 | pass | `tests/unit/timeline.test.ts` "TL-1 src/shared/domain imports nothing from src/main/claude or anything else in main". Reviewed independently 2026-10-10. |
+| TL-2 | pass | `tests/unit/timeline.test.ts` "TL-2 TL-4 everyoneIn(year) matches the hand-written fixture answers exactly" (loops `fixtures/expected/tl2.json`); `tests/integration/timeline.test.ts` "TL-2 timeline.year returns the hand-written answers for 2040, 2041, and 2075"; `tests/e2e/timeline.spec.ts` "TL-2 TL-5 the year view lists everyone at the story time". Reviewed independently 2026-10-10. |
+| TL-3 | pass | `tests/unit/timeline.test.ts` "TL-3 with full dates, the age is one less until the birthday is reached in that year" (500-case property test). Reviewed independently 2026-10-10. |
+| TL-4 | pass | `tests/unit/timeline.test.ts` "TL-4 in 2041 Margaret Hale is listed alive at 83 and flagged as dying that year", lifespan property test. Reviewed independently 2026-10-10. |
+| TL-5 | pass | `tests/unit/timeline.test.ts` "TL-5 Iris Hale-Zhou by 2060 lived through five events, with her age at each"; integration "TL-5 timeline.livedThrough lists events with ages and category paths". Reviewed independently 2026-10-10. |
+| TL-6 | pass | `tests/unit/timeline.test.ts` TL-6 chart lanes and the four filters; `tests/e2e/timeline.spec.ts` "TL-6 WE-1 the timeline draws every lane with a cursor; filters by family, status, category, and place", "TL-6 NF-2 an event is edited from the timeline; arrow keys move between marks and Enter opens". Reviewed independently 2026-10-10. |
+| TL-7 | pass | `tests/unit/timeline.test.ts` "TL-7 Margaret Hale and Iris Hale-Zhou every five years"; `tests/e2e/timeline.spec.ts` "TL-7 compare shows two characters side by side, every 5 years or every year". Reviewed independently 2026-10-10. |
+| WE-1 | pass | `tests/integration/timeline.test.ts` "WE-1 events with a full date, a year, or a range, real or invented, linked to places and characters", "WE-1 ED-8 the category list is editable". Reviewed independently 2026-10-10. |
+| WE-2 | pass | `tests/integration/timeline.test.ts` "WE-2 ARCH-8 a new bible gets default decades from its lists collection", "WE-2 the fixture eras have no gaps; an edit that opens a gap is flagged and still saved"; `tests/e2e/timeline.spec.ts` "WE-2 the eras screen flags a gap after an edit and never blocks the save". Reviewed independently 2026-10-10. |
+| WE-3 | pass | `tests/unit/timeline.test.ts` "WE-3 the era for a year", "WE-3 the events up to a year, in date order, and within a window". Reviewed independently 2026-10-10. |
+| TM-1 | pass | `tests/e2e/timeline.spec.ts` "TM-1 TM-3 Cmd+T opens Story Time from every screen; setting 2040 updates the tree and the status bar". Reviewed independently 2026-10-10. |
+| TM-2 | pass | `tests/e2e/timeline.spec.ts` "TM-2 the dialog shows everyone in the year, the era, the events, and the strands". Reviewed independently 2026-10-10. |
+| TM-3 | pass | `tests/integration/timeline.test.ts` "TM-3 the story time with a full date, chapter, and strand persists in meta and reads back after reopening"; e2e TM-1 TM-3 (tree, status bar, reload); `tests/e2e/tree.spec.ts` "CH-3 the story time drives the ages on character pages". Brief default inputs are wired in M7. Reviewed independently 2026-10-10. |
+| TM-4 | pass | `tests/e2e/timeline.spec.ts` "TM-4 anchors: Iris Hale-Zhou is 9 gives 2040, +10 steps to 2050, and a strand sets its year". Reviewed independently 2026-10-10. |
+| TM-5 | pass | `tests/integration/timeline.test.ts` "TM-5 Use as strand year shows the change, then writes the strand through the write path with a note" (no revision on set); `tests/e2e/timeline.spec.ts` "TM-5 setting the time writes no entry; Use as strand year shows the change and writes only after approval". Reviewed independently 2026-10-10. |
+
+NF-1 timeline queries measured under 100 ms with 5,000 generated entries (`tests/unit/timeline-perf.test.ts`); `compare`, `strandsIn`, and the place filter are measured at M10.
+Open notes from review (carried into M4): character page uses the story-time year, not the full date; the Story Time dialog does not trap focus; lived-through can include an event later in a full-date death year; strand-shift preview and write logic are duplicated.
+
+## M4: plot, culture, places, glossary, knowledge, themes, questions, log, custom sections, search
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| PL-1 | pending | |
+| PL-2 | pending | |
+| PL-3 | pending | |
+| PL-4 | pending | |
+| CU-1 | pending | |
+| CU-2 | pending | |
+| PC-1 | pending | |
+| GL-1 | pending | |
+| GL-2 | pending | |
+| GL-3 | pending | |
+| KN-1 | pending | |
+| KN-2 | pending | |
+| KN-3 | pending | |
+| TH-1 | pending | |
+| OQ-1 | pending | |
+| SL-1 | pending | |
+| CS-1 | pending | |
+| CS-2 | pending | |
+| CS-3 | pending | |
+| SR-1 | pending | |
+| SR-2 | pending | |
