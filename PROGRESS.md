@@ -46,17 +46,39 @@ Open notes from review (carried into M2): `rejectProposal` ignores `matchedCount
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| CH-1 | pending | |
-| CH-2 | pending | |
-| CH-3 | pending | |
-| CH-4 | pending | |
-| FT-1 | pending | |
-| FT-2 | pending | |
-| FT-3 | pending | |
-| FT-4 | pending | |
-| FT-5 | pending | |
-| FT-6 | pending | |
-| FT-7 | pending | |
-| FT-8 | pending | |
-| FT-9 | pending | |
-| FT-10 | pending | |
+| CH-1 | pass | `tests/e2e/tree.spec.ts` "CH-1 a character is created, edited with zero, one, and several families, and deleted and restored". Reviewed independently 2026-10-10. |
+| CH-2 | pass | `tests/unit/character.test.ts` "CH-2 every name field, with what each other character calls them"; `tests/e2e/tree.spec.ts` "CH-2 CH-3 the character page shows every name...", "CH-2 a Chinese name shows as characters, with romanization and meaning on hover and on keyboard focus". Reviewed independently 2026-10-10. |
+| CH-3 | pass | `tests/unit/ages.test.ts` (TL-3, TL-4 rules in code); `tests/unit/character.test.ts` CH-3 relatives, timeline, knowledge; `tests/e2e/tree.spec.ts` "CH-2 CH-3 the character page shows every name, the age at the current position, relatives, a personal timeline, and what they know", "CH-3 the story time drives the ages on character pages" (both ages shown). Reviewed independently 2026-10-10. |
+| CH-4 | pass | `tests/unit/ages.test.ts` "CH-4 an unknown birth is reported as age unknown, never estimated"; `tests/e2e/tree.spec.ts` "CH-4 a character with an unknown birth year is reported as age unknown on the page and in the tree". Reviewed independently 2026-10-10. |
+| FT-1 | pass | `tests/e2e/tree.spec.ts` "FT-1 one tree for every family, a filter to one family, and to the ancestors and descendants of one person" (13, 6, 9 nodes with names). Reviewed independently 2026-10-10. |
+| FT-2 | pass | `tests/e2e/tree.spec.ts` "FT-2 FT-4 building the fixture tree by hand through tree actions gives the fixture graph and layout", "FT-2 change a link type, remove a link and undo it, and delete and restore a person through the trash". Reviewed independently 2026-10-10. |
+| FT-3 | pass | `tests/e2e/tree.spec.ts` "FT-7 FT-3 a click opens the character in the inspector without leaving the tree, and an edit there redraws the node" (both directions); `tests/integration/tree.test.ts` "FT-3 a write through the one write path shows in the next tree.get at once". Reviewed independently 2026-10-10. |
+| FT-4 | pass | `tests/unit/tree.test.ts` FT-4 parents, adoptive link, no family, half-siblings, "both unions of Zhou Lan are drawn, the ended one with its end year"; `tests/e2e/tree.spec.ts` "FT-4 links and unions are drawn by type...", "FT-4 a person with two unions: both draw, the ended one with its year, each child under its own union, and half-siblings". First review failed (no multi-union test); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| FT-5 | pass | `tests/e2e/tree.spec.ts` "FT-5 the year control redraws every node for 2040, 2041, and 2075 as in the TL-2 answers, and marks unions" (loops over `fixtures/expected/tl2.json`). Reviewed independently 2026-10-10. |
+| FT-6 | pass | `tests/unit/tree.test.ts` FT-6 four warnings with boundary values, "nobody can be their own ancestor"; `tests/integration/tree.test.ts` loop refusal on create, update, batch, restore; `tests/e2e/tree.spec.ts` "FT-6 warnings show beside the tree and never block; a person cannot become their own ancestor". Reviewed independently 2026-10-10. |
+| FT-7 | pass | `tests/e2e/tree.spec.ts` "FT-7 FT-3 a click opens the character in the inspector without leaving the tree..." (name, years, status chip). Reviewed independently 2026-10-10. |
+| FT-8 | pass | `tests/e2e/tree.spec.ts` "FT-8 pan by drag, zoom with the buttons and the wheel, collapse and expand a branch, and fit to window", "FT-8 NF-2 the tree works from the keyboard", "FT-8 a tree of 200 people across six generations redraws in under 500 ms in the renderer". Reviewed independently 2026-10-10. |
+| FT-9 | pass | `tests/e2e/tree.spec.ts` "FT-9 the tree exports as a PNG image and as a PDF through a save dialog" (PNG decoded with real content; PDF light colors in dark mode). Reviewed independently 2026-10-10. |
+| FT-10 | pass | `tests/unit/tree.test.ts` "FT-10 a child of Ruth / Margaret / Daniel and Lan: every existing node keeps its position"; `tests/integration/tree.test.ts` positions persist per bible; `tests/e2e/tree.spec.ts` "FT-10 adding a child to Ruth leaves every other node where it was, and stays so after a reload". First review failed (row packing shifted the Zhou family); fixed with a stored incremental layout and re-reviewed pass. Reviewed independently 2026-10-10. |
+
+Open notes from review (carried into M3): union end-year label can overlap a node when partners are not adjacent (`tree.ts` around 736); a child of a non-adjacent union is drawn from each parent rather than a union midpoint until Tidy; Enter on a focused node selects it, collapse needs the toggle.
+
+## M3: timeline, ages, world events, era states, story time
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| TL-1 | pending | |
+| TL-2 | pending | |
+| TL-3 | pending | |
+| TL-4 | pending | |
+| TL-5 | pending | |
+| TL-6 | pending | |
+| TL-7 | pending | |
+| WE-1 | pending | |
+| WE-2 | pending | |
+| WE-3 | pending | |
+| TM-1 | pending | |
+| TM-2 | pending | |
+| TM-3 | pending | |
+| TM-4 | pending | |
+| TM-5 | pending | |
