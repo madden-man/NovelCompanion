@@ -24,7 +24,16 @@ export type BibleChannel =
   | 'lists.rename'
   | 'lists.addItem'
   | 'lists.removeItem'
-  | 'search.query';
+  | 'search.query'
+  | 'proposal.list'
+  | 'proposal.diff'
+  | 'proposal.approve'
+  | 'proposal.edit'
+  | 'proposal.reject'
+  | 'proposal.refresh';
+
+/** Channels that exist only outside a packaged app. */
+export type TestChannel = 'test.propose';
 
 export type BibleHandlers = { [C in BibleChannel]: Handler<C> };
 
@@ -57,7 +66,31 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
         title: entryTitle(session().model.get(b.collection, b.id)),
       }));
 
+  const proposalView = (id: string) => {
+    const { repo, model } = session();
+    const d = repo.proposalDiff(id);
+    const target = d.proposal.targetId
+      ? model.get(d.proposal.collection, d.proposal.targetId)
+      : undefined;
+    return { ...d, targetTitle: target ? entryTitle(target) : null };
+  };
+
   return {
+    'proposal.list': ({ state }) => ({
+      proposals: session()
+        .repo.listProposals(state)
+        .map((p) => proposalView(p._id)),
+    }),
+    'proposal.diff': ({ id }) => proposalView(id),
+    'proposal.approve': async ({ id }) => ({ proposal: await session().repo.applyProposal(id) }),
+    'proposal.edit': async ({ id, data }) => ({
+      proposal: await session().repo.editProposal(id, data),
+    }),
+    'proposal.reject': async ({ id }) => ({ proposal: await session().repo.rejectProposal(id) }),
+    'proposal.refresh': async ({ id }) => {
+      await session().repo.refreshProposal(id);
+      return proposalView(id);
+    },
     'entry.list': ({ collection, trash }) => {
       const { repo } = session();
       const entries = repo.list(collection, {
@@ -152,6 +185,17 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
         .slice(0, limit)
         .map((h) => ({ ...h, title: entryTitle(model.get(h.collection, h.id)) }));
       return { hits };
+    },
+  };
+}
+
+/** Test-only handlers: never registered in a packaged app. */
+export function testHandlers(current: () => OpenBible | null): { [C in TestChannel]: Handler<C> } {
+  return {
+    'test.propose': async (req) => {
+      const s = current();
+      if (!s) throw new Error(NO_BIBLE);
+      return { proposal: await s.repo.propose(req) };
     },
   };
 }

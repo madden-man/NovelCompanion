@@ -8,7 +8,7 @@ import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
-import { BIBLE_CHANNELS, bibleHandlers } from './bibleHandlers';
+import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
 import type { Handler } from './validate';
 
@@ -84,9 +84,13 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   current?.unsubscribe();
   const offChange = session.repo.onChange((e) => broadcast('bible.changed', e));
   const offLists = session.repo.onListsChange(() => broadcast('lists.changed', { bible: slug }));
+  const offProposals = session.repo.onProposalsChange(() =>
+    broadcast('proposals.changed', { bible: slug }),
+  );
   const unsubscribe = () => {
     offChange();
     offLists();
+    offProposals();
   };
   current = { session, name: record.name, unsubscribe };
   const bible = { id: slug, name: record.name };
@@ -112,5 +116,9 @@ export function registerHandlers(): void {
   const handlers = bibleHandlers(() => current?.session ?? null);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);
+  }
+  // The proposal seam for tests exists only outside a packaged app.
+  if (!app.isPackaged) {
+    handle('test.propose', testHandlers(() => current?.session ?? null)['test.propose']);
   }
 }

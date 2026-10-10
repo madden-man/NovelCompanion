@@ -1,3 +1,4 @@
+import { deleteCommand, editCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   collectionInfo,
@@ -25,11 +26,11 @@ type Backlink = Response<'entry.get'>['backlinks'][number];
 
 /** Debounce for autosave, and the longest a change may wait while typing goes on (ED-2). */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
-export const AUTOSAVE_MAX_WAIT_MS = 900;
+export const AUTOSAVE_MAX_WAIT_MS = 700;
 
 /**
  * Autosave for one entry (ED-2): every change updates the draft at once and
- * is written 500 ms after the last keystroke, and never more than 900 ms after
+ * is written 500 ms after the last keystroke, and never more than 700 ms after
  * the first unsaved one. Each save becomes one undo command (ED-3).
  */
 function useAutosave(collection: EntryCollection, id: string) {
@@ -80,7 +81,7 @@ function useAutosave(collection: EntryCollection, id: string) {
       const base = saved.current;
       const target = current.current;
       if (!base || !target) return;
-      const { forward, backward } = patchBetween(base, target);
+      const { forward } = patchBetween(base, target);
       if (Object.keys(forward).length === 0) {
         firstPending.current = null;
         setStatus('saved');
@@ -102,11 +103,17 @@ function useAutosave(collection: EntryCollection, id: string) {
           setWarnings(r.warnings);
           setError(null);
           const labels = Object.keys(forward).map((k) => labelPath(manifests[collection], k));
-          undo.record({
-            label: `Changed ${labels.join(', ')} on ${entryTitle(entry)}`,
-            undo: [{ kind: 'update', collection, id, patch: backward }],
-            redo: [{ kind: 'update', collection, id, patch: forward }],
-          });
+          // Built from the stored documents, so each step expects what is really stored.
+          undo.record(
+            editCommand(
+              `Changed ${labels.join(', ')} on ${entryTitle(entry)}`,
+              collection,
+              id,
+              base,
+              entry,
+            ),
+          );
+          undo.markSaved();
           if (current.current === target) {
             current.current = entry;
             setDraft(entry);
@@ -228,11 +235,7 @@ export function EntryPane(props: {
   const doDelete = async () => {
     try {
       await call('entry.delete', { collection, id });
-      undo.record({
-        label: `Moved ${entryTitle(draft ?? undefined)} to the trash`,
-        undo: [{ kind: 'restore', collection, id }],
-        redo: [{ kind: 'delete', collection, id }],
-      });
+      undo.record(deleteCommand(collection, id, entryTitle(draft ?? undefined)));
       setConfirmDelete(null);
       ed.reload();
     } catch (e) {
@@ -243,11 +246,7 @@ export function EntryPane(props: {
   const doRestore = async () => {
     try {
       await call('entry.restore', { collection, id });
-      undo.record({
-        label: `Restored ${entryTitle(draft ?? undefined)} from the trash`,
-        undo: [{ kind: 'delete', collection, id }],
-        redo: [{ kind: 'restore', collection, id }],
-      });
+      undo.record(restoreCommand(collection, id, entryTitle(draft ?? undefined)));
       ed.reload();
     } catch (e) {
       setActionError(plainError(e));

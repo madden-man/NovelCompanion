@@ -11,6 +11,8 @@
 import type { StoryDate } from '../schema/common';
 import type { FieldSpec } from '../schema/manifest';
 import type { ListDoc } from '../schema/lists';
+import type { CustomSection } from '../schema/custom';
+import { customValueIssues } from './customValues';
 import {
   compareStoryDates,
   dayNumber,
@@ -38,6 +40,8 @@ export interface WarningContext {
   find(id: string): { collection: string; doc: Doc } | undefined;
   list(listId: string): ListDoc | undefined;
   customSpecs?: CustomSpecs;
+  /** The raw custom section, for checking custom entry values against it. */
+  customSection?: (id: string) => CustomSection | undefined;
 }
 
 const MIN_PARENT_AGE = 12;
@@ -356,6 +360,20 @@ export function computeWarnings(
     case 'openQuestions':
       openQuestionChecks(doc, out);
       break;
+    case 'customEntries': {
+      const section =
+        typeof doc.sectionId === 'string' ? ctx.customSection?.(doc.sectionId) : undefined;
+      if (section && isPlainObject(doc.values)) {
+        for (const issue of customValueIssues(section, doc.values)) {
+          out.push({
+            path: `values.${issue.fieldId}`,
+            code: 'custom-value',
+            message: issue.message,
+          });
+        }
+      }
+      break;
+    }
     default:
       break;
   }

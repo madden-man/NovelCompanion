@@ -108,7 +108,7 @@ export const customEntryFields: FieldSpec[] = [
   f.ref('sectionId', 'Section', ['customSections'], { required: true }),
   f.customValues('values', 'Fields', {
     required: true,
-    warnings: ['missing-target', 'range-end-before-start'],
+    warnings: ['missing-target', 'range-end-before-start', 'custom-value'],
   }),
 ];
 

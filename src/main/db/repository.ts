@@ -8,6 +8,8 @@ import {
   LIST_IDS,
   ListDoc,
   Proposal,
+  choiceListId,
+  parseChoiceListId,
   entrySchemas,
   entryTitle,
   isEntryCollection,
@@ -15,13 +17,14 @@ import {
 } from '../../shared/schema';
 import type {
   AnyListId,
+  CustomSection,
   DerivedListId,
   EntryCollection,
   EntryInput,
   EntryOf,
   ListItem,
 } from '../../shared/schema';
-import { customValueIssues } from '../../shared/domain/customValues';
+import { hasValue } from '../../shared/domain/customValues';
 import { contentOf, diffEntries } from '../../shared/domain/diff';
 import type { FieldChange } from '../../shared/domain/diff';
 import {
@@ -72,7 +75,7 @@ export interface RevisionView {
 }
 
 export interface ListView {
-  _id: AnyListId;
+  _id: AnyListId | string;
   label: string;
   /** Derived lists hold entries; their items are renamed through those entries. */
   derived: boolean;
@@ -144,6 +147,12 @@ export class Repository {
     return () => this.emitter.off('change', listener);
   }
 
+  /** A proposal was made, edited, refreshed, approved, or rejected. */
+  onProposalsChange(listener: () => void): () => void {
+    this.emitter.on('proposals', listener);
+    return () => this.emitter.off('proposals', listener);
+  }
+
   /** Lists changed: a rename, an added item, or a tag first used. */
   onListsChange(listener: () => void): () => void {
     this.emitter.on('lists', listener);
@@ -177,11 +186,7 @@ export class Repository {
     if (c === 'customEntries') {
       const section = this.model.get('customSections', String(doc.sectionId));
       if (!section) return fail(`There is no custom section with the ID ${String(doc.sectionId)}.`);
-      const issues = customValueIssues(
-        section as never,
-        (doc.values ?? {}) as Record<string, unknown>,
-      );
-      if (issues.length) fail(`This custom entry is not valid: ${issues.join(' ')}`);
+      // Values that no longer fit the section are warnings (ED-10), not refusals.
     }
     if (c === 'customSections') {
       const ids = (doc.fields as { id: string }[]).map((f) => f.id);
@@ -364,8 +369,91 @@ export class Repository {
     this.assertCollection(c);
     const prior = await this.current(c, id);
     const change = this.buildUpdate(c, prior, patch as Record<string, unknown>);
+    if (c === 'customSections') this.guardSectionChange(prior, change.next);
     await this.commit([change]);
     return change.next as EntryOf<C>;
+  }
+
+  /** Custom entries of a section, trash included, so a restore never meets a lost value. */
+  private sectionEntries(sectionId: string): StoredDoc[] {
+    return this.model.all('customEntries').filter((e) => e.sectionId === sectionId);
+  }
+
+  /**
+   * A section edit may not drop a field or a choice that entries still use
+   * (ED-8): it says how many use it, as list items in use do. Rename a choice
+   * on the Lists screen instead, which updates the entries too.
+   */
+  private guardSectionChange(prior: StoredDoc, next: StoredDoc): void {
+    type F = { id: string; label: string; type: string; options: string[] };
+    const before = prior.fields as F[];
+    const after = next.fields as F[];
+    const entries = this.sectionEntries(prior._id);
+    const values = (e: StoredDoc) => (e.values ?? {}) as Record<string, unknown>;
+    const count = (n: number) => (n === 1 ? '1 entry uses' : `${n} entries use`);
+    for (const field of before) {
+      const now = after.find((f) => f.id === field.id);
+      if (!now) {
+        const n = entries.filter((e) => hasValue(values(e)[field.id])).length;
+        if (n > 0) {
+          throw new RepositoryError(
+            `${count(n)} the field ${field.label}. Clear it on those entries first, or keep the field.`,
+          );
+        }
+        continue;
+      }
+      if (field.type !== 'singleChoice' || now.type !== 'singleChoice') continue;
+      for (const option of field.options.filter((o) => !now.options.includes(o))) {
+        const n = entries.filter((e) => values(e)[field.id] === option).length;
+        if (n > 0) {
+          throw new RepositoryError(
+            `${count(n)} the choice ${option} in ${field.label}. Rename it on the Lists screen, or change those entries first.`,
+          );
+        }
+      }
+    }
+  }
+
+  /** A section's single-choice field, for the choice lists. */
+  private choiceField(listId: string) {
+    const parsed = parseChoiceListId(listId);
+    if (!parsed) return null;
+    const section = this.model.get('customSections', parsed.sectionId);
+    const fields = (section?.fields ?? []) as {
+      id: string;
+      label: string;
+      type: string;
+      options: string[];
+    }[];
+    const field = fields.find((f) => f.id === parsed.fieldId && f.type === 'singleChoice');
+    if (!section || !field) throw new RepositoryError('That choice field no longer exists.');
+    return { section, field, fields };
+  }
+
+  private async writeChoices(
+    section: StoredDoc,
+    fieldId: string,
+    options: string[],
+    entryPatches: { id: string; values: Record<string, unknown> }[] = [],
+    note?: string,
+  ): Promise<number> {
+    const prior = await this.current('customSections', section._id);
+    const fields = (prior.fields as { id: string; options: string[] }[]).map((f) =>
+      f.id === fieldId ? { ...f, options } : f,
+    );
+    const changes: Change[] = [
+      { ...this.buildUpdate('customSections', prior, { fields }), ...(note ? { note } : {}) },
+    ];
+    for (const p of entryPatches) {
+      const e = await this.current('customEntries', p.id);
+      changes.push({
+        ...this.buildUpdate('customEntries', e, { values: p.values }),
+        ...(note ? { note } : {}),
+      });
+    }
+    await this.commit(changes);
+    this.emitter.emit('lists');
+    return entryPatches.length;
   }
 
   /** Move to the trash (ED-5). Links are kept so a restore brings them back. */
@@ -428,6 +516,7 @@ export class Repository {
       find: (id) => this.model.find(id),
       list: (id) => this.model.get('lists', id) as ListDoc | undefined,
       customSpecs: this.customSpecs,
+      customSection: (id) => this.model.get('customSections', id) as CustomSection | undefined,
     });
   }
 
@@ -591,7 +680,32 @@ export class Repository {
       fixedItems: true,
       items: this.derivedItems(id),
     }));
-    return [...stored, ...derived];
+    const choices: ListView[] = [];
+    for (const section of this.model.all('customSections').filter((d) => !d.deletedAt)) {
+      const entries = this.sectionEntries(section._id).filter((e) => !e.deletedAt);
+      for (const f of section.fields as {
+        id: string;
+        label: string;
+        type: string;
+        options: string[];
+      }[]) {
+        if (f.type !== 'singleChoice') continue;
+        choices.push({
+          _id: choiceListId(section._id, f.id),
+          label: `${String(section.name)}: ${f.label}`,
+          derived: true,
+          fixedItems: false,
+          items: f.options.map((o) => ({
+            id: o,
+            label: o,
+            parentId: null,
+            usage: entries.filter((e) => (e.values as Record<string, unknown>)?.[f.id] === o)
+              .length,
+          })),
+        });
+      }
+    }
+    return [...stored, ...derived, ...choices];
   }
 
   /**
@@ -605,6 +719,29 @@ export class Repository {
   ): Promise<{ updated: number; from: string }> {
     const to = label.trim();
     if (!to) throw new RepositoryError('A list item needs a name.');
+    const choice = this.choiceField(listId);
+    if (choice) {
+      const { section, field } = choice;
+      if (!field.options.includes(itemId)) {
+        throw new RepositoryError(`${field.label} has no choice called ${itemId}.`);
+      }
+      if (itemId === to) return { updated: 0, from: itemId };
+      if (field.options.includes(to)) {
+        throw new RepositoryError(`${field.label} already has a choice called ${to}.`);
+      }
+      // Every entry holding the old choice gets the new one, in the same transaction.
+      const patches = this.sectionEntries(section._id)
+        .filter((e) => (e.values as Record<string, unknown>)?.[field.id] === itemId)
+        .map((e) => ({ id: e._id, values: { ...(e.values as object), [field.id]: to } }));
+      const updated = await this.writeChoices(
+        section,
+        field.id,
+        field.options.map((o) => (o === itemId ? to : o)),
+        patches,
+        `Renamed ${itemId} to ${to} in ${field.label}`,
+      );
+      return { updated, from: itemId };
+    }
     if (isDerived(listId)) {
       const collection =
         listId === 'families'
@@ -652,6 +789,16 @@ export class Repository {
     label: string,
     parentId: string | null = null,
   ): Promise<ListItem> {
+    const choice = this.choiceField(listId);
+    if (choice) {
+      const name = label.trim();
+      if (!name) throw new RepositoryError('A choice needs a name.');
+      if (choice.field.options.includes(name)) {
+        throw new RepositoryError(`${choice.field.label} already has a choice called ${name}.`);
+      }
+      await this.writeChoices(choice.section, choice.field.id, [...choice.field.options, name]);
+      return { id: name, label: name, parentId: null };
+    }
     if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
       throw new RepositoryError('Items in this list come from the entries themselves.');
     }
@@ -671,6 +818,24 @@ export class Repository {
 
   /** Remove an unused item. An item in use is kept, and the message says how many use it. */
   async removeListItem(listId: string, itemId: string): Promise<void> {
+    const choice = this.choiceField(listId);
+    if (choice) {
+      const { section, field } = choice;
+      const n = this.sectionEntries(section._id).filter(
+        (e) => (e.values as Record<string, unknown>)?.[field.id] === itemId,
+      ).length;
+      if (n > 0) {
+        throw new RepositoryError(
+          `${n === 1 ? '1 entry uses' : `${n} entries use`} ${itemId}. Change them first, or rename the choice instead.`,
+        );
+      }
+      await this.writeChoices(
+        section,
+        field.id,
+        field.options.filter((o) => o !== itemId),
+      );
+      return;
+    }
     if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
       throw new RepositoryError('Items in this list come from the entries themselves.');
     }
@@ -724,6 +889,7 @@ export class Repository {
     });
     await this.proposals().insertOne(proposal);
     this.model.put('proposals', proposal as unknown as StoredDoc);
+    this.emitter.emit('proposals');
     return proposal;
   }
 
@@ -751,24 +917,73 @@ export class Repository {
     return Proposal.parse(p);
   }
 
-  /**
-   * Apply an approved proposal through the write path and record the approval
-   * on the proposal and on the entry's revision, in one transaction (ED-7).
-   * `edits` replaces the proposed data when the person changed it first.
-   */
-  async applyProposal(id: string, edits?: Record<string, unknown>): Promise<Proposal> {
+  private pending(id: string): Proposal {
     const proposal = this.proposal(id);
     if (proposal.state !== 'pending') {
       throw new RepositoryError(`This proposal is already ${proposal.state}.`);
     }
+    return proposal;
+  }
+
+  private async saveProposal(p: Proposal): Promise<Proposal> {
+    const res = await this.proposals().replaceOne({ _id: p._id, state: 'pending' }, p);
+    if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    this.model.put('proposals', p as unknown as StoredDoc);
+    this.emitter.emit('proposals');
+    return p;
+  }
+
+  /**
+   * Change what a proposal would write before approving it (ED-7). The new
+   * values are checked against the schema now, so approval cannot fail on them.
+   */
+  async editProposal(id: string, data: Record<string, unknown>): Promise<Proposal> {
+    const proposal = this.pending(id);
+    if (proposal.op === 'delete') throw new RepositoryError('A deletion has no values to edit.');
+    const c = proposal.collection as EntryCollection;
+    const clean = this.stripSystem(data);
+    if (proposal.op === 'update') {
+      this.buildUpdate(c, await this.current(c, String(proposal.targetId)), clean);
+    } else {
+      this.validate(c, {
+        ...clean,
+        _id: 'CHECK',
+        createdAt: this.now().toISOString(),
+        modifiedAt: this.now().toISOString(),
+      });
+    }
+    return this.saveProposal({ ...proposal, data: clean, edited: true });
+  }
+
+  /** Compare again: take the entry as it is now as the proposal's base, so it can be approved. */
+  async refreshProposal(id: string): Promise<Proposal> {
+    const proposal = this.pending(id);
+    if (!proposal.targetId) return proposal;
+    const current = await this.current(proposal.collection as EntryCollection, proposal.targetId);
+    return this.saveProposal({ ...proposal, baseModifiedAt: String(current.modifiedAt) });
+  }
+
+  /**
+   * Apply an approved proposal through the write path and record the approval
+   * on the proposal and on the entry's revision, in one transaction (ED-7).
+   * A proposal whose entry changed after it was made is refused: the person
+   * has not seen the change against the entry as it is now.
+   */
+  async applyProposal(id: string): Promise<Proposal> {
+    const proposal = this.pending(id);
     const c = proposal.collection as EntryCollection;
     this.assertCollection(c);
-    const data = edits ?? proposal.data;
+    const data = proposal.data;
     let change: Change;
     if (proposal.op === 'create') {
       change = this.buildCreate(c, { ...data, _id: proposal.targetId ?? data._id });
     } else {
       const prior = await this.current(c, String(proposal.targetId));
+      if (proposal.baseModifiedAt !== null && prior.modifiedAt !== proposal.baseModifiedAt) {
+        throw new RepositoryError(
+          'This entry changed after the proposal was made, so it was not approved. Compare again to see the proposal against the entry as it is now.',
+        );
+      }
       change =
         proposal.op === 'update'
           ? this.buildUpdate(c, prior, data)
@@ -780,7 +995,6 @@ export class Repository {
       ...proposal,
       state: 'approved',
       decidedAt: this.now().toISOString(),
-      edited: edits !== undefined,
       appliedEntryId: change.next._id,
       data,
     };
@@ -791,6 +1005,7 @@ export class Repository {
       if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
     });
     this.model.put('proposals', decided as unknown as StoredDoc);
+    this.emitter.emit('proposals');
     return decided;
   }
 
@@ -806,6 +1021,7 @@ export class Repository {
     };
     await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
     this.model.put('proposals', decided as unknown as StoredDoc);
+    this.emitter.emit('proposals');
     return decided;
   }
 }

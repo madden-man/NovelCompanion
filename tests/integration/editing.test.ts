@@ -410,9 +410,16 @@ describe('ED-8 editable lists', () => {
 });
 
 describe('ED-7 proposals wait for approval', () => {
-  test('ED-7 a proposal changes nothing until approved, and approval is recorded on the proposal and the revision', async () => {
+  const stored = async (c: string, id: string) =>
+    fixture.handle.collection(c).findOne({ _id: id as never });
+  const revisionCount = (id: string) =>
+    fixture.handle.collection('revisions').countDocuments({ entryId: id });
+
+  test('ED-7 a proposal changes nothing in MongoDB until approved, and approval is recorded on the proposal and a revision', async () => {
     const { repo, handle } = fixture;
-    const before = repo.get('characters', 'Z2')!;
+    const before = await stored('characters', 'Z2');
+    const revsBefore = await revisionCount('Z2');
+    const invoke = ipcFor(() => fixture);
     const p = await repo.propose({
       source: 'import',
       op: 'update',
@@ -422,17 +429,25 @@ describe('ED-7 proposals wait for approval', () => {
       reason: 'The workbook says Foshan.',
     });
     expect(p.state).toBe('pending');
-    expect(repo.get('characters', 'Z2')).toEqual(before);
-    const { changes, conflict } = repo.proposalDiff(p._id);
-    expect(changes).toEqual([{ path: 'birthplace', before: before.birthplace, after: 'Foshan' }]);
-    expect(conflict).toBe(false);
+    // The database, not the read model, is unchanged, and no revision was written.
+    expect(await stored('characters', 'Z2')).toEqual(before);
+    expect(await revisionCount('Z2')).toBe(revsBefore);
+    const view = await invoke('proposal.diff', { id: p._id });
+    expect(view.changes).toEqual([
+      { path: 'birthplace', before: before!.birthplace, after: 'Foshan' },
+    ]);
+    expect(view.conflict).toBe(false);
+    expect(
+      (await invoke('proposal.list', { state: 'pending' })).proposals.map((v) => v.proposal._id),
+    ).toContain(p._id);
 
-    const approved = await repo.applyProposal(p._id);
+    const { proposal: approved } = await invoke('proposal.approve', { id: p._id });
     expect(approved).toEqual(
       expect.objectContaining({ state: 'approved', edited: false, appliedEntryId: 'Z2' }),
     );
     expect(approved.decidedAt).not.toBeNull();
-    expect(repo.get('characters', 'Z2')!.birthplace).toBe('Foshan');
+    expect((await stored('characters', 'Z2'))!.birthplace).toBe('Foshan');
+    expect(await revisionCount('Z2')).toBe(revsBefore + 1);
     const [rev] = await repo.history('characters', 'Z2');
     expect(rev).toEqual(
       expect.objectContaining({ proposalId: p._id, note: 'Approved a proposal from import' }),
@@ -440,11 +455,12 @@ describe('ED-7 proposals wait for approval', () => {
     expect(await handle.collection('proposals').findOne({ _id: p._id as never })).toEqual(
       expect.objectContaining({ state: 'approved' }),
     );
-    await expect(repo.applyProposal(p._id)).rejects.toThrow(/already approved/);
+    await expect(invoke('proposal.approve', { id: p._id })).rejects.toThrow(/already approved/);
   });
 
-  test('ED-7 an edit made after the proposal shows as a conflict, and an edited proposal is recorded as edited', async () => {
+  test('ED-7 a proposal whose entry changed since is refused plainly, and approves after comparing again', async () => {
     const { repo } = fixture;
+    const invoke = ipcFor(() => fixture);
     const p = await repo.propose({
       source: 'claude',
       op: 'update',
@@ -453,23 +469,67 @@ describe('ED-7 proposals wait for approval', () => {
       data: { backstory: 'Proposed.' },
     });
     await repo.update('characters', 'Z2', { backstory: 'My own words.' });
-    expect(repo.proposalDiff(p._id).conflict).toBe(true);
-    const approved = await repo.applyProposal(p._id, { backstory: 'My own words, kept.' });
-    expect(approved.edited).toBe(true);
-    expect(repo.get('characters', 'Z2')!.backstory).toBe('My own words, kept.');
+    const revs = await revisionCount('Z2');
+    expect((await invoke('proposal.diff', { id: p._id })).conflict).toBe(true);
+    await expect(invoke('proposal.approve', { id: p._id })).rejects.toThrow(
+      /This entry changed after the proposal was made, so it was not approved\. Compare again/,
+    );
+    expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words.');
+    expect(await revisionCount('Z2')).toBe(revs);
+    expect(
+      (await fixture.handle.collection('proposals').findOne({ _id: p._id as never }))!.state,
+    ).toBe('pending');
+
+    const again = await invoke('proposal.refresh', { id: p._id });
+    expect(again.conflict).toBe(false);
+    expect(again.changes).toEqual([
+      { path: 'backstory', before: 'My own words.', after: 'Proposed.' },
+    ]);
+    const { proposal: edited } = await invoke('proposal.edit', {
+      id: p._id,
+      data: { backstory: 'My own words, kept.' },
+    });
+    expect(edited.edited).toBe(true);
+    expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words.');
+    await invoke('proposal.approve', { id: p._id });
+    expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words, kept.');
+    expect(await revisionCount('Z2')).toBe(revs + 1);
+    await expect(invoke('proposal.edit', { id: p._id, data: {} })).rejects.toThrow(
+      /already approved/,
+    );
   });
 
-  test('ED-7 a rejected proposal changes nothing; create and delete proposals apply through the write path', async () => {
+  test('ED-7 an edit to a proposal that the schema cannot store is refused before approval', async () => {
+    const p = await fixture.repo.propose({
+      source: 'import',
+      op: 'update',
+      collection: 'characters',
+      targetId: 'Z2',
+      data: { birthplace: 'x' },
+    });
+    await expect(fixture.repo.editProposal(p._id, { birth: { year: 'old' } })).rejects.toThrow(
+      /not valid/,
+    );
+    await fixture.repo.rejectProposal(p._id);
+  });
+
+  test('ED-7 a rejected proposal leaves MongoDB unchanged; create and delete proposals apply through the write path', async () => {
     const { repo } = fixture;
+    const invoke = ipcFor(() => fixture);
+    const before = await stored('facts', 'F2');
+    const revs = await revisionCount('F2');
     const rejected = await repo.propose({
       source: 'bulk',
       op: 'delete',
       collection: 'facts',
       targetId: 'F2',
     });
-    await repo.rejectProposal(rejected._id);
-    expect(repo.get('facts', 'F2')).toBeDefined();
-    expect(repo.listProposals('rejected').map((x) => x._id)).toContain(rejected._id);
+    await invoke('proposal.reject', { id: rejected._id });
+    expect(await stored('facts', 'F2')).toEqual(before);
+    expect(await revisionCount('F2')).toBe(revs);
+    expect(
+      (await invoke('proposal.list', { state: 'rejected' })).proposals.map((v) => v.proposal._id),
+    ).toContain(rejected._id);
 
     const create = await repo.propose({
       source: 'import',
@@ -477,15 +537,121 @@ describe('ED-7 proposals wait for approval', () => {
       collection: 'facts',
       data: { title: 'A new secret', status: 'idea' },
     });
-    const done = await repo.applyProposal(create._id);
-    expect(repo.get('facts', done.appliedEntryId!)!.title).toBe('A new secret');
+    const { proposal: done } = await invoke('proposal.approve', { id: create._id });
+    expect((await stored('facts', done.appliedEntryId!))!.title).toBe('A new secret');
+    expect(await revisionCount(done.appliedEntryId!)).toBe(1);
     const del = await repo.propose({
       source: 'import',
       op: 'delete',
       collection: 'facts',
       targetId: done.appliedEntryId,
     });
-    await repo.applyProposal(del._id);
-    expect(repo.get('facts', done.appliedEntryId!)).toBeUndefined();
+    await invoke('proposal.approve', { id: del._id });
+    expect((await stored('facts', done.appliedEntryId!))!.deletedAt).toBeDefined();
+    expect(await revisionCount(done.appliedEntryId!)).toBe(2);
+  });
+});
+
+describe('ED-8 custom section choices and fields', () => {
+  const choiceList = 'choice:CS-RECIPES:occasion';
+  const values = async (id: string) =>
+    ((await fixture.handle.collection('customEntries').findOne({ _id: id as never }))!.values ??
+      {}) as Record<string, unknown>;
+
+  test('ED-8 renaming a choice updates every custom entry using it in one transaction, with revisions', async () => {
+    const { repo } = fixture;
+    const list = repo.lists().find((l) => l._id === choiceList)!;
+    expect(list.items.find((i) => i.id === 'Holiday')!.usage).toBeGreaterThan(0);
+    const users = repo
+      .list('customEntries')
+      .filter((e) => e.values.occasion === 'Holiday')
+      .map((e) => e._id);
+    const res = await ipcFor(() => fixture)('lists.rename', {
+      listId: choiceList,
+      itemId: 'Holiday',
+      label: 'Festival',
+    });
+    expect(res).toEqual({ updated: users.length, from: 'Holiday' });
+    for (const id of users) {
+      expect((await values(id)).occasion).toBe('Festival');
+      expect((await repo.history('customEntries', id))[0]!.note).toBe(
+        'Renamed Holiday to Festival in Occasion',
+      );
+    }
+    const section = await fixture.handle
+      .collection('customSections')
+      .findOne({ _id: 'CS-RECIPES' as never });
+    const occasion = (section!.fields as { id: string; options: string[] }[]).find(
+      (f) => f.id === 'occasion',
+    )!;
+    expect(occasion.options).toEqual(['Everyday', 'Festival', 'Funeral']);
+    for (const id of users) {
+      expect(repo.warnings('customEntries', repo.get('customEntries', id) as never)).toEqual([]);
+    }
+  });
+
+  test('ED-8 a choice in use cannot be removed, on the Lists screen or in the section editor, and the message says how many', async () => {
+    const { repo } = fixture;
+    await expect(repo.removeListItem(choiceList, 'Festival')).rejects.toThrow(
+      /^1 entry uses Festival\./,
+    );
+    const section = repo.get('customSections', 'CS-RECIPES')!;
+    const fields = section.fields.map((f) =>
+      f.id === 'occasion' ? { ...f, options: ['Everyday', 'Funeral'] } : f,
+    );
+    await expect(repo.update('customSections', 'CS-RECIPES', { fields })).rejects.toThrow(
+      /^1 entry uses the choice Festival in Occasion\./,
+    );
+    await repo.removeListItem(choiceList, 'Funeral');
+    expect(
+      repo.get('customSections', 'CS-RECIPES')!.fields.find((f) => f.id === 'occasion')!.options,
+    ).toEqual(['Everyday', 'Festival']);
+    await repo.addListItem(choiceList, 'Wedding');
+    expect(
+      repo
+        .lists()
+        .find((l) => l._id === choiceList)!
+        .items.map((i) => i.id),
+    ).toEqual(['Everyday', 'Festival', 'Wedding']);
+  });
+
+  test('ED-8 a field in use cannot be removed, and the message says how many', async () => {
+    const { repo } = fixture;
+    const section = repo.get('customSections', 'CS-RECIPES')!;
+    await expect(
+      repo.update('customSections', 'CS-RECIPES', {
+        fields: section.fields.filter((f) => f.id !== 'method'),
+      }),
+    ).rejects.toThrow(/entr(y|ies) uses? the field Method\. Clear it/);
+    // A field nobody fills in can go.
+    await repo.update('customSections', 'CS-RECIPES', {
+      fields: [...section.fields, { id: 'spare', label: 'Spare', type: 'text', options: [] }],
+    });
+    await repo.update('customSections', 'CS-RECIPES', { fields: section.fields });
+  });
+
+  test('ED-10 a custom value that no longer fits its section is a warning, and the entry still saves', async () => {
+    const { repo } = fixture;
+    const section = repo.get('customSections', 'CS-RECIPES')!;
+    // The field changes kind, so the stored choice no longer fits.
+    await repo.update('customSections', 'CS-RECIPES', {
+      fields: section.fields.map((f) =>
+        f.id === 'firstCooked' ? { ...f, type: 'singleChoice' as const, options: ['Early'] } : f,
+      ),
+    });
+    const ce = repo.get('customEntries', 'CE1')!;
+    const saved = await repo.update('customEntries', 'CE1', { title: `${ce.title} (checked)` });
+    expect(saved.title).toMatch(/\(checked\)$/);
+    expect(repo.warnings('customEntries', saved as never)).toContainEqual(
+      expect.objectContaining({ path: 'values.firstCooked', code: 'custom-value' }),
+    );
+    // A value for a field that no longer exists is kept and flagged too.
+    const stale = await repo.update('customEntries', 'CE1', {
+      values: { ...saved.values, gone: 'old text' },
+    });
+    expect(repo.warnings('customEntries', stale as never)).toContainEqual(
+      expect.objectContaining({ path: 'values.gone', code: 'custom-value' }),
+    );
+    await repo.update('customSections', 'CS-RECIPES', { fields: section.fields });
   });
 });

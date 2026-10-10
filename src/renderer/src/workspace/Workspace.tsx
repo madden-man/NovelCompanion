@@ -4,6 +4,7 @@ import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
 import { EntryPane, UndoPanel } from './editor';
+import { ReviewQueue } from './review';
 import { UndoProvider } from './undo';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 
@@ -11,6 +12,7 @@ type View =
   | { kind: 'section'; collection: EntryCollection; selected: string | null; creating: boolean }
   | { kind: 'trash' }
   | { kind: 'lists' }
+  | { kind: 'review' }
   | { kind: 'bibles' };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
@@ -60,6 +62,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         ))}
         <div className="rail-group">
           <span className="eyebrow">Manage</span>
+          {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
           {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
           {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
           {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
@@ -108,6 +111,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           <div className="ws-wide-area">
             {view.kind === 'trash' && <TrashView onOpen={open} />}
             {view.kind === 'lists' && <ListsView />}
+            {view.kind === 'review' && <ReviewQueue />}
             {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
           </div>
           <SideInspector />

@@ -1,3 +1,4 @@
+import { createCommand, renameCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { collectionInfo, entrySchemas, entryTitle, manifests } from '../../../shared/schema';
@@ -135,11 +136,7 @@ export function NewEntryForm(props: {
     setBusy(true);
     try {
       const { entry } = await call('entry.create', { collection, data: draft });
-      undo.record({
-        label: `Created ${entryTitle(entry)}`,
-        undo: [{ kind: 'delete', collection, id: entry._id }],
-        redo: [{ kind: 'restore', collection, id: entry._id }],
-      });
+      undo.record(createCommand(collection, entry._id, entryTitle(entry)));
       props.onCreated(entry._id);
     } catch (err) {
       setError(plainError(err));
@@ -213,11 +210,7 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     try {
       await call('entry.restore', { collection, id });
       const { count } = await call('entry.linkedFrom', { id });
-      undo.record({
-        label: `Restored ${title} from the trash`,
-        undo: [{ kind: 'delete', collection, id }],
-        redo: [{ kind: 'restore', collection, id }],
-      });
+      undo.record(restoreCommand(collection, id, title));
       setDone(
         `${title} is back${count ? `, with ${count} ${count === 1 ? 'entry' : 'entries'} linking to it` : ''}.`,
       );
@@ -316,11 +309,16 @@ function ListPanel({ list }: { list: WireList }) {
     setMessage(null);
     try {
       const r = await call('lists.rename', { listId: list._id, itemId, label });
-      undo.record({
-        label: `Renamed ${r.from} to ${label.trim()} in ${list.label}`,
-        undo: [{ kind: 'rename', listId: list._id, itemId, label: r.from }],
-        redo: [{ kind: 'rename', listId: list._id, itemId, label: label.trim() }],
-      });
+      undo.record(
+        renameCommand(
+          list.label,
+          list._id,
+          itemId,
+          r.from,
+          label.trim(),
+          list._id.startsWith('choice:') ? label.trim() : itemId,
+        ),
+      );
       setMessage({
         text:
           r.updated > 0

@@ -22,23 +22,42 @@ function check(field: CustomField, v: unknown): string | null {
   }
 }
 
+export interface CustomValueIssue {
+  fieldId: string;
+  message: string;
+}
+
 /**
- * Problems with a custom entry's values against its section (CS-1). These are
- * shape errors, not story warnings, so the write path refuses them.
+ * Values that no longer fit their section (CS-1): a field that was removed, a
+ * choice that is gone, or a value of another kind after the field changed.
+ * They are ED-10 warnings, never a reason to refuse a write.
  */
 export function customValueIssues(
   section: Pick<CustomSection, 'fields' | 'name'>,
   values: Record<string, unknown>,
-): string[] {
-  const issues: string[] = [];
+): CustomValueIssue[] {
+  const issues: CustomValueIssue[] = [];
   for (const key of Object.keys(values)) {
     const field = section.fields.find((f) => f.id === key);
     if (!field) {
-      issues.push(`The section ${section.name} has no field with the ID ${key}.`);
+      if (values[key] !== null) {
+        issues.push({
+          fieldId: key,
+          message: `The section ${section.name} no longer has this field. The old value is kept.`,
+        });
+      }
       continue;
     }
     const problem = check(field, values[key]);
-    if (problem) issues.push(`${field.label} ${problem}.`);
+    if (problem) issues.push({ fieldId: key, message: `${field.label} ${problem}.` });
   }
   return issues;
+}
+
+/** True when a custom value counts as filled in, so removing its field would lose it. */
+export function hasValue(v: unknown): boolean {
+  if (v === null || v === undefined || v === '') return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (isPlainObject(v)) return Object.values(v).some((x) => x !== null && x !== undefined);
+  return true;
 }

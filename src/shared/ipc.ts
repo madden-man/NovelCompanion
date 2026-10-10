@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BibleName, BibleSlug } from './bible';
-import { AnyListIdSchema, ENTRY_COLLECTIONS, entrySchemas } from './schema';
+import { ENTRY_COLLECTIONS, ListIdParam, Proposal, entrySchemas } from './schema';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -102,13 +102,22 @@ export const WireListItem = z.strictObject({
 });
 
 export const WireList = z.strictObject({
-  _id: AnyListIdSchema,
+  _id: ListIdParam,
   label: z.string(),
   derived: z.boolean(),
   fixedItems: z.boolean(),
   items: z.array(WireListItem),
 });
 export type WireList = z.output<typeof WireList>;
+
+/** A proposal with what it would change against the entry as it is now. */
+const ProposalView = z.strictObject({
+  proposal: Proposal,
+  targetTitle: z.string().nullable(),
+  changes: z.array(z.strictObject({ path: z.string(), before: z.unknown(), after: z.unknown() })),
+  conflict: z.boolean(),
+});
+export type ProposalView = z.output<typeof ProposalView>;
 
 const RevisionSummary = z.strictObject({
   _id: z.string(),
@@ -244,7 +253,7 @@ export const contract = {
   /** Rename an item and every entry that uses it, in one transaction (ED-8). */
   'lists.rename': {
     request: z.strictObject({
-      listId: AnyListIdSchema,
+      listId: ListIdParam,
       itemId: z.string().min(1),
       label: z.string().trim().min(1, 'A list item needs a name.').max(200),
     }),
@@ -252,7 +261,7 @@ export const contract = {
   },
   'lists.addItem': {
     request: z.strictObject({
-      listId: AnyListIdSchema,
+      listId: ListIdParam,
       label: z.string().trim().min(1, 'A list item needs a name.').max(200),
       parentId: z.string().min(1).nullable().default(null),
     }),
@@ -261,7 +270,7 @@ export const contract = {
     }),
   },
   'lists.removeItem': {
-    request: z.strictObject({ listId: AnyListIdSchema, itemId: z.string().min(1) }),
+    request: z.strictObject({ listId: ListIdParam, itemId: z.string().min(1) }),
     response: z.strictObject({ ok: z.literal(true) }),
   },
   /** Search the open bible (ARCH-2); used by the `@` link picker (ED-9). */
@@ -281,6 +290,49 @@ export const contract = {
         }),
       ),
     }),
+  },
+  /** The review queue (ED-7): proposals with their diff against the live entry. */
+  'proposal.list': {
+    request: z.strictObject({ state: z.enum(['pending', 'approved', 'rejected']).optional() }),
+    response: z.strictObject({ proposals: z.array(ProposalView) }),
+  },
+  'proposal.diff': {
+    request: z.strictObject({ id: EntryId }),
+    response: ProposalView,
+  },
+  /** Approve: apply through the write path. Refused when the entry changed since (a conflict). */
+  'proposal.approve': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ proposal: Proposal }),
+  },
+  /** Change the proposed values before approving. */
+  'proposal.edit': {
+    request: z.strictObject({ id: EntryId, data: z.record(z.string(), z.unknown()) }),
+    response: z.strictObject({ proposal: Proposal }),
+  },
+  'proposal.reject': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ proposal: Proposal }),
+  },
+  /** Compare again after a conflict: the entry as it is now becomes the base. */
+  'proposal.refresh': {
+    request: z.strictObject({ id: EntryId }),
+    response: ProposalView,
+  },
+  /**
+   * Development and test builds only: record a proposal as an importer or
+   * Claude will (M5, M6). A packaged app does not register this channel.
+   */
+  'test.propose': {
+    request: z.strictObject({
+      source: z.enum(['import', 'claude', 'bulk']),
+      op: z.enum(['create', 'update', 'delete']),
+      collection: CollectionName,
+      targetId: EntryId.nullable().default(null),
+      data: z.record(z.string(), z.unknown()).default({}),
+      reason: z.string().max(2000).default(''),
+    }),
+    response: z.strictObject({ proposal: Proposal }),
   },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {
@@ -314,6 +366,7 @@ export const events = {
   }),
   /** Cmd+Z and Shift+Cmd+Z, caught in main before the page or the menu sees them (ED-3). */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo']) }),
+  'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */
   'lists.changed': z.strictObject({ bible: z.string() }),
 } as const;

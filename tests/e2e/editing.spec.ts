@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
+import { MongoClient } from 'mongodb';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   ENTRY_COLLECTIONS,
@@ -195,7 +196,7 @@ test('ED-2 continuous typing still saves within one second of the first change',
     await input.press(ch === ' ' ? 'Space' : ch);
     if (!saw && (await currentEntry('characters', 'Ada Sullivan')).backstory) {
       saw = true;
-      expect(Date.now() - start).toBeLessThan(1500);
+      expect(Date.now() - start).toBeLessThan(1000);
     }
   }
   await waitSaved(page);
@@ -236,6 +237,18 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
     .toBe('Place 2');
   await expect(input).toHaveValue('Place 2');
+  // Redo walks every remaining step forward to the last change.
+  for (let n = 0; n < 49; n++) await page.keyboard.press('Shift+Meta+z');
+  await expect(page.getByTestId('undo-notice').first()).toHaveText(
+    'Redid: Changed Birthplace on Undo Hale',
+  );
+  await expect
+    .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
+    .toBe('Place 51');
+  await expect(input).toHaveValue('Place 51');
+  await page.keyboard.press('Shift+Meta+z');
+  await expect(page.getByTestId('undo-notice').first()).toHaveText('Nothing to redo.');
+  expect((await currentEntry('characters', 'Undo Hale')).birthplace).toBe('Place 51');
 });
 
 test('ED-3 undo and redo cover creating, deleting, restoring, and editing links', async () => {
@@ -494,4 +507,235 @@ test('ED-6 generated content and imported content are edited like any other fiel
     const title = await page.getByTestId('editor').getByRole('heading', { level: 2 }).textContent();
     expect((await currentEntry(c, title ?? ''))[name]).toBe(text);
   }
+});
+
+/** Read a stored document straight from MongoDB, not through the app. */
+async function fromMongo(collection: string, id: string) {
+  const client = new MongoClient(server.getUri());
+  try {
+    await client.connect();
+    return await client
+      .db('novel_companion')
+      .collection(`${BIBLE}.${collection}`)
+      .findOne({ _id: id as never });
+  } finally {
+    await client.close();
+  }
+}
+
+test('ED-3 tree edits undo to the start and redo to the end: a union and a parent link, their types, and deleting the union', async () => {
+  const ids = await page.evaluate(async () => {
+    const make = async (name: string, year: number) =>
+      (
+        await window.api.invoke('entry.create', {
+          collection: 'characters',
+          data: { title: name, status: 'canon', names: { full: name }, birth: { year } },
+        })
+      ).entry._id;
+    return {
+      mother: await make('Tree Mother', 1955),
+      father: await make('Tree Father', 1953),
+      child: await make('Tree Child', 1982),
+    };
+  });
+  // Create the union through the editor.
+  await openSection('unions');
+  await page.getByRole('button', { name: 'New union', exact: true }).click();
+  let form = page.getByTestId('new-entry');
+  await field(form, 'title').locator('input').fill('Tree union');
+  const partners = field(form, 'partnerIds').locator('select');
+  await partners.nth(0).selectOption(ids.mother);
+  await partners.nth(1).selectOption(ids.father);
+  await field(form, 'type').locator('select').selectOption('married');
+  await form.getByRole('button', { name: 'Create union' }).click();
+  await waitSaved(page);
+  const unionId = (await page.getByTestId('editor').getAttribute('data-entry-id'))!;
+  // Create the parent link.
+  await openSection('parentLinks');
+  await page.getByRole('button', { name: 'New parent link', exact: true }).click();
+  form = page.getByTestId('new-entry');
+  await field(form, 'title').locator('input').fill('Tree parent link');
+  await field(form, 'parentId').locator('select').selectOption(ids.mother);
+  await field(form, 'childId').locator('select').selectOption(ids.child);
+  await field(form, 'type').locator('select').selectOption('biological');
+  await form.getByRole('button', { name: 'Create parent link' }).click();
+  await waitSaved(page);
+  const linkId = (await page.getByTestId('editor').getAttribute('data-entry-id'))!;
+  const start = {
+    union: await fromMongo('unions', unionId),
+    link: await fromMongo('parentLinks', linkId),
+  };
+  // Change the parent-link type, then the union type, then delete the union.
+  await field(page.getByTestId('editor'), 'type').locator('select').selectOption('adoptive');
+  await waitSaved(page);
+  await openSection('unions');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Tree union/ })
+    .click();
+  await field(page.getByTestId('editor'), 'type').locator('select').selectOption('partnered');
+  await waitSaved(page);
+  const inspector = page.getByTestId('inspector');
+  await inspector.getByRole('button', { name: 'Move to trash' }).click();
+  await inspector
+    .getByRole('dialog', { name: 'Move to trash' })
+    .getByRole('button', { name: 'Move to trash' })
+    .click();
+  await expect(page.getByTestId('editor')).toContainText('This entry is in the trash.');
+  const end = {
+    union: await fromMongo('unions', unionId),
+    link: await fromMongo('parentLinks', linkId),
+  };
+  expect(end.union!.deletedAt).toBeDefined();
+  expect([end.union!.type, end.link!.type]).toEqual(['partnered', 'adoptive']);
+
+  // Five steps back: delete, union type, link type, link create, union create.
+  await page.locator('body').click();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Meta+z');
+  await expect(page.getByTestId('undo-notice').first()).toHaveText('Undid: Created Tree union');
+  const atStart = {
+    union: await fromMongo('unions', unionId),
+    link: await fromMongo('parentLinks', linkId),
+  };
+  expect([atStart.union!.type, atStart.link!.type]).toEqual(['married', 'biological']);
+  expect([Boolean(atStart.union!.deletedAt), Boolean(atStart.link!.deletedAt)]).toEqual([
+    true,
+    true,
+  ]);
+  for (const k of ['partnerIds', 'parentId', 'childId', 'title', 'startYear'] as const) {
+    expect(atStart.union![k]).toEqual(start.union![k]);
+    expect(atStart.link![k]).toEqual(start.link![k]);
+  }
+
+  // Five steps forward to the end.
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+Meta+z');
+  await expect(page.getByTestId('undo-notice').first()).toHaveText(
+    'Redid: Moved Tree union to the trash',
+  );
+  const atEnd = {
+    union: await fromMongo('unions', unionId),
+    link: await fromMongo('parentLinks', linkId),
+  };
+  expect([atEnd.union!.type, atEnd.link!.type]).toEqual(['partnered', 'adoptive']);
+  expect([Boolean(atEnd.union!.deletedAt), Boolean(atEnd.link!.deletedAt)]).toEqual([true, false]);
+});
+
+test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the last saved change', async () => {
+  await openSection('characters');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Ada Sullivan/ })
+    .click();
+  const editor = page.getByTestId('editor');
+  const input = field(editor, 'birthplace').locator('input');
+  const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
+  await input.fill('Saved city');
+  await waitSaved(page);
+  await expect(history.first()).toHaveText('Changed Birthplace on Ada Sullivan');
+  const historyBefore = await history.allTextContents();
+  await input.fill('Unsaved typing');
+  await page.keyboard.press('Meta+z');
+  await expect(input).toHaveValue('Saved city');
+  await waitSaved(page);
+  expect((await currentEntry('characters', 'Ada Sullivan')).birthplace).toBe('Saved city');
+  expect(await history.allTextContents()).toEqual(historyBefore);
+  // With nothing unsaved in the field, Cmd+Z steps back through saved changes again.
+  await page.keyboard.press('Meta+z');
+  await expect
+    .poll(async () => (await currentEntry('characters', 'Ada Sullivan')).birthplace)
+    .not.toBe('Saved city');
+});
+
+test('ED-7 a proposal waits in the review queue with its diff; approve writes it, reject leaves MongoDB unchanged', async () => {
+  const ada = await currentEntry('characters', 'Ada Sullivan');
+  const before = await fromMongo('characters', ada._id);
+  const propose = (data: Record<string, unknown>, reason: string) =>
+    page.evaluate(
+      ([id, d, r]) =>
+        window.api.invoke('test.propose', {
+          source: 'import',
+          op: 'update',
+          collection: 'characters',
+          targetId: id,
+          data: d,
+          reason: r,
+        }),
+      [ada._id, data, reason] as const,
+    );
+  const approveMe = await propose({ birthplace: 'Sacramento' }, 'The workbook says Sacramento.');
+  const rejectMe = await propose(
+    { backstory: 'A proposed backstory.' },
+    'The workbook has a backstory.',
+  );
+
+  await rail(page, 'Review queue').click();
+  const queue = page.getByTestId('review-queue');
+  const card = queue.locator(`[data-proposal="${approveMe.proposal._id}"]`);
+  await expect(card).toContainText('The workbook says Sacramento.');
+  const cells = (c: typeof card) =>
+    c
+      .getByTestId('proposal-diff')
+      .getByRole('row', { name: /Birthplace/ })
+      .getByRole('cell');
+  await expect(cells(card).nth(0)).toHaveText(String(before!.birthplace || 'Blank'));
+  await expect(cells(card).nth(1)).toHaveText('Sacramento');
+  // Nothing is written before approval: MongoDB still holds the old document.
+  expect(await fromMongo('characters', ada._id)).toEqual(before);
+
+  // Edit the proposed value, then approve.
+  await card.getByRole('button', { name: 'Edit' }).click();
+  await field(card, 'birthplace').locator('input').fill('Davis');
+  await card.getByRole('button', { name: 'Save proposed values' }).click();
+  await expect(cells(card).nth(1)).toHaveText('Davis');
+  expect((await fromMongo('characters', ada._id))!.birthplace).toBe(before!.birthplace);
+  await card.getByRole('button', { name: 'Approve' }).click();
+  await expect(card).toHaveCount(0);
+  expect((await fromMongo('characters', ada._id))!.birthplace).toBe('Davis');
+  await expect(queue).toContainText('Approved after editing');
+
+  const rejectCard = queue.locator(`[data-proposal="${rejectMe.proposal._id}"]`);
+  await expect(rejectCard.getByTestId('proposal-diff')).toContainText('A proposed backstory.');
+  const beforeReject = await fromMongo('characters', ada._id);
+  await rejectCard.getByRole('button', { name: 'Reject' }).click();
+  await expect(rejectCard).toHaveCount(0);
+  expect(await fromMongo('characters', ada._id)).toEqual(beforeReject);
+  await expect(queue).toContainText('Rejected');
+});
+
+test('ED-7 a proposal whose entry changed since is refused until compared again', async () => {
+  const ada = await currentEntry('characters', 'Ada Sullivan');
+  const { proposal } = await page.evaluate(
+    (id) =>
+      window.api.invoke('test.propose', {
+        source: 'claude',
+        op: 'update',
+        collection: 'characters',
+        targetId: id,
+        data: { birthplace: 'Modesto' },
+      }),
+    ada._id,
+  );
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: ada._id,
+    patch: { birthplace: 'Stockton' },
+  });
+  await rail(page, 'Lists').click();
+  await rail(page, 'Review queue').click();
+  const card = page.locator(`[data-proposal="${proposal._id}"]`);
+  await expect(card.getByRole('status')).toContainText(
+    'This entry changed after the proposal was made',
+  );
+  await expect(card.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  await card.getByRole('button', { name: 'Compare again' }).click();
+  await expect(
+    card
+      .getByTestId('proposal-diff')
+      .getByRole('row', { name: /Birthplace/ })
+      .getByRole('cell')
+      .nth(0),
+  ).toHaveText('Stockton');
+  await card.getByRole('button', { name: 'Approve' }).click();
+  await expect(card).toHaveCount(0);
+  expect((await fromMongo('characters', ada._id))!.birthplace).toBe('Modesto');
 });

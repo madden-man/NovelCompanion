@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
-import { patchBetween } from '../../../shared/domain/diff';
+import { editCommand } from '../../../shared/domain/undoRunner';
 import { labelPath } from '../../../shared/domain/issues';
 import { formatStoryDate } from '../../../shared/domain/dates';
 import { isPlainObject } from '../../../shared/domain/paths';
@@ -92,12 +92,15 @@ export function HistoryDrawer(props: {
         id,
         revisionId: diff.revision._id,
       });
-      const { forward, backward } = patchBetween(before, entry);
-      undo.record({
-        label: `Restored the version of ${props.title} from ${formatTime(diff.revision.at)}`,
-        undo: [{ kind: 'update', collection, id, patch: backward }],
-        redo: [{ kind: 'update', collection, id, patch: forward }],
-      });
+      undo.record(
+        editCommand(
+          `Restored the version of ${props.title} from ${formatTime(diff.revision.at)}`,
+          collection,
+          id,
+          before,
+          entry,
+        ),
+      );
       setSelected(null);
       setReloads((n) => n + 1);
     } catch (e) {

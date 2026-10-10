@@ -54,6 +54,16 @@ export class UndoStack<Op> {
     if (cmd) this.undone.push(cmd);
   }
 
+  /** Drop the command an undo just moved to the redo stack, after it was skipped. */
+  discardUndone(): void {
+    this.undone.pop();
+  }
+
+  /** Drop the command a redo just moved back to the undo stack, after it was skipped. */
+  discardDone(): void {
+    this.done.pop();
+  }
+
   get canUndo(): boolean {
     return this.done.length > 0;
   }

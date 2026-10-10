@@ -8,38 +8,28 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { UndoStack } from '../../../shared/domain/undo';
-import type { Command } from '../../../shared/domain/undo';
-import type { EntryCollection } from '../../../shared/schema';
-import { call, plainError } from '../api';
+import { UndoManager, stepNotice } from '../../../shared/domain/undoRunner';
+import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner';
+import { undoIO } from '../../../shared/undoIO';
+import { call } from '../api';
 
-/** One write an undo or redo replays through the normal write path (ARCHITECTURE rule 5). */
-export type Op =
-  | { kind: 'update'; collection: EntryCollection; id: string; patch: Record<string, unknown> }
-  | { kind: 'delete'; collection: EntryCollection; id: string }
-  | { kind: 'restore'; collection: EntryCollection; id: string }
-  | { kind: 'rename'; listId: string; itemId: string; label: string };
+export type { Op, UndoCommand };
 
-export type UndoCommand = Command<Op>;
+/** Undo writes go through the same IPC channels as every other write. */
+const io: UndoIO = undoIO(call);
 
-async function apply(op: Op): Promise<void> {
-  switch (op.kind) {
-    case 'update':
-      await call('entry.update', { collection: op.collection, id: op.id, patch: op.patch });
-      return;
-    case 'delete':
-      await call('entry.delete', { collection: op.collection, id: op.id });
-      return;
-    case 'restore':
-      await call('entry.restore', { collection: op.collection, id: op.id });
-      return;
-    case 'rename':
-      await call('lists.rename', {
-        listId: op.listId as never,
-        itemId: op.itemId,
-        label: op.label,
-      });
+type TextField = HTMLInputElement | HTMLTextAreaElement;
+
+function focusedTextField(): TextField | null {
+  const el = document.activeElement;
+  if (el instanceof HTMLTextAreaElement) return el;
+  if (
+    el instanceof HTMLInputElement &&
+    !['checkbox', 'radio', 'button', 'submit'].includes(el.type)
+  ) {
+    return el;
   }
+  return null;
 }
 
 interface Undo {
@@ -53,15 +43,23 @@ interface Undo {
   notice: string | null;
   /** Editors register a flush so a pending autosave lands before an undo. */
   registerFlush(fn: () => Promise<void>): () => void;
+  /** Editors call this after a save, so the focused field's saved value is known. */
+  markSaved(): void;
 }
 
 const UndoContext = createContext<Undo | null>(null);
 
-/** Session undo and redo (ED-3): at least 50 steps, Cmd+Z and Shift+Cmd+Z. */
+/**
+ * Session undo and redo (ED-3): at least 50 steps, Cmd+Z and Shift+Cmd+Z.
+ * Inside a text field holding unsaved typing, the keys undo the typing (the
+ * browser's own text undo); everywhere else they step through the app's history.
+ */
 export function UndoProvider({ children }: { children: ReactNode }) {
-  const stack = useRef(new UndoStack<Op>());
+  const manager = useRef(new UndoManager());
   const flushes = useRef(new Set<() => Promise<void>>());
   const busy = useRef(Promise.resolve());
+  /** The value the focused text field held when it was focused or last saved. */
+  const savedValue = useRef<{ el: TextField; value: string; nativeUndone: boolean } | null>(null);
   const [snapshot, setSnapshot] = useState(() => ({
     canUndo: false,
     canRedo: false,
@@ -69,13 +67,13 @@ export function UndoProvider({ children }: { children: ReactNode }) {
   }));
   const [notice, setNotice] = useState<string | null>(null);
   const refresh = useCallback(() => {
-    const s = stack.current;
+    const s = manager.current.stack;
     setSnapshot({ canUndo: s.canUndo, canRedo: s.canRedo, history: s.history() });
   }, []);
 
   const record = useCallback(
     (cmd: UndoCommand) => {
-      stack.current.push(cmd);
+      manager.current.record(cmd);
       refresh();
     },
     [refresh],
@@ -90,20 +88,8 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       // Steps run one after another, so fast key presses replay in order.
       busy.current = busy.current.then(async () => {
         await flushAll();
-        const cmd = direction === 'undo' ? stack.current.undo() : stack.current.redo();
-        if (!cmd) {
-          setNotice(direction === 'undo' ? 'Nothing to undo.' : 'Nothing to redo.');
-          refresh();
-          return;
-        }
-        try {
-          for (const op of cmd[direction]) await apply(op);
-          setNotice(`${direction === 'undo' ? 'Undid' : 'Redid'}: ${cmd.label}`);
-        } catch (e) {
-          if (direction === 'undo') stack.current.revertUndo();
-          else stack.current.revertRedo();
-          setNotice(`Could not ${direction}: ${plainError(e)}`);
-        }
+        const r = await manager.current.step(direction, io);
+        setNotice(stepNotice(direction, r));
         refresh();
       });
       return busy.current;
@@ -111,26 +97,63 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     [flushAll, refresh],
   );
 
+  /** Undo typing in the focused field when it has unsaved typing; true when it did. */
+  const textStep = useCallback((direction: 'undo' | 'redo'): boolean => {
+    const el = focusedTextField();
+    const saved = savedValue.current;
+    if (!el || !saved || saved.el !== el) return false;
+    const dirty = el.value !== saved.value;
+    if (direction === 'undo' && dirty) {
+      document.execCommand('undo');
+      saved.nativeUndone = true;
+      return true;
+    }
+    if (direction === 'redo' && saved.nativeUndone) {
+      document.execCommand('redo');
+      if (el.value === saved.value) saved.nativeUndone = false;
+      return true;
+    }
+    return false;
+  }, []);
+
+  const command = useCallback(
+    (direction: 'undo' | 'redo') => {
+      if (!textStep(direction)) void step(direction);
+    },
+    [step, textStep],
+  );
+
   useEffect(() => {
-    const off = window.api.on('app.command', ({ command }) => void step(command));
+    const onFocus = () => {
+      const el = focusedTextField();
+      savedValue.current = el ? { el, value: el.value, nativeUndone: false } : null;
+    };
+    const off = window.api.on('app.command', ({ command: c }) => command(c));
     // Fallback for key presses that reach the page directly.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
       e.preventDefault();
-      void step(e.shiftKey ? 'redo' : 'undo');
+      command(e.shiftKey ? 'redo' : 'undo');
     };
+    document.addEventListener('focusin', onFocus);
     window.addEventListener('keydown', onKey);
     return () => {
       off();
+      document.removeEventListener('focusin', onFocus);
       window.removeEventListener('keydown', onKey);
     };
-  }, [step]);
+  }, [command]);
 
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushes.current.add(fn);
     return () => {
       flushes.current.delete(fn);
     };
+  }, []);
+
+  const markSaved = useCallback(() => {
+    const el = focusedTextField();
+    savedValue.current = el ? { el, value: el.value, nativeUndone: false } : null;
   }, []);
 
   const value = useMemo<Undo>(
@@ -141,8 +164,9 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       ...snapshot,
       notice,
       registerFlush,
+      markSaved,
     }),
-    [record, step, notice, registerFlush, snapshot],
+    [record, step, notice, registerFlush, markSaved, snapshot],
   );
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;

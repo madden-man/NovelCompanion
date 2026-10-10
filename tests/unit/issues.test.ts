@@ -18,7 +18,7 @@ describe('ED-10 schema problems in plain words at the field', () => {
     const issues = fieldIssues(r.error!.issues);
     expect(issues).toContainEqual({ path: 'names.full', message: 'Cannot be empty.' });
     expect(issues.find((i) => i.path === 'birth')?.message).toBe('This value has the wrong form.');
-    for (const i of issues) expect(i.message).not.toMatch(/—|--|expected|received/);
+    for (const i of issues) expect(i.message).not.toMatch(/\u2014|--|expected|received/);
   });
 
   test('ED-10 a field path reads as its labels', () => {
