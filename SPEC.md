@@ -1,6 +1,6 @@
 # SPEC: novel companion desktop app
 
-Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A17 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
+Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A21 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
 
 Each criterion has an ID (for example `FT-4`). A criterion passes only when there is a named automated test or a recorded manual check for it in `PROGRESS.md`.
 
@@ -165,13 +165,13 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
   5. Place descriptions for the story year.
   6. What each character present knows, and facts others present know that the point-of-view character does not.
   7. Summaries of the three previous chapters in reading order, the previous chapter in each of this chapter's arcs, and the previous chapter with the same point-of-view character.
-  8. Beats planned for this chapter, and unresolved beats from earlier chapters in its arcs.
-  9. Glossary terms, themes, and open questions linked to anything selected above.
+  8. Beats planned for this chapter, and unresolved beats from earlier chapters in its arcs. An unresolved beat is one in any of this chapter's arcs whose story year is at or before this story year and which is assigned to no chapter or to a chapter not marked written `[A18]`.
+  9. Glossary terms, themes, and open questions linked to anything selected above. Linked means: a glossary term linked to a selected entry or whose characters appear in a selected character's names; a theme with an appearance in a selected chapter or this chapter; an open question linked to any selected entry `[A18]`.
   10. The last session log note for this chapter.
 - **SB-3** The selection is saved as a manifest of entry IDs. For the same inputs and data, the manifest is identical every time.
 - **SB-4** Claude writes the brief from the manifest's contents only. Every item in the brief cites entry IDs, and code verifies each cited ID is in the manifest; anything that fails is flagged visibly.
 - **SB-5** The brief keeps canon and planned material visibly separate, and never includes events after the story year except under a labelled "planned ahead" heading.
-- **SB-6** If the selection exceeds the size budget, items are dropped in a fixed priority order and the brief says what was left out.
+- **SB-6** If the selection exceeds the size budget (measured in characters of the selected entries' text, default 40,000, a setting), items are dropped in this fixed priority order, lowest first: open questions, themes, glossary, place descriptions, cultural entries, world events beyond the window, previous-chapter summaries, beats, knowledge, era state, characters present, session-log note `[A18]`. The brief says what was left out.
 - **SB-7** If Claude is unavailable, the app shows the selected entries as a structured brief with no synthesis.
 - **SB-8** Briefs are saved, editable, linked to their chapter, and exportable as Markdown and PDF.
 - **SB-9** I can add or remove entries from the selection and regenerate.
@@ -180,16 +180,16 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 
 - **CC-1** Runs on one chapter or the whole manuscript, on demand.
 - **CC-2** Structural checks, in code: a character present in a chapter while dead or unborn in its story year; a character acting on a fact before the year they learn it; an event linked to a chapter as having happened but dated after its story year; tree warnings from `FT-6`; a chapter's story year outside its point-of-view character's lifetime.
-- **CC-3** Prose checks, by Claude: the chapter text is compared with the entries selected for it. Each finding quotes the chapter passage, cites the conflicting entry, and explains the conflict.
-- **CC-4** Each finding can be dismissed, marked resolved, or turned into an edit of the cited entry. Dismissed findings do not reappear unless the text or the entry changes.
+- **CC-3** `[A20]` Alignment checks, by Claude: the chapter text is compared with the entries selected for it and with the plot as stored: the chapter's strands and years, its beats, beats in its arcs dated before its story year, chapter order, and the facts in play. Each finding quotes the chapter passage with its line numbers, cites the conflicting entry or beat, and explains the conflict. The check runs on one chapter or the whole manuscript at any time (`CC-1`) and uses the model configured for continuity, default `claude-opus-5-5`.
+- **CC-4** `[A20]` Each finding offers three resolutions. **Manuscript wins:** the finding carries a prepared change set to the bible (the entries, beats, or strands that would make the bible match the chapter); the change set is shown as a diff, and one click applies all of it through the normal write path, recorded in revision history and undoable. **Rewrite recommended:** the finding becomes a rewrite task listing the exact manuscript lines (chapter, line numbers, quoted text) and a plain description of what must change to match the bible; it never contains replacement prose (`AI-4`). Open rewrite tasks are listed on the dashboard (`DB-1`) and on the chapter. **Dismiss.** Dismissed findings do not reappear unless the text or the entry changes.
 - **CC-5** Structural checks produce no findings on the fixture novel's clean chapters and find every planted structural error (section 7).
 
-### 5.13 Claude panel
+### 5.13 Claude panel `[A19]` `[A21]`
 
-- **AI-1** A chat panel is available from every screen, with streaming responses, a stop button, and saved conversation history.
-- **AI-2** Claude reads the bible through tools: search entries, get an entry, query the timeline for a year, get a person's relatives, get a chapter. The panel shows which entries were read for each answer.
+- **AI-1** A question panel is available from every screen: I ask questions about the bible and the manuscript, with streaming responses, a stop button, and saved conversation history. Claude also runs inside four features, each started by a named control and fed only by deterministic selection: session briefs (`DB-2`, `SB-4`), alignment checks (`CC-3`), chapter summaries (`MS-2`), and import proposals (`IM-5`). Every run streams, can be stopped, and is saved with the feature that produced it.
+- **AI-2** In the panel Claude reads the bible through read-only tools: search entries, get an entry, query the timeline for a year, get a person's relatives, get a chapter. The panel shows which entries were read for each answer; each feature run shows which entries it was given.
 - **AI-3** Claude has no tool that writes to the bible. It can only submit proposals (create, change, delete, link), which appear in a review queue showing the exact change. Nothing is saved until I approve, and I can edit a proposal before approving.
-- **AI-4** Claude does not draft prose for the novel unless I ask in that conversation. This is a default instruction I can change in settings.
+- **AI-4** Claude never drafts prose for the novel. No screen, setting, or control asks Claude for prose, the system prompt for the panel and for every feature forbids it, and if I ask for prose in the panel Claude declines in one sentence and offers the bible facts instead. A test asserts that every system prompt contains the prohibition and that a recorded "write the scene" request in the panel yields a refusal with no prose.
 - **AI-5** Imported text is treated as material to analyse, never as instructions to Claude.
 - **AI-6** On first use, the app states plainly that content used in Claude features is sent to Anthropic, and which features do that.
 - **AI-7** Failures (no network, bad key, rate limit) show a clear message and never lose my input or corrupt data.
@@ -232,7 +232,7 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 
 ### 5.19 Settings
 
-- **ST-1** `[A3]` `[A17]` Settings cover: Claude model per feature (briefs default Opus) and sign-in status, Claude default instructions, brief window and size budget, romanization systems, snapshot count, MongoDB connection (stored in the keychain, shown masked), Drive connection, and light or dark appearance.
+- **ST-1** `[A3]` `[A17]` `[A19]` Settings cover: Claude model per feature (briefs default Opus) and sign-in status, brief window and size budget, romanization systems, snapshot count, MongoDB connection (stored in the keychain, shown masked), Drive connection, and light or dark appearance.
 
 ### 5.20 Story time `[A11]`
 
@@ -244,10 +244,10 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 
 ### 5.21 Dashboard and Start session `[A17]`
 
-- **DB-1** The app opens on a dashboard: the last session-log note (`SL-1`), the current story time (`TM-1`), the current position in reading order, open questions count, and one primary control, "Start session".
+- **DB-1** The app opens on a dashboard: the last session-log note (`SL-1`), the current story time (`TM-1`), the current position in reading order, open questions count, open rewrite tasks (`CC-4`), and two primary controls, "Start session" and "Check alignment" (`CC-1`).
 - **DB-2** Start session takes a section of plot: a part, a chapter, a chapter strand, or a story year plus point-of-view character (the same inputs as `SB-1`). It runs the `SB-2` selection, then has Claude synthesize the brief with these three sections first and always present: (1) the characters in the section and their ages at its story year, (2) the world events ongoing at that time, (3) the cultural expectations bearing on those characters at that moment. The remaining `SB-4` sections follow. Every rule in `SB-3` to `SB-9` applies.
 - **DB-3** Starting a session creates a session-log entry linked to the section and the brief, and sets the story time to the section's year.
-- **DB-4** The brief is generated with the model configured for briefs, default `claude-opus-5-5`. Settings (`ST-1`) hold a model per Claude feature: briefs, continuity prose checks, chapter summaries, chat, and import proposals.
+- **DB-4** The brief is generated with the model configured for briefs, default `claude-opus-5-5`. Settings (`ST-1`) hold a model per Claude feature: briefs (default Opus), alignment checks (default Opus), chapter summaries, import proposals, and the question panel.
 
 ---
 
@@ -326,7 +326,7 @@ All other chapters are clean and must produce no structural findings.
 | M3 | Timeline, ages, world events, era states, story time | TL-1 to 7; WE-1 to 3; TM-1 to 5 |
 | M4 | Plot, culture, places, glossary, knowledge, themes, questions, log, custom sections, search | PL, CU, PC, GL, KN, TH, OQ, SL, CS, SR |
 | M5 | Excel and Word import, snapshots, export | IM-1 to 4, 6, 7; BK-1 to 4 |
-| M6 | Claude panel, tools, proposal queue | ARCH-4, 5; AI-1 to 7; IM-5 |
+| M6 | Claude panel, tools, proposal queue, import proposals | ARCH-4, 5; AI-1 to 7; IM-5 |
 | M7 | Manuscript, session brief, dashboard | MS-1 to 5; SB-1 to 9; DB-1 to 4 |
 | M8 | Continuity check | CC-1 to 5 |
 | M9 | Google Drive | GD-1 to 5 |
@@ -378,3 +378,7 @@ Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the sto
 | A15 | 10.1, NF-4 | Packaging target is macOS only. | Tommy's instruction. |
 | A16 | 1, ARCH-8, M0 | The app is general: many bibles, one database each, no book-specific code. East Winds is the first bible and the example. | Tommy: "the supplement tool should be utilizing those details as an example, not purely for this book." |
 | A17 | 5.21 DB-1 to 4, ST-1, M7 | Dashboard with Start session: pick a plot section, deterministic selection, Opus synthesizes characters and ages, ongoing world events, and cultural expectations first, then the rest of the brief; logs the session. Per-feature model setting. | Tommy, 2026-10-10: "there should be a way to generate a new session for a given section of plot which synthesizes... this should be on the main dashboard and should use opus." |
+| A18 | SB-2 steps 8 and 9, SB-6, section 4 Chapter | Definitions tightened: unresolved beat, linked glossary/theme/question, budget unit and drop order. Every strand carries its own point-of-view character and places; the importer sets a backstory strand's point of view to its first listed character when the sheet gives none, so CC-2 does not flag every backstory strand. | The mockup builder could not implement these rules without choosing; recorded so M7 tests have one reading. |
+| A19 | 5.13 AI-1, AI-2, AI-4; ST-1; DB-4; M6 | No chat panel. Claude runs only inside briefs, continuity prose checks, summaries, and import proposals. Claude never drafts prose and no control or setting can ask it to. | Tommy, 2026-10-10: "take out the claude panel, i don't need to ask you questions directly" and "remove any box that will allow claude to draft prose, that should not exist anywhere in the app." |
+| A20 | CC-3, CC-4, DB-1, DB-4 | Alignment check: Claude (Opus) reads any chapter or the whole manuscript on demand and compares it to the entries and the stored plot. Each finding resolves as Manuscript wins (one-click prepared change set to the bible, shown as a diff, undoable) or Rewrite recommended (exact lines and what must change, no prose) or Dismiss. Rewrite tasks on the dashboard. | Tommy, 2026-10-10: "allow claude to read the manuscript at any point and check how well it aligns with the plot... either allow me to override what's in the supplement tool and automatically update it, or recommend rewrite on whatever section is misaligned, even showing specific lines. this should use opus too." |
+| A21 | 5.13 AI-1, AI-2, AI-4; DB-4; M6 | The question panel is back (read-only tools, proposals only through the queue). The prose ban from A19 stays absolute and now covers the panel: a prose request is declined. | Tommy, 2026-10-10: "add back the claude question panel, that was a good idea." |

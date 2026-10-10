@@ -27,18 +27,17 @@
   .section-head h2 { font-size: 1.5rem; }
 
   /* Chat panel */
-  .chat-frame { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+  .chat-frame { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
   .chat-frame .page-stub { padding: 16px 18px; min-width: 0; }
   .chat { border-left: 1px solid var(--border); display: flex; flex-direction: column; min-height: 520px; background: var(--surface); }
-  .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .chat-head { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .chat-head .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .chat-head strong { font-family: var(--font-display); font-size: 1.05rem; font-weight: 500; }
+  .chat-head .callout { font-size: 0.8rem; padding: 4px 8px; }
   .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 420px; }
   .msg { max-width: 92%; padding: 8px 10px; border-radius: 10px; font-size: 0.92rem; line-height: 1.4; }
   .msg.user { align-self: flex-end; background: var(--bubble-user); color: var(--fg); border-bottom-right-radius: 2px; }
   .msg.ai { align-self: flex-start; background: var(--bubble-ai); color: var(--fg); border-bottom-left-radius: 2px; }
-  .msg .reads { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border-strong); font-size: 0.78rem; color: var(--fg-2); }
-  .msg .reads ul { margin: 4px 0 0; padding-left: 16px; }
-  .msg .reads .id { color: var(--fg); }
   .msg.stopped::after { content: ' (stopped)'; color: var(--fg-2); font-style: italic; }
   .composer { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .composer textarea { width: 100%; min-height: 56px; }
@@ -47,15 +46,16 @@
   .suggest button:hover { border-color: var(--accent); }
   .history { font-size: 0.85rem; }
   .history ol { margin: 6px 0 0; padding-left: 18px; }
+  .overlay { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  @media (max-width: 760px) { .chat-frame { grid-template-columns: 1fr; } .chat { border-left: 0; border-top: 1px solid var(--border); } }
+  .msg .reads { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border-strong); font-size: 0.78rem; color: var(--fg-2); }
+  .msg .reads ul { margin: 4px 0 0; padding-left: 16px; }
+  .msg .reads .id { color: var(--fg); }
   .state-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
   .state-tabs button { font: inherit; font-size: 0.82rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); cursor: pointer; }
   .state-tabs button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-  .overlay { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
   .notice { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 6px; }
   .notice ul { margin: 0; padding-left: 18px; }
-  .setting-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.88rem; }
-  .toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
-  @media (max-width: 760px) { .chat-frame { grid-template-columns: 1fr; } .chat { border-left: 0; border-top: 1px solid var(--border); } }
 
   /* Proposals */
   .proposal { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 12px; }
@@ -124,7 +124,7 @@
   <header>
     <span class="eyebrow">Novel companion mockup 4 of 4</span>
     <h1>Claude Panel and Import</h1>
-    <p class="lede">How Claude reads the bible without writing to it, how files from Excel, Word, Google Docs and Drive become entries, and how snapshots, bibles and settings work. Every control below changes real page state. Data shown is example data from the first bible, East Winds. The app itself holds any number of bibles.</p>
+    <p class="lede">How Claude answers questions and reads the bible without writing to it, how files from Excel, Word, Google Docs and Drive become entries, and how snapshots, bibles and settings work. Every control below changes real page state. Data shown is example data from the first bible, East Winds. The app itself holds any number of bibles.</p>
     <nav class="toc" aria-label="Sections">
       <a href="#claude">Claude panel</a><a href="#proposals">Proposal queue</a><a href="#excel">Excel import</a><a href="#docs">Word and Docs import</a><a href="#drive">Google Drive</a><a href="#snapshots">Snapshots, bibles, settings</a>
     </nav>
@@ -134,8 +134,8 @@
   <section class="section" id="claude">
     <div class="section-head">
       <h2>Claude panel</h2>
-      <span class="crit-ref">AI-1 streaming and stop · AI-2 tool reads shown · AI-4 no prose by default · AI-5 imported text is data · AI-6 first-use notice · AI-7 failures keep input · ARCH-4 subscription sign-in</span>
-      <p>The panel opens from every screen. Claude can search and read the bible through tools and can only propose changes. Pick a state to see how the panel behaves when things go wrong.</p>
+      <span class="crit-ref">AI-1 streaming and stop · AI-2 tool reads shown · AI-4 no prose, ever · AI-5 imported text is data · AI-6 first-use notice · AI-7 failures keep input · ARCH-4 subscription sign-in</span>
+      <p>The panel opens from every screen. Claude answers questions by searching and reading the bible through tools, and can only propose changes. Pick a state to see how the panel behaves when things go wrong.</p>
     </div>
     <div class="state-tabs" role="group" aria-label="Panel state">
       <button type="button" id="state-ready" aria-pressed="true" data-state="ready">Signed in</button>
@@ -149,11 +149,6 @@
         <h3 style="margin-top:4px">Li Dawn <span class="zh" tabindex="0" data-pinyin="Xiǎoxī" data-meaning="dawn light">晓曦</span></h3>
         <p class="example-note">Born 7 Jan 2037, Jinan. Status canon. The panel stays open while you move between pages.</p>
         <hr>
-        <div class="setting-line">
-          <label class="toggle"><input type="checkbox" id="prose-setting"> Allow Claude to draft prose without being asked</label>
-          <span class="example-note" id="prose-note">Default off (AI-4). Claude will refuse to write scene text unless you ask for it in the conversation.</span>
-        </div>
-        <hr>
         <div class="history" id="history-block">
           <strong>Saved conversations</strong>
           <ol id="history-list"></ol>
@@ -161,8 +156,8 @@
       </div>
       <aside class="chat" aria-label="Claude panel">
         <div class="chat-head">
-          <strong>Claude</strong>
-          <span class="chip" id="chat-status"><span class="dot" style="color:var(--good)"></span> Signed in as Tommy</span>
+          <div class="top"><strong>Claude</strong><span class="chip" id="chat-status"><span class="dot" style="color:var(--good)"></span> Signed in as Tommy</span></div>
+          <div class="callout">Claude never drafts prose for this novel. There is no control or setting for it.</div>
         </div>
         <div id="chat-body" style="display:flex;flex-direction:column;flex:1;min-height:0">
           <div class="messages" id="messages" aria-live="polite"></div>
@@ -171,6 +166,7 @@
               <button type="button" data-prompt="Who is alive in 2075 and how old are they?">Who is alive in 2075?</button>
               <button type="button" data-prompt="What does Dawn know about Frank's CIA work, and when did she learn it?">What does Dawn know about the CIA?</button>
               <button type="button" data-prompt="Chaney has no birth year. Propose one that fits chapter 1.">Propose Chaney's birth year</button>
+              <button type="button" data-prompt="Write the scene where Mark meets Dawn">Write the scene where Mark meets Dawn</button>
             </div>
             <textarea id="chat-input" placeholder="Ask about the bible. Claude reads entries through tools and cites their IDs."></textarea>
             <div class="row">
@@ -183,6 +179,10 @@
         <div id="chat-overlay" class="overlay" hidden></div>
       </aside>
     </div>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between"><h3>Where Claude runs</h3><span class="example-note">Models are set per feature in Settings below. Every run shows the entries it read, with IDs (AI-2).</span></div>
+      <div class="stack" id="feature-list" style="margin-top:8px"></div>
+    </div>
   </section>
 
   <!-- 2. Proposal queue -->
@@ -190,7 +190,7 @@
     <div class="section-head">
       <h2>Proposal queue</h2>
       <span class="crit-ref">AI-3 no write tool, proposals only · ED-7 nothing saved without approval</span>
-      <p>Claude has no tool that writes to the bible. Everything it wants to change arrives here as an exact before and after. The live value beside each card is what the bible holds right now. It changes only when you approve.</p>
+      <p>Claude has no tool that writes to the bible. Proposals arrive here from the question panel, import runs (section 4) and alignment findings, as an exact before and after. The live value beside each card is what the bible holds right now. It changes only when you approve.</p>
     </div>
     <div class="stack" id="proposal-list"></div>
   </section>
@@ -245,7 +245,7 @@
     <div class="section-head">
       <h2>Word and Google Docs import</h2>
       <span class="crit-ref">IM-4 backstory, chapter, or note with headings kept · IM-5 optional structured proposals · MS-1 italics and scene breaks kept · AI-5 imported text is never an instruction</span>
-      <p>Bring a document in as what it is. Headings, italics and scene breaks survive. Claude can read it and propose entries, which land in the queue above for your approval.</p>
+      <p>Bring a document in as what it is. Headings, italics and scene breaks survive. Optionally Claude reads it and proposes entries, which land in the queue above for your approval. This is the only way a document reaches Claude.</p>
     </div>
     <div class="grid-2">
       <div class="panel stack">
@@ -331,8 +331,20 @@
     <div class="panel">
       <h3>Settings</h3>
       <div class="settings-grid" style="margin-top:8px">
-        <label class="field">Claude model
-          <select id="set-model"><option>claude-fable-5-1</option><option>claude-opus-5-5</option><option>claude-sonnet-5-5</option></select>
+        <label class="field">Model for the question panel
+          <select id="set-model-panel" data-feature="panel"><option>claude-fable-5-1</option><option>claude-opus-5-5</option><option selected>claude-sonnet-5-5</option><option>claude-haiku-4-5-20251001</option></select>
+        </label>
+        <label class="field">Model for session briefs
+          <select id="set-model-briefs" data-feature="briefs"><option>claude-fable-5-1</option><option selected>claude-opus-5-5</option><option>claude-sonnet-5-5</option><option>claude-haiku-4-5-20251001</option></select>
+        </label>
+        <label class="field">Model for alignment checks
+          <select id="set-model-continuity" data-feature="continuity"><option>claude-fable-5-1</option><option selected>claude-opus-5-5</option><option>claude-sonnet-5-5</option><option>claude-haiku-4-5-20251001</option></select>
+        </label>
+        <label class="field">Model for chapter summaries
+          <select id="set-model-summaries" data-feature="summaries"><option>claude-fable-5-1</option><option>claude-opus-5-5</option><option selected>claude-sonnet-5-5</option><option>claude-haiku-4-5-20251001</option></select>
+        </label>
+        <label class="field">Model for import proposals
+          <select id="set-model-imports" data-feature="imports"><option>claude-fable-5-1</option><option>claude-opus-5-5</option><option selected>claude-sonnet-5-5</option><option>claude-haiku-4-5-20251001</option></select>
         </label>
         <div class="field">Sign-in status
           <div class="row"><span class="status good" id="set-signin">Claude Code signed in as Tommy</span><button type="button" class="btn small" id="set-signin-btn">Check again</button></div>
@@ -357,9 +369,6 @@
           <div class="row"><select id="roman-lang"><option>Cantonese</option><option>Japanese</option></select><select id="roman-sys"><option>Jyutping</option><option>Yale</option><option>Hepburn</option></select><button type="button" class="btn small" id="roman-add">Add</button></div>
         </div>
       </div>
-      <label class="field" style="margin-top:12px">Claude default instructions
-        <textarea id="set-instructions" rows="3">You are a story bible assistant. Read entries through tools and cite their IDs. Do not draft prose for the novel unless asked in this conversation. Keep canon and planned material separate.</textarea>
-      </label>
       <div class="row" style="margin-top:10px"><button type="button" class="btn primary" id="settings-save">Save settings</button><span class="example-note" id="settings-note">Settings save automatically in the real app (ED-2); this button shows what was saved.</span></div>
     </div>
   </section>
@@ -383,25 +392,38 @@
   const links = [{ from: 'ch_chaney', to: 'ch_mark', type: 'girlfriend 2052 to 2054' }];
 
   /* ---------- 1. Claude panel ---------- */
+  const features = [
+    { key: 'panel', name: 'Question panel', what: 'Answers questions by reading the bible through tools; submits proposals, never prose.' },
+    { key: 'briefs', name: 'Session briefs', what: 'Writes the one-page brief from the manifest of selected entries; cites every entry ID.' },
+    { key: 'continuity', name: 'Alignment checks', what: 'Compares a chapter’s text with the entries selected for it and with the stored plot; each finding quotes the lines and offers Manuscript wins or Rewrite recommended.' },
+    { key: 'summaries', name: 'Chapter summaries', what: 'Offers a summary when a chapter is marked written; nothing saved until you approve or edit it.' },
+    { key: 'imports', name: 'Import proposals', what: 'Reads an imported document and proposes structured entries through the queue.' },
+  ];
+  function modelFor(key) { const sel = $('#set-model-' + key); return sel ? sel.value : ''; }
+  function renderFeatures() {
+    $('#feature-list').innerHTML = features.map(f => `<div class="row" style="justify-content:space-between;align-items:flex-start"><span><strong>${esc(f.name)}</strong><br><span class="example-note">${esc(f.what)}</span></span><span class="chip" id="feat-${f.key}">${esc(modelFor(f.key))}</span></div>`).join('');
+  }
   const exchanges = [
     {
       match: /alive|2075|old/i,
-      prompt: 'Who is alive in 2075 and how old are they?',
       reply: 'In 2075 the living Sullivans are Frank (75), Sydney (45), Shannon and Emilie (43), Mark (38), Darnell (46), Matthew (26), Leon (11), LiNa (7) and HaoYu (5). Neveah is 3 but not yet adopted. On the Li side: Siyuan (68), Qin (67), Xuan (42), Dawn (38) and Sichao (36, the year of her accident). Laura and Samantha are dead. Wang’an would be 95 if alive; his death year is unset. Nian You, Gu Chu and Robb have no birth year, so their ages are unknown. These ages come from the timeline tool, not from me.',
       reads: [['timeline_for_year', '2075', 'ev_2075_port, era_7'], ['get_entry', 'ch_frank', 'Frank Sullivan'], ['get_entry', 'ch_sichao', 'Li Sichao']],
     },
     {
       match: /dawn.*(cia|frank)|cia/i,
-      prompt: 'What does Dawn know about Frank’s CIA work, and when did she learn it?',
       reply: 'The fact fc_cia (“Frank helped the CIA document China’s inflated markets in 2035”) has three knowledge records. Frank from 2035, Laura from 2035 (Frank told her), and Dawn from 2081, in chapter 2.11 “Dawn and Qin”, where Qin tells her in Jinan. So in any chapter before 2081 Dawn does not know. Chapter 1.7 “Mark and Dawn” (2067) has Frank present with Dawn and would be a place to check that nobody lets it slip. Mark has no record at all; that may be a gap.',
       reads: [['search_entries', 'CIA', 'fc_cia, ev_2035_bubble'], ['get_entry', 'fc_cia', 'knowledge records'], ['get_chapter', 'chp_2_11', 'Dawn and Qin'], ['get_relatives', 'ch_dawn', 'Mark, Qin, Siyuan']],
     },
     {
       match: /chaney|birth year|propose/i,
-      prompt: 'Chaney has no birth year. Propose one that fits chapter 1.',
       reply: 'Chaney is Mark’s classmate from freshman year and goes to Homecoming with him in fall 2052, when Mark is 15. A classmate born in 2037 fits; she leaves for Maryland each summer and the two break up in summer 2054. I have submitted a proposal to set her birth year to 2037 with status planned. Nothing changes until you approve it in the queue.',
       reads: [['get_entry', 'ch_chaney', 'Chaney'], ['get_chapter', 'chp_1_2', 'Mark Meets Dawn, backstory strand 2052'], ['get_entry', 'ch_mark', 'born 2037-07-08']],
       proposes: 'p_chaney',
+    },
+    {
+      match: /write|draft|scene|prose/i,
+      reply: 'I don’t draft prose for this novel. Here is what the bible holds for that scene: chapter 1.2 “Mark Meets Dawn” (chp_1_2), present strand 2056 at USC (pl_usc), point of view Mark (ch_mark, 19, marketing major, drunk). Dawn (ch_dawn, 19, born 7 Jan 2037 in Jinan, status canon) is undeclared and stutters over English she knows better than most Americans at the party. Beat bt_2: they do not fall in love right away, and Mark is unsure because she is not Christian. Open question oq_dawn_birth: her birth year is still disputed across sources.',
+      reads: [['get_chapter', 'chp_1_2', 'Mark Meets Dawn'], ['get_entry', 'ch_mark', 'born 2037-07-08'], ['get_entry', 'ch_dawn', 'born 2037-01-07'], ['get_entry', 'bt_2', 'beat'], ['get_entry', 'oq_dawn_birth', 'open']],
     },
   ];
   const history = [
@@ -410,37 +432,20 @@
   ];
   let streaming = null;
   let panelState = 'ready';
-  let pendingInput = '';
-
-  function renderHistory() {
-    $('#history-list').innerHTML = history.map(h => `<li>${esc(h.title)} <span class="example-note">(${esc(h.when)}, ${h.turns} turns)</span></li>`).join('');
-  }
-  function addMsg(role, html) {
-    const m = document.createElement('div'); m.className = 'msg ' + role; m.innerHTML = html;
-    $('#messages').appendChild(m); $('#messages').scrollTop = 1e6; return m;
-  }
-  function readsHtml(reads) {
-    return `<div class="reads">Read for this answer<ul>${reads.map(r => `<li>${esc(r[0])}(<span class="id">${esc(r[1])}</span>) → ${esc(r[2])}</li>`).join('')}</ul></div>`;
-  }
+  function renderHistory() { $('#history-list').innerHTML = history.map(h => `<li>${esc(h.title)} <span class="example-note">(${esc(h.when)}, ${h.turns} turns)</span></li>`).join(''); }
+  function addMsg(role, html) { const m = document.createElement('div'); m.className = 'msg ' + role; m.innerHTML = html; $('#messages').appendChild(m); $('#messages').scrollTop = 1e6; return m; }
+  function readsHtml(reads) { return `<div class="reads">Read for this answer<ul>${reads.map(r => `<li>${esc(r[0])}(<span class="id">${esc(r[1])}</span>) → ${esc(r[2])}</li>`).join('')}</ul></div>`; }
   function send(text) {
     text = (text || '').trim(); if (!text || streaming) return;
     if (panelState === 'offline') {
-      pendingInput = text;
       addMsg('user', esc(text));
       addMsg('ai', '<strong>No network.</strong> The message was not sent. Your text is kept in the box below; reconnect and press Send again. Nothing in the bible changed.');
-      $('#chat-input').value = text;
-      return;
+      $('#chat-input').value = text; return;
     }
-    addMsg('user', esc(text));
-    $('#chat-input').value = '';
-    const ex = exchanges.find(e => e.match.test(text)) || {
-      reply: 'I searched the bible for that and found nothing matching. Try naming a character, a chapter, or a year; I read entries through tools and will list what I read.',
-      reads: [['search_entries', text.slice(0, 24), 'no matches']],
-    };
-    const m = addMsg('ai', '');
-    const words = ex.reply.split(' ');
-    let i = 0;
-    $('#stop-btn').disabled = false; $('#send-btn').disabled = true; $('#stream-note').textContent = 'Streaming';
+    addMsg('user', esc(text)); $('#chat-input').value = '';
+    const ex = exchanges.find(e => e.match.test(text)) || { reply: 'I searched the bible for that and found nothing matching. Try naming a character, a chapter, or a year; I read entries through tools and will list what I read.', reads: [['search_entries', text.slice(0, 24), 'no matches']] };
+    const m = addMsg('ai', ''); const words = ex.reply.split(' '); let i = 0;
+    $('#stop-btn').disabled = false; $('#send-btn').disabled = true; $('#stream-note').textContent = 'Streaming (' + modelFor('panel') + ')';
     function finish(stopped) {
       streaming = null; $('#stop-btn').disabled = true; $('#send-btn').disabled = false; $('#stream-note').textContent = '';
       if (stopped) m.classList.add('stopped');
@@ -449,31 +454,26 @@
       history.unshift({ title: text.length > 32 ? text.slice(0, 32) + '…' : text, when: 'just now', turns: 2 }); renderHistory();
     }
     if (reduced) { m.textContent = ex.reply; finish(false); return; }
-    streaming = setInterval(() => {
-      if (i >= words.length) { clearInterval(streaming); finish(false); return; }
-      m.textContent += (i ? ' ' : '') + words[i++]; $('#messages').scrollTop = 1e6;
-    }, 45);
+    streaming = setInterval(() => { if (i >= words.length) { clearInterval(streaming); finish(false); return; } m.textContent += (i ? ' ' : '') + words[i++]; $('#messages').scrollTop = 1e6; }, 45);
   }
   $('#send-btn').addEventListener('click', () => send($('#chat-input').value));
   $('#chat-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send($('#chat-input').value); } });
   $('#stop-btn').addEventListener('click', () => { if (streaming) { clearInterval(streaming); const m = $$('.msg.ai').pop(); streaming = null; $('#stop-btn').disabled = true; $('#send-btn').disabled = false; $('#stream-note').textContent = ''; m.classList.add('stopped'); m.insertAdjacentHTML('beforeend', '<div class="reads">Stopped by you. The partial reply is kept; nothing was written.</div>'); } });
   $$('#suggest button').forEach(b => b.addEventListener('click', () => send(b.dataset.prompt)));
-  $('#prose-setting').addEventListener('change', e => { $('#prose-note').textContent = e.target.checked ? 'On. Claude may draft scene text when it judges it useful. This changes the default instructions in Settings.' : 'Default off (AI-4). Claude will refuse to write scene text unless you ask for it in the conversation.'; });
-
   function setPanelState(s) {
     panelState = s;
     $$('.state-tabs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === s)));
     const ov = $('#chat-overlay'); const body = $('#chat-body'); const st = $('#chat-status');
     ov.hidden = true; body.hidden = false;
-    if (s === 'ready') { st.innerHTML = '<span class="dot" style="color:var(--good)"></span> Signed in as Tommy'; }
-    if (s === 'offline') { st.innerHTML = '<span class="dot" style="color:var(--critical)"></span> No network'; }
+    if (s === 'ready') st.innerHTML = '<span class="dot" style="color:var(--good)"></span> Signed in as Tommy';
+    if (s === 'offline') st.innerHTML = '<span class="dot" style="color:var(--critical)"></span> No network';
     if (s === 'notice') {
       st.innerHTML = '<span class="dot" style="color:var(--warning)"></span> First use';
       body.hidden = true; ov.hidden = false;
       ov.innerHTML = `<div class="notice"><strong>Before you use Claude in this app</strong>
-        <p>These features send parts of your bible, and sometimes chapter text, to Anthropic to be processed by Claude:</p>
-        <ul><li>Session brief: the entries selected for a chapter</li><li>Continuity check, prose part: the chapter text and the entries selected for it</li><li>Chapter summary: the chapter text</li><li>This chat: your messages and whatever entries Claude reads with its tools</li><li>Document reading on import, only when you ask for proposals: the document text</li></ul>
-        <p>Everything else in the app runs on this Mac and your database. Claude signs in with your Claude subscription through Claude Code; no API key is stored.</p>
+        <p>These five features send parts of your bible, and sometimes chapter or document text, to Anthropic to be processed by Claude:</p>
+        <ul><li>Question panel: your messages and whatever entries Claude reads with its tools</li><li>Session briefs: the entries selected for a chapter</li><li>Alignment checks: the chapter text and the entries selected for it</li><li>Chapter summaries: the chapter text</li><li>Import proposals, only when you ask for them: the document text</li></ul>
+        <p>Nothing else leaves this Mac and your database. Claude signs in with your Claude subscription through Claude Code; no API key is stored.</p>
         <div class="row"><button type="button" class="btn primary" id="notice-ok">I understand</button></div></div>`;
       $('#notice-ok').addEventListener('click', () => { setPanelState('ready'); toast('Notice dismissed. It will not show again.'); });
     }
@@ -481,7 +481,7 @@
       st.innerHTML = '<span class="dot" style="color:var(--critical)"></span> Not signed in';
       body.hidden = true; ov.hidden = false;
       ov.innerHTML = `<div class="callout crit"><strong>Claude Code is not signed in on this Mac.</strong><p style="margin-top:4px">Run <code>claude</code> in a terminal and sign in, then come back.</p></div>
-        <p class="example-note">Everything except Claude features keeps working. Your draft message is kept.</p>
+        <p class="example-note">Everything except the five Claude features keeps working. Your draft message is kept.</p>
         <div class="row"><button type="button" class="btn primary" id="retry-btn">Retry</button></div>`;
       $('#retry-btn').addEventListener('click', () => { setPanelState('ready'); toast('Signed in as Tommy.'); });
     }
@@ -490,9 +490,9 @@
 
   /* ---------- 2. Proposal queue ---------- */
   const proposalDefs = {
-    p_xuan: { kind: 'change', entry: 'ch_xuan', field: 'born', from: 2033, to: 2036, title: 'Change Li Xuan’s birth year', why: 'Xuan enters Tsinghua and the Party in 2054 and calls himself Deputy Director at 22. Both fit 2036. The 2033 value comes from the newest workbook but contradicts his own philosophy entry.', reads: ['ch_xuan', 'bt_13', 'oq_xuan_birth'] },
+    p_xuan: { kind: 'change', entry: 'ch_xuan', field: 'born', from: 2033, to: 2036, title: 'Change Li Xuan’s birth year', why: 'From an alignment finding on chapter 2.12: Xuan enters Tsinghua and the Party in 2054 and calls himself Deputy Director at 22. Both fit 2036. The 2033 value comes from the newest workbook but contradicts his own philosophy entry.', reads: ['ch_xuan', 'bt_13', 'oq_xuan_birth'] },
     p_chaney: { kind: 'change', entry: 'ch_chaney', field: 'born', from: null, to: 2037, title: 'Set Chaney’s birth year', why: 'A classmate of Mark’s from freshman year; Homecoming in fall 2052 when Mark is 15.', reads: ['ch_chaney', 'chp_1_2', 'ch_mark'] },
-    p_robb_del: { kind: 'delete', entry: 'ch_robb', title: 'Delete Robb', why: 'Robb appears only as Sydney’s boyfriend and is already named inside un_sydney_robb. Deleting moves him to the trash; links are kept there (ED-5).', reads: ['ch_robb', 'un_sydney_robb'] },
+    p_robb_del: { kind: 'delete', entry: 'ch_robb', title: 'Delete Robb', why: 'From an alignment finding: Robb appears only as Sydney’s boyfriend and is already named inside un_sydney_robb. Deleting moves him to the trash; links are kept there (ED-5).', reads: ['ch_robb', 'un_sydney_robb'] },
     p_link: { kind: 'link', from: 'ch_guchu', to: 'ch_qin', type: 'friend from the factory, honorary uncle to Dawn', title: 'Link Gu Chu to Li Qin', why: 'The character notes call him Qin’s friend from the factory; no relationship entry exists.', reads: ['ch_guchu', 'ch_qin'] },
     p_mark_born: { kind: 'change', entry: 'ch_mark', field: 'bornDate', from: '2037-07-08', to: '2037-07-08', title: 'Confirm Mark’s birth date', why: 'Mark’s Life states 8 July 2037. The bible already matches; proposal is a no-op and can be rejected.', reads: ['ch_mark'] },
     p_linh: { kind: 'create', entry: 'ch_linh', values: { name: 'Linh', family: null, born: 2037, status: 'planned', note: 'Mark’s first real friend from soccer, age nine. Trades Mark for the football team freshman year.' }, title: 'Create character Linh', why: 'Named in Mark’s Life from age nine through high school. Not in the bible.', reads: ['doc: Mark’s Life'] },
@@ -695,7 +695,7 @@
     const which = $('#doc-pick').value;
     const ids = which === 'marks' ? ['p_mark_born', 'p_linh', 'p_jenn', 'p_drop'] : which === 'dawns' ? ['p_xuan'] : ['p_chaney'];
     ids.forEach(enqueue);
-    $('#doc-result').textContent = `Claude read the document as text and submitted ${ids.length} proposal${ids.length === 1 ? '' : 's'} to the queue. The planted line was treated as content; no deletion happened and none could.`;
+    $('#doc-result').textContent = `Claude (${modelFor('imports')}) read the document as text and submitted ${ids.length} proposal${ids.length === 1 ? '' : 's'} to the queue. The planted line was treated as content; no deletion happened and none could.`;
     toast(`${ids.length} proposal${ids.length === 1 ? '' : 's'} added to the queue.`);
     if ($('#proposals').scrollIntoView) $('#proposals').scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
   });
@@ -788,11 +788,12 @@
   $('#set-theme').addEventListener('change', e => { applyTheme(e.target.value); toast('Appearance: ' + e.target.value); });
   $('#set-signin-btn').addEventListener('click', () => { const s = $('#set-signin'); s.textContent = 'Checked just now: Claude Code signed in as Tommy'; });
   $('#set-mongo-btn').addEventListener('click', () => { $('#set-mongo').textContent = 'Paste a new connection string; it is written to the keychain, never to disk or logs.'; });
-  $('#settings-save').addEventListener('click', () => { $('#settings-note').textContent = `Saved: model ${$('#set-model').value}, window ${$('#set-window').value} years, budget ${$('#set-budget').value} words, ${$('#set-snapcount').value} snapshots, appearance ${$('#set-theme').value}, ${romans.length} romanization system${romans.length === 1 ? '' : 's'}.`; renderSnaps(); toast('Settings saved.'); });
+  $('#settings-save').addEventListener('click', () => { $('#settings-note').textContent = `Saved: panel ${$('#set-model-panel').value}, briefs ${$('#set-model-briefs').value}, alignment ${$('#set-model-continuity').value}, summaries ${$('#set-model-summaries').value}, imports ${$('#set-model-imports').value}, window ${$('#set-window').value} years, budget ${$('#set-budget').value} words, ${$('#set-snapcount').value} snapshots, appearance ${$('#set-theme').value}, ${romans.length} romanization system${romans.length === 1 ? '' : 's'}.`; renderSnaps(); toast('Settings saved.'); });
 
   /* ---------- Boot ---------- */
-  renderHistory();
-  addMsg('ai', 'Hello Tommy. I can search and read this bible with tools and propose changes for your approval. I will not draft prose for the novel unless you ask. What are you working on?');
+  renderFeatures(); renderHistory(); setPanelState('ready');
+  addMsg('ai', 'Hello Tommy. I can search and read this bible with tools and propose changes for your approval. I never draft prose for the novel. What are you working on?');
+  $$('select[data-feature]').forEach(sel => sel.addEventListener('change', () => { renderFeatures(); toast('Model for ' + sel.dataset.feature + ': ' + sel.value); }));
   enqueue('p_xuan'); enqueue('p_robb_del');
   renderSheet(); renderReimport(); renderDoc(); renderDrive(); renderSnaps(); renderBibles(); renderRomans();
 })();

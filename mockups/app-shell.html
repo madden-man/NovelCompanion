@@ -55,6 +55,41 @@
   .oq .decide { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
   .oq .decision { padding: 6px 10px; border-left: 3px solid var(--good); background: color-mix(in oklab, var(--good) 12%, var(--surface)); border-radius: 0 6px 6px 0; }
 
+  /* dashboard and session flow */
+  .dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 8px; }
+  .dash-last { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
+  .dash-cta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .dash > .panel:last-child { grid-column: 1 / -1; }
+  .tile { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .tile-num { font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 500; }
+  .tasks-tile { grid-column: 1 / -1; }
+  .task-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .task-list li { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-left: 3px solid var(--serious); background: var(--surface-2); border-radius: 0 6px 6px 0; font-size: 0.92rem; }
+  .task-list q, .finding q { font-family: var(--font-display); font-style: italic; }
+  .align-panel { grid-column: 1 / -1; }
+  .finding { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.92rem; }
+  .finding .decision { padding: 6px 10px; border-left: 3px solid var(--good); background: color-mix(in oklab, var(--good) 12%, var(--surface)); border-radius: 0 6px 6px 0; }
+  .diff { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--surface-2); border-radius: 6px; }
+  .diff-row { display: flex; flex-direction: column; gap: 2px; }
+  .diff del { text-decoration: line-through; color: var(--critical); font-family: var(--font-mono); font-size: 0.85rem; }
+  .diff ins { text-decoration: none; color: var(--good-ink); font-family: var(--font-mono); font-size: 0.85rem; }
+  .steps-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .step { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-strong); font-size: 0.82rem; font-weight: 600; color: var(--fg); }
+  .step.current { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .step.done { background: var(--accent-soft); }
+  .sel-groups { display: flex; flex-direction: column; gap: 4px; }
+  .sel-group { border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+  .sel-group summary { cursor: pointer; font-weight: 600; }
+  .sel-group summary .num { display: inline-block; min-width: 2ch; text-align: right; margin-right: 6px; color: var(--accent); font-weight: 700; }
+  .sel-group ul { margin: 6px 0 4px; padding-left: 18px; font-size: 0.88rem; }
+  .brief { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-display); font-size: 1.02rem; }
+  .brief h4 { font-family: var(--font-body); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg); margin: 10px 0 0; }
+  .brief .line { max-width: none; }
+  .brief .line .chip { font-family: var(--font-body); vertical-align: middle; }
+  .brief .id { color: var(--fg-2); }
+  .brief .id.bad { color: var(--critical); font-weight: 700; border-bottom: 2px solid var(--critical); }
+  .brief .ahead { border: 1px dashed var(--planned); border-radius: 8px; padding: 8px 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+
   /* story time dialog */
   .overlay { position: fixed; inset: 0; background: rgba(22,32,43,0.35); z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow: auto; }
   .overlay[hidden] { display: none; }
@@ -170,8 +205,8 @@
   <section class="section" id="sec-frame">
     <div class="intro">
       <h2>The frame</h2>
-      <p>Every section lives in the left rail. The inspector on the right opens whatever you select without leaving the page you are on. The status bar carries the story time and where you stopped last session.</p>
-      <span class="crit-ref">CH-2, CH-3, KN-1, GL-1, GL-2, GL-3, OQ-1, SL-1, TM-3</span>
+      <p>The app opens on the Dashboard: where you stopped, the story time, your position in the book, and one button to start a session. Every other section lives in the left rail. The inspector on the right opens whatever you select without leaving the page you are on.</p>
+      <span class="crit-ref">DB-1 to DB-4, CH-2, CH-3, KN-1, GL-1, GL-2, GL-3, OQ-1, SL-1, TM-3</span>
     </div>
     <div class="frame with-inspector" id="frame">
       <nav class="rail" id="rail" aria-label="Sections"></nav>
@@ -337,6 +372,11 @@
   const state = {
     year: 2056,
     page: 'dashboard',
+    tasks: [
+      { id: 'rt_1', chapter: 'chp_1_2', lines: '14 to 15', quote: 'As a college sophomore extends his drunken hand', change: '"sophomore" implies 2057 but the strand year is 2056.', done: false },
+      { id: 'rt_2', chapter: 'chp_1_1', lines: '9', quote: 'a quiet Buddhist girl from Jinan', change: 'Dawn described as Buddhist; the bible has her questioning faith from 2053 and atheist by 2064.', done: false },
+    ],
+    align: { open: false, scope: 'chapter', findings: [], streaming: false, done: false, applied: [] },
     session: { step: 0, kind: 'chapter', ref: '', year: 2056, pov: 'ch_mark', selection: null, brief: [], streaming: false, done: false, logId: null },
     selectedChar: 'ch_mark',
     selectedChapter: null,
@@ -454,6 +494,267 @@
     else if (state.page === 'glossary') { title.textContent = 'Glossary'; body.innerHTML = renderGlossary(); }
     else if (state.page === 'openq') { title.textContent = 'Open questions'; body.innerHTML = renderOpenQ(); }
     else { const r = RAIL.find((x) => x[0] === state.page); title.textContent = r ? r[1] : state.page; body.innerHTML = `<div class="stub"><strong>${esc(r ? r[1] : '')}</strong><span>${esc(STUBS[state.page] || '')}</span></div>`; }
+  }
+  // ---------- dashboard and session flow ----------
+  function currentPosition() { const w = D.chapters.filter((c) => c.written).sort((a, b) => b.order - a.order); return w[0] || null; }
+  function partLabel(ch) { const p = D.byId(D.parts, ch.part); return p ? `${p.book.replace(/:.*$/, '')} Ch. ${ch.order - (p.number - 1) * 12}` : ''; }
+  function renderDashboard() {
+    const last = D.sessionLog[0]; const pos = currentPosition(); const openN = D.openQuestions.filter((q) => q.state === 'open').length;
+    const lastCh = chapterById(last.chapter);
+    const era = D.eraFor(state.year);
+    return `
+      <span class="crit-ref">DB-1 to DB-4, SB-1 to SB-5, SL-1, TM-3, CC-1, CC-3, CC-4</span>
+      <div class="dash">
+        <div class="panel dash-last">
+          <span class="eyebrow">Where you stopped</span>
+          <h3>${esc(last.date)}, ${esc(lastCh ? lastCh.title : 'Introduction')}</h3>
+          <p>${esc(last.stopped)}</p>
+          ${last.note ? `<p class="example-note">${esc(last.note)}</p>` : ''}
+          ${last.briefId ? `<p><span class="chip canon">Brief ${esc(last.briefId)}</span></p>` : ''}
+        </div>
+        <div class="panel tile">
+          <span class="eyebrow">Story time</span>
+          <div class="tile-num" style="color: var(--time)">${state.year}</div>
+          <span>${era ? esc(era.name) : 'Before the timeline'}</span>
+          <button type="button" class="btn small" id="dash-open-time">Change</button>
+        </div>
+        <div class="panel tile">
+          <span class="eyebrow">Current position</span>
+          <div class="tile-num">${pos ? esc(partLabel(pos)) : 'None'}</div>
+          <span>${pos ? esc(pos.title) : 'No chapter marked written'}${pos && pos.inProgress ? ', in progress' : ''}</span>
+        </div>
+        <div class="panel tile">
+          <span class="eyebrow">Open questions</span>
+          <div class="tile-num">${openN}</div>
+          <button type="button" class="btn small" data-page="openq">Review</button>
+        </div>
+        <div class="panel tile tasks-tile">
+          <span class="eyebrow">Rewrite tasks</span>
+          ${renderTasks()}
+        </div>
+        <div class="dash-cta">
+          <button type="button" class="btn primary" id="dash-start">Start session</button>
+          <button type="button" class="btn primary" id="dash-align">Check alignment</button>
+          <span class="example-note">Start a session for a brief. Check alignment to compare the manuscript with the bible.</span>
+        </div>
+        ${state.align.open ? renderAlign() : ''}
+        <div class="panel">
+          <span class="eyebrow">Session log</span>
+          <ul class="timeline-list">${D.sessionLog.map((s) => `<li class="${s.briefId ? 'chapter' : ''}"><span class="yr num">${esc(s.date.slice(5))}</span><span class="ag"></span><span>${esc(chapterById(s.chapter) ? chapterById(s.chapter).title : 'Introduction')}: ${esc(s.stopped)}${s.briefId ? ` <span class="chip canon">brief ${esc(s.briefId)}</span>` : ''}</span></li>`).join('')}</ul>
+        </div>
+      </div>`;
+  }
+  function renderTasks() {
+    const open = state.tasks.filter((t) => !t.done);
+    if (!open.length) return '<p class="example-note">No open rewrite tasks. Run Check alignment to find more.</p>';
+    return `<ul class="task-list">${open.map((t) => { const ch = chapterById(t.chapter); return `<li>
+      <div><strong>${esc(partLabel(ch))}, line${t.lines.includes('to') ? 's' : ''} ${esc(t.lines)}:</strong> <q>${esc(t.quote)}</q></div>
+      <div>${esc(t.change)}</div>
+      <div class="row"><button type="button" class="btn small" data-task-open="${t.id}">Open chapter</button><button type="button" class="btn small" data-task-done="${t.id}">Done</button></div>
+    </li>`; }).join('')}</ul>`;
+  }
+  const ALIGN_FINDINGS = [
+    { id: 'af_1', chapter: 'chp_1_2', lines: '3', quote: 'the most beautiful woman he’s met in his nineteen years', entry: 'ch_mark', field: 'born', from: 2037, to: 2036, explain: 'Mark is nineteen in 2056 only if born 2037 and the party is after July 8. The bible says 8 July 2037; the manuscript treats him as nineteen all year.', change: 'Make the party late in the year, or let Mark be eighteen.' },
+    { id: 'af_2', chapter: 'chp_1_2', lines: '21', quote: 'she’s studied English all her life', entry: 'ch_dawn', field: 'note', from: 'Reader, shy, religious studies then atheist. Marries Mark 2066.', to: 'Reader, shy, studied English since childhood, religious studies then atheist. Marries Mark 2066.', explain: 'The bible has no English study in Dawn’s backstory; Dawn’s Life has her in the advanced reading group for characters, not English.', change: 'Cut "all her life" or move the English study into the bible.' },
+    { id: 'af_3', chapter: 'chp_1_1', lines: '6', quote: 'In the east, a fiery sun breaks the horizon.', entry: 'pl_sf', field: 'name', from: 'San Francisco', to: 'San Francisco', explain: 'The introduction is on a mountain with no place entry; the bible cannot say which range or year this is.', change: 'Add the mountain as a place with a year, or leave it deliberately unplaced.' },
+  ];
+  function renderAlign() {
+    const a = state.align;
+    const ch = currentPosition();
+    return `<div class="panel stack align-panel" id="align-panel">
+      <div class="row"><h3>Check alignment</h3><span class="chip">Model: claude-opus-5-5 (alignment)</span>
+        ${a.streaming ? '<button type="button" class="btn danger small" id="align-stop">Stop</button>' : ''}
+        ${a.done ? '<span class="status good">Complete</span>' : a.streaming ? '<span class="status warning">Streaming findings</span>' : ''}
+      </div>
+      <div class="row">
+        <label class="field" for="align-scope">Scope<select id="align-scope"><option value="chapter" ${a.scope === 'chapter' ? 'selected' : ''}>This chapter (${esc(ch ? ch.title : 'none')})</option><option value="manuscript" ${a.scope === 'manuscript' ? 'selected' : ''}>Whole manuscript</option></select></label>
+        ${!a.streaming ? '<button type="button" class="btn primary" id="align-run">Run</button>' : ''}
+        <button type="button" class="btn" id="align-close">Close</button>
+      </div>
+      <p class="example-note">Structural checks run in code first (ages, dates, who knew what). Then Claude compares the prose with the selected entries and quotes both sides. Nothing changes until you choose.</p>
+      <div class="stack" id="align-findings">${a.findings.map(renderFinding).join('')}</div>
+    </div>`;
+  }
+  function renderFinding(f) {
+    const ch = chapterById(f.chapter); const applied = state.align.applied.includes(f.id);
+    const entryName = f.entry.startsWith('ch_') ? charName(f.entry) : (D.byId(D.places, f.entry) || {}).name || f.entry;
+    return `<div class="finding" data-finding="${f.id}">
+      <div><strong>${esc(partLabel(ch))}, line ${esc(f.lines)}:</strong> <q>${esc(f.quote)}</q></div>
+      <div>${esc(f.explain)} <span class="id">${esc(f.chapter)}</span> <span class="id">${esc(f.entry)}</span></div>
+      ${f.resolved ? `<div class="decision">${esc(f.resolved)}${applied ? ` <button type="button" class="btn small" data-finding-undo="${f.id}">Undo</button>` : ''}</div>` : f.showDiff ? `
+        <div class="diff">
+          <div class="diff-row"><span class="eyebrow">Bible now</span><del>${esc(entryName)}.${esc(f.field)} = ${esc(f.from)}</del></div>
+          <div class="diff-row"><span class="eyebrow">After</span><ins>${esc(entryName)}.${esc(f.field)} = ${esc(f.to)}</ins></div>
+          <div class="row"><button type="button" class="btn primary small" data-finding-apply="${f.id}">Apply all</button><button type="button" class="btn small" data-finding-cancel="${f.id}">Cancel</button></div>
+        </div>` : `
+        <div class="row">
+          <button type="button" class="btn small" data-finding-mw="${f.id}">Manuscript wins</button>
+          <button type="button" class="btn small" data-finding-rw="${f.id}">Rewrite recommended</button>
+          <button type="button" class="btn small" data-finding-dismiss="${f.id}">Dismiss</button>
+        </div>`}
+    </div>`;
+  }
+  function startAlign() {
+    const a = state.align; a.findings = []; a.streaming = true; a.done = false; renderMain();
+    const pool = a.scope === 'chapter' ? ALIGN_FINDINGS.filter((f) => f.chapter === (currentPosition() || {}).id) : ALIGN_FINDINGS;
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let i = 0;
+    const tick = () => {
+      if (!a.streaming) return;
+      if (i >= pool.length) { a.streaming = false; a.done = true; renderMain(); return; }
+      a.findings.push(Object.assign({}, pool[i])); i++; renderMain();
+      a.timer = setTimeout(tick, reduced ? 0 : 900);
+    };
+    a.timer = setTimeout(tick, reduced ? 0 : 500);
+  }
+  function findingById(id) { return state.align.findings.find((f) => f.id === id); }
+  function sectionTarget() {
+    const s = state.session; const t = { label: '', year: s.year, pov: s.pov, present: [], places: [], chapters: [] };
+    if (s.kind === 'part') { const p = D.byId(D.parts, s.ref); const chs = D.chapters.filter((c) => c.part === p.id); t.label = `${p.book}, Part ${p.number}: ${p.title}`; t.chapters = chs; const prim = chs.map((c) => c.strands.find((x) => x.primary)); t.year = prim.length ? Math.min.apply(null, prim.map((x) => x.year)) : s.year; t.pov = chs[0] ? chs[0].pov : s.pov; chs.forEach((c) => c.strands.forEach((x) => x.present.forEach((id) => { if (!t.present.includes(id)) t.present.push(id); }))); }
+    else if (s.kind === 'chapter') { const c = chapterById(s.ref); const p = c.strands.find((x) => x.primary); t.label = `${partLabel(c)}: ${c.title}`; t.year = p.year; t.pov = p.pov; t.present = p.present.slice(); t.chapters = [c]; }
+    else if (s.kind === 'strand') { const [chId, sId] = s.ref.split('|'); const c = chapterById(chId); const st = c.strands.find((x) => x.id === sId); t.label = `${c.title}, ${st.label}`; t.year = st.year; t.pov = st.pov; t.present = st.present.slice(); t.chapters = [c]; }
+    else { const c = D.byId(D.characters, s.pov); t.label = `${s.year}, point of view ${c ? c.name : ''}`; t.year = s.year; t.pov = s.pov; }
+    if (!t.present.includes(t.pov)) t.present.unshift(t.pov);
+    if (t.present.length === 1) { const pov = t.pov; D.parents.filter((p) => p.child === pov).forEach((p) => t.present.push(p.parent)); D.parents.filter((p) => p.parent === pov).forEach((p) => t.present.push(p.child)); D.unions.filter((u) => u.a === pov || u.b === pov).forEach((u) => t.present.push(u.a === pov ? u.b : u.a)); t.present = t.present.filter((id, i, a) => a.indexOf(id) === i).filter((id) => { const c = D.byId(D.characters, id); return c && D.ageIn(c, t.year).state === 'alive'; }); if (!t.present.includes(pov)) t.present.unshift(pov); }
+    const povC = D.byId(D.characters, t.pov);
+    t.community = povC && (povC.family === 'li' || (povC.id === 'ch_dawn' && t.year < 2057)) ? 'Jinan / Shandong' : 'San Francisco';
+    t.places = D.places.filter((p) => p.community === t.community && p.descriptions.some((d) => t.year >= d.start && t.year <= d.end));
+    return t;
+  }
+  function computeSelection() {
+    const t = sectionTarget();
+    const chars = t.present.map((id) => D.byId(D.characters, id)).filter(Boolean);
+    const era = D.eraFor(t.year);
+    const recent = D.eventsUpTo(t.year, 10);
+    const formative = D.events.filter((e) => e.formative && e.year <= t.year && chars.some((c) => c.born != null && e.year >= c.born && e.year <= (c.died || 2100)) && !recent.includes(e));
+    const placeEvents = D.events.filter((e) => (e.places || []).some((p) => t.places.some((x) => x.id === p)) && !recent.includes(e) && !formative.includes(e));
+    const culture = D.cultural.filter((c) => c.community === t.community && t.year >= c.start && t.year <= c.end);
+    const facts = D.facts.filter((f) => f.knowledge.some((k) => chars.some((c) => c.id === k.who) && k.year <= t.year));
+    const prevChapters = t.chapters.length ? D.chapters.filter((c) => c.order < t.chapters[0].order).sort((a, b) => b.order - a.order).slice(0, 3) : [];
+    const beats = D.beats.filter((b) => t.chapters.some((c) => c.id === b.chapter) || (b.year <= t.year && b.year > t.year - 10 && chars.some((c) => c.id === b.pov)));
+    const glossary = D.glossary.filter((g) => chars.some((c) => c.zh && (g.zh === c.zh || c.zh.includes(g.zh))));
+    const questions = D.openQuestions.filter((q) => q.state === 'open' && q.links.some((id) => chars.some((c) => c.id === id)));
+    const log = D.sessionLog.filter((s) => t.chapters.some((c) => c.id === s.chapter)).slice(0, 1);
+    const ahead = D.events.filter((e) => e.year > t.year && e.year <= t.year + 10 && e.formative);
+    const groups = [
+      ['Section chapters', t.chapters.map((c) => c.id), t.chapters.map((c) => c.title)],
+      ['Characters present', chars.map((c) => c.id), chars.map((c) => `${c.name}, ${ageText(c, t.year)}`)],
+      ['Era state', era ? [era.id] : [], era ? [era.name] : []],
+      ['World events, last 10 years', recent.map((e) => e.id), recent.map((e) => `${e.year} ${e.title}`)],
+      ['Formative events in a lifetime', formative.map((e) => e.id), formative.map((e) => `${e.year} ${e.title}`)],
+      ['Events linked to the places', placeEvents.map((e) => e.id), placeEvents.map((e) => `${e.year} ${e.title}`)],
+      ['Cultural entries', culture.map((c) => c.id), culture.map((c) => c.title)],
+      ['Place descriptions', t.places.map((p) => p.id), t.places.map((p) => p.name)],
+      ['Facts known by someone present', facts.map((f) => f.id), facts.map((f) => f.title)],
+      ['Previous chapters', prevChapters.map((c) => c.id), prevChapters.map((c) => c.title)],
+      ['Beats', beats.map((b) => b.id), beats.map((b) => b.text)],
+      ['Glossary terms', glossary.map((g) => g.id), glossary.map((g) => `${g.zh} ${g.pinyin}`)],
+      ['Open questions', questions.map((q) => q.id), questions.map((q) => q.question.slice(0, 60))],
+      ['Last session note', log.map((s) => s.id), log.map((s) => s.stopped)],
+      ['Planned ahead (after the year)', ahead.map((e) => e.id), ahead.map((e) => `${e.year} ${e.title}`)],
+    ];
+    const ids = new Set(); groups.forEach((g) => g[1].forEach((id) => ids.add(id)));
+    return { target: t, chars, era, recent, formative, placeEvents, culture, facts, prevChapters, beats, glossary, questions, log, ahead, groups, ids };
+  }
+  function buildBrief(sel) {
+    const t = sel.target; const L = [];
+    const cite = (ids) => ids.map((id) => `[${id}]`).join(' ');
+    const chipFor = (st) => st === 'canon' ? 'canon' : 'planned';
+    L.push({ h: '1. Characters and their ages' });
+    sel.chars.forEach((c) => L.push({ t: `${D.displayName(c)} is ${ageText(c, t.year)} in ${t.year}. ${c.note || ''}`, ids: [c.id], status: chipFor(c.status) }));
+    L.push({ h: '2. Ongoing world events' });
+    if (sel.era) L.push({ t: `The era is "${sel.era.name}". ${sel.era.economy || sel.era.politics || ''}`, ids: [sel.era.id], status: 'planned' });
+    sel.recent.slice(-4).forEach((e) => L.push({ t: `${e.year}: ${e.title}.`, ids: [e.id], status: 'planned' }));
+    sel.formative.slice(0, 2).forEach((e) => L.push({ t: `Formative for someone present: ${e.year}, ${e.title}.`, ids: [e.id], status: 'planned' }));
+    L.push({ h: '3. Cultural expectations in this moment' });
+    sel.culture.forEach((c) => L.push({ t: `${c.title}: ${c.text}`, ids: [c.id], status: 'planned' }));
+    if (!sel.culture.length) L.push({ t: 'No cultural entry covers this community and year yet.', ids: [], status: 'planned' });
+    L.push({ h: 'Who knows what' });
+    sel.facts.forEach((f) => { const knowers = f.knowledge.filter((k) => k.year <= t.year && sel.chars.some((c) => c.id === k.who)); const povKnows = knowers.some((k) => k.who === t.pov); L.push({ t: `${knowers.map((k) => charName(k.who)).join(' and ')} ${knowers.length > 1 ? 'know' : 'knows'} that ${f.title.charAt(0).toLowerCase() + f.title.slice(1)}${povKnows ? '' : `. ${charName(t.pov)} does not`}.`, ids: [f.id].concat(knowers.map((k) => k.who)), status: chipFor(f.status) }); });
+    L.push({ h: 'Loose threads' });
+    sel.beats.slice(0, 3).forEach((b) => L.push({ t: `${b.text} (${b.year}). ${b.experience || ''}`, ids: [b.id].concat(b.chapter && sel.ids.has(b.chapter) ? [b.chapter] : []), status: 'planned' }));
+    // one planted bad citation to show SB-4 verification
+    L.push({ t: `Mark's black Moleskine notebook has not appeared on the page since high school.`, ids: ['chp_1_2', 'th_moleskine'], status: 'planned' });
+    L.push({ h: 'Open questions' });
+    sel.questions.forEach((q) => L.push({ t: q.question, ids: [q.id], status: 'planned' }));
+    if (!sel.questions.length) L.push({ t: 'None linked to anyone present.', ids: [], status: 'planned' });
+    if (sel.ahead.length) { L.push({ h: 'Planned ahead', ahead: true }); sel.ahead.forEach((e) => L.push({ t: `${e.year}: ${e.title}.`, ids: [e.id], status: 'planned', ahead: true })); }
+    return L;
+  }
+  function renderSession() {
+    const s = state.session;
+    const steps = ['1. Pick a section', '2. What the bible selects', '3. Brief'];
+    const head = `<div class="steps-nav">${steps.map((lbl, i) => `<span class="step ${i === s.step ? 'current' : i < s.step ? 'done' : ''}">${lbl}</span>`).join('')}</div>`;
+    if (s.step === 0) {
+      return `${head}
+        <div class="panel stack">
+          <div class="section-tabs">${[['part', 'A part'], ['chapter', 'A chapter'], ['strand', 'A chapter strand'], ['year', 'A year and point of view']].map(([k, l]) => `<button type="button" class="pill-btn" data-kind="${k}" aria-pressed="${s.kind === k}">${l}</button>`).join('')}</div>
+          ${s.kind === 'part' ? `<label class="field" for="sess-part">Part<select id="sess-part">${D.parts.filter((p) => D.chapters.some((c) => c.part === p.id)).map((p) => `<option value="${p.id}" ${s.ref === p.id ? 'selected' : ''}>${esc(p.book)}, Part ${p.number}: ${esc(p.title)}</option>`).join('')}</select></label>` : ''}
+          ${s.kind === 'chapter' ? `<label class="field" for="sess-chapter">Chapter<select id="sess-chapter">${D.chapters.map((c) => `<option value="${c.id}" ${s.ref === c.id ? 'selected' : ''}>${esc(partLabel(c))}: ${esc(c.title)} (${c.strands.find((x) => x.primary).year})</option>`).join('')}</select></label>` : ''}
+          ${s.kind === 'strand' ? `<label class="field" for="sess-strand">Strand<select id="sess-strand">${D.chapters.map((c) => c.strands.map((x) => `<option value="${c.id}|${x.id}" ${s.ref === c.id + '|' + x.id ? 'selected' : ''}>${esc(c.title)}: ${esc(x.label)} (${x.year})</option>`).join('')).join('')}</select></label>` : ''}
+          ${s.kind === 'year' ? `<div class="row"><label class="field" for="sess-year">Story year<input id="sess-year" type="number" value="${s.year}" inputmode="numeric"></label><label class="field" for="sess-pov">Point of view<select id="sess-pov">${D.characters.map((c) => `<option value="${c.id}" ${s.pov === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>` : ''}
+          <div class="row"><button type="button" class="btn primary" id="sess-next">See the selection</button><button type="button" class="btn" id="sess-cancel">Back to dashboard</button></div>
+        </div>`;
+    }
+    if (s.step === 1) {
+      const sel = s.selection = computeSelection();
+      return `${head}
+        <div class="panel stack">
+          <div class="row"><h3>${esc(sel.target.label)}</h3><span class="chip time">${sel.target.year}</span><span class="chip">Model: claude-opus-5-5 (briefs)</span></div>
+          <p class="example-note">Selected by deterministic queries (SB-2). Claude only writes from what is listed here. ${sel.ids.size} entries in the manifest.</p>
+          <div class="sel-groups">${sel.groups.map((g, i) => `<details class="sel-group" ${i === 0 ? 'open' : ''}><summary><span class="num">${g[1].length}</span> ${esc(g[0])}</summary>${g[1].length ? `<ul>${g[1].map((id, j) => `<li><span class="id">${esc(id)}</span> ${esc(g[2][j])}</li>`).join('')}</ul>` : '<p class="example-note">Nothing selected.</p>'}</details>`).join('')}</div>
+          <div class="row"><button type="button" class="btn primary" id="sess-gen">Generate with Opus</button><button type="button" class="btn" id="sess-back">Change section</button></div>
+        </div>`;
+    }
+    const sel = s.selection;
+    return `${head}
+      <div class="panel stack">
+        <div class="row"><h3>Brief: ${esc(sel.target.label)}</h3><span class="chip time">${sel.target.year}</span><span class="chip">Model: claude-opus-5-5 (briefs)</span>
+          ${s.streaming ? '<button type="button" class="btn danger small" id="sess-stop">Stop</button>' : ''}
+          ${s.done ? '<span class="status good">Complete, saved to the session log</span>' : s.streaming ? '<span class="status warning">Streaming</span>' : '<span class="status serious">Stopped before the end</span>'}
+        </div>
+        <div class="row"><span class="chip canon">canon</span><span class="chip planned">planned</span><span class="example-note">Every line cites the entries it came from. A citation outside the selection is flagged in red (SB-4).</span></div>
+        <div class="brief" id="brief-body"></div>
+        ${!s.streaming ? `<div class="row"><button type="button" class="btn" id="sess-regen">Regenerate</button><button type="button" class="btn" id="sess-done">Back to dashboard</button></div>` : ''}
+      </div>`;
+  }
+  function renderBriefLines(upTo, partialWords) {
+    const s = state.session; const el = $('brief-body'); if (!el) return;
+    let html = ''; let inAhead = false;
+    s.brief.slice(0, upTo + 1).forEach((ln, i) => {
+      if (ln.h) { if (ln.ahead && !inAhead) { html += '<div class="ahead"><span class="eyebrow">Planned ahead: after ' + s.selection.target.year + '</span>'; inAhead = true; } html += `<h4>${esc(ln.h)}</h4>`; return; }
+      const text = i === upTo && partialWords != null ? ln.t.split(' ').slice(0, partialWords).join(' ') : ln.t;
+      const cites = i === upTo && partialWords != null ? '' : ln.ids.map((id) => s.selection.ids.has(id) ? `<span class="id">${esc(id)}</span>` : `<span class="id bad" title="Not in the selection">${esc(id)} not in selection</span>`).join(' ');
+      html += `<p class="line"><span class="chip ${ln.status}">${ln.status}</span> ${esc(text)} ${cites}</p>`;
+    });
+    if (inAhead) html += '</div>';
+    el.innerHTML = html;
+  }
+  function startStream() {
+    const s = state.session; s.brief = buildBrief(s.selection); s.streaming = true; s.done = false; s.step = 2; renderRail(); renderMain();
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { renderBriefLines(s.brief.length - 1); finishStream(); return; }
+    let i = 0, w = 0;
+    const tick = () => {
+      if (!s.streaming) return;
+      const ln = s.brief[i];
+      if (!ln) { finishStream(); return; }
+      if (ln.h) { renderBriefLines(i); i++; w = 0; s.timer = setTimeout(tick, 120); return; }
+      const total = ln.t.split(' ').length;
+      w += 2;
+      if (w >= total) { renderBriefLines(i); i++; w = 0; s.timer = setTimeout(tick, 90); } else { renderBriefLines(i, w); s.timer = setTimeout(tick, 28); }
+    };
+    tick();
+  }
+  function stopStream() { const s = state.session; s.streaming = false; clearTimeout(s.timer); renderMain(); renderBriefLines(s.brief.length - 1); showToast('Stopped. The partial brief is kept and editable.'); }
+  function finishStream() {
+    const s = state.session; s.streaming = false; s.done = true; clearTimeout(s.timer);
+    const t = s.selection.target; const ch = t.chapters[0];
+    const briefId = 'brief_' + Date.now().toString(36).slice(-5);
+    s.logId = 'sl_' + Date.now();
+    D.sessionLog.unshift({ id: s.logId, date: '2026-10-10', chapter: ch ? ch.id : null, stopped: `Started session on ${t.label}, ${t.year}.`, note: '', briefId });
+    setYear(t.year, 'session section');
+    renderMain(); renderBriefLines(s.brief.length - 1);
   }
   function renderCharacters() {
     const cards = liveChars().map((c) => `
@@ -781,6 +1082,34 @@
   // ---------- events ----------
   $('rail').addEventListener('click', (e) => { const b = e.target.closest('[data-page]'); if (b) goPage(b.dataset.page); });
   $('main-body').addEventListener('click', (e) => {
+    const s = state.session;
+    if (e.target.id === 'dash-start') { s.step = 0; s.done = false; s.streaming = false; if (!s.ref) { s.kind = 'chapter'; s.ref = 'chp_1_2'; } goPage('session'); return; }
+    if (e.target.id === 'dash-open-time') { openTime(); return; }
+    if (e.target.id === 'dash-align') { state.align.open = true; renderMain(); $('align-panel').scrollIntoView({ block: 'nearest' }); return; }
+    if (e.target.id === 'align-close') { state.align.open = false; state.align.streaming = false; clearTimeout(state.align.timer); renderMain(); return; }
+    if (e.target.id === 'align-run') { startAlign(); return; }
+    if (e.target.id === 'align-stop') { state.align.streaming = false; clearTimeout(state.align.timer); renderMain(); showToast('Stopped. Findings so far are kept.'); return; }
+    const tOpen = e.target.closest('[data-task-open]'); if (tOpen) { const t = state.tasks.find((x) => x.id === tOpen.dataset.taskOpen); openChapterInspector(t.chapter); renderOutline(); showToast(`Opened ${chapterById(t.chapter).title} at line ${t.lines}`); return; }
+    const tDone = e.target.closest('[data-task-done]'); if (tDone) { state.tasks.find((x) => x.id === tDone.dataset.taskDone).done = true; renderMain(); showToast('Rewrite task done'); return; }
+    const fb = e.target.closest('[data-finding-mw],[data-finding-rw],[data-finding-dismiss],[data-finding-apply],[data-finding-cancel],[data-finding-undo]');
+    if (fb) {
+      const ds = fb.dataset; const id = ds.findingMw || ds.findingRw || ds.findingDismiss || ds.findingApply || ds.findingCancel || ds.findingUndo; const f = findingById(id);
+      const entry = f.entry.startsWith('ch_') ? D.byId(D.characters, f.entry) : D.byId(D.places, f.entry);
+      if (ds.findingMw) f.showDiff = true;
+      else if (ds.findingCancel) f.showDiff = false;
+      else if (ds.findingApply) { pushUndo({ type: 'field', id: f.entry, field: f.field, from: f.from, to: f.to }); entry[f.field] = f.to; f.showDiff = false; f.resolved = `Manuscript wins. Bible updated: ${f.field} is now ${f.to}.`; state.align.applied.push(f.id); showToast('Bible updated. Undo is available.'); }
+      else if (ds.findingUndo) { entry[f.field] = f.from; const i = state.undo.findIndex((u) => u.id === f.entry && u.field === f.field && u.to === f.to); if (i >= 0) state.undo.splice(i, 1); state.align.applied = state.align.applied.filter((x) => x !== f.id); f.resolved = null; showToast('Bible change undone.'); }
+      else if (ds.findingRw) { state.tasks.push({ id: 'rt_' + f.id, chapter: f.chapter, lines: f.lines, quote: f.quote, change: f.change, done: false }); f.resolved = 'Added to rewrite tasks.'; showToast('Rewrite task added'); }
+      else if (ds.findingDismiss) { f.resolved = 'Dismissed. It will not reappear unless the text or the entry changes.'; }
+      renderAll(false); return;
+    }
+    const pg = e.target.closest('[data-page]'); if (pg && !e.target.closest('#rail')) { goPage(pg.dataset.page); return; }
+    const k = e.target.closest('[data-kind]'); if (k) { s.kind = k.dataset.kind; s.ref = s.kind === 'part' ? 'part_1' : s.kind === 'chapter' ? 'chp_1_2' : s.kind === 'strand' ? 'chp_1_2|chp_1_2_s1' : ''; renderMain(); return; }
+    if (e.target.id === 'sess-next') { s.step = 1; renderMain(); return; }
+    if (e.target.id === 'sess-cancel' || e.target.id === 'sess-done') { goPage('dashboard'); return; }
+    if (e.target.id === 'sess-back') { s.step = 0; renderMain(); return; }
+    if (e.target.id === 'sess-gen' || e.target.id === 'sess-regen') { startStream(); return; }
+    if (e.target.id === 'sess-stop') { stopStream(); return; }
     const card = e.target.closest('[data-char]'); if (card) { state.selectedChar = card.dataset.char; goPage('character'); openCharInspector(card.dataset.char); return; }
     if (e.target.id === 'back-to-list') { goPage('characters'); return; }
     const f = e.target.closest('[data-oqf]'); if (f) { state.oqFilter = f.dataset.oqf; renderMain(); return; }
@@ -789,6 +1118,13 @@
       if (!v) { $('dec-' + q.id).focus(); showToast('Write the decision first'); return; }
       q.state = 'decided'; q.decision = v; renderMain(); showToast('Decided: ' + q.question.slice(0, 40));
     }
+  });
+  $('main-body').addEventListener('change', (e) => {
+    const s = state.session;
+    if (e.target.id === 'sess-part' || e.target.id === 'sess-chapter' || e.target.id === 'sess-strand') s.ref = e.target.value;
+    if (e.target.id === 'sess-year') s.year = parseInt(e.target.value, 10) || s.year;
+    if (e.target.id === 'sess-pov') s.pov = e.target.value;
+    if (e.target.id === 'align-scope') state.align.scope = e.target.value;
   });
   $('main-body').addEventListener('input', (e) => { if (e.target.id === 'glossary-q') { state.glossaryQuery = e.target.value; const pos = e.target.selectionStart; renderMain(); const el = $('glossary-q'); el.focus(); el.setSelectionRange(pos, pos); } });
   $('open-time').addEventListener('click', openTime);

@@ -66,13 +66,25 @@
   .controls { display: flex; flex-direction: column; gap: 10px; }
   .controls .field { font-size: 0.85rem; }
   .ex { font-size: 0.8rem; color: var(--fg-2); }
+  .finding.streaming .actions, .finding.streaming .resolution, .finding.streaming .cites { display: none; }
+  .finding .q .ln { font-family: var(--font-mono); font-style: normal; font-weight: 600; font-size: 0.78rem; margin-right: 6px; }
+  .finding .q p { margin: 2px 0; max-width: none; }
+  .finding .expl { min-height: 1.2em; }
+  .diff { margin-top: 6px; }
+  .diff td.before { color: var(--critical); } .diff td.after { color: var(--good-ink); font-weight: 600; }
+  .resolution .saved { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; font-weight: 600; }
+  .tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .task { border: 1px solid var(--border); border-left: 4px solid var(--planned); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); }
+  .task .q p { margin: 2px 0; font-family: var(--font-display); font-style: italic; max-width: none; }
+  .task .q .ln { font-family: var(--font-mono); font-style: normal; font-weight: 600; font-size: 0.78rem; margin-right: 6px; }
+  .align-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
 </style>
 
 <div class="doc">
   <header>
     <span class="eyebrow">Novel companion mockup 3 of 4</span>
     <h1>Session Brief and Continuity</h1>
-    <p class="lede">How a writing session starts: the app picks the entries by rule, Claude writes one page from only those entries, and every claim cites an entry the code can check. Then the continuity check reads the chapter back against the bible.</p>
+    <p class="lede">How a writing session starts: the app picks the entries by rule, Claude writes one page from only those entries, and every claim cites an entry the code can check. Then the alignment check reads the chapter back against the bible and the stored plot.</p>
     <div class="meta">
       <span class="chip">Example bible: East Winds</span>
       <span class="chip canon"><span class="dot"></span>canon</span>
@@ -209,12 +221,17 @@
     </div>
   </section>
 
-  <!-- 5. Continuity -->
+  <!-- 5. Alignment check -->
   <section class="section panel" id="sec-continuity">
     <div class="intro">
-      <h2>5. Continuity check</h2>
-      <span class="crit-ref">CC-1, CC-2, CC-3, CC-4, CC-5</span>
-      <p>Structural checks run in code over every chapter. Three errors are planted in this page's copy of the bible so you can see what a finding looks like; every other chapter comes back clean. Prose findings are what Claude returns when it reads the chapter text against the selected entries.</p>
+      <h2>5. Alignment check <span class="chip" id="model-chip">Model: claude-opus-5-5 (alignment)</span></h2>
+      <span class="crit-ref">CC-1, CC-2, CC-3, CC-4, CC-5, A20</span>
+      <p>Structural checks run in code over every chapter. Three errors are planted in this page's copy of the bible so you can see what a finding looks like; every other chapter comes back clean. Then Claude reads the chapter text against the selected entries and the stored plot, and streams findings. Lines 12 to 14 of chapter 2 are planted for this demo; the rest is the real manuscript, numbered by paragraph.</p>
+    </div>
+    <div class="sunken" id="rewrite-tasks-box">
+      <span class="eyebrow">Rewrite tasks</span>
+      <ul class="tasks" id="rewrite-tasks"></ul>
+      <p class="note">These also appear on the dashboard.</p>
     </div>
     <div class="row">
       <button class="btn primary" id="btn-cc" type="button">Run structural checks on the whole manuscript</button>
@@ -222,8 +239,14 @@
       <div class="counts" id="cc-counts"></div>
     </div>
     <ul class="findings" id="cc-out"></ul>
-    <div>
-      <span class="eyebrow">Prose findings (Claude), for the selected chapter</span>
+    <div class="sunken stack">
+      <span class="eyebrow">Alignment with the text (Claude)</span>
+      <div class="align-head">
+        <label class="field">Scope<select id="align-scope"><option value="one">This chapter</option><option value="all">Whole manuscript</option></select></label>
+        <button class="btn primary" id="btn-align" type="button">Check alignment</button>
+        <button class="btn" id="btn-align-stop" type="button" disabled>Stop</button>
+        <span class="note" id="align-status">Not run yet.</span>
+      </div>
       <ul class="findings" id="prose-out"></ul>
     </div>
   </section>
@@ -270,11 +293,29 @@
   D.chapters.find(c => c.id === 'chp_1_6').strands[0].present.push('ch_laura');          // S1: Laura present in 2063, died 2037
   const factsInPlay = { chp_2_3: [{ who: 'ch_dawn', fact: 'fc_sichao' }], chp_1_2: [{ who: 'ch_mark', fact: 'fc_sepsis' }] }; // S2: Dawn acts on fc_sichao in 2059, learns it 2083
   const eventsHappened = { chp_1_1: ['ev_2075_port'] };                                  // S3: 2075 event linked to a 2055 chapter as happened
-  // Chapter text, read-only import (MS-5). Chapter 1 is Tommy's; one planted line for the prose check.
-  const chapterText = {
-    chp_1_1: 'They pass each other many times among the bustling halls of USC, as if orbiting each other in some cosmic dance, before they finally meet. As a college sophomore extends his drunken hand to a petite Chinese girl in southern California, angels shout for joy, and the morning stars sing.',
-    chp_1_2: 'To be clear, reader, he does not mean that she seems smart. In truth, he means that she might well be the most beautiful woman he’s met in his nineteen years on this earth. [...] Frank, sixty that spring, had warned him about girls like her, girls who grew up in Shanghai and studied harder than anyone he would ever meet.',
+  // Chapter text, read-only import (MS-5), as numbered paragraphs. Chapter 2 lines 1 to 11 are Tommy's manuscript; lines marked planted exist only for this demo.
+  const chapterLines = {
+    chp_1_1: [
+      { n: 1, text: 'Many of Mark\u2019s friends struggle to get into college, framing it as a gap year, but Mark gets into USC and kisses his San Francisco life goodbye, secretly relishing the chance to reinvent himself.', planted: true },
+    ],
+    chp_1_2: [
+      { n: 1, text: 'They pass each other many times among the bustling halls of USC, as if orbiting each other in some cosmic dance, before they finally meet. As a college sophomore extends his drunken hand to a petite Chinese girl in southern California, angels shout for joy, and the morning stars sing.' },
+      { n: 2, text: '\u201cHi! I\u2019m Mark,\u201d he says happily, knowing little how much he slurs even these three words.' },
+      { n: 3, text: '\u201cMy name is Dawn Li,\u201d she replies, stuttering over the unfamiliar words herself.' },
+      { n: 4, text: '\u201cNice to meet you! What\u2019s your major?\u201d he asks with rote precision.' },
+      { n: 5, text: '\u201cI\u2019m\u2026\u201d' },
+      { n: 6, text: 'She searches for the word. As the seconds stretch, an old desperation claws at her chest.' },
+      { n: 7, text: '\u201cUndeclared?\u201d he offers with a smile. His kindness surprises her. She nods.' },
+      { n: 8, text: '\u201cWell, fair enough,\u201d he continues. \u201cYou could probably do anything you wanted.\u201d' },
+      { n: 9, text: '\u201cHuh?\u201d she asks. \u201cWhat, do you mean?\u201d' },
+      { n: 10, text: 'Now it\u2019s his time to panic. \u201cOh, I just meant, uh, you seem..really smart,\u201d he says, old anxiety pulling beer up to his lips.' },
+      { n: 11, text: 'To be clear, reader, he does not mean that she seems smart. In truth, he means that she might well be the most beautiful woman he\u2019s met in his nineteen years on this earth. He means that her cascading black hair, dark brown eyes, and ripe bosom all contribute to a masterpiece of visual harmony the likes of which he has never seen.' },
+      { n: 12, text: 'Frank, sixty that spring, had warned him about girls like her, girls who grew up in Shanghai and studied harder than anyone he would ever meet.', planted: true },
+      { n: 13, text: 'She touched the little jade Buddha at her throat before she answered, the way she did every morning at the shrine in her dorm, the way her mother had taught her.', planted: true },
+      { n: 14, text: '\u201cMark from Marketing?\u201d she remarks with a coy smile, and he laughs, and nothing about her church or his crosses his mind.', planted: true },
+    ],
   };
+  const chapterText = {}; Object.keys(chapterLines).forEach(k => { chapterText[k] = chapterLines[k].map(l => l.text).join(' '); });
   const defaultPlace = { chp_1_1: 'pl_usc', chp_1_2: 'pl_usc', chp_1_3: 'pl_usc', chp_2_1: 'pl_usc', chp_2_2: 'pl_usc', chp_2_3: 'pl_usc', chp_1_4: 'pl_sf', chp_1_5: 'pl_sf', chp_1_6: 'pl_sf', chp_1_7: 'pl_sf', chp_2_5: 'pl_jinan', chp_2_6: 'pl_jinan', chp_3_7: 'pl_jinan', chp_3_8: 'pl_jinan' };
 
   // ---------- Page state ----------
@@ -282,6 +323,7 @@
     mode: 'chapter', chapterId: 'chp_1_2', strandIdx: 0, year: 2056, povId: 'ch_mark', placeId: 'pl_usc', extras: [],
     windowYears: 10, removed: new Set(), added: [], budget: 80, claudeDown: false, saved: [],
     dismissed: new Set(), resolved: new Set(), lastRunScope: 'all', ccFindings: null, written: {}, promoted: {}, summaryDraft: null,
+    align: { findings: [], complete: new Set(), scope: 'one', ran: false, stopped: false }, res: {}, tasks: [], taskSeq: 0,
   };
 
   // ---------- Lookups ----------
@@ -566,21 +608,132 @@
       <div class="editslot"></div>
     </li>`;
   }
-  // CC-3: prose findings, mocked as Claude's output but computed against the live entries so edits change them.
-  function proseFindings() {
-    const st = strand(); if (!st.chapterId) return [];
-    const text = chapterText[st.chapterId]; if (!text) return [{ kind: 'No manuscript text', text: 'This chapter has no imported text yet, so there is nothing for Claude to read.', ids: [st.chapterId], key: 'prose-none-' + st.chapterId }];
-    const out = [];
+  // CC-3 as amended by A20: alignment findings, mocked as Claude's output but computed against the live
+  // entries, beats and strand years so that applying a change set makes the finding go away on re-run.
+  const reduced = () => w.matchMedia && w.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const w = window;
+  function chg(label, obj, prop, after) { return { label, before: String(obj[prop]), after: String(after), apply() { this.old = obj[prop]; obj[prop] = after; }, revert() { obj[prop] = this.old; } }; }
+  function alignmentFindings(chapId) {
+    const c = chapter(chapId); const lines = chapterLines[chapId] || []; const out = [];
+    if (!lines.length) return out;
+    const prim = c.strands.find(s => s.primary); const year = prim.year;
+    const has = (re) => lines.filter(l => re.test(l.text));
     const mark = ch('ch_mark'), frank = ch('ch_frank'), dawn = ch('ch_dawn');
-    const markAge = EW.ageIn(mark, st.year);
-    if (/nineteen years/.test(text)) { if (markAge.state === 'alive' && markAge.age !== 19) out.push({ kind: 'Age in prose', quote: 'the most beautiful woman he’s met in his nineteen years on this earth', text: `Mark is ${markAge.age} in ${st.year} (born ${mark.born}).`, explain: 'Either the strand year or Mark’s birth year is off, or the line should change.', ids: [st.chapterId, 'ch_mark'], key: 'prose-mark-age-' + st.chapterId, entry: 'ch_mark' }); else out.push({ kind: 'Age in prose, consistent', quote: 'his nineteen years on this earth', text: `Mark is ${markAge.state === 'alive' ? markAge.age : markAge.state} in ${st.year}. No conflict.`, ids: [st.chapterId, 'ch_mark'], key: 'prose-mark-ok-' + st.chapterId, consistent: true }); }
-    if (/Frank, sixty/.test(text)) { const fa = EW.ageIn(frank, st.year); if (fa.state !== 'alive' || fa.age !== 60) out.push({ kind: 'Age in prose', quote: 'Frank, sixty that spring', text: `Frank is ${fa.state === 'alive' ? fa.age : fa.state} in ${st.year} (born ${frank.born}).`, explain: 'The chapter gives Frank an age the bible does not support.', ids: [st.chapterId, 'ch_frank'], key: 'prose-frank-age-' + st.chapterId, entry: 'ch_frank' }); }
-    if (/grew up in Shanghai/.test(text)) { if (!/shanghai/i.test(dawn.birthplace || '')) out.push({ kind: 'Established fact', quote: 'girls who grew up in Shanghai', text: `Dawn’s birthplace is recorded as ${dawn.birthplace || 'unknown'}.`, explain: 'Chapter text contradicts the character entry. Fix the line, or edit the entry if Shanghai is right.', ids: [st.chapterId, 'ch_dawn'], key: 'prose-dawn-place-' + st.chapterId, entry: 'ch_dawn' }); }
+    const soph = has(/sophomore/), nineteen = has(/nineteen years/);
+    if (soph.length && nineteen.length) {
+      const implied = 2055 + 2; // USC from 2055 (chp_1_1): sophomore year runs 2056 to 2057, and nineteen after a July birthday points at spring 2057
+      if (year !== implied) out.push({ chapter: chapId, kind: 'Strand year', lines: uniqLines(soph.concat(nineteen)), ids: [prim.id, 'ch_mark', 'chp_1_1'], entry: chapId, key: 'align-year-' + chapId,
+        text: `The primary strand is set in ${year}. The text has Mark a sophomore and nineteen; Mark starts USC in 2055 and turns nineteen in July 2056, so a sophomore party scene lands in ${implied}.`,
+        changes: [chg(`Strand ${prim.id} story year`, prim, 'year', implied)], rewrite: `Make the scene read as ${year}: drop "sophomore" or move the age so a freshman-year party fits.` });
+    }
+    const fr = has(/Frank, sixty/);
+    if (fr.length) { const fa = EW.ageIn(frank, year); if (fa.state !== 'alive' || fa.age !== 60) out.push({ chapter: chapId, kind: 'Age in prose', lines: fr, ids: ['ch_frank'], entry: 'ch_frank', key: 'align-frank-' + chapId,
+      text: `Frank is ${fa.state === 'alive' ? fa.age : fa.state} in ${year} (born ${frank.born}). The text gives him sixty.`,
+      changes: [chg('Frank Sullivan born', frank, 'born', year - 60)], rewrite: `Change Frank’s stated age to ${fa.state === 'alive' ? fa.age : 'one the bible supports'}.` }); }
+    const sh = has(/grew up in Shanghai/);
+    if (sh.length && !/shanghai/i.test(dawn.birthplace || '')) out.push({ chapter: chapId, kind: 'Established fact', lines: sh, ids: ['ch_dawn'], entry: 'ch_dawn', key: 'align-dawn-place-' + chapId,
+      text: `Dawn’s birthplace is recorded as ${dawn.birthplace || 'unknown'}; every backstory places her childhood in Jinan. The text says Shanghai.`,
+      changes: [chg('Li Dawn birthplace', dawn, 'birthplace', 'Shanghai')], rewrite: 'Replace the city so the line matches Jinan, or remove the city.' });
+    const beat = D.beats.find(b => b.id === 'bt_2');
+    if (beat && beat.chapter === chapId && !has(/Christian|church/).some(l => /not sure|isn’t sure|unsure/.test(l.text))) {
+      const closest = has(/church/); out.push({ chapter: chapId, kind: 'Planned beat not in text', lines: closest.length ? closest : [lines[lines.length - 1]], noQuote: closest.length ? '' : 'No passage carries the beat; the closest line is quoted.', ids: ['bt_2', chapId], entry: 'bt_2', key: 'align-beat-' + chapId,
+        text: `The plot gives this chapter the beat "${beat.text}". The text shows the meeting but never Mark’s doubt about her not being Christian; line 14 says the opposite.`,
+        changes: [chg('Beat bt_2 chapter', beat, 'chapter', 'chp_1_3')], rewrite: 'Show Mark’s hesitation over faith somewhere in the party scene, or at the end of the chapter.' });
+    }
+    const bud = has(/jade Buddha/);
+    if (bud.length && !/Buddha|shrine/.test(dawn.note || '')) { const fa = D.facts.find(f => f.id === 'fc_atheist'); const cu = D.cultural.find(x => x.id === 'cu_5'); out.push({ chapter: chapId, kind: 'Cultural entry and fact timing', lines: bud, ids: ['cu_5', 'fc_atheist', 'ch_dawn'], entry: 'ch_dawn', key: 'align-buddha-' + chapId,
+      text: `"${cu.title}" (${cu.community}, ${cu.start} to ${cu.end}) describes Siyuan’s practice, not Dawn’s; Dawn’s entry records no practice of her own. "${fa.title}" dates her decision to ${fa.knowledge[0].year}, after a period of trying to make sense of her faith. A daily shrine habit in ${year} conflicts with both.`,
+      changes: [chg('Li Dawn note', dawn, 'note', (dawn.note || '') + ' Keeps a small jade Buddha from her mother and a dorm shrine through college; the habit fades before 2064.')], rewrite: 'Cut the shrine habit, or make the gesture a reflex she is already embarrassed by.' }); }
     return out;
   }
+  function uniqLines(ls) { const seen = new Set(); return ls.filter(l => !seen.has(l.n) && seen.add(l.n)).sort((a, b) => a.n - b.n); }
+  function alignHtml(f) {
+    const s = sig(f); const dismissed = S.dismissed.has(s), resolved = S.resolved.has(s); const r = S.res[f.key] || {};
+    return `<li class="finding align streaming${dismissed ? ' dismissed' : ''}${resolved || r.mode === 'applied' ? ' resolved' : ''}" data-key="${esc(f.key)}">
+      <div class="row"><span class="kind">${esc(f.kind)}</span><span class="chip">${esc(labelOf(f.chapter).replace(/<[^>]+>/g, ''))}</span><span class="note">line${f.lines.length === 1 ? '' : 's'} ${f.lines.map(l => l.n).join(', ')}</span>${dismissed ? '<span class="chip">dismissed</span>' : ''}${resolved ? '<span class="chip canon">resolved</span>' : ''}${r.mode === 'applied' ? '<span class="chip canon">bible updated</span>' : ''}${r.mode === 'rewrite' ? `<span class="chip planned">rewrite task ${r.taskId}</span>` : ''}</div>
+      ${f.noQuote ? `<div class="note">${esc(f.noQuote)}</div>` : ''}
+      <blockquote class="q"></blockquote>
+      <div class="expl"></div>
+      <div class="cites">${f.ids.map(id => `<span class="cite">${esc(id)}</span>`).join(' ')}</div>
+      <div class="actions">
+        <button type="button" class="btn small" data-act="wins" data-key="${esc(f.key)}"${r.mode === 'applied' ? ' disabled' : ''}>Manuscript wins</button>
+        <button type="button" class="btn small" data-act="rewrite" data-key="${esc(f.key)}"${r.mode === 'rewrite' ? ' disabled' : ''}>Rewrite recommended</button>
+        <button type="button" class="btn small" data-act="dismiss" data-group="prose" data-sig="${esc(s)}"${dismissed ? ' disabled' : ''}>Dismiss</button>
+      </div>
+      <div class="resolution">${resolutionHtml(f)}</div>
+    </li>`;
+  }
+  function resolutionHtml(f) {
+    const r = S.res[f.key]; if (!r) return '';
+    if (r.mode === 'diff' || r.mode === 'applied') {
+      const rows = f.changes.map(c => `<tr><td>${esc(c.label)}</td><td class="before">${esc(c.before)}</td><td class="after">${esc(c.after)}</td></tr>`).join('');
+      return `<div class="scroll-x"><table class="diff"><thead><tr><th>Bible target</th><th>Before</th><th>After</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+        (r.mode === 'diff' ? `<div class="row" style="margin-top:6px"><button type="button" class="btn primary small" data-act="apply" data-key="${esc(f.key)}">Apply all</button><span class="note">Changes the bible, the beats, or the strand years so they match the chapter. Nothing in the manuscript changes.</span></div>`
+          : `<div class="saved"><span class="ok">Saved, undo available</span><button type="button" class="btn small" data-act="undo" data-key="${esc(f.key)}">Undo</button></div>`);
+    }
+    if (r.mode === 'rewrite') return `<div class="note">Added to the rewrite tasks above as task ${r.taskId}.</div>`;
+    return '';
+  }
+  // Fill a finding's quote and explanation. Streams word by word, or all at once under reduced motion or when complete already.
+  function fillFinding(li, f, instant, onDone) {
+    const q = li.querySelector('.q'), ex = li.querySelector('.expl');
+    const parts = []; f.lines.forEach(l => { const p = d.createElement('p'); const ln = d.createElement('span'); ln.className = 'ln'; ln.textContent = `Line ${l.n}:`; p.appendChild(ln); q.appendChild(p); parts.push({ el: p, words: l.text.split(' ') }); });
+    parts.push({ el: ex, words: f.text.split(' ') });
+    if (instant) { parts.forEach(pt => pt.el.appendChild(d.createTextNode(pt.words.join(' ')))); li.classList.remove('streaming'); onDone && onDone(); return null; }
+    let pi = 0, wi = 0;
+    const tick = () => { if (pi >= parts.length) { li.classList.remove('streaming'); onDone && onDone(); return false; } const pt = parts[pi]; pt.el.appendChild(d.createTextNode((wi ? ' ' : '') + pt.words[wi])); wi++; if (wi >= pt.words.length) { pi++; wi = 0; } return true; };
+    return tick;
+  }
+  const d = document;
+  let streamTimer = null;
+  function runAlignment() {
+    stopAlignment(false);
+    const scope = $('align-scope').value; S.align.scope = scope; S.align.ran = true; S.align.stopped = false; S.align.complete = new Set();
+    const chapIds = scope === 'one' ? [S.chapterId] : D.chapters.slice().sort((a, b) => a.order - b.order).map(c => c.id);
+    const withText = chapIds.filter(id => chapterLines[id]);
+    S.align.findings = withText.flatMap(id => alignmentFindings(id));
+    $('prose-out').innerHTML = '';
+    $('btn-align').disabled = true; $('btn-align-stop').disabled = false;
+    const status = () => `${S.align.complete.size} of ${S.align.findings.length} finding${S.align.findings.length === 1 ? '' : 's'}, ${withText.length} chapter${withText.length === 1 ? '' : 's'} with text of ${chapIds.length} in scope`;
+    $('align-status').textContent = 'Streaming: ' + status();
+    const queue = S.align.findings.slice(); let tick = null, cur = null;
+    const next = () => { cur = queue.shift(); if (!cur) { finish(); return; } $('prose-out').insertAdjacentHTML('beforeend', alignHtml(cur)); const el = $('prose-out').lastElementChild; tick = fillFinding(el, cur, reduced(), () => { S.align.complete.add(cur.key); $('align-status').textContent = 'Streaming: ' + status(); }); if (!tick) next(); };
+    const finish = () => { clearInterval(streamTimer); streamTimer = null; $('btn-align').disabled = false; $('btn-align-stop').disabled = true; $('align-status').textContent = (S.align.stopped ? 'Stopped: ' : 'Done: ') + status() + (S.align.findings.length ? '' : '. Nothing to report.') + (withText.length < chapIds.length ? '. Chapters without imported text are skipped.' : ''); if (!S.align.findings.length) $('prose-out').innerHTML = '<li class="ok">The text, the entries, and the plot agree.</li>'; };
+    if (reduced()) { while (queue.length) { cur = queue.shift(); $('prose-out').insertAdjacentHTML('beforeend', alignHtml(cur)); fillFinding($('prose-out').lastElementChild, cur, true, () => S.align.complete.add(cur.key)); } finish(); return; }
+    next();
+    if (!cur) return;
+    streamTimer = setInterval(() => { if (!tick) { next(); return; } if (!tick()) { tick = null; next(); } }, 18);
+  }
+  function stopAlignment(user) {
+    if (!streamTimer) return;
+    clearInterval(streamTimer); streamTimer = null; S.align.stopped = true;
+    const partial = $('prose-out').querySelector('.finding.streaming'); if (partial) { partial.querySelector('.expl').appendChild(d.createTextNode(' [stopped]')); partial.classList.remove('streaming'); partial.querySelector('.actions').innerHTML = '<span class="note">Incomplete finding; run again to finish it.</span>'; }
+    $('btn-align').disabled = false; $('btn-align-stop').disabled = true;
+    if (user) $('align-status').textContent = `Stopped after ${S.align.complete.size} complete finding${S.align.complete.size === 1 ? '' : 's'}.`;
+  }
+  // Re-render completed findings without streaming (after other state changes).
   function renderProse() {
-    const list = proseFindings();
-    $('prose-out').innerHTML = list.length ? list.map(f => f.consistent ? `<li class="finding resolved"><div class="row"><span class="kind">${esc(f.kind)}</span></div><blockquote>${esc(f.quote)}</blockquote><div>${esc(f.text)} ${f.ids.map(id => `<span class="cite">${esc(id)}</span>`).join(' ')}</div></li>` : findingHtml(f, 'prose')).join('') : '<li class="note">No prose findings.</li>';
+    if (streamTimer) return;
+    if (!S.align.ran) { $('prose-out').innerHTML = '<li class="note">Not run yet. Pick a scope and press Check alignment.</li>'; return; }
+    $('prose-out').innerHTML = '';
+    S.align.findings.filter(f => S.align.complete.has(f.key)).forEach(f => { $('prose-out').insertAdjacentHTML('beforeend', alignHtml(f)); fillFinding($('prose-out').lastElementChild, f, true); });
+    if (!$('prose-out').children.length) $('prose-out').innerHTML = S.align.findings.length ? '<li class="note">Run was stopped before any finding completed.</li>' : '<li class="ok">The text, the entries, and the plot agree.</li>';
+  }
+  function renderTasks() {
+    $('rewrite-tasks').innerHTML = S.tasks.length ? S.tasks.map(t => `<li class="task"><div class="row"><strong>Task ${t.id}</strong><span class="chip">${esc(labelOf(t.chapter).replace(/<[^>]+>/g, ''))}</span><span class="note">line${t.lines.length === 1 ? '' : 's'} ${t.lines.map(l => l.n).join(', ')}</span><span class="chip planned">${esc(t.kind)}</span></div><div class="q">${t.lines.map(l => `<p><span class="ln">Line ${l.n}:</span>${esc(l.text)}</p>`).join('')}</div><div><strong>What must change:</strong> ${esc(t.desc)}</div><div class="note">No replacement prose is suggested; the app does not draft the novel (AI-4).</div><div class="row"><button type="button" class="btn small" data-task-open="${esc(t.chapter)}">Open chapter</button><button type="button" class="btn small" data-task-done="${t.id}">Done</button></div></li>`).join('') : '<li class="note">No rewrite tasks. Mark an alignment finding "Rewrite recommended" to add one.</li>';
+  }
+  function afterBibleChange() { if (S.ccFindings) S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null); renderCC(); renderInputs(); renderSelection(); renderBrief(); renderKnowledge(); renderWritten(); renderProse(); }
+  // Replace one completed finding in place (works while another finding is still streaming).
+  function refreshFinding(f) { const li = $('prose-out').querySelector(`.finding[data-key="${f.key}"]`); if (!li) return; const fresh = d.createElement('ul'); fresh.innerHTML = alignHtml(f); const el = fresh.firstElementChild; fillFinding(el, f, true); li.replaceWith(el); }
+  function alignActions(e) {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const key = b.dataset.key; const f = S.align.findings.find(x => x.key === key) || S.align.findings.find(x => sig(x) === b.dataset.sig);
+    if (b.dataset.act === 'dismiss') { S.dismissed.add(b.dataset.sig); toast('Dismissed. It stays dismissed on re-run until the text or the entry changes.'); if (f) refreshFinding(f); return; }
+    if (!f) return;
+    if (b.dataset.act === 'wins') { S.res[key] = { mode: 'diff' }; refreshFinding(f); }
+    if (b.dataset.act === 'apply') { f.changes.forEach(c => c.apply()); S.res[key] = { mode: 'applied' }; toast('Saved, undo available'); afterBibleChange(); refreshFinding(f); }
+    if (b.dataset.act === 'undo') { f.changes.slice().reverse().forEach(c => c.revert()); S.res[key] = { mode: 'diff' }; toast('Reverted'); afterBibleChange(); refreshFinding(f); }
+    if (b.dataset.act === 'rewrite') { const id = ++S.taskSeq; S.tasks.push({ id, chapter: f.chapter, lines: f.lines, kind: f.kind, desc: f.rewrite, key }); S.res[key] = { mode: 'rewrite', taskId: id }; toast(`Rewrite task ${id} added`); renderTasks(); refreshFinding(f); }
   }
   function editBox(entryId) {
     const e = entry(entryId); if (!e) return '';
@@ -612,7 +765,7 @@
   }
 
   // ---------- Render everything ----------
-  function renderAll() { renderInputs(); renderSelection(); renderBrief(); renderSaved(); renderKnowledge(); renderProse(); renderWritten(); if (S.ccFindings) { S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null); } renderCC(); }
+  function renderAll() { renderInputs(); renderSelection(); renderBrief(); renderSaved(); renderKnowledge(); renderProse(); renderTasks(); renderWritten(); if (S.ccFindings) { S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null); } renderCC(); }
   function selectionChanged() { renderInputs(); renderSelection(); renderBrief(); renderSaved(); renderKnowledge(); renderProse(); renderWritten(); }
 
   // ---------- Events ----------
@@ -660,7 +813,10 @@
     renderCC(); renderProse();
   }
   $('cc-out').addEventListener('click', findingActions);
-  $('prose-out').addEventListener('click', findingActions);
+  $('prose-out').addEventListener('click', alignActions);
+  $('btn-align').addEventListener('click', runAlignment);
+  $('btn-align-stop').addEventListener('click', () => stopAlignment(true));
+  $('rewrite-tasks').addEventListener('click', e => { const o = e.target.closest('[data-task-open]'); const dn = e.target.closest('[data-task-done]'); if (o) { S.mode = 'chapter'; S.chapterId = o.dataset.taskOpen; S.strandIdx = 0; S.placeId = defaultPlace[S.chapterId] || null; selectionChanged(); $('sec-inputs').scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth' }); toast('Chapter opened in section 1'); } if (dn) { S.tasks = S.tasks.filter(t => t.id !== parseInt(dn.dataset.taskDone, 10)); Object.keys(S.res).forEach(k => { if (S.res[k].mode === 'rewrite' && S.res[k].taskId === parseInt(dn.dataset.taskDone, 10)) delete S.res[k]; }); renderTasks(); renderProse(); toast('Task done'); } });
   $('written-out').addEventListener('click', e => {
     const c = chapter(S.chapterId);
     if (e.target.id === 'btn-mark-written') { S.written[S.chapterId] = { stage: 'summary', draft: c.id === 'chp_1_2' ? 'Mark, nineteen and a marketing major, meets Dawn Li at a USC party. She is undeclared and searching for the English word; he is awkward and kind. Forty-five minutes of clumsy conversation later he brushes her shoulder, she nods, and they go upstairs. The chapter ends with his hand moving to her face.' : (c.summary || `${c.title}: summary generated from the imported text.`) }; renderWritten(); }
