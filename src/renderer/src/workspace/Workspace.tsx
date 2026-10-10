@@ -6,10 +6,13 @@ import { DataProvider } from './data';
 import { EntryPane, UndoPanel } from './editor';
 import { ReviewQueue } from './review';
 import { UndoProvider } from './undo';
+import { StoryTimeProvider } from './storyTime';
+import { TreeView } from './tree/TreeView';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 
 type View =
   | { kind: 'section'; collection: EntryCollection; selected: string | null; creating: boolean }
+  | { kind: 'tree' }
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
@@ -22,7 +25,9 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   return (
     <DataProvider key={props.bibleId}>
       <UndoProvider key={props.bibleId}>
-        <Frame bibles={props.bibles} />
+        <StoryTimeProvider key={props.bibleId}>
+          <Frame bibles={props.bibles} />
+        </StoryTimeProvider>
       </UndoProvider>
     </DataProvider>
   );
@@ -51,6 +56,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         {GROUPS.map((g) => (
           <div key={g} className="rail-group">
             <span className="eyebrow">{g}</span>
+            {g === 'People' &&
+              railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
             {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
               railButton(
                 collectionInfo[c].plural,
@@ -106,6 +113,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             </>
           )}
         </>
+      ) : view.kind === 'tree' ? (
+        <TreeView onOpen={open} />
       ) : (
         <>
           <div className="ws-wide-area">

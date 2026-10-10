@@ -4,12 +4,16 @@ import type { Channel, WireEntry } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
+import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
+import { characterPage } from '../../shared/domain/character';
+import { positionYear } from '../../shared/domain/position';
 
 /** Channels that act on the open bible. */
 export type BibleChannel =
   | 'entry.list'
   | 'entry.get'
   | 'entry.create'
+  | 'entry.createMany'
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
@@ -30,7 +34,12 @@ export type BibleChannel =
   | 'proposal.approve'
   | 'proposal.edit'
   | 'proposal.reject'
-  | 'proposal.refresh';
+  | 'proposal.refresh'
+  | 'tree.get'
+  | 'tree.lineage'
+  | 'character.page'
+  | 'storyTime.get'
+  | 'storyTime.set';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -65,6 +74,15 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
         ...b,
         title: entryTitle(session().model.get(b.collection, b.id)),
       }));
+
+  const graph = () => {
+    const { model } = session();
+    return buildGraph(model.all('characters'), model.all('unions'), model.all('parentLinks'));
+  };
+  const position = () => {
+    const { model, repo } = session();
+    return positionYear(repo.storyTime(), model.all('chapters'));
+  };
 
   const proposalView = (id: string) => {
     const { repo, model } = session();
@@ -108,6 +126,35 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     'entry.create': async ({ collection, data }) => {
       const entry = (await session().repo.create(collection, data as never)) as StoredDoc;
       return withWarnings(collection, entry);
+    },
+    'entry.createMany': async ({ items }) => {
+      const created = await session().repo.createMany(items);
+      return {
+        entries: created.map((entry, i) =>
+          withWarnings((items[i] as { collection: EntryCollection }).collection, entry),
+        ),
+      };
+    },
+    'tree.get': () => {
+      const g = graph();
+      return { people: g.people, unions: g.unions, links: g.links, warnings: treeWarnings(g) };
+    },
+    'tree.lineage': ({ id }) => {
+      const g = graph();
+      if (!g.byId.has(id)) throw new Error(`No character has the ID ${id}.`);
+      const order = (ids: Set<string>) =>
+        [...ids].sort((a, b) => (g.rank.get(a) ?? 0) - (g.rank.get(b) ?? 0));
+      return { ancestors: order(ancestorsOf(g, id)), descendants: order(descendantsOf(g, id)) };
+    },
+    'character.page': ({ id }) => {
+      const page = characterPage(session().model, id, position());
+      if (!page) throw new Error(`No character has the ID ${id}.`);
+      return { page };
+    },
+    'storyTime.get': () => ({ time: session().repo.storyTime(), position: position() }),
+    'storyTime.set': async ({ time }) => {
+      const saved = await session().repo.setStoryTime(time);
+      return { time: saved, position: position() };
     },
     'entry.update': async ({ collection, id, patch }) => {
       const entry = (await session().repo.update(collection, id, patch as never)) as StoredDoc;

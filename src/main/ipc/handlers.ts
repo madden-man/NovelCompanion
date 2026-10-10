@@ -8,6 +8,7 @@ import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
+import { exportTree } from './exportTree';
 import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
 import type { Handler } from './validate';
@@ -87,10 +88,14 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const offProposals = session.repo.onProposalsChange(() =>
     broadcast('proposals.changed', { bible: slug }),
   );
+  const offTime = session.repo.onStoryTimeChange(() =>
+    broadcast('storyTime.changed', { bible: slug }),
+  );
   const unsubscribe = () => {
     offChange();
     offLists();
     offProposals();
+    offTime();
   };
   current = { session, name: record.name, unsubscribe };
   const bible = { id: slug, name: record.name };
@@ -113,6 +118,7 @@ export function registerHandlers(): void {
   handle('bible.create', ({ slug, name }) => bibleCreate(slug, name));
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
+  handle('tree.export', (req) => exportTree(req));
   const handlers = bibleHandlers(() => current?.session ?? null);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);

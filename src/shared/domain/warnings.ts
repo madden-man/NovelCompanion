@@ -6,7 +6,7 @@
  * the entry and the entries it names: death before birth, years outside a
  * lifetime, KN-2 learning before birth, and the FT-6 parent-age and
  * born-after-death checks. Tree-wide FT-6 checks (overlapping unions, a child
- * born before a union) need the whole tree and arrive with it in M2.
+ * born before a union) use the whole tree when the context can list it.
  */
 import type { StoryDate } from '../schema/common';
 import type { FieldSpec } from '../schema/manifest';
@@ -14,13 +14,13 @@ import type { ListDoc } from '../schema/lists';
 import type { CustomSection } from '../schema/custom';
 import { customValueIssues } from './customValues';
 import {
-  compareStoryDates,
-  dayNumber,
-  formatStoryDate,
-  isImpossibleDate,
-  isKnown,
-  yearOf,
-} from './dates';
+  bornAfterDeathWarning,
+  buildGraph,
+  overlapWarning,
+  parentAgeWarning,
+  treeWarnings,
+} from './tree';
+import { compareStoryDates, formatStoryDate, isImpossibleDate, yearOf } from './dates';
 import { isPlainObject, joinPath } from './paths';
 import type { Doc } from './paths';
 import { outgoingRefs } from './refs';
@@ -42,10 +42,9 @@ export interface WarningContext {
   customSpecs?: CustomSpecs;
   /** The raw custom section, for checking custom entry values against it. */
   customSection?: (id: string) => CustomSection | undefined;
+  /** Every stored entry of a collection, for checks that need the whole tree (FT-6). */
+  all?: (collection: string) => Doc[];
 }
-
-const MIN_PARENT_AGE = 12;
-const MAX_PARENT_AGE = 60;
 
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -212,42 +211,37 @@ function characterChecks(doc: Doc, out: FieldWarning[]): void {
   });
 }
 
-/** FT-6 parent age at the child's birth, and a child born over a year after the parent died. */
+/**
+ * FT-6 parent age at the child's birth, and a child born over a year after the
+ * parent died. The same pure checks the tree uses, so both say the same thing.
+ * They apply to biological links; other parents may be any age.
+ */
 function parentLinkChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
   const parent = typeof doc.parentId === 'string' ? ctx.get('characters', doc.parentId) : undefined;
   const child = typeof doc.childId === 'string' ? ctx.get('characters', doc.childId) : undefined;
-  if (!parent || !child) return;
-  const pBirth = asDate(parent.birth);
-  const cBirth = asDate(child.birth);
-  const pDeath = asDate(parent.death);
-  const pBorn = yearOf(pBirth);
-  const cBorn = yearOf(cBirth);
-  if (pBorn !== null && cBorn !== null) {
-    const age = cBorn - pBorn;
-    if (age < MIN_PARENT_AGE) {
-      out.push({
-        path: 'parentId',
-        code: 'parent-age',
-        message: `${titleOf(parent)} would be ${age} when ${titleOf(child)} is born, under ${MIN_PARENT_AGE}.`,
-      });
-    } else if (age > MAX_PARENT_AGE) {
-      out.push({
-        path: 'parentId',
-        code: 'parent-age',
-        message: `${titleOf(parent)} would be ${age} when ${titleOf(child)} is born, over ${MAX_PARENT_AGE}.`,
-      });
-    }
+  if (!parent || !child || doc.type !== 'biological') return;
+  const named = (d: Doc) => ({ name: titleOf(d), birth: asDate(d.birth), death: asDate(d.death) });
+  const age = parentAgeWarning(named(parent), named(child));
+  if (age) out.push({ path: 'parentId', code: 'parent-age', message: age });
+  const late = bornAfterDeathWarning(named(parent), named(child));
+  if (late) out.push({ path: 'childId', code: 'born-after-parent-death', message: late });
+}
+
+/** FT-6 tree-wide checks on a union: overlapping unions and children born before it. */
+function unionTreeChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  if (!ctx.all || doc.deletedAt) return;
+  const unions = ctx.all('unions').filter((u) => u._id !== doc._id);
+  const g = buildGraph(ctx.all('characters'), [...unions, doc], ctx.all('parentLinks'));
+  const me = g.unions.find((u) => u.id === doc._id);
+  if (!me) return;
+  for (const other of g.unions) {
+    if (other.id === me.id) continue;
+    const msg = overlapWarning(g, me, other);
+    if (msg) out.push({ path: 'startYear', code: 'overlapping-unions', message: msg });
   }
-  if (isKnown(pDeath) && isKnown(cBirth)) {
-    const dd = dayNumber(pDeath);
-    const cd = dayNumber(cBirth);
-    const tooLate = dd !== null && cd !== null ? cd - dd > 366 : cBirth.year > pDeath.year + 1;
-    if (tooLate) {
-      out.push({
-        path: 'childId',
-        code: 'born-after-parent-death',
-        message: `${titleOf(child)} is born in ${cBirth.year}, more than a year after ${titleOf(parent)} dies in ${pDeath.year}.`,
-      });
+  for (const w of treeWarnings(g)) {
+    if (w.code === 'born-before-union' && w.entryIds.includes(me.id)) {
+      out.push({ path: 'startYear', code: 'born-before-union', message: w.message });
     }
   }
 }
@@ -347,6 +341,7 @@ export function computeWarnings(
       break;
     case 'unions':
       unionChecks(doc, ctx, out);
+      unionTreeChecks(doc, ctx, out);
       break;
     case 'knowledgeRecords':
       knowledgeChecks(doc, ctx, out);

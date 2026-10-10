@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BibleName, BibleSlug } from './bible';
 import { ENTRY_COLLECTIONS, ListIdParam, Proposal, entrySchemas } from './schema';
+import { StoryTimeValue } from './storyTime';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -119,6 +120,156 @@ const ProposalView = z.strictObject({
 });
 export type ProposalView = z.output<typeof ProposalView>;
 
+const StoryDateWire = z.union([
+  z.strictObject({
+    year: z.number(),
+    month: z.number().optional(),
+    day: z.number().optional(),
+  }),
+  z.strictObject({ unknown: z.literal(true) }),
+]);
+
+const TreePersonWire = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  chinese: z.string(),
+  birth: StoryDateWire.nullable(),
+  death: StoryDateWire.nullable(),
+  familyIds: z.array(z.string()),
+  status: z.string(),
+  createdAt: z.string(),
+});
+
+const TreeUnionWire = z.strictObject({
+  id: z.string(),
+  a: z.string(),
+  b: z.string(),
+  type: z.string(),
+  startYear: z.number().nullable(),
+  endYear: z.number().nullable(),
+  endReason: z.string(),
+  createdAt: z.string(),
+});
+
+const TreeLinkWire = z.strictObject({
+  id: z.string(),
+  parentId: z.string(),
+  childId: z.string(),
+  type: z.string(),
+  startYear: z.number().nullable(),
+  createdAt: z.string(),
+});
+
+const TreeWarningWire = z.strictObject({
+  code: z.enum([
+    'parent-age',
+    'born-after-parent-death',
+    'overlapping-unions',
+    'born-before-union',
+  ]),
+  message: z.string(),
+  personIds: z.array(z.string()),
+  entryIds: z.array(z.string()),
+});
+
+const LifeStateWire = z.union([
+  z.strictObject({ state: z.literal('alive'), age: z.number(), dyingThisYear: z.boolean() }),
+  z.strictObject({ state: z.literal('dead'), deathYear: z.number() }),
+  z.strictObject({ state: z.literal('unborn'), birthYear: z.number() }),
+  z.strictObject({ state: z.literal('unknown') }),
+]);
+
+const PositionWire = z.strictObject({
+  year: z.number().nullable(),
+  source: z.enum(['storyTime', 'lastWritten', 'none']),
+  chapterId: z.string().nullable(),
+});
+
+const StoryTimeResponse = z.strictObject({
+  time: StoryTimeValue.nullable(),
+  position: PositionWire,
+});
+
+const CharacterPageWire = z.strictObject({
+  id: z.string(),
+  name: z.string(),
+  names: z.strictObject({
+    full: z.string(),
+    chinese: z.string(),
+    romanization: z.string(),
+    order: z.string(),
+    birthName: z.string(),
+    marriedName: z.string(),
+    nicknames: z.array(z.string()),
+    calledBy: z.array(
+      z.strictObject({ characterId: z.string(), characterName: z.string(), name: z.string() }),
+    ),
+  }),
+  families: z.array(z.strictObject({ id: z.string(), name: z.string(), color: z.string() })),
+  years: z.string(),
+  birthKnown: z.boolean(),
+  position: PositionWire.extend({ state: LifeStateWire.nullable() }),
+  timeline: z.array(
+    z.strictObject({
+      kind: z.enum(['birth', 'death', 'union', 'union-end', 'child', 'beat', 'event', 'chapter']),
+      year: z.number().nullable(),
+      age: z.number().nullable(),
+      collection: z.string(),
+      id: z.string(),
+      title: z.string(),
+      detail: z.string(),
+    }),
+  ),
+  relatives: z.strictObject({
+    parents: z.array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        type: z.string(),
+        startYear: z.number().nullable(),
+      }),
+    ),
+    children: z.array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        type: z.string(),
+        startYear: z.number().nullable(),
+      }),
+    ),
+    siblings: z.array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        kind: z.enum(['full', 'half', 'sibling']),
+      }),
+    ),
+    partners: z.array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        unionId: z.string(),
+        type: z.string(),
+        startYear: z.number().nullable(),
+        endYear: z.number().nullable(),
+        endReason: z.string(),
+      }),
+    ),
+  }),
+  knowledge: z.array(
+    z.strictObject({
+      recordId: z.string(),
+      factId: z.string(),
+      fact: z.string(),
+      yearLearned: z.number().nullable(),
+      chapterId: z.string().nullable(),
+      chapter: z.string().nullable(),
+      how: z.string(),
+      knownAtPosition: z.boolean().nullable(),
+    }),
+  ),
+});
+
 const RevisionSummary = z.strictObject({
   _id: z.string(),
   op: z.enum(['create', 'update', 'softDelete', 'restore']),
@@ -182,6 +333,23 @@ export const contract = {
       .strictObject({ collection: CollectionName, data: z.record(z.string(), z.unknown()) })
       .superRefine(checkNewEntry),
     response: WithWarnings,
+  },
+  /**
+   * Create several entries in one transaction: an in-tree action that makes a
+   * person and the link to them (FT-2), or a batch load. All or nothing.
+   */
+  'entry.createMany': {
+    request: z.strictObject({
+      items: z
+        .array(
+          z
+            .strictObject({ collection: CollectionName, data: z.record(z.string(), z.unknown()) })
+            .superRefine(checkNewEntry),
+        )
+        .min(1)
+        .max(2000),
+    }),
+    response: z.strictObject({ entries: z.array(WithWarnings) }),
   },
   /** Change some fields. Warnings come back; they never block the write (ED-10). */
   'entry.update': {
@@ -334,6 +502,58 @@ export const contract = {
     }),
     response: z.strictObject({ proposal: Proposal }),
   },
+  /** The family tree from the read model: people, unions, parent links, FT-6 warnings. */
+  'tree.get': {
+    request: z.strictObject({}),
+    response: z.strictObject({
+      people: z.array(TreePersonWire),
+      unions: z.array(TreeUnionWire),
+      links: z.array(TreeLinkWire),
+      warnings: z.array(TreeWarningWire),
+    }),
+  },
+  /** Ancestors and descendants of one person (FT-1). */
+  'tree.lineage': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ ancestors: z.array(z.string()), descendants: z.array(z.string()) }),
+  },
+  /** Save the tree as an image or a PDF through a save dialog (FT-9). */
+  'tree.export': {
+    request: z.strictObject({
+      format: z.enum(['png', 'pdf']),
+      /** The tree as standalone SVG markup with its styles inlined. */
+      svg: z.string().min(1).max(30_000_000),
+      /** For PNG: the rasterized image as a base64 data URL. */
+      png: z
+        .string()
+        .regex(/^data:image\/png;base64,/)
+        .max(60_000_000)
+        .optional(),
+      width: z.number().positive().max(100_000),
+      height: z.number().positive().max(100_000),
+      fileName: z
+        .string()
+        .min(1)
+        .max(120)
+        .regex(/^[A-Za-z0-9 _.-]+$/),
+    }),
+    response: z.strictObject({ saved: z.boolean(), path: z.string().nullable() }),
+  },
+  /** Everything the character page shows (CH-1 to CH-4), computed in main from the read model. */
+  'character.page': {
+    request: z.strictObject({ id: EntryId }),
+    response: z.strictObject({ page: CharacterPageWire }),
+  },
+  /** The current story time and the year ages are shown at (TM-3). */
+  'storyTime.get': {
+    request: z.strictObject({}),
+    response: StoryTimeResponse,
+  },
+  /** Set or clear the story time. It writes no entry (TM-5). */
+  'storyTime.set': {
+    request: z.strictObject({ time: StoryTimeValue.nullable() }),
+    response: StoryTimeResponse,
+  },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {
     request: z.strictObject({ url: z.string().min(1).max(2000) }),
@@ -369,6 +589,8 @@ export const events = {
   'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */
   'lists.changed': z.strictObject({ bible: z.string() }),
+  /** The story time was set or cleared (TM-3). */
+  'storyTime.changed': z.strictObject({ bible: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;

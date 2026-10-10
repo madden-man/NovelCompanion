@@ -27,6 +27,7 @@ import type {
 import { hasValue } from '../../shared/domain/customValues';
 import { contentOf, diffEntries } from '../../shared/domain/diff';
 import type { FieldChange } from '../../shared/domain/diff';
+import { StoryTimeValue } from '../../shared/storyTime';
 import {
   countListUsage,
   derivedRename,
@@ -36,6 +37,7 @@ import {
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
 import { computeWarnings } from '../../shared/domain/warnings';
+import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
@@ -163,7 +165,7 @@ export class Repository {
     return this.bible.collection<StoredDoc>(c);
   }
 
-  private validate<C extends EntryCollection>(c: C, doc: unknown): EntryOf<C> {
+  private validate<C extends EntryCollection>(c: C, doc: unknown, shape = true): EntryOf<C> {
     const result = entrySchemas[c].safeParse(doc);
     if (!result.success) {
       throw new ValidationError(
@@ -172,12 +174,12 @@ export class Repository {
       );
     }
     const data = result.data as EntryOf<C>;
-    this.checkShape(c, data as unknown as StoredDoc);
+    if (shape) this.checkShape(c, data as unknown as StoredDoc);
     return data;
   }
 
   /** Shape rules that need other data: custom values must fit their section (CS-1). */
-  private checkShape(c: EntryCollection, doc: StoredDoc): void {
+  private checkShape(c: EntryCollection, doc: StoredDoc, ancestry = true): void {
     const fail = (message: string) => {
       throw new ValidationError(message, [
         { code: 'custom', message, path: [], input: doc } as z.core.$ZodIssue,
@@ -192,6 +194,25 @@ export class Repository {
       const ids = (doc.fields as { id: string }[]).map((f) => f.id);
       if (new Set(ids).size !== ids.length) fail('Two fields in this section share an ID.');
     }
+    if (ancestry && c === 'parentLinks' && !doc.deletedAt) this.checkNotOwnAncestor(doc, []);
+  }
+
+  /**
+   * FT-6: nobody may be their own ancestor. Every parent link in force counts,
+   * whoever it names, plus the links written in the same transaction.
+   */
+  private checkNotOwnAncestor(doc: StoredDoc, batch: StoredDoc[]): void {
+    const links = [...this.model.all('parentLinks'), ...batch]
+      .filter((l) => !l.deletedAt && l._id !== doc._id)
+      .map((l) => ({ parentId: String(l.parentId), childId: String(l.childId) }));
+    const parentId = String(doc.parentId);
+    const childId = String(doc.childId);
+    if (!wouldBeOwnAncestor(links, parentId, childId)) return;
+    const name = (id: string) => entryTitle(this.model.get('characters', id) ?? { title: id });
+    const message = ownAncestorMessage(name(parentId), name(childId));
+    throw new ValidationError(message, [
+      { code: 'custom', message, path: ['childId'], input: doc } as z.core.$ZodIssue,
+    ]);
   }
 
   private assertCollection(c: string): asserts c is EntryCollection {
@@ -330,10 +351,23 @@ export class Repository {
   }
 
   private buildCreate<C extends EntryCollection>(c: C, input: Record<string, unknown>): Change {
+    return this.buildCreateWith(c, input, true);
+  }
+
+  /** A create whose shape checks run later, against the whole batch. */
+  private buildCreateUnchecked(c: EntryCollection, input: Record<string, unknown>): Change {
+    return this.buildCreateWith(c, input, false);
+  }
+
+  private buildCreateWith(
+    c: EntryCollection,
+    input: Record<string, unknown>,
+    shape: boolean,
+  ): Change {
     const at = this.now().toISOString();
     const rest = this.stripSystem(input);
     const id = typeof input._id === 'string' && input._id ? input._id : newId();
-    const doc = this.validate(c, { ...rest, _id: id, createdAt: at, modifiedAt: at });
+    const doc = this.validate(c, { ...rest, _id: id, createdAt: at, modifiedAt: at }, shape);
     if (this.model.get(c, id)) throw new RepositoryError(`An entry with the ID ${id} exists.`);
     return { collection: c, op: 'create', next: doc as StoredDoc, prior: null };
   }
@@ -363,6 +397,34 @@ export class Repository {
     const change = this.buildCreate(c, input as Record<string, unknown>);
     await this.commit([change]);
     return change.next as EntryOf<C>;
+  }
+
+  /**
+   * Create several entries in one transaction, for in-tree actions that make a
+   * person and the link to them together (FT-2), and for loading many at once.
+   * Either every entry is written or none is.
+   */
+  async createMany(
+    items: { collection: EntryCollection; data: Record<string, unknown> }[],
+  ): Promise<StoredDoc[]> {
+    const changes: Change[] = [];
+    const ids = new Set<string>();
+    for (const item of items) {
+      this.assertCollection(item.collection);
+      const change = this.buildCreateUnchecked(item.collection, item.data);
+      if (ids.has(change.next._id)) {
+        throw new RepositoryError(`Two new entries share the ID ${change.next._id}.`);
+      }
+      ids.add(change.next._id);
+      changes.push(change);
+    }
+    const links = changes.filter((ch) => ch.collection === 'parentLinks').map((ch) => ch.next);
+    for (const ch of changes) {
+      this.checkShape(ch.collection, ch.next, false);
+      if (ch.collection === 'parentLinks') this.checkNotOwnAncestor(ch.next, links);
+    }
+    await this.commit(changes);
+    return changes.map((ch) => ch.next);
   }
 
   async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
@@ -517,6 +579,7 @@ export class Repository {
       list: (id) => this.model.get('lists', id) as ListDoc | undefined,
       customSpecs: this.customSpecs,
       customSection: (id) => this.model.get('customSections', id) as CustomSection | undefined,
+      all: (col) => this.model.all(col),
     });
   }
 
@@ -1019,9 +1082,45 @@ export class Repository {
       state: 'rejected',
       decidedAt: this.now().toISOString(),
     };
-    await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
+    const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
+    if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
   }
+
+  // ---------- story time (TM-3, stored in meta, never an entry) ----------
+
+  /** The current story time, or null when none is set. */
+  storyTime(): StoryTimeValue | null {
+    const doc = this.model.get('meta', STORY_TIME_ID);
+    if (!doc || typeof doc.year !== 'number') return null;
+    return StoryTimeValue.parse({
+      year: doc.year,
+      ...(typeof doc.month === 'number' ? { month: doc.month } : {}),
+      ...(typeof doc.day === 'number' ? { day: doc.day } : {}),
+    });
+  }
+
+  /** Set or clear the story time. It writes only the meta document, never an entry (TM-5). */
+  async setStoryTime(value: StoryTimeValue | null): Promise<StoryTimeValue | null> {
+    const meta = this.bible.collection<StoredDoc>('meta');
+    if (value === null) {
+      await meta.deleteOne({ _id: STORY_TIME_ID });
+      this.model.remove('meta', STORY_TIME_ID);
+    } else {
+      const doc: StoredDoc = { _id: STORY_TIME_ID, ...StoryTimeValue.parse(value) };
+      await meta.replaceOne({ _id: STORY_TIME_ID }, doc, { upsert: true });
+      this.model.put('meta', doc);
+    }
+    this.emitter.emit('storyTime');
+    return this.storyTime();
+  }
+
+  onStoryTimeChange(listener: () => void): () => void {
+    this.emitter.on('storyTime', listener);
+    return () => this.emitter.off('storyTime', listener);
+  }
 }
+
+const STORY_TIME_ID = 'storyTime';

@@ -1,5 +1,6 @@
 import { deleteCommand, editCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   collectionInfo,
   editableFields,
@@ -19,6 +20,7 @@ import { Field } from './fields';
 import { formatTime } from './format';
 import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
+import { CharacterSummary } from './character';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
 
@@ -33,7 +35,7 @@ export const AUTOSAVE_MAX_WAIT_MS = 700;
  * is written 500 ms after the last keystroke, and never more than 700 ms after
  * the first unsaved one. Each save becomes one undo command (ED-3).
  */
-function useAutosave(collection: EntryCollection, id: string) {
+export function useAutosave(collection: EntryCollection, id: string) {
   const undo = useUndo();
   const [draft, setDraft] = useState<Entry | null>(null);
   const [warnings, setWarnings] = useState<FieldWarning[]>([]);
@@ -113,7 +115,7 @@ function useAutosave(collection: EntryCollection, id: string) {
               entry,
             ),
           );
-          undo.markSaved();
+          undo.markSaved(entry);
           if (current.current === target) {
             current.current = entry;
             setDraft(entry);
@@ -200,6 +202,107 @@ export function SaveState({ status, error }: { status: SaveStatus; error: string
   );
 }
 
+/**
+ * Move to trash and restore (ED-5): before deleting, list what links here.
+ * Used by the entry inspector and by the tree inspector (FT-2).
+ */
+export function TrashControls(props: {
+  collection: EntryCollection;
+  id: string;
+  title: string;
+  inTrash: boolean;
+  /** Save pending edits first, so the trash holds the latest version. */
+  beforeDelete: () => Promise<void>;
+  onChanged: () => void;
+  extra?: ReactNode;
+}) {
+  const { collection, id, title } = props;
+  const undo = useUndo();
+  const [confirmDelete, setConfirmDelete] = useState<Response<'entry.linkedFrom'> | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const askDelete = async () => {
+    setActionError(null);
+    await props.beforeDelete();
+    setConfirmDelete(await call('entry.linkedFrom', { id }));
+  };
+
+  const doDelete = async () => {
+    try {
+      await call('entry.delete', { collection, id });
+      undo.record(deleteCommand(collection, id, title));
+      setConfirmDelete(null);
+      props.onChanged();
+    } catch (e) {
+      setActionError(plainError(e));
+    }
+  };
+
+  const doRestore = async () => {
+    try {
+      await call('entry.restore', { collection, id });
+      undo.record(restoreCommand(collection, id, title));
+      props.onChanged();
+    } catch (e) {
+      setActionError(plainError(e));
+    }
+  };
+
+  return (
+    <>
+      <div className="row">
+        {props.extra}
+        {props.inTrash ? (
+          <button type="button" className="btn" onClick={() => void doRestore()}>
+            Restore from trash
+          </button>
+        ) : (
+          <button type="button" className="btn danger" onClick={() => void askDelete()}>
+            Move to trash
+          </button>
+        )}
+      </div>
+      {actionError && (
+        <p className="callout crit" role="alert">
+          {actionError}
+        </p>
+      )}
+      {confirmDelete && (
+        <div className="panel stack confirm" role="dialog" aria-label="Move to trash">
+          <strong>Move {title} to the trash?</strong>
+          {confirmDelete.count === 0 ? (
+            <p>Nothing links here.</p>
+          ) : (
+            <>
+              <p data-testid="linked-count">
+                {confirmDelete.count === 1
+                  ? '1 entry links here. Its link is kept and works again if you restore this entry.'
+                  : `${confirmDelete.count} entries link here. Their links are kept and work again if you restore this entry.`}
+              </p>
+              <ul className="backlink-list">
+                {confirmDelete.entries.map((b, i) => (
+                  <li key={i}>
+                    {collectionInfo[b.collection].singular}: {b.title}{' '}
+                    <span className="example-note">({b.kind})</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="row">
+            <button type="button" className="btn danger" onClick={() => void doDelete()}>
+              Move to trash
+            </button>
+            <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** The editor in the middle and the inspector on the right for one entry. */
 export function EntryPane(props: {
   collection: EntryCollection;
@@ -209,10 +312,7 @@ export function EntryPane(props: {
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
-  const undo = useUndo();
   const [showHistory, setShowHistory] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<Response<'entry.linkedFrom'> | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const info = collectionInfo[collection];
   const manifest = manifests[collection];
   const draft = ed.draft;
@@ -223,33 +323,6 @@ export function EntryPane(props: {
       : [];
     if (!links.some((l) => l.targetId === targetId)) {
       ed.setField('links', [...links, { targetId, kind: 'mention' }]);
-    }
-  };
-
-  const askDelete = async () => {
-    setActionError(null);
-    await ed.flush();
-    setConfirmDelete(await call('entry.linkedFrom', { id }));
-  };
-
-  const doDelete = async () => {
-    try {
-      await call('entry.delete', { collection, id });
-      undo.record(deleteCommand(collection, id, entryTitle(draft ?? undefined)));
-      setConfirmDelete(null);
-      ed.reload();
-    } catch (e) {
-      setActionError(plainError(e));
-    }
-  };
-
-  const doRestore = async () => {
-    try {
-      await call('entry.restore', { collection, id });
-      undo.record(restoreCommand(collection, id, entryTitle(draft ?? undefined)));
-      ed.reload();
-    } catch (e) {
-      setActionError(plainError(e));
     }
   };
 
@@ -293,6 +366,7 @@ export function EntryPane(props: {
             This entry is in the trash. Restore it to bring it back with its links.
           </p>
         )}
+        {collection === 'characters' && <CharacterSummary id={id} onOpen={props.onOpen} />}
         <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
           {editableFields(manifest).map((spec) => (
             <Field
@@ -331,57 +405,19 @@ export function EntryPane(props: {
             <dt>Last changed</dt>
             <dd>{formatTime(draft.modifiedAt)}</dd>
           </dl>
-          <div className="row">
-            <button type="button" className="btn" onClick={() => setShowHistory(true)}>
-              History
-            </button>
-            {inTrash ? (
-              <button type="button" className="btn" onClick={() => void doRestore()}>
-                Restore from trash
+          <TrashControls
+            collection={collection}
+            id={id}
+            title={entryTitle(draft)}
+            inTrash={inTrash}
+            beforeDelete={ed.flush}
+            onChanged={ed.reload}
+            extra={
+              <button type="button" className="btn" onClick={() => setShowHistory(true)}>
+                History
               </button>
-            ) : (
-              <button type="button" className="btn danger" onClick={() => void askDelete()}>
-                Move to trash
-              </button>
-            )}
-          </div>
-          {actionError && (
-            <p className="callout crit" role="alert">
-              {actionError}
-            </p>
-          )}
-          {confirmDelete && (
-            <div className="panel stack confirm" role="dialog" aria-label="Move to trash">
-              <strong>Move {entryTitle(draft)} to the trash?</strong>
-              {confirmDelete.count === 0 ? (
-                <p>Nothing links here.</p>
-              ) : (
-                <>
-                  <p data-testid="linked-count">
-                    {confirmDelete.count === 1
-                      ? '1 entry links here. Its link is kept and works again if you restore this entry.'
-                      : `${confirmDelete.count} entries link here. Their links are kept and work again if you restore this entry.`}
-                  </p>
-                  <ul className="backlink-list">
-                    {confirmDelete.entries.map((b, i) => (
-                      <li key={i}>
-                        {collectionInfo[b.collection].singular}: {b.title}{' '}
-                        <span className="example-note">({b.kind})</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <div className="row">
-                <button type="button" className="btn danger" onClick={() => void doDelete()}>
-                  Move to trash
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>
-                  Keep it
-                </button>
-              </div>
-            </div>
-          )}
+            }
+          />
         </div>
       </aside>
       {showHistory && (
@@ -394,6 +430,87 @@ export function EntryPane(props: {
         />
       )}
     </>
+  );
+}
+
+/**
+ * The generic editor for one entry inside another screen, such as the tree's
+ * inspector (FT-7): the same fields, autosave, warnings, undo, and trash flow
+ * as the main editor, so an edit here is the same data everywhere (FT-3).
+ */
+export function EmbeddedEditor(props: {
+  collection: EntryCollection;
+  id: string;
+  onChanged?: () => void;
+}) {
+  const { collection, id } = props;
+  const ed = useAutosave(collection, id);
+  const manifest = manifests[collection];
+  const draft = ed.draft;
+  if (ed.status === 'missing') return <p className="callout warn">This entry no longer exists.</p>;
+  if (!draft) return <p aria-live="polite">Loading the entry.</p>;
+  const inTrash = Boolean(draft.deletedAt);
+  const messages = { warnings: ed.warnings, issues: ed.issues };
+  const onMention = (targetId: string) => {
+    const links = Array.isArray(draft.links)
+      ? (draft.links as { targetId: string; kind: string }[])
+      : [];
+    if (!links.some((l) => l.targetId === targetId)) {
+      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
+    }
+  };
+  return (
+    <section
+      className="stack embedded-editor"
+      aria-label={`Edit ${entryTitle(draft)}`}
+      data-testid="editor"
+      data-entry-id={id}
+    >
+      <header className="editor-head">
+        <div className="stack tight">
+          <span className="eyebrow">{collectionInfo[collection].singular}</span>
+          <h3>{entryTitle(draft)}</h3>
+        </div>
+        <SaveState status={ed.status} error={ed.error} />
+      </header>
+      {inTrash && (
+        <p className="callout warn" role="status">
+          This entry is in the trash. Restore it to bring it back with its links.
+        </p>
+      )}
+      {ed.warnings.length > 0 && (
+        <p className="callout warn" data-testid="warning-count">
+          {ed.warnings.length === 1
+            ? '1 field has a warning. It still saved.'
+            : `${ed.warnings.length} fields have warnings. They still saved.`}
+        </p>
+      )}
+      <TrashControls
+        collection={collection}
+        id={id}
+        title={entryTitle(draft)}
+        inTrash={inTrash}
+        beforeDelete={ed.flush}
+        onChanged={() => {
+          ed.reload();
+          props.onChanged?.();
+        }}
+      />
+      <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
+        {editableFields(manifest).map((spec) => (
+          <Field
+            key={spec.name}
+            spec={spec}
+            value={draft[spec.name]}
+            path={spec.name}
+            messages={messages}
+            root={draft}
+            onMention={onMention}
+            onChange={(v) => ed.setField(spec.name, v)}
+          />
+        ))}
+      </form>
+    </section>
   );
 }
 

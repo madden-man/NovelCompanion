@@ -41,7 +41,10 @@ export const unionFields: FieldSpec[] = [
   f.listItem('type', 'Union type', 'unionTypes', { required: true }),
   ...yearRange('startYear', 'endYear').map((s) => ({
     ...s,
-    warnings: [...s.warnings, 'union-before-birth'],
+    warnings:
+      s.name === 'startYear'
+        ? [...s.warnings, 'union-before-birth', 'overlapping-unions', 'born-before-union']
+        : [...s.warnings, 'union-before-birth'],
   })),
   f.text('endReason', 'How it ended'),
 ];

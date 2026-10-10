@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import { UndoManager, stepNotice } from '../../../shared/domain/undoRunner';
 import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner';
 import { undoIO } from '../../../shared/undoIO';
+import { savedFieldText } from '../../../shared/domain/undoText';
 import { call } from '../api';
 
 export type { Op, UndoCommand };
@@ -43,8 +44,12 @@ interface Undo {
   notice: string | null;
   /** Editors register a flush so a pending autosave lands before an undo. */
   registerFlush(fn: () => Promise<void>): () => void;
-  /** Editors call this after a save, so the focused field's saved value is known. */
-  markSaved(): void;
+  /**
+   * Editors call this after a save with the stored entry. The focused field's
+   * saved value changes only when that field belongs to the saved entry, and
+   * then to the stored value, so typing elsewhere stays undoable (ED-3).
+   */
+  markSaved(saved: Record<string, unknown>): void;
 }
 
 const UndoContext = createContext<Undo | null>(null);
@@ -151,9 +156,18 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const markSaved = useCallback(() => {
+  const markSaved = useCallback((saved: Record<string, unknown>) => {
     const el = focusedTextField();
-    savedValue.current = el ? { el, value: el.value, nativeUndone: false } : null;
+    if (!el) return;
+    const text = savedFieldText(saved, el.closest('[data-field]')?.getAttribute('data-field'));
+    if (text === undefined) return;
+    const cur = savedValue.current;
+    if (cur && cur.el === el) {
+      cur.value = text;
+      if (el.value === text) cur.nativeUndone = false;
+    } else {
+      savedValue.current = { el, value: text, nativeUndone: false };
+    }
   }, []);
 
   const value = useMemo<Undo>(
