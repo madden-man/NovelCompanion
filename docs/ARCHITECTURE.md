@@ -14,7 +14,7 @@ Binding for every builder. `SPEC.md` says what; this file says how. Change it on
 | Read model | `src/main/readmodel/`: in-memory maps of every collection, loaded on connect, updated by the one write path | NF-1 timeline and tree queries never hit the network |
 | Search | `minisearch` with a custom tokenizer: Latin words plus CJK character bigrams; index rebuilt from the read model and patched on writes | ARCH-2, SR-1, GL-2 |
 | Secrets | `@napi-rs/keyring` for the macOS keychain. Service `novel-companion-mongodb`, account `novel-companion` holds the connection string (already stored on Tommy's Mac) | ARCH-5 |
-| Claude | `@anthropic-ai/claude-agent-sdk` from the main process. Auth: see "Claude" below; the subscription route is blocked by Anthropic policy pending Tommy's decision. | ARCH-4, A3 |
+| Claude | `@anthropic-ai/claude-agent-sdk` from the main process, API key from the keychain (A23). See "Claude" below. | ARCH-4, A23 |
 | Google | `googleapis` with the loopback (desktop) OAuth flow; scopes `drive.readonly` for import and `drive.file` for export | GD-1, GD-4 |
 | Excel / Word | `exceljs` for workbooks, `mammoth` for .docx to HTML (keeps italics and headings), Google Docs exported as .docx through the Drive API | IM-1, IM-4, MS-1 |
 | Snapshots | JSON dump of every collection to `app.getPath('userData')/snapshots/<bible>/<ISO timestamp>/` | BK-1 |
@@ -58,7 +58,7 @@ docs/              this file, findings, progress
 
 ## Claude
 
-**Auth decision pending (2026-10-10).** Anthropic's Agent SDK docs state: "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products, including agents built on the Claude Agent SDK" (https://code.claude.com/docs/en/agent-sdk/quickstart.md). The documented path is an API key in `ANTHROPIC_API_KEY`. Until Tommy decides, M6 assumes an API key stored in the keychain (service `novel-companion-anthropic`), set from the settings screen, with the subscription route left as a documented switch that is off.
+**Auth decided (2026-10-10, A23): API key.** Stored in the macOS keychain, service `novel-companion-anthropic`, account `novel-companion`; the main process reads it with `@napi-rs/keyring` and passes it to the SDK as `ANTHROPIC_API_KEY` in the subprocess environment only. Never logged, never in a file, never sent to the renderer beyond a masked suffix. Verified against `GET /v1/models` on 2026-10-10; the live list included `claude-opus-5-5`, `claude-fable-5-1`, `claude-sonnet-5-5`, `claude-haiku-5-5`. Settings populate the model selects from that endpoint, cached, with the defaults from DB-4.
 
 Verified SDK facts (same docs): package `@anthropic-ai/claude-agent-sdk`; `query({ prompt, options })` is an async generator of messages; `options.systemPrompt`, `options.allowedTools`, `options.disallowedTools`, `options.permissionMode: 'dontAsk'`, `options.mcpServers`, `options.model`, `options.maxTurns`; stop with the query object's `interrupt()` and `close()`; in-process tools through `tool(name, description, zodShape, handler, { annotations: { readOnlyHint: true } })` and `createSdkMcpServer({ name, tools })`, allowed as `mcp__<server>__<tool>`; the npm package bundles the Claude Code binary as an optional dependency and `options.pathToClaudeCodeExecutable` overrides where to find it (needed when packaged in asar: unpack the SDK with electron-builder `asarUnpack`). Model IDs for the settings list come from Anthropic's current model page at M6, not from memory; the environment reports `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5-20251001`.
 
@@ -68,7 +68,7 @@ Verified SDK facts (same docs): package `@anthropic-ai/claude-agent-sdk`; `query
 - Streaming partial messages feed the feature's output pane; an AbortController backs the Stop button.
 - The model is read from settings per feature (DB-4): briefs default `claude-opus-5-5`, the others default `claude-sonnet-5-5`.
 - In the test suite the SDK is replaced by a recorded-response fake behind the same interface (`src/main/claude/client.ts` exports an interface; `fake.ts` and `sdk.ts` implement it).
-- If the CLI is missing or the key is unset, the app shows the exact fix. See the auth decision above.
+- If the key is unset or rejected, the app says so and opens the settings screen.
 
 ## Fixture novel
 
