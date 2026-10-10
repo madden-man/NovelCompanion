@@ -1,0 +1,786 @@
+<title>Family Tree and Timeline</title>
+<link rel="stylesheet" href="shared/theme.css">
+<style>
+  /* Layout: a document of operable sections; the tree and the timeline each live in their own scroll box. */
+  :root {
+    --node-w: 150px;
+    --unborn-alpha: 0.35;
+  }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+  .toolbar label.field { min-width: 140px; }
+  .tree-wrap { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--chart-surface); height: 460px; overflow: hidden; touch-action: none; }
+  .tree-wrap svg { width: 100%; height: 100%; display: block; cursor: grab; }
+  .tree-wrap svg.dragging { cursor: grabbing; }
+  .tree-ctl { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+  .node { width: var(--node-w); height: 64px; box-sizing: border-box; border: 1.5px solid var(--border-strong); border-radius: 6px; background: var(--surface); padding: 5px 7px; font-size: 0.78rem; line-height: 1.2; color: var(--fg); cursor: pointer; display: flex; flex-direction: column; gap: 2px; position: relative; font-family: var(--font-body); }
+  .node:hover { border-color: var(--accent); }
+  .node.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .node .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node .yrs { color: var(--fg-2); display: flex; justify-content: space-between; gap: 6px; }
+  .node .fam { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 6px 0 0 6px; background: var(--fs, var(--series-4)); }
+  .node.unborn { opacity: var(--unborn-alpha); border-style: dashed; }
+  .node.dead { border-color: var(--fg); border-width: 2px; }
+  .node.unknown { border-style: dotted; }
+  .node.collapsed::after { content: '+'; position: absolute; right: 6px; top: 2px; font-weight: 700; color: var(--accent); }
+  .node .chip { font-size: 0.66rem; padding: 0 6px; align-self: flex-start; }
+  .node .age { font-weight: 600; color: var(--fg); }
+  .link { fill: none; stroke: var(--border-strong); stroke-width: 2; }
+  .link.adoptive { stroke-dasharray: 6 4; }
+  .link.guardian { stroke-dasharray: 2 4; }
+  .link.step { stroke-dasharray: 10 3 2 3; }
+  .union { fill: none; stroke: var(--fg-2); stroke-width: 2; }
+  .union.partnered { stroke-dasharray: 6 4; }
+  .union.ended { stroke: var(--fg-3); }
+  .union-end { font-size: 10px; fill: var(--fg-2); font-family: var(--font-body); }
+  .inspector-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 760px) { .inspector-grid { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
+  .card .nm { font-family: var(--font-display); font-size: 1.2rem; }
+  .warn-list { display: flex; flex-direction: column; gap: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.85rem; align-items: center; }
+  .legend .sw { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .legend .ln { display: inline-block; width: 22px; border-top: 2px solid var(--fg-2); margin-right: 6px; vertical-align: middle; }
+  .legend .ln.dash { border-top-style: dashed; }
+  .legend .ln.dot { border-top-style: dotted; }
+  .tl-wrap { position: relative; border: 1px solid var(--border); border-radius: 8px; background: var(--chart-surface); overflow-x: auto; overflow-y: hidden; }
+  .tl-wrap svg { display: block; }
+  .tl-text { font-family: var(--font-body); font-size: 11px; fill: var(--fg); }
+  .tl-text.sec { fill: var(--fg-2); }
+  .tl-grid { stroke: var(--grid); stroke-width: 1; }
+  .tl-axis { stroke: var(--axis); stroke-width: 1; }
+  .tl-era { fill: var(--surface-2); stroke: var(--border); }
+  .tl-cursor { stroke: var(--time); stroke-width: 2; }
+  .tl-ev { cursor: pointer; }
+  .tl-ev:hover circle { stroke: var(--fg); stroke-width: 2; }
+  .tl-ev.formative circle { stroke: var(--fg); stroke-width: 1.5; }
+  .tl-chap-p { fill: var(--planned); }
+  .tl-chap-b { fill: none; stroke: var(--planned); stroke-width: 2; }
+  .tl-chap-link { stroke: var(--planned); stroke-width: 1; stroke-dasharray: 3 3; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); padding: 6px 9px; border-radius: 6px; font-size: 0.8rem; max-width: 260px; z-index: 10; box-shadow: var(--shadow); }
+  .tooltip[hidden] { display: none; }
+  .note { font-size: 0.85rem; color: var(--fg-2); }
+  .msg { font-weight: 600; }
+  .trash li { display: flex; gap: 8px; align-items: center; }
+  table.compact td, table.compact th { padding: 4px 8px; }
+  .state-alive { color: var(--good-ink); font-weight: 600; }
+  .state-dead { color: var(--fg); font-weight: 600; }
+  .state-unborn, .state-unknown { color: var(--fg-2); font-weight: 600; }
+  .state-dying { color: var(--serious); font-weight: 700; }
+</style>
+
+<div class="doc">
+  <header>
+    <span class="eyebrow">Novel companion mockup, section 2 of 4</span>
+    <h1>Family Tree and Timeline</h1>
+    <p class="lede">Every age and every alive-or-dead answer on this page is computed by ordinary code from birth and death years, never by a model. The data is the East Winds bible, the first project in the app; everything below works for any novel.</p>
+    <div class="callout time" id="time-banner">Story time: <strong class="num" id="time-label">2056</strong>. The year control in the tree, the year view, the timeline cursor, and the compare table all follow it.</div>
+  </header>
+
+  <!-- 1. TREE -->
+  <section class="section" id="tree-section">
+    <div class="intro">
+      <h2>Family tree</h2>
+      <span class="crit-ref">FT-1 to FT-10, ED-5</span>
+      <p>One tree for every family together, with the Sullivan and Li lines meeting at Mark and Dawn. Drag to pan, double-click a node to collapse its branch, click a node to edit it in place.</p>
+    </div>
+    <div class="toolbar">
+      <label class="field">Show
+        <select id="tree-filter">
+          <option value="all">All families</option>
+          <option value="sullivan">Sullivan only</option>
+          <option value="li">李 Li only</option>
+          <option value="lineage">Ancestors and descendants of a person</option>
+        </select>
+      </label>
+      <label class="field" id="lineage-field" hidden>Person
+        <select id="lineage-person"></select>
+      </label>
+      <label class="field" style="flex: 1 1 220px;">Year <span class="num" id="year-readout">2056</span>
+        <input type="range" id="year-slider" min="2000" max="2100" value="2056" step="1">
+      </label>
+      <button class="btn" id="btn-fit">Fit to window</button>
+      <button class="btn" id="btn-export-png">Export PNG</button>
+      <button class="btn" id="btn-export-pdf">Export PDF</button>
+    </div>
+    <div class="tree-wrap" id="tree-wrap">
+      <svg id="tree-svg" viewBox="0 0 1200 600" role="img" aria-label="Family tree"></svg>
+      <div class="tree-ctl">
+        <button class="btn small" id="btn-zoom-in" aria-label="Zoom in">+</button>
+        <button class="btn small" id="btn-zoom-out" aria-label="Zoom out">&minus;</button>
+      </div>
+    </div>
+    <div class="legend" aria-label="Tree legend">
+      <span><span class="sw" style="background: var(--series-1)"></span>Sullivan</span>
+      <span><span class="sw" style="background: var(--series-3)"></span>李 Li</span>
+      <span><span class="sw" style="background: var(--series-2)"></span>Both families</span>
+      <span><span class="sw" style="background: var(--series-4)"></span>No family</span>
+      <span><span class="ln"></span>Married, biological</span>
+      <span><span class="ln dash"></span>Partnered, adoptive</span>
+      <span><span class="ln dot"></span>Guardian</span>
+      <span class="note">Dashed faint node: not yet born. Heavy border: dead by this year. Dotted: birth unknown.</span>
+    </div>
+    <p class="note" id="export-note" hidden></p>
+
+    <div class="inspector-grid">
+      <div class="panel" id="inspector">
+        <h3>Edit in place</h3>
+        <span class="crit-ref">FT-2, FT-3, FT-6, ED-5</span>
+        <p class="note" id="inspector-empty">Click a node to edit it.</p>
+        <form id="person-form" class="stack" hidden>
+          <label class="field">Name <input id="f-name" type="text"></label>
+          <div class="row">
+            <label class="field">Born <input id="f-born" type="number" min="1900" max="2200" placeholder="unknown"></label>
+            <label class="field">Died <input id="f-died" type="number" min="1900" max="2200" placeholder="alive"></label>
+            <label class="field">Family
+              <select id="f-family">
+                <option value="sullivan">Sullivan</option>
+                <option value="li">李 Li</option>
+                <option value="both">Both</option>
+                <option value="">None</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <button type="button" class="btn small" id="btn-add-child">Add child</button>
+            <button type="button" class="btn small" id="btn-add-partner">Add partner</button>
+            <button type="button" class="btn small" id="btn-add-parent">Add parent</button>
+            <button type="button" class="btn small danger" id="btn-delete">Delete</button>
+          </div>
+          <div class="sunken" id="delete-confirm" hidden>
+            <p class="msg" id="delete-links"></p>
+            <div class="row" style="margin-top: 6px;">
+              <button type="button" class="btn small danger" id="btn-delete-yes">Move to trash</button>
+              <button type="button" class="btn small" id="btn-delete-no">Keep</button>
+            </div>
+          </div>
+          <div class="sunken">
+            <p class="eyebrow">Link an existing person as a child of this one</p>
+            <div class="row" style="margin-top: 6px;">
+              <select id="link-child"></select>
+              <select id="link-type">
+                <option value="biological">biological</option>
+                <option value="adoptive">adoptive</option>
+                <option value="step">step</option>
+                <option value="guardian">guardian</option>
+              </select>
+              <button type="button" class="btn small" id="btn-link-child">Link</button>
+              <button type="button" class="btn small" id="btn-try-cycle">Try: make Frank a child of Mark</button>
+            </div>
+            <p class="msg" id="link-msg" style="margin-top: 6px;"></p>
+          </div>
+        </form>
+      </div>
+      <div class="stack">
+        <div class="card" id="person-card">
+          <span class="eyebrow">Character page, same record</span>
+          <div class="nm" id="card-name">Select a node</div>
+          <div class="note" id="card-years"></div>
+          <div class="note" id="card-age"></div>
+        </div>
+        <div class="panel">
+          <h3>Warnings</h3>
+          <span class="crit-ref">FT-6, ED-10</span>
+          <p class="note">Warnings never block saving. Self-ancestry is the one thing the app refuses.</p>
+          <div class="warn-list" id="warn-list"></div>
+        </div>
+        <div class="panel">
+          <h3>Trash</h3>
+          <span class="crit-ref">ED-5</span>
+          <ul class="trash" id="trash-list"><li class="note">Empty.</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. YEAR VIEW -->
+  <section class="section" id="year-section">
+    <div class="intro">
+      <h2>Who is alive in <span class="num" id="year-view-label">2056</span></h2>
+      <span class="crit-ref">TL-1 to TL-4</span>
+      <p>Year-only birth data gives age as year minus birth year. A character in the year of their death is listed alive and flagged as dying that year. Unknown birth years are reported as unknown, never estimated. This table is plain arithmetic in code (TL-1).</p>
+    </div>
+    <div class="scroll-x">
+      <table class="compact" id="year-table">
+        <thead><tr><th>Character</th><th>Family</th><th>State</th><th>Age</th><th>Note</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. LIVED THROUGH -->
+  <section class="section" id="lived-section">
+    <div class="intro">
+      <h2>Events a character has lived through</h2>
+      <span class="crit-ref">TL-5</span>
+      <p>World events inside the character's lifetime up to the current story year, with their age at each. Formative events are marked; the brief always includes those.</p>
+    </div>
+    <div class="toolbar">
+      <label class="field">Character <select id="lived-person"></select></label>
+    </div>
+    <div class="scroll-x">
+      <table class="compact" id="lived-table">
+        <thead><tr><th>Year</th><th>Age</th><th>Event</th><th>Category</th><th>Formative</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. TIMELINE -->
+  <section class="section" id="timeline-section">
+    <div class="intro">
+      <h2>Timeline</h2>
+      <span class="crit-ref">TL-6, WE-1, WE-2</span>
+      <p>Eras, world events, chapter strands, and lifespans on one axis from 2000 to 2100. Hover any mark for detail. Click an event to edit it; the marker moves as you type.</p>
+    </div>
+    <div class="toolbar">
+      <label class="field">Family
+        <select id="tl-family">
+          <option value="all">All</option>
+          <option value="sullivan">Sullivan</option>
+          <option value="li">李 Li</option>
+          <option value="both">Both families</option>
+        </select>
+      </label>
+      <label class="field">Event category <select id="tl-category"><option value="all">All categories</option></select></label>
+      <label class="field">Status
+        <select id="tl-status">
+          <option value="all">All</option>
+          <option value="canon">Canon</option>
+          <option value="planned">Planned</option>
+          <option value="idea">Idea</option>
+        </select>
+      </label>
+    </div>
+    <div class="tl-wrap" id="tl-wrap">
+      <svg id="tl-svg" role="img" aria-label="Timeline"></svg>
+      <div class="tooltip" id="tl-tip" hidden></div>
+    </div>
+    <div class="legend" aria-label="Timeline legend">
+      <span><span class="sw" style="background: var(--series-1)"></span>Sullivan lifespan</span>
+      <span><span class="sw" style="background: var(--series-3)"></span>李 Li lifespan</span>
+      <span><span class="sw" style="background: var(--series-2)"></span>Both families</span>
+      <span><span class="sw" style="background: var(--series-4)"></span>No family</span>
+      <span><span class="sw" style="background: var(--fg-2); border-radius: 50%; width: 10px;"></span>World event (ringed: formative)</span>
+      <span><span class="sw" style="background: var(--planned); width: 10px;"></span>Chapter, present strand</span>
+      <span><span class="sw" style="background: transparent; border: 2px solid var(--planned); width: 8px; height: 8px;"></span>Chapter, backstory strand</span>
+      <span><span class="sw" style="background: var(--time); width: 3px;"></span>Story time</span>
+    </div>
+    <div class="panel" id="event-inspector" hidden>
+      <h3>Edit event</h3>
+      <span class="crit-ref">TL-6, ED-2</span>
+      <div class="row">
+        <label class="field" style="flex: 1 1 320px;">Title <input id="ev-title" type="text"></label>
+        <label class="field">Year <input id="ev-year" type="number" min="2000" max="2100"></label>
+        <span class="chip" id="ev-category"></span>
+        <span class="note" id="ev-saved">Saved automatically.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. COMPARE -->
+  <section class="section" id="compare-section">
+    <div class="intro">
+      <h2>Compare two characters</h2>
+      <span class="crit-ref">TL-7</span>
+      <p>Ages side by side across a year range. The range starts at the current story year.</p>
+    </div>
+    <div class="toolbar">
+      <label class="field">First <select id="cmp-a"></select></label>
+      <label class="field">Second <select id="cmp-b"></select></label>
+      <label class="field">From <input id="cmp-from" type="number" min="1990" max="2100" value="2030"></label>
+      <label class="field">To <input id="cmp-to" type="number" min="1990" max="2100" value="2090"></label>
+      <label class="field">Step
+        <select id="cmp-step"><option value="5">Every 5 years</option><option value="1">Every year</option></select>
+      </label>
+    </div>
+    <div class="scroll-x">
+      <table class="compact" id="cmp-table">
+        <thead><tr><th>Year</th><th id="cmp-h-a">A</th><th id="cmp-h-b">B</th><th>Gap</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="shared/data.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const el = (tag, attrs, children) => {
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs) { if (k === 'text') n.textContent = attrs[k]; else if (k === 'html') n.innerHTML = attrs[k]; else n.setAttribute(k, attrs[k]); }
+    (children || []).forEach(c => n.appendChild(c));
+    return n;
+  };
+  const svgEl = (tag, attrs) => { const n = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ---------- state (a working copy of the bible) ----------
+  const S = {
+    year: 2056,
+    people: EW.characters.map(c => Object.assign({}, c)),
+    unions: EW.unions.map(u => Object.assign({}, u)),
+    parents: EW.parents.map(p => Object.assign({}, p)),
+    events: EW.events.map(e => Object.assign({}, e)),
+    trash: [],
+    filter: 'all', lineage: 'ch_mark',
+    selected: null, collapsed: new Set(),
+    view: { x: 0, y: 0, w: 1200, h: 600 },
+    nextId: 1,
+    selectedEvent: null,
+  };
+  const person = (id) => S.people.find(p => p.id === id);
+  const live = () => S.people.filter(p => !S.trash.includes(p.id));
+  const familyName = (f) => ({ sullivan: 'Sullivan', li: '李 Li', both: 'Both' }[f] || 'None');
+  const seriesVar = (f) => `var(--series-${EW.familySeries(f)})`;
+  const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2200); };
+
+  // ---------- relationships ----------
+  const parentsOf = (id) => S.parents.filter(p => p.child === id && !S.trash.includes(p.parent)).map(p => p.parent);
+  const childrenOf = (id) => S.parents.filter(p => p.parent === id && !S.trash.includes(p.child)).map(p => p.child);
+  const partnersOf = (id) => S.unions.filter(u => u.a === id || u.b === id).map(u => u.a === id ? u.b : u.a).filter(x => !S.trash.includes(x));
+  function ancestors(id, acc) { acc = acc || new Set(); parentsOf(id).forEach(p => { if (!acc.has(p)) { acc.add(p); ancestors(p, acc); } }); return acc; }
+  function descendants(id, acc) { acc = acc || new Set(); childrenOf(id).forEach(c => { if (!acc.has(c)) { acc.add(c); descendants(c, acc); } }); return acc; }
+
+  // ---------- layout ----------
+  const NW = 150, NH = 64, GAP = 26, ROW = 128;
+  function visibleIds() {
+    let ids = live().map(p => p.id);
+    if (S.filter === 'sullivan' || S.filter === 'li') {
+      ids = ids.filter(id => { const p = person(id); return p.family === S.filter || p.family === 'both'; });
+    } else if (S.filter === 'lineage') {
+      const keep = new Set([S.lineage]); ancestors(S.lineage).forEach(a => keep.add(a)); descendants(S.lineage).forEach(d => keep.add(d));
+      [...keep].forEach(k => partnersOf(k).forEach(pt => keep.add(pt)));
+      ids = ids.filter(id => keep.has(id));
+    }
+    // collapsed branches hide descendants
+    const hidden = new Set();
+    S.collapsed.forEach(c => descendants(c).forEach(d => hidden.add(d)));
+    return ids.filter(id => !hidden.has(id));
+  }
+  function layout() {
+    const ids = visibleIds(); const vis = new Set(ids);
+    const gen = {}; ids.forEach(id => { gen[id] = 0; });
+    for (let i = 0; i < 12; i++) {
+      let changed = false;
+      ids.forEach(id => {
+        const ps = parentsOf(id).filter(p => vis.has(p));
+        let g = ps.length ? Math.max(...ps.map(p => gen[p])) + 1 : 0;
+        partnersOf(id).filter(p => vis.has(p)).forEach(p => { g = Math.max(g, gen[p]); });
+        if (g !== gen[id]) { gen[id] = g; changed = true; }
+      });
+      if (!changed) break;
+    }
+    const rank = {}; S.people.forEach((p, i) => { rank[p.id] = i; });
+    const rows = {}; ids.forEach(id => { (rows[gen[id]] = rows[gen[id]] || []).push(id); });
+    const pos = {};
+    const gens = Object.keys(rows).map(Number).sort((a, b) => a - b);
+    gens.forEach(g => { rows[g].sort((a, b) => rank[a] - rank[b]); });
+    // two passes of barycenter ordering so children sit near parents, stable on rank
+    for (let pass = 0; pass < 2; pass++) {
+      gens.forEach(g => {
+        const row = rows[g];
+        const key = {};
+        row.forEach((id, i) => {
+          const ps = parentsOf(id).filter(p => pos[p]);
+          key[id] = ps.length ? ps.reduce((s, p) => s + pos[p].x, 0) / ps.length : (pos[id] ? pos[id].x : i * (NW + GAP) + 1e6 + rank[id]);
+        });
+        row.sort((a, b) => key[a] - key[b] || rank[a] - rank[b]);
+        // partners adjacent: pull each partner next to the earlier one
+        for (let i = 0; i < row.length; i++) {
+          partnersOf(row[i]).forEach(pt => {
+            const j = row.indexOf(pt);
+            if (j > i + 1) { row.splice(j, 1); row.splice(i + 1, 0, pt); }
+          });
+        }
+        row.forEach((id, i) => { pos[id] = { x: i * (NW + GAP), y: g * ROW, gen: g }; });
+      });
+    }
+    // center each row loosely under its parents' span
+    gens.forEach(g => {
+      if (g === 0) return;
+      const row = rows[g];
+      const xs = row.map(id => parentsOf(id).filter(p => pos[p]).map(p => pos[p].x)).flat();
+      if (!xs.length) return;
+      const target = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const cur = (pos[row[0]].x + pos[row[row.length - 1]].x) / 2;
+      const shift = target - cur;
+      row.forEach(id => { pos[id].x += shift; });
+    });
+    return { ids, pos, vis };
+  }
+
+  // ---------- drawing ----------
+  function nodeHtml(p) {
+    const a = EW.ageIn(p, S.year);
+    let cls = 'node ' + a.state + (S.selected === p.id ? ' selected' : '') + (S.collapsed.has(p.id) ? ' collapsed' : '');
+    let right = '';
+    if (a.state === 'alive') right = `<span class="age num">${a.dyingThisYear ? 'dies at ' + a.age : 'age ' + a.age}</span>`;
+    else if (a.state === 'dead') right = `<span class="age">d. ${p.died}</span>`;
+    else if (a.state === 'unborn') right = `<span class="age">unborn</span>`;
+    else right = `<span class="age">age unknown</span>`;
+    const years = `${p.born != null ? p.born : '?'}${p.died != null ? ' to ' + p.died : ''}`;
+    return `<div class="${cls}" data-id="${p.id}" tabindex="0" role="button" style="--fs:${seriesVar(p.family)}">
+      <span class="fam"></span>
+      <div class="nm">${esc(p.name)} ${EW.zhSpan(p)}</div>
+      <div class="yrs"><span class="num">${years}</span>${right}</div>
+      <span class="chip ${p.status}">${p.status}</span>
+    </div>`;
+  }
+  function drawTree() {
+    const svg = $('#tree-svg'); svg.innerHTML = '';
+    const L = layout(); const { ids, pos, vis } = L;
+    if (!ids.length) return;
+    const g = svgEl('g', {}); svg.appendChild(g);
+    // unions
+    S.unions.forEach(u => {
+      if (!vis.has(u.a) || !vis.has(u.b)) return;
+      const A = pos[u.a], B = pos[u.b];
+      const active = (u.start == null || u.start <= S.year) && (u.end == null || u.end >= S.year);
+      const cls = 'union ' + u.type + (active ? '' : ' ended');
+      let d;
+      if (A.y === B.y) d = `M${A.x + NW},${A.y + NH / 2} L${B.x},${B.y + NH / 2}`;
+      else d = `M${A.x + NW / 2},${A.y + NH} L${A.x + NW / 2},${A.y + NH + 18} L${B.x + NW / 2},${B.y - 18} L${B.x + NW / 2},${B.y}`;
+      if (A.x > B.x && A.y === B.y) d = `M${B.x + NW},${B.y + NH / 2} L${A.x},${A.y + NH / 2}`;
+      const path = svgEl('path', { d, class: cls }); g.appendChild(path);
+      if (u.end != null) {
+        const mx = (A.x + B.x + NW) / 2, my = A.y + NH / 2;
+        g.appendChild(svgEl('line', { x1: mx, y1: my - 7, x2: mx, y2: my + 7, class: 'union' }));
+        const t = svgEl('text', { x: mx + 4, y: my - 4, class: 'union-end' }); t.textContent = 'ended ' + u.end; g.appendChild(t);
+      }
+    });
+    // parent links
+    ids.forEach(cid => {
+      const links = S.parents.filter(p => p.child === cid && vis.has(p.parent));
+      if (!links.length) return;
+      const pids = links.map(l => l.parent);
+      const C = pos[cid];
+      const union = S.unions.find(u => pids.length === 2 && ((u.a === pids[0] && u.b === pids[1]) || (u.a === pids[1] && u.b === pids[0])));
+      if (union && pos[union.a].y === pos[union.b].y) {
+        const A = pos[union.a], B = pos[union.b];
+        const mx = (Math.min(A.x, B.x) + NW + Math.max(A.x, B.x)) / 2, my = A.y + NH / 2;
+        const type = links[0].type;
+        const d = `M${mx},${my} L${mx},${C.y - ROW / 4} L${C.x + NW / 2},${C.y - ROW / 4} L${C.x + NW / 2},${C.y}`;
+        g.appendChild(svgEl('path', { d, class: 'link ' + type }));
+      } else {
+        links.forEach(l => {
+          const P = pos[l.parent];
+          const d = `M${P.x + NW / 2},${P.y + NH} L${P.x + NW / 2},${C.y - ROW / 4} L${C.x + NW / 2},${C.y - ROW / 4} L${C.x + NW / 2},${C.y}`;
+          g.appendChild(svgEl('path', { d, class: 'link ' + l.type }));
+        });
+      }
+    });
+    // nodes
+    ids.forEach(id => {
+      const p = person(id); const P = pos[id];
+      const fo = svgEl('foreignObject', { x: P.x, y: P.y, width: NW, height: NH });
+      fo.innerHTML = nodeHtml(p);
+      g.appendChild(fo);
+    });
+    S.bbox = { x: Math.min(...ids.map(i => pos[i].x)) - 20, y: -20, w: Math.max(...ids.map(i => pos[i].x)) - Math.min(...ids.map(i => pos[i].x)) + NW + 40, h: Math.max(...ids.map(i => pos[i].y)) + NH + 40 };
+    if (!S.fitted) { fit(); S.fitted = true; }
+    applyView();
+  }
+  function applyView() { $('#tree-svg').setAttribute('viewBox', `${S.view.x} ${S.view.y} ${S.view.w} ${S.view.h}`); }
+  function fit() {
+    const wrap = $('#tree-wrap'); const ar = wrap.clientWidth / wrap.clientHeight;
+    const b = S.bbox; let w = b.w, h = b.h;
+    if (w / h < ar) w = h * ar; else h = w / ar;
+    S.view = { x: b.x - (w - b.w) / 2, y: b.y - (h - b.h) / 2, w, h };
+    applyView();
+  }
+  function zoom(f) { const v = S.view; const cx = v.x + v.w / 2, cy = v.y + v.h / 2; v.w *= f; v.h *= f; v.x = cx - v.w / 2; v.y = cy - v.h / 2; applyView(); }
+
+  // pan by drag (pointer events, works for touch too)
+  (function () {
+    const svg = $('#tree-svg'); let drag = null;
+    svg.addEventListener('pointerdown', e => { if (e.target.closest('.node')) return; drag = { x: e.clientX, y: e.clientY, vx: S.view.x, vy: S.view.y }; svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId); });
+    svg.addEventListener('pointermove', e => { if (!drag) return; const k = S.view.w / svg.clientWidth; S.view.x = drag.vx - (e.clientX - drag.x) * k; S.view.y = drag.vy - (e.clientY - drag.y) * k; applyView(); });
+    const end = () => { drag = null; svg.classList.remove('dragging'); };
+    svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+    svg.addEventListener('click', e => { const n = e.target.closest('.node'); if (!n) return; if (e.target.classList.contains('zh')) return; select(n.dataset.id); });
+    svg.addEventListener('dblclick', e => { const n = e.target.closest('.node'); if (!n) return; const id = n.dataset.id; if (S.collapsed.has(id)) S.collapsed.delete(id); else if (childrenOf(id).length) S.collapsed.add(id); else { toast('No branch to collapse here.'); return; } drawTree(); });
+    svg.addEventListener('keydown', e => { const n = e.target.closest('.node'); if (!n) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(n.dataset.id); } });
+  })();
+
+  // ---------- inspector (shared record with the character card) ----------
+  function select(id) {
+    S.selected = id; const p = person(id);
+    $('#inspector-empty').hidden = true; $('#person-form').hidden = false; $('#delete-confirm').hidden = true; $('#link-msg').textContent = '';
+    $('#f-name').value = p.name; $('#f-born').value = p.born != null ? p.born : ''; $('#f-died').value = p.died != null ? p.died : ''; $('#f-family').value = p.family || '';
+    const sel = $('#link-child'); sel.innerHTML = '';
+    live().filter(x => x.id !== id).forEach(x => sel.appendChild(el('option', { value: x.id, text: x.name })));
+    drawTree(); renderCard();
+  }
+  function renderCard() {
+    const p = S.selected ? person(S.selected) : null;
+    if (!p) { $('#card-name').textContent = 'Select a node'; $('#card-years').textContent = ''; $('#card-age').textContent = ''; return; }
+    $('#card-name').innerHTML = `${esc(p.name)} ${EW.zhSpan(p)}`;
+    $('#card-years').textContent = `${familyName(p.family)} · born ${p.born != null ? p.born : 'unknown'}${p.died != null ? ', died ' + p.died : ''}${p.birthplace ? ' · ' + p.birthplace : ''}`;
+    const a = EW.ageIn(p, S.year);
+    $('#card-age').textContent = `In ${S.year}: ` + ({ alive: `alive, age ${a.age}${a.dyingThisYear ? ', dies this year' : ''}`, dead: `dead since ${a.diedYear}`, unborn: 'not yet born', unknown: 'age unknown' }[a.state]);
+  }
+  function onEdit() {
+    const p = person(S.selected); if (!p) return;
+    p.name = $('#f-name').value || p.name;
+    const b = $('#f-born').value, d = $('#f-died').value;
+    p.born = b === '' ? undefined : Number(b); p.died = d === '' ? undefined : Number(d);
+    p.family = $('#f-family').value || null;
+    renderAll();
+  }
+  ['#f-name', '#f-born', '#f-died', '#f-family'].forEach(s => $(s).addEventListener('input', onEdit));
+  $('#person-form').addEventListener('submit', e => e.preventDefault());
+
+  function newPerson(name, family, born) { const id = 'ch_new' + (S.nextId++); const p = { id, name, family, born, status: 'idea', note: 'Added in the tree.' }; S.people.push(p); return p; }
+  $('#btn-add-child').addEventListener('click', () => {
+    const p = person(S.selected); const kid = newPerson('New child of ' + p.name.split(' ')[0], p.family, p.born != null ? p.born + 28 : undefined);
+    S.parents.push({ id: 'pl_new' + S.nextId, parent: p.id, child: kid.id, type: 'biological' });
+    const pt = partnersOf(p.id)[0]; if (pt) S.parents.push({ id: 'pl_new' + (S.nextId + 1), parent: pt, child: kid.id, type: 'biological' });
+    S.nextId += 2; S.collapsed.delete(p.id); toast('Added ' + kid.name); select(kid.id); renderAll();
+  });
+  $('#btn-add-partner').addEventListener('click', () => {
+    const p = person(S.selected); const pt = newPerson('Partner of ' + p.name.split(' ')[0], null, p.born);
+    S.unions.push({ id: 'un_new' + S.nextId++, a: p.id, b: pt.id, type: 'partnered', start: p.born != null ? p.born + 25 : undefined });
+    toast('Added ' + pt.name); select(pt.id); renderAll();
+  });
+  $('#btn-add-parent').addEventListener('click', () => {
+    const p = person(S.selected); const par = newPerson('Parent of ' + p.name.split(' ')[0], p.family, p.born != null ? p.born - 30 : undefined);
+    S.parents.push({ id: 'pl_new' + S.nextId++, parent: par.id, child: p.id, type: 'biological' });
+    toast('Added ' + par.name); select(par.id); renderAll();
+  });
+  function linkedEntries(id) {
+    const n = S.unions.filter(u => u.a === id || u.b === id).length + S.parents.filter(p => p.parent === id || p.child === id).length
+      + EW.chapters.filter(c => c.strands.some(s => s.present.includes(id))).length + EW.events.filter(e => (e.characters || []).includes(id)).length
+      + EW.facts.filter(f => f.knowledge.some(k => k.who === id)).length;
+    return n;
+  }
+  $('#btn-delete').addEventListener('click', () => {
+    const p = person(S.selected);
+    $('#delete-links').textContent = `${p.name} is linked from ${linkedEntries(p.id)} entries (unions, parent links, chapters, events, knowledge). Links are kept and come back on restore.`;
+    $('#delete-confirm').hidden = false;
+  });
+  $('#btn-delete-no').addEventListener('click', () => { $('#delete-confirm').hidden = true; });
+  $('#btn-delete-yes').addEventListener('click', () => {
+    S.trash.push(S.selected); toast('Moved to trash'); S.selected = null;
+    $('#person-form').hidden = true; $('#inspector-empty').hidden = false; renderAll();
+  });
+  function renderTrash() {
+    const ul = $('#trash-list'); ul.innerHTML = '';
+    if (!S.trash.length) { ul.appendChild(el('li', { class: 'note', text: 'Empty.' })); return; }
+    S.trash.forEach(id => {
+      const p = person(id);
+      const li = el('li', {}, [el('span', { text: p.name }), el('button', { class: 'btn small', text: 'Restore' })]);
+      li.querySelector('button').addEventListener('click', () => { S.trash = S.trash.filter(x => x !== id); toast('Restored ' + p.name + ' with links intact'); renderAll(); });
+      ul.appendChild(li);
+    });
+  }
+  function tryLink(parentId, childId, type) {
+    if (parentId === childId) return 'A person cannot be their own child.';
+    if (ancestors(parentId).has(childId)) return `Refused: ${person(childId).name} is already an ancestor of ${person(parentId).name}, so this link would make someone their own ancestor.`;
+    if (S.parents.some(p => p.parent === parentId && p.child === childId)) return 'That link already exists.';
+    S.parents.push({ id: 'pl_new' + S.nextId++, parent: parentId, child: childId, type }); renderAll();
+    return `Linked ${person(childId).name} as ${type} child of ${person(parentId).name}.`;
+  }
+  $('#btn-link-child').addEventListener('click', () => { $('#link-msg').textContent = tryLink(S.selected, $('#link-child').value, $('#link-type').value); });
+  $('#btn-try-cycle').addEventListener('click', () => { if (S.trash.includes('ch_mark') || S.trash.includes('ch_frank')) { $('#link-msg').textContent = 'Restore Mark and Frank first.'; return; } select('ch_mark'); $('#link-msg').textContent = tryLink('ch_mark', 'ch_frank', 'biological'); });
+
+  // ---------- warnings (FT-6) ----------
+  function warnings() {
+    const out = [];
+    S.parents.forEach(l => {
+      if (S.trash.includes(l.parent) || S.trash.includes(l.child) || l.type === 'guardian' || l.type === 'step') return;
+      const P = person(l.parent), C = person(l.child);
+      if (P.born != null && C.born != null && l.type === 'biological') {
+        const a = C.born - P.born;
+        if (a < 12) out.push(`${P.name} would be ${a} at ${C.name}'s birth.`);
+        if (a > 60) out.push(`${P.name} would be ${a} at ${C.name}'s birth.`);
+      }
+      if (P.died != null && C.born != null && C.born > P.died + 1 && l.type === 'biological') out.push(`${C.name} is born ${C.born - P.died} years after ${P.name} died.`);
+    });
+    const us = S.unions.filter(u => !S.trash.includes(u.a) && !S.trash.includes(u.b));
+    us.forEach(u => {
+      us.forEach(v => {
+        if (u.id >= v.id) return;
+        const shared = [u.a, u.b].find(x => x === v.a || x === v.b); if (!shared) return;
+        const s1 = u.start ?? -Infinity, e1 = u.end ?? Infinity, s2 = v.start ?? -Infinity, e2 = v.end ?? Infinity;
+        if (s1 <= e2 && s2 <= e1) out.push(`${person(shared).name} has overlapping unions (${person(u.a === shared ? u.b : u.a).name} and ${person(v.a === shared ? v.b : v.a).name}).`);
+      });
+      if (u.start == null) return;
+      S.parents.filter(p => (p.parent === u.a || p.parent === u.b) && p.type === 'biological').forEach(p => {
+        const C = person(p.child); const both = S.parents.filter(q => q.child === p.child).map(q => q.parent);
+        if (both.includes(u.a) && both.includes(u.b) && C.born != null && C.born < u.start) out.push(`${C.name} is born in ${C.born}, before ${person(u.a).name} and ${person(u.b).name}'s union starts in ${u.start}.`);
+      });
+    });
+    return [...new Set(out)];
+  }
+  function renderWarnings() {
+    const w = warnings(); const box = $('#warn-list'); box.innerHTML = '';
+    if (!w.length) { box.appendChild(el('p', { class: 'note', text: 'No warnings for the current data. Set Mark’s birth to 2005 or Laura’s death to 2030 to see some.' })); return; }
+    w.forEach(t => box.appendChild(el('div', { class: 'status warning', text: t })));
+  }
+
+  // ---------- year view (TL-2 to TL-4) ----------
+  function renderYear() {
+    $('#year-view-label').textContent = S.year; $('#time-label').textContent = S.year; $('#year-readout').textContent = S.year;
+    const tb = $('#year-table tbody'); tb.innerHTML = '';
+    const order = { alive: 0, unborn: 1, dead: 2, unknown: 3 };
+    live().map(p => ({ p, a: EW.ageIn(p, S.year) })).sort((x, y) => order[x.a.state] - order[y.a.state] || (x.p.born || 0) - (y.p.born || 0)).forEach(({ p, a }) => {
+      const state = a.state === 'alive' && a.dyingThisYear ? 'dying' : a.state;
+      const label = { alive: 'alive', dying: 'alive, dies this year', dead: 'dead', unborn: 'not yet born', unknown: 'unknown' }[state];
+      const age = a.state === 'alive' ? a.age : a.state === 'dead' ? `died ${a.diedYear}` : a.state === 'unborn' ? `born ${p.born}` : 'unknown';
+      const tr = el('tr', {}, [
+        el('td', { html: `${esc(p.name)} ${EW.zhSpan(p)}` }),
+        el('td', { html: `<span class="chip fam-${EW.familySeries(p.family)}">${familyName(p.family)}</span>` }),
+        el('td', { html: `<span class="state-${state}">${label}</span>` }),
+        el('td', { class: 'num', text: age }),
+        el('td', { text: p.bornDate && a.state === 'alive' ? `Exact date on file (${p.bornDate}); age is exact for a full date.` : '' }),
+      ]);
+      tb.appendChild(tr);
+    });
+  }
+
+  // ---------- lived through (TL-5) ----------
+  function renderLived() {
+    const id = $('#lived-person').value; const p = person(id); const tb = $('#lived-table tbody'); tb.innerHTML = '';
+    if (!p || p.born == null) { tb.appendChild(el('tr', {}, [el('td', { colspan: 5, class: 'note', text: 'Birth year unknown, so lived-through events cannot be computed.' })])); return; }
+    const end = Math.min(S.year, p.died != null ? p.died : 9999);
+    const evs = S.events.filter(e => e.year >= p.born && e.year <= end).sort((a, b) => a.year - b.year);
+    if (!evs.length) tb.appendChild(el('tr', {}, [el('td', { colspan: 5, class: 'note', text: `Nothing yet: ${p.name} is ${EW.ageIn(p, S.year).state} in ${S.year}.` })]));
+    evs.forEach(e => tb.appendChild(el('tr', {}, [
+      el('td', { class: 'num', text: e.year }), el('td', { class: 'num', text: e.year - p.born }), el('td', { text: e.title }), el('td', { text: e.category }),
+      el('td', { html: e.formative ? '<span class="chip canon">formative</span>' : '' }),
+    ])));
+  }
+
+  // ---------- timeline (TL-6) ----------
+  const TL = { x0: 2000, x1: 2100, ppy: 11, left: 10, right: 20 };
+  const tx = (y) => TL.left + (y - TL.x0) * TL.ppy;
+  function renderTimeline() {
+    const svg = $('#tl-svg'); svg.innerHTML = '';
+    const fam = $('#tl-family').value, cat = $('#tl-category').value, st = $('#tl-status').value;
+    const people = live().filter(p => (fam === 'all' || p.family === fam) && (st === 'all' || p.status === st) && p.born != null).sort((a, b) => a.born - b.born);
+    const evs = S.events.filter(e => cat === 'all' || e.category.split(' > ')[0] === cat);
+    const chaps = EW.chapters.filter(c => st === 'all' || c.status === st);
+    const W = tx(TL.x1) + TL.right;
+    const yEra = 18, hEra = 24, yEv = yEra + hEra + 14, evRows = 3, yCh = yEv + evRows * 14 + 10, yLife = yCh + 34, rowH = 16;
+    const H = yLife + people.length * rowH + 30;
+    svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // grid and axis
+    for (let y = TL.x0; y <= TL.x1; y += 10) {
+      svg.appendChild(svgEl('line', { x1: tx(y), y1: yEra, x2: tx(y), y2: H - 24, class: 'tl-grid' }));
+      const t = svgEl('text', { x: tx(y), y: H - 8, class: 'tl-text sec num', 'text-anchor': 'middle' }); t.textContent = y; svg.appendChild(t);
+    }
+    svg.appendChild(svgEl('line', { x1: TL.left, y1: H - 24, x2: W - TL.right, y2: H - 24, class: 'tl-axis' }));
+    // eras
+    EW.eras.forEach(e => {
+      const x = tx(e.start), w = Math.max(tx(e.end + 1) - x - 2, 6);
+      const r = svgEl('rect', { x, y: yEra, width: w, height: hEra, rx: 3, class: 'tl-era' }); svg.appendChild(r);
+      hover(r, `<strong>${esc(e.name)}</strong><br>${e.start === e.end ? e.start : e.start + ' to ' + e.end}`);
+      if (w > 60) { const t = svgEl('text', { x: x + 5, y: yEra + 16, class: 'tl-text' }); t.textContent = e.name.length * 6 > w ? e.name.slice(0, Math.floor(w / 6) - 1) + '…' : e.name; svg.appendChild(t); }
+    });
+    // events, staggered into rows when the same year repeats
+    const used = {};
+    evs.forEach(e => {
+      const row = (used[e.year] = (used[e.year] || 0) + 1) - 1;
+      const gy = yEv + (row % evRows) * 14;
+      const g = svgEl('g', { class: 'tl-ev' + (e.formative ? ' formative' : '') });
+      const c = svgEl('circle', { cx: tx(e.year) + TL.ppy / 2, cy: gy, r: 4.5, fill: 'var(--fg-2)', stroke: 'var(--chart-surface)', 'stroke-width': 1 });
+      const hit = svgEl('circle', { cx: tx(e.year) + TL.ppy / 2, cy: gy, r: 9, fill: 'transparent' });
+      g.appendChild(c); g.appendChild(hit); svg.appendChild(g);
+      hover(g, `<strong>${e.year}</strong> ${esc(e.title)}<br>${esc(e.category)} · ${esc(e.region)}${e.formative ? ' · formative' : ''}`);
+      g.addEventListener('click', () => selectEvent(e.id));
+    });
+    // chapter strands
+    chaps.forEach(c => {
+      const p = c.strands.find(s => s.primary), b = c.strands.find(s => !s.primary);
+      const xp = tx(p.year) + TL.ppy / 2, xb = tx(b.year) + TL.ppy / 2;
+      svg.appendChild(svgEl('line', { x1: xp, y1: yCh + 8, x2: xb, y2: yCh + 8, class: 'tl-chap-link' }));
+      const rp = svgEl('rect', { x: xp - 4, y: yCh, width: 8, height: 16, rx: 2, class: 'tl-chap-p' });
+      const rb = svgEl('rect', { x: xb - 4, y: yCh + 4, width: 8, height: 8, rx: 2, class: 'tl-chap-b' });
+      svg.appendChild(rp); svg.appendChild(rb);
+      hover(rp, `<strong>${esc(c.title)}</strong><br>${esc(p.label)}, ${p.year} (primary) · ${c.status}`);
+      hover(rb, `<strong>${esc(c.title)}</strong><br>${esc(b.label)}, ${b.year} (backstory)`);
+    });
+    // lifespans
+    people.forEach((p, i) => {
+      const y = yLife + i * rowH;
+      const x0 = tx(p.born), x1 = tx(p.died != null ? p.died + 1 : TL.x1 + 1);
+      const r = svgEl('rect', { x: x0, y: y + 3, width: Math.max(x1 - x0, 3), height: 10, rx: 2, fill: seriesVar(p.family), stroke: 'var(--chart-surface)', 'stroke-width': 1 });
+      svg.appendChild(r);
+      const a = EW.ageIn(p, S.year);
+      hover(r, `<strong>${esc(p.name)}</strong> ${p.born}${p.died != null ? ' to ' + p.died : ' onward'}<br>In ${S.year}: ${a.state === 'alive' ? 'age ' + a.age : a.state}`);
+      const t = svgEl('text', { x: x0 + 4, y: y + 12, class: 'tl-text' }); t.textContent = p.name; svg.appendChild(t);
+    });
+    // cursor
+    svg.appendChild(svgEl('line', { x1: tx(S.year) + TL.ppy / 2, y1: yEra - 6, x2: tx(S.year) + TL.ppy / 2, y2: H - 24, class: 'tl-cursor' }));
+    const ct = svgEl('text', { x: tx(S.year) + TL.ppy / 2 + 4, y: yEra - 8, class: 'tl-text num' }); ct.textContent = 'story time ' + S.year; svg.appendChild(ct);
+    // lane labels
+    [['Eras', yEra - 4], ['World events', yEv - 10], ['Chapters', yCh - 4], ['Lifespans', yLife - 4]].forEach(([n, y]) => { const t = svgEl('text', { x: TL.left, y, class: 'tl-text sec' }); t.textContent = n; svg.appendChild(t); });
+    if (!S.tlScrolled) { $('#tl-wrap').scrollLeft = Math.max(0, tx(S.year) - 200); S.tlScrolled = true; }
+  }
+  function hover(node, html) {
+    const tip = $('#tl-tip'), wrap = $('#tl-wrap');
+    const show = (e) => { tip.innerHTML = html; tip.hidden = false; const r = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - r.left + wrap.scrollLeft + 12, wrap.scrollWidth - 270) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px'; };
+    node.addEventListener('mouseenter', show); node.addEventListener('mousemove', show); node.addEventListener('mouseleave', () => { tip.hidden = true; });
+  }
+  function selectEvent(id) {
+    S.selectedEvent = id; const e = S.events.find(x => x.id === id);
+    $('#event-inspector').hidden = false; $('#ev-title').value = e.title; $('#ev-year').value = e.year; $('#ev-category').textContent = e.category;
+    $('#event-inspector').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function onEventEdit() {
+    const e = S.events.find(x => x.id === S.selectedEvent); if (!e) return;
+    e.title = $('#ev-title').value || e.title; const y = Number($('#ev-year').value); if (y >= 2000 && y <= 2100) e.year = y;
+    $('#ev-saved').textContent = 'Saved automatically at ' + new Date().toLocaleTimeString() + '.';
+    renderTimeline(); renderLived();
+  }
+  $('#ev-title').addEventListener('input', onEventEdit); $('#ev-year').addEventListener('input', onEventEdit);
+
+  // ---------- compare (TL-7) ----------
+  function renderCompare() {
+    const a = person($('#cmp-a').value), b = person($('#cmp-b').value);
+    let from = Number($('#cmp-from').value), to = Number($('#cmp-to').value); const step = Number($('#cmp-step').value);
+    if (!(from < to)) { to = from + 10; $('#cmp-to').value = to; }
+    $('#cmp-h-a').textContent = a.name; $('#cmp-h-b').textContent = b.name;
+    const tb = $('#cmp-table tbody'); tb.innerHTML = '';
+    const cell = (p, y) => { const r = EW.ageIn(p, y); return r.state === 'alive' ? `<span class="state-alive num">${r.age}${r.dyingThisYear ? ' (dies)' : ''}</span>` : r.state === 'dead' ? `<span class="state-dead">dead (${r.diedYear})</span>` : r.state === 'unborn' ? '<span class="state-unborn">unborn</span>' : '<span class="state-unknown">unknown</span>'; };
+    for (let y = from; y <= to; y += step) {
+      const ra = EW.ageIn(a, y), rb = EW.ageIn(b, y);
+      const gap = ra.state === 'alive' && rb.state === 'alive' ? Math.abs(ra.age - rb.age) + ' years' : '';
+      const tr = el('tr', {}, [el('td', { class: 'num', text: y }), el('td', { html: cell(a, y) }), el('td', { html: cell(b, y) }), el('td', { text: gap })]);
+      if (y === S.year) tr.style.background = 'var(--time-soft)';
+      tb.appendChild(tr);
+    }
+  }
+
+  // ---------- wiring ----------
+  function fillPeopleSelects() {
+    ['#lineage-person', '#lived-person', '#cmp-a', '#cmp-b'].forEach(s => {
+      const sel = $(s); const cur = sel.value; sel.innerHTML = '';
+      live().forEach(p => sel.appendChild(el('option', { value: p.id, text: p.name })));
+      if (cur && live().some(p => p.id === cur)) sel.value = cur;
+    });
+  }
+  function renderAll() { drawTree(); renderCard(); renderWarnings(); renderTrash(); renderYear(); fillPeopleSelects(); renderLived(); renderTimeline(); renderCompare(); }
+
+  $('#tree-filter').addEventListener('change', e => { S.filter = e.target.value; $('#lineage-field').hidden = S.filter !== 'lineage'; S.fitted = false; drawTree(); });
+  $('#lineage-person').addEventListener('change', e => { S.lineage = e.target.value; S.fitted = false; drawTree(); });
+  $('#year-slider').addEventListener('input', e => { S.year = Number(e.target.value); drawTree(); renderCard(); renderYear(); renderLived(); renderTimeline(); renderCompare(); });
+  $('#btn-fit').addEventListener('click', fit);
+  $('#btn-zoom-in').addEventListener('click', () => zoom(0.8)); $('#btn-zoom-out').addEventListener('click', () => zoom(1.25));
+  const exportNote = (kind) => { const n = $('#export-note'); n.hidden = false; n.textContent = `In the app this saves family-tree-${S.year}.${kind} to a folder you choose (FT-9). This mockup runs in a sandbox that blocks downloads, so nothing is saved here.`; };
+  $('#btn-export-png').addEventListener('click', () => exportNote('png')); $('#btn-export-pdf').addEventListener('click', () => exportNote('pdf'));
+  ['#tl-family', '#tl-category', '#tl-status'].forEach(s => $(s).addEventListener('change', renderTimeline));
+  ['#lived-person'].forEach(s => $(s).addEventListener('change', renderLived));
+  ['#cmp-a', '#cmp-b', '#cmp-from', '#cmp-to', '#cmp-step'].forEach(s => $(s).addEventListener('input', renderCompare));
+  // category filter options
+  [...new Set(S.events.map(e => e.category.split(' > ')[0]))].sort().forEach(c => $('#tl-category').appendChild(el('option', { value: c, text: c })));
+  window.addEventListener('resize', () => { fit(); });
+
+  fillPeopleSelects();
+  $('#lived-person').value = 'ch_mark'; $('#cmp-a').value = 'ch_mark'; $('#cmp-b').value = 'ch_dawn';
+  renderAll();
+})();
+</script>

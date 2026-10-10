@@ -1,6 +1,6 @@
 # SPEC: novel companion desktop app
 
-Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A16 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
+Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A17 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
 
 Each criterion has an ID (for example `FT-4`). A criterion passes only when there is a named automated test or a recorded manual check for it in `PROGRESS.md`.
 
@@ -232,7 +232,7 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 
 ### 5.19 Settings
 
-- **ST-1** `[A3]` Settings cover: Claude model and sign-in status, Claude default instructions, brief window and size budget, romanization systems, snapshot count, MongoDB connection (stored in the keychain, shown masked), Drive connection, and light or dark appearance.
+- **ST-1** `[A3]` `[A17]` Settings cover: Claude model per feature (briefs default Opus) and sign-in status, Claude default instructions, brief window and size budget, romanization systems, snapshot count, MongoDB connection (stored in the keychain, shown masked), Drive connection, and light or dark appearance.
 
 ### 5.20 Story time `[A11]`
 
@@ -241,6 +241,13 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 - **TM-3** The current story time drives the tree year control, the timeline cursor, the default brief inputs, and the ages shown on character pages, until I change it. It persists across launches and is shown in the status bar.
 - **TM-4** The time can be set by anchor: pick a character and an age ("Mark is 19") and the year is computed; pick a chapter strand and its year is used; or step the year by one or ten.
 - **TM-5** Setting the time never writes to any entry. Promoting a time to a chapter strand's year is an explicit action that follows `ED-7`.
+
+### 5.21 Dashboard and Start session `[A17]`
+
+- **DB-1** The app opens on a dashboard: the last session-log note (`SL-1`), the current story time (`TM-1`), the current position in reading order, open questions count, and one primary control, "Start session".
+- **DB-2** Start session takes a section of plot: a part, a chapter, a chapter strand, or a story year plus point-of-view character (the same inputs as `SB-1`). It runs the `SB-2` selection, then has Claude synthesize the brief with these three sections first and always present: (1) the characters in the section and their ages at its story year, (2) the world events ongoing at that time, (3) the cultural expectations bearing on those characters at that moment. The remaining `SB-4` sections follow. Every rule in `SB-3` to `SB-9` applies.
+- **DB-3** Starting a session creates a session-log entry linked to the section and the brief, and sets the story time to the section's year.
+- **DB-4** The brief is generated with the model configured for briefs, default `claude-opus-5-5`. Settings (`ST-1`) hold a model per Claude feature: briefs, continuity prose checks, chapter summaries, chat, and import proposals.
 
 ---
 
@@ -320,7 +327,7 @@ All other chapters are clean and must produce no structural findings.
 | M4 | Plot, culture, places, glossary, knowledge, themes, questions, log, custom sections, search | PL, CU, PC, GL, KN, TH, OQ, SL, CS, SR |
 | M5 | Excel and Word import, snapshots, export | IM-1 to 4, 6, 7; BK-1 to 4 |
 | M6 | Claude panel, tools, proposal queue | ARCH-4, 5; AI-1 to 7; IM-5 |
-| M7 | Manuscript and session brief | MS-1 to 5; SB-1 to 9 |
+| M7 | Manuscript, session brief, dashboard | MS-1 to 5; SB-1 to 9; DB-1 to 4 |
 | M8 | Continuity check | CC-1 to 5 |
 | M9 | Google Drive | GD-1 to 5 |
 | M10 | Settings, performance, packaging, final audit | ST-1; NF-1 to 4; ARCH-6; every criterion re-checked |
@@ -370,3 +377,4 @@ Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the sto
 | A14 | Section 7 fixture | Fixture includes two parts, a two-strand chapter, categories, and a workbook with table and grid sheets. | So the amended model and import paths have tests. |
 | A15 | 10.1, NF-4 | Packaging target is macOS only. | Tommy's instruction. |
 | A16 | 1, ARCH-8, M0 | The app is general: many bibles, one database each, no book-specific code. East Winds is the first bible and the example. | Tommy: "the supplement tool should be utilizing those details as an example, not purely for this book." |
+| A17 | 5.21 DB-1 to 4, ST-1, M7 | Dashboard with Start session: pick a plot section, deterministic selection, Opus synthesizes characters and ages, ongoing world events, and cultural expectations first, then the rest of the brief; logs the session. Per-feature model setting. | Tommy, 2026-10-10: "there should be a way to generate a new session for a given section of plot which synthesizes... this should be on the main dashboard and should use opus." |

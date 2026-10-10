@@ -1,0 +1,675 @@
+<title>Session Brief and Continuity</title>
+<link rel="stylesheet" href="shared/theme.css">
+<style>
+  /* Tokens local to this page. Light on :root, dark in both dark blocks. */
+  :root { --cite-bg: #eef2f6; --cite-bad-bg: #fbe3e3; --strand-bg: #f7f9fb; --kept: #1f7a68; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --cite-bg: #243040; --cite-bad-bg: #4a2222; --strand-bg: #131b24; --kept: #4fc3a8; } }
+  :root[data-theme="dark"] { --cite-bg: #243040; --cite-bad-bg: #4a2222; --strand-bg: #131b24; --kept: #4fc3a8; }
+
+  .doc > header .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .section h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+  .inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+  .mode { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; }
+  .mode button { all: unset; cursor: pointer; padding: 6px 12px; font-weight: 600; color: var(--fg); }
+  .mode button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .strands { display: flex; flex-wrap: wrap; gap: 8px; }
+  .strand { all: unset; cursor: pointer; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 6px 10px; background: var(--strand-bg); color: var(--fg); display: flex; flex-direction: column; gap: 2px; min-width: 180px; }
+  .strand[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .strand .label { font-weight: 600; }
+  .strand .year { font-family: var(--font-mono); font-size: 0.85rem; color: var(--fg-2); }
+  .steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; counter-reset: step; }
+  .steps > li { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .steps > li::before { counter-increment: step; content: counter(step); font-family: var(--font-display); font-size: 1.3rem; color: var(--fg-2); line-height: 1; }
+  .steps .title { font-weight: 600; }
+  .steps .rule { color: var(--fg-2); font-size: 0.88rem; }
+  .ids { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .idchip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-size: 0.78rem; background: var(--cite-bg); color: var(--fg); border-radius: 4px; padding: 1px 6px; border: 1px solid var(--border); }
+  .idchip button { all: unset; cursor: pointer; font-family: var(--font-body); font-size: 0.75rem; font-weight: 700; color: var(--fg-2); padding: 0 2px; }
+  .idchip button:hover { color: var(--critical); }
+  .idchip.dropped { text-decoration: line-through; opacity: 0.7; }
+  .hashline { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-family: var(--font-mono); font-size: 0.9rem; }
+  .hashline strong { font-family: var(--font-body); }
+  .brief { font-family: var(--font-display); font-size: 1.05rem; line-height: 1.5; }
+  .brief h3 { font-family: var(--font-display); font-size: 1.15rem; margin: 14px 0 4px; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+  .brief h3:first-child { margin-top: 0; }
+  .brief ul { margin: 0; padding-left: 1.2rem; }
+  .brief li { margin: 3px 0; }
+  .brief .chip { font-family: var(--font-body); vertical-align: 1px; margin-left: 4px; }
+  .cite { font-family: var(--font-mono); font-size: 0.75rem; background: var(--cite-bg); border-radius: 3px; padding: 0 4px; color: var(--fg); }
+  .cite.bad { background: var(--cite-bad-bg); color: var(--fg); border: 1px solid var(--critical); }
+  .cite.bad::after { content: ' not in manifest'; font-family: var(--font-body); font-weight: 700; color: var(--critical); }
+  .ahead { border: 1px dashed var(--planned); border-radius: 8px; padding: 10px 12px; margin-top: 14px; }
+  .ahead h3 { border: 0; margin: 0 0 4px; color: var(--planned); }
+  .leftout { margin-top: 12px; }
+  .structured dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+  .structured dt { font-weight: 600; }
+  .structured dd { margin: 0; }
+  .knowgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .matrix th, .matrix td { text-align: center; }
+  .matrix th:first-child, .matrix td:first-child { text-align: left; }
+  .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .finding { border: 1px solid var(--border); border-left: 4px solid var(--critical); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .finding.dismissed { border-left-color: var(--border-strong); opacity: 0.75; }
+  .finding.resolved { border-left-color: var(--good); }
+  .finding .kind { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-2); }
+  .finding blockquote { margin: 0; padding: 4px 10px; border-left: 2px solid var(--border-strong); font-family: var(--font-display); font-style: italic; }
+  .finding .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .editbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: end; }
+  .counts { display: flex; flex-wrap: wrap; gap: 14px; font-weight: 600; }
+  .ok { color: var(--good-ink); font-weight: 700; }
+  .saved li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .promote li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; }
+  .note { font-size: 0.85rem; color: var(--fg-2); }
+  textarea.md { width: 100%; min-height: 160px; font-family: var(--font-mono); font-size: 0.8rem; }
+  .brief-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; }
+  @media (max-width: 760px) { .brief-wrap { grid-template-columns: 1fr; } }
+  .controls { display: flex; flex-direction: column; gap: 10px; }
+  .controls .field { font-size: 0.85rem; }
+  .ex { font-size: 0.8rem; color: var(--fg-2); }
+</style>
+
+<div class="doc">
+  <header>
+    <span class="eyebrow">Novel companion mockup 3 of 4</span>
+    <h1>Session Brief and Continuity</h1>
+    <p class="lede">How a writing session starts: the app picks the entries by rule, Claude writes one page from only those entries, and every claim cites an entry the code can check. Then the continuity check reads the chapter back against the bible.</p>
+    <div class="meta">
+      <span class="chip">Example bible: East Winds</span>
+      <span class="chip canon"><span class="dot"></span>canon</span>
+      <span class="chip planned"><span class="dot"></span>planned</span>
+      <span class="chip idea"><span class="dot"></span>idea</span>
+      <span class="ex">Every control below changes the simulated state on this page. The app is general purpose; East Winds is the first bible loaded into it.</span>
+    </div>
+  </header>
+
+  <!-- 1. Inputs -->
+  <section class="section panel" id="sec-inputs">
+    <div class="intro">
+      <h2>1. Brief inputs</h2>
+      <span class="crit-ref">SB-1, A5 (strands)</span>
+      <p>Give it a chapter, or a story year and a point-of-view character. A chapter with two strands gets one selection per strand, primary first.</p>
+    </div>
+    <div class="row">
+      <div class="mode" role="group" aria-label="Input mode">
+        <button type="button" id="mode-chapter" aria-pressed="true">From a chapter</button>
+        <button type="button" id="mode-year" aria-pressed="false">From a year and POV</button>
+      </div>
+    </div>
+    <div class="inputs" id="inputs-chapter">
+      <label class="field">Chapter<select id="in-chapter"></select></label>
+      <label class="field">Place (optional)<select id="in-place"></select></label>
+      <label class="field">Also present (optional)<select id="in-extra"></select></label>
+      <label class="field">Event window, years before the story year<input type="number" id="in-window" min="1" max="40" value="10"></label>
+    </div>
+    <div class="inputs" id="inputs-year" hidden>
+      <label class="field">Story year<input type="number" id="in-year" min="1990" max="2110" value="2056"></label>
+      <label class="field">Point of view<select id="in-pov"></select></label>
+      <label class="field">Place (optional)<select id="in-place-2"></select></label>
+      <label class="field">Also present (optional)<select id="in-extra-2"></select></label>
+    </div>
+    <div class="row" id="extras-row"></div>
+    <div>
+      <span class="eyebrow">Strands</span>
+      <div class="strands" id="strands"></div>
+    </div>
+  </section>
+
+  <!-- 2. Selection -->
+  <section class="section panel" id="sec-selection">
+    <div class="intro">
+      <h2>2. Deterministic selection</h2>
+      <span class="crit-ref">SB-2, SB-3, SB-9</span>
+      <p>Ten queries run in code, in this order, with no model involved. The result is a manifest of entry IDs. Same inputs and data, same manifest, same hash.</p>
+    </div>
+    <div class="hashline">
+      <strong>Manifest hash</strong> <span id="hash"></span>
+      <span id="hash-count"></span>
+      <button class="btn small" id="btn-rerun" type="button">Run selection again</button>
+      <button class="btn small" id="btn-reset-sel" type="button">Reset removals and additions</button>
+    </div>
+    <ol class="steps" id="steps"></ol>
+    <div class="row">
+      <label class="field">Add entry to the selection
+        <select id="add-entry"></select>
+      </label>
+      <button class="btn small" id="btn-add" type="button">Add entry</button>
+      <span class="note">Removing or adding an entry changes the hash; the brief regenerates from the new manifest.</span>
+    </div>
+  </section>
+
+  <!-- 3. Brief -->
+  <section class="section panel" id="sec-brief">
+    <div class="intro">
+      <h2>3. The brief</h2>
+      <span class="crit-ref">SB-4, SB-5, SB-6, SB-7, SB-8</span>
+      <p>Claude writes from the manifest and nothing else. Each item cites entry IDs. Code checks every citation against the manifest; a citation to anything else is flagged where you read it. Canon and planned stay separate, and nothing dated after the story year appears outside the "Planned ahead" box.</p>
+    </div>
+    <div class="brief-wrap">
+      <div>
+        <div id="brief-out"></div>
+        <div class="leftout" id="leftout"></div>
+      </div>
+      <div class="controls">
+        <label class="field">Size budget: <span id="budget-val" class="num"></span> entries
+          <input type="range" id="budget" min="6" max="80" value="80">
+        </label>
+        <label class="field row" style="flex-direction: row; align-items: center; gap: 8px;"><input type="checkbox" id="claude-down"> Claude unavailable</label>
+        <div class="row">
+          <button class="btn primary small" id="btn-save" type="button">Save brief</button>
+          <button class="btn small" id="btn-export" type="button">Export Markdown</button>
+        </div>
+        <div id="cite-summary" class="note"></div>
+        <div>
+          <span class="eyebrow">Saved briefs for this chapter</span>
+          <ul class="saved" id="saved-list"></ul>
+        </div>
+        <div id="export-box" hidden>
+          <span class="eyebrow">Markdown</span>
+          <textarea class="md" id="md-out" readonly></textarea>
+          <div class="row"><button class="btn small" id="btn-copy" type="button">Copy</button><span class="note">The app writes this to a file and also exports PDF.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Knowledge -->
+  <section class="section panel" id="sec-knowledge">
+    <div class="intro">
+      <h2>4. Knowledge states</h2>
+      <span class="crit-ref">KN-1, KN-2, KN-3</span>
+      <p>Who knows which secret, and from when. The chapter's "facts in play" list is what the continuity check reads.</p>
+    </div>
+    <div class="knowgrid">
+      <div class="sunken">
+        <label class="field">Fact<select id="kn-fact"></select></label>
+        <div id="kn-fact-out"></div>
+      </div>
+      <div class="sunken">
+        <div class="row">
+          <label class="field">Character<select id="kn-char"></select></label>
+          <label class="field">Year<input type="number" id="kn-year" value="2056" min="1990" max="2110"></label>
+        </div>
+        <div id="kn-char-out"></div>
+      </div>
+    </div>
+    <div class="sunken">
+      <span class="eyebrow">Facts in play for <span id="fip-chapter"></span></span>
+      <div class="scroll-x" id="fip"></div>
+    </div>
+    <div class="sunken">
+      <span class="eyebrow">Add a knowledge record</span>
+      <div class="editbox">
+        <label class="field">Character<select id="kr-char"></select></label>
+        <label class="field">Fact<select id="kr-fact"></select></label>
+        <label class="field">Year learned<input type="number" id="kr-year" value="2060"></label>
+        <label class="field">How<input type="text" id="kr-how" value="Told at dinner"></label>
+        <button class="btn small" id="kr-add" type="button">Add record</button>
+      </div>
+      <div id="kr-warn"></div>
+    </div>
+  </section>
+
+  <!-- 5. Continuity -->
+  <section class="section panel" id="sec-continuity">
+    <div class="intro">
+      <h2>5. Continuity check</h2>
+      <span class="crit-ref">CC-1, CC-2, CC-3, CC-4, CC-5</span>
+      <p>Structural checks run in code over every chapter. Three errors are planted in this page's copy of the bible so you can see what a finding looks like; every other chapter comes back clean. Prose findings are what Claude returns when it reads the chapter text against the selected entries.</p>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="btn-cc" type="button">Run structural checks on the whole manuscript</button>
+      <button class="btn" id="btn-cc-one" type="button">Run on the selected chapter only</button>
+      <div class="counts" id="cc-counts"></div>
+    </div>
+    <ul class="findings" id="cc-out"></ul>
+    <div>
+      <span class="eyebrow">Prose findings (Claude), for the selected chapter</span>
+      <ul class="findings" id="prose-out"></ul>
+    </div>
+  </section>
+
+  <!-- 6. Mark as written -->
+  <section class="section panel" id="sec-written">
+    <div class="intro">
+      <h2>6. Mark the chapter as written</h2>
+      <span class="crit-ref">MS-2, MS-3, MS-5</span>
+      <p>Marking a chapter written offers a summary and a list of planned entries it establishes. Nothing is saved until you approve each piece. The manuscript text is a read-only import; the app has no way to edit it.</p>
+    </div>
+    <div id="written-out"></div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="shared/data.js"></script>
+<script>
+(function () {
+  'use strict';
+  const EW = window.EW;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  // ---------- Local, mutable copy of the bible with planted continuity errors ----------
+  const D = {
+    characters: clone(EW.characters), chapters: clone(EW.chapters), events: clone(EW.events), eras: clone(EW.eras),
+    cultural: clone(EW.cultural), places: clone(EW.places), facts: clone(EW.facts), beats: clone(EW.beats),
+    glossary: clone(EW.glossary), themes: clone(EW.themes), openQuestions: clone(EW.openQuestions), sessionLog: clone(EW.sessionLog),
+    arcs: clone(EW.arcs), parts: clone(EW.parts), unions: clone(EW.unions), parents: clone(EW.parents),
+  };
+  // Backstory strands narrate from the first character in their cast; data.js defaults them to the chapter's POV.
+  D.chapters.forEach(ch => ch.strands.forEach(s => { if (!s.primary && s.present.length) s.pov = s.present[0]; }));
+  // Status for entries that have none.
+  D.events.forEach(e => { if (!e.status) e.status = 'planned'; });
+  D.eras.forEach(e => { if (!e.status) e.status = 'planned'; });
+  D.cultural.forEach(e => { if (!e.status) e.status = 'planned'; });
+  D.places.forEach(e => { if (!e.status) e.status = 'planned'; });
+  D.beats.forEach(e => { if (!e.status) e.status = 'planned'; });
+  D.glossary.forEach(e => { if (!e.status) e.status = 'canon'; });
+  D.themes.forEach(e => { if (!e.status) e.status = 'planned'; });
+  // Planted errors (CC-5): three structural mistakes that the check must find.
+  D.chapters.find(c => c.id === 'chp_1_6').strands[0].present.push('ch_laura');          // S1: Laura present in 2063, died 2037
+  const factsInPlay = { chp_2_3: [{ who: 'ch_dawn', fact: 'fc_sichao' }], chp_1_2: [{ who: 'ch_mark', fact: 'fc_sepsis' }] }; // S2: Dawn acts on fc_sichao in 2059, learns it 2083
+  const eventsHappened = { chp_1_1: ['ev_2075_port'] };                                  // S3: 2075 event linked to a 2055 chapter as happened
+  // Chapter text, read-only import (MS-5). Chapter 1 is Tommy's; one planted line for the prose check.
+  const chapterText = {
+    chp_1_1: 'They pass each other many times among the bustling halls of USC, as if orbiting each other in some cosmic dance, before they finally meet. As a college sophomore extends his drunken hand to a petite Chinese girl in southern California, angels shout for joy, and the morning stars sing.',
+    chp_1_2: 'To be clear, reader, he does not mean that she seems smart. In truth, he means that she might well be the most beautiful woman he’s met in his nineteen years on this earth. [...] Frank, sixty that spring, had warned him about girls like her, girls who grew up in Shanghai and studied harder than anyone he would ever meet.',
+  };
+  const defaultPlace = { chp_1_1: 'pl_usc', chp_1_2: 'pl_usc', chp_1_3: 'pl_usc', chp_2_1: 'pl_usc', chp_2_2: 'pl_usc', chp_2_3: 'pl_usc', chp_1_4: 'pl_sf', chp_1_5: 'pl_sf', chp_1_6: 'pl_sf', chp_1_7: 'pl_sf', chp_2_5: 'pl_jinan', chp_2_6: 'pl_jinan', chp_3_7: 'pl_jinan', chp_3_8: 'pl_jinan' };
+
+  // ---------- Page state ----------
+  const S = {
+    mode: 'chapter', chapterId: 'chp_1_2', strandIdx: 0, year: 2056, povId: 'ch_mark', placeId: 'pl_usc', extras: [],
+    windowYears: 10, removed: new Set(), added: [], budget: 80, claudeDown: false, saved: [],
+    dismissed: new Set(), resolved: new Set(), lastRunScope: 'all', ccFindings: null, written: {}, promoted: {}, summaryDraft: null,
+  };
+
+  // ---------- Lookups ----------
+  const chars = () => D.characters;
+  const ch = (id) => D.characters.find(c => c.id === id);
+  const chapter = (id) => D.chapters.find(c => c.id === id);
+  const part = (id) => D.parts.find(p => p.id === id);
+  const allEntries = () => [].concat(D.characters, D.events, D.eras, D.cultural, D.places, D.facts, D.chapters, D.beats, D.glossary, D.themes, D.openQuestions, D.sessionLog);
+  const entry = (id) => allEntries().find(e => e.id === id);
+  const kindOf = (id) => id.split('_')[0];
+  const cjk = (c) => c.zh ? ` <span class="zh" tabindex="0" data-pinyin="${esc(c.pinyin)}" data-meaning="${esc(c.meaning)}">${c.zh}</span>` : '';
+  function labelOf(id) {
+    const e = entry(id); if (!e) return id;
+    switch (kindOf(id)) {
+      case 'ch': return e.name + cjk(e);
+      case 'ev': return `${e.year}: ${e.title}`;
+      case 'era': return `${e.name} (${e.start}${e.end !== e.start ? ' to ' + e.end : ''})`;
+      case 'cu': return `${e.title} (${e.community}, ${e.start} to ${e.end})`;
+      case 'pl': return e.name;
+      case 'fc': return e.title;
+      case 'chp': { const p = part(e.part); return `${p ? 'Part ' + p.number + ' ' : ''}Ch. ${e.id.split('_')[2]}: ${e.title}`; }
+      case 'bt': return `${e.year}: ${e.text}`;
+      case 'gl': return `${e.zh} ${e.pinyin}`;
+      case 'th': return e.name;
+      case 'oq': return e.question.length > 90 ? e.question.slice(0, 88) + '…' : e.question;
+      case 'sl': return `Session ${e.date}`;
+    }
+    return id;
+  }
+  const statusOf = (id) => { const e = entry(id); return (e && e.status) || 'planned'; };
+  const chip = (status) => `<span class="chip ${esc(status)}"><span class="dot"></span>${esc(status)}</span>`;
+  const idchip = (id, removable) => `<span class="idchip${S.removed.has(id) ? ' dropped' : ''}" title="${esc(labelOf(id).replace(/<[^>]+>/g, ''))}">${esc(id)}${removable ? `<button type="button" data-remove="${esc(id)}" aria-label="Remove ${esc(id)} from selection">×</button>` : ''}</span>`;
+  const ageText = (c, year) => { const a = EW.ageIn(c, year); return a.state === 'alive' ? `${a.age}${a.dyingThisYear ? ', dies this year' : ''}` : a.state === 'unborn' ? 'not yet born' : a.state === 'dead' ? `dead since ${a.diedYear}` : 'age unknown'; };
+  function hash(ids) { let h = 5381; const s = ids.slice().sort().join('|'); for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16).padStart(8, '0'); }
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 2200); }
+
+  // ---------- Current strand (chapter mode or synthetic) ----------
+  function currentStrands() {
+    if (S.mode === 'chapter') {
+      const c = chapter(S.chapterId);
+      return c.strands.map(s => ({ id: s.id, label: s.label, year: s.year, pov: s.pov, present: s.present.slice(), primary: s.primary, chapterId: c.id }));
+    }
+    return [{ id: 'adhoc', label: `${S.year}, ${ch(S.povId).name}`, year: S.year, pov: S.povId, present: [], primary: true, chapterId: null }];
+  }
+  function strand() { const list = currentStrands(); return list[Math.min(S.strandIdx, list.length - 1)]; }
+
+  // ---------- Relatives (used by step 1 when no cast is listed) ----------
+  function relatives(id) {
+    const parentsOf = D.parents.filter(p => p.child === id).map(p => p.parent);
+    const childrenOf = D.parents.filter(p => p.parent === id).map(p => p.child);
+    const partners = D.unions.filter(u => u.a === id || u.b === id).map(u => u.a === id ? u.b : u.a);
+    const siblings = D.parents.filter(p => parentsOf.includes(p.parent) && p.child !== id).map(p => p.child);
+    return Array.from(new Set([].concat(parentsOf, partners, childrenOf, siblings)));
+  }
+
+  // ---------- SB-2: the ten selection steps ----------
+  function select(st) {
+    const year = st.year, pov = st.pov;
+    const steps = [];
+    // 1 characters present with ages
+    let present = Array.from(new Set(st.present.concat(S.extras)));
+    let rule1 = 'Characters listed as present in the strand';
+    if (present.length === 0) { present = [pov].concat(relatives(pov).filter(r => EW.ageIn(ch(r), year).state === 'alive')); rule1 = 'None listed, so the point-of-view character plus living parents, partners, children and siblings'; }
+    if (!present.includes(pov)) present.unshift(pov);
+    steps.push({ title: 'Characters present, with ages', rule: rule1, ids: present });
+    // 2 era
+    const era = D.eras.find(e => year >= e.start && year <= e.end);
+    steps.push({ title: 'The era state covering the story year', rule: `Era whose range contains ${year}`, ids: era ? [era.id] : [] });
+    // 3 events: window, formative in lifetimes, linked to places
+    const windowEv = D.events.filter(e => e.year <= year && e.year > year - S.windowYears);
+    const lifeEv = D.events.filter(e => e.formative && e.year <= year && present.some(p => { const c = ch(p); return c.born != null && e.year >= c.born && (c.died == null || e.year <= c.died); }));
+    const place = D.places.find(p => p.id === S.placeId);
+    const placeIds = place ? [place.id, place.parent].filter(Boolean) : [];
+    const placeEv = D.events.filter(e => (e.places || []).some(p => placeIds.includes(p)));
+    steps.push({ title: 'World events', rule: `In the ${S.windowYears} years before ${year}, plus formative events in the lifetime of anyone present, plus events linked to the strand’s place`, ids: uniq(windowEv.concat(lifeEv, placeEv).map(e => e.id)) });
+    // 4 cultural
+    const cu = place ? D.cultural.filter(c => c.community === place.community && year >= c.start && year <= c.end) : [];
+    steps.push({ title: 'Cultural entries', rule: place ? `Community "${place.community}" in ${year}` : 'No place given, so none', ids: cu.map(c => c.id) });
+    // 5 places
+    steps.push({ title: 'Place descriptions for the story year', rule: place ? `${place.name} and its parent, descriptions covering ${year}` : 'No place given', ids: placeIds.filter(pid => { const p = D.places.find(x => x.id === pid); return p && p.descriptions.some(d => year >= d.start && year <= d.end); }) });
+    // 6 knowledge
+    const knows = (who) => D.facts.filter(f => f.knowledge.some(k => k.who === who && k.year <= year)).map(f => f.id);
+    const povKnows = new Set(knows(pov));
+    const factIds = new Set();
+    present.forEach(p => knows(p).forEach(f => factIds.add(f)));
+    const othersOnly = Array.from(factIds).filter(f => !povKnows.has(f));
+    steps.push({ title: 'What each character present knows', rule: `Knowledge records dated ${year} or earlier; ${othersOnly.length} fact${othersOnly.length === 1 ? '' : 's'} known to others but not to ${ch(pov).name}`, ids: Array.from(factIds) });
+    // 7 previous chapters
+    let prevIds = [];
+    if (st.chapterId) {
+      const cur = chapter(st.chapterId);
+      const ordered = D.chapters.slice().sort((a, b) => a.order - b.order);
+      const before = ordered.filter(c => c.order < cur.order);
+      prevIds = before.slice(-3).map(c => c.id);
+      D.arcs.filter(a => (a.chapters || []).includes(cur.id)).forEach(a => { const i = a.chapters.indexOf(cur.id); if (i > 0) prevIds.push(a.chapters[i - 1]); });
+      const samePov = before.filter(c => c.pov === cur.pov); if (samePov.length) prevIds.push(samePov[samePov.length - 1].id);
+    }
+    steps.push({ title: 'Summaries of previous chapters', rule: 'The three previous in reading order, the previous in each of this chapter’s arcs, and the previous with the same point of view', ids: uniq(prevIds) });
+    // 8 beats
+    const arcIds = st.chapterId ? D.arcs.filter(a => (a.chapters || []).includes(st.chapterId)).map(a => a.id) : D.arcs.filter(a => a.owner === pov).map(a => a.id);
+    const beats = D.beats.filter(b => (st.chapterId && b.chapter === st.chapterId) || (b.chapter == null && arcIds.includes(b.arc) && b.year <= year));
+    steps.push({ title: 'Beats planned for this chapter, and unresolved beats earlier in its arcs', rule: 'Beats attached to the chapter; beats in its arcs with no chapter yet and a year at or before the story year', ids: beats.map(b => b.id) });
+    // 9 glossary, themes, open questions linked to anything selected
+    const selectedSoFar = new Set(steps.flatMap(s => s.ids).concat(st.chapterId ? [st.chapterId] : []));
+    const gl = D.glossary.filter(g => present.some(p => ch(p).zh && ch(p).zh === g.zh)).map(g => g.id);
+    const th = D.themes.filter(t => t.appearances.some(a => selectedSoFar.has(a.chapter))).map(t => t.id);
+    const oq = D.openQuestions.filter(q => q.links.some(l => selectedSoFar.has(l))).map(q => q.id);
+    steps.push({ title: 'Glossary terms, themes and open questions linked to anything above', rule: 'Terms matching the characters’ names, themes appearing in the selected chapters, questions linked to any selected entry', ids: gl.concat(th, oq) });
+    // 10 session log
+    const logs = st.chapterId ? D.sessionLog.filter(l => l.chapter === st.chapterId).sort((a, b) => b.date.localeCompare(a.date)) : [];
+    steps.push({ title: 'The last session log note for this chapter', rule: 'Most recent log entry whose chapter is this one', ids: logs.length ? [logs[0].id] : [] });
+    return { steps, present, era, place, year, pov, othersOnly };
+  }
+  function uniq(a) { return Array.from(new Set(a)); }
+
+  // Priority order for SB-6 budget drops (kept first).
+  const PRIORITY = ['sl', 'ch', 'era', 'fc', 'bt', 'chp', 'ev', 'cu', 'pl', 'gl', 'th', 'oq'];
+  function manifest(sel) {
+    const raw = uniq(sel.steps.flatMap(s => s.ids).concat(S.added)).filter(id => !S.removed.has(id));
+    const ranked = raw.slice().sort((a, b) => PRIORITY.indexOf(kindOf(a)) - PRIORITY.indexOf(kindOf(b)));
+    const kept = ranked.slice(0, S.budget), dropped = ranked.slice(S.budget);
+    return { all: raw, kept, dropped, hash: hash(raw) };
+  }
+
+  // ---------- Render: inputs ----------
+  function fillSelect(el, options, value) { el.innerHTML = options.map(o => `<option value="${esc(o.value)}"${o.value === value ? ' selected' : ''}>${esc(o.label)}</option>`).join(''); }
+  function renderInputs() {
+    const chapOpts = D.chapters.slice().sort((a, b) => a.order - b.order).map(c => ({ value: c.id, label: labelOf(c.id).replace(/<[^>]+>/g, '') }));
+    fillSelect($('in-chapter'), chapOpts, S.chapterId);
+    const placeOpts = [{ value: '', label: 'None' }].concat(D.places.map(p => ({ value: p.id, label: p.name })));
+    fillSelect($('in-place'), placeOpts, S.placeId || ''); fillSelect($('in-place-2'), placeOpts, S.placeId || '');
+    const charOpts = [{ value: '', label: 'Pick a character' }].concat(D.characters.map(c => ({ value: c.id, label: c.name })));
+    fillSelect($('in-extra'), charOpts, ''); fillSelect($('in-extra-2'), charOpts, '');
+    fillSelect($('in-pov'), D.characters.map(c => ({ value: c.id, label: c.name })), S.povId);
+    $('in-window').value = S.windowYears; $('in-year').value = S.year;
+    $('mode-chapter').setAttribute('aria-pressed', S.mode === 'chapter'); $('mode-year').setAttribute('aria-pressed', S.mode === 'year');
+    $('inputs-chapter').hidden = S.mode !== 'chapter'; $('inputs-year').hidden = S.mode !== 'year';
+    $('extras-row').innerHTML = S.extras.length ? '<span class="eyebrow">Also present</span>' + S.extras.map(id => `<span class="chip">${esc(ch(id).name)} <button type="button" class="btn small" data-unextra="${id}" aria-label="Remove">×</button></span>`).join('') : '';
+    const list = currentStrands();
+    $('strands').innerHTML = list.map((s, i) => `<button type="button" class="strand" data-strand="${i}" aria-pressed="${i === S.strandIdx}"><span class="label">${esc(s.label)}${s.primary ? ' (primary)' : ''}</span><span class="year">${s.year} &middot; POV ${esc(ch(s.pov).name)} &middot; ${s.present.length} present</span></button>`).join('');
+  }
+
+  // ---------- Render: selection ----------
+  let lastSel = null, lastMan = null;
+  function renderSelection() {
+    const st = strand();
+    lastSel = select(st); lastMan = manifest(lastSel);
+    $('hash').textContent = lastMan.hash;
+    $('hash-count').textContent = `${lastMan.all.length} entries, ${lastMan.kept.length} within budget`;
+    $('steps').innerHTML = lastSel.steps.map(s => `<li><div><div class="title">${esc(s.title)}</div><div class="rule">${esc(s.rule)}</div><div class="ids">${s.ids.length ? s.ids.map(id => idchip(id, true)).join('') : '<span class="note">nothing selected</span>'}</div></div></li>`).join('')
+      + (S.added.length ? `<li><div><div class="title">Added by hand (SB-9)</div><div class="ids">${S.added.map(id => idchip(id, true)).join('')}</div></div></li>` : '');
+    const inMan = new Set(lastMan.all);
+    fillSelect($('add-entry'), allEntries().filter(e => !inMan.has(e.id)).map(e => ({ value: e.id, label: `${e.id}  ${labelOf(e.id).replace(/<[^>]+>/g, '')}` })), '');
+  }
+
+  // ---------- Render: brief ----------
+  function briefModel() {
+    const sel = lastSel, man = lastMan, kept = new Set(man.kept), year = sel.year;
+    const keptOf = (kind) => man.kept.filter(id => kindOf(id) === kind);
+    const M = { sections: [], ahead: [] };
+    const push = (title, items) => { if (items.length) M.sections.push({ title, items }); };
+    const item = (text, ids, status) => ({ text, ids, status });
+    // Who is in the room
+    push('Who is in the room', keptOf('ch').map(id => { const c = ch(id); return item(`${c.name}${c.zh ? ' ' + c.zh : ''}, ${ageText(c, year)}${id === sel.pov ? ', point of view' : ''}.`, [id], c.status); }));
+    // What has happened so far: beats before the year, previous chapter summaries
+    const sofar = [];
+    keptOf('bt').forEach(id => { const b = entry(id); if (b.year <= year) sofar.push(item(`${b.year}: ${b.text}. ${b.experience || ''}`.trim(), [id, b.pov], b.status)); else M.ahead.push(item(`${b.year}: ${b.text}`, [id], b.status)); });
+    keptOf('chp').forEach(id => { const c = entry(id); sofar.push(item(`${labelOf(id).replace(/<[^>]+>/g, '')}: ${c.summary || (c.written ? 'written, summary not yet approved' : 'planned, no summary yet')}`, [id], c.status)); });
+    push('What has happened to them so far', sofar);
+    // The world this year
+    const world = [];
+    keptOf('era').forEach(id => { const e = entry(id); world.push(item(`${e.name}. ${e.economy} ${e.politics}`.trim(), [id], e.status)); });
+    keptOf('ev').forEach(id => { const e = entry(id); if (e.year <= year) world.push(item(`${e.year}: ${e.title}.`, [id], e.status)); else M.ahead.push(item(`${e.year}: ${e.title}`, [id], e.status)); });
+    if (!S.claudeDown) world.push(item('The depression has already begun and nobody at the party has a job lined up.', ['ev_2063_depression'], 'planned')); // planted bad citation
+    push('The world this year', world);
+    push('Cultural context', keptOf('cu').map(id => { const c = entry(id); return item(`${c.title}: ${c.text}`, [id], c.status); }).concat(keptOf('pl').map(id => { const p = entry(id); const d = p.descriptions.find(x => year >= x.start && year <= x.end); return item(`${p.name}: ${d ? d.text : 'no description for this year'}`, [id], p.status); })));
+    // Who knows what
+    const know = [];
+    keptOf('fc').forEach(id => { const f = entry(id); const knowers = sel.present.filter(p => f.knowledge.some(k => k.who === p && k.year <= year)); const since = (p) => f.knowledge.find(k => k.who === p && k.year <= year).year; know.push(item(`${f.title}: known to ${knowers.map(p => ch(p).name + ' since ' + since(p)).join(', ')}${sel.othersOnly.includes(id) ? '. ' + ch(sel.pov).name + ' does not know this.' : '.'}`, [id].concat(knowers), f.status)); });
+    push('Who knows what', know);
+    push('Loose threads', keptOf('bt').filter(id => entry(id).chapter == null).map(id => { const b = entry(id); return item(`Unplaced beat from ${b.year}: ${b.text}.`, [id], b.status); }).concat(keptOf('th').map(id => { const t = entry(id); return item(`Theme ${t.name}: ${t.appearances.map(a => a.note).join(' ')}`, [id], t.status); })));
+    push('Glossary', keptOf('gl').map(id => { const g = entry(id); return item(`${g.zh} ${g.pinyin}: ${g.meaning}`, [id], g.status); }));
+    push('Open questions', keptOf('oq').map(id => { const q = entry(id); return item(`${q.question}${q.state === 'decided' ? ' Decided: ' + q.decision : ''}`, [id], q.state === 'decided' ? 'canon' : 'idea'); }));
+    push('Where you stopped last time', keptOf('sl').map(id => { const l = entry(id); return item(`${l.date}: ${l.stopped} ${l.note || ''}`.trim(), [id], 'canon'); }));
+    M.kept = kept; M.dropped = man.dropped; M.year = year;
+    return M;
+  }
+  function renderBrief() {
+    const M = briefModel(); const st = strand();
+    let bad = 0, total = 0;
+    const cites = (ids) => ids.map(id => { total++; const ok = M.kept.has(id); if (!ok) bad++; return `<span class="cite${ok ? '' : ' bad'}">${esc(id)}</span>`; }).join(' ');
+    const head = `<div class="row" style="margin-bottom:8px"><span class="chip time">Story year ${M.year}</span><span class="chip">${esc(st.label)}</span><span class="chip">POV ${esc(ch(st.pov).name)}</span></div>`;
+    if (S.claudeDown) {
+      $('brief-out').innerHTML = head + `<div class="callout warn"><strong>Claude is unavailable.</strong> This is the structured brief: the selected entries, grouped by step, with no synthesis.</div><div class="structured" style="margin-top:10px">` +
+        lastSel.steps.map(s => `<h3 style="margin:10px 0 4px">${esc(s.title)}</h3><dl>${s.ids.filter(id => M.kept.has(id)).map(id => `<dt>${chip(statusOf(id))}</dt><dd>${labelOf(id)} <span class="cite">${esc(id)}</span></dd>`).join('') || '<dd class="note">nothing</dd>'}</dl>`).join('') + '</div>';
+    } else {
+      $('brief-out').innerHTML = head + `<div class="brief">` + M.sections.map(sec => `<h3>${esc(sec.title)}</h3><ul>${sec.items.map(it => `<li>${esc(it.text)} ${chip(it.status)} ${cites(it.ids)}</li>`).join('')}</ul>`).join('') +
+        `<div class="ahead"><h3>Planned ahead (after ${M.year})</h3>${M.ahead.length ? `<ul>${M.ahead.map(it => `<li>${esc(it.text)} ${chip(it.status)} ${cites(it.ids)}</li>`).join('')}</ul>` : '<p class="note">Nothing selected is dated after the story year.</p>'}</div></div>`;
+    }
+    $('leftout').innerHTML = M.dropped.length ? `<div class="callout warn"><strong>Left out to fit the budget of ${S.budget}:</strong> ${M.dropped.length} entries, dropped lowest priority first. <div class="ids" style="margin-top:6px">${M.dropped.map(id => idchip(id, false)).join('')}</div></div>` : `<p class="note">Everything selected fits the budget.</p>`;
+    $('cite-summary').innerHTML = S.claudeDown ? 'No citations to check in the structured brief.' : `${total} citations checked by code, <strong>${bad} flagged</strong>${bad ? ' (the brief cited an entry that was never selected)' : ''}.`;
+    $('budget-val').textContent = S.budget;
+  }
+  function briefMarkdown() {
+    const M = briefModel(); const st = strand();
+    let md = `# Brief: ${st.label} (${M.year})\n\nPOV: ${ch(st.pov).name}. Manifest ${lastMan.hash}.\n`;
+    M.sections.forEach(sec => { md += `\n## ${sec.title}\n` + sec.items.map(it => `- ${it.text} [${it.status}] (${it.ids.join(', ')})`).join('\n') + '\n'; });
+    md += `\n## Planned ahead\n` + (M.ahead.map(it => `- ${it.text} [${it.status}] (${it.ids.join(', ')})`).join('\n') || '- none') + '\n';
+    if (M.dropped.length) md += `\n## Left out (budget ${S.budget})\n` + M.dropped.map(id => `- ${id}`).join('\n') + '\n';
+    return md;
+  }
+  function renderSaved() {
+    const list = S.saved.filter(b => b.chapterId === (S.mode === 'chapter' ? S.chapterId : null));
+    $('saved-list').innerHTML = list.length ? list.map((b, i) => `<li><input type="text" value="${esc(b.title)}" data-saved="${i}" aria-label="Brief title"><span class="note">${esc(b.date)} &middot; manifest ${esc(b.hash)}</span></li>`).join('') : '<li class="note">None saved yet.</li>';
+  }
+
+  // ---------- Render: knowledge ----------
+  function renderKnowledge() {
+    fillSelect($('kn-fact'), D.facts.map(f => ({ value: f.id, label: f.title })), $('kn-fact').value || D.facts[0].id);
+    fillSelect($('kn-char'), D.characters.map(c => ({ value: c.id, label: c.name })), $('kn-char').value || 'ch_mark');
+    fillSelect($('kr-char'), D.characters.map(c => ({ value: c.id, label: c.name })), $('kr-char').value || 'ch_sichao');
+    fillSelect($('kr-fact'), D.facts.map(f => ({ value: f.id, label: f.title })), $('kr-fact').value || 'fc_cia');
+    const f = D.facts.find(x => x.id === $('kn-fact').value);
+    $('kn-fact-out').innerHTML = `<table><thead><tr><th>Who knows</th><th>Since</th><th>How</th></tr></thead><tbody>${f.knowledge.slice().sort((a, b) => a.year - b.year).map(k => `<tr><td>${esc(ch(k.who).name)}</td><td class="num">${k.year}${k.chapter ? ' <span class="cite">' + esc(k.chapter) + '</span>' : ''}</td><td>${esc(k.how)}</td></tr>`).join('')}</tbody></table>`;
+    const c = ch($('kn-char').value), y = parseInt($('kn-year').value, 10) || 2056;
+    const known = D.facts.filter(x => x.knowledge.some(k => k.who === c.id && k.year <= y));
+    const unknown = D.facts.filter(x => !known.includes(x));
+    $('kn-char-out').innerHTML = `<p><strong>${esc(c.name)} in ${y}</strong> (${ageText(c, y)})</p><p><strong>Knows:</strong></p><ul>${known.map(x => `<li>${esc(x.title)} <span class="note">since ${x.knowledge.find(k => k.who === c.id).year}</span></li>`).join('') || '<li class="note">nothing recorded</li>'}</ul><p><strong>Does not know:</strong></p><ul>${unknown.map(x => `<li>${esc(x.title)}</li>`).join('') || '<li class="note">nothing</li>'}</ul>`;
+    // Facts in play matrix for the selected chapter
+    const chapId = S.mode === 'chapter' ? S.chapterId : null;
+    $('fip-chapter').textContent = chapId ? labelOf(chapId).replace(/<[^>]+>/g, '') : 'the selected chapter (none in year mode)';
+    if (!chapId) { $('fip').innerHTML = '<p class="note">Pick a chapter in section 1.</p>'; return; }
+    const present = uniq(chapter(chapId).strands.flatMap(s => s.present));
+    const fip = factsInPlay[chapId] || (factsInPlay[chapId] = []);
+    $('fip').innerHTML = `<table class="matrix"><thead><tr><th>Acts on</th>${D.facts.map(f => `<th title="${esc(f.title)}">${esc(f.id)}</th>`).join('')}</tr></thead><tbody>${present.map(p => `<tr><td>${esc(ch(p).name)}</td>${D.facts.map(f => `<td><input type="checkbox" data-fip-who="${p}" data-fip-fact="${f.id}" aria-label="${esc(ch(p).name)} acts on ${esc(f.title)}"${fip.some(x => x.who === p && x.fact === f.id) ? ' checked' : ''}></td>`).join('')}</tr>`).join('')}</tbody></table><p class="note">Ticked boxes are the chapter’s facts in play. The continuity check compares each against the year that character learns the fact.</p>`;
+  }
+
+  // ---------- CC-2: structural checks ----------
+  function treeWarnings() {
+    const out = [];
+    D.parents.forEach(pl => { const p = ch(pl.parent), c = ch(pl.child); if (!p || !c || p.born == null || c.born == null || pl.type !== 'biological') return; const age = c.born - p.born; if (age < 12 || age > 60) out.push({ kind: 'Tree warning', text: `${p.name} was ${age} when ${c.name} was born.`, ids: [p.id, c.id], key: 'tree-age-' + pl.id }); if (p.died != null && c.born > p.died + 1) out.push({ kind: 'Tree warning', text: `${c.name} was born ${c.born - p.died} years after ${p.name} died.`, ids: [p.id, c.id], key: 'tree-death-' + pl.id }); });
+    D.unions.forEach(u => { D.unions.forEach(v => { if (u.id < v.id && (u.a === v.a || u.a === v.b || u.b === v.a || u.b === v.b) && u.start != null && v.start != null) { const uEnd = u.end == null ? 9999 : u.end, vEnd = v.end == null ? 9999 : v.end; if (u.start <= vEnd && v.start <= uEnd) out.push({ kind: 'Tree warning', text: `Unions ${u.id} and ${v.id} overlap.`, ids: [u.a, u.b, v.a, v.b], key: 'tree-overlap-' + u.id + v.id }); } }); });
+    D.parents.forEach(pl => { const c = ch(pl.child); const u = D.unions.find(x => x.start != null && D.parents.some(q => q.child === pl.child && q.parent === (x.a === pl.parent ? x.b : x.a)) && (x.a === pl.parent || x.b === pl.parent)); if (u && c && c.born != null && c.born < u.start && pl.type === 'biological' && pl.parent === u.a) out.push({ kind: 'Tree warning', text: `${c.name} was born in ${c.born}, before the union ${u.id} started in ${u.start}.`, ids: [c.id, u.a, u.b], key: 'tree-union-' + pl.id }); });
+    return out;
+  }
+  function structuralChecks(scopeChapterId) {
+    const findings = [];
+    const chaptersToCheck = D.chapters.filter(c => !scopeChapterId || c.id === scopeChapterId);
+    chaptersToCheck.forEach(c => {
+      c.strands.forEach(s => {
+        s.present.forEach(p => { const a = EW.ageIn(ch(p), s.year); if (a.state === 'unborn' || a.state === 'dead') findings.push({ chapter: c.id, strand: s.label, kind: 'Present while ' + (a.state === 'dead' ? 'dead' : 'unborn'), text: `${ch(p).name} is listed as present in ${s.year}, but ${a.state === 'dead' ? 'died in ' + a.diedYear : 'is born in ' + ch(p).born}.`, ids: [c.id, p], key: `present-${c.id}-${s.id}-${p}`, entry: p }); });
+        const pa = EW.ageIn(ch(s.pov), s.year);
+        if (pa.state !== 'alive' && pa.state !== 'unknown') findings.push({ chapter: c.id, strand: s.label, kind: 'Story year outside POV lifetime', text: `${ch(s.pov).name} narrates ${s.year} but is ${pa.state === 'dead' ? 'dead since ' + pa.diedYear : 'born in ' + ch(s.pov).born}.`, ids: [c.id, s.pov], key: `pov-${c.id}-${s.id}`, entry: s.pov });
+      });
+      const y = c.strands.find(s => s.primary).year;
+      (factsInPlay[c.id] || []).forEach(x => { const f = D.facts.find(q => q.id === x.fact); const k = f.knowledge.find(q => q.who === x.who); if (!k) findings.push({ chapter: c.id, strand: 'primary', kind: 'Acts on a fact never learned', text: `${ch(x.who).name} acts on "${f.title}" but has no knowledge record.`, ids: [c.id, f.id, x.who], key: `fact-none-${c.id}-${x.who}-${f.id}`, entry: f.id }); else if (k.year > y) findings.push({ chapter: c.id, strand: 'primary', kind: 'Acts on a fact before learning it', text: `${ch(x.who).name} acts on "${f.title}" in ${y}, but learns it in ${k.year}${k.chapter ? ' (' + k.chapter + ')' : ''}.`, ids: [c.id, f.id, x.who], key: `fact-${c.id}-${x.who}-${f.id}`, entry: f.id }); });
+      (eventsHappened[c.id] || []).forEach(ev => { const e = D.events.find(q => q.id === ev); if (e.year > y) findings.push({ chapter: c.id, strand: 'primary', kind: 'Event linked as happened but dated later', text: `"${e.title}" is dated ${e.year}, after the chapter’s story year ${y}.`, ids: [c.id, e.id], key: `event-${c.id}-${e.id}`, entry: e.id }); });
+    });
+    if (!scopeChapterId) treeWarnings().forEach(w => findings.push(Object.assign({ chapter: null, strand: '' }, w)));
+    return { findings, checked: chaptersToCheck.length };
+  }
+  function sig(f) { const e = f.entry ? entry(f.entry) : null; return f.key + '|' + (e ? JSON.stringify(e) : ''); }
+  function renderCC() {
+    if (!S.ccFindings) { $('cc-out').innerHTML = '<li class="note">Not run yet.</li>'; $('cc-counts').innerHTML = ''; return; }
+    const r = S.ccFindings;
+    const flagged = new Set(r.findings.map(f => f.chapter).filter(Boolean));
+    $('cc-counts').innerHTML = `<span>${r.checked} chapter${r.checked === 1 ? '' : 's'} checked</span><span class="status critical">${r.findings.length} finding${r.findings.length === 1 ? '' : 's'}</span><span class="ok">${r.checked - flagged.size} clean</span>`;
+    $('cc-out').innerHTML = r.findings.length ? r.findings.map(f => findingHtml(f, 'cc')).join('') : '<li class="ok">No structural findings.</li>';
+  }
+  function findingHtml(f, group) {
+    const s = sig(f); const dismissed = S.dismissed.has(s), resolved = S.resolved.has(s);
+    return `<li class="finding${dismissed ? ' dismissed' : ''}${resolved ? ' resolved' : ''}" data-key="${esc(f.key)}">
+      <div class="row"><span class="kind">${esc(f.kind)}</span>${f.chapter ? `<span class="chip">${esc(labelOf(f.chapter).replace(/<[^>]+>/g, ''))}</span><span class="note">${esc(f.strand)}</span>` : ''}${dismissed ? '<span class="chip">dismissed</span>' : ''}${resolved ? '<span class="chip canon">resolved</span>' : ''}</div>
+      ${f.quote ? `<blockquote>${esc(f.quote)}</blockquote>` : ''}
+      <div>${esc(f.text)} ${f.ids.map(id => `<span class="cite">${esc(id)}</span>`).join(' ')}</div>
+      ${f.explain ? `<div class="note">${esc(f.explain)}</div>` : ''}
+      <div class="actions">
+        <button type="button" class="btn small" data-act="dismiss" data-group="${group}" data-sig="${esc(s)}"${dismissed ? ' disabled' : ''}>Dismiss</button>
+        <button type="button" class="btn small" data-act="resolve" data-group="${group}" data-sig="${esc(s)}"${resolved ? ' disabled' : ''}>Mark resolved</button>
+        ${f.entry ? `<button type="button" class="btn small" data-act="edit" data-group="${group}" data-sig="${esc(s)}" data-entry="${esc(f.entry)}">Edit cited entry ${esc(f.entry)}</button>` : ''}
+      </div>
+      <div class="editslot"></div>
+    </li>`;
+  }
+  // CC-3: prose findings, mocked as Claude's output but computed against the live entries so edits change them.
+  function proseFindings() {
+    const st = strand(); if (!st.chapterId) return [];
+    const text = chapterText[st.chapterId]; if (!text) return [{ kind: 'No manuscript text', text: 'This chapter has no imported text yet, so there is nothing for Claude to read.', ids: [st.chapterId], key: 'prose-none-' + st.chapterId }];
+    const out = [];
+    const mark = ch('ch_mark'), frank = ch('ch_frank'), dawn = ch('ch_dawn');
+    const markAge = EW.ageIn(mark, st.year);
+    if (/nineteen years/.test(text)) { if (markAge.state === 'alive' && markAge.age !== 19) out.push({ kind: 'Age in prose', quote: 'the most beautiful woman he’s met in his nineteen years on this earth', text: `Mark is ${markAge.age} in ${st.year} (born ${mark.born}).`, explain: 'Either the strand year or Mark’s birth year is off, or the line should change.', ids: [st.chapterId, 'ch_mark'], key: 'prose-mark-age-' + st.chapterId, entry: 'ch_mark' }); else out.push({ kind: 'Age in prose, consistent', quote: 'his nineteen years on this earth', text: `Mark is ${markAge.state === 'alive' ? markAge.age : markAge.state} in ${st.year}. No conflict.`, ids: [st.chapterId, 'ch_mark'], key: 'prose-mark-ok-' + st.chapterId, consistent: true }); }
+    if (/Frank, sixty/.test(text)) { const fa = EW.ageIn(frank, st.year); if (fa.state !== 'alive' || fa.age !== 60) out.push({ kind: 'Age in prose', quote: 'Frank, sixty that spring', text: `Frank is ${fa.state === 'alive' ? fa.age : fa.state} in ${st.year} (born ${frank.born}).`, explain: 'The chapter gives Frank an age the bible does not support.', ids: [st.chapterId, 'ch_frank'], key: 'prose-frank-age-' + st.chapterId, entry: 'ch_frank' }); }
+    if (/grew up in Shanghai/.test(text)) { if (!/shanghai/i.test(dawn.birthplace || '')) out.push({ kind: 'Established fact', quote: 'girls who grew up in Shanghai', text: `Dawn’s birthplace is recorded as ${dawn.birthplace || 'unknown'}.`, explain: 'Chapter text contradicts the character entry. Fix the line, or edit the entry if Shanghai is right.', ids: [st.chapterId, 'ch_dawn'], key: 'prose-dawn-place-' + st.chapterId, entry: 'ch_dawn' }); }
+    return out;
+  }
+  function renderProse() {
+    const list = proseFindings();
+    $('prose-out').innerHTML = list.length ? list.map(f => f.consistent ? `<li class="finding resolved"><div class="row"><span class="kind">${esc(f.kind)}</span></div><blockquote>${esc(f.quote)}</blockquote><div>${esc(f.text)} ${f.ids.map(id => `<span class="cite">${esc(id)}</span>`).join(' ')}</div></li>` : findingHtml(f, 'prose')).join('') : '<li class="note">No prose findings.</li>';
+  }
+  function editBox(entryId) {
+    const e = entry(entryId); if (!e) return '';
+    if (kindOf(entryId) === 'ch') return `<div class="editbox sunken"><label class="field">Name<input type="text" data-f="name" value="${esc(e.name)}"></label><label class="field">Born<input type="number" data-f="born" value="${e.born == null ? '' : e.born}"></label><label class="field">Died<input type="number" data-f="died" value="${e.died == null ? '' : e.died}"></label><label class="field">Birthplace<input type="text" data-f="birthplace" value="${esc(e.birthplace || '')}"></label><button type="button" class="btn primary small" data-save="${esc(entryId)}">Save entry</button></div>`;
+    if (kindOf(entryId) === 'ev') return `<div class="editbox sunken"><label class="field">Title<input type="text" data-f="title" value="${esc(e.title)}"></label><label class="field">Year<input type="number" data-f="year" value="${e.year}"></label><button type="button" class="btn primary small" data-save="${esc(entryId)}">Save entry</button></div>`;
+    if (kindOf(entryId) === 'fc') { const k = e.knowledge; return `<div class="editbox sunken"><label class="field">Title<input type="text" data-f="title" value="${esc(e.title)}"></label>${k.map((r, i) => `<label class="field">${esc(ch(r.who).name)} learns in<input type="number" data-k="${i}" value="${r.year}"></label>`).join('')}<button type="button" class="btn primary small" data-save="${esc(entryId)}">Save entry</button></div>`; }
+    return '';
+  }
+
+  // ---------- MS-2, MS-3: mark as written ----------
+  function renderWritten() {
+    const chapId = S.mode === 'chapter' ? S.chapterId : null;
+    if (!chapId) { $('written-out').innerHTML = '<p class="note">Pick a chapter in section 1.</p>'; return; }
+    const c = chapter(chapId); const w = S.written[chapId];
+    const establishes = { chp_1_2: [{ id: 'est_mark_age', text: 'Mark is nineteen in the party scene (2056)', entry: 'ch_mark' }, { id: 'est_mark_major', text: 'Mark is a marketing major at USC', entry: 'ch_mark' }, { id: 'est_dawn_usc', text: 'Dawn is at USC in 2056, undeclared', entry: 'ch_dawn' }], chp_1_1: [{ id: 'est_usc', text: 'Mark attends USC from 2055', entry: 'ch_mark' }] }[chapId] || [];
+    const genSummary = c.summary ? c.summary : `${c.title}: a planned chapter in ${part(c.part).title}. (Generated summary would appear here once text is imported.)`;
+    let html = `<div class="row"><strong>${labelOf(chapId)}</strong> ${chip(c.status)} ${c.written ? '<span class="chip canon">written</span>' : '<span class="chip">not yet marked written</span>'}</div>`;
+    html += `<p class="note">Manuscript text (read-only import): ${chapterText[chapId] ? '<q>' + esc(chapterText[chapId].slice(0, 140)) + '…</q>' : 'none imported yet'}</p>`;
+    if (!w) html += `<div class="row" style="margin-top:8px"><button type="button" class="btn primary" id="btn-mark-written">Mark as written</button></div>`;
+    else {
+      if (w.stage === 'summary') html += `<div class="sunken stack" style="margin-top:8px"><span class="eyebrow">Generated summary, edit before approving</span><textarea id="summary-draft" rows="4">${esc(w.draft)}</textarea><div class="row"><button type="button" class="btn primary small" id="btn-approve-summary">Approve summary</button><button type="button" class="btn small" id="btn-discard-summary">Discard</button><span class="note">Nothing is saved until you approve.</span></div></div>`;
+      if (w.stage === 'promote' || w.stage === 'done') {
+        html += `<div class="callout" style="margin-top:8px">Summary saved: <em>${esc(c.summary)}</em></div>`;
+        html += `<div class="sunken" style="margin-top:8px"><span class="eyebrow">Planned entries this chapter establishes (promote to canon, one by one)</span><ul class="promote">${establishes.map(e => `<li><input type="checkbox" data-promote="${e.id}" id="pr-${e.id}"${S.promoted[e.id] ? ' checked disabled' : ''}><label for="pr-${e.id}">${esc(e.text)}</label> <span class="cite">${esc(e.entry)}</span> ${chip(S.promoted[e.id] ? 'canon' : 'planned')}</li>`).join('') || '<li class="note">Nothing planned is established here.</li>'}</ul><div class="row"><button type="button" class="btn primary small" id="btn-promote"${w.stage === 'done' && establishes.every(e => S.promoted[e.id]) ? ' disabled' : ''}>Promote checked to canon</button><button type="button" class="btn small" id="btn-promote-skip">Leave the rest planned</button></div></div>`;
+      }
+    }
+    html += `<p class="note" style="margin-top:8px">MS-5: there is no code path that writes to a manuscript file or Google Doc.</p>`;
+    $('written-out').innerHTML = html;
+  }
+
+  // ---------- Render everything ----------
+  function renderAll() { renderInputs(); renderSelection(); renderBrief(); renderSaved(); renderKnowledge(); renderProse(); renderWritten(); if (S.ccFindings) { S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null); } renderCC(); }
+  function selectionChanged() { renderInputs(); renderSelection(); renderBrief(); renderSaved(); renderKnowledge(); renderProse(); renderWritten(); }
+
+  // ---------- Events ----------
+  $('mode-chapter').addEventListener('click', () => { S.mode = 'chapter'; S.strandIdx = 0; S.placeId = defaultPlace[S.chapterId] || null; selectionChanged(); });
+  $('mode-year').addEventListener('click', () => { S.mode = 'year'; S.strandIdx = 0; selectionChanged(); });
+  $('in-chapter').addEventListener('change', e => { S.chapterId = e.target.value; S.strandIdx = 0; S.placeId = defaultPlace[S.chapterId] || null; S.removed.clear(); S.added = []; selectionChanged(); });
+  ['in-place', 'in-place-2'].forEach(id => $(id).addEventListener('change', e => { S.placeId = e.target.value || null; selectionChanged(); }));
+  ['in-extra', 'in-extra-2'].forEach(id => $(id).addEventListener('change', e => { if (e.target.value && !S.extras.includes(e.target.value)) S.extras.push(e.target.value); selectionChanged(); }));
+  $('in-window').addEventListener('change', e => { S.windowYears = Math.max(1, parseInt(e.target.value, 10) || 10); selectionChanged(); });
+  $('in-year').addEventListener('change', e => { S.year = parseInt(e.target.value, 10) || 2056; selectionChanged(); });
+  $('in-pov').addEventListener('change', e => { S.povId = e.target.value; selectionChanged(); });
+  $('extras-row').addEventListener('click', e => { const b = e.target.closest('[data-unextra]'); if (b) { S.extras = S.extras.filter(x => x !== b.dataset.unextra); selectionChanged(); } });
+  $('strands').addEventListener('click', e => { const b = e.target.closest('[data-strand]'); if (b) { S.strandIdx = parseInt(b.dataset.strand, 10); selectionChanged(); } });
+  $('btn-rerun').addEventListener('click', () => { const before = lastMan.hash; renderSelection(); renderBrief(); toast(lastMan.hash === before ? `Same manifest: ${lastMan.hash}` : `Manifest changed: ${lastMan.hash}`); });
+  $('btn-reset-sel').addEventListener('click', () => { S.removed.clear(); S.added = []; renderSelection(); renderBrief(); toast('Selection reset to the rules'); });
+  $('steps').addEventListener('click', e => { const b = e.target.closest('[data-remove]'); if (b) { const id = b.dataset.remove; if (S.added.includes(id)) S.added = S.added.filter(x => x !== id); else S.removed.add(id); const before = lastMan.hash; renderSelection(); renderBrief(); toast(`Removed ${id}; hash ${before} → ${lastMan.hash}`.replace('→', 'to')); } });
+  $('btn-add').addEventListener('click', () => { const id = $('add-entry').value; if (!id) return; S.removed.delete(id); if (!S.added.includes(id)) S.added.push(id); const before = lastMan.hash; renderSelection(); renderBrief(); toast(`Added ${id}; hash ${before} to ${lastMan.hash}`); });
+  $('budget').addEventListener('input', e => { S.budget = parseInt(e.target.value, 10); renderSelection(); renderBrief(); });
+  $('claude-down').addEventListener('change', e => { S.claudeDown = e.target.checked; renderBrief(); });
+  $('btn-save').addEventListener('click', () => { const st = strand(); S.saved.push({ title: `${st.label} ${st.year}`, chapterId: st.chapterId, hash: lastMan.hash, date: new Date().toISOString().slice(0, 10) }); renderSaved(); toast('Brief saved and linked to the chapter'); });
+  $('saved-list').addEventListener('input', e => { const i = e.target.dataset.saved; if (i != null) S.saved.filter(b => b.chapterId === (S.mode === 'chapter' ? S.chapterId : null))[i].title = e.target.value; });
+  $('btn-export').addEventListener('click', () => { $('export-box').hidden = false; $('md-out').value = briefMarkdown(); });
+  $('btn-copy').addEventListener('click', () => { const ta = $('md-out'); const done = () => toast('Copied'); const fail = () => { ta.focus(); ta.select(); toast('Clipboard blocked; text selected, press Cmd+C'); }; try { navigator.clipboard.writeText(ta.value).then(done, fail); } catch (err) { fail(); } });
+  ['kn-fact', 'kn-char', 'kn-year'].forEach(id => $(id).addEventListener('change', renderKnowledge));
+  $('fip').addEventListener('change', e => { const cb = e.target; if (!cb.dataset.fipWho) return; const list = factsInPlay[S.chapterId] || (factsInPlay[S.chapterId] = []); const i = list.findIndex(x => x.who === cb.dataset.fipWho && x.fact === cb.dataset.fipFact); if (cb.checked && i < 0) list.push({ who: cb.dataset.fipWho, fact: cb.dataset.fipFact }); if (!cb.checked && i >= 0) list.splice(i, 1); if (S.ccFindings) { S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null); renderCC(); } });
+  $('kr-add').addEventListener('click', () => { const who = $('kr-char').value, fact = $('kr-fact').value, year = parseInt($('kr-year').value, 10), how = $('kr-how').value; const c = ch(who); const f = D.facts.find(x => x.id === fact); const early = c.born != null && year < c.born; $('kr-warn').innerHTML = early ? `<div class="callout warn" style="margin-top:8px"><strong>Warning, saved anyway (KN-2, ED-10):</strong> ${esc(c.name)} is born in ${c.born}, so learning this in ${year} happens before birth. This is fiction; you may mean it.</div>` : `<div class="callout" style="margin-top:8px">Added: ${esc(c.name)} learns "${esc(f.title)}" in ${year}.</div>`; const ex = f.knowledge.find(k => k.who === who); if (ex) { ex.year = year; ex.how = how; } else f.knowledge.push({ who, year, how }); renderKnowledge(); renderSelection(); renderBrief(); });
+  $('btn-cc').addEventListener('click', () => { S.lastRunScope = 'all'; S.ccFindings = structuralChecks(null); renderCC(); toast('Structural checks ran on every chapter'); });
+  $('btn-cc-one').addEventListener('click', () => { S.lastRunScope = 'one'; S.ccFindings = structuralChecks(S.chapterId); renderCC(); toast('Structural checks ran on ' + labelOf(S.chapterId).replace(/<[^>]+>/g, '')); });
+  function findingActions(e) {
+    const b = e.target.closest('[data-act]'); const save = e.target.closest('[data-save]');
+    if (save) {
+      const id = save.dataset.save; const en = entry(id); const box = save.closest('.editbox');
+      box.querySelectorAll('[data-f]').forEach(inp => { const f = inp.dataset.f; en[f] = inp.type === 'number' ? (inp.value === '' ? null : parseInt(inp.value, 10)) : inp.value; });
+      box.querySelectorAll('[data-k]').forEach(inp => { en.knowledge[parseInt(inp.dataset.k, 10)].year = parseInt(inp.value, 10); });
+      const li = save.closest('.finding'); const prevSig = li.querySelector('[data-act="dismiss"]').dataset.sig; S.resolved.add(prevSig);
+      toast(`Saved ${id}; the finding is resolved and the check re-ran`);
+      if (S.ccFindings) S.ccFindings = structuralChecks(S.lastRunScope === 'one' ? S.chapterId : null);
+      renderCC(); renderProse(); renderSelection(); renderBrief(); renderKnowledge(); renderWritten(); return;
+    }
+    if (!b) return;
+    const s = b.dataset.sig;
+    if (b.dataset.act === 'dismiss') { S.dismissed.add(s); toast('Dismissed. It stays dismissed on re-run until the text or the entry changes.'); }
+    if (b.dataset.act === 'resolve') { S.resolved.add(s); toast('Marked resolved'); }
+    if (b.dataset.act === 'edit') { const slot = b.closest('.finding').querySelector('.editslot'); slot.innerHTML = slot.innerHTML ? '' : editBox(b.dataset.entry); return; }
+    renderCC(); renderProse();
+  }
+  $('cc-out').addEventListener('click', findingActions);
+  $('prose-out').addEventListener('click', findingActions);
+  $('written-out').addEventListener('click', e => {
+    const c = chapter(S.chapterId);
+    if (e.target.id === 'btn-mark-written') { S.written[S.chapterId] = { stage: 'summary', draft: c.id === 'chp_1_2' ? 'Mark, nineteen and a marketing major, meets Dawn Li at a USC party. She is undeclared and searching for the English word; he is awkward and kind. Forty-five minutes of clumsy conversation later he brushes her shoulder, she nods, and they go upstairs. The chapter ends with his hand moving to her face.' : (c.summary || `${c.title}: summary generated from the imported text.`) }; renderWritten(); }
+    if (e.target.id === 'btn-approve-summary') { c.summary = $('summary-draft').value; c.written = true; c.status = 'canon'; S.written[S.chapterId].stage = 'promote'; renderWritten(); renderSelection(); renderBrief(); toast('Summary approved and saved; chapter marked written'); }
+    if (e.target.id === 'btn-discard-summary') { delete S.written[S.chapterId]; renderWritten(); toast('Discarded. Nothing was saved.'); }
+    if (e.target.id === 'btn-promote') { let n = 0; $('written-out').querySelectorAll('[data-promote]:checked:not([disabled])').forEach(cb => { S.promoted[cb.dataset.promote] = true; n++; }); if (S.promoted.est_mark_age || S.promoted.est_mark_major) ch('ch_mark').status = 'canon'; if (S.promoted.est_dawn_usc) ch('ch_dawn').status = 'canon'; S.written[S.chapterId].stage = 'done'; renderWritten(); renderSelection(); renderBrief(); toast(`${n} entr${n === 1 ? 'y' : 'ies'} promoted to canon`); }
+    if (e.target.id === 'btn-promote-skip') { S.written[S.chapterId].stage = 'done'; renderWritten(); toast('Remaining entries stay planned'); }
+  });
+
+  renderAll();
+})();
+</script>
