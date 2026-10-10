@@ -1,6 +1,6 @@
 # SPEC: novel companion desktop app
 
-Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A15 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
+Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A16 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
 
 Each criterion has an ID (for example `FT-4`). A criterion passes only when there is a named automated test or a recorded manual check for it in `PROGRESS.md`.
 
@@ -8,7 +8,7 @@ Each criterion has an ID (for example `FT-4`). A criterion passes only when ther
 
 ## 1. Purpose and scope
 
-A single-user desktop app that holds the story bible for a multi-generational novel (2025 to 2100, the Sullivan and Li families, San Francisco and Jinan in Shandong `[A1]`) and produces a focused brief before each writing session.
+A single-user desktop app that holds the story bible for a novel and produces a focused brief before each writing session. The app is general `[A16]`: it holds any number of bibles (one per novel, each its own database, switched in settings), and nothing about a particular book is written into code. The first bible, and the example used throughout this spec and the tests' spirit, is East Winds (2025 to 2100, the Sullivan and Li families, San Francisco and Jinan in Shandong `[A1]`).
 
 **In scope:** storing and editing all story knowledge, a visual family tree, timeline and age calculations, session briefs, continuity checks, Claude running inside the app, import from Excel and Word, Google Drive import and backup.
 
@@ -34,6 +34,7 @@ Defaults; Phase 0 may amend them with a stated reason.
 - **ARCH-5** `[A2]` The MongoDB connection string, Drive tokens, and any API key are stored in the macOS keychain, never in the database, logs, exports, or the repository.
 - **ARCH-6** `[A2]` The app needs a connection to the MongoDB deployment. When it cannot connect, it says so in plain language, offers to open the most recent local snapshot read-only, and never pretends a write succeeded. Claude and Drive are the only features that need any other network access.
 - **ARCH-7** No telemetry or analytics of any kind.
+- **ARCH-8** `[A16]` Multiple bibles. Each bible is one MongoDB database on the configured cluster; the app lists them, creates a new empty one, and switches between them. Every list in section 4 that has defaults (families, communities, union types, categories, eras, romanization systems) is seeded per bible on creation and editable per `ED-8`; the East Winds values arrive through import, not from code.
 
 ## 4. Data model
 
@@ -312,7 +313,7 @@ All other chapters are clean and must produce no structural findings.
 
 | # | Milestone | Criteria |
 |---|---|---|
-| M0 | Project scaffold, test harness, fixture novel and expected answers | ARCH-1, 2, 7; section 7; T-7 |
+| M0 | Project scaffold, test harness, fixture novel and expected answers | ARCH-1, 2, 7, 8; section 7; T-7 |
 | M1 | Data model, generic editing, history, undo, trash, links | ED-1 to 10; T-5 |
 | M2 | Characters and family tree | CH-1 to 4; FT-1 to 10 |
 | M3 | Timeline, ages, world events, era states, story time | TL-1 to 7; WE-1 to 3; TM-1 to 5 |
@@ -368,3 +369,4 @@ Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the sto
 | A13 | IM-7 | Newest source wins on conflicts; every conflict becomes an open question. | Tommy's rule: more recent changes trump older ones, and he will edit through them. |
 | A14 | Section 7 fixture | Fixture includes two parts, a two-strand chapter, categories, and a workbook with table and grid sheets. | So the amended model and import paths have tests. |
 | A15 | 10.1, NF-4 | Packaging target is macOS only. | Tommy's instruction. |
+| A16 | 1, ARCH-8, M0 | The app is general: many bibles, one database each, no book-specific code. East Winds is the first bible and the example. | Tommy: "the supplement tool should be utilizing those details as an example, not purely for this book." |
