@@ -1117,6 +1117,26 @@ export class Repository {
     return this.storyTime();
   }
 
+  /** Stored tree positions keyed by character ID (FT-10), or null when none are stored. */
+  treePositions(): Record<string, { x: number; y: number; loose?: boolean }> | null {
+    const doc = this.model.get('meta', TREE_LAYOUT_ID);
+    const p = doc?.positions;
+    return p && typeof p === 'object'
+      ? (p as Record<string, { x: number; y: number; loose?: boolean }>)
+      : null;
+  }
+
+  /** Save the tree positions. Layout is not an entry: no revision, no undo step. */
+  async setTreePositions(
+    positions: Record<string, { x: number; y: number; loose?: boolean }>,
+  ): Promise<void> {
+    const doc: StoredDoc = { _id: TREE_LAYOUT_ID, positions };
+    await this.bible.collection<StoredDoc>('meta').replaceOne({ _id: TREE_LAYOUT_ID }, doc, {
+      upsert: true,
+    });
+    this.model.put('meta', doc);
+  }
+
   onStoryTimeChange(listener: () => void): () => void {
     this.emitter.on('storyTime', listener);
     return () => this.emitter.off('storyTime', listener);
@@ -1124,3 +1144,4 @@ export class Repository {
 }
 
 const STORY_TIME_ID = 'storyTime';
+const TREE_LAYOUT_ID = 'treeLayout';

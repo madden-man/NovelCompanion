@@ -241,16 +241,30 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
   });
 });
 
+describe('FT-10 tree positions are stored per bible', () => {
+  test('FT-10 saved positions come back from tree.get and after reopening, and write no revision', async () => {
+    const before = await revisions();
+    expect((await invoke('tree.get', {})).positions).toBeNull();
+    const positions = { H1: { x: 9, y: 0 }, U1: { x: 0, y: -132, loose: true } };
+    await invoke('tree.savePositions', { positions });
+    expect((await invoke('tree.get', {})).positions).toEqual(positions);
+    const again = await openBibleSession(store, bible.handle.id);
+    expect((await ipcFor(() => again)('tree.get', {})).positions).toEqual(positions);
+    expect(await revisions()).toBe(before);
+  });
+});
+
 describe('CH-3 the character page and the story time', () => {
   test('CH-3 character.page shows ages at the last written chapter when no story time is set', async () => {
     await invoke('storyTime.set', { time: null });
     const { page } = await invoke('character.page', { id: 'H1' });
-    expect(page.position).toEqual({
+    expect(page.current).toMatchObject({
       year: 2040,
-      source: 'lastWritten',
       chapterId: 'CH5',
+      readingOrder: 5,
       state: { state: 'alive', age: 82, dyingThisYear: false },
     });
+    expect(page.storyTime).toBeNull();
     expect(page.relatives.children.map((c) => c.name)).toEqual(['Daniel Hale', 'Ruth Hale']);
     expect(page.names.calledBy).toEqual([
       { characterId: 'H5', characterName: 'Iris Hale-Zhou', name: 'Gran' },
@@ -264,11 +278,13 @@ describe('CH-3 the character page and the story time', () => {
       time: { year: 2041 },
       position: { year: 2041, source: 'storyTime', chapterId: null },
     });
-    expect((await invoke('character.page', { id: 'H1' })).page.position.state).toEqual({
-      state: 'alive',
-      age: 83,
-      dyingThisYear: true,
+    const { page } = await invoke('character.page', { id: 'H1' });
+    expect(page.storyTime).toEqual({
+      year: 2041,
+      state: { state: 'alive', age: 83, dyingThisYear: true },
     });
+    // The current-position age stays at the last written chapter.
+    expect(page.current.state).toEqual({ state: 'alive', age: 82, dyingThisYear: false });
     expect(await revisions()).toBe(before);
     // Reopen the bible: the story time comes back from the meta document.
     const again = await openBibleSession(store, bible.handle.id);
@@ -278,7 +294,7 @@ describe('CH-3 the character page and the story time', () => {
 
   test('CH-4 character.page reports an unknown birth as age unknown', async () => {
     const { page } = await invoke('character.page', { id: 'U1' });
-    expect(page.position.state).toEqual({ state: 'unknown' });
+    expect(page.current.state).toEqual({ state: 'unknown' });
     expect(page.years).toBe('unknown');
   });
 });

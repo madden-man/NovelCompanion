@@ -9,28 +9,59 @@ const page = (id: string, storyYear: number | null = null) =>
   characterPage(
     data,
     id,
-    positionYear(storyYear === null ? null : { year: storyYear }, fixture.chapters!),
+    positionYear(null, fixture.chapters!),
+    storyYear === null ? null : { year: storyYear },
   )!;
 
 describe('CH-2 CH-3 the character page', () => {
   test('CH-3 with no story time, ages show at the last written chapter: chapter 5 in 2040', () => {
     const p = page('H1');
-    expect(p.position).toEqual({
+    expect(p.current).toEqual({
       year: 2040,
-      source: 'lastWritten',
       chapterId: 'CH5',
+      chapter: expect.any(String),
+      readingOrder: 5,
       state: { state: 'alive', age: 82, dyingThisYear: false },
     });
+    expect(p.storyTime).toBeNull();
   });
 
-  test('CH-3 a story time overrides the current position', () => {
-    expect(page('H1', 2041).position.state).toEqual({
-      state: 'alive',
-      age: 83,
-      dyingThisYear: true,
+  test('CH-3 with a story time, the page has both the current-position age and the story-time age', () => {
+    const p = page('H1', 2041);
+    expect(p.current.state).toEqual({ state: 'alive', age: 82, dyingThisYear: false });
+    expect(p.storyTime).toEqual({
+      year: 2041,
+      state: { state: 'alive', age: 83, dyingThisYear: true },
     });
-    expect(page('H1', 2075).position.state).toEqual({ state: 'dead', deathYear: 2041 });
-    expect(page('Z5', 2040).position.state).toEqual({ state: 'unborn', birthYear: 2058 });
+    expect(page('H1', 2075).storyTime!.state).toEqual({ state: 'dead', deathYear: 2041 });
+    expect(page('Z5', 2040).storyTime!.state).toEqual({ state: 'unborn', birthYear: 2058 });
+    expect(page('Z5').current.state).toEqual({ state: 'unborn', birthYear: 2058 });
+  });
+
+  test('CH-3 a timeline row after a death reads dead and one before birth not yet born; never age unknown', () => {
+    const ch4 = page('H2').timeline.find((i) => i.kind === 'chapter' && i.id === 'CH4')!;
+    expect(ch4).toMatchObject({ year: 2032, age: null, state: 'dead' });
+    const ch3 = page('H2').timeline.find((i) => i.kind === 'chapter' && i.id === 'CH3')!;
+    expect(ch3).toMatchObject({ year: 2029, age: 73, state: 'alive' });
+    // Put Iris (born 2031) in chapter 3 (2029): that row reads not yet born.
+    const chapters = fixture.chapters!.map((c) =>
+      c._id === 'CH3'
+        ? {
+            ...c,
+            strands: (c.strands as { characterIds: string[] }[]).map((st) => ({
+              ...st,
+              characterIds: [...st.characterIds, 'H5'],
+            })),
+          }
+        : c,
+    );
+    const moved = { all: (c: string) => (c === 'chapters' ? chapters : (fixture[c] ?? [])) };
+    const iris = characterPage(moved, 'H5', positionYear(null, chapters))!;
+    expect(iris.timeline.find((i) => i.id === 'CH3')).toMatchObject({
+      year: 2029,
+      age: null,
+      state: 'unborn',
+    });
   });
 
   test('CH-2 every name field, with what each other character calls them', () => {
@@ -129,8 +160,12 @@ describe('CH-2 CH-3 the character page', () => {
     const p = page('U1', 2040);
     expect(p.birthKnown).toBe(false);
     expect(p.years).toBe('unknown');
-    expect(p.position.state).toEqual({ state: 'unknown' });
+    expect(p.current.state).toEqual({ state: 'unknown' });
+    expect(p.storyTime!.state).toEqual({ state: 'unknown' });
     expect(p.timeline.filter((i) => i.kind === 'event')).toEqual([]);
-    for (const i of p.timeline) expect(i.age).toBeNull();
+    for (const i of p.timeline) {
+      expect(i.age).toBeNull();
+      expect(i.state).toBe('unknown');
+    }
   });
 });

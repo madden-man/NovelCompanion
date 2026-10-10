@@ -12,13 +12,14 @@ import {
   layoutTree,
   planAddRelative,
   planLinkExisting,
+  placeLayout,
   relativesOf,
   treeEdges,
   treeWarnings,
   unionStateIn,
   wouldBeOwnAncestor,
 } from '../../src/shared/domain/tree';
-import type { AddRelative, TreeGraph } from '../../src/shared/domain/tree';
+import type { AddRelative, StoredPositions, TreeGraph } from '../../src/shared/domain/tree';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
 
@@ -494,5 +495,182 @@ describe('FT-2 in-tree actions', () => {
     expect(() => planAddRelative(g, { ...base, kind: 'sibling', anchorId: 'X1' }, ids())).toThrow(
       'Tomas Reyes has no known parents, so a sibling has no one to link to. Add a parent first.',
     );
+  });
+});
+
+describe('FT-10 stored positions: a new person is placed without moving anyone', () => {
+  const later = (i: number) => `2027-01-01T00:00:0${i}.000Z`;
+  const withChild = (parents: string[], born: number) =>
+    buildGraph(
+      [...fixture.characters!, { ...person('KID', born), createdAt: later(0) }],
+      fixture.unions!,
+      [
+        ...fixture.parentLinks!,
+        ...parents.map((p, i) => ({ ...link(p, 'KID'), createdAt: later(i + 1) })),
+      ],
+    );
+  const stored = () => placeLayout(fixtureGraph(), null).positions;
+  const expectKept = (before: StoredPositions, after: StoredPositions) => {
+    for (const [id, p] of Object.entries(before)) expect(after[id], id).toEqual(p);
+  };
+  const expectNoOverlap = (ps: StoredPositions) => {
+    const all = Object.values(ps);
+    for (const a of all)
+      for (const b of all) {
+        if (a !== b && a.y === b.y) expect(Math.abs(a.x - b.x)).toBeGreaterThanOrEqual(NODE_W);
+      }
+  };
+
+  test('FT-10 with nothing stored the full layout runs and is stored', () => {
+    const r = placeLayout(fixtureGraph(), null);
+    expect(r.changed).toBe(true);
+    expect(
+      Object.fromEntries(Object.entries(r.positions).map(([k, v]) => [k, [v.x, v.y]])),
+    ).toEqual(pos(fixtureGraph()));
+    expect(placeLayout(fixtureGraph(), r.positions).changed).toBe(false);
+  });
+
+  test('FT-10 a child of Ruth: every existing node keeps its position', () => {
+    const before = stored();
+    const r = placeLayout(withChild(['H4'], 2020), before);
+    expect(r.changed).toBe(true);
+    expectKept(before, r.positions);
+    expect(r.positions.KID).toEqual({ x: -194, y: 2 * ROW_H });
+    expectNoOverlap(r.positions);
+  });
+
+  test('FT-10 a child of Margaret: every existing node keeps its position', () => {
+    const before = stored();
+    const r = placeLayout(withChild(['H1'], 1995), before);
+    expectKept(before, r.positions);
+    expect(r.positions.KID!.y).toBe(ROW_H);
+    expectNoOverlap(r.positions);
+  });
+
+  test('FT-10 a child of Daniel and Lan: every existing node keeps its position', () => {
+    const before = stored();
+    const r = placeLayout(withChild(['H3', 'Z3'], 2034), before);
+    expectKept(before, r.positions);
+    expect(r.positions.KID).toEqual({ x: 697, y: 2 * ROW_H });
+    expectNoOverlap(r.positions);
+  });
+
+  test('FT-10 a partner goes right beside when free; removing a person frees the slot', () => {
+    const before = stored();
+    const g = buildGraph(
+      [...fixture.characters!, { ...person('MATE', 1994), createdAt: later(0) }],
+      [...fixture.unions!, { ...union('Z4', 'MATE'), createdAt: later(1) }],
+      fixture.parentLinks!,
+    );
+    const r = placeLayout(g, before);
+    expectKept(before, r.positions);
+    expect(r.positions.MATE).toEqual({ x: 618 + NODE_W + 26, y: ROW_H });
+    const gone = placeLayout(fixtureGraph(), r.positions);
+    expect(gone.changed).toBe(true);
+    expect(gone.positions.MATE).toBeUndefined();
+    expectKept(before, gone.positions);
+  });
+
+  test('FT-10 someone added on their own sits in the top row, and moves under their parent once linked', () => {
+    const before = stored();
+    const alone = buildGraph(
+      [...fixture.characters!, { ...person('KID', 2020), createdAt: later(0) }],
+      fixture.unions!,
+      fixture.parentLinks!,
+    );
+    const r1 = placeLayout(alone, before);
+    expect(r1.positions.KID).toEqual({ x: NODE_W + 26, y: -ROW_H, loose: true });
+    const r2 = placeLayout(withChild(['H6'], 2040), r1.positions);
+    expectKept(before, r2.positions);
+    expect(r2.positions.KID).toEqual({ x: 0, y: 3 * ROW_H });
+  });
+});
+
+test('FT-10 a couple tied only to each other leaves the top row and settles: a second pass changes nothing', () => {
+  const a = { ...person('A', 1950), createdAt: '2027-01-01T00:00:00.000Z' };
+  const b = { ...person('B', 1951), createdAt: '2027-01-01T00:00:01.000Z' };
+  const first = placeLayout(buildGraph([a], [], []), null);
+  const g = buildGraph([a, b], [{ ...union('A', 'B'), createdAt: '2027-01-01T00:00:02.000Z' }], []);
+  const second = placeLayout(g, first.positions);
+  // B starts a group of its own in the tree; A leaves the top row to sit beside B.
+  expect(second.positions.B).toEqual({ x: 0, y: 0 });
+  expect(second.positions.A).toEqual({ x: NODE_W + 26, y: 0 });
+  expect(placeLayout(g, second.positions).changed).toBe(false);
+});
+
+describe('FT-4 more than one union for a person, and half-siblings', () => {
+  // Zhou Lan has an earlier union with Chen Bo, ended in 2020, and a son from it.
+  const g = () =>
+    buildGraph(
+      [
+        ...fixture.characters!,
+        {
+          ...person('CB', 1986),
+          title: 'Chen Bo',
+          names: { full: 'Chen Bo' },
+          createdAt: '2027-01-01T00:00:00.000Z',
+        },
+        {
+          ...person('KAI', 2012),
+          title: 'Kai Chen',
+          names: { full: 'Kai Chen' },
+          createdAt: '2027-01-01T00:00:01.000Z',
+        },
+      ],
+      [
+        ...fixture.unions!,
+        { ...union('Z3', 'CB', 2008, 2020), createdAt: '2027-01-01T00:00:02.000Z' },
+      ],
+      [
+        ...fixture.parentLinks!,
+        { ...link('Z3', 'KAI'), createdAt: '2027-01-01T00:00:03.000Z' },
+        { ...link('CB', 'KAI'), createdAt: '2027-01-01T00:00:04.000Z' },
+      ],
+    );
+
+  test('FT-4 both unions of Zhou Lan are drawn, the ended one with its end year', () => {
+    const graph = g();
+    const layout = layoutTree(graph, everyone(graph));
+    const { unions } = treeEdges(graph, layout, 2040);
+    const lan = unions.filter((u) => u.id === 'UN-H3-Z3' || u.id === 'U-Z3-CB');
+    expect(lan.map((u) => [u.id, u.state, u.endYear, u.label !== null])).toEqual([
+      ['UN-H3-Z3', 'active', null, false],
+      ['U-Z3-CB', 'ended', 2020, true],
+    ]);
+    // Lan sits between her two partners, each union beside her.
+    const x = (id: string) => layout.nodes.get(id)!.x;
+    expect(x('H3')).toBeLessThan(x('Z3'));
+    expect(x('Z3')).toBeLessThan(x('CB'));
+    expect(x('CB') - x('Z3')).toBe(NODE_W + 26);
+  });
+
+  test('FT-4 each child hangs from the midpoint of its own parents union', () => {
+    const graph = g();
+    const layout = layoutTree(graph, everyone(graph));
+    const { links } = treeEdges(graph, layout, 2040);
+    const mid = (a: string, b: string) => {
+      const A = layout.nodes.get(a)!;
+      const B = layout.nodes.get(b)!;
+      return (Math.min(A.x, B.x) + NODE_W + Math.max(A.x, B.x)) / 2;
+    };
+    const start = (child: string) => {
+      const l = links.find((e) => e.childId === child)!;
+      expect(l.ids).toHaveLength(2);
+      return Number(/^M([\d.-]+),/.exec(l.path)![1]);
+    };
+    expect(start('H5')).toBe(mid('H3', 'Z3'));
+    expect(start('KAI')).toBe(mid('Z3', 'CB'));
+    expect(start('H5')).not.toBe(start('KAI'));
+  });
+
+  test('FT-4 Iris and Kai are half-siblings through Zhou Lan', () => {
+    const graph = g();
+    expect(relativesOf(graph, 'H5').siblings).toEqual([
+      { id: 'KAI', kind: 'half', sharedParentIds: ['Z3'] },
+    ]);
+    expect(relativesOf(graph, 'Z3').partners.map((p) => [p.id, p.endYear])).toEqual([
+      ['H3', null],
+      ['CB', 2020],
+    ]);
   });
 });

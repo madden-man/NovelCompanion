@@ -1059,3 +1059,10 @@ div.field {
   font-size: 0.85rem;
   color: var(--fg);
 }
+.tree-svg:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.tnode-toggle:focus-visible circle {
+  stroke-width: 3;
+}

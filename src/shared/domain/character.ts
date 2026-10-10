@@ -23,8 +23,10 @@ export type TimelineKind =
 export interface TimelineItem {
   kind: TimelineKind;
   year: number | null;
-  /** Age in that year, or null when the birth is unknown (CH-4). */
+  /** Age in that year, or null when the birth is unknown (CH-4), or they are dead or unborn. */
   age: number | null;
+  /** Their state in that year: dead after death, not yet born before birth, unknown only for an unknown birth. */
+  state: LifeState['state'] | null;
   collection: string;
   id: string;
   title: string;
@@ -47,7 +49,18 @@ export interface CharacterPage {
   families: { id: string; name: string; color: string }[];
   years: string;
   birthKnown: boolean;
-  position: Position & { state: LifeState | null };
+  /** The current position: the last chapter in reading order marked written (CH-3). */
+  current: {
+    year: number | null;
+    chapterId: string | null;
+    chapter: string | null;
+    readingOrder: number | null;
+    state: LifeState | null;
+  };
+  /** The story time, when one is set (TM-3). */
+  storyTime: { year: number; state: LifeState } | null;
+  /** The year "what they know" is judged at: the story time, else the current position. */
+  knowledgeYear: number | null;
   timeline: TimelineItem[];
   relatives: {
     parents: { id: string; name: string; type: string; startYear: number | null }[];
@@ -95,8 +108,10 @@ function eventYears(e: Doc): [number, number] | null {
 export function characterPage(
   data: PageData,
   id: string,
-  position: Position,
+  current: Position,
+  storyTime: { year: number } | null = null,
 ): CharacterPage | null {
+  const knowledgeYear = storyTime?.year ?? current.year;
   const chars = data.all('characters');
   const me = chars.find((c) => c._id === id);
   if (!me) return null;
@@ -122,8 +137,12 @@ export function characterPage(
   const rel = relativesOf(graph, id);
 
   const timeline: TimelineItem[] = [];
-  const item = (t: Omit<TimelineItem, 'age'> & { age?: number | null }) =>
-    timeline.push({ ...t, age: t.age === undefined ? ageIn(t.year) : t.age });
+  const item = (t: Omit<TimelineItem, 'age' | 'state'> & { age?: number | null }) =>
+    timeline.push({
+      ...t,
+      age: t.age === undefined ? ageIn(t.year) : t.age,
+      state: t.year === null ? null : lifeState(life, t.year).state,
+    });
   if (born !== null) {
     item({
       kind: 'birth',
@@ -251,7 +270,7 @@ export function characterPage(
         chapterId: chId,
         chapter: chId ? title(chapterById.get(chId), chId) : null,
         how: str(k.how),
-        knownAtPosition: y === null || position.year === null ? null : y <= position.year,
+        knownAtPosition: y === null || knowledgeYear === null ? null : y <= knowledgeYear,
       };
     })
     .sort((a, b) => (a.yearLearned ?? Infinity) - (b.yearLearned ?? Infinity));
@@ -283,10 +302,19 @@ export function characterPage(
     }),
     years: lifeYears(life),
     birthKnown: isKnown(birth),
-    position: {
-      ...position,
-      state: position.year === null ? null : lifeState(life, position.year),
+    current: {
+      year: current.year,
+      chapterId: current.chapterId,
+      chapter: current.chapterId
+        ? title(chapterById.get(current.chapterId), current.chapterId)
+        : null,
+      readingOrder: current.chapterId
+        ? ((chapterById.get(current.chapterId)?.readingOrder as number | undefined) ?? null)
+        : null,
+      state: current.year === null ? null : lifeState(life, current.year),
     },
+    storyTime: storyTime ? { year: storyTime.year, state: lifeState(life, storyTime.year) } : null,
+    knowledgeYear,
     timeline,
     relatives: {
       parents: rel.parents.map((p) => ({

@@ -37,6 +37,7 @@ export type BibleChannel =
   | 'proposal.refresh'
   | 'tree.get'
   | 'tree.lineage'
+  | 'tree.savePositions'
   | 'character.page'
   | 'storyTime.get'
   | 'storyTime.set';
@@ -137,7 +138,17 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     },
     'tree.get': () => {
       const g = graph();
-      return { people: g.people, unions: g.unions, links: g.links, warnings: treeWarnings(g) };
+      return {
+        people: g.people,
+        unions: g.unions,
+        links: g.links,
+        warnings: treeWarnings(g),
+        positions: session().repo.treePositions(),
+      };
+    },
+    'tree.savePositions': async ({ positions }) => {
+      await session().repo.setTreePositions(positions);
+      return { ok: true as const };
     },
     'tree.lineage': ({ id }) => {
       const g = graph();
@@ -147,7 +158,10 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
       return { ancestors: order(ancestorsOf(g, id)), descendants: order(descendantsOf(g, id)) };
     },
     'character.page': ({ id }) => {
-      const page = characterPage(session().model, id, position());
+      const { model, repo } = session();
+      // The current position is the last written chapter, whatever the story time (CH-3).
+      const current = positionYear(null, model.all('chapters'));
+      const page = characterPage(model, id, current, repo.storyTime());
       if (!page) throw new Error(`No character has the ID ${id}.`);
       return { page };
     },

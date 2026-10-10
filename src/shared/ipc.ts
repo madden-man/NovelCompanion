@@ -160,6 +160,13 @@ const TreeLinkWire = z.strictObject({
   createdAt: z.string(),
 });
 
+const TreePositions = z
+  .record(
+    z.string().min(1).max(64),
+    z.strictObject({ x: z.number(), y: z.number(), loose: z.boolean().optional() }),
+  )
+  .refine((r) => Object.keys(r).length <= 20_000, 'Too many positions');
+
 const TreeWarningWire = z.strictObject({
   code: z.enum([
     'parent-age',
@@ -208,12 +215,21 @@ const CharacterPageWire = z.strictObject({
   families: z.array(z.strictObject({ id: z.string(), name: z.string(), color: z.string() })),
   years: z.string(),
   birthKnown: z.boolean(),
-  position: PositionWire.extend({ state: LifeStateWire.nullable() }),
+  current: z.strictObject({
+    year: z.number().nullable(),
+    chapterId: z.string().nullable(),
+    chapter: z.string().nullable(),
+    readingOrder: z.number().nullable(),
+    state: LifeStateWire.nullable(),
+  }),
+  storyTime: z.strictObject({ year: z.number(), state: LifeStateWire }).nullable(),
+  knowledgeYear: z.number().nullable(),
   timeline: z.array(
     z.strictObject({
       kind: z.enum(['birth', 'death', 'union', 'union-end', 'child', 'beat', 'event', 'chapter']),
       year: z.number().nullable(),
       age: z.number().nullable(),
+      state: z.enum(['alive', 'dead', 'unborn', 'unknown']).nullable(),
       collection: z.string(),
       id: z.string(),
       title: z.string(),
@@ -510,7 +526,14 @@ export const contract = {
       unions: z.array(TreeUnionWire),
       links: z.array(TreeLinkWire),
       warnings: z.array(TreeWarningWire),
+      /** Stored node positions keyed by character ID (FT-10), or null before the first layout. */
+      positions: TreePositions.nullable(),
     }),
+  },
+  /** Store the tree's node positions, after a new person is placed or the layout is tidied (FT-10). */
+  'tree.savePositions': {
+    request: z.strictObject({ positions: TreePositions }),
+    response: z.strictObject({ ok: z.literal(true) }),
   },
   /** Ancestors and descendants of one person (FT-1). */
   'tree.lineage': {

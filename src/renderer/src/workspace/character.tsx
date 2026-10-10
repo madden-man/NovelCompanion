@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
-import { describeState } from '../../../shared/domain/ages';
 import { call } from '../api';
 import { useList, useStore } from './data';
 import { useStoryTime } from './storyTime';
@@ -54,7 +53,7 @@ export function CharacterSummary(props: {
 
   if (error) return null;
   if (!page) return <p aria-live="polite">Loading the character page.</p>;
-  const pos = page.position;
+  const cur = page.current;
   const open = (id: string) => props.onOpen('characters', id);
   const person = (id: string, name: string) => (
     <button type="button" className="link-btn" onClick={() => open(id)}>
@@ -79,11 +78,18 @@ export function CharacterSummary(props: {
             {page.years === 'unknown' ? 'Born: unknown' : page.years}
           </span>
         </div>
-        <p className="char-age" data-testid="char-age">
-          {pos.year === null || !pos.state
-            ? 'No story time is set and no chapter is marked written, so no age is shown yet.'
-            : `In ${pos.year} (${pos.source === 'storyTime' ? 'story time' : 'last written chapter'}): ${describeState(pos.state)}`}
-        </p>
+        <div className="stack tight">
+          <p className="char-age" data-testid="char-age">
+            {cur.year === null || !cur.state
+              ? 'Age at current position: no chapter is marked written yet.'
+              : `Age at current position (Chapter ${cur.readingOrder ?? '?'}, year ${cur.year}): ${ageWords(cur.state)}`}
+          </p>
+          {page.storyTime && (
+            <p className="char-age" data-testid="char-age-story">
+              {`Age at story time (year ${page.storyTime.year}): ${ageWords(page.storyTime.state)}`}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="char-grid">
@@ -212,7 +218,9 @@ export function CharacterSummary(props: {
                   {k.how ? `. ${k.how}` : ''}{' '}
                   {k.knownAtPosition !== null && (
                     <span className={`chip ${k.knownAtPosition ? 'canon' : 'idea'}`}>
-                      {k.knownAtPosition ? `knows by ${pos.year}` : `not yet in ${pos.year}`}
+                      {k.knownAtPosition
+                        ? `knows by ${page.knowledgeYear}`
+                        : `not yet in ${page.knowledgeYear}`}
                     </span>
                   )}
                 </li>
@@ -244,7 +252,7 @@ export function CharacterSummary(props: {
               {page.timeline.map((t, i) => (
                 <tr key={i} data-kind={t.kind}>
                   <td className="num">{t.year ?? 'unknown'}</td>
-                  <td className="num">{t.age === null ? 'age unknown' : t.age}</td>
+                  <td className="num">{timelineAge(t)}</td>
                   <td>
                     <button
                       type="button"
@@ -264,6 +272,35 @@ export function CharacterSummary(props: {
       </div>
     </section>
   );
+}
+
+/** The age column: an age, or why there is none. "age unknown" is only for an unknown birth (CH-4). */
+function timelineAge(t: Page['timeline'][number]): string {
+  if (t.year === null) return 'year unknown';
+  switch (t.state) {
+    case 'alive':
+      return String(t.age);
+    case 'dead':
+      return 'dead';
+    case 'unborn':
+      return 'not yet born';
+    default:
+      return 'age unknown';
+  }
+}
+
+/** An age for the page lines: the number, or the state in plain words. */
+function ageWords(s: NonNullable<Page['current']['state']>): string {
+  switch (s.state) {
+    case 'alive':
+      return s.dyingThisYear ? `${s.age}, dies this year` : String(s.age);
+    case 'dead':
+      return `dead since ${s.deathYear}`;
+    case 'unborn':
+      return 'not yet born';
+    case 'unknown':
+      return 'age unknown';
+  }
 }
 
 const KIND_LABELS: Record<Page['timeline'][number]['kind'], string> = {

@@ -17,11 +17,12 @@ import {
   filterPeople,
   hasBranch,
   hideCollapsed,
-  layoutTree,
+  layoutFromPositions,
   parentsOf,
   partnersOf,
   planAddRelative,
   planLinkExisting,
+  placeLayout,
   treeEdges,
 } from '../../../../shared/domain/tree';
 import type {
@@ -163,9 +164,20 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
         <g
           className="tnode-toggle"
           data-export="skip"
+          tabIndex={0}
+          role="button"
+          aria-label={`${p.collapsed ? 'Expand' : 'Collapse'} the branch of ${p.person.name}`}
+          aria-expanded={!p.collapsed}
           onClick={(e) => {
             e.stopPropagation();
             p.onToggle(p.person.id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              p.onToggle(p.person.id);
+            }
           }}
         >
           <circle cx={NODE_W - 14} cy={53} r={8} />
@@ -222,11 +234,40 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     return { kind: 'all' };
   }, [filterKey, lineage]);
 
+  const saveSeq = useRef(0);
+  // Stored positions are kept; only new people are placed (FT-10).
+  const placed = useMemo(
+    () => (graph && data ? placeLayout(graph, data.positions) : null),
+    [graph, data],
+  );
+
+  useEffect(() => {
+    if (!placed?.changed) return;
+    const positions = placed.positions;
+    const seq = ++saveSeq.current;
+    void call('tree.savePositions', { positions }).then(() => {
+      if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
+    });
+  }, [placed]);
+
   const layout = useMemo(() => {
-    if (!graph) return null;
+    if (!graph || !placed) return null;
     const shown = hideCollapsed(graph, filterPeople(graph, filter), collapsed);
-    return layoutTree(graph, shown);
-  }, [graph, filter, collapsed]);
+    const kept = new Map<string, { x: number; y: number }>();
+    for (const [id, p] of placed.layout.nodes) if (shown.has(id)) kept.set(id, p);
+    return layoutFromPositions(kept);
+  }, [graph, placed, filter, collapsed]);
+
+  const [confirmTidy, setConfirmTidy] = useState(false);
+  const tidy = async () => {
+    if (!graph) return;
+    const { positions } = placeLayout(graph, null);
+    saveSeq.current += 1;
+    await call('tree.savePositions', { positions });
+    setData((d) => (d ? { ...d, positions } : d));
+    setConfirmTidy(false);
+    fitted.current = false;
+  };
 
   const edges = useMemo(
     () => (graph && layout ? treeEdges(graph, layout, year) : null),
@@ -244,7 +285,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     () =>
       layout
         ? {
-            x: -PAD,
+            x: (layout.minX ?? 0) - PAD,
             y: layout.minY - PAD,
             width: Math.max(layout.width, NODE_W) + 2 * PAD,
             height: Math.max(layout.height, NODE_H) + 2 * PAD,
@@ -307,6 +348,31 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     return () => el.removeEventListener('wheel', onWheel);
   }, [data]);
 
+  /** NF-2: arrows pan (Shift for larger steps), + and - zoom, F fits. */
+  const onTreeKey = (e: ReactKeyboardEvent<SVGSVGElement>) => {
+    const pan: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
+    const dir = pan[e.key];
+    if (dir) {
+      e.preventDefault();
+      const k = e.shiftKey ? 0.4 : 0.1;
+      setView((v) => (v ? { ...v, x: v.x + dir[0] * v.w * k, y: v.y + dir[1] * v.h * k } : v));
+    } else if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      zoom(0.8);
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      zoom(1.25);
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      fit();
+    }
+  };
+
   const drag = useRef<{ x: number; y: number; v: View; id: number } | null>(null);
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (!view || (e.target as Element).closest('.tnode')) return;
@@ -343,8 +409,18 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     const el = svg.current;
     if (!el) return;
     try {
-      const bg = getComputedStyle(el).getPropertyValue('--chart-surface').trim() || '#ffffff';
-      const markup = standaloneSvg(el, bbox, bg);
+      // Exports always use the light theme, so the tree reads on a white page.
+      const root = document.documentElement;
+      const before = root.getAttribute('data-theme');
+      root.setAttribute('data-theme', 'light');
+      let markup: string;
+      try {
+        const bg = getComputedStyle(el).getPropertyValue('--chart-surface').trim() || '#ffffff';
+        markup = standaloneSvg(el, bbox, bg);
+      } finally {
+        if (before === null) root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', before);
+      }
       const fileName = `family-tree-${year}`;
       const scale = Math.min(2, 16_000 / Math.max(bbox.width, bbox.height));
       const png =
@@ -461,6 +537,9 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
             <button type="button" className="btn" onClick={fit}>
               Fit to window
             </button>
+            <button type="button" className="btn" onClick={() => setConfirmTidy(true)}>
+              Tidy layout
+            </button>
             <button type="button" className="btn" onClick={() => void exportAs('png')}>
               Export PNG
             </button>
@@ -469,6 +548,23 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
             </button>
           </div>
         </div>
+        {confirmTidy && (
+          <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
+            <strong>Tidy the whole layout?</strong>
+            <p>
+              This lays out the tree again from scratch, so every person may move. People you add
+              later are placed without moving anyone.
+            </p>
+            <div className="row">
+              <button type="button" className="btn primary" onClick={() => void tidy()}>
+                Tidy layout
+              </button>
+              <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
+                Keep the layout
+              </button>
+            </div>
+          </div>
+        )}
         {exportNote && (
           <p
             className={exportNote.bad ? 'callout crit' : 'callout'}
@@ -491,6 +587,8 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
             aria-label={`Family tree in ${year}`}
             data-testid="tree-svg"
             data-year={year}
+            tabIndex={0}
+            onKeyDown={onTreeKey}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endDrag}

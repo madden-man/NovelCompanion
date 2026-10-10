@@ -11,6 +11,7 @@ import type { TreeGraph } from '../../src/shared/domain/tree';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
+import { decodePng, pdfFillColors } from '../helpers/png';
 import { field, invokeVia, launch, rail, waitSaved } from './helpers';
 
 let server: MongoMemoryReplSet;
@@ -247,7 +248,20 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   expect(signature(built)).toEqual(signature(expected));
   // The same graph lays out the same way, whatever order it was entered in.
   expect(layoutByName(built)).toEqual(layoutByName(expected));
-  // What the screen draws is that layout.
+  // Entered one at a time, people were placed without moving anyone, so Tidy layout
+  // runs the full layout once; after a confirm, the screen draws exactly that layout.
+  await page.getByRole('button', { name: 'Tidy layout' }).click();
+  await page
+    .getByRole('dialog', { name: 'Tidy layout' })
+    .getByRole('button', { name: 'Tidy layout' })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
+  await expect
+    .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])
+    .toEqual({
+      x: layoutByName(built)[t.people[0]!.name]![0],
+      y: layoutByName(built)[t.people[0]!.name]![1],
+    });
   const shown = await page
     .locator('g.tnode')
     .evaluateAll((els) =>
@@ -563,6 +577,33 @@ test('FT-8 pan by drag, zoom with the buttons and the wheel, collapse and expand
   await expect(node('Sam Hale')).toHaveCount(1);
 });
 
+test('FT-8 NF-2 the tree works from the keyboard: arrows pan, Shift for larger steps, + and - zoom, F fits, Enter and Space collapse', async () => {
+  const box = async () => (await svgEl().getAttribute('viewBox'))!.split(' ').map(Number);
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  const fitted = await box();
+  await svgEl().focus();
+  await page.keyboard.press('ArrowRight');
+  let b = await box();
+  expect(b[0]).toBeCloseTo(fitted[0]! + fitted[2]! * 0.1, 3);
+  await page.keyboard.press('Shift+ArrowDown');
+  b = await box();
+  expect(b[1]).toBeCloseTo(fitted[1]! + fitted[3]! * 0.4, 3);
+  await page.keyboard.press('+');
+  expect((await box())[2]).toBeCloseTo(fitted[2]! * 0.8, 3);
+  await page.keyboard.press('-');
+  expect((await box())[2]).toBeCloseTo(fitted[2]!, 3);
+  await page.keyboard.press('f');
+  expect(await box()).toEqual(fitted);
+  const toggle = page.getByRole('button', { name: 'Collapse the branch of Daniel Hale' });
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(node('Iris Hale-Zhou')).toHaveCount(0);
+  const expand = page.getByRole('button', { name: 'Expand the branch of Daniel Hale' });
+  await expand.focus();
+  await page.keyboard.press(' ');
+  await expect(node('Iris Hale-Zhou')).toHaveCount(1);
+});
+
 test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tree-export-'));
   const stubDialog = (file: string) =>
@@ -573,6 +614,11 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
           filePath: f,
         });
     }, file);
+  // The app is in dark mode; exports still use the light theme.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe('rgb(15, 21, 28)');
   const png = join(dir, 'tree.png');
   await stubDialog(png);
   await page.getByRole('button', { name: 'Export PNG' }).click();
@@ -583,8 +629,26 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
   const height = bytes.readUInt32BE(20);
   expect(width).toBeGreaterThan(1000);
   expect(height).toBeGreaterThan(500);
-  // The image holds the drawing, not a blank page: many distinct bytes after compression.
   expect((await stat(png)).size).toBeGreaterThan(20_000);
+  // Decode it: a light page with nodes drawn on it in many colours, and dark text.
+  const img = decodePng(bytes);
+  const bg = img.pixel(2, 2);
+  expect(Math.min(...bg)).toBeGreaterThan(240);
+  const colors = new Set<string>();
+  let ink = 0;
+  let dark = 0;
+  for (let y = 0; y < img.height; y += 2) {
+    for (let x = 0; x < img.width; x += 2) {
+      const p = img.pixel(x, y);
+      colors.add(p.join(','));
+      if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 30) ink++;
+      if (p[0] + p[1] + p[2] < 200) dark++;
+    }
+  }
+  const sampled = Math.ceil(img.height / 2) * Math.ceil(img.width / 2);
+  expect(colors.size).toBeGreaterThan(50);
+  expect(ink / sampled).toBeGreaterThan(0.01);
+  expect(dark).toBeGreaterThan(500);
   const pdf = join(dir, 'tree.pdf');
   await stubDialog(pdf);
   await page.getByRole('button', { name: 'Export PDF' }).click();
@@ -592,6 +656,12 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
   const head = (await readFile(pdf)).subarray(0, 5).toString('latin1');
   expect(head).toBe('%PDF-');
   expect((await stat(pdf)).size).toBeGreaterThan(5_000);
+  // The PDF paints with the light theme: light node boxes, never the dark surfaces.
+  const fills = pdfFillColors(await readFile(pdf)).map((c) => c.join(','));
+  expect(fills).toContain('255,255,255');
+  expect(fills).not.toContain('23,31,40');
+  expect(fills).not.toContain('26,26,25');
+  await page.emulateMedia({ colorScheme: 'light' });
   // Cancelling saves nothing.
   await app.evaluate(({ dialog }) => {
     (dialog as unknown as { showSaveDialog: () => Promise<unknown> }).showSaveDialog =
@@ -653,6 +723,69 @@ test('FT-10 adding a child to Sam leaves every other node where it was', async (
   for (const [n, t] of Object.entries(after)) expect(again[n], n).toBe(t);
 });
 
+const domPositions = async () =>
+  Object.fromEntries(
+    await page
+      .locator('g.tnode')
+      .evaluateAll((els) =>
+        els.map((e) => [e.getAttribute('aria-label')!.split(',')[0], e.getAttribute('transform')]),
+      ),
+  );
+
+test('FT-10 adding a child to Ruth leaves every other node where it was, and stays so after a reload', async () => {
+  const before = await domPositions();
+  await select('Ruth Hale');
+  await add('child', 'Grace Hale', 2020, { type: 'biological' });
+  const after = await domPositions();
+  for (const [n, t] of Object.entries(before)) expect(after[n], n).toBe(t);
+  // Positions are stored per bible: opening the tree again draws the same places.
+  await rail(page, 'Characters').click();
+  await openTree();
+  await expect(node('Grace Hale')).toHaveCount(1);
+  expect(await domPositions()).toEqual(after);
+});
+
+test('FT-4 a person with two unions: both draw, the ended one with its year, each child under its own union, and half-siblings', async () => {
+  await select('Zhou Lan');
+  await add('partner', 'Chen Bo', 1986, { type: 'married' });
+  await editLink('Zhou Lan', { startYear: 2008, endYear: 2020, endReason: 'divorce' });
+  await select('Zhou Lan');
+  await add('child', 'Kai Chen', 2012, { type: 'biological', coParent: 'Chen Bo' });
+  await page.getByTestId('tree-year').fill('2040');
+  const lanUnions = page.locator('g[data-union]');
+  await expect(lanUnions).toHaveCount(5);
+  await expect(page.locator('text.tunion-end', { hasText: 'ended 2020' })).toHaveCount(1);
+  // Lay out again so Lan sits between her two partners, then check where each child hangs.
+  await page.getByRole('button', { name: 'Tidy layout' }).click();
+  await page
+    .getByRole('dialog', { name: 'Tidy layout' })
+    .getByRole('button', { name: 'Tidy layout' })
+    .click();
+  const xOf = async (name: string) =>
+    Number(/translate\(([-\d.]+),/.exec((await node(name).getAttribute('transform'))!)![1]);
+  await expect.poll(async () => (await xOf('Chen Bo')) - (await xOf('Zhou Lan'))).toBe(194);
+  const [dan, lan, bo] = [await xOf('Daniel Hale'), await xOf('Zhou Lan'), await xOf('Chen Bo')];
+  const t = await invoke('tree.get', {});
+  const id = (n: string) => t.people.find((p) => p.name === n)!.id;
+  const startOf = async (child: string) => {
+    const linkIds = t.links.filter((l) => l.childId === id(child)).map((l) => l.id);
+    expect(linkIds).toHaveLength(2);
+    const d = await page
+      .locator(`path.tlink[data-links~="${linkIds[0]}"][data-links~="${linkIds[1]}"]`)
+      .getAttribute('d');
+    return Number(/^M([-\d.]+),/.exec(d!)![1]);
+  };
+  expect(await startOf('Iris Hale-Zhou')).toBe((dan + 168 + lan) / 2);
+  expect(await startOf('Kai Chen')).toBe((lan + 168 + bo) / 2);
+  // The character page shows them as half-siblings.
+  await select('Iris Hale-Zhou');
+  await inspector().getByRole('button', { name: 'Open the character page' }).click();
+  await expect(page.getByTestId('character-page').getByTestId('relatives')).toContainText(
+    'Kai Chen (half-sibling)',
+  );
+  await openTree();
+});
+
 // ---------- the character page, against the fixture novel ----------
 
 async function openCharacter(name: string) {
@@ -670,7 +803,7 @@ test('CH-2 CH-3 the character page shows every name, the age at the current posi
   const p = await openCharacter('Margaret Hale');
   // No story time is set: the age is at the last written chapter, chapter 5 in 2040.
   await expect(p.getByTestId('char-age')).toHaveText(
-    'In 2040 (last written chapter): alive, age 82',
+    'Age at current position (Chapter 5, year 2040): 82',
   );
   const names = p.getByTestId('char-names');
   for (const text of ['Margaret Hale', 'Margaret Doyle', 'Family name last', 'Maggie']) {
@@ -733,7 +866,9 @@ test('CH-2 a Chinese name shows as characters, with romanization and meaning on 
 test('CH-4 a character with an unknown birth year is reported as age unknown on the page and in the tree', async () => {
   const p = await openCharacter('The Archivist');
   await expect(p.getByTestId('char-years')).toHaveText('Born: unknown');
-  await expect(p.getByTestId('char-age')).toHaveText('In 2040 (last written chapter): age unknown');
+  await expect(p.getByTestId('char-age')).toHaveText(
+    'Age at current position (Chapter 5, year 2040): age unknown',
+  );
   const rows = p.getByTestId('char-timeline').locator('tbody tr');
   await expect(rows.first().locator('td').nth(1)).toHaveText('age unknown');
   await openTree();
@@ -748,15 +883,29 @@ test('CH-3 the story time drives the ages on character pages', async () => {
   await page.getByTestId('tree-year').fill('2041');
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2041);
   const p = await openCharacter('Margaret Hale');
+  // Both ages: at the current position (the last written chapter) and at the story time.
   await expect(p.getByTestId('char-age')).toHaveText(
-    'In 2041 (story time): alive, age 83, dies this year',
+    'Age at current position (Chapter 5, year 2040): 82',
+  );
+  await expect(p.getByTestId('char-age-story')).toHaveText(
+    'Age at story time (year 2041): 83, dies this year',
   );
   await expect(byId('H1')).toHaveCount(0);
   await openTree();
   await expect(byId('H1')).toHaveAttribute('data-state', 'dying');
   await page.getByTestId('tree-year').fill('2075');
   await openCharacter('Margaret Hale');
-  await expect(page.getByTestId('char-age')).toHaveText('In 2075 (story time): dead since 2041');
+  await expect(page.getByTestId('char-age-story')).toHaveText(
+    'Age at story time (year 2075): dead since 2041',
+  );
+  await expect(page.getByTestId('char-age')).toHaveText(
+    'Age at current position (Chapter 5, year 2040): 82',
+  );
+  // A timeline row after death reads dead: Peter Hale in chapter 4, set in 2032.
+  const peter = await openCharacter('Peter Hale');
+  const row = peter.getByTestId('char-timeline').locator('tbody tr', { hasText: 'Chapter 4' });
+  await expect(row.locator('td').nth(0)).toHaveText('2032');
+  await expect(row.locator('td').nth(1)).toHaveText('dead');
 });
 
 test('CH-1 a character is created, edited with zero, one, and several families, and deleted and restored', async () => {

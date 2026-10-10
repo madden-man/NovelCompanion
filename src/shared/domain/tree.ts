@@ -329,6 +329,8 @@ export interface NodePos {
 
 export interface TreeLayout {
   nodes: Map<string, NodePos>;
+  /** The left edge of the drawing. */
+  minX?: number;
   /** The top of the drawing: below zero when a row of people tied to no one is shown. */
   minY: number;
   width: number;
@@ -530,6 +532,153 @@ export function layoutTree(g: TreeGraph, shown: ReadonlySet<string>): TreeLayout
     width: Math.max(nodes.size && offset ? offset - COMPONENT_GAP : 0, looseW),
     height: (maxGen >= 0 ? maxGen * ROW_H + NODE_H : 0) + (loose ? ROW_H : 0),
   };
+}
+
+// ---------- persistent, incremental layout (FT-10) ----------
+
+export interface StoredPosition {
+  x: number;
+  y: number;
+  /** In the row of people tied to no one in the tree. */
+  loose?: boolean;
+}
+export type StoredPositions = Record<string, StoredPosition>;
+
+const LOOSE_Y = -ROW_H;
+
+/** A layout from positions alone, with its bounds. */
+export function layoutFromPositions(
+  positions: ReadonlyMap<string, { x: number; y: number }>,
+): TreeLayout {
+  const nodes = new Map<string, NodePos>();
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [id, p] of positions) {
+    nodes.set(id, { x: p.x, y: p.y, gen: Math.round(p.y / ROW_H) });
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x + NODE_W);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y + NODE_H);
+  }
+  if (!nodes.size) return { nodes, minX: 0, minY: 0, width: 0, height: 0 };
+  return { nodes, minX, minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Is the slot at x free in a row, given the x of every node already in it? */
+function freeAt(row: readonly number[], x: number): boolean {
+  return row.every((o) => Math.abs(o - x) >= NODE_W + SIBLING_GAP);
+}
+
+/** The nearest free x to `want` in a row: the nearer of the first free slot to the right and to the left. */
+export function nearestFreeSlot(row: readonly number[], want: number): number {
+  if (freeAt(row, want)) return want;
+  const step = NODE_W + SIBLING_GAP;
+  // Candidate slots sit just beside each blocking node.
+  const right = [...row]
+    .map((o) => o + step)
+    .filter((x) => x > want && freeAt(row, x))
+    .sort((a, b) => a - b)[0];
+  const left = [...row]
+    .map((o) => o - step)
+    .filter((x) => x < want && freeAt(row, x))
+    .sort((a, b) => b - a)[0];
+  if (right === undefined) return left ?? want + step;
+  if (left === undefined) return right;
+  return right - want <= want - left ? right : left;
+}
+
+/**
+ * The layout the tree shows (FT-10). Positions are stored per bible and kept:
+ * with nothing stored, the full layout runs once. After that, a new person is
+ * placed on their own, in the nearest free slot of their row (under their
+ * parents, beside a partner, or above a child), and no one else moves.
+ * Someone removed frees their slot. Someone in the row of people tied to no
+ * one who gains a tie is placed again, as if new. `changed` says whether the
+ * positions differ from what was stored, so they can be saved.
+ */
+export function placeLayout(
+  g: TreeGraph,
+  stored: StoredPositions | null,
+): { layout: TreeLayout; positions: StoredPositions; changed: boolean } {
+  const ids = g.people.map((p) => p.id);
+  if (!stored || Object.keys(stored).length === 0) {
+    const full = layoutTree(g, new Set(ids));
+    const positions: StoredPositions = {};
+    for (const [id, p] of full.nodes) {
+      positions[id] = p.y === LOOSE_Y ? { x: p.x, y: p.y, loose: true } : { x: p.x, y: p.y };
+    }
+    return {
+      layout: layoutFromPositions(new Map(Object.entries(positions))),
+      positions,
+      changed: ids.length > 0,
+    };
+  }
+  const pos = new Map<string, StoredPosition>();
+  let changed = false;
+  for (const [id, p] of Object.entries(stored)) {
+    if (g.byId.has(id)) pos.set(id, { ...p });
+    else changed = true;
+  }
+  const ties = (id: string) => [...parentsOf(g, id), ...childrenOf(g, id), ...partnersOf(g, id)];
+  /** Placed and in the tree proper, so it can anchor someone. */
+  const anchored = (id: string) => {
+    const p = pos.get(id);
+    return p !== undefined && !p.loose;
+  };
+  const rowXs = (y: number, loose: boolean) =>
+    [...pos.values()].filter((p) => p.y === y && Boolean(p.loose) === loose).map((p) => p.x);
+  const place = (id: string) => {
+    const at = (xs: string[]) => xs.filter(anchored).map((x) => pos.get(x) as StoredPosition);
+    const ps = at(parentsOf(g, id));
+    const mates = at(partnersOf(g, id));
+    const kids = at(childrenOf(g, id));
+    let y: number;
+    let wants: number[];
+    let loose = false;
+    if (ps.length) {
+      y = Math.max(...ps.map((p) => p.y)) + ROW_H;
+      wants = [Math.round(mean(ps.map((p) => p.x)))];
+    } else if (mates.length) {
+      const m = mates[0] as StoredPosition;
+      y = m.y;
+      wants = [m.x + NODE_W + COUPLE_GAP, m.x - NODE_W - COUPLE_GAP];
+    } else if (kids.length) {
+      y = Math.min(...kids.map((k) => k.y)) - ROW_H;
+      wants = [Math.round(mean(kids.map((k) => k.x)))];
+    } else if (ties(id).length > 0) {
+      // Tied only to people in the top row: start a new group at the right of the tree.
+      const xs = [...pos.values()].filter((p) => !p.loose).map((p) => p.x);
+      y = 0;
+      wants = [xs.length ? Math.max(...xs) + NODE_W + COMPONENT_GAP : 0];
+    } else {
+      // Tied to no one: the row above the tree.
+      y = LOOSE_Y;
+      loose = true;
+      const row = rowXs(y, true);
+      wants = [row.length ? Math.max(...row) + NODE_W + SIBLING_GAP : 0];
+    }
+    const row = rowXs(y, loose);
+    // A partner sits right beside, or left beside; otherwise the nearest free slot.
+    const exact = wants.find((w) => row.every((o) => Math.abs(o - w) >= NODE_W + COUPLE_GAP));
+    const x = exact ?? nearestFreeSlot(row, wants[0] as number);
+    pos.set(id, loose ? { x, y, loose: true } : { x, y });
+  };
+  // New people, and people in the top row who now have a tie into the tree, are placed;
+  // repeat until no one in the top row is tied into the tree (each pass moves someone out).
+  for (let pass = 0; pass <= ids.length; pass++) {
+    const todo = ids.filter((id) => {
+      const p = pos.get(id);
+      return !p || (p.loose === true && ties(id).some(anchored));
+    });
+    if (!todo.length) break;
+    changed = true;
+    for (const id of todo) pos.delete(id);
+    for (const id of todo) place(id);
+  }
+  const positions: StoredPositions = Object.fromEntries(pos);
+  return { layout: layoutFromPositions(pos), positions, changed };
 }
 
 // ---------- drawing geometry (FT-4, FT-5) ----------
