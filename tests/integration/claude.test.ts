@@ -601,4 +601,219 @@ describe('IM-5 import proposals', () => {
     expect(counts().proposals).toBe(proposalsBefore);
     expect(bible.model.get('characters', 'H1')!.deletedAt).toBeUndefined();
   });
+
+  test('IM-5 AI-1 stopping an import proposals run saves it as stopped and queues nothing', async () => {
+    const { file } = await invokeBible('import.pickFile', { kind: 'document' });
+    const slow = rig([
+      {
+        name: 'slow import',
+        feature: 'importProposals',
+        match: 'Wedding Weather',
+        steps: [{ text: '{"summary": "A wedding' }, { waitForAbort: true }],
+      },
+    ]);
+    const before = counts();
+    const id = runId();
+    await slow.call('claude.importProposals', { runId: id, fileId: file!.id });
+    await waitFor(() => slow.events.some((e) => e.runId === id && e.kind === 'text'));
+    expect((await slow.call('claude.stop', { runId: id })).stopped).toBe(true);
+    const run = await slow.finished(id);
+    expect(run.turns[0]).toMatchObject({ status: 'stopped', proposalIds: [], error: null });
+    expect(run.output).toBeNull();
+    expect(counts()).toEqual(before);
+  });
+});
+
+async function waitFor(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 500 && !check(); i++) await new Promise((res) => setTimeout(res, 10));
+  if (!check()) throw new Error('Timed out waiting.');
+}
+
+describe('AI-1 AI-7 run lifecycle', () => {
+  test('AI-1 a second question while the conversation is still answering is refused, and both turns are kept', async () => {
+    const first = runId();
+    const started = await r.call('claude.ask', {
+      runId: first,
+      conversationId: null,
+      question: 'Tell me everything about the Hale family',
+    });
+    await waitFor(() => r.events.some((e) => e.runId === first && e.kind === 'text'));
+    await expect(
+      r.call('claude.ask', {
+        runId: runId(),
+        conversationId: started.conversationId,
+        question: 'How old is Margaret in 2040?',
+      }),
+    ).rejects.toThrow(/still answering in this conversation/);
+    expect((await r.call('claude.run', { id: started.conversationId })).active).toEqual([first]);
+    await r.call('claude.stop', { runId: first });
+    await r.finished(first);
+    const second = runId();
+    await r.call('claude.ask', {
+      runId: second,
+      conversationId: started.conversationId,
+      question: 'How old is Margaret in 2040?',
+    });
+    const run = await r.finished(second);
+    expect(run.turns.map((t) => [t.question, t.status])).toEqual([
+      ['Tell me everything about the Hale family', 'stopped'],
+      ['How old is Margaret in 2040?', 'done'],
+    ]);
+    const saved = await bible.handle
+      .collection('conversations')
+      .findOne({ _id: started.conversationId as never });
+    expect((saved!.turns as { status: string }[]).map((t) => t.status)).toEqual([
+      'stopped',
+      'done',
+    ]);
+  });
+
+  test('AI-1 saves write one turn at a time, so concurrent writes to two turns both land', async () => {
+    const store = new RunStore(bible);
+    const at = new Date().toISOString();
+    const turn = (id: string) => ({
+      id,
+      question: id,
+      answer: '',
+      model: 'm',
+      status: 'running' as const,
+      error: null,
+      entries: [],
+      proposalIds: [],
+      rejected: [],
+      startedAt: at,
+      finishedAt: null,
+    });
+    const created = await store.create({
+      _id: `conc${Date.now()}`,
+      feature: 'panel',
+      title: 'concurrent',
+      createdAt: at,
+      modifiedAt: at,
+      turns: [turn('turn-a-0001')],
+    });
+    await store.pushTurn(created._id, turn('turn-b-0001'), at);
+    await Promise.all([
+      store.updateTurn(created._id, { ...turn('turn-a-0001'), answer: 'one', status: 'done' }, at),
+      store.updateTurn(created._id, { ...turn('turn-b-0001'), answer: 'two', status: 'done' }, at),
+    ]);
+    const saved = await bible.handle
+      .collection('conversations')
+      .findOne({ _id: created._id as never });
+    expect((saved!.turns as { answer: string }[]).map((t) => t.answer)).toEqual(['one', 'two']);
+  });
+
+  test('AI-1 the same run ID twice at once starts one run and refuses the other', async () => {
+    const id = runId();
+    const results = await Promise.allSettled([
+      r.call('claude.ask', {
+        runId: id,
+        conversationId: null,
+        question: 'How old is Margaret in 2040?',
+      }),
+      r.call('claude.ask', {
+        runId: id,
+        conversationId: null,
+        question: 'How old is Margaret in 2040?',
+      }),
+    ]);
+    expect(results.map((x) => x.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(
+      String((results.find((x) => x.status === 'rejected') as PromiseRejectedResult).reason),
+    ).toMatch(/already in use/);
+    await r.finished(id);
+  });
+
+  test('AI-7 with no network the run fails with a plain message; the question is kept and the bible is untouched', async () => {
+    const before = counts();
+    const id = runId();
+    await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'Can you answer while offline?',
+    });
+    const run = await r.finished(id);
+    expect(run.turns[0]).toMatchObject({
+      question: 'Can you answer while offline?',
+      status: 'failed',
+      error: { kind: 'network', message: ERROR_MESSAGES.network },
+    });
+    expect(ERROR_MESSAGES.network).toMatch(/Check your network connection/);
+    expect(counts()).toEqual(before);
+  });
+
+  test('AI-7 when MongoDB drops mid-run the run still finishes with a plain message, and nothing is left hanging', async () => {
+    let failing = false;
+    const real = bible.handle;
+    const flaky: OpenBible = {
+      ...bible,
+      handle: {
+        ...real,
+        collection: ((name: string) => {
+          const c = real.collection(name);
+          if (name !== 'conversations') return c;
+          return new Proxy(c, {
+            get(target, prop, receiver) {
+              if (failing && (prop === 'findOneAndUpdate' || prop === 'insertOne')) {
+                return () => Promise.reject(new Error('connection reset'));
+              }
+              const v = Reflect.get(target, prop, receiver) as unknown;
+              return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+            },
+          });
+        }) as typeof real.collection,
+      },
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => unhandled.push(e);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const slow = rig(RECORDINGS, { delayMs: 30 });
+      const id = runId();
+      const start = await slow.runtime.ask(flaky, {
+        runId: id,
+        conversationId: null,
+        question: 'How old is Margaret in 2040?',
+      });
+      failing = true;
+      const run = await start.done; // resolves; never rejects
+      expect(run.turns[0]!.question).toBe('How old is Margaret in 2040?');
+      expect(slow.events.filter((e) => e.runId === id && e.kind === 'finished')).toEqual([
+        {
+          kind: 'finished',
+          runId: id,
+          conversationId: start.conversationId,
+          status: 'failed',
+          error: { kind: 'saveFailed', message: ERROR_MESSAGES.saveFailed },
+        },
+      ]);
+      expect(slow.runtime.isActive(id)).toBe(false);
+      // A first save that fails sends nothing and frees the run ID; the caller gets the message.
+      const id2 = runId();
+      await expect(
+        slow.runtime.ask(flaky, { runId: id2, conversationId: null, question: 'Again?' }),
+      ).rejects.toThrow(ERROR_MESSAGES.saveFailed);
+      expect(slow.runtime.isActive(id2)).toBe(false);
+      await new Promise((res) => setTimeout(res, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      failing = false;
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  test('AI-1 stopAll (bible switch, app quit) stops every running run and waits until it is saved as stopped', async () => {
+    const id = runId();
+    await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'Tell me everything about the Hale family',
+    });
+    await waitFor(() => r.events.some((e) => e.runId === id && e.kind === 'text'));
+    await r.runtime.stopAll();
+    expect(r.runtime.isActive(id)).toBe(false);
+    const finished = r.events.find((e) => e.runId === id && e.kind === 'finished')!;
+    const saved = new RunStore(bible).get(finished.conversationId)!;
+    expect(saved.turns[0]).toMatchObject({ status: 'stopped' });
+  });
 });

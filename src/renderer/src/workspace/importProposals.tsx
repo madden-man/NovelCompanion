@@ -27,6 +27,7 @@ export function ImportProposals(props: { fileId: string; fileName: string }) {
   const headingId = useId();
 
   const live = useRunStream(runId, (done) => {
+    if (done.error?.kind === 'saveFailed') setError(done.error.message);
     if (done.conversationId) {
       void call('claude.run', { id: done.conversationId }).then((r) => setRun(r.run));
     }

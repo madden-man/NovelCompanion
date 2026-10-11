@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/claude';
 import { collectionInfo, isEntryCollection } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
+import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { formatTime } from './format';
 import './claude.css';
@@ -348,6 +349,16 @@ export function ClaudePanelGate() {
         e.preventDefault();
         claudeNav.togglePanel();
       }
+      // Escape closes the panel when focus is in it or nowhere in particular (a disabled
+      // button that had focus leaves it on the page body), never from another dialog.
+      if (e.key === 'Escape' && panelOpen && !e.defaultPrevented) {
+        const at = document.activeElement;
+        const inPanel = at?.closest('#claude-panel');
+        if (inPanel || !at || at === document.body) {
+          e.preventDefault();
+          claudeNav.closePanel();
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -389,19 +400,33 @@ function ClaudePanel() {
     );
   }, []);
 
-  const loadConversation = useCallback(async (id: string) => {
-    const { run } = await call('claude.run', { id });
+  /**
+   * Show a saved conversation. A turn still streaming in main (the panel was
+   * closed mid-answer, or another conversation is picked) is followed again,
+   * so its text keeps arriving and Stop works.
+   */
+  const adopt = useCallback(({ run, active }: Response<'claude.run'>, attach: boolean) => {
     keptConversation = run._id;
     setConversationState(run);
+    const running = active[0];
+    if (attach && running) {
+      setRunId(running);
+      setAsked(run.turns.find((t) => t.id === running)?.question ?? '');
+    }
     return run;
   }, []);
 
+  const loadConversation = useCallback(
+    async (id: string, attach = false) => adopt(await call('claude.run', { id }), attach),
+    [adopt],
+  );
+
   useEffect(() => {
     loadHistory();
-    // Reopening the panel shows the conversation it was showing.
+    // Reopening the panel shows the conversation it was showing, and follows a running answer.
     if (keptConversation) {
       call('claude.run', { id: keptConversation }).then(
-        ({ run }) => setConversationState(run),
+        (r) => adopt(r, true),
         () => {
           keptConversation = null;
         },
@@ -412,7 +437,7 @@ function ClaudePanel() {
     return () => {
       if (back instanceof HTMLElement) back.focus();
     };
-  }, [loadHistory, loadConversation]);
+  }, [loadHistory, adopt]);
 
   const live = useRunStream(runId, (finished) => {
     const settle = () => {
@@ -420,14 +445,16 @@ function ClaudePanel() {
       setAsked(null);
       loadHistory();
     };
+    const question = asked ?? '';
+    if (finished.status === 'failed') {
+      // AI-7: a failed question goes back in the box, so nothing typed is lost.
+      setDraft((d) => d || question);
+      // A run that could not be saved has no saved error to show, so say it here.
+      if (finished.error?.kind === 'saveFailed') setError(finished.error.message);
+    }
     if (!finished.conversationId) return settle();
     loadConversation(finished.conversationId).then(
-      (run) => {
-        settle();
-        // AI-7: a failed question goes back in the box, so nothing typed is lost.
-        const last = run.turns.at(-1);
-        if (last && last.status === 'failed') setDraft((d) => d || last.question);
-      },
+      () => settle(),
       (e: unknown) => {
         settle();
         setError(plainError(e));
@@ -445,7 +472,13 @@ function ClaudePanel() {
     setAsked(question);
     setDraft('');
     try {
-      await call('claude.ask', { runId: id, conversationId: conversation?._id ?? null, question });
+      const started = await call('claude.ask', {
+        runId: id,
+        conversationId: conversation?._id ?? null,
+        question,
+      });
+      // Remember the conversation now, so closing the panel mid-answer and reopening it follows the run.
+      keptConversation = started.conversationId;
     } catch (e) {
       setRunId(null);
       setAsked(null);
@@ -463,7 +496,8 @@ function ClaudePanel() {
     inputRef.current?.focus();
   };
 
-  const turns = conversation?.turns ?? [];
+  // The running turn shows from the stream below, not from its saved copy.
+  const turns = (conversation?.turns ?? []).filter((t) => t.id !== runId);
   const running = runId !== null;
 
   return (
@@ -472,12 +506,6 @@ function ClaudePanel() {
       className="claude-panel"
       aria-labelledby={ids.title}
       data-testid="claude-panel"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          nav.closePanel();
-        }
-      }}
     >
       <header className="drawer-head">
         <div>
@@ -514,7 +542,7 @@ function ClaudePanel() {
             value={conversation?._id ?? ''}
             disabled={running}
             onChange={(e) => {
-              if (e.target.value) void loadConversation(e.target.value);
+              if (e.target.value) void loadConversation(e.target.value, true);
               else setConversation(null);
             }}
             data-testid="claude-history"
@@ -535,7 +563,7 @@ function ClaudePanel() {
         {turns.map((t) => (
           <TurnView key={t.id} turn={t} />
         ))}
-        {running && asked && (
+        {running && (
           <li
             className="claude-turn"
             aria-busy="true"

@@ -1,4 +1,4 @@
-import { ClaudeRun } from '../../shared/claude';
+import { ClaudeRun, ClaudeTurn } from '../../shared/claude';
 import type { ClaudeFeature, ClaudeRunSummary } from '../../shared/claude';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
@@ -11,17 +11,58 @@ const COLLECTION = 'conversations';
  * and feature runs share it, told apart by `feature`. A run is not an entry:
  * it has no revisions and no undo, like proposals and settings, and this is
  * the one place that writes it. The read model is kept in step.
+ *
+ * Writes touch one turn at a time (`$push` a new turn, `$set` the matching
+ * turn), never the whole document, so two writers on one conversation cannot
+ * overwrite each other's turns.
  */
 export class RunStore {
   constructor(private readonly session: OpenBible) {}
 
-  async save(run: ClaudeRun): Promise<ClaudeRun> {
+  private collection() {
+    return this.session.handle.collection<ClaudeRun>(COLLECTION);
+  }
+
+  private remember(doc: ClaudeRun | null): ClaudeRun {
+    if (!doc) throw new Error('That conversation is not saved.');
+    const parsed = ClaudeRun.parse(doc);
+    this.session.model.put(COLLECTION, parsed as unknown as StoredDoc);
+    return parsed;
+  }
+
+  /** A new run with its first turn. */
+  async create(run: ClaudeRun): Promise<ClaudeRun> {
     const doc = ClaudeRun.parse(run);
-    await this.session.handle
-      .collection<ClaudeRun>(COLLECTION)
-      .replaceOne({ _id: doc._id }, doc, { upsert: true });
+    await this.collection().insertOne(doc);
     this.session.model.put(COLLECTION, doc as unknown as StoredDoc);
     return doc;
+  }
+
+  /** Add a turn to a saved conversation, leaving its other turns alone. */
+  async pushTurn(runId: string, turn: ClaudeTurn, at: string): Promise<ClaudeRun> {
+    const doc = await this.collection().findOneAndUpdate(
+      { _id: runId },
+      { $push: { turns: ClaudeTurn.parse(turn) }, $set: { modifiedAt: at } },
+      { returnDocument: 'after' },
+    );
+    return this.remember(doc);
+  }
+
+  /** Replace one turn (by its ID) and optionally the run's output; nothing else changes. */
+  async updateTurn(
+    runId: string,
+    turn: ClaudeTurn,
+    at: string,
+    output?: unknown,
+  ): Promise<ClaudeRun> {
+    const set: Record<string, unknown> = { 'turns.$': ClaudeTurn.parse(turn), modifiedAt: at };
+    if (output !== undefined) set.output = output;
+    const doc = await this.collection().findOneAndUpdate(
+      { _id: runId, 'turns.id': turn.id },
+      { $set: set },
+      { returnDocument: 'after' },
+    );
+    return this.remember(doc);
   }
 
   get(id: string): ClaudeRun | null {

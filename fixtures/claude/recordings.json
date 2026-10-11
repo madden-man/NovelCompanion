@@ -89,6 +89,12 @@
     "steps": [{ "fail": "rateLimit" }]
   },
   {
+    "name": "panel: no network",
+    "feature": "panel",
+    "match": "while offline",
+    "steps": [{ "fail": "network" }]
+  },
+  {
     "name": "panel: Anthropic rejects the key",
     "feature": "panel",
     "match": "rejected key",

@@ -86,7 +86,8 @@ export const RUN_ID = z
 
 interface Launch {
   session: OpenBible;
-  run: ClaudeRun;
+  /** A new run to create with this turn, or the saved conversation the turn joins. */
+  run: ClaudeRun | { existing: string };
   turn: ClaudeTurn;
   feature: ClaudeFeature;
   system: string;
@@ -118,7 +119,11 @@ export interface Sink {
  * writes to the bible and never loses the input.
  */
 export class ClaudeRuntime {
-  private readonly active = new Map<string, AbortController>();
+  /** Runs streaming now, by run (turn) ID: how to stop each, its conversation, and when it ends. */
+  private readonly active = new Map<
+    string,
+    { controller: AbortController; conversationId: string; done: Promise<unknown> }
+  >();
   private readonly newId = monotonicFactory();
   private readonly now: () => Date;
 
@@ -165,15 +170,27 @@ export class ClaudeRuntime {
 
   /** Stop a streaming run. What streamed so far is kept, marked stopped. */
   stop(runId: string): boolean {
-    const c = this.active.get(runId);
-    if (!c) return false;
-    c.abort();
+    const a = this.active.get(runId);
+    if (!a) return false;
+    a.controller.abort();
     return true;
   }
 
-  /** Stop everything, for example when the bible closes. */
-  stopAll(): void {
-    for (const c of this.active.values()) c.abort();
+  /**
+   * Stop every streaming run and wait until each is saved as stopped. Called
+   * when the open bible changes and before the app closes the store.
+   */
+  async stopAll(): Promise<void> {
+    const pending = [...this.active.values()];
+    for (const a of pending) a.controller.abort();
+    await Promise.allSettled(pending.map((a) => a.done));
+  }
+
+  /** Runs streaming now in one conversation. */
+  activeIn(conversationId: string): string[] {
+    return [...this.active.entries()]
+      .filter(([, a]) => a.conversationId === conversationId)
+      .map(([id]) => id);
   }
 
   // ---------- the question panel (AI-1, AI-2) ----------
@@ -182,14 +199,16 @@ export class ClaudeRuntime {
     session: OpenBible,
     req: { runId: string; conversationId: string | null; question: string },
   ): Promise<RunStart> {
-    const store = new RunStore(session);
     const at = this.now().toISOString();
     const model = this.modelFor('panel');
-    let run: ClaudeRun;
+    const turn = newTurn(req.runId, req.question, model, at);
+    let run: ClaudeRun | { existing: string };
+    let earlier: ClaudeTurn[] = [];
     if (req.conversationId) {
-      const found = store.get(req.conversationId);
+      const found = new RunStore(session).get(req.conversationId);
       if (!found || found.feature !== 'panel') throw new Error('That conversation is not saved.');
-      run = found;
+      earlier = found.turns.filter((t) => t.status === 'done');
+      run = { existing: found._id };
     } else {
       run = {
         _id: this.newId(),
@@ -197,14 +216,12 @@ export class ClaudeRuntime {
         title: titleOf(req.question),
         createdAt: at,
         modifiedAt: at,
-        turns: [],
+        turns: [turn],
       };
     }
-    const earlier = run.turns.filter((t) => t.status === 'done');
-    const turn = newTurn(req.runId, req.question, model, at);
     return this.launch({
       session,
-      run: { ...run, turns: [...run.turns, turn], modifiedAt: at },
+      run,
       turn,
       feature: 'panel',
       system: panelSystemPrompt(),
@@ -270,79 +287,92 @@ export class ClaudeRuntime {
   // ---------- shared ----------
 
   private async launch(l: Launch): Promise<RunStart> {
-    if (this.active.has(l.turn.id) || runExists(l.session, l.turn.id)) {
+    const id = l.turn.id;
+    const conversationId = 'existing' in l.run ? l.run.existing : l.run._id;
+    // Claim the run ID and the conversation before any await, so two requests cannot both pass.
+    if (this.active.has(id) || runExists(l.session, id)) {
       throw new Error('That run ID is already in use.');
     }
+    if (this.activeIn(conversationId).length) {
+      throw new Error(
+        'Claude is still answering in this conversation. Wait for the answer or stop it, then ask again.',
+      );
+    }
+    const controller = new AbortController();
+    const slot = { controller, conversationId, done: Promise.resolve() as Promise<unknown> };
+    this.active.set(id, slot);
+
     const store = new RunStore(l.session);
-    const conversationId = l.run._id;
+    const at = () => this.now().toISOString();
     const emit = (e: DistributiveOmit<ClaudeStreamEvent, 'runId' | 'conversationId'>) =>
-      this.deps.emit({ ...e, runId: l.turn.id, conversationId } as ClaudeStreamEvent);
-    // AI-7: the input is saved before anything is sent.
-    let run = await store.save(l.run);
+      this.deps.emit({ ...e, runId: id, conversationId } as ClaudeStreamEvent);
+
+    // AI-7: the input is saved before anything is sent. If it cannot be, nothing is sent
+    // and the caller gets the reason; the renderer puts the question back.
+    let run: ClaudeRun;
+    try {
+      run =
+        'existing' in l.run
+          ? await store.pushTurn(conversationId, l.turn, at())
+          : await store.create(l.run);
+    } catch {
+      this.active.delete(id);
+      throw new Error(ERROR_MESSAGES.saveFailed);
+    }
     let turn = l.turn;
-    const update = async (patch: Partial<ClaudeTurn>, runPatch: Partial<ClaudeRun> = {}) => {
+    // Each save writes this turn only (and the output), never the other turns.
+    const update = async (patch: Partial<ClaudeTurn>, output?: unknown) => {
       turn = { ...turn, ...patch };
-      run = {
-        ...run,
-        ...runPatch,
-        modifiedAt: this.now().toISOString(),
-        turns: run.turns.map((t) => (t.id === turn.id ? turn : t)),
-      };
-      run = await store.save(run);
+      try {
+        run = await store.updateTurn(conversationId, turn, at(), output);
+      } catch (e) {
+        throw new SaveFailed(e);
+      }
     };
     const fail = async (error: RunError) => {
-      await update({ status: 'failed', error, finishedAt: this.now().toISOString() });
+      await update({ status: 'failed', error, finishedAt: at() });
       emit({ kind: 'finished', status: 'failed', error });
       return run;
     };
 
-    const key = this.deps.keys.get();
-    const settings = this.deps.settings.read();
-    if (!settings.acknowledged[l.session.handle.id]) {
-      const done = fail(errorOf('notAcknowledged'));
-      return { runId: turn.id, conversationId, done };
-    }
-    if (!key) {
-      const done = fail(errorOf('noKey'));
-      return { runId: turn.id, conversationId, done };
-    }
-
-    const controller = new AbortController();
-    this.active.set(turn.id, controller);
     const entries = new Map(turn.entries.map((e) => [`${e.collection}:${e.id}`, e]));
     const proposalIds: string[] = [];
     const rejected: { summary: string; reason: string }[] = [];
     const sink: Sink = {
-      label: `${FEATURE_INFO[l.feature].label.toLowerCase()}, run ${turn.id}`,
+      label: `${FEATURE_INFO[l.feature].label.toLowerCase()}, run ${id}`,
       now: this.now,
       read: (list) => {
         const fresh = list.filter((e) => !entries.has(`${e.collection}:${e.id}`));
         for (const e of fresh) entries.set(`${e.collection}:${e.id}`, e);
         if (fresh.length) emit({ kind: 'read', entries: fresh });
       },
-      proposed: (id) => {
-        proposalIds.push(id);
-        emit({ kind: 'proposal', proposalId: id });
+      proposed: (pid) => {
+        proposalIds.push(pid);
+        emit({ kind: 'proposal', proposalId: pid });
       },
       rejected: (summary, reason) => rejected.push({ summary, reason }),
     };
-    if (turn.entries.length) emit({ kind: 'read', entries: turn.entries });
+    const collected = () => ({ entries: [...entries.values()], proposalIds, rejected });
 
-    const request: ClaudeRequest = {
-      feature: l.feature,
-      model: turn.model,
-      apiKey: key,
-      system: l.system,
-      prompt: l.prompt,
-      tools: l.tools(sink),
-      outputSchema: l.outputSchema,
-      maxTurns: l.maxTurns,
-    };
-
-    const done = (async (): Promise<ClaudeRun> => {
+    const body = async (): Promise<ClaudeRun> => {
+      const key = this.deps.keys.get();
+      if (!this.deps.settings.read().acknowledged[l.session.handle.id]) {
+        return fail(errorOf('notAcknowledged'));
+      }
+      if (!key) return fail(errorOf('noKey'));
+      if (turn.entries.length) emit({ kind: 'read', entries: turn.entries });
+      const request: ClaudeRequest = {
+        feature: l.feature,
+        model: turn.model,
+        apiKey: key,
+        system: l.system,
+        prompt: l.prompt,
+        tools: l.tools(sink),
+        outputSchema: l.outputSchema,
+        maxTurns: l.maxTurns,
+      };
       let streamed = '';
       let result: { text: string; structured: unknown } | null = null;
-      const collected = () => ({ entries: [...entries.values()], proposalIds, rejected });
       try {
         for await (const ev of this.deps.client.run(request, controller.signal)) {
           if (ev.type === 'text') {
@@ -353,12 +383,7 @@ export class ClaudeRuntime {
           }
         }
         if (controller.signal.aborted) {
-          await update({
-            ...collected(),
-            answer: streamed,
-            status: 'stopped',
-            finishedAt: this.now().toISOString(),
-          });
+          await update({ ...collected(), answer: streamed, status: 'stopped', finishedAt: at() });
           emit({ kind: 'finished', status: 'stopped', error: null });
           return run;
         }
@@ -368,31 +393,44 @@ export class ClaudeRuntime {
           sink,
         );
         await update(
-          {
-            ...collected(),
-            answer: finished.answer || streamed,
-            status: 'done',
-            finishedAt: this.now().toISOString(),
-          },
-          finished.output !== undefined ? { output: finished.output } : {},
+          { ...collected(), answer: finished.answer || streamed, status: 'done', finishedAt: at() },
+          finished.output,
         );
         emit({ kind: 'finished', status: 'done', error: null });
         return run;
       } catch (e) {
+        if (e instanceof SaveFailed) throw e;
         const error =
           e instanceof ClaudeFailure ? { kind: e.kind, message: e.message } : errorOf('other');
         // Keep what streamed: the input is in the turn already (AI-7).
         await update({ ...collected(), answer: streamed });
         return fail(error);
-      } finally {
-        this.active.delete(turn.id);
       }
-    })();
-    return { runId: turn.id, conversationId, done };
+    };
+
+    // Whatever happens, the run ends with one `finished` event and `done` never rejects:
+    // a save that fails part way is reported as saveFailed (AI-7).
+    const done = body()
+      .catch(() => {
+        emit({ kind: 'finished', status: 'failed', error: errorOf('saveFailed') });
+        return { ...run, turns: run.turns.map((t) => (t.id === id ? turn : t)) };
+      })
+      .finally(() => {
+        this.active.delete(id);
+      });
+    slot.done = done;
+    return { runId: id, conversationId, done };
   }
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** A save to MongoDB failed during a run; reported as saveFailed, never as a Claude error. */
+class SaveFailed extends Error {
+  constructor(cause: unknown) {
+    super('save failed', { cause });
+  }
+}
 
 const errorOf = (kind: RunError['kind']): RunError => ({ kind, message: ERROR_MESSAGES[kind] });
 

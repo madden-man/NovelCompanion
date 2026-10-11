@@ -204,6 +204,32 @@ test('AI-1 Stop ends a streaming answer and keeps what arrived', async () => {
   await expect(panel().getByTestId('claude-stop')).toBeHidden();
 });
 
+test('AI-1 closing the panel mid-answer and reopening it follows the same run: no second question, and Stop still works', async () => {
+  await panel().getByRole('button', { name: 'New conversation' }).click();
+  await ask('Tell me everything about the Hale family');
+  await expect(lastTurn().getByTestId('claude-answer')).toContainText('who married in 1982.');
+  await page.keyboard.press('Escape');
+  await expect(panel()).toBeHidden();
+  await page.keyboard.press('Meta+j');
+  await expect(panel()).toBeVisible();
+  // The running turn is shown once, still running, with what has streamed.
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(1);
+  await expect(lastTurn()).toHaveAttribute('data-status', 'running');
+  await expect(lastTurn().getByTestId('claude-answer')).toContainText('who married in 1982.');
+  await input().fill('How old is Margaret in 2040?');
+  await expect(panel().getByTestId('claude-send')).toBeDisabled();
+  await panel().getByTestId('claude-stop').click();
+  await expect(lastTurn()).toHaveAttribute('data-status', 'stopped');
+  // Now a second question in the same conversation is taken, and both turns are kept.
+  await panel().getByTestId('claude-send').click();
+  await expect(lastTurn()).toHaveAttribute('data-status', 'done');
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(2);
+  await expect(panel().getByTestId('claude-turn').first()).toHaveAttribute(
+    'data-status',
+    'stopped',
+  );
+});
+
 test('AI-4 asking for a scene gets a one-sentence refusal that offers the facts', async () => {
   await panel().getByRole('button', { name: 'New conversation' }).click();
   await ask('Write the scene where Margaret hears that Peter has died.');
@@ -279,4 +305,27 @@ test('IM-5 AI-6 a Word document in Import can be read by Claude, and its proposa
   await expect(panel().getByTestId('claude-disclosure')).toBeVisible();
   await panel().getByTestId('claude-disclosure').getByRole('button', { name: 'Not now' }).click();
   await expect(panel()).toBeHidden();
+});
+
+test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in its own bible', async () => {
+  await invoke('bible.open', { slug: SLUG });
+  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Claude fixture');
+  await page.keyboard.press('Meta+j');
+  await panel().getByRole('button', { name: 'New conversation' }).click();
+  await ask('Tell me everything about the Hale family');
+  await expect(lastTurn().getByTestId('claude-answer')).toContainText('who married in 1982.');
+  await invoke('bible.open', { slug: 'claude-second' });
+  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Second');
+  await invoke('bible.open', { slug: SLUG });
+  const { runs } = await invoke('claude.runs', { feature: 'panel' });
+  expect(runs[0]).toMatchObject({
+    title: 'Tell me everything about the Hale family',
+    status: 'stopped',
+  });
+  const { run, active } = await invoke('claude.run', { id: runs[0]!.id });
+  expect(active).toEqual([]);
+  expect(run.turns.at(-1)).toMatchObject({
+    status: 'stopped',
+    answer: 'The Hale family begins with Margaret and Peter, who married in 1982.',
+  });
 });

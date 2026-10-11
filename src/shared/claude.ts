@@ -75,6 +75,7 @@ export const ClaudeErrorKind = z.enum([
   'modelUnavailable',
   'invalidOutput',
   'notAcknowledged',
+  'saveFailed',
   'noBible',
   'other',
 ]);
@@ -96,6 +97,8 @@ export const ERROR_MESSAGES: Record<ClaudeErrorKind, string> = {
   invalidOutput:
     'Claude answered in a shape the app could not read, so nothing was saved from it. Try again.',
   notAcknowledged: 'Read how Claude uses your content and confirm it before the first run.',
+  saveFailed:
+    'The app could not save this run to MongoDB, so it stopped. Check your connection, then ask again. Your question is kept.',
   noBible: 'Open a bible first.',
   other: 'Claude could not finish. Try again. Your question is kept.',
 };

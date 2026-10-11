@@ -226,7 +226,7 @@ describe('AI-3 Claude has no tool that writes to the bible', () => {
       const text = readFileSync(f, 'utf8');
       const writes = [
         ...text.matchAll(
-          /\.(insertOne|insertMany|updateOne|updateMany|replaceOne|deleteOne|deleteMany)\(/g,
+          /\.(insertOne|insertMany|updateOne|updateMany|replaceOne|deleteOne|deleteMany|findOneAndUpdate|findOneAndReplace|findOneAndDelete|bulkWrite)\(/g,
         ),
       ];
       if (writes.length) expect(relative(ROOT, f)).toBe('src/main/claude/store.ts');
