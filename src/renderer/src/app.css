@@ -1806,3 +1806,12 @@ label.check {
   background: color-mix(in oklab, var(--critical) 14%, var(--surface));
   font-weight: 700;
 }
+.brief-body .uncited {
+  background: color-mix(in oklab, var(--critical) 12%, var(--surface));
+}
+.brief-body .uncited-flag {
+  font-size: 0.8rem;
+  border: 1px solid var(--critical);
+  border-radius: 4px;
+  padding: 0 4px;
+}

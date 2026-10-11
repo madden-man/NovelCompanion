@@ -3,6 +3,7 @@ import {
   citationProblems,
   markdownToHtml,
   missingLeadSections,
+  uncitedLines,
 } from '../../../../shared/domain/brief/render';
 import { editCommand } from '../../../../shared/domain/undoRunner';
 import { entryTitle } from '../../../../shared/schema';
@@ -37,7 +38,13 @@ export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
   const manifest = useMemo(() => ids(brief?.entryIds), [brief?.entryIds]);
   const problems = useMemo(() => citationProblems(content, manifest), [content, manifest]);
   const missing = useMemo(() => missingLeadSections(content), [content]);
-  const html = useMemo(() => markdownToHtml(content, manifest), [content, manifest]);
+  // SB-4: a Claude-written brief must cite something on every line; the structured one does by construction.
+  const synthesized = brief?.synthesized === true;
+  const uncited = useMemo(() => (synthesized ? uncitedLines(content) : []), [synthesized, content]);
+  const html = useMemo(
+    () => markdownToHtml(content, manifest, { flagUncited: synthesized }),
+    [content, manifest, synthesized],
+  );
 
   if (ed.status === 'missing') return <p className="callout warn">This brief no longer exists.</p>;
   if (!brief) return <p aria-live="polite">Loading the brief.</p>;
@@ -105,6 +112,12 @@ export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
       {problems.length > 0 && (
         <p className="callout crit" role="alert" data-testid="brief-problems">
           These citations are not in the selection: {problems.join(', ')}. Check those lines.
+        </p>
+      )}
+      {uncited.length > 0 && (
+        <p className="callout crit" role="alert" data-testid="brief-uncited">
+          {uncited.length === 1 ? 'One line cites' : `${uncited.length} lines cite`} no entry, so it
+          cannot be checked against the selection: {uncited.join(' / ')}
         </p>
       )}
       {missing.length > 0 && (

@@ -14,6 +14,7 @@ import {
   markdownToHtml,
   missingLeadSections,
   structuredBrief,
+  uncitedLines,
 } from '../../src/shared/domain/brief/render';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { briefCollections, briefData } from '../helpers/briefFixture';
@@ -42,7 +43,11 @@ interface Case {
 
 const expected = JSON.parse(
   readFileSync(join(import.meta.dirname, '../../fixtures/expected/sb2-selection.json'), 'utf8'),
-) as { cases: Case[]; budgetZero: { omitted: [GroupKind, string][]; ids: string[] } };
+) as {
+  cases: Case[];
+  budgetZero: { omitted: [GroupKind, string][]; ids: string[] };
+  partTwo: { beats: string[]; plannedAhead: string[] };
+};
 
 const STRAND_KINDS: GroupKind[] = [
   'era',
@@ -63,6 +68,8 @@ const SHARED_KINDS: GroupKind[] = [
   'openQuestions',
   'custom',
   'sessionNote',
+  'decidedQuestions',
+  'plannedAhead',
   'added',
 ];
 
@@ -147,9 +154,10 @@ describe('SB-2 the selection matches the hand-written known answers (fixtures/ex
       year: 2045,
       povCharacterId: 'H5',
       placeIds: ['PLC2'],
-      characterIds: ['H5', 'H3'],
+      characterIds: ['H3'],
     });
     const s = sel.strands[0]!;
+    // The point of view is always present, first, even when other characters are given.
     expect(group(s.groups, 'characters').map((it) => it.id)).toEqual(['H5', 'H3']);
     expect(group(s.groups, 'culture').map((it) => it.id)).toEqual(['CU4']);
     expect(group(s.groups, 'places').map((it) => it.id)).toEqual(['PLC2']);
@@ -196,7 +204,7 @@ describe('SB-3 the manifest is identical for the same inputs and data', () => {
 });
 
 describe('SB-6 the size budget drops items in the fixed priority order', () => {
-  test('SB-6 a budget of 0 drops every item lowest priority first and says what was left out', () => {
+  test('SB-6 A25 a budget of 0 drops everything but the lead sections, lowest priority first, and says the brief is over budget', () => {
     const sel = selectForSession(
       briefData(true),
       { kind: 'chapter', chapterId: 'CH6' },
@@ -205,8 +213,28 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
     expect(sel.omitted.map((o) => [o.kind, o.id])).toEqual(expected.budgetZero.omitted);
     expect(sel.omitted.every((o) => o.reason === 'budget')).toBe(true);
     expect(sel.ids).toEqual(expected.budgetZero.ids);
-    expect(sel.size).toBe(0);
-    expect(structuredBrief(sel)).toContain('## Left out');
+    expect(sel.size).toBeGreaterThan(0);
+    expect(sel.overBudget).toBe(true);
+    const brief = structuredBrief(sel);
+    expect(brief).toContain('## Left out');
+    expect(brief).toContain('## Over budget');
+    // An entry reported as left out is never still in the manifest.
+    expect(sel.omitted.filter((o) => sel.ids.includes(o.id))).toEqual([]);
+  });
+
+  test('SB-6 an event in two strands is left out only when it leaves both', () => {
+    const full = selectForSession(briefData(false), { kind: 'chapter', chapterId: 'CH2' });
+    for (let b = full.size - 1; b >= 0; b -= 1) {
+      const s = selectForSession(
+        briefData(false),
+        { kind: 'chapter', chapterId: 'CH2' },
+        { window: 10, budget: b },
+      );
+      expect(
+        s.omitted.filter((o) => s.ids.includes(o.id)),
+        `budget ${b}`,
+      ).toEqual([]);
+    }
   });
 
   test('SB-6 a budget one character short drops only the lowest priority item', () => {
@@ -238,24 +266,70 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
       }
     }
     expect(sel.size).toBe(n);
-    expect(DROP_ORDER.slice(2, 9)).toEqual([
+    expect(DROP_ORDER).toEqual([
+      'plannedAhead',
+      'custom',
+      'decidedQuestions',
       'openQuestions',
       'themes',
       'glossary',
       'places',
-      'culture',
-      'eventsFormative',
       'eventsPlaces',
-    ]);
-    expect(DROP_ORDER.slice(-7)).toEqual([
       'previousChapters',
       'beats',
       'povUnknown',
       'knowledge',
       'era',
-      'characters',
       'sessionNote',
     ]);
+    // A25: the DB-2 lead sections are never dropped.
+    for (const k of ['characters', 'eventsWindow', 'eventsFormative', 'culture'] as GroupKind[]) {
+      expect(DROP_ORDER).not.toContain(k);
+    }
+  });
+});
+
+describe('SB-3 SB-5 A24 more known answers', () => {
+  test('SB-3 a duplicate knowledge record gives the same manifest in either stored order', () => {
+    const cols = briefCollections(true);
+    const k4 = cols.knowledgeRecords!.find((k) => k._id === 'K4')!;
+    cols.knowledgeRecords = [...cols.knowledgeRecords!, { ...k4, _id: 'K5' }];
+    const input: BriefInput = { kind: 'chapter', chapterId: 'CH6' };
+    const a = selectForSession(fromCollections(cols), input);
+    const reversed = Object.fromEntries(
+      Object.entries(cols).map(([k, v]) => [k, [...v].reverse()]),
+    );
+    const b = selectForSession(fromCollections(reversed), input);
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+    // The lower ID counts when two records share a year.
+    expect(a.ids).toContain('K4');
+    expect(a.ids).not.toContain('K5');
+  });
+
+  test('SB-5 a whole-part session puts beats dated after the story year under Planned ahead', () => {
+    const sel = selectForSession(briefData(true), { kind: 'part', partId: 'PT2' });
+    expect(sel.year).toBe(2040);
+    expect(group(sel.shared, 'beats').map((it) => it.id)).toEqual(expected.partTwo.beats);
+    expect(group(sel.shared, 'plannedAhead').map((it) => it.id)).toEqual(
+      expected.partTwo.plannedAhead,
+    );
+    const md = structuredBrief(sel);
+    const ahead = md.indexOf('## Planned ahead (after 2040)');
+    expect(ahead).toBeGreaterThan(0);
+    expect(md.indexOf('[[B6]]')).toBeGreaterThan(ahead);
+  });
+
+  test('A24 decided questions are selected by the same link rule and shown under Decided with their decision', () => {
+    const sel = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
+    expect(group(sel.shared, 'decidedQuestions').map((it) => [it.id, it.detail])).toEqual([
+      ['Q2', 'Settled: she is. Decision: Left-handed.'],
+    ]);
+    expect(group(sel.shared, 'openQuestions').map((it) => it.id)).toEqual(['Q1', 'Q4']);
+    const md = structuredBrief(sel);
+    const decided = md.indexOf('### Decided');
+    expect(decided).toBeGreaterThan(md.indexOf('## 8. Glossary, themes, and open questions'));
+    expect(md.indexOf('[[Q2]]')).toBeGreaterThan(decided);
+    expect(md.indexOf('[[Q1]]')).toBeLessThan(decided);
   });
 });
 
@@ -322,6 +396,17 @@ describe('SB-5 SB-7 the structured brief', () => {
     expect(markdownToHtml(edited, sel.ids)).toContain(
       '<span class="cite bad" data-cite="Z2" title="Not in the selection">Z2 not in the selection</span>',
     );
+  });
+
+  test('SB-4 lines of a Claude-written brief that cite nothing are found and marked', () => {
+    const text =
+      '# Brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- Daniel is tired.\nA loose sentence.\n- Nothing selected.\n';
+    expect(uncitedLines(text)).toEqual(['Daniel is tired.', 'A loose sentence.']);
+    const html = markdownToHtml(text, sel.ids, { flagUncited: true });
+    expect(html).toContain(
+      '<li><span class="uncited" title="This line cites no entry">Daniel is tired. <strong class="uncited-flag">cites nothing</strong></span></li>',
+    );
+    expect(markdownToHtml(text, sel.ids)).not.toContain('uncited');
   });
 
   test('SB-8 Markdown to HTML escapes brief text', () => {

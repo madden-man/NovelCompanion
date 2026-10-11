@@ -52,7 +52,12 @@ export function whoKnows(data: TimelineData, factId: string, year?: number): Kno
       chapterLearnedId: str(k.chapterLearnedId) || null,
       how: str(k.how),
     }))
-    .sort((a, b) => byYear(a, b) || a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        byYear(a, b) ||
+        a.name.localeCompare(b.name) ||
+        (a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0),
+    )
     .filter((k, i, all) => all.findIndex((o) => o.characterId === k.characterId) === i)
     .filter((k) => year === undefined || isKnownBy(k.yearLearned, year) === true);
 }
@@ -100,7 +105,12 @@ export function knownBy(data: TimelineData, characterId: string, year: number): 
   const later = new Map<string, number>();
   const knownIds = new Set<string>();
   const byFact = new Map(facts.map((f) => [str(f._id), f]));
-  for (const k of data.all('knowledgeRecords').filter(live)) {
+  // SB-3: records in ID order, so of two records with the same year the lower ID counts, whatever the stored order.
+  const records = data
+    .all('knowledgeRecords')
+    .filter(live)
+    .sort((a, b) => (str(a._id) < str(b._id) ? -1 : str(a._id) > str(b._id) ? 1 : 0));
+  for (const k of records) {
     if (k.characterId !== characterId) continue;
     const fact = byFact.get(str(k.factId));
     if (!fact) continue;

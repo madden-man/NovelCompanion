@@ -92,7 +92,7 @@ export function briefModel(claude: SessionClaude): string {
  * `foreignCitation` asks for one that is not, to exercise SB-4.
  */
 export function fakeSessionClaude(
-  opts: { foreignCitation?: string; summary?: string; fail?: string } = {},
+  opts: { foreignCitation?: string; uncitedLine?: string; summary?: string; fail?: string } = {},
 ): SessionClaude {
   return {
     briefs: {
@@ -122,6 +122,7 @@ export function fakeSessionClaude(
           '## 5. Loose threads',
           ...lines(by(['beats', 'previousChapters'])),
         ];
+        if (opts.uncitedLine) out.push(`- ${opts.uncitedLine}`);
         if (opts.foreignCitation)
           out.push(`- A line with a stray source. [[${opts.foreignCitation}]]`);
         const content = out.join('\n') + '\n';

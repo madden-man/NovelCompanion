@@ -20,6 +20,7 @@ let bible: OpenBible;
 let claude: SessionClaude = { briefs: null, summaries: null };
 let picked: string | null = null;
 let printed: string | null = null;
+let exportTo: string | null = null;
 const outDir = mkdtempSync(join(tmpdir(), 'nc-m7-'));
 let invoke: Invoke;
 
@@ -50,6 +51,7 @@ const CH6_IDS = [
   'K4',
   'PLC2',
   'Q1',
+  'Q2',
   'Q4',
   'SL2',
   'TH1',
@@ -63,7 +65,7 @@ beforeAll(async () => {
   invoke = ipcFor(() => bible, {
     claude: () => claude,
     pickFile: async () => picked,
-    pickExportPath: async (name) => join(outDir, name),
+    pickExportPath: async (name) => exportTo ?? join(outDir, name),
     printPdf: async (html) => {
       printed = html;
       return Buffer.from('%PDF-1.4 fake');
@@ -101,9 +103,12 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
     const tight = await invoke('session.relevant', {
       input: { kind: 'chapter', chapterId: 'CH6' },
     });
-    expect(tight.selection.ids).toEqual(['CH6']);
+    // A25: the lead sections stay, and the brief says it is over budget.
+    expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E4', 'E5', 'H3', 'H5']);
+    expect(tight.selection.overBudget).toBe(true);
     expect(tight.selection.omitted[0]).toMatchObject({ id: 'E9', reason: 'budget' });
     expect(tight.structured).toContain('## Left out');
+    expect(tight.structured).toContain('## Over budget');
     await invoke('brief.settings.set', { budget: 40_000, window: 3 });
     const narrow = await invoke('session.relevant', {
       input: { kind: 'chapter', chapterId: 'CH6' },
@@ -138,7 +143,16 @@ describe('DB-2 DB-3 SB-7 Start session without Claude', () => {
       storyYear: 2045,
       povCharacterId: 'H5',
       date: '2026-10-11',
+      // SL-1, step 10: the record of a start carries no note, so it never shows as where you stopped.
+      stoppedAt: '',
+      notes: '',
     });
+    const again = await invoke('session.relevant', {
+      input: { kind: 'chapter', chapterId: 'CH6' },
+    });
+    const note = again.selection.shared.find((g) => g.kind === 'sessionNote')!;
+    expect(note.items.map((i) => i.id)).toEqual(['SL2']);
+    expect((await invoke('dashboard.get', {})).lastLog?.id).toBe('SL3');
     expect(r.time).toEqual({ year: 2045, chapterId: 'CH6', strandId: 'CH6-present' });
     expect(bible.repo.storyTime()).toEqual({
       year: 2045,
@@ -148,6 +162,28 @@ describe('DB-2 DB-3 SB-7 Start session without Claude', () => {
     // SB-8: linked to its chapter, so the chapter lists it.
     const linked = await invoke('entry.backlinks', { id: 'CH6' });
     expect(linked.backlinks.map((b) => b.id)).toContain(r.brief._id);
+  });
+
+  test('DB-3 a start that cannot save leaves no brief, no log, and the story time as it was', async () => {
+    const time = bible.repo.storyTime();
+    const briefs = bible.model.all('briefs').length;
+    const logs = bible.model.all('sessionLogs').length;
+    const original = bible.repo.createMany.bind(bible.repo);
+    bible.repo.createMany = async () => {
+      throw new Error('the database refused the write');
+    };
+    try {
+      await expect(
+        invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH2' } }),
+      ).rejects.toThrow(
+        'The session was not started, and nothing was saved: the database refused the write.',
+      );
+    } finally {
+      bible.repo.createMany = original;
+    }
+    expect(bible.repo.storyTime()).toEqual(time);
+    expect(bible.model.all('briefs')).toHaveLength(briefs);
+    expect(bible.model.all('sessionLogs')).toHaveLength(logs);
   });
 
   test('DB-3 a part and a year with point of view set the story time to the section year', async () => {
@@ -169,10 +205,18 @@ describe('SB-4 DB-4 Claude writes the brief from the manifest only', () => {
     expect(r.synthesized).toBe(true);
     expect(r.note).toBeNull();
     expect(r.problems).toEqual([]);
+    expect(r.uncited).toEqual([]);
     const brief = bible.model.get('briefs', r.brief._id)!;
     expect(brief.model).toBe('claude-opus-5-5');
     expect(brief.synthesized).toBe(true);
     expect(missingLeadSections(String(brief.content))).toEqual([]);
+  });
+
+  test('SB-4 a line of a Claude-written brief that cites nothing is reported', async () => {
+    claude = fakeSessionClaude({ uncitedLine: 'Iris has always loved the rain.' });
+    const r = await invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
+    expect(r.uncited).toEqual(['Iris has always loved the rain.']);
+    expect(r.problems).toEqual([]);
   });
 
   test('SB-4 a cited ID outside the manifest is reported', async () => {
@@ -339,6 +383,21 @@ describe('MS-1 MS-4 MS-5 manuscript import from Word, re-import, and the diff', 
     expect(read.diff.every((d) => d.kind === 'same')).toBe(true);
   });
 
+  test('MS-5 a brief export is refused onto a linked manuscript or any Word file', async () => {
+    const brief = bible.model.all('briefs').find((b) => !b.deletedAt)!;
+    exportTo = path;
+    const bytes = readFileSync(path);
+    await expect(invoke('brief.export', { id: brief._id, format: 'markdown' })).rejects.toThrow(
+      /That file is a manuscript/,
+    );
+    expect(readFileSync(path).equals(bytes)).toBe(true);
+    exportTo = join(outDir, 'Another.docx');
+    await expect(invoke('brief.export', { id: brief._id, format: 'pdf' })).rejects.toThrow(
+      /That file is a manuscript/,
+    );
+    exportTo = null;
+  });
+
   test('MS-5 importing never writes to the manuscript file', async () => {
     const bytes = readFileSync(path);
     await invoke('manuscript.read', { chapterId: 'CH6' });
@@ -394,7 +453,9 @@ describe('DB-1 the dashboard', () => {
       },
     });
     const d = await invoke('dashboard.get', {});
-    expect(d.lastLog).toMatchObject({ stoppedAt: '' });
+    // SL-1: the newest note you wrote, not a session's start record.
+    expect(d.lastLog).toMatchObject({ id: 'SL3', stoppedAt: 'Margaret blows out the candles.' });
+    expect(d.recentLogs.some((l) => l.text === 'Started a session' && l.briefId)).toBe(true);
     expect(d.position).toEqual({ chapterId: 'CH5', title: 'Candles', readingOrder: 5, year: 2040 });
     expect(d.openQuestions).toBe(3);
     expect(d.rewriteTasks).toEqual([

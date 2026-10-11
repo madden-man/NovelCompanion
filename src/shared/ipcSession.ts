@@ -45,6 +45,7 @@ const GROUP_KINDS = [
   'glossary',
   'themes',
   'openQuestions',
+  'decidedQuestions',
   'custom',
   'sessionNote',
   'added',
@@ -109,6 +110,7 @@ export const SelectionWire = z.strictObject({
   window: z.number(),
   budget: z.number(),
   size: z.number(),
+  overBudget: z.boolean(),
   ids: z.array(z.string()),
 });
 
@@ -125,6 +127,8 @@ const BriefResult = z.strictObject({
   note: z.string().nullable(),
   /** SB-4: cited IDs that are not in the manifest. */
   problems: z.array(z.string()),
+  /** SB-4: lines of a Claude-written brief that cite nothing. */
+  uncited: z.array(z.string()),
 });
 
 const BriefSettings = z.strictObject({

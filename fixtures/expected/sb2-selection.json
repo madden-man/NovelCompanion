@@ -211,6 +211,7 @@
         "glossary": ["GL3", "GL1"],
         "themes": ["TH1", "TH2"],
         "openQuestions": ["Q1", "Q4"],
+        "decidedQuestions": ["Q2"],
         "custom": ["CE3"],
         "sessionNote": ["SL2"]
       },
@@ -239,6 +240,7 @@
           "Q1": "linked to Daniel Hale",
           "Q4": "linked to The forties"
         },
+        "decidedQuestions": { "Q2": "linked to Iris Hale-Zhou" },
         "custom": { "CE3": "Family recipes, linked to the chapter" },
         "sessionNote": { "SL2": "2026-10-05" }
       },
@@ -269,6 +271,7 @@
         "K4",
         "PLC2",
         "Q1",
+        "Q2",
         "Q4",
         "SL2",
         "TH1",
@@ -277,10 +280,11 @@
     }
   ],
   "budgetZero": {
-    "$comment": "SB-6 with a budget of 0 on the CH6 supplement case: every item is dropped, lowest priority first, last item of a group first. The manifest keeps only the chapter itself.",
+    "$comment": "SB-6 with A25, a budget of 0 on the CH6 supplement case. Everything outside the DB-2 lead sections drops, lowest priority first, last item of a group first; an entry is listed as left out only when it leaves the manifest (F2 stays while it is still under knowledge). The lead sections (characters, window and formative events, culture) stay, and the brief is over budget.",
     "omitted": [
       ["plannedAhead", "E9"],
       ["custom", "CE3"],
+      ["decidedQuestions", "Q2"],
       ["openQuestions", "Q4"],
       ["openQuestions", "Q1"],
       ["themes", "TH2"],
@@ -288,12 +292,7 @@
       ["glossary", "GL1"],
       ["glossary", "GL3"],
       ["places", "PLC2"],
-      ["culture", "CU4"],
-      ["eventsFormative", "E3"],
-      ["eventsFormative", "E1"],
       ["eventsPlaces", "E2"],
-      ["eventsWindow", "E5"],
-      ["eventsWindow", "E4"],
       ["previousChapters", "CH5"],
       ["previousChapters", "CH4"],
       ["previousChapters", "CH3"],
@@ -302,13 +301,15 @@
       ["beats", "B7"],
       ["beats", "B1"],
       ["beats", "B4"],
-      ["povUnknown", "F2"],
       ["knowledge", "F2"],
       ["era", "ERA-2040"],
-      ["characters", "H3"],
-      ["characters", "H5"],
       ["sessionNote", "SL2"]
     ],
-    "ids": ["CH6"]
+    "ids": ["CH6", "CU4", "E1", "E3", "E4", "E5", "H3", "H5"]
+  },
+  "partTwo": {
+    "$comment": "SB-5: a whole-part session (PT2, story year 2040 from CH5). Beats of the part's chapters dated after 2040 are planned ahead (B3 2041, B4 2045, B6 2060); unresolved beats at or before 2040 in the part's arcs (B1 2029, B7 2040) stay as beats.",
+    "beats": ["B1", "B7"],
+    "plannedAhead": ["B3", "B4", "B6"]
   }
 }

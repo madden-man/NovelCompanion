@@ -323,6 +323,15 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
   await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
   await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
   await expect(brief.getByTestId('brief-missing-lead')).toHaveCount(0);
+  await expect(brief.getByTestId('brief-uncited')).toHaveCount(0);
+  // A line that cites nothing is flagged on a Claude-written brief.
+  await brief.getByRole('button', { name: 'Edit the text' }).click();
+  const text = await brief.getByTestId('brief-text').inputValue();
+  await brief.getByTestId('brief-text').fill(`${text}- Daniel has always hated rain.\n`);
+  await expect(brief.getByTestId('autosave')).toHaveText('Saved');
+  await expect(brief.getByTestId('brief-uncited')).toContainText('Daniel has always hated rain.');
+  await brief.getByRole('button', { name: 'Show the brief' }).click();
+  await expect(brief.locator('.uncited-flag')).toHaveText(['cites nothing']);
 });
 
 test('MS-1 MS-2 MS-3 MS-4 MS-5 import a chapter from Word, mark it written, approve the summary, promote, and re-import with a diff', async () => {

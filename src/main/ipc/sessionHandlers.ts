@@ -5,6 +5,7 @@
  * code through the same zod contract.
  */
 import { writeFile } from 'node:fs/promises';
+import { extname, resolve } from 'node:path';
 import { monotonicFactory } from 'ulid';
 import type { Channel, Response } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
@@ -18,6 +19,7 @@ import {
   briefPrintPage,
   citationProblems,
   structuredBrief,
+  uncitedLines,
 } from '../../shared/domain/brief/render';
 import {
   establishedPlanned,
@@ -199,34 +201,49 @@ export function sessionHandlers(
       const sel = select(input, add, remove);
       const text = await write(sel);
       const briefId = newId();
+      // DB-3 as one step: the story time first (a settings write), then the brief and the log
+      // in one transaction. If that transaction fails, the story time goes back as it was.
+      const before = repo.storyTime();
+      const time = await repo.setStoryTime(storyTimeFor(sel));
       const date = localDateString(now());
       const first = sel.strands[0];
-      const [brief, log] = await repo.createMany([
-        { collection: 'briefs', data: { _id: briefId, ...briefData(sel, text) } },
-        {
-          collection: 'sessionLogs',
-          data: {
-            title: `Session ${date}`,
-            status: 'canon',
-            date,
-            chapterId: sel.chapterIds[0] ?? null,
-            partId: input.kind === 'part' ? input.partId : null,
-            strandId: input.kind === 'strand' ? input.strandId : null,
-            storyYear: sel.year,
-            povCharacterId: first?.povCharacterId ?? null,
-            briefId,
-            stoppedAt: '',
-            notes: `Started a session for ${sel.label}.`,
+      let created: StoredDoc[];
+      try {
+        created = await repo.createMany([
+          { collection: 'briefs', data: { _id: briefId, ...briefData(sel, text) } },
+          {
+            collection: 'sessionLogs',
+            data: {
+              title: `Session ${date}`,
+              status: 'canon',
+              date,
+              chapterId: sel.chapterIds[0] ?? null,
+              partId: input.kind === 'part' ? input.partId : null,
+              strandId: input.kind === 'strand' ? input.strandId : null,
+              storyYear: sel.year,
+              povCharacterId: first?.povCharacterId ?? null,
+              briefId,
+              // Left empty: SL-1 and step 10 show notes you write, not this record of the start.
+              stoppedAt: '',
+              notes: '',
+            },
           },
-        },
-      ]);
-      const time = await repo.setStoryTime(storyTimeFor(sel));
+        ]);
+      } catch (e) {
+        await repo.setStoryTime(before);
+        throw new Error(
+          `The session was not started, and nothing was saved: ${e instanceof Error ? e.message : 'the write failed'}.`,
+          { cause: e },
+        );
+      }
+      const [brief, log] = created;
       return {
         brief: brief as Response<'session.start'>['brief'],
         log: log as Response<'session.start'>['log'],
         synthesized: text.synthesized,
         note: text.note,
         problems: citationProblems(text.content, sel.ids),
+        uncited: text.synthesized ? uncitedLines(text.content) : [],
         time,
       };
     },
@@ -242,6 +259,7 @@ export function sessionHandlers(
         synthesized: text.synthesized,
         note: text.note,
         problems: citationProblems(text.content, sel.ids),
+        uncited: text.synthesized ? uncitedLines(text.content) : [],
       };
     },
     'brief.export': async ({ id, format }) => {
@@ -251,6 +269,18 @@ export function sessionHandlers(
       const ext = format === 'pdf' ? 'pdf' : 'md';
       const path = deps.pickExportPath ? await deps.pickExportPath(`${name}.${ext}`, format) : null;
       if (!path) return { saved: false, path: null };
+      // MS-5: an export never lands on a manuscript.
+      const target = resolve(path);
+      const linked = session()
+        .model.all('chapters')
+        .map((c) => parseLocator(str(c.manuscriptSource)))
+        .filter((l): l is NonNullable<typeof l> => l !== null && l.sourceId === 'word')
+        .map((l) => resolve(l.locator));
+      if (linked.includes(target) || ['.docx', '.doc'].includes(extname(target).toLowerCase())) {
+        throw new Error(
+          'That file is a manuscript. The app never writes to a manuscript, so choose another name for the export.',
+        );
+      }
       const content = str(brief.content);
       if (format === 'markdown') {
         await writeFile(path, content, 'utf8');
@@ -442,7 +472,7 @@ export function sessionHandlers(
             id: str(l._id),
             date: str(l.date),
             chapter: chapterTitle(l.chapterId),
-            text: str(l.stoppedAt) || str(l.notes),
+            text: str(l.stoppedAt) || str(l.notes) || (str(l.briefId) ? 'Started a session' : ''),
             briefId: str(l.briefId) || null,
           })),
       };

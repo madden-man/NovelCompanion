@@ -18,13 +18,13 @@
  *   alive in the story year.
  * - World events linked to the strand's places that start after the story
  *   year go under "Planned ahead" (SB-5) instead of being left out.
- * - Open questions in step 9 are those still open (state `open`).
+ * - Step 9 lists still-open questions and decided questions (A24) apart.
  * - With a year and point of view but no chapter, step 7 is the chapter with
  *   that point of view whose strand year is latest at or before the story
  *   year, and step 8 is empty (there are no arcs to follow).
- * - SB-6 does not rank planned-ahead events, custom entries (CS-3), or the
- *   events inside the window; they drop first, first, and right after the
- *   events beyond the window respectively. Entries you add (SB-9) never drop.
+ * - SB-6 does not rank planned-ahead items or custom entries (CS-3); they drop
+ *   first. The DB-2 lead sections never drop (A25). Entries you add (SB-9) never drop.
+ * - An entry is reported as left out only once it leaves the manifest.
  */
 import type { LifeState } from '../ages';
 import { describeState } from '../ages';
@@ -86,6 +86,7 @@ export type GroupKind =
   | 'glossary'
   | 'themes'
   | 'openQuestions'
+  | 'decidedQuestions'
   | 'custom'
   | 'sessionNote'
   | 'added';
@@ -106,6 +107,7 @@ export const GROUP_TITLES: Record<GroupKind, string> = {
   glossary: 'Glossary terms',
   themes: 'Themes',
   openQuestions: 'Open questions',
+  decidedQuestions: 'Decided',
   custom: 'Custom entries',
   sessionNote: 'Last session note',
   added: 'Added by you',
@@ -128,6 +130,7 @@ export const GROUP_STEP: Record<GroupKind, number> = {
   glossary: 9,
   themes: 9,
   openQuestions: 9,
+  decidedQuestions: 9,
   custom: 9,
   sessionNote: 10,
   added: 0,
@@ -147,26 +150,30 @@ const STRAND_KINDS: GroupKind[] = [
 ];
 
 /**
+ * DB-2 lead sections (A25): characters present with ages, world events
+ * ongoing (in the window and formative), and cultural expectations. SB-6
+ * never drops them; when they alone exceed the budget the brief says so.
+ */
+export const LEAD_KINDS: GroupKind[] = ['characters', 'eventsWindow', 'eventsFormative', 'culture'];
+
+/**
  * SB-6: the order items are dropped in when the selection is over budget,
- * lowest priority first. Added entries are never dropped.
+ * lowest priority first. Added entries and the lead sections are never dropped.
  */
 export const DROP_ORDER: GroupKind[] = [
   'plannedAhead',
   'custom',
+  'decidedQuestions',
   'openQuestions',
   'themes',
   'glossary',
   'places',
-  'culture',
-  'eventsFormative',
   'eventsPlaces',
-  'eventsWindow',
   'previousChapters',
   'beats',
   'povUnknown',
   'knowledge',
   'era',
-  'characters',
   'sessionNote',
 ];
 
@@ -234,6 +241,8 @@ export interface Selection {
   budget: number;
   /** Characters of selected text after any drops (SB-6). */
   size: number;
+  /** A25: true when the lead sections alone are over the budget, so the brief is too. */
+  overBudget: boolean;
   /** The manifest (SB-3): every selected entry ID, sorted. */
   ids: string[];
 }
@@ -528,8 +537,12 @@ export function selectForSession(
 
     // 1. Characters present, with ages; else the point of view and family.
     let present = spec.characterIds.filter((id) => live(characters.get(id)));
-    if (!present.length && spec.pov && live(characters.get(spec.pov))) {
+    const povLive = !!spec.pov && live(characters.get(spec.pov));
+    if (!present.length && spec.pov && povLive) {
       present = family(data, spec.pov, Y);
+    } else if (spec.pov && povLive && !present.includes(spec.pov)) {
+      // SB-1: the point of view character is always present, first.
+      present = [spec.pov, ...present];
     }
     for (const id of present) {
       const c = characters.get(id);
@@ -771,7 +784,11 @@ export function selectForSession(
       while (g.items.length && size > settings.budget) {
         const it = g.items.pop();
         if (!it) break;
-        if (!omitted.some((o) => o.id === it.id && o.kind === kind)) {
+        // Left out only once it leaves the manifest: it may still be in another strand or group.
+        const still = all().some((x) =>
+          x.items.some((y) => y.id === it.id || y.refs.includes(it.id)),
+        );
+        if (!still && !omitted.some((o) => o.id === it.id)) {
           omitted.push({ id: it.id, title: it.title, kind, reason: 'budget' });
         }
         size = sizeOf();
@@ -801,6 +818,7 @@ export function selectForSession(
     window: settings.window,
     budget: settings.budget,
     size,
+    overBudget: size > settings.budget,
     ids: [...ids].sort(byText),
   };
 }
@@ -958,8 +976,12 @@ function sharedSteps(
     (num(a.year) ?? Infinity) - (num(b.year) ?? Infinity) ||
     byText(title(a), title(b)) ||
     byText(str(a._id), str(b._id));
+  // SB-5: a beat of the section dated after the story year is planned ahead, not a beat now.
+  const beatsAhead: SelectedItem[] = [];
   for (const b of beatDocs.filter((b) => sectionIds.includes(str(b.chapterId))).sort(beatOrder)) {
-    beats.push(beatItem(b, 'planned for this chapter'));
+    const y = num(b.year);
+    if (y !== null && y > Y) beatsAhead.push(beatItem(b, 'planned for a chapter of this section'));
+    else beats.push(beatItem(b, 'planned for this chapter'));
   }
   if (sectionArcs.length) {
     const unresolved = beatDocs
@@ -1080,6 +1102,21 @@ function sharedSteps(
       refs: [],
     }));
 
+  // A24: decided questions are included too, under their own heading, with their decision.
+  const decided: SelectedItem[] = data
+    .all('openQuestions')
+    .filter(live)
+    .filter((q) => q.state === 'decided' && isLinked(q))
+    .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)))
+    .map((q) => ({
+      id: str(q._id),
+      collection: 'openQuestions',
+      title: title(q),
+      status: str(q.status),
+      note: linkedTo(q),
+      detail: joinText(plain(q.question), `Decision: ${plain(q.decision) || 'not recorded'}`),
+      refs: [],
+    }));
   const questions: SelectedItem[] = data
     .all('openQuestions')
     .filter(live)
@@ -1176,8 +1213,10 @@ function sharedSteps(
     group('glossary', glossary),
     group('themes', themes),
     group('openQuestions', questions),
+    group('decidedQuestions', decided),
     group('custom', custom),
     group('sessionNote', sessionNote),
+    group('plannedAhead', beatsAhead),
   ];
 }
 

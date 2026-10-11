@@ -35,6 +35,30 @@ export function citationProblems(content: string, manifest: readonly string[]): 
   return citedIds(content).filter((id) => !ids.has(id));
 }
 
+const HAS_CITE = /\[\[[A-Za-z0-9_-]{1,64}\]\]/;
+const NOT_A_CLAIM = /^(nothing selected\.?|canon:|planned or idea:)$/i;
+
+/** True when a line states something and so must cite its source (SB-4). */
+function isUncited(line: string): boolean {
+  const l = line.trim();
+  if (!l || /^#{1,6}\s/.test(l)) return false;
+  if (NOT_A_CLAIM.test(l.replace(/^[-*]\s+/, ''))) return false;
+  return !HAS_CITE.test(l);
+}
+
+/**
+ * SB-4: the lines of a Claude-written brief that cite nothing. Headings and
+ * the "Nothing selected." placeholders are not claims; every other line or
+ * list item must cite at least one entry. The structured brief cites by
+ * construction, so this is checked on synthesized briefs.
+ */
+export function uncitedLines(content: string): string[] {
+  return content
+    .split('\n')
+    .filter(isUncited)
+    .map((l) => l.trim().replace(/^[-*]\s+/, ''));
+}
+
 /** DB-2: the lead sections a brief is missing or has out of order, by heading text. */
 export function missingLeadSections(content: string): string[] {
   const headings = content
@@ -110,13 +134,32 @@ export function structuredBrief(sel: Selection): string {
   ];
   for (const [heading, kinds] of numbered) {
     const items = kinds.flatMap((k) => sharedGroup(sel, k)?.items ?? []);
-    if (!items.length && (kinds[0] === 'custom' || kinds[0] === 'added')) continue;
-    section(heading, items.length ? canonSplit(items) : ['Nothing selected.']);
+    const decided = kinds.includes('openQuestions')
+      ? (sharedGroup(sel, 'decidedQuestions')?.items ?? [])
+      : [];
+    if (!items.length && !decided.length && (kinds[0] === 'custom' || kinds[0] === 'added')) {
+      continue;
+    }
+    const body =
+      items.length || !decided.length
+        ? items.length
+          ? canonSplit(items)
+          : ['Nothing selected.']
+        : [];
+    // A24: decided questions under their own heading, apart from the open ones.
+    if (decided.length) body.push('### Decided', ...decided.map(line));
+    section(heading, body);
   }
-  const ahead = sel.strands.flatMap(
-    (s) => s.groups.find((g) => g.kind === 'plannedAhead')?.items ?? [],
-  );
+  const ahead = [
+    ...sel.strands.flatMap((s) => s.groups.find((g) => g.kind === 'plannedAhead')?.items ?? []),
+    ...(sharedGroup(sel, 'plannedAhead')?.items ?? []),
+  ];
   if (ahead.length) section(`Planned ahead (after ${sel.year})`, ahead.map(line));
+  if (sel.overBudget) {
+    section('Over budget', [
+      `The lead sections alone are ${sel.size} characters, over the budget of ${sel.budget}. They are always kept.`,
+    ]);
+  }
   if (sel.omitted.length) {
     section(
       'Left out',
@@ -201,8 +244,16 @@ function inline(s: string, manifest: ReadonlySet<string> | null): string {
  * and citations. Everything is escaped first, so brief text can never inject
  * markup. With a manifest, citations outside it are marked (SB-4).
  */
-export function markdownToHtml(md: string, manifest: readonly string[] | null = null): string {
+export function markdownToHtml(
+  md: string,
+  manifest: readonly string[] | null = null,
+  opts: { flagUncited?: boolean } = {},
+): string {
   const ids = manifest ? new Set(manifest) : null;
+  const mark = (l: string, html: string) =>
+    opts.flagUncited && isUncited(l)
+      ? `<span class="uncited" title="This line cites no entry">${html} <strong class="uncited-flag">cites nothing</strong></span>`
+      : html;
   const out: string[] = [];
   let list = false;
   const close = () => {
@@ -219,12 +270,12 @@ export function markdownToHtml(md: string, manifest: readonly string[] | null = 
     } else if (/^\s*[-*]\s+/.test(l)) {
       if (!list) out.push('<ul>');
       list = true;
-      out.push(`<li>${inline(l.replace(/^\s*[-*]\s+/, ''), ids)}</li>`);
+      out.push(`<li>${mark(l, inline(l.replace(/^\s*[-*]\s+/, ''), ids))}</li>`);
     } else if (l.trim() === '') {
       close();
     } else {
       close();
-      out.push(`<p>${inline(l, ids)}</p>`);
+      out.push(`<p>${mark(l, inline(l, ids))}</p>`);
     }
   }
   close();
