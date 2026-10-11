@@ -23,8 +23,15 @@ const STATUS_CHOICES = [
   ['idea', 'Idea'],
 ] as const;
 
-/** Import (IM-1 to IM-7): pick a workbook or a Word document, map it, compare it, approve changes. */
-export function ImportView() {
+type PickedFile = NonNullable<Response<'import.pickFile'>['file']>;
+
+/**
+ * Import (IM-1 to IM-7): pick a workbook or a Word document, map it, compare
+ * it, approve changes. GD-2, GD-3: `initialFile` is a file main already read
+ * (from Google Drive); the same mapping and comparison steps follow.
+ */
+export function ImportView(props: { initialFile?: PickedFile; heading?: string } = {}) {
+  const { initialFile } = props;
   const [workbook, setWorkbook] = useState<{ info: WorkbookInfo; initial: Mapping | null } | null>(
     null,
   );
@@ -32,7 +39,7 @@ export function ImportView() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [applied, setApplied] = useState<Applied | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(initialFile !== undefined);
 
   const reset = () => {
     setPlan(null);
@@ -46,28 +53,7 @@ export function ImportView() {
     try {
       const { file } = await call('import.pickFile', { kind });
       if (!file) return;
-      if (kind === 'workbook') {
-        setDocument(null);
-        const info = await call('import.workbook', { fileId: file.id });
-        const first = info.sheets[0];
-        // A sheet with no saved mapping starts from its columns matched by header.
-        const initial =
-          info.saved.find((s) => s.sheet === first?.name)?.mapping ??
-          (first
-            ? (
-                await call('import.guess', {
-                  fileId: file.id,
-                  sheet: first.name,
-                  shape: first.shape,
-                  collection: first.shape === 'grid' ? 'worldEvents' : 'characters',
-                })
-              ).mapping
-            : null);
-        setWorkbook({ info, initial });
-      } else {
-        setWorkbook(null);
-        setDocument(await call('import.document', { fileId: file.id }));
-      }
+      await load(file);
     } catch (e) {
       setError(plainError(e));
     } finally {
@@ -75,14 +61,56 @@ export function ImportView() {
     }
   };
 
+  const load = async (file: PickedFile) => {
+    if (file.kind === 'workbook') {
+      setDocument(null);
+      const info = await call('import.workbook', { fileId: file.id });
+      const first = info.sheets[0];
+      // A sheet with no saved mapping starts from its columns matched by header.
+      const initial =
+        info.saved.find((s) => s.sheet === first?.name)?.mapping ??
+        (first
+          ? (
+              await call('import.guess', {
+                fileId: file.id,
+                sheet: first.name,
+                shape: first.shape,
+                collection: first.shape === 'grid' ? 'worldEvents' : 'characters',
+              })
+            ).mapping
+          : null);
+      setWorkbook({ info, initial });
+    } else {
+      setWorkbook(null);
+      setDocument(await call('import.document', { fileId: file.id }));
+    }
+  };
+
+  useEffect(() => {
+    if (!initialFile) return;
+    load(initialFile)
+      .catch((e: unknown) => setError(plainError(e)))
+      .finally(() => setBusy(false));
+    // Load once per file handed in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile?.id]);
+
   return (
     <section className="ws-wide stack" aria-labelledby="import-title" data-testid="import-view">
-      <h2 id="import-title">Import</h2>
-      <p className="lede">
-        Bring in an Excel workbook or a Word document. You choose where each column goes and see the
-        result before anything is saved. Importing the same file again updates the entries it made.
-      </p>
-      <div className="row">
+      <h2 id="import-title">{props.heading ?? 'Import'}</h2>
+      {initialFile ? (
+        <p className="lede">
+          {initialFile.name} from Google Drive. Map it and compare: nothing is saved until you
+          approve the changes.
+        </p>
+      ) : (
+        <p className="lede">
+          Bring in an Excel workbook or a Word document. You choose where each column goes and see
+          the result before anything is saved. Importing the same file again updates the entries it
+          made.
+        </p>
+      )}
+      <div className="row" hidden={initialFile !== undefined}>
         <button
           type="button"
           className="btn primary"

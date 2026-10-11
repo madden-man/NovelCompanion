@@ -12,6 +12,7 @@ import {
 import { StoryTimeValue } from './storyTime';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
+import { driveContract } from './ipcDrive';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -1312,6 +1313,8 @@ export const contract = {
       z.strictObject({ ok: z.literal(false), message: z.string() }),
     ]),
   },
+  /** Google Drive (M9): see `ipcDrive.ts`. */
+  ...driveContract,
 } as const;
 
 export type Channel = keyof typeof contract;

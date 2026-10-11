@@ -5,7 +5,12 @@ import type { Store } from '../db';
 import { createBibleWithDefaults, openBibleForApp } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
-import type { ImportDeps } from './importHandlers';
+import type { ImportBridge, ImportDeps } from './importHandlers';
+import { DriveService, setDriveService } from '../drive';
+import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
+import { keychainStore, memoryStore } from '../drive/secrets';
+import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
+import type { DriveChannel } from './driveHandlers';
 import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
@@ -141,7 +146,38 @@ export async function openExternal(url: string): Promise<Response<'app.openExter
 const testPath = (name: string): string | null =>
   !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
 
+/**
+ * GD-1: the one Drive service. An unpackaged build may point it at a local
+ * fake Google (tests), with tokens held in memory instead of the keychain.
+ */
+const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
+function makeDriveService(): DriveService {
+  const base = testPath(TEST_GOOGLE_ENV);
+  if (base && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(base)) {
+    return new DriveService({
+      secrets: memoryStore(),
+      endpoints: endpointsAt(base),
+      // The fake consent page redirects straight to the loopback listener.
+      openBrowser: async (url) => void (await fetch(url)),
+      authTimeoutMs: 10_000,
+    });
+  }
+  return new DriveService({
+    secrets: keychainStore(),
+    endpoints: GOOGLE_ENDPOINTS,
+    // The consent page opens in the system browser, never in the app's window.
+    openBrowser: (url) => shell.openExternal(url),
+  });
+}
+
+let importBridge: ImportBridge | null = null;
+let onDriveApplied: ((origin: string) => Promise<void>) | null = null;
+
 const importDeps: ImportDeps = {
+  bridge: (b) => {
+    importBridge = b;
+  },
+  onApplied: (origin) => onDriveApplied?.(origin),
   async pickFile(kind) {
     const forced = testPath(
       kind === 'workbook' ? 'NOVEL_COMPANION_TEST_PICK_FILE' : 'NOVEL_COMPANION_TEST_PICK_DOCUMENT',
@@ -198,6 +234,18 @@ export function registerHandlers(): void {
   const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);
+  }
+  // Google Drive (M9).
+  const drive = makeDriveService();
+  setDriveService(drive);
+  const dh = driveHandlers(
+    () => current?.session ?? null,
+    () => drive,
+    () => importBridge,
+  );
+  onDriveApplied = dh.onApplied;
+  for (const channel of DRIVE_CHANNELS) {
+    handle(channel, dh.handlers[channel] as Handler<DriveChannel>);
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {

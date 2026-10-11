@@ -40,6 +40,7 @@ import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/romanization';
+import type { DriveLink, DriveSeen } from '../../shared/domain/drive';
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
@@ -1407,6 +1408,21 @@ export class Repository {
     });
   }
 
+  // ---------- Google Drive links (GD-2, GD-3; stored in meta, never a token) ----------
+
+  /** The Drive files and folders linked to this bible, and the version of each file last brought in. */
+  driveState(): { links: DriveLink[]; seen: DriveSeen[] } {
+    const doc = this.model.get('meta', DRIVE_ID);
+    return {
+      links: (Array.isArray(doc?.links) ? doc.links : []) as DriveLink[],
+      seen: (Array.isArray(doc?.seen) ? doc.seen : []) as DriveSeen[],
+    };
+  }
+
+  async setDriveState(state: { links: DriveLink[]; seen: DriveSeen[] }): Promise<void> {
+    await this.writeMeta({ _id: DRIVE_ID, links: state.links, seen: state.seen });
+  }
+
   /** Tell views that the whole bible was replaced, after a restore or a file import. */
   announceReload(message: string): void {
     this.emitter.emit('reload', message);
@@ -1603,3 +1619,4 @@ const STORY_TIME_ID = 'storyTime';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';
+const DRIVE_ID = 'drive';

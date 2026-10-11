@@ -22,6 +22,8 @@ import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
+import { DriveLaunchNotice, DriveView } from './drive';
+import { SettingsView } from './settings';
 
 type View =
   | {
@@ -47,6 +49,8 @@ type View =
   | { kind: 'review' }
   | { kind: 'import' }
   | { kind: 'backups' }
+  | { kind: 'drive' }
+  | { kind: 'settings' }
   | { kind: 'bibles' };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
@@ -87,6 +91,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   return (
     <ZhNavProvider value={open}>
       <LaunchPanel />
+      <DriveLaunchNotice onReview={() => setView({ kind: 'drive' })} />
       <StopPrompt />
       <div className="ws-frame" data-testid="workspace">
         <TopBar />
@@ -176,9 +181,11 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
             {railButton('Import', view.kind === 'import', () => setView({ kind: 'import' }))}
             {railButton('Backups', view.kind === 'backups', () => setView({ kind: 'backups' }))}
+            {railButton('Google Drive', view.kind === 'drive', () => setView({ kind: 'drive' }))}
             {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
             {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
             {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
+            {railButton('Settings', view.kind === 'settings', () => setView({ kind: 'settings' }))}
           </div>
         </nav>
         {view.kind === 'section' ? (
@@ -242,6 +249,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'review' && <ReviewQueue />}
               {view.kind === 'import' && <ImportView />}
               {view.kind === 'backups' && <BackupsView />}
+              {view.kind === 'drive' && <DriveView />}
+              {view.kind === 'settings' && <SettingsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
               {view.kind === 'year' && <YearView />}
               {view.kind === 'compare' && <CompareView />}

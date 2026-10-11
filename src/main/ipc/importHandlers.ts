@@ -38,6 +38,24 @@ export interface ImportDeps {
   pickSavePath?: (defaultName: string) => Promise<string | null>;
   /** Ask for an exported bible file to read. Null when cancelled. */
   pickBibleFile?: () => Promise<string | null>;
+  /**
+   * GD-2: receives the bridge through which another source (Google Drive)
+   * hands an already-read file to this same pipeline: mapping, preview,
+   * compare, and apply, exactly as for a picked file.
+   */
+  bridge?: (bridge: ImportBridge) => void;
+  /** GD-3: told after the person applied (or declined) a comparison of a file that has an origin. */
+  onApplied?: (origin: string) => Promise<void> | void;
+}
+
+/** A parsed file from elsewhere, registered as if it had been picked. */
+export interface ImportBridge {
+  adopt(
+    source:
+      | { kind: 'workbook'; workbook: ParsedWorkbook }
+      | { kind: 'document'; document: ParsedDocument },
+    origin: string,
+  ): { id: string; name: string; kind: 'workbook' | 'document'; modifiedAt: string };
 }
 
 export type ImportChannel =
@@ -62,9 +80,10 @@ export type ImportHandlers = { [C in ImportChannel]: Handler<C & Channel> };
 const NO_BIBLE = 'Open a bible first.';
 const newId = monotonicFactory();
 
-type Picked =
+type Picked = (
   | { id: string; path: string; kind: 'workbook'; workbook: ParsedWorkbook }
-  | { id: string; path: string; kind: 'document'; document: ParsedDocument };
+  | { id: string; path: string; kind: 'document'; document: ParsedDocument }
+) & { origin?: string };
 
 type StoredPlan = {
   id: string;
@@ -72,6 +91,8 @@ type StoredPlan = {
   file: SourceFile;
   mapping: Mapping | null;
   createSection: DocumentPlan['createSection'];
+  /** Where the file came from, when not a local pick (GD-3). */
+  origin?: string;
 };
 
 function wireFile(p: Picked) {
@@ -108,6 +129,20 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
     for (const old of [...plans.keys()].slice(0, Math.max(0, plans.size - 8))) plans.delete(old);
     return id;
   };
+  const originOf = (fileId: string) => {
+    const o = files.get(fileId)?.origin;
+    return o ? { origin: o } : {};
+  };
+  deps.bridge?.({
+    adopt(source, origin) {
+      const p: Picked =
+        source.kind === 'workbook'
+          ? { id: newId(), path: '', kind: 'workbook', workbook: source.workbook, origin }
+          : { id: newId(), path: '', kind: 'document', document: source.document, origin };
+      files.set(p.id, p);
+      return wireFile(p);
+    },
+  });
   const sectionOf = (collection: string, sectionId?: string) =>
     collection === 'customEntries' && sectionId
       ? (session().model.get('customSections', sectionId) as unknown as
@@ -205,7 +240,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       const sheet = wb.sheets.find((x) => x.name === mapping.sheet);
       if (!sheet) throw new Error(`The workbook has no sheet called ${mapping.sheet}.`);
       const { set, file } = planSheet(s, sheet, wb, mapping);
-      const id = remember({ set, file, mapping, createSection: null });
+      const id = remember({ set, file, mapping, createSection: null, ...originOf(fileId) });
       return planView(s, id, wb.fileName, set);
     },
 
@@ -218,6 +253,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
         await s.repo.saveMapping(mappingKey(plan.file.fileName, plan.mapping.sheet), plan.mapping);
       }
       plans.delete(planId);
+      if (plan.origin) await deps.onApplied?.(plan.origin);
       const latest = s.snapshots ? (await s.snapshots.list())[0] : undefined;
       return { ...result, snapshot: latest?.id ?? null };
     },
@@ -262,6 +298,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
         file: plan.file,
         mapping: null,
         createSection: plan.createSection,
+        ...originOf(fileId),
       });
       return planView(s, id, doc.fileName, plan.set);
     },
