@@ -16,6 +16,7 @@ import type { FieldWarning } from '../../../shared/domain/warnings';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import { useEntries, useList } from './data';
 import { EntryPicker, PickerList, pickerKeys, useLookup, useSearch } from './pickers';
+import { ZhMeaning, ZhPreview } from './Zh';
 
 export interface Messages {
   warnings: FieldWarning[];
@@ -171,6 +172,7 @@ function TextField({ spec, value, onChange, path, messages }: FieldProps) {
         value={asString(value)}
         onChange={(e) => onChange(spec.nullable && e.target.value === '' ? null : e.target.value)}
       />
+      <ZhMeaning text={asString(value)} />
     </FieldShell>
   );
 }
@@ -232,6 +234,7 @@ function LongTextField({ spec, value, onChange, path, messages, onMention }: Fie
       {mention && (
         <PickerList hits={hits} active={active} onPick={pick} id={listId} query={mention.query} />
       )}
+      <ZhPreview text={text} />
     </FieldShell>
   );
 }

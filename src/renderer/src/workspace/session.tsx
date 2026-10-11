@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
-import { stopLogData } from '../../../shared/domain/sessionLog';
+import { stopLogData, stopPromptLabel } from '../../../shared/domain/sessionLog';
 import { entryTitle } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
@@ -14,12 +14,12 @@ import { useUndo } from './undo';
  * working" cancels the close.
  */
 export function StopPrompt() {
-  const [open, setOpen] = useState(false);
-  useEffect(() => window.api.on('app.closeRequested', () => setOpen(true)), []);
-  return open ? <StopDialog onCancel={() => setOpen(false)} /> : null;
+  const [open, setOpen] = useState<{ quitting: boolean } | null>(null);
+  useEffect(() => window.api.on('app.closeRequested', ({ quitting }) => setOpen({ quitting })), []);
+  return open ? <StopDialog quitting={open.quitting} onCancel={() => setOpen(null)} /> : null;
 }
 
-function StopDialog({ onCancel }: { onCancel: () => void }) {
+function StopDialog({ quitting, onCancel }: { quitting: boolean; onCancel: () => void }) {
   const undo = useUndo();
   const chapters = useEntries('chapters');
   const [stoppedAt, setStoppedAt] = useState('');
@@ -30,7 +30,11 @@ function StopDialog({ onCancel }: { onCancel: () => void }) {
   const area = useRef<HTMLTextAreaElement>(null);
   const ids = { title: useId(), text: useId(), chapter: useId() };
   useFocusTrap(dialogRef);
-  useEffect(() => area.current?.focus(), []);
+  useEffect(() => {
+    area.current?.focus();
+    // Tell main the prompt is up, so it waits for the person instead of timing out.
+    void call('app.closePromptShown', {});
+  }, []);
 
   const cancel = () => {
     void call('app.confirmClose', { proceed: false });
@@ -107,7 +111,7 @@ function StopDialog({ onCancel }: { onCancel: () => void }) {
             disabled={busy}
             onClick={() => void finish(true)}
           >
-            {hasNote ? 'Save note and quit' : 'Quit without a note'}
+            {stopPromptLabel(hasNote, quitting)}
           </button>
           {error && (
             <button
@@ -116,7 +120,7 @@ function StopDialog({ onCancel }: { onCancel: () => void }) {
               disabled={busy}
               onClick={() => void finish(false)}
             >
-              Quit without saving
+              {quitting ? 'Quit without saving' : 'Close without saving'}
             </button>
           )}
           <button type="button" className="btn" disabled={busy} onClick={cancel}>

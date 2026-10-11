@@ -17,7 +17,7 @@
         "primary": true,
         "povCharacterId": "H5",
         "characterIds": ["H5", "Z5", "U1"],
-        "placeIds": []
+        "placeIds": ["PLC4"]
       }
     ],
     "factsInPlay": [],
@@ -25,7 +25,12 @@
     "manuscriptText": "<p>Iris was forty-four the winter she brought Noor to the archive. The Archivist opened the door before they knocked.</p><p><em>You are late,</em> the Archivist said, as if they had been expected for years.</p>",
     "summary": "Iris and Noor visit the Archivist.",
     "sourceFile": "chapter-01.docx",
-    "links": [{ "targetId": "E9", "kind": "happened" }]
+    "links": [
+      {
+        "targetId": "E9",
+        "kind": "happened"
+      }
+    ]
   },
   {
     "_id": "CH2",
@@ -45,7 +50,7 @@
         "primary": true,
         "povCharacterId": "H3",
         "characterIds": ["H3", "Z3", "H5"],
-        "placeIds": []
+        "placeIds": ["PLC2"]
       },
       {
         "id": "CH2-backstory",
@@ -55,7 +60,7 @@
         "primary": false,
         "povCharacterId": "Z3",
         "characterIds": ["Z3", "Z1", "H5"],
-        "placeIds": []
+        "placeIds": ["PLC3"]
       }
     ],
     "factsInPlay": [],
@@ -173,15 +178,25 @@
       }
     ],
     "factsInPlay": [
-      { "factId": "F2", "characterId": "H5", "note": "Iris asks Daniel about his uncle." }
+      {
+        "factId": "F2",
+        "characterId": "H5",
+        "note": "Iris asks Daniel about his uncle."
+      }
     ],
     "written": false,
     "manuscriptText": "<p>Iris asked her father about the uncle nobody mentioned. Outside, the old flood line was still painted on the wall.</p>",
     "summary": "Iris starts asking questions.",
     "sourceFile": null,
     "links": [
-      { "targetId": "E3", "kind": "happened" },
-      { "targetId": "E10", "kind": "happened" }
+      {
+        "targetId": "E3",
+        "kind": "happened"
+      },
+      {
+        "targetId": "E10",
+        "kind": "happened"
+      }
     ]
   },
   {
@@ -202,11 +217,15 @@
         "primary": true,
         "povCharacterId": "Z3",
         "characterIds": ["Z3", "H5", "X1"],
-        "placeIds": []
+        "placeIds": ["PLC3"]
       }
     ],
     "factsInPlay": [
-      { "factId": "F1", "characterId": "Z3", "note": "Lan finally shows Iris the letters." }
+      {
+        "factId": "F1",
+        "characterId": "Z3",
+        "note": "Lan finally shows Iris the letters."
+      }
     ],
     "written": false,
     "manuscriptText": "<p>Lan had grown up in Shanghai, and the rain there had always come sideways. She told Iris and Tomas about it while they waited out the storm.</p>",
@@ -239,6 +258,11 @@
     "manuscriptText": "<p>Noor taught her mother to talk to the house robot without shouting.</p>",
     "summary": "Noor and Iris, older.",
     "sourceFile": null,
-    "links": [{ "targetId": "E9", "kind": "happened" }]
+    "links": [
+      {
+        "targetId": "E9",
+        "kind": "happened"
+      }
+    ]
   }
 ]

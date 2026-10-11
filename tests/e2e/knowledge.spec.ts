@@ -85,11 +85,30 @@ test('KN-1 KN-2 the fact page lists who knows it, and a record before birth save
   expect(saved.warnings.map((w) => w.code)).toEqual(['learned-before-birth']);
 });
 
-test('KN-1 the character page shows what they know, including the fact just recorded', async () => {
+test('KN-1 the character page shows what H5 knows and does not know in 2059 and in 2060', async () => {
+  await invoke('storyTime.set', { time: { year: 2059 } });
   await rail(page, 'Characters').click();
   await pick(/Iris Hale-Zhou/).click();
-  await expect(page.getByTestId('knowledge')).toContainText("Peter's letter");
-  await expect(page.getByTestId('knowledge')).toContainText('2060');
+  await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2059.');
+  await expect(page.getByTestId('knowledge-empty')).toBeVisible();
+  const missing = page.getByTestId('does-not-know');
+  await expect(missing.locator('[data-fact="F2"]')).toContainText("Peter's letter");
+  await expect(missing.locator('[data-fact="F2"]')).toContainText('not yet in 2059');
+  await expect(missing.locator('[data-fact="F2"]')).toContainText('They learn it in 2060.');
+  await expect(missing.locator('[data-fact="F1"]')).toContainText('Meiling was engaged before Wei');
+  await expect(missing.locator('[data-fact="F1"]')).toContainText('never');
+
+  await invoke('storyTime.set', { time: { year: 2060 } });
+  await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2060.');
+  const known = page.getByTestId('knowledge');
+  await expect(known).toContainText("Peter's letter");
+  await expect(known).toContainText('learned 2060');
+  await expect(known).toContainText('She finds it in Margaret');
+  await expect(page.getByTestId('does-not-know').locator('[data-fact="F2"]')).toHaveCount(0);
+  await expect(page.getByTestId('does-not-know').locator('[data-fact="F1"]')).toContainText(
+    'never',
+  );
+  await invoke('storyTime.set', { time: null });
 });
 
 test('KN-3 a chapter lists which characters act on which facts, and the outline chapter page shows them', async () => {
@@ -136,6 +155,32 @@ test('TH-1 a theme gets appearances by chapter, and the chapter page shows the t
   await waitSaved(page);
   const page3 = (await invoke('chapter.page', { id: 'CH3' })).page;
   expect(page3.themes).toMatchObject([{ title: 'Letters kept', note: 'Lan hides the letters' }]);
+});
+
+test('TH-1 adding a theme in the chapter Themes field creates an empty appearance, and removing it removes the appearance', async () => {
+  const themes = (await invoke('entry.list', { collection: 'themes', trash: 'exclude' })).entries;
+  const theme = themes.find((t) => t.entry.title === 'Letters kept')!.entry;
+  await rail(page, 'Chapters').click();
+  await pick(/Candles/).click();
+  const editor = page.getByTestId('editor');
+  const themesField = field(editor, 'themeIds');
+  await themesField.locator(':scope > select').selectOption(theme._id);
+  await waitSaved(page);
+  const apps = async () =>
+    (
+      (await invoke('entry.get', { collection: 'themes', id: theme._id })).entry.appearances as {
+        chapterId: string;
+        note: string;
+      }[]
+    ).filter((a) => a.chapterId === 'CH5');
+  expect(await apps()).toEqual([{ chapterId: 'CH5', note: '' }]);
+  expect((await invoke('chapter.page', { id: 'CH5' })).page.themes).toMatchObject([
+    { title: 'Letters kept', note: '' },
+  ]);
+  await themesField.locator(':scope > .chips .chip-remove').first().click();
+  await waitSaved(page);
+  expect(await apps()).toEqual([]);
+  expect((await invoke('chapter.page', { id: 'CH5' })).page.themes).toEqual([]);
 });
 
 test('OQ-1 an open question is marked decided, warns until it has a decision, and filters by state', async () => {
@@ -363,6 +408,11 @@ test('SL-1 closing the app asks where you stopped, saves the note, and the next 
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
   const prompt = page.getByTestId('stop-prompt');
   await expect(prompt.getByRole('heading', { name: 'Where did you stop?' })).toBeVisible();
+  // Only the window is closing, so the buttons say close, not quit.
+  await expect(prompt.getByRole('button', { name: 'Close without a note' })).toBeVisible();
+  await prompt.getByLabel('Where did you stop?', { exact: true }).fill('A note');
+  await expect(prompt.getByRole('button', { name: 'Save note and close' })).toBeVisible();
+  await expect(prompt.getByRole('button', { name: /quit/i })).toHaveCount(0);
   await prompt.getByRole('button', { name: 'Keep working' }).click();
   await expect(prompt).toHaveCount(0);
   await expect(page.getByTestId('workspace')).toBeVisible();
@@ -370,9 +420,11 @@ test('SL-1 closing the app asks where you stopped, saves the note, and the next 
   // Quit (what Cmd+Q does): answer, and the note is saved before the app exits.
   const closing = app.close();
   await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole('button', { name: 'Quit without a note' })).toBeVisible();
   await prompt
     .getByLabel('Where did you stop?', { exact: true })
     .fill('Iris is opening the box in the attic.');
+  await expect(prompt.getByRole('button', { name: 'Save note and quit' })).toBeVisible();
   await prompt.getByLabel('Chapter (optional)').selectOption('CH6');
   await prompt.getByRole('button', { name: 'Save note and quit' }).click();
   await closing;
@@ -406,4 +458,39 @@ test('SL-1 closing the app asks where you stopped, saves the note, and the next 
   expect(
     (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries,
   ).toHaveLength(before);
+});
+
+test('SL-1 a page that never answers cannot trap the window: it closes after the wait with no log written', async () => {
+  test.setTimeout(120_000);
+  await app.close();
+  // A short wait for the test; a real app waits 10 seconds.
+  ({ app, page } = await launch(server.getUri(), {
+    NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
+    NOVEL_COMPANION_STOP_PROMPT_TIMEOUT_MS: '1500',
+  }));
+  invoke = invokeVia(page);
+  await openBible();
+  const logs = async () =>
+    (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries.length;
+  const before = await logs();
+  // Hang the page: its script is busy for longer than the wait, so it cannot show the prompt.
+  void page
+    .evaluate(() => {
+      const end = Date.now() + 8_000;
+      while (Date.now() < end) {
+        // busy
+      }
+    })
+    .catch(() => undefined);
+  const started = Date.now();
+  const closed = new Promise<void>((resolve) => app.process().once('exit', () => resolve()));
+  await app.evaluate(({ app: electron }) => electron.quit()).catch(() => undefined);
+  await closed;
+  const waited = Date.now() - started;
+  expect(waited).toBeGreaterThanOrEqual(1_400);
+  expect(waited).toBeLessThan(7_500);
+  ({ app, page } = await launch(server.getUri()));
+  invoke = invokeVia(page);
+  await openBible();
+  expect(await logs()).toBe(before);
 });

@@ -1,0 +1,70 @@
+[
+  {
+    "_id": "PLC1",
+    "title": "Portland",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "parentId": null,
+    "communityId": null,
+    "descriptions": [
+      {
+        "startYear": null,
+        "endYear": null,
+        "text": "A rainy river city in Oregon."
+      }
+    ]
+  },
+  {
+    "_id": "PLC2",
+    "title": "The Hale house",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "parentId": "PLC1",
+    "communityId": null,
+    "descriptions": [
+      {
+        "startYear": null,
+        "endYear": null,
+        "text": "A narrow two-story house with a kitchen at the back."
+      }
+    ]
+  },
+  {
+    "_id": "PLC3",
+    "title": "Guangzhou",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "parentId": null,
+    "communityId": null,
+    "descriptions": [
+      {
+        "startYear": null,
+        "endYear": null,
+        "text": "A humid southern city where Lan grew up."
+      }
+    ]
+  },
+  {
+    "_id": "PLC4",
+    "title": "The Archive",
+    "status": "canon",
+    "provenance": "invented",
+    "createdAt": "2026-01-15T09:00:00.000Z",
+    "modifiedAt": "2026-01-15T09:00:00.000Z",
+    "parentId": "PLC1",
+    "communityId": null,
+    "descriptions": [
+      {
+        "startYear": null,
+        "endYear": null,
+        "text": "A quiet records building with a door that opens before anyone knocks."
+      }
+    ]
+  }
+]

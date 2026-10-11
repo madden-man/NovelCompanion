@@ -25,9 +25,15 @@ import {
   timelineChart,
   yearForAge,
 } from '../../shared/domain/timeline';
-import { chapterPage, outlineGrid, reorder } from '../../shared/domain/outline';
+import {
+  beatsOfArc,
+  chapterPage,
+  moveChapter,
+  outlineGrid,
+  reorderBeatsInArc,
+} from '../../shared/domain/outline';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
-import { systemFor, termProblem } from '../../shared/domain/romanization';
+import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
 import { factPage, knownBy, whoKnows } from '../../shared/domain/knowledge';
 import { latestLog } from '../../shared/domain/sessionLog';
 import { compileFilters } from '../../shared/domain/searchFilters';
@@ -117,8 +123,24 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
   };
   // Stored entries carry modifiedAt; the response schema checks it on the way out.
   const wire = (d: StoredDoc) => d as unknown as WireEntry;
+  // TH-1: a chapter's Themes are read from the themes that list it as an appearance.
+  const derived = (c: EntryCollection, entry: StoredDoc): StoredDoc =>
+    c === 'chapters'
+      ? {
+          ...entry,
+          themeIds: session()
+            .model.all('themes')
+            .filter(
+              (t) =>
+                !t.deletedAt &&
+                Array.isArray(t.appearances) &&
+                t.appearances.some((a: { chapterId?: string }) => a.chapterId === entry._id),
+            )
+            .map((t) => t._id),
+        }
+      : entry;
   const withWarnings = (c: EntryCollection, entry: StoredDoc) => ({
-    entry: wire(entry),
+    entry: wire(derived(c, entry)),
     warnings: session().repo.warnings(c, entry),
   });
   const titled = (links: { collection: string; id: string; kind: string }[]) =>
@@ -148,7 +170,13 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     return {
       languages: (languages?.items ?? []).map((l) => {
         const sys = systemFor(l.id, settings, systems);
-        return { id: l.id, label: l.label, systemId: sys?.id ?? null, kind: sys?.kind ?? null };
+        return {
+          id: l.id,
+          label: l.label,
+          systemId: sys?.id ?? null,
+          kind: sys?.kind ?? null,
+          note: sys && !sys.kind ? NO_CHECKER_NOTE : null,
+        };
       }),
       systems: (systems?.items ?? []).map((i) => ({ id: i.id, label: i.label })),
     };
@@ -345,34 +373,64 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     },
     'plot.reorder': async (req) => {
       const { model, repo } = session();
-      const field = req.kind === 'chapters' ? ('readingOrder' as const) : ('order' as const);
-      const group = (
-        req.kind === 'chapters'
-          ? model.all('chapters').filter((c) => c.partId === req.groupId)
-          : model
-              .all('plotBeats')
-              .filter((b) => Array.isArray(b.arcIds) && b.arcIds.includes(req.groupId))
-      )
-        .filter((d) => !d.deletedAt)
-        .sort(
-          (a, b) =>
-            Number(a[field] ?? 0) - Number(b[field] ?? 0) ||
-            String(a.title).localeCompare(String(b.title)),
+      if (req.kind === 'chapters') {
+        const moved = model.get('chapters', req.movedId);
+        if (!moved || moved.deletedAt) throw new Error('That chapter does not exist.');
+        const part = model.get('parts', req.groupId);
+        if (!part || part.deletedAt) throw new Error('That part does not exist.');
+        const patches = moveChapter(
+          model.all('chapters'),
+          model.all('parts'),
+          model.all('books'),
+          req.movedId,
+          req.groupId,
+          req.toIndex,
         );
+        const before = new Map(model.all('chapters').map((c) => [c._id, c]));
+        await repo.reorder(
+          'chapters',
+          patches.map((p) => ({
+            id: p.id,
+            patch: { readingOrder: p.readingOrder, partId: p.partId },
+          })),
+        );
+        return {
+          collection: 'chapters' as const,
+          changes: patches.map((p) => {
+            const c = before.get(p.id);
+            return {
+              id: p.id,
+              before: {
+                readingOrder: Number(c?.readingOrder ?? 0),
+                partId: String(c?.partId ?? ''),
+              },
+              after: { readingOrder: p.readingOrder, partId: p.partId },
+            };
+          }),
+        };
+      }
+      const group = beatsOfArc(model.all('plotBeats'), req.groupId);
       if (!group.some((d) => d._id === req.movedId)) {
         throw new Error('That item is not in this group.');
       }
-      const moves = reorder(
-        group.map((d) => ({ id: d._id, value: Number(d[field] ?? 0) })),
+      const patches = reorderBeatsInArc(
+        model.all('plotBeats'),
+        req.groupId,
         req.movedId,
         req.toIndex,
-        req.kind === 'chapters' ? 'reuse' : 'sequence',
       );
-      const before = new Map(group.map((d) => [d._id, Number(d[field] ?? 0)]));
-      await repo.reorder(req.kind === 'chapters' ? 'chapters' : 'plotBeats', moves);
+      const before = new Map(group.map((b) => [b._id, b]));
+      await repo.reorder(
+        'plotBeats',
+        patches.map((p) => ({ id: p.id, patch: { arcOrders: p.arcOrders } })),
+      );
       return {
-        field,
-        changes: moves.map((m) => ({ id: m.id, before: before.get(m.id) ?? 0, after: m.value })),
+        collection: 'plotBeats' as const,
+        changes: patches.map((p) => ({
+          id: p.id,
+          before: { arcOrders: (before.get(p.id)?.arcOrders ?? []) as unknown },
+          after: { arcOrders: p.arcOrders },
+        })),
       };
     },
     'culture.entriesFor': ({ communityId, year }) => ({
@@ -401,6 +459,9 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     'romanization.check': ({ languageId, text }) => {
       const { model, repo } = session();
       const systems = model.get('lists', 'romanizationSystems') as ListDoc | undefined;
+      const system = systemFor(languageId, repo.romanizationSettings(), systems);
+      // A system with no checker never reports "follows the system": it says it cannot check.
+      if (system && !system.kind) return { ok: true, message: NO_CHECKER_NOTE };
       const problem = termProblem(
         { language: languageId, romanization: text },
         repo.romanizationSettings(),
@@ -521,9 +582,10 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
     'knowledge.whoKnows': ({ factId, year }) => ({
       knowers: whoKnows(session().model, factId, year),
     }),
-    'knowledge.knownBy': ({ characterId, year }) => ({
-      facts: knownBy(session().model, characterId, year),
-    }),
+    'knowledge.knownBy': ({ characterId, year }) => {
+      const { known, unknown } = knownBy(session().model, characterId, year);
+      return { facts: known, unknown };
+    },
     'sessionLog.latest': () => {
       const { model } = session();
       const log = latestLog(model.all('sessionLogs'));

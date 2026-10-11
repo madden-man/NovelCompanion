@@ -255,6 +255,11 @@ export function RomanizationView(props: { onOpen: Open }) {
                 </option>
               ))}
             </select>
+            {l.note && (
+              <p className="callout" role="note" data-testid="romanization-no-checker">
+                {l.note}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -279,6 +284,69 @@ export function RomanizationView(props: { onOpen: Open }) {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+/** GL-1, GL-3: every glossary term in one table. Hovering or focusing the characters shows the meaning. */
+export function GlossaryTable(props: { onOpen: Open }) {
+  const terms = useEntries('glossaryTerms');
+  const languages = useList('languages');
+  const label = (id: unknown) =>
+    languages?.items.find((l) => l.id === id)?.label ?? String(id ?? '');
+  const rows = useMemo(
+    () => [...terms].sort((a, b) => String(a.characters).localeCompare(String(b.characters))),
+    [terms],
+  );
+  return (
+    <section
+      className="ws-wide stack"
+      aria-labelledby="glossary-table-title"
+      data-testid="glossary-table"
+    >
+      <h2 id="glossary-table-title">Glossary table</h2>
+      <p className="lede">
+        Every term with its characters, romanization, language, and meaning. Hover over the
+        characters or focus them with the keyboard for the meaning.
+      </p>
+      {rows.length === 0 ? (
+        <p className="example-note">No glossary terms yet.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="compact">
+            <thead>
+              <tr>
+                <th scope="col">Characters</th>
+                <th scope="col">Romanization</th>
+                <th scope="col">Language</th>
+                <th scope="col">Meaning</th>
+                <th scope="col">Open</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => (
+                <tr key={t._id} data-term={t._id}>
+                  <td>
+                    <Zh text={String(t.characters ?? '')} />
+                  </td>
+                  <td>{String(t.romanization ?? '')}</td>
+                  <td>{label(t.language)}</td>
+                  <td>{String(t.meaning ?? '')}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => props.onOpen('glossaryTerms', t._id)}
+                    >
+                      Edit {String(t.characters ?? '')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

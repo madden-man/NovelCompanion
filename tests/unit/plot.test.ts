@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { chapterPage, outlineGrid, reorder } from '../../src/shared/domain/outline';
+import {
+  beatOrderIn,
+  beatsOfArc,
+  chapterPage,
+  moveChapter,
+  outlineGrid,
+  reorder,
+  reorderBeatsInArc,
+} from '../../src/shared/domain/outline';
 import { reorderCommand } from '../../src/shared/domain/undoRunner';
 import { readFixture } from '../helpers/loadFixture';
 
@@ -199,6 +207,136 @@ describe('PL-3 reorder keeps reading order and story year apart', () => {
   });
 });
 
+describe('PL-3 beat order is stored per arc', () => {
+  const beat = (id: string, arcOrders: { arcId: string; order: number }[]) => ({
+    _id: id,
+    title: id,
+    arcIds: arcOrders.map((o) => o.arcId),
+    arcOrders,
+    ...base,
+  });
+  const beats = [
+    beat('b1', [{ arcId: 'A1', order: 1 }]),
+    beat('b2', [
+      { arcId: 'A1', order: 2 },
+      { arcId: 'A2', order: 1 },
+    ]),
+    beat('b3', [
+      { arcId: 'A1', order: 3 },
+      { arcId: 'A2', order: 2 },
+    ]),
+  ];
+
+  test('PL-3 a beat in two arcs has a position in each', () => {
+    expect(beatOrderIn(beats[1]!, 'A1')).toBe(2);
+    expect(beatOrderIn(beats[1]!, 'A2')).toBe(1);
+    expect(beatsOfArc(beats, 'A2').map((b) => b._id)).toEqual(['b2', 'b3']);
+  });
+
+  test('PL-3 reordering in one arc renumbers only that arc and keeps the position in the other', () => {
+    const patches = reorderBeatsInArc(beats, 'A1', 'b3', 0);
+    expect(patches).toEqual([
+      {
+        id: 'b3',
+        arcOrders: [
+          { arcId: 'A2', order: 2 },
+          { arcId: 'A1', order: 1 },
+        ],
+      },
+      { id: 'b1', arcOrders: [{ arcId: 'A1', order: 2 }] },
+      {
+        id: 'b2',
+        arcOrders: [
+          { arcId: 'A2', order: 1 },
+          { arcId: 'A1', order: 3 },
+        ],
+      },
+    ]);
+    // Applying it leaves A2 exactly as it was.
+    const applied = beats.map((b) => {
+      const p = patches.find((x) => x.id === b._id);
+      return p ? { ...b, arcOrders: p.arcOrders } : b;
+    });
+    expect(beatsOfArc(applied, 'A1').map((b) => b._id)).toEqual(['b3', 'b1', 'b2']);
+    expect(beatsOfArc(applied, 'A2').map((b) => [b._id, beatOrderIn(b, 'A2')])).toEqual([
+      ['b2', 1],
+      ['b3', 2],
+    ]);
+  });
+
+  test('PL-3 a beat with no position in an arc yet is added to the numbering', () => {
+    const loose = [...beats, { _id: 'b4', title: 'b4', arcIds: ['A2'], arcOrders: [], ...base }];
+    const patches = reorderBeatsInArc(loose, 'A2', 'b4', 0);
+    expect(patches.find((p) => p.id === 'b4')?.arcOrders).toEqual([{ arcId: 'A2', order: 1 }]);
+    expect(patches.find((p) => p.id === 'b2')?.arcOrders).toContainEqual({ arcId: 'A1', order: 2 });
+  });
+
+  test('PL-4 the chapter page orders beats by the first of the chapter arcs they belong to', () => {
+    const d = {
+      all: (c: string) =>
+        ({ ...extra, plotBeats: beats.map((b) => ({ ...b, chapterId: 'X1' })) })[c] ?? [],
+    };
+    // X1 lists A1 first, so A1 positions rule: b1, b2, b3.
+    expect(chapterPage(d, 'X1')?.beats.map((b) => b.id)).toEqual(['b1', 'b2', 'b3']);
+  });
+});
+
+describe('PL-3 a chapter can move into another part', () => {
+  const parts = (extra.parts ?? []) as Record<string, unknown>[];
+  const books = (extra.books ?? []) as Record<string, unknown>[];
+  const chapters = [
+    { _id: 'c1', title: 'c1', partId: 'P1', readingOrder: 1, ...base },
+    { _id: 'c2', title: 'c2', partId: 'P1', readingOrder: 2, ...base },
+    { _id: 'c3', title: 'c3', partId: 'P2', readingOrder: 3, ...base },
+    { _id: 'c4', title: 'c4', partId: 'P2', readingOrder: 4, ...base },
+  ];
+
+  test('PL-3 moving into the middle of the next part takes its place and part, and renumbers both parts', () => {
+    expect(moveChapter(chapters, parts, books, 'c1', 'P2', 1)).toEqual([
+      { id: 'c2', readingOrder: 1, partId: 'P1' },
+      { id: 'c3', readingOrder: 2, partId: 'P2' },
+      { id: 'c1', readingOrder: 3, partId: 'P2' },
+    ]);
+  });
+
+  test('PL-3 moving up into the earlier part at its start', () => {
+    expect(moveChapter(chapters, parts, books, 'c4', 'P1', 0)).toEqual([
+      { id: 'c4', readingOrder: 1, partId: 'P1' },
+      { id: 'c1', readingOrder: 2, partId: 'P1' },
+      { id: 'c2', readingOrder: 3, partId: 'P1' },
+      { id: 'c3', readingOrder: 4, partId: 'P2' },
+    ]);
+  });
+
+  test('PL-3 an index past the end puts the chapter last in the target part', () => {
+    const r = moveChapter(chapters, parts, books, 'c1', 'P2', 99);
+    expect(r.find((p) => p.id === 'c1')).toEqual({ id: 'c1', readingOrder: 4, partId: 'P2' });
+  });
+
+  test('PL-3 a move inside one part reuses that part numbers and leaves the other part alone', () => {
+    expect(moveChapter(chapters, parts, books, 'c2', 'P1', 0)).toEqual([
+      { id: 'c2', readingOrder: 1, partId: 'P1' },
+      { id: 'c1', readingOrder: 2, partId: 'P1' },
+    ]);
+  });
+
+  test('PL-3 moving the only chapter out of a part leaves that part empty and the numbers unique', () => {
+    const lone = [chapters[0]!, chapters[2]!, chapters[3]!].map((c, i) => ({
+      ...c,
+      readingOrder: i + 1,
+    }));
+    const r = moveChapter(lone, parts, books, 'c1', 'P2', 0);
+    const finalPart = new Map(lone.map((c) => [c._id, c.partId]));
+    const finalOrder = new Map(lone.map((c) => [c._id, c.readingOrder]));
+    for (const p of r) {
+      finalPart.set(p.id, p.partId);
+      finalOrder.set(p.id, p.readingOrder);
+    }
+    expect([...finalPart.values()]).toEqual(['P2', 'P2', 'P2']);
+    expect(new Set(finalOrder.values()).size).toBe(3);
+  });
+});
+
 describe('PL-4 the chapter page', () => {
   test('PL-4 Two Kitchens shows each strand with ages in that strand year', () => {
     const page = chapterPage(data, 'CH2');
@@ -215,6 +353,18 @@ describe('PL-4 the chapter page', () => {
     });
   });
 
+  test('PL-4 the chapter page lists places per strand, with their parent places', () => {
+    const kitchens = chapterPage(data, 'CH2');
+    expect(kitchens?.strands.find((s) => s.primary)?.places).toEqual([
+      { id: 'PLC2', name: 'Portland > The Hale house' },
+    ]);
+    expect(kitchens?.strands.find((s) => !s.primary)?.places).toEqual([
+      { id: 'PLC3', name: 'Guangzhou' },
+    ]);
+    expect(chapterPage(data, 'CH7')?.strands[0]?.places.map((p) => p.name)).toEqual(['Guangzhou']);
+    expect(chapterPage(data, 'CH4')?.strands[0]?.places).toEqual([]);
+  });
+
   test('PL-4 Wedding Weather lists the fact in play with who acts on it', () => {
     const page = chapterPage(data, 'CH3');
     expect(page?.factsInPlay).toEqual([
@@ -228,7 +378,7 @@ describe('PL-4 the chapter page', () => {
     ]);
   });
 
-  test('PL-4 beats come in order with their arcs, and themes come from the chapter and the theme appearances', () => {
+  test('PL-4 beats come in order with their arcs, and themes come only from the theme appearances', () => {
     const d = {
       all: (c: string) =>
         ({
@@ -239,7 +389,7 @@ describe('PL-4 the chapter page', () => {
               title: 'Later',
               chapterId: 'X1',
               arcIds: ['A2'],
-              order: 2,
+              arcOrders: [{ arcId: 'A2', order: 2 }],
               year: 2075,
               description: 'd',
               ...base,
@@ -249,12 +399,15 @@ describe('PL-4 the chapter page', () => {
               title: 'Earlier',
               chapterId: 'X1',
               arcIds: ['A1', 'A2'],
-              order: 1,
+              arcOrders: [
+                { arcId: 'A1', order: 1 },
+                { arcId: 'A2', order: 1 },
+              ],
               year: null,
               description: '',
               ...base,
             },
-            { _id: 'T3', title: 'Elsewhere', chapterId: 'X2', arcIds: [], order: 0, ...base },
+            { _id: 'T3', title: 'Elsewhere', chapterId: 'X2', arcIds: [], arcOrders: [], ...base },
           ],
           themes: [
             {
@@ -278,17 +431,25 @@ describe('PL-4 the chapter page', () => {
 
 describe('PL-3 undo for a reorder', () => {
   test('PL-3 one command puts every old number back, and redo applies the new ones', () => {
-    const cmd = reorderCommand('Moved Second', 'chapters', 'readingOrder', [
-      { id: 'a', before: 2, after: 1 },
-      { id: 'b', before: 1, after: 2 },
+    const cmd = reorderCommand('Moved Second', 'chapters', [
+      {
+        id: 'a',
+        before: { readingOrder: 2, partId: 'P2' },
+        after: { readingOrder: 1, partId: 'P1' },
+      },
+      {
+        id: 'b',
+        before: { readingOrder: 1, partId: 'P1' },
+        after: { readingOrder: 2, partId: 'P1' },
+      },
     ]);
     expect(cmd.undo.map((o) => o.kind === 'update' && [o.id, o.patch, o.expect])).toEqual([
-      ['a', { readingOrder: 2 }, { readingOrder: 1 }],
-      ['b', { readingOrder: 1 }, { readingOrder: 2 }],
+      ['a', { readingOrder: 2, partId: 'P2' }, { readingOrder: 1, partId: 'P1' }],
+      ['b', { readingOrder: 1, partId: 'P1' }, { readingOrder: 2, partId: 'P1' }],
     ]);
     expect(cmd.redo.map((o) => o.kind === 'update' && [o.id, o.patch])).toEqual([
-      ['a', { readingOrder: 1 }],
-      ['b', { readingOrder: 2 }],
+      ['a', { readingOrder: 1, partId: 'P1' }],
+      ['b', { readingOrder: 2, partId: 'P1' }],
     ]);
   });
 });

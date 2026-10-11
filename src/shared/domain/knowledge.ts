@@ -65,26 +65,81 @@ export interface KnownFact {
   how: string;
 }
 
-/** KN-1: the facts a character has learned by a year, earliest first. */
-export function knownBy(data: TimelineData, characterId: string, year: number): KnownFact[] {
-  const facts = new Map(data.all('facts').map((f) => [str(f._id), f]));
-  const out: KnownFact[] = [];
+/**
+ * A fact a character does not know in a year. `not-yet` when they learn it in
+ * a later year (`yearLearned` is the earliest such year, the label names the
+ * year asked about: "not yet in 2059"); `never` when no
+ * record says they learn it. A record with no year cannot be placed, so it
+ * never counts as known and is listed as `never`.
+ */
+export interface UnknownFact {
+  factId: string;
+  fact: string;
+  reason: 'not-yet' | 'never';
+  yearLearned: number | null;
+  /** "not yet in 2059" (the year asked about) or "never". */
+  label: string;
+}
+
+export interface Knowledge {
+  known: KnownFact[];
+  unknown: UnknownFact[];
+}
+
+/**
+ * KN-1: for a character and a year, the facts they know (from when) and every
+ * other fact in the bible as one they do not know: "not yet in Y" (Y is the year
+ * asked about) when a later
+ * record exists, "never" otherwise. Known facts come earliest first; unknown
+ * facts list the "not yet" ones first, by year, then the rest by title.
+ */
+export function knownBy(data: TimelineData, characterId: string, year: number): Knowledge {
+  const facts = data.all('facts').filter(live);
+  const known: KnownFact[] = [];
+  const later = new Map<string, number>();
+  const knownIds = new Set<string>();
+  const byFact = new Map(facts.map((f) => [str(f._id), f]));
   for (const k of data.all('knowledgeRecords').filter(live)) {
     if (k.characterId !== characterId) continue;
+    const fact = byFact.get(str(k.factId));
+    if (!fact) continue;
     const learned = num(k.yearLearned);
-    if (learned === null || learned > year) continue;
-    const fact = facts.get(str(k.factId));
-    if (!fact || !live(fact)) continue;
-    out.push({
-      recordId: str(k._id),
-      factId: str(k.factId),
-      fact: title(fact, str(k.factId)),
-      yearLearned: learned,
-      chapterLearnedId: str(k.chapterLearnedId) || null,
-      how: str(k.how),
-    });
+    if (learned === null) continue;
+    if (learned <= year) {
+      knownIds.add(str(k.factId));
+      known.push({
+        recordId: str(k._id),
+        factId: str(k.factId),
+        fact: title(fact, str(k.factId)),
+        yearLearned: learned,
+        chapterLearnedId: str(k.chapterLearnedId) || null,
+        how: str(k.how),
+      });
+    } else {
+      const prev = later.get(str(k.factId));
+      if (prev === undefined || learned < prev) later.set(str(k.factId), learned);
+    }
   }
-  return out.sort(byYear);
+  const unknown: UnknownFact[] = facts
+    .filter((f) => !knownIds.has(str(f._id)))
+    .map((f) => {
+      const y = later.get(str(f._id));
+      const fact = title(f, str(f._id));
+      return y === undefined
+        ? { factId: str(f._id), fact, reason: 'never' as const, yearLearned: null, label: 'never' }
+        : {
+            factId: str(f._id),
+            fact,
+            reason: 'not-yet' as const,
+            yearLearned: y,
+            label: `not yet in ${year}`,
+          };
+    })
+    .sort(
+      (a, b) =>
+        (a.yearLearned ?? Infinity) - (b.yearLearned ?? Infinity) || a.fact.localeCompare(b.fact),
+    );
+  return { known: known.sort(byYear), unknown };
 }
 
 export interface FactPage {

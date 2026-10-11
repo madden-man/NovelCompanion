@@ -398,9 +398,57 @@ export class Repository {
 
   async create<C extends EntryCollection>(c: C, input: CreateInput<C>): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const change = this.buildCreate(c, input as Record<string, unknown>);
-    await this.commit([change]);
+    let data = input as Record<string, unknown>;
+    let themes: string[] | null = null;
+    if (c === 'chapters' && 'themeIds' in data) {
+      const { themeIds, ...rest } = data;
+      data = rest;
+      themes = Array.isArray(themeIds) ? themeIds.map(String) : [];
+    }
+    const change = this.buildCreate(c, data);
+    const more = themes ? await this.themeChanges(change.next._id, themes) : [];
+    await this.commit([change, ...more]);
     return change.next as EntryOf<C>;
+  }
+
+  /**
+   * TH-1: a theme's appearances are the one record of which chapters it is in.
+   * The chapter's Themes field is derived from them, so setting it adds an
+   * appearance (with an empty note the person can fill) to each theme newly
+   * listed and removes the chapter's appearances from each theme dropped.
+   */
+  private async themeChanges(chapterId: string, wanted: string[]): Promise<Change[]> {
+    const want = [...new Set(wanted)];
+    for (const tid of want) {
+      const theme = this.model.get('themes', tid);
+      if (!theme) throw new RepositoryError(`No themes entry has the ID ${tid}.`);
+    }
+    const appearancesOf = (t: StoredDoc) =>
+      (Array.isArray(t.appearances) ? t.appearances : []) as { chapterId: string; note: string }[];
+    const changes: Change[] = [];
+    for (const theme of this.model.all('themes')) {
+      const apps = appearancesOf(theme);
+      const has = apps.some((a) => a.chapterId === chapterId);
+      const wants = want.includes(theme._id);
+      if (wants && !has) {
+        const prior = await this.current('themes', theme._id);
+        changes.push({
+          ...this.buildUpdate('themes', prior, {
+            appearances: [...appearancesOf(prior), { chapterId, note: '' }],
+          }),
+          note: 'Added from the chapter Themes field',
+        });
+      } else if (!wants && has) {
+        const prior = await this.current('themes', theme._id);
+        changes.push({
+          ...this.buildUpdate('themes', prior, {
+            appearances: appearancesOf(prior).filter((a) => a.chapterId !== chapterId),
+          }),
+          note: 'Removed from the chapter Themes field',
+        });
+      }
+    }
+    return changes;
   }
 
   /**
@@ -434,9 +482,21 @@ export class Repository {
   async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
     this.assertCollection(c);
     const prior = await this.current(c, id);
-    const change = this.buildUpdate(c, prior, patch as Record<string, unknown>);
+    let own = patch as Record<string, unknown>;
+    let more: Change[] = [];
+    if (c === 'chapters' && 'themeIds' in own) {
+      const { themeIds, ...rest } = own;
+      own = rest;
+      more = await this.themeChanges(id, Array.isArray(themeIds) ? themeIds.map(String) : []);
+    }
+    if (more.length && Object.keys(this.stripSystem(own)).length === 0) {
+      // Only the derived Themes field changed: the chapter itself is not rewritten.
+      await this.commit(more);
+      return prior as EntryOf<C>;
+    }
+    const change = this.buildUpdate(c, prior, own);
     if (c === 'customSections') this.guardSectionChange(prior, change.next);
-    await this.commit([change]);
+    await this.commit([change, ...more]);
     return change.next as EntryOf<C>;
   }
 
@@ -1113,15 +1173,8 @@ export class Repository {
 
   /** Set or clear the story time. It writes only the meta document, never an entry (TM-5). */
   async setStoryTime(value: StoryTimeValue | null): Promise<StoryTimeValue | null> {
-    const meta = this.bible.collection<StoredDoc>('meta');
-    if (value === null) {
-      await meta.deleteOne({ _id: STORY_TIME_ID });
-      this.model.remove('meta', STORY_TIME_ID);
-    } else {
-      const doc: StoredDoc = { _id: STORY_TIME_ID, ...StoryTimeValue.parse(value) };
-      await meta.replaceOne({ _id: STORY_TIME_ID }, doc, { upsert: true });
-      this.model.put('meta', doc);
-    }
+    if (value === null) await this.writeMeta(null, STORY_TIME_ID);
+    else await this.writeMeta({ _id: STORY_TIME_ID, ...StoryTimeValue.parse(value) });
     this.emitter.emit('storyTime');
     return this.storyTime();
   }
@@ -1184,20 +1237,25 @@ export class Repository {
   // Plot reorder (PL-3) and romanization settings (GL-1).
 
   /**
-   * Reorder chapters (reading order) or beats (order within an arc) in one
-   * transaction. Only the order field changes; story years are untouched.
-   * Each moved entry gets a revision, so each step can be undone.
+   * Change the order fields of several chapters or beats in one transaction
+   * (PL-3). Each patch carries only order fields (a chapter's reading order and
+   * part, a beat's per-arc positions); story years are never touched. Each
+   * entry gets a revision, so each step can be undone.
    */
   async reorder(
     collection: 'chapters' | 'plotBeats',
-    moves: { id: string; value: number }[],
+    patches: { id: string; patch: Record<string, unknown> }[],
   ): Promise<StoredDoc[]> {
-    const field = collection === 'chapters' ? 'readingOrder' : 'order';
+    const allowed = collection === 'chapters' ? ['readingOrder', 'partId'] : ['arcOrders'];
     const changes: Change[] = [];
-    for (const m of moves) {
+    for (const m of patches) {
+      const stray = Object.keys(m.patch).filter((k) => !allowed.includes(k));
+      if (stray.length) {
+        throw new RepositoryError(`A reorder may only change ${allowed.join(' and ')}.`);
+      }
       const prior = await this.current(collection, m.id);
       changes.push({
-        ...this.buildUpdate(collection, prior, { [field]: m.value }),
+        ...this.buildUpdate(collection, prior, m.patch),
         note: collection === 'chapters' ? 'Reordered chapters' : 'Reordered beats',
       });
     }
@@ -1205,7 +1263,14 @@ export class Repository {
     return changes.map((c) => c.next);
   }
 
-  /** One romanization system per language (GL-1). Stored in meta, not an entry. */
+  /**
+   * One romanization system per language (GL-1). This is a settings write, in
+   * the same class as the story time and the tree layout: it is stored in the
+   * `meta` collection, is not an entry, and so has no entry revision and no
+   * undo step. Changing it is one visible action on the Romanization screen
+   * that can be changed back there. Every settings write goes through
+   * `writeMeta`, the one place that touches `meta`.
+   */
   romanizationSettings(): RomanizationSettings {
     return settingsFromMeta(this.model.get('meta', ROMANIZATION_META_ID));
   }
@@ -1224,11 +1289,7 @@ export class Repository {
     }
     // An empty string records "no system" so the default does not apply.
     const next = { ...this.romanizationSettings(), [languageId]: systemId ?? '' };
-    const doc: StoredDoc = { _id: ROMANIZATION_META_ID, systems: next };
-    await this.bible
-      .collection<StoredDoc>('meta')
-      .replaceOne({ _id: ROMANIZATION_META_ID }, doc, { upsert: true });
-    this.model.put('meta', doc);
+    await this.writeMeta({ _id: ROMANIZATION_META_ID, systems: next });
     // Glossary warnings depend on this, so views reload.
     this.emitter.emit('lists');
     return next;
@@ -1247,10 +1308,24 @@ export class Repository {
   async setTreePositions(
     positions: Record<string, { x: number; y: number; loose?: boolean }>,
   ): Promise<void> {
-    const doc: StoredDoc = { _id: TREE_LAYOUT_ID, positions };
-    await this.bible.collection<StoredDoc>('meta').replaceOne({ _id: TREE_LAYOUT_ID }, doc, {
-      upsert: true,
-    });
+    await this.writeMeta({ _id: TREE_LAYOUT_ID, positions });
+  }
+
+  /**
+   * Settings writes (story time, tree layout, romanization choices): a single
+   * `meta` document, replaced or removed, with the read model kept in step.
+   * They are not entries, so they carry no entry revision (ARCHITECTURE rule 5
+   * covers entries).
+   */
+  private async writeMeta(doc: StoredDoc | null, removeId?: string): Promise<void> {
+    const meta = this.bible.collection<StoredDoc>('meta');
+    if (doc === null) {
+      const id = removeId as string;
+      await meta.deleteOne({ _id: id });
+      this.model.remove('meta', id);
+      return;
+    }
+    await meta.replaceOne({ _id: doc._id }, doc, { upsert: true });
     this.model.put('meta', doc);
   }
 

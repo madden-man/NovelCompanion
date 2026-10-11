@@ -9,6 +9,9 @@ import type { ListDoc } from '../schema/lists';
 
 export type RomanizationKind = 'pinyin' | 'jyutping';
 
+/** Shown wherever a system has no checker, so nothing passes silently (GL-1). */
+export const NO_CHECKER_NOTE = 'No checker for this system; terms are not flagged';
+
 /** The checker a system's name selects, or null for a system the app has no table for. */
 export function romanizationKind(label: string): RomanizationKind | null {
   if (/pinyin/i.test(label)) return 'pinyin';
@@ -93,6 +96,25 @@ function splitPinyin(run: string): string[] | null {
 
 const TONE_MARKS = /[̀́̄̌]/g;
 
+/**
+ * Standalone interjection syllables that sit outside the initials and finals
+ * tables: ê, m, n, ng, hm, hng (with or without a tone mark or number).
+ */
+const PINYIN_INTERJECTIONS = new Set(words('ê m n ng hm hng'));
+
+export function isPinyinInterjection(s: string): boolean {
+  return PINYIN_INTERJECTIONS.has(s);
+}
+
+/**
+ * A run of letters with no tone digit inside it: real syllables, optionally
+ * ending in the erhua r (nǎr, wánr, yìdiǎnr).
+ */
+function runOk(run: string): boolean {
+  if (splitPinyin(run) !== null) return true;
+  return run.length > 1 && run.endsWith('r') && splitPinyin(run.slice(0, -1)) !== null;
+}
+
 function pinyinWordOk(word: string): boolean {
   // Remove tone marks, keep the diaeresis, then write it as v.
   const plain = word
@@ -101,11 +123,13 @@ function pinyinWordOk(word: string): boolean {
     .normalize('NFC')
     .toLowerCase()
     .replace(/ü/g, 'v');
+  if (isPinyinInterjection(plain.replace(/[0-5]$/, ''))) return true;
   if (!/^(?:[a-z]+[0-5]?)+$/.test(plain)) return false;
+  // With tone numbers the erhua r can follow its own digit: dian3r.
   return plain
     .split(/[0-5]/)
     .filter(Boolean)
-    .every((run) => splitPinyin(run) !== null);
+    .every((run, i) => (run === 'r' ? i > 0 : runOk(run)));
 }
 
 // Jyutping

@@ -47,6 +47,12 @@ const currentSummary = () =>
   current ? { id: current.session.handle.id, name: current.name } : null;
 
 let closeDecision: ((proceed: boolean) => void) | null = null;
+let closePromptShown: (() => void) | null = null;
+
+/** SL-1: main registers what happens when the page says the stop prompt is showing. */
+export function onClosePromptShown(fn: () => void): void {
+  closePromptShown = fn;
+}
 
 /** SL-1: main registers what happens when the stop prompt is answered or cancelled. */
 export function onCloseDecision(fn: (proceed: boolean) => void): void {
@@ -133,6 +139,10 @@ export function registerHandlers(): void {
   handle('tree.export', (req) => exportTree(req));
   handle('app.confirmClose', ({ proceed }) => {
     closeDecision?.(proceed);
+    return { ok: true as const };
+  });
+  handle('app.closePromptShown', () => {
+    closePromptShown?.();
     return { ok: true as const };
   });
   const handlers = bibleHandlers(() => current?.session ?? null);

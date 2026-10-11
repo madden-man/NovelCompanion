@@ -35,6 +35,10 @@ afterAll(async () => {
   await store.close();
 });
 
+const orderIn = (beat: Record<string, unknown>, arcId: string) =>
+  ((beat.arcOrders as { arcId: string; order: number }[]).find((o) => o.arcId === arcId)?.order ??
+    0) as number;
+
 const make = async (collection: string, data: Record<string, unknown>) =>
   (await invoke('entry.create', { collection: collection as never, data })).entry;
 
@@ -101,11 +105,16 @@ describe('PL-1 books, parts, chapters, arcs, and beats through the write path', 
       description: 'A letter.',
       worldContext: 'Flood year.',
       experienceNote: 'Iris feels cold.',
-      order: 1,
+      arcOrders: [
+        { arcId: whole._id, order: 1 },
+        { arcId: owned._id, order: 3 },
+      ],
       status: 'planned',
     });
     expect(ch.arcIds).toEqual([whole._id, owned._id]);
     expect(beat).toMatchObject({ worldContext: 'Flood year.', experienceNote: 'Iris feels cold.' });
+    expect(orderIn(beat, whole._id)).toBe(1);
+    expect(orderIn(beat, owned._id)).toBe(3);
     const grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     const row = grid.rows.find((r) => r.kind === 'chapter');
     expect(
@@ -151,6 +160,20 @@ describe('PL-2 PL-4 the outline and chapter page over IPC', () => {
     });
     await expect(fxInvoke('chapter.page', { id: 'nope' })).rejects.toThrow(/No chapter/);
   });
+
+  test('PL-4 chapter.page shows the places of each strand: the house for the present, Guangzhou for the backstory', async () => {
+    const { page } = await fxInvoke('chapter.page', { id: 'CH2' });
+    expect(page.strands.map((s) => [s.label, s.places.map((p) => p.name)])).toEqual([
+      ['present', ['Portland > The Hale house']],
+      ['backstory', ['Guangzhou']],
+    ]);
+    expect(
+      (await fxInvoke('chapter.page', { id: 'CH7' })).page.strands[0]?.places.map((p) => p.name),
+    ).toEqual(['Guangzhou']);
+    expect(
+      (await fxInvoke('chapter.page', { id: 'CH1' })).page.strands[0]?.places.map((p) => p.id),
+    ).toEqual(['PLC4']);
+  });
 });
 
 describe('PL-3 reordering changes reading order only', () => {
@@ -168,9 +191,9 @@ describe('PL-3 reordering changes reading order only', () => {
       movedId: last._id,
       toIndex: 0,
     });
-    expect(r.field).toBe('readingOrder');
+    expect(r.collection).toBe('chapters');
     expect(r.changes.find((c) => c.id === last._id)).toMatchObject({
-      after: sorted[0]!.readingOrder,
+      after: { readingOrder: sorted[0]!.readingOrder, partId: 'PT1' },
     });
     expect(await revs()).toBe(n + r.changes.length);
     const after = (
@@ -196,7 +219,7 @@ describe('PL-3 reordering changes reading order only', () => {
       await fxInvoke('entry.update', {
         collection: 'chapters',
         id: c.id,
-        patch: { readingOrder: c.before },
+        patch: c.before,
       });
     }
   });
@@ -210,7 +233,7 @@ describe('PL-3 reordering changes reading order only', () => {
           await make('plotBeats', {
             title: t,
             arcIds: [arc._id],
-            order: ids.length + 1,
+            arcOrders: [{ arcId: arc._id, order: ids.length + 1 }],
             status: 'planned',
           })
         )._id,
@@ -222,18 +245,258 @@ describe('PL-3 reordering changes reading order only', () => {
       movedId: ids[2]!,
       toIndex: 0,
     });
-    expect(r.field).toBe('order');
+    expect(r.collection).toBe('plotBeats');
     const order = (
       await invoke('entry.list', { collection: 'plotBeats', trash: 'exclude' })
     ).entries
       .map((e) => e.entry)
       .filter((b) => (b.arcIds as string[]).includes(arc._id))
-      .sort((a, b) => Number(a.order) - Number(b.order))
+      .sort((a, b) => orderIn(a, arc._id) - orderIn(b, arc._id))
       .map((b) => b.title);
     expect(order).toEqual(['three', 'one', 'two']);
     await expect(
       invoke('plot.reorder', { kind: 'beats', groupId: 'no-arc', movedId: ids[0]!, toIndex: 0 }),
     ).rejects.toThrow(/not in this group/);
+  });
+});
+
+describe('PL-3 beat order per arc and chapters across parts', () => {
+  test('PL-3 a beat in two arcs reordered in one arc keeps its position in the other', async () => {
+    const a1 = await make('arcs', {
+      title: 'Arc one',
+      name: 'Arc one',
+      scope: 'custom',
+      status: 'planned',
+    });
+    const a2 = await make('arcs', {
+      title: 'Arc two',
+      name: 'Arc two',
+      scope: 'custom',
+      status: 'planned',
+    });
+    const beat = (title: string, orders: [string, number][]) =>
+      make('plotBeats', {
+        title,
+        status: 'planned',
+        arcIds: orders.map(([arcId]) => arcId),
+        arcOrders: orders.map(([arcId, order]) => ({ arcId, order })),
+      });
+    const x = await beat('x', [[a1._id, 1]]);
+    const y = await beat('y', [
+      [a1._id, 2],
+      [a2._id, 1],
+    ]);
+    const z = await beat('z', [
+      [a1._id, 3],
+      [a2._id, 2],
+    ]);
+    const r = await invoke('plot.reorder', {
+      kind: 'beats',
+      groupId: a1._id,
+      movedId: z._id,
+      toIndex: 0,
+    });
+    expect(r.collection).toBe('plotBeats');
+    const stored = async (id: string) =>
+      (await invoke('entry.get', { collection: 'plotBeats', id })).entry;
+    expect(orderIn(await stored(z._id), a1._id)).toBe(1);
+    expect(orderIn(await stored(x._id), a1._id)).toBe(2);
+    expect(orderIn(await stored(y._id), a1._id)).toBe(3);
+    // Arc two is untouched.
+    expect(orderIn(await stored(y._id), a2._id)).toBe(1);
+    expect(orderIn(await stored(z._id), a2._id)).toBe(2);
+    // Reordering arc two does not move anything in arc one.
+    await invoke('plot.reorder', { kind: 'beats', groupId: a2._id, movedId: z._id, toIndex: 0 });
+    expect(orderIn(await stored(z._id), a2._id)).toBe(1);
+    expect(orderIn(await stored(y._id), a2._id)).toBe(2);
+    expect(orderIn(await stored(z._id), a1._id)).toBe(1);
+    expect(orderIn(await stored(y._id), a1._id)).toBe(3);
+    // Undo through the write path puts the arc one positions back.
+    for (const c of r.changes) {
+      await invoke('entry.update', { collection: 'plotBeats', id: c.id, patch: c.before });
+    }
+    expect(orderIn(await stored(z._id), a1._id)).toBe(3);
+  });
+
+  test('PL-3 dragging a chapter into another part takes the target part and renumbers both parts in one transaction', async () => {
+    const list = async () =>
+      (await fxInvoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries.map(
+        (e) => e.entry,
+      );
+    const before = await list();
+    const inPart = (cs: typeof before, part: string) =>
+      cs
+        .filter((c) => c.partId === part)
+        .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder));
+    const first = inPart(before, 'PT1')[0]!;
+    const target = inPart(before, 'PT2')[1]!;
+    const yearsBefore = new Map(before.map((c) => [c._id, JSON.stringify(c.strands)]));
+    const revs = () => fixture.handle.collection('revisions').countDocuments();
+    const n = await revs();
+    const r = await fxInvoke('plot.reorder', {
+      kind: 'chapters',
+      groupId: 'PT2',
+      movedId: first._id,
+      toIndex: 1,
+    });
+    const after = await list();
+    expect(inPart(after, 'PT2').map((c) => c._id)).toContain(first._id);
+    expect(inPart(after, 'PT2')[1]?._id).toBe(first._id);
+    expect(inPart(after, 'PT1')).toHaveLength(inPart(before, 'PT1').length - 1);
+    // Reading order is still unique and runs part one, then part two.
+    const readingOrders = [...inPart(after, 'PT1'), ...inPart(after, 'PT2')].map((c) =>
+      Number(c.readingOrder),
+    );
+    expect(readingOrders).toEqual([...readingOrders].sort((a, b) => a - b));
+    expect(new Set(readingOrders).size).toBe(readingOrders.length);
+    // Both parts changed and each change has a revision.
+    expect(new Set(r.changes.map((c) => (c.after as { partId: string }).partId))).toEqual(
+      new Set(['PT1', 'PT2']),
+    );
+    expect(await revs()).toBe(n + r.changes.length);
+    // The target keeps its place after the moved chapter, and no story year moved.
+    const idx = inPart(after, 'PT2').findIndex((c) => c._id === target._id);
+    expect(idx).toBe(2);
+    for (const c of after) expect(JSON.stringify(c.strands)).toBe(yearsBefore.get(c._id));
+    // Undo replays the old part and number of each chapter.
+    for (const c of r.changes) {
+      await fxInvoke('entry.update', { collection: 'chapters', id: c.id, patch: c.before });
+    }
+    const restored = await list();
+    expect(restored.map((c) => [c._id, c.partId, c.readingOrder]).sort()).toEqual(
+      before.map((c) => [c._id, c.partId, c.readingOrder]).sort(),
+    );
+  });
+
+  test('PL-3 plot.reorder refuses a part or a chapter that does not exist', async () => {
+    await expect(
+      fxInvoke('plot.reorder', { kind: 'chapters', groupId: 'nope', movedId: 'CH1', toIndex: 0 }),
+    ).rejects.toThrow(/part does not exist/);
+    await expect(
+      fxInvoke('plot.reorder', { kind: 'chapters', groupId: 'PT1', movedId: 'nope', toIndex: 0 }),
+    ).rejects.toThrow(/chapter does not exist/);
+  });
+});
+
+describe('TH-1 a theme and a chapter share one record', () => {
+  const themeApps = async (id: string) =>
+    ((await invoke('entry.get', { collection: 'themes', id })).entry.appearances ?? []) as {
+      chapterId: string;
+      note: string;
+    }[];
+
+  test('TH-1 adding a theme from the chapter Themes field creates an empty appearance, and removing it removes the appearance', async () => {
+    const theme = await make('themes', { title: 'Water', status: 'planned' });
+    const chapter = await make('chapters', {
+      title: 'Shore',
+      status: 'planned',
+      partId: 'P',
+      readingOrder: 1,
+      strands: [strand('s', 2040)],
+    });
+    expect(chapter.themeIds).toEqual([]);
+    const added = await invoke('entry.update', {
+      collection: 'chapters',
+      id: chapter._id,
+      patch: { themeIds: [theme._id] },
+    });
+    expect(added.entry.themeIds).toEqual([theme._id]);
+    expect(await themeApps(theme._id)).toEqual([{ chapterId: chapter._id, note: '' }]);
+    // The chapter itself stores no themeIds.
+    const stored = await fresh.handle.collection('chapters').findOne({ _id: chapter._id as never });
+    expect(stored).not.toHaveProperty('themeIds');
+    // The note the person fills in survives a second add of the same theme.
+    await invoke('entry.update', {
+      collection: 'themes',
+      id: theme._id,
+      patch: { appearances: [{ chapterId: chapter._id, note: 'Rain on the roof' }] },
+    });
+    await invoke('entry.update', {
+      collection: 'chapters',
+      id: chapter._id,
+      patch: { themeIds: [theme._id] },
+    });
+    expect(await themeApps(theme._id)).toEqual([
+      { chapterId: chapter._id, note: 'Rain on the roof' },
+    ]);
+    const removed = await invoke('entry.update', {
+      collection: 'chapters',
+      id: chapter._id,
+      patch: { themeIds: [] },
+    });
+    expect(removed.entry.themeIds).toEqual([]);
+    expect(await themeApps(theme._id)).toEqual([]);
+  });
+
+  test('TH-1 adding an appearance on the theme shows the theme on the chapter, and the chapter page lists it with its note', async () => {
+    const theme = await make('themes', { title: 'Fire', status: 'planned' });
+    const chapter = await make('chapters', {
+      title: 'Hearth',
+      status: 'planned',
+      partId: 'P',
+      readingOrder: 2,
+      strands: [strand('s', 2041)],
+    });
+    await invoke('entry.update', {
+      collection: 'themes',
+      id: theme._id,
+      patch: { appearances: [{ chapterId: chapter._id, note: 'Candles' }] },
+    });
+    expect(
+      (await invoke('entry.get', { collection: 'chapters', id: chapter._id })).entry.themeIds,
+    ).toEqual([theme._id]);
+    expect((await invoke('chapter.page', { id: chapter._id })).page.themes).toEqual([
+      { id: theme._id, title: 'Fire', note: 'Candles' },
+    ]);
+    // Removing the appearance on the theme removes it from the chapter.
+    await invoke('entry.update', {
+      collection: 'themes',
+      id: theme._id,
+      patch: { appearances: [] },
+    });
+    expect(
+      (await invoke('entry.get', { collection: 'chapters', id: chapter._id })).entry.themeIds,
+    ).toEqual([]);
+    expect((await invoke('chapter.page', { id: chapter._id })).page.themes).toEqual([]);
+  });
+
+  test('TH-1 the theme change and the chapter change are written together, each with a revision, and an unknown theme is refused', async () => {
+    const theme = await make('themes', { title: 'Light', status: 'planned' });
+    const chapter = await make('chapters', {
+      title: 'Lamp',
+      status: 'planned',
+      partId: 'P',
+      readingOrder: 3,
+      strands: [strand('s', 2042)],
+    });
+    await invoke('entry.update', {
+      collection: 'chapters',
+      id: chapter._id,
+      patch: { themeIds: [theme._id], summary: 'A lamp.' },
+    });
+    const history = await invoke('revisions.list', { collection: 'themes', id: theme._id });
+    expect(history.revisions.map((r) => r.note)).toContain('Added from the chapter Themes field');
+    await expect(
+      invoke('entry.update', {
+        collection: 'chapters',
+        id: chapter._id,
+        patch: { themeIds: ['no-such-theme'] },
+      }),
+    ).rejects.toThrow(/No themes entry/);
+  });
+
+  test('TH-1 a chapter created with themes gets the appearances', async () => {
+    const theme = await make('themes', { title: 'Salt', status: 'planned' });
+    const chapter = await make('chapters', {
+      title: 'Sea',
+      status: 'planned',
+      partId: 'P',
+      readingOrder: 4,
+      strands: [strand('s', 2043)],
+      themeIds: [theme._id],
+    });
+    expect(await themeApps(theme._id)).toEqual([{ chapterId: chapter._id, note: '' }]);
+    expect(chapter.themeIds).toEqual([theme._id]);
   });
 });
 
@@ -347,6 +610,47 @@ describe('GL-1 GL-2 glossary settings, warnings, and search', () => {
     expect((await invoke('romanization.check', { languageId: 'mandarin', text: 'zzz' })).ok).toBe(
       false,
     );
+  });
+
+  test('GL-1 a user-added system with no checker says so on the Romanization screen data and in the check, and flags nothing', async () => {
+    const { item } = await invoke('lists.addItem', {
+      listId: 'romanizationSystems',
+      label: 'Wade-Giles',
+      parentId: null,
+    });
+    await invoke('romanization.set', { languageId: 'mandarin', systemId: item.id });
+    const r = await invoke('romanization.get', {});
+    expect(r.languages.find((l) => l.id === 'mandarin')).toMatchObject({
+      systemId: item.id,
+      kind: null,
+      note: 'No checker for this system; terms are not flagged',
+    });
+    // A language with a real checker carries no note.
+    expect(r.languages.find((l) => l.id === 'cantonese')?.note).toBeNull();
+    const check = await invoke('romanization.check', { languageId: 'mandarin', text: 'zzz qqq' });
+    expect(check).toEqual({
+      ok: true,
+      message: 'No checker for this system; terms are not flagged',
+    });
+    const t = await invoke('entry.create', {
+      collection: 'glossaryTerms',
+      data: term({ romanization: 'zzz qqq' }),
+    });
+    expect(t.warnings.some((w) => w.code === 'romanization-system')).toBe(false);
+    await invoke('romanization.set', { languageId: 'mandarin', systemId: 'mandarin' });
+    expect(
+      (await invoke('romanization.get', {})).languages.find((l) => l.id === 'mandarin')?.note,
+    ).toBeNull();
+  });
+
+  test('GL-1 the romanization choice is a settings write in meta: it persists, and it adds no entry revision', async () => {
+    const revs = () => fresh.handle.collection('revisions').countDocuments();
+    const n = await revs();
+    await invoke('romanization.set', { languageId: 'cantonese', systemId: null });
+    expect(await revs()).toBe(n);
+    const doc = await fresh.handle.collection('meta').findOne({ _id: 'romanization' as never });
+    expect(doc).toMatchObject({ systems: { cantonese: '' } });
+    await invoke('romanization.set', { languageId: 'cantonese', systemId: 'cantonese' });
   });
 
   test('GL-1 the settings survive reopening the bible, and a bad language is refused', async () => {

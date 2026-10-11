@@ -5,9 +5,11 @@ import {
   closeStore,
   hasOpenBible,
   onCloseDecision,
+  onClosePromptShown,
   openExternal,
   registerHandlers,
 } from './ipc/handlers';
+import { STOP_PROMPT_TIMEOUT_MS, stopPromptOutcome } from '../shared/domain/sessionLog';
 import { wireEvent } from '../shared/ipc';
 
 const APP_NAME = 'Novel Companion';
@@ -36,6 +38,18 @@ function lockDownSession(): void {
 const skipStopPrompt = !app.isPackaged && process.env.NOVEL_COMPANION_SKIP_STOP_PROMPT === '1';
 let closeApproved = false;
 let quitPending = false;
+let stopTimer: ReturnType<typeof setTimeout> | null = null;
+/** True while the page is showing the stop prompt and a person is answering it. */
+let promptShown = false;
+
+/**
+ * SL-1: how long to wait for the page to show the stop prompt. Tests may
+ * shorten it; a packaged app always waits the full 10 seconds.
+ */
+const stopPromptTimeout = (() => {
+  const raw = Number(process.env.NOVEL_COMPANION_STOP_PROMPT_TIMEOUT_MS);
+  return !app.isPackaged && Number.isFinite(raw) && raw > 0 ? raw : STOP_PROMPT_TIMEOUT_MS;
+})();
 
 function createWindow(): BrowserWindow {
   closeApproved = false;
@@ -63,16 +77,43 @@ function createWindow(): BrowserWindow {
     const wc = win.webContents;
     if (wc.isDestroyed() || wc.isCrashed() || wc.isLoading()) return;
     event.preventDefault();
-    win.webContents.send(wireEvent('app.closeRequested'), { hasBible: true });
+    if (stopTimer || promptShown) return; // already asking
+    win.webContents.send(wireEvent('app.closeRequested'), {
+      hasBible: true,
+      quitting: quitPending,
+    });
+    // A page that never shows the prompt cannot trap the window: close without a log.
+    const asked = Date.now();
+    stopTimer = setTimeout(() => {
+      stopTimer = null;
+      const outcome = stopPromptOutcome(
+        { shown: false, decision: null, elapsedMs: Date.now() - asked },
+        stopPromptTimeout,
+      );
+      if (outcome === 'close') finishClose();
+    }, stopPromptTimeout);
+  });
+  const clearStopTimer = () => {
+    if (stopTimer) clearTimeout(stopTimer);
+    stopTimer = null;
+  };
+  const finishClose = () => {
+    closeApproved = true;
+    if (quitPending) app.quit();
+    else if (!win.isDestroyed()) win.close();
+  };
+  onClosePromptShown(() => {
+    promptShown = true;
+    clearStopTimer();
   });
   onCloseDecision((proceed) => {
+    promptShown = false;
+    clearStopTimer();
     if (!proceed) {
       quitPending = false;
       return;
     }
-    closeApproved = true;
-    if (quitPending) app.quit();
-    else if (!win.isDestroyed()) win.close();
+    finishClose();
   });
   // ED-3: undo and redo are the app's own command stacks, replayed through
   // the write path. Catch the keys here, before the page or the Edit menu,

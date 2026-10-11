@@ -78,6 +78,12 @@ export interface FieldSpec {
   itemLabel?: string;
   /** For `objectList`: the fewest items the schema accepts. */
   minItems?: number;
+  /**
+   * Not stored on this entry. The value is read from other entries and a
+   * write to it is carried out on them (chapter themes come from each theme's
+   * appearances).
+   */
+  derived?: boolean;
 }
 
 type Extra = Partial<Omit<FieldSpec, 'name' | 'kind' | 'label'>>;

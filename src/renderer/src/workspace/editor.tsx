@@ -5,6 +5,7 @@ import {
   collectionInfo,
   editableFields,
   entrySchemas,
+  withoutDerived,
   entryTitle,
   manifests,
 } from '../../../shared/schema';
@@ -22,6 +23,7 @@ import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterSummary } from './character';
 import { FactSummary } from './knowledge';
+import { Zh } from './Zh';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
 
@@ -90,7 +92,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
         setStatus('saved');
         return;
       }
-      const check = entrySchemas[collection].safeParse(target);
+      const check = entrySchemas[collection].safeParse(withoutDerived(collection, target));
       if (!check.success) {
         setIssues(fieldIssues(check.error.issues));
         setStatus('error');
@@ -358,7 +360,9 @@ export function EntryPane(props: {
         <header className="editor-head">
           <div className="stack tight">
             <span className="eyebrow">{info.singular}</span>
-            <h2 id="editor-title">{entryTitle(draft)}</h2>
+            <h2 id="editor-title">
+              <Zh text={entryTitle(draft)} />
+            </h2>
           </div>
           <SaveState status={ed.status} error={ed.error} />
         </header>
@@ -387,7 +391,9 @@ export function EntryPane(props: {
       <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
         <span className="eyebrow">Inspector</span>
         <div className="stack">
-          <h3>{entryTitle(draft)}</h3>
+          <h3>
+            <Zh text={entryTitle(draft)} />
+          </h3>
           <SaveState status={ed.status} error={ed.error} />
           {ed.warnings.length > 0 && (
             <p className="callout warn" data-testid="warning-count">
@@ -471,7 +477,9 @@ export function EmbeddedEditor(props: {
       <header className="editor-head">
         <div className="stack tight">
           <span className="eyebrow">{collectionInfo[collection].singular}</span>
-          <h3>{entryTitle(draft)}</h3>
+          <h3>
+            <Zh text={entryTitle(draft)} />
+          </h3>
         </div>
         <SaveState status={ed.status} error={ed.error} />
       </header>

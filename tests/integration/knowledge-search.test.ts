@@ -46,6 +46,35 @@ describe('KN-1 knowledge through the IPC layer', () => {
     await expect(fx('fact.page', { id: 'nope' })).rejects.toThrow(/No fact/);
   });
 
+  test('KN-1 knowledge.knownBy lists what H5 does not know: not yet in 2059 for the letter, never for the other fact', async () => {
+    const labels = async (year: number) =>
+      (await fx('knowledge.knownBy', { characterId: 'H5', year })).unknown.map((f) => [
+        f.factId,
+        f.label,
+      ]);
+    expect(await labels(2059)).toEqual([
+      ['F2', 'not yet in 2059'],
+      ['F1', 'never'],
+    ]);
+    expect(await labels(2060)).toEqual([['F1', 'never']]);
+  });
+
+  test('KN-1 the character page lists what H5 does not know in the story-time year', async () => {
+    const doesNotKnow = async (year: number) => {
+      await fx('storyTime.set', { time: { year } });
+      return (await fx('character.page', { id: 'H5' })).page.doesNotKnow.map((f) => [
+        f.factId,
+        f.label,
+      ]);
+    };
+    expect(await doesNotKnow(2059)).toEqual([
+      ['F2', 'not yet in 2059'],
+      ['F1', 'never'],
+    ]);
+    expect(await doesNotKnow(2060)).toEqual([['F1', 'never']]);
+    await fx('storyTime.set', { time: null });
+  });
+
   test('KN-1 the character page lists what they know, from the same records', async () => {
     const page = (await fx('character.page', { id: 'Z3' })).page;
     expect(page.knowledge.map((k) => [k.factId, k.yearLearned])).toEqual([['F1', 2028]]);

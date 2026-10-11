@@ -108,6 +108,8 @@ interface NodeProps {
   colors: string[];
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
+  /** GL-3: show or hide the visible meaning card for this node's Chinese name. */
+  onCard: (card: { text: string; el: Element } | null) => void;
 }
 
 /** One person in the tree (FT-7): name, years, status, and their state in the year (FT-5). */
@@ -122,6 +124,11 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
     e.preventDefault();
     if (k === 'toggle') p.onToggle(p.person.id);
     else p.onSelect(p.person.id);
+  };
+  // GL-3: a node with a Chinese name shows a visible card on hover and on keyboard focus.
+  const cardText = p.person.chinese ? p.hint || `${p.person.chinese}: not in the glossary yet` : '';
+  const showCard = (e: { currentTarget: Element }) => {
+    if (cardText) p.onCard({ text: cardText, el: e.currentTarget });
   };
   const stripes = p.colors.length ? p.colors : ['none'];
   const h = NODE_H / stripes.length;
@@ -141,6 +148,10 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       onClick={() => p.onSelect(p.person.id)}
       onDoubleClick={() => p.onToggle(p.person.id)}
       onKeyDown={onKey}
+      onFocus={showCard}
+      onBlur={() => p.onCard(null)}
+      onMouseEnter={showCard}
+      onMouseLeave={() => p.onCard(null)}
     >
       <title>{aria}</title>
       <rect className="tnode-box" width={NODE_W} height={NODE_H} rx={6} />
@@ -220,6 +231,21 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const [yearDraft, setYearDraft] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
+  /** GL-3: the meaning card of the focused node, placed under it. */
+  const [card, setCard] = useState<{ text: string; x: number; y: number } | null>(null);
+  const showCard = useCallback((c: { text: string; el: Element } | null) => {
+    if (!c || !wrap.current) {
+      setCard(null);
+      return;
+    }
+    const box = c.el.getBoundingClientRect();
+    const area = wrap.current.getBoundingClientRect();
+    setCard({
+      text: c.text,
+      x: Math.max(4, Math.min(box.left - area.left, area.width - 288)),
+      y: Math.min(box.bottom - area.top + 4, area.height - 40),
+    });
+  }, []);
   const fitted = useRef(false);
 
   useEffect(() => {
@@ -651,11 +677,22 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
                     colors={colorOf(p.familyIds)}
                     onSelect={setSelected}
                     onToggle={toggle}
+                    onCard={showCard}
                   />
                 );
               })}
             </g>
           </svg>
+          {card && (
+            <div
+              className="tree-card"
+              role="tooltip"
+              data-testid="tree-card"
+              style={{ left: card.x, top: card.y }}
+            >
+              {card.text}
+            </div>
+          )}
           <div className="tree-ctl">
             <button
               type="button"

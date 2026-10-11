@@ -55,6 +55,7 @@ export function CharacterSummary(props: {
   if (error) return null;
   if (!page) return <p aria-live="polite">Loading the character page.</p>;
   const cur = page.current;
+  const knows = page.knowledge.filter((k) => k.knownAtPosition === true);
   const open = (id: string) => props.onOpen('characters', id);
   const person = (id: string, name: string) => (
     <button type="button" className="link-btn" onClick={() => open(id)}>
@@ -201,32 +202,65 @@ export function CharacterSummary(props: {
           </dl>
 
           <h4>What they know</h4>
-          {page.knowledge.length === 0 ? (
-            <p className="example-note">No knowledge records yet.</p>
+          {page.knowledgeYear === null ? (
+            <p className="example-note" data-testid="knowledge-no-year">
+              Set a story time to see what they know and do not know.
+            </p>
           ) : (
-            <ul className="plain-list" data-testid="knowledge">
-              {page.knowledge.map((k) => (
-                <li key={k.recordId}>
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => props.onOpen('facts', k.factId)}
-                  >
-                    {k.fact}
-                  </button>
-                  : learned {k.yearLearned ?? 'in an unknown year'}
-                  {k.chapter ? ` in ${k.chapter}` : ''}
-                  {k.how ? `. ${k.how}` : ''}{' '}
-                  {k.knownAtPosition !== null && (
-                    <span className={`chip ${k.knownAtPosition ? 'canon' : 'idea'}`}>
-                      {k.knownAtPosition
-                        ? `knows by ${page.knowledgeYear}`
-                        : `not yet in ${page.knowledgeYear}`}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              <p className="example-note" data-testid="knowledge-year">
+                As of {page.knowledgeYear}.
+              </p>
+              {knows.length === 0 ? (
+                <p className="example-note" data-testid="knowledge-empty">
+                  They know no facts yet in {page.knowledgeYear}.
+                </p>
+              ) : (
+                <ul className="plain-list" data-testid="knowledge">
+                  {knows.map((k) => (
+                    <li key={k.recordId} data-fact={k.factId}>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => props.onOpen('facts', k.factId)}
+                      >
+                        <Zh text={k.fact} actions={false} />
+                      </button>
+                      : learned {k.yearLearned}
+                      {k.chapter ? ` in ${k.chapter}` : ''}
+                      {k.how ? `. ${k.how}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <h4>What they do not know</h4>
+              {page.doesNotKnow.length === 0 ? (
+                <p className="example-note" data-testid="does-not-know-empty">
+                  There is no fact they do not know in {page.knowledgeYear}.
+                </p>
+              ) : (
+                <ul className="plain-list" data-testid="does-not-know">
+                  {page.doesNotKnow.map((f) => (
+                    <li key={f.factId} data-fact={f.factId}>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => props.onOpen('facts', f.factId)}
+                      >
+                        <Zh text={f.fact} actions={false} />
+                      </button>{' '}
+                      <span className="chip idea">{f.label}</span>
+                      {f.yearLearned !== null && (
+                        <span className="example-note"> They learn it in {f.yearLearned}.</span>
+                      )}
+                      {page.knowledge.some(
+                        (k) => k.factId === f.factId && k.yearLearned === null,
+                      ) && <span className="example-note"> A record has no year.</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -68,7 +68,7 @@ test.beforeAll(async () => {
         arcIds: [arc.entry._id],
         chapterId: 'CH2',
         year: 2045,
-        order: i + 1,
+        arcOrders: [{ arcId: arc.entry._id, order: i + 1 }],
         status: 'planned',
       },
     });
@@ -121,6 +121,13 @@ test('PL-2 PL-4 clicking a row opens the chapter page, and its strand years are 
     'alive, age 14',
   );
   await expect(pageView.getByTestId('chapter-arcs')).toContainText('Iris: coming home');
+  // PL-4: places per strand, with the place they sit in.
+  await expect(
+    pageView.locator('[data-strand="CH2-present"]').getByTestId('chapter-places'),
+  ).toContainText('Places: Portland > The Hale house');
+  await expect(
+    pageView.locator('[data-strand="CH2-backstory"]').getByTestId('chapter-places'),
+  ).toContainText('Places: Guangzhou');
   const editor = inspector().getByTestId('editor');
   await field(editor, 'strands.1.startYear').locator(':scope > input').fill('2033');
   await expect(editor.getByTestId('autosave')).toHaveText('Saved');
@@ -158,6 +165,75 @@ test('PL-3 dragging a chapter within its part changes the reading order and no s
   expect(await readingOrder('CH1')).toBe(1);
 });
 
+test('PL-4 a chapter in one strand shows its place, and a chapter with none shows no places line', async () => {
+  await grid().locator('[data-chapter="CH7"]').getByTestId('outline-label').click();
+  await expect(
+    inspector().getByTestId('chapter-page').locator('[data-strand="CH7-present"]'),
+  ).toContainText('Places: Guangzhou');
+  await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
+  await expect(inspector().getByTestId('chapter-page')).toContainText('Chapter 4');
+  await expect(inspector().getByTestId('chapter-places')).toHaveCount(0);
+  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
+});
+
+test('PL-3 dragging a chapter into another part gives it the target part and renumbers both parts; undo restores both', async () => {
+  const part = async (id: string) =>
+    (await invoke('entry.get', { collection: 'chapters', id })).entry.partId;
+  expect(await part('CH1')).toBe('PT1');
+  const yearsBefore = JSON.stringify(
+    (await invoke('entry.get', { collection: 'chapters', id: 'CH1' })).entry.strands,
+  );
+  await grid()
+    .locator('[data-chapter="CH1"]')
+    .getByTestId('outline-label')
+    .dragTo(grid().locator('[data-chapter="CH6"]').getByTestId('outline-label'));
+  await expect.poll(() => part('CH1')).toBe('PT2');
+  // It takes the place of the chapter it was dropped on (CH6 was second in part two).
+  const order = async () =>
+    (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .filter((c) => c.partId === 'PT2')
+      .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
+      .map((c) => c._id);
+  expect(await order()).toEqual(['CH5', 'CH1', 'CH6', 'CH7', 'CH8']);
+  const first = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .filter((c) => c.partId === 'PT1')
+    .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
+    .map((c) => c._id);
+  expect(first).toEqual(['CH2', 'CH3', 'CH4']);
+  expect(
+    JSON.stringify(
+      (await invoke('entry.get', { collection: 'chapters', id: 'CH1' })).entry.strands,
+    ),
+  ).toBe(yearsBefore);
+  await expect(grid().locator('[data-chapter]').first()).toHaveAttribute('data-chapter', 'CH2');
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => part('CH1')).toBe('PT1');
+  expect(await readingOrder('CH1')).toBe(1);
+  expect(await readingOrder('CH2')).toBe(2);
+  expect(await readingOrder('CH6')).toBe(6);
+});
+
+test('PL-3 the Move to the end of a part control moves the open chapter to another part', async () => {
+  await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
+  await inspector()
+    .getByLabel('Move to the end of a part')
+    .selectOption({ label: 'Part Two: The Letter' });
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.partId,
+    )
+    .toBe('PT2');
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.partId,
+    )
+    .toBe('PT1');
+  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
+});
+
 test('PL-3 the move buttons reorder a chapter and the beat list reorders beats', async () => {
   await inspector().getByRole('button', { name: 'Move earlier in its part' }).click();
   await expect.poll(() => readingOrder('CH2')).toBe(1);
@@ -185,15 +261,12 @@ test('CU-2 culture by year lists the entries that apply to a community and year'
 });
 
 test('PC-1 the place tree nests places and shows each description for the year', async () => {
-  const city = await invoke('entry.create', {
-    collection: 'places',
-    data: { title: 'Portland', status: 'canon' },
-  });
+  // Portland is a place in the fixture; the district nests inside it.
   await invoke('entry.create', {
     collection: 'places',
     data: {
       title: 'Pearl District',
-      parentId: city.entry._id,
+      parentId: 'PLC1',
       status: 'canon',
       descriptions: [
         { startYear: null, endYear: 2034, text: 'Warehouses by the river.' },
@@ -204,8 +277,9 @@ test('PC-1 the place tree nests places and shows each description for the year',
   await rail(page, 'Place tree').click();
   const view = page.getByTestId('places-view');
   await view.getByLabel('Year').fill('2000');
-  const child = view.locator('li[data-depth="1"]');
-  await expect(child).toContainText('Pearl District');
+  const child = view.locator('li[data-depth="1"]').filter({ hasText: 'Pearl District' });
+  await expect(view.locator('li[data-place="PLC2"]')).toHaveAttribute('data-depth', '1');
+  await expect(child).toHaveCount(1);
   await expect(child.getByTestId('place-description')).toContainText('Warehouses by the river.');
   await view.getByLabel('Year').fill('2050');
   await expect(child.getByTestId('place-description')).toContainText('Stilt houses');
@@ -288,4 +362,124 @@ test('GL-3 hovering a glossary name in the place tree shows its romanization and
   const run = page.getByTestId('places-view').getByTestId('zh').first();
   await run.hover();
   await expect(run.getByRole('tooltip')).toContainText('yuèbǐng: mooncake');
+});
+
+test('GL-3 the editor shows a Meaning control on a title with Chinese and a preview of a long text field, both with the glossary meaning on focus', async () => {
+  await invoke('entry.create', {
+    collection: 'facts',
+    data: { title: '晓曦的信', body: '她写了晓曦和月饼。\n\n第二段。', status: 'idea' },
+  });
+  await rail(page, 'Facts').click();
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /晓曦\s*的信/ })
+    .click();
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { name: /晓曦\s*的信/ })).toBeVisible();
+  // The title field: a small Meaning control shows the card on keyboard focus.
+  const title = field(editor, 'title');
+  const meaning = title.getByTestId('zh-meaning');
+  const card = title.getByRole('tooltip');
+  await expect(card).toBeHidden();
+  await meaning.focus();
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('晓曦: xiǎoxī, dawn light');
+  await expect(card).toContainText('的信: not in the glossary yet');
+  // The long text field keeps its text area and adds a read-only preview with focusable runs.
+  const body = field(editor, 'body');
+  await expect(body.locator('textarea')).toHaveValue(/晓曦和月饼/);
+  const preview = body.getByTestId('zh-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('p')).toHaveCount(2);
+  const run = preview.locator('[data-term="GL1"]');
+  await expect(run.locator('.zh-chars')).toHaveText('晓曦');
+  await run.focus();
+  await expect(run.getByRole('tooltip')).toBeVisible();
+  await expect(run.getByRole('tooltip')).toHaveText('xiǎoxī: dawn light');
+  await preview.locator('[data-term="GL5"]').focus();
+  await expect(preview.locator('[data-term="GL5"]').getByRole('tooltip')).toHaveText(
+    'yuèbǐng: mooncake',
+  );
+  // A field with no Chinese shows neither.
+  await expect(field(editor, 'sourceNote').getByTestId('zh-preview')).toHaveCount(0);
+  await expect(field(editor, 'sourceNote').getByTestId('zh-meaning')).toHaveCount(0);
+});
+
+test('GL-3 the glossary table, the culture view, and the chapter page show the meaning of Chinese on hover and focus', async () => {
+  // Glossary table.
+  await rail(page, 'Glossary table').click();
+  const table = page.getByTestId('glossary-table');
+  const row = table.locator('tr[data-term="GL5"]');
+  await expect(row).toContainText('yuèbǐng');
+  await expect(row).toContainText('mooncake');
+  const chars = row.getByTestId('zh').first();
+  await chars.focus();
+  await expect(chars.getByRole('tooltip')).toHaveText('yuèbǐng: mooncake');
+  await chars.blur();
+  await chars.hover();
+  await expect(chars.getByRole('tooltip')).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // Culture view.
+  await invoke('entry.create', {
+    collection: 'culturalEntries',
+    data: {
+      title: '中秋月饼',
+      communityId: 'guangzhou',
+      startYear: 1980,
+      endYear: 2100,
+      generationNotes: '外婆 bakes them.',
+      status: 'canon',
+    },
+  });
+  await rail(page, 'Culture by year').click();
+  const culture = page.getByTestId('culture-view');
+  await culture.getByLabel('Community').selectOption({ label: 'Guangzhou' });
+  await culture.getByLabel('Year').fill('2020');
+  const results = culture.getByTestId('culture-results');
+  const moon = results.locator('[data-term="GL5"]').first();
+  await moon.focus();
+  await expect(moon.getByRole('tooltip')).toHaveText('yuèbǐng: mooncake');
+  const gran = results.locator('[data-term="GL4"]').first();
+  await gran.focus();
+  await expect(gran.getByRole('tooltip')).toHaveText('wàipó: maternal grandmother');
+
+  // Chapter page: a place name with Chinese in a strand.
+  const { entry: place } = await invoke('entry.create', {
+    collection: 'places',
+    data: { title: '晓曦楼', status: 'idea' },
+  });
+  const ch7 = (await invoke('entry.get', { collection: 'chapters', id: 'CH7' })).entry;
+  const strands = (ch7.strands as { placeIds: string[] }[]).map((s) => ({
+    ...s,
+    placeIds: [...s.placeIds, place._id],
+  }));
+  await invoke('entry.update', { collection: 'chapters', id: 'CH7', patch: { strands } });
+  await rail(page, 'Outline').click();
+  await grid().locator('[data-chapter="CH7"]').getByTestId('outline-label').click();
+  const places = inspector().getByTestId('chapter-places');
+  await expect(places).toContainText('Guangzhou');
+  const house = places.locator('[data-term="GL1"]');
+  await house.focus();
+  await expect(house.getByRole('tooltip')).toHaveText('xiǎoxī: dawn light');
+});
+
+test('GL-1 a system with no checker shows a visible note on the Romanization screen and flags nothing', async () => {
+  const { item } = await invoke('lists.addItem', {
+    listId: 'romanizationSystems',
+    label: 'Wade-Giles',
+    parentId: null,
+  });
+  await rail(page, 'Romanization').click();
+  const view = page.getByTestId('romanization-view');
+  await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
+  await view.getByLabel('Mandarin').selectOption({ label: 'Wade-Giles' });
+  await expect(view.getByTestId('romanization-no-checker')).toHaveText(
+    'No checker for this system; terms are not flagged',
+  );
+  expect(
+    (await invoke('romanization.get', {})).languages.find((l) => l.id === 'mandarin')?.systemId,
+  ).toBe(item.id);
+  await view.getByLabel('Mandarin').selectOption({ label: 'Hanyu Pinyin' });
+  await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
 });

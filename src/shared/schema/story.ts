@@ -90,7 +90,6 @@ export const Chapter = entry({
   readingOrder: z.int().min(1),
   strands: z.array(Strand).min(1),
   arcIds: z.array(Id).default([]),
-  themeIds: z.array(Id).default([]),
   factsInPlay: z.array(FactInPlay).default([]),
   written: z.boolean().default(false),
   /** Read-only import of the manuscript (MS-5). */
@@ -124,7 +123,11 @@ export const chapterFields: FieldSpec[] = [
     { required: true, minItems: 1, itemLabel: 'label', warnings: ['primary-strand-count'] },
   ),
   f.refs('arcIds', 'Arcs', ['arcs']),
-  f.refs('themeIds', 'Themes', ['themes']),
+  // Derived: a theme's appearances are the one place the link is stored (TH-1).
+  f.refs('themeIds', 'Themes', ['themes'], {
+    derived: true,
+    hint: 'Adding a theme here adds an appearance to that theme, with an empty note. Removing it removes the appearance.',
+  }),
   f.objectList(
     'factsInPlay',
     'Facts in play',
@@ -143,6 +146,9 @@ export const chapterFields: FieldSpec[] = [
   f.text('sourceFile', 'Source file', { nullable: true }),
 ];
 
+/** The position of a beat within one arc (A7, PL-3). */
+export const BeatArcOrder = z.strictObject({ arcId: Id, order: z.int() });
+
 /** Plot beat (A7). */
 export const PlotBeat = entry({
   arcIds: z.array(Id).default([]),
@@ -152,7 +158,8 @@ export const PlotBeat = entry({
   description: z.string().default(''),
   worldContext: z.string().default(''),
   experienceNote: z.string().default(''),
-  order: z.int().default(0),
+  /** PL-3: the position in each arc the beat belongs to. A beat in two arcs has two positions. */
+  arcOrders: z.array(BeatArcOrder).default([]),
 });
 export type PlotBeat = z.infer<typeof PlotBeat>;
 
@@ -165,7 +172,15 @@ export const plotBeatFields: FieldSpec[] = [
   f.longText('description', 'Description'),
   f.longText('worldContext', 'World context'),
   f.longText('experienceNote', 'How the point of view character experiences it'),
-  f.int('order', 'Order within arc'),
+  f.objectList(
+    'arcOrders',
+    'Order within each arc',
+    [
+      f.ref('arcId', 'Arc', ['arcs'], { required: true }),
+      f.int('order', 'Order', { required: true }),
+    ],
+    { itemLabel: 'arcId' },
+  ),
 ];
 
 /** A fact is a secret or a piece of family history; its text is the shared body. */

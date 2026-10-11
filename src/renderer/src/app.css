@@ -1560,6 +1560,34 @@ tr.is-story-year td {
 .zh-html p {
   margin: 0 0 0.5em;
 }
+.zh-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.zh-meaning {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+.tree-card {
+  position: absolute;
+  z-index: 30;
+  max-width: 280px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 0.8rem;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
 .rail-search {
   padding: 0 0 8px;
 }

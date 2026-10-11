@@ -7,6 +7,7 @@ import {
   Provenance,
   Status,
   entrySchemas,
+  manifests,
 } from './schema';
 import { StoryTimeValue } from './storyTime';
 import type { EntryCollection } from './schema';
@@ -37,6 +38,11 @@ const WireBacklink = z.strictObject({
 const WithWarnings = z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) });
 
 const SYSTEM_FIELDS = ['createdAt', 'modifiedAt', 'deletedAt'];
+
+/** Derived fields (read from other entries) take a list of IDs and are not part of the stored schema. */
+const derivedNames = (c: EntryCollection) =>
+  manifests[c].filter((s) => s.derived).map((s) => s.name);
+const DerivedIds = z.array(z.string().min(1));
 const PLACEHOLDER_TIME = '2000-01-01T00:00:00.000Z';
 
 /** Check a whole new entry against its collection's schema, as the write path will. */
@@ -48,8 +54,15 @@ function checkNewEntry(
     if (k in v.data)
       ctx.addIssue({ code: 'custom', path: ['data', k], message: `${k} is set by the app` });
   }
+  const derived = derivedNames(v.collection);
+  const stored = Object.fromEntries(Object.entries(v.data).filter(([k]) => !derived.includes(k)));
+  for (const k of derived) {
+    if (k in v.data && !DerivedIds.safeParse(v.data[k]).success) {
+      ctx.addIssue({ code: 'custom', path: ['data', k], message: `${k} must be a list of IDs` });
+    }
+  }
   const r = entrySchemas[v.collection].safeParse({
-    ...v.data,
+    ...stored,
     _id: typeof v.data._id === 'string' ? v.data._id : 'NEW',
     createdAt: PLACEHOLDER_TIME,
     modifiedAt: PLACEHOLDER_TIME,
@@ -77,7 +90,7 @@ function checkPatch(
       ctx.addIssue({ code: 'custom', path: ['patch', k], message: `${k} is set by the app` });
       continue;
     }
-    const field = shape[k];
+    const field = derivedNames(v.collection).includes(k) ? DerivedIds : shape[k];
     if (!field) {
       ctx.addIssue({
         code: 'custom',
@@ -204,6 +217,14 @@ const StoryTimeResponse = z.strictObject({
   position: PositionWire,
 });
 
+const UnknownFactWire = z.strictObject({
+  factId: z.string(),
+  fact: z.string(),
+  reason: z.enum(['not-yet', 'never']),
+  yearLearned: z.number().nullable(),
+  label: z.string(),
+});
+
 const CharacterPageWire = z.strictObject({
   id: z.string(),
   name: z.string(),
@@ -298,6 +319,7 @@ const CharacterPageWire = z.strictObject({
       knownAtPosition: z.boolean().nullable(),
     }),
   ),
+  doesNotKnow: z.array(UnknownFactWire),
 });
 
 const Moment = z.strictObject({
@@ -534,7 +556,10 @@ const RomanizationWire = z.strictObject({
       label: z.string(),
       /** The system item ID in force for this language, or null for none. */
       systemId: z.string().nullable(),
+      /** The checker for that system. Null with a system set means the app has no checker for it. */
       kind: z.enum(['pinyin', 'jyutping']).nullable(),
+      /** Set when a system is in force but has no checker. */
+      note: z.string().nullable(),
     }),
   ),
   systems: z.array(z.strictObject({ id: z.string(), label: z.string() })),
@@ -752,7 +777,8 @@ export const contract = {
   /** KN-1: the facts a character has learned by a year. */
   'knowledge.knownBy': {
     request: z.strictObject({ characterId: EntryId, year: Year }),
-    response: z.strictObject({ facts: z.array(KnownFactWire) }),
+    /** `facts` are the facts they know by the year; `unknown` is every other fact, as "not yet in Y" or "never". */
+    response: z.strictObject({ facts: z.array(KnownFactWire), unknown: z.array(UnknownFactWire) }),
   },
   /** SL-1: the newest session log with a note, for the launch panel. */
   'sessionLog.latest': {
@@ -773,6 +799,11 @@ export const contract = {
   /** SL-1: the stop prompt is answered (or skipped); main closes the window (or quits) when `proceed` is true, and stays open when it is false. */
   'app.confirmClose': {
     request: z.strictObject({ proceed: z.boolean() }),
+    response: z.strictObject({ ok: z.literal(true) }),
+  },
+  /** SL-1: the page is showing the stop prompt, so main stops its 10 second wait and waits for the answer. */
+  'app.closePromptShown': {
+    request: z.strictObject({}),
     response: z.strictObject({ ok: z.literal(true) }),
   },
   /** The review queue (ED-7): proposals with their diff against the live entry. */
@@ -998,8 +1029,9 @@ export const contract = {
     response: z.strictObject({ page: ChapterPageWire }),
   },
   /**
-   * PL-3: move a chapter within its part, or a beat within an arc. Only the
-   * order field changes, never a story year. Returns what changed, for undo.
+   * PL-3: move a chapter to a place in a part (its own or another, where it
+   * takes the target part), or a beat within one arc (only that arc's
+   * position changes). Story years never change. Returns what changed, for undo.
    */
   'plot.reorder': {
     request: z.union([
@@ -1017,8 +1049,15 @@ export const contract = {
       }),
     ]),
     response: z.strictObject({
-      field: z.enum(['readingOrder', 'order']),
-      changes: z.array(z.strictObject({ id: z.string(), before: z.number(), after: z.number() })),
+      collection: z.enum(['chapters', 'plotBeats']),
+      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a beat's per-arc positions). */
+      changes: z.array(
+        z.strictObject({
+          id: z.string(),
+          before: z.record(z.string(), z.unknown()),
+          after: z.record(z.string(), z.unknown()),
+        }),
+      ),
     }),
   },
   /** CU-2: the cultural entries of a community that apply in a year. */
@@ -1092,7 +1131,7 @@ export const events = {
   /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),
   /** SL-1: the window is closing or the app is quitting; ask "Where did you stop?" first. */
-  'app.closeRequested': z.strictObject({ hasBible: z.boolean() }),
+  'app.closeRequested': z.strictObject({ hasBible: z.boolean(), quitting: z.boolean() }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */
   'lists.changed': z.strictObject({ bible: z.string() }),

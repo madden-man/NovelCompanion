@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import { describeState } from '../../../shared/domain/ages';
+import { beatsOfArc } from '../../../shared/domain/outline';
 import { reorderCommand } from '../../../shared/domain/undoRunner';
 import type { Response } from '../../../shared/ipc';
 import { entryTitle } from '../../../shared/schema';
@@ -33,9 +34,7 @@ function useReorder() {
     try {
       const r = await call('plot.reorder', { kind, groupId, movedId, toIndex });
       if (r.changes.length) {
-        undo.record(
-          reorderCommand(label, kind === 'chapters' ? 'chapters' : 'plotBeats', r.field, r.changes),
-        );
+        undo.record(reorderCommand(label, r.collection, r.changes));
       }
     } catch (e) {
       setError(plainError(e));
@@ -84,10 +83,27 @@ export function OutlineView() {
     setOver(null);
     const moved = chapters.find((c) => c.id === dragging);
     setDragging(null);
-    if (!moved || moved.partId !== target.partId || moved.id === target.id) return;
-    const siblings = inPart(target.partId);
+    if (!moved || moved.id === target.id) return;
+    // Into another part the chapter takes the target's place and the target's part (PL-3).
+    const siblings = inPart(target.partId).filter((c) => c.id !== moved.id);
     const toIndex = siblings.findIndex((c) => c.id === target.id);
     void reorder.run('chapters', target.partId, moved.id, toIndex, `Moved ${moved.title}`);
+  };
+
+  /** Drop on a part heading: the chapter goes to the start of that part. */
+  const dropOnPart = (e: DragEvent, partId: string) => {
+    e.preventDefault();
+    setOver(null);
+    const moved = chapters.find((c) => c.id === dragging);
+    setDragging(null);
+    if (!moved || moved.partId === partId) return;
+    void reorder.run('chapters', partId, moved.id, 0, `Moved ${moved.title}`);
+  };
+
+  const toPart = (c: ChapterRow, partId: string) => {
+    if (!partId || partId === c.partId) return;
+    const end = inPart(partId).length;
+    void reorder.run('chapters', partId, c.id, end, `Moved ${c.title} to another part`);
   };
 
   const move = (c: ChapterRow, by: -1 | 1) => {
@@ -132,7 +148,7 @@ export function OutlineView() {
         </div>
         <p className="example-note">
           {order === 'reading'
-            ? 'Chapters in reading order, grouped by book and part. Drag a row to a new place in its part, or open a chapter and use the move buttons.'
+            ? 'Chapters in reading order, grouped by book and part. Drag a row to a new place in its part or into another part, or open a chapter and use the move buttons.'
             : 'Chapters sorted by story year. Switch to reading order to move them.'}
         </p>
         {reorder.error && (
@@ -163,7 +179,23 @@ export function OutlineView() {
               </div>
               {outline.rows.map((row) =>
                 row.kind !== 'chapter' ? (
-                  <div key={`${row.kind}:${row.id}`} className={`ol-group ${row.kind}`}>
+                  <div
+                    key={`${row.kind}:${row.id}`}
+                    className={`ol-group ${row.kind}${over === `part:${row.id}` ? ' over' : ''}`}
+                    data-part={row.kind === 'part' ? row.id : undefined}
+                    onDragOver={
+                      row.kind === 'part'
+                        ? (e) => {
+                            if (dragging) {
+                              e.preventDefault();
+                              setOver(`part:${row.id}`);
+                            }
+                          }
+                        : undefined
+                    }
+                    onDragLeave={row.kind === 'part' ? () => setOver(null) : undefined}
+                    onDrop={row.kind === 'part' ? (e) => dropOnPart(e, row.id) : undefined}
+                  >
                     {row.kind === 'book' ? 'Book' : 'Part'}: {row.title}
                   </div>
                 ) : (
@@ -172,8 +204,7 @@ export function OutlineView() {
                     className={`ol-row${selected === row.id ? ' selected' : ''}${over === row.id ? ' over' : ''}`}
                     data-chapter={row.id}
                     onDragOver={(e) => {
-                      const moved = chapters.find((c) => c.id === dragging);
-                      if (moved && moved.partId === row.partId) {
+                      if (dragging) {
                         e.preventDefault();
                         setOver(row.id);
                       }
@@ -297,6 +328,25 @@ export function OutlineView() {
                 Move later in its part
               </button>
             </div>
+            {outline?.order === 'reading' && (
+              <div className="field">
+                <label htmlFor={`${orderId}-part`}>Move to the end of a part</label>
+                <select
+                  id={`${orderId}-part`}
+                  value=""
+                  onChange={(e) => toPart(sel, e.target.value)}
+                >
+                  <option value="">Pick a part</option>
+                  {outline.rows
+                    .filter((r) => r.kind === 'part' && r.id !== sel.partId)
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.title}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
             <ChapterPageView key={`p:${sel.id}`} id={sel.id} />
             <EmbeddedEditor key={`e:${sel.id}`} collection="chapters" id={sel.id} />
           </>
@@ -349,7 +399,7 @@ export function ChapterPageView({ id }: { id: string }) {
         <p className="row tight" data-testid="chapter-arcs">
           {page.arcs.map((a) => (
             <span key={a.id} className="chip">
-              {a.name}
+              <Zh text={a.name} />
             </span>
           ))}
         </p>
@@ -366,7 +416,12 @@ export function ChapterPageView({ id }: { id: string }) {
                   <Zh text={b.title} />
                 </strong>
                 {b.year !== null && <span className="example-note"> ({b.year})</span>}
-                {b.arcs.length > 0 && <span className="example-note"> {b.arcs.join(', ')}</span>}
+                {b.arcs.length > 0 && (
+                  <span className="example-note">
+                    {' '}
+                    <Zh text={b.arcs.join(', ')} />
+                  </span>
+                )}
                 {b.description && (
                   <>
                     <br />
@@ -384,7 +439,11 @@ export function ChapterPageView({ id }: { id: string }) {
             {s.label}
             {s.primary ? ' (primary)' : ''}, {years(s)}
           </span>
-          {s.pov && <span>Point of view: {s.pov.name}</span>}
+          {s.pov && (
+            <span>
+              Point of view: <Zh text={s.pov.name} />
+            </span>
+          )}
           <ul className="stack-list" aria-label={`Characters present, ${s.label}`}>
             {s.characters.length === 0 ? (
               <li className="empty">No characters listed.</li>
@@ -397,7 +456,17 @@ export function ChapterPageView({ id }: { id: string }) {
               ))
             )}
           </ul>
-          {s.places.length > 0 && <span>Places: {s.places.map((p) => p.name).join('; ')}</span>}
+          {s.places.length > 0 && (
+            <span data-testid="chapter-places">
+              Places:{' '}
+              {s.places.map((p, i) => (
+                <span key={p.id} data-place={p.id}>
+                  {i > 0 && '; '}
+                  <Zh text={p.name} />
+                </span>
+              ))}
+            </span>
+          )}
         </div>
       ))}
       <div className="stack tight" data-testid="chapter-themes">
@@ -408,8 +477,13 @@ export function ChapterPageView({ id }: { id: string }) {
           <ul className="stack-list">
             {page.themes.map((t) => (
               <li key={t.id}>
-                {t.title}
-                {t.note && <span className="example-note"> {t.note}</span>}
+                <Zh text={t.title} />
+                {t.note && (
+                  <span className="example-note">
+                    {' '}
+                    <Zh text={t.note} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -423,8 +497,13 @@ export function ChapterPageView({ id }: { id: string }) {
           <ul className="stack-list">
             {page.factsInPlay.map((f, i) => (
               <li key={i}>
-                {f.character} acts on {f.fact}
-                {f.note && <span className="example-note"> {f.note}</span>}
+                <Zh text={f.character} /> acts on <Zh text={f.fact} />
+                {f.note && (
+                  <span className="example-note">
+                    {' '}
+                    <Zh text={f.note} />
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -442,17 +521,7 @@ function ArcBeats({ reorder }: { reorder: ReturnType<typeof useReorder> }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const selectId = useId();
   const arc = arcs.find((a) => a._id === arcId) ?? null;
-  const list = useMemo(
-    () =>
-      beats
-        .filter((b) => Array.isArray(b.arcIds) && (b.arcIds as string[]).includes(arcId))
-        .sort(
-          (a, b) =>
-            Number(a.order ?? 0) - Number(b.order ?? 0) ||
-            entryTitle(a).localeCompare(entryTitle(b)),
-        ),
-    [beats, arcId],
-  );
+  const list = useMemo(() => beatsOfArc(beats, arcId), [beats, arcId]);
   const moveTo = (id: string, to: number) => {
     if (to < 0 || to >= list.length) return;
     void reorder.run('beats', arcId, id, to, `Moved a beat in ${arc ? entryTitle(arc) : 'an arc'}`);

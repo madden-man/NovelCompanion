@@ -164,3 +164,76 @@ export function ZhHtml({ html }: { html: string }) {
   }, [html]);
   return <div className="zh-html">{nodes.map((n, i) => renderNode(n, String(i)))}</div>;
 }
+
+const CJK_TEST = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{2fa1f}]/u;
+
+/** True when the text holds any Chinese character. */
+export function hasCjk(text: string): boolean {
+  return CJK_TEST.test(text);
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Plain text from a text area as simple HTML: blank lines split paragraphs, single breaks stay. */
+export function plainToHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+/** Stored text that is already HTML (manuscript text, rich bodies) is shown as it is. */
+const looksLikeHtml = (text: string) =>
+  /<\/?(p|em|strong|i|b|u|ul|ol|li|h[1-4]|br|blockquote)\b/i.test(text);
+
+/**
+ * GL-3: a read-only preview shown beside a long-text field that holds Chinese
+ * characters, so the characters can be hovered or focused for their meaning
+ * while the field itself stays a plain text area.
+ */
+export function ZhPreview({ text }: { text: string }) {
+  if (!hasCjk(text)) return null;
+  return (
+    <div className="zh-preview" data-testid="zh-preview" aria-label="Preview with meanings">
+      <span className="eyebrow">Preview with meanings</span>
+      <ZhHtml html={looksLikeHtml(text) ? text : plainToHtml(text)} />
+    </div>
+  );
+}
+
+/**
+ * GL-3: a small "Meaning" control beside a short field with Chinese characters.
+ * Hovering or focusing it shows the romanization and meaning of each run from
+ * the glossary, and says when a run has no term yet.
+ */
+export function ZhMeaning({ text }: { text: string }) {
+  const terms = useGlossary();
+  const tipId = useId();
+  const runs = useMemo(
+    () =>
+      zhPieces(text, terms).flatMap((p) =>
+        p.kind === 'zh' ? [{ chars: p.text, term: p.term }] : [],
+      ),
+    [text, terms],
+  );
+  if (runs.length === 0) return null;
+  return (
+    <span className="zh-run zh-meaning">
+      <button type="button" className="btn small" aria-describedby={tipId} data-testid="zh-meaning">
+        Meaning
+      </button>
+      <span className="zh-tip" role="tooltip" id={tipId}>
+        {runs.map((r, i) => (
+          <span key={i}>
+            <span lang="zh">{r.chars}</span>
+            {': '}
+            {r.term
+              ? `${r.term.romanization || 'No romanization yet'}, ${r.term.meaning || 'no meaning yet'}`
+              : 'not in the glossary yet'}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}

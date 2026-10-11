@@ -129,6 +129,16 @@ export const manifests: Record<EntryCollection, FieldSpec[]> = {
   customEntries: customEntryFields,
 };
 
+/** A document without its derived fields (they are read from other entries, never stored on this one). */
+export function withoutDerived<T extends Record<string, unknown>>(
+  collection: EntryCollection,
+  doc: T,
+): T {
+  const derived = manifests[collection].filter((s) => s.derived).map((s) => s.name);
+  if (derived.length === 0) return doc;
+  return Object.fromEntries(Object.entries(doc).filter(([k]) => !derived.includes(k))) as T;
+}
+
 export interface CollectionInfo {
   singular: string;
   plural: string;

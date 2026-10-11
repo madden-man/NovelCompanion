@@ -73,7 +73,8 @@ function compare(
   for (const spec of specs) {
     const field = shape[spec.name];
     if (!field) {
-      out.push(`${at}${spec.name}: in the manifest but not the schema`);
+      // A derived field is read from other entries; it is not stored here.
+      if (!spec.derived) out.push(`${at}${spec.name}: in the manifest but not the schema`);
       continue;
     }
     const { core, optional, nullable } = unwrap(field);
@@ -111,6 +112,15 @@ describe('T-5 field manifests match the schemas', () => {
       problems.push(...compare(manifests[c], shape, `${c}.`));
     }
     expect(problems).toEqual([]);
+  });
+
+  test('TH-1 the only derived manifest field is the chapter Themes field, and it is not in the stored schema', () => {
+    const derived = ENTRY_COLLECTIONS.flatMap((c) =>
+      manifests[c].filter((s) => s.derived).map((s) => `${c}.${s.name}`),
+    );
+    expect(derived).toEqual(['chapters.themeIds']);
+    const shape = (entrySchemas.chapters as unknown as { shape: Record<string, z.ZodType> }).shape;
+    expect(Object.keys(shape)).not.toContain('themeIds');
   });
 
   test('T-5 a field added to a schema without a manifest entry is caught', () => {

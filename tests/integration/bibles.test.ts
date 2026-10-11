@@ -188,3 +188,72 @@ describe('ARCH-2 versioned migrations per bible', () => {
     });
   });
 });
+
+describe('PL-3 TH-1 migrations carry old data forward', () => {
+  test('PL-3 a beat with one order number becomes one position in each of its arcs', async () => {
+    const bible = await createBible(store, freshSlug('beat-orders'), 'Beats');
+    const at = '2026-01-15T09:00:00.000Z';
+    await bible.collection('plotBeats').insertMany([
+      {
+        _id: 'b1',
+        title: 'one',
+        status: 'planned',
+        arcIds: ['A', 'B'],
+        order: 4,
+        createdAt: at,
+        modifiedAt: at,
+      },
+      {
+        _id: 'b2',
+        title: 'two',
+        status: 'planned',
+        arcIds: [],
+        order: 2,
+        createdAt: at,
+        modifiedAt: at,
+      },
+    ] as never);
+    await store.db
+      .collection(REGISTRY)
+      .updateOne({ _id: bible.id as never }, { $set: { schemaVersion: 3 } });
+    expect(await migrate(bible)).toEqual({ from: 3, to: LATEST_SCHEMA_VERSION });
+    const b1 = await bible.collection('plotBeats').findOne({ _id: 'b1' as never });
+    expect(b1).toMatchObject({
+      arcOrders: [
+        { arcId: 'A', order: 4 },
+        { arcId: 'B', order: 4 },
+      ],
+    });
+    expect(b1).not.toHaveProperty('order');
+    expect(await bible.collection('plotBeats').findOne({ _id: 'b2' as never })).toMatchObject({
+      arcOrders: [],
+    });
+  });
+
+  test('TH-1 a chapter theme list becomes theme appearances with empty notes, keeping notes that exist', async () => {
+    const bible = await createBible(store, freshSlug('theme-apps'), 'Themes');
+    const at = '2026-01-15T09:00:00.000Z';
+    const base = { status: 'planned', createdAt: at, modifiedAt: at };
+    await bible.collection('themes').insertMany([
+      { _id: 'T1', title: 'Water', appearances: [], ...base },
+      { _id: 'T2', title: 'Fire', appearances: [{ chapterId: 'C1', note: 'kept' }], ...base },
+    ] as never);
+    await bible.collection('chapters').insertMany([
+      { _id: 'C1', title: 'One', themeIds: ['T1', 'T2', 'gone'], ...base },
+      { _id: 'C2', title: 'Two', ...base },
+    ] as never);
+    await store.db
+      .collection(REGISTRY)
+      .updateOne({ _id: bible.id as never }, { $set: { schemaVersion: 4 } });
+    await migrate(bible);
+    expect(await bible.collection('themes').findOne({ _id: 'T1' as never })).toMatchObject({
+      appearances: [{ chapterId: 'C1', note: '' }],
+    });
+    expect(await bible.collection('themes').findOne({ _id: 'T2' as never })).toMatchObject({
+      appearances: [{ chapterId: 'C1', note: 'kept' }],
+    });
+    expect(await bible.collection('chapters').findOne({ _id: 'C1' as never })).not.toHaveProperty(
+      'themeIds',
+    );
+  });
+});

@@ -8,7 +8,10 @@ import {
 import {
   checkRomanization,
   isJyutpingSyllable,
+  isPinyinInterjection,
   isPinyinSyllable,
+  NO_CHECKER_NOTE,
+  romanizationKind,
   systemFor,
   termProblem,
 } from '../../src/shared/domain/romanization';
@@ -151,6 +154,39 @@ describe('GL-1 the romanization checker', () => {
     expect(['zhei1x', 'ju1', 'bou', 'fei2n', 'xa'].some(isPinyinSyllable)).toBe(false);
   });
 
+  test('GL-1 erhua is accepted: a trailing r after a valid syllable', () => {
+    for (const s of [
+      'nǎr',
+      'wánr',
+      'yìdiǎnr',
+      'huar',
+      'dian3r',
+      'yi4dian3r',
+      'nar3',
+      'Běijīng huàr',
+    ]) {
+      expect(checkRomanization('pinyin', s), s).toEqual({ ok: true, invalid: [] });
+    }
+  });
+
+  test('GL-1 a stray r is still wrong: it needs a valid syllable before it, in the same word', () => {
+    for (const s of ['r', 'nr', 'xyzr', 'qwr', 'ni3 r', 'rr', 'bqar']) {
+      expect(checkRomanization('pinyin', s).ok, s).toBe(false);
+    }
+  });
+
+  test('GL-1 the standalone interjections ê, m, n, ng, hm are accepted, with tone marks or numbers', () => {
+    for (const s of ['ê', 'ế', 'm', 'ḿ', 'n', 'ň', 'ng', 'ńg', 'ng4', 'hm', 'hng', 'n2']) {
+      expect(checkRomanization('pinyin', s), s).toEqual({ ok: true, invalid: [] });
+    }
+    // They are words of their own, not syllables to build other words from.
+    for (const s of ['mn', 'nm', 'êê', 'hmm', 'ngx']) {
+      expect(checkRomanization('pinyin', s).ok, s).toBe(false);
+    }
+    expect(isPinyinInterjection('ng')).toBe(true);
+    expect(isPinyinInterjection('ni')).toBe(false);
+  });
+
   const jyutOk = [
     'gwong2dung1',
     'nei5 hou2',
@@ -186,6 +222,21 @@ describe('GL-1 the romanization checker', () => {
       { id: 'cantonese', label: 'Jyutping', parentId: null },
     ],
   };
+
+  test('GL-1 a user-added system with no checker says so and never reports that a term follows it', () => {
+    const custom = {
+      ...systems,
+      items: [...systems.items, { id: 'wade', label: 'Wade-Giles', parentId: null }],
+    };
+    expect(romanizationKind('Wade-Giles')).toBeNull();
+    const system = systemFor('mandarin', { mandarin: 'wade' }, custom);
+    expect(system).toMatchObject({ label: 'Wade-Giles', kind: null });
+    expect(NO_CHECKER_NOTE).toBe('No checker for this system; terms are not flagged');
+    // Nothing is flagged, because nothing can be checked; the note is what tells the person.
+    expect(
+      termProblem({ language: 'mandarin', romanization: 'ni3 zzz' }, { mandarin: 'wade' }, custom),
+    ).toBeNull();
+  });
 
   test('GL-1 one system per language: the default follows the language, a setting overrides it', () => {
     expect(systemFor('mandarin', {}, systems)).toMatchObject({

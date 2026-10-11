@@ -831,8 +831,13 @@ test('CH-2 CH-3 the character page shows every name, the age at the current posi
   await expect(rows.filter({ hasText: 'Arctic summer sea ice' })).toHaveCount(0);
 
   const ruth = await openCharacter('Ruth Hale');
-  await expect(ruth.getByTestId('knowledge')).toContainText("Peter's letter: learned 2041");
-  await expect(ruth.getByTestId('knowledge')).toContainText('not yet in 2040');
+  // Ruth learns the letter in 2041, so at 2040 it is a fact she does not know yet.
+  await expect(ruth.getByTestId('knowledge-empty')).toBeVisible();
+  const ruthMissing = ruth.getByTestId('does-not-know');
+  await expect(ruthMissing).toContainText("Peter's letter");
+  await expect(ruthMissing).toContainText('not yet in 2040');
+  await expect(ruthMissing).toContainText('They learn it in 2041.');
+  await expect(ruthMissing).toContainText('Meiling was engaged before Wei');
   await expect(ruth.getByTestId('relatives')).toContainText('Sam Hale (adoptive)');
   const sam = await openCharacter('Sam Hale');
   await expect(sam.getByTestId('relatives')).toContainText('Ruth Hale (adoptive from 2015)');
@@ -1010,4 +1015,27 @@ test('FT-8 a tree of 200 people across six generations redraws in under 500 ms i
       }),
   );
   expect(collapse).toBeLessThan(500);
+});
+
+test('GL-3 a tree node with a Chinese name shows a visible card with the meaning on keyboard focus and on hover', async () => {
+  await openBible(FIX);
+  await openTree();
+  const iris = byId('H5');
+  const card = page.getByTestId('tree-card');
+  await expect(card).toHaveCount(0);
+  await iris.focus();
+  await expect(card).toBeVisible();
+  await expect(card).toHaveText('晓曦 xiǎoxī: dawn light');
+  await iris.blur();
+  await expect(card).toHaveCount(0);
+  // A name with Chinese but no glossary term says so.
+  const meiling = byId('Z4');
+  await meiling.focus();
+  await expect(card).toHaveText('周军: not in the glossary yet');
+  // A person with no Chinese name shows no card.
+  await byId('H1').focus();
+  await expect(card).toHaveCount(0);
+  await byId('H1').blur();
+  await iris.hover();
+  await expect(card).toHaveText('晓曦 xiǎoxī: dawn light');
 });

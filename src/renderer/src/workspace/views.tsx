@@ -1,7 +1,13 @@
 import { createCommand, renameCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { collectionInfo, entrySchemas, entryTitle, manifests } from '../../../shared/schema';
+import {
+  collectionInfo,
+  entrySchemas,
+  entryTitle,
+  manifests,
+  withoutDerived,
+} from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Response, WireList } from '../../../shared/ipc';
 import { blankEntry } from '../../../shared/domain/blank';
@@ -208,7 +214,7 @@ export function NewEntryForm(props: {
     setError(null);
     const at = new Date().toISOString();
     const check = entrySchemas[collection].safeParse({
-      ...draft,
+      ...withoutDerived(collection, draft),
       _id: 'NEW',
       createdAt: at,
       modifiedAt: at,

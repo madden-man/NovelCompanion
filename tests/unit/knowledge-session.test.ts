@@ -2,10 +2,13 @@ import { describe, expect, test } from 'vitest';
 import { factPage, isKnownBy, knownBy, whoKnows } from '../../src/shared/domain/knowledge';
 import { filterQuestions, questionCounts } from '../../src/shared/domain/questions';
 import {
+  STOP_PROMPT_TIMEOUT_MS,
   latestLog,
   localDateString,
   logsNewestFirst,
   stopLogData,
+  stopPromptLabel,
+  stopPromptOutcome,
 } from '../../src/shared/domain/sessionLog';
 import { computeWarnings } from '../../src/shared/domain/warnings';
 import { characterPage } from '../../src/shared/domain/character';
@@ -37,13 +40,61 @@ describe('KN-1 who knows a fact and what a character knows', () => {
   });
 
   test("KN-1 knownBy gives H5 nothing in 2059 and Peter's letter in 2060", () => {
-    expect(knownBy(data, 'H5', 2059)).toEqual([]);
-    expect(knownBy(data, 'H5', 2060).map((f) => [f.factId, f.fact, f.yearLearned])).toEqual([
+    expect(knownBy(data, 'H5', 2059).known).toEqual([]);
+    expect(knownBy(data, 'H5', 2060).known.map((f) => [f.factId, f.fact, f.yearLearned])).toEqual([
       ['F2', "Peter's letter", 2060],
     ]);
-    expect(knownBy(data, 'H5', 2099)).toHaveLength(1);
-    expect(knownBy(data, 'Z3', 2027)).toEqual([]);
-    expect(knownBy(data, 'Z3', 2028).map((f) => f.factId)).toEqual(['F1']);
+    expect(knownBy(data, 'H5', 2099).known).toHaveLength(1);
+    expect(knownBy(data, 'Z3', 2027).known).toEqual([]);
+    expect(knownBy(data, 'Z3', 2028).known.map((f) => f.factId)).toEqual(['F1']);
+  });
+
+  test('KN-1 knownBy lists what H5 does not know: not yet in 2059 for the letter, which H5 learns in 2060, never for the engagement', () => {
+    const in2059 = knownBy(data, 'H5', 2059);
+    expect(in2059.unknown.map((f) => [f.factId, f.fact, f.reason, f.label])).toEqual([
+      ['F2', "Peter's letter", 'not-yet', 'not yet in 2059'],
+      ['F1', 'Meiling was engaged before Wei', 'never', 'never'],
+    ]);
+    expect(in2059.unknown[0]?.yearLearned).toBe(2060);
+    expect(in2059.unknown[1]?.yearLearned).toBeNull();
+    const in2060 = knownBy(data, 'H5', 2060);
+    expect(in2060.known.map((f) => f.factId)).toEqual(['F2']);
+    expect(in2060.unknown.map((f) => [f.factId, f.label])).toEqual([['F1', 'never']]);
+  });
+
+  test('KN-1 every live fact is either known or unknown, never both, and a trashed fact is in neither', () => {
+    for (const [who, year] of [
+      ['H5', 2059],
+      ['H5', 2060],
+      ['Z3', 2028],
+      ['Z3', 2027],
+      ['U1', 2100],
+    ] as const) {
+      const k = knownBy(data, who, year);
+      const ids = [...k.known.map((f) => f.factId), ...k.unknown.map((f) => f.factId)].sort();
+      expect(ids, `${who} ${year}`).toEqual(['F1', 'F2']);
+    }
+    const trimmed = fromCollections({
+      ...fx,
+      facts: fx.facts!.map((f) =>
+        f._id === 'F1' ? { ...f, deletedAt: '2026-02-01T00:00:00.000Z' } : f,
+      ),
+    });
+    expect(knownBy(trimmed, 'H5', 2059).unknown.map((f) => f.factId)).toEqual(['F2']);
+  });
+
+  test('KN-1 the earliest later year is the one a character learns it in', () => {
+    const twice = fromCollections({
+      ...fx,
+      knowledgeRecords: [
+        ...fx.knowledgeRecords!,
+        { _id: 'K8', factId: 'F1', characterId: 'H5', yearLearned: 2080, how: '' },
+        { _id: 'K9', factId: 'F1', characterId: 'H5', yearLearned: 2070, how: '' },
+      ],
+    });
+    const f1 = knownBy(twice, 'H5', 2059).unknown.find((f) => f.factId === 'F1');
+    expect(f1).toMatchObject({ reason: 'not-yet', yearLearned: 2070, label: 'not yet in 2059' });
+    expect(knownBy(twice, 'H5', 2075).known.map((f) => f.factId)).toContain('F1');
   });
 
   test('KN-1 a record with no year is listed on the fact but never counts as known by a year', () => {
@@ -56,7 +107,10 @@ describe('KN-1 who knows a fact and what a character knows', () => {
     });
     expect(whoKnows(withBlank, 'F1').map((k) => k.characterId)).toEqual(['Z3', 'H3']);
     expect(whoKnows(withBlank, 'F1', 2100).map((k) => k.characterId)).toEqual(['Z3']);
-    expect(knownBy(withBlank, 'H3', 2100)).toEqual([]);
+    expect(knownBy(withBlank, 'H3', 2100).known).toEqual([]);
+    expect(knownBy(withBlank, 'H3', 2100).unknown.find((f) => f.factId === 'F1')?.label).toBe(
+      'never',
+    );
     expect(isKnownBy(null, 2050)).toBeNull();
     expect(isKnownBy(2040, null)).toBeNull();
     expect(isKnownBy(2040, 2040)).toBe(true);
@@ -91,6 +145,27 @@ describe('KN-1 who knows a fact and what a character knows', () => {
       null,
     )!;
     expect(early.knowledge.map((k) => k.knownAtPosition)).toEqual([false]);
+  });
+
+  test('KN-1 the character page lists what H5 does not know in 2059 and in 2060, from knownBy', () => {
+    const at = (year: number) =>
+      characterPage(data, 'H5', { chapterId: 'CH7', year, source: 'lastWritten' }, null)!;
+    expect(at(2059).doesNotKnow.map((f) => [f.factId, f.label])).toEqual([
+      ['F2', 'not yet in 2059'],
+      ['F1', 'never'],
+    ]);
+    expect(
+      at(2059)
+        .knowledge.filter((k) => k.knownAtPosition)
+        .map((k) => k.factId),
+    ).toEqual([]);
+    expect(at(2060).doesNotKnow.map((f) => [f.factId, f.label])).toEqual([['F1', 'never']]);
+    expect(
+      at(2060)
+        .knowledge.filter((k) => k.knownAtPosition)
+        .map((k) => k.factId),
+    ).toEqual(['F2']);
+    expect(at(2060).doesNotKnow).toEqual(knownBy(data, 'H5', 2060).unknown);
   });
 
   test('KN-1 the fact page lists who learns it, when, and in which chapter', () => {
@@ -222,6 +297,32 @@ describe('SL-1 the session log', () => {
     ).toBe(true);
     expect(stopLogData({ stoppedAt: '   ' }, new Date())).toBeNull();
     expect(stopLogData({ stoppedAt: 'x', chapterId: '' }, new Date())!.chapterId).toBeNull();
+  });
+
+  test('SL-1 the stop prompt button says close when only the window closes and quit when the app quits', () => {
+    expect(stopPromptLabel(true, false)).toBe('Save note and close');
+    expect(stopPromptLabel(true, true)).toBe('Save note and quit');
+    expect(stopPromptLabel(false, false)).toBe('Close without a note');
+    expect(stopPromptLabel(false, true)).toBe('Quit without a note');
+  });
+
+  test('SL-1 a page that never shows the prompt is closed after 10 seconds, with no log', () => {
+    expect(STOP_PROMPT_TIMEOUT_MS).toBe(10_000);
+    const asked = { shown: false, decision: null };
+    expect(stopPromptOutcome({ ...asked, elapsedMs: 0 })).toBe('wait');
+    expect(stopPromptOutcome({ ...asked, elapsedMs: 9_999 })).toBe('wait');
+    expect(stopPromptOutcome({ ...asked, elapsedMs: 10_000 })).toBe('close');
+    expect(stopPromptOutcome({ ...asked, elapsedMs: 3_000 }, 2_500)).toBe('close');
+  });
+
+  test('SL-1 once the prompt is showing, main waits for the person however long they take', () => {
+    expect(stopPromptOutcome({ shown: true, decision: null, elapsedMs: 600_000 })).toBe('wait');
+  });
+
+  test('SL-1 an answer decides at once: close, or keep working', () => {
+    expect(stopPromptOutcome({ shown: true, decision: true, elapsedMs: 50 })).toBe('close');
+    expect(stopPromptOutcome({ shown: true, decision: false, elapsedMs: 50 })).toBe('stay');
+    expect(stopPromptOutcome({ shown: false, decision: false, elapsedMs: 99_999 })).toBe('stay');
   });
 
   test('SL-1 local dates are zero padded', () => {

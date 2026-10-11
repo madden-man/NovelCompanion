@@ -47,16 +47,21 @@ describe('ED-1 the write path works for every collection', () => {
     'ED-1 %s: create, read, update, trash, restore, each with a revision',
     async (c) => {
       const { repo, handle } = bible;
+      // A derived field (chapter Themes) is not stored on the entry; TH-1 tests cover it.
+      const stored = (doc: Record<string, unknown>) =>
+        Object.fromEntries(
+          Object.entries(doc).filter(([k]) => !manifests[c].find((s) => s.name === k)?.derived),
+        );
       const created = (await repo.create(
         c,
-        build(manifests[c], 0, gen, 'full', true) as never,
+        stored(build(manifests[c], 0, gen, 'full', true)) as never,
       )) as {
         _id: string;
       };
       const id = created._id;
       expect(repo.get(c, id)).toEqual(created);
       expect(await handle.collection(c).findOne({ _id: id as never })).toEqual(created);
-      const b = build(manifests[c], 1, gen, 'full', true);
+      const b = stored(build(manifests[c], 1, gen, 'full', true));
       const updated = (await repo.update(c, id, b as never)) as Record<string, unknown>;
       for (const [k, v] of Object.entries(b)) expect(updated[k], `${c}.${k}`).toEqual(v);
       await repo.softDelete(c, id);

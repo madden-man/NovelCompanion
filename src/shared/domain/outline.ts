@@ -243,6 +243,142 @@ export function reorder(
     .filter((r) => before.get(r.id) !== r.value);
 }
 
+/** PL-3: where a beat sits in one arc. A beat with no position there counts as 0. */
+export function beatOrderIn(beat: Doc, arcId: string): number {
+  const entry = (Array.isArray(beat.arcOrders) ? beat.arcOrders.filter(isPlainObject) : []).find(
+    (o) => o.arcId === arcId,
+  );
+  return num(entry?.order) ?? 0;
+}
+
+/** The live beats of one arc, in that arc's order, then by title. */
+export function beatsOfArc<T extends Doc>(beats: readonly T[], arcId: string): T[] {
+  return beats
+    .filter((b) => live(b) && idList(b.arcIds).includes(arcId))
+    .sort(
+      (a, b) => beatOrderIn(a, arcId) - beatOrderIn(b, arcId) || title(a).localeCompare(title(b)),
+    );
+}
+
+export interface BeatPatch {
+  id: string;
+  /** The beat's whole new `arcOrders`. Other arcs keep the position they had. */
+  arcOrders: { arcId: string; order: number }[];
+}
+
+/**
+ * PL-3: move one beat within one arc. Only that arc is renumbered 1 to n; a
+ * beat that also sits in another arc keeps its position there. Returns the new
+ * `arcOrders` of each beat whose position in this arc changes.
+ */
+export function reorderBeatsInArc(
+  beats: readonly Doc[],
+  arcId: string,
+  movedId: string,
+  toIndex: number,
+): BeatPatch[] {
+  const group = beatsOfArc(beats, arcId);
+  const moves = reorder(
+    group.map((b) => ({ id: str(b._id), value: beatOrderIn(b, arcId) })),
+    movedId,
+    toIndex,
+    'sequence',
+  );
+  const byId = new Map(group.map((b) => [str(b._id), b]));
+  return moves.map((m) => {
+    const beat = byId.get(m.id) as Doc;
+    const others = (Array.isArray(beat.arcOrders) ? beat.arcOrders.filter(isPlainObject) : [])
+      .filter((o) => o.arcId !== arcId && idList(beat.arcIds).includes(str(o.arcId)))
+      .map((o) => ({ arcId: str(o.arcId), order: num(o.order) ?? 0 }));
+    return { id: m.id, arcOrders: [...others, { arcId, order: m.value }] };
+  });
+}
+
+export interface ChapterPatch {
+  id: string;
+  readingOrder: number;
+  partId: string;
+}
+
+/**
+ * PL-3: move a chapter to a place in a part, in its own part or another one.
+ * Within a part the numbers of that part are reused, so other parts keep
+ * theirs. Into another part the chapter takes the target position and the
+ * target part, and the reading order is renumbered across the chapters of the
+ * book or books involved, handing the same numbers back out in the new order.
+ * Returns the chapters whose reading order or part changes.
+ */
+export function moveChapter(
+  chapters: readonly Doc[],
+  parts: readonly Doc[],
+  books: readonly Doc[],
+  movedId: string,
+  toPartId: string,
+  toIndex: number,
+): ChapterPatch[] {
+  const liveChapters = chapters.filter(live);
+  const moved = liveChapters.find((c) => str(c._id) === movedId);
+  if (!moved) return [];
+  const partById = new Map(parts.map((p) => [str(p._id), p]));
+  const bookNo = new Map(books.map((b) => [str(b._id), num(b.number) ?? 0]));
+  const rank = (partId: string): [number, number] => {
+    const part = partById.get(partId);
+    return [bookNo.get(str(part?.bookId)) ?? 0, num(part?.number) ?? 0];
+  };
+  const cmp = (a: { partId: string; readingOrder: number; title: string }, b: typeof a) => {
+    const [ab, ap] = rank(a.partId);
+    const [bb, bp] = rank(b.partId);
+    return ab - bb || ap - bp || a.readingOrder - b.readingOrder || a.title.localeCompare(b.title);
+  };
+  const item = (c: Doc) => ({
+    id: str(c._id),
+    partId: str(c.partId),
+    readingOrder: num(c.readingOrder) ?? 0,
+    title: title(c),
+  });
+
+  if (str(moved.partId) === toPartId) {
+    const siblings = liveChapters
+      .filter((c) => str(c.partId) === toPartId)
+      .map(item)
+      .sort(cmp);
+    return reorder(
+      siblings.map((c) => ({ id: c.id, value: c.readingOrder })),
+      movedId,
+      toIndex,
+      'reuse',
+    ).map((r) => ({ id: r.id, readingOrder: r.value, partId: toPartId }));
+  }
+
+  const bookOf = (partId: string) => str(partById.get(partId)?.bookId);
+  const books2 = new Set([bookOf(str(moved.partId)), bookOf(toPartId)]);
+  const scope = liveChapters
+    .filter((c) => books2.has(bookOf(str(c.partId))))
+    .map(item)
+    .sort(cmp);
+  const before = new Map(scope.map((c) => [c.id, c]));
+  const values = scope.map((c) => c.readingOrder).sort((a, b) => a - b);
+  const rest = scope.filter((c) => c.id !== movedId);
+  const [tb, tp] = rank(toPartId);
+  const ahead = rest.filter((c) => {
+    const [b, p] = rank(c.partId);
+    return b < tb || (b === tb && p < tp);
+  }).length;
+  const inTarget = rest.filter((c) => c.partId === toPartId).length;
+  const at = ahead + Math.max(0, Math.min(inTarget, toIndex));
+  const next = [...rest];
+  next.splice(at, 0, { ...(before.get(movedId) as ReturnType<typeof item>), partId: toPartId });
+  const out: ChapterPatch[] = [];
+  next.forEach((c, i) => {
+    const was = before.get(c.id) as ReturnType<typeof item>;
+    const value = values[i] as number;
+    if (was.readingOrder !== value || was.partId !== c.partId) {
+      out.push({ id: c.id, readingOrder: value, partId: c.partId });
+    }
+  });
+  return out;
+}
+
 export interface ChapterPage {
   id: string;
   title: string;
@@ -269,6 +405,16 @@ export interface ChapterPage {
     character: string;
     note: string;
   }[];
+}
+
+/**
+ * A beat on a chapter page is placed by its position in the first of the
+ * chapter's arcs that it belongs to, else in its own first arc, else 0.
+ */
+function chapterBeatOrder(beat: Doc, chapterArcs: readonly string[]): number {
+  const arcs = idList(beat.arcIds);
+  const arc = chapterArcs.find((a) => arcs.includes(a)) ?? arcs[0];
+  return arc === undefined ? 0 : beatOrderIn(beat, arc);
 }
 
 /** PL-4: a chapter with its beats, who is present and how old, places, themes, and facts in play. */
@@ -301,10 +447,15 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
     },
   );
 
+  const chapterArcs = idList(chapter.arcIds);
   const beats = data
     .all('plotBeats')
     .filter((b) => live(b) && b.chapterId === id)
-    .sort((a, b) => (num(a.order) ?? 0) - (num(b.order) ?? 0) || title(a).localeCompare(title(b)))
+    .sort(
+      (a, b) =>
+        chapterBeatOrder(a, chapterArcs) - chapterBeatOrder(b, chapterArcs) ||
+        title(a).localeCompare(title(b)),
+    )
     .map((b) => ({
       id: str(b._id),
       title: title(b, 'Untitled beat'),
@@ -313,8 +464,8 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
       arcs: idList(b.arcIds).map((a) => arcName(arcs.get(a), a)),
     }));
 
+  // A theme's appearances are the one record of which chapters it is in (TH-1).
   const themeNotes = new Map<string, string>();
-  for (const tid of idList(chapter.themeIds)) themeNotes.set(tid, '');
   for (const t of data.all('themes').filter(live)) {
     const app = (Array.isArray(t.appearances) ? t.appearances.filter(isPlainObject) : []).find(
       (a) => a.chapterId === id,

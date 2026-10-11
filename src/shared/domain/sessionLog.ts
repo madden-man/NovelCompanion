@@ -47,3 +47,41 @@ export function logsNewestFirst<T extends Doc>(logs: readonly T[]): T[] {
       str(b.date).localeCompare(str(a.date)) || str(b.createdAt).localeCompare(str(a.createdAt)),
   );
 }
+
+/** SL-1: how long main waits for the page to show the stop prompt before it closes anyway. */
+export const STOP_PROMPT_TIMEOUT_MS = 10_000;
+
+/**
+ * SL-1: the label on the stop prompt's main button. With a note it says what
+ * is being closed ("close" for the window, "quit" for the app); without one it
+ * says so.
+ */
+export function stopPromptLabel(hasNote: boolean, quitting: boolean): string {
+  if (hasNote) return quitting ? 'Save note and quit' : 'Save note and close';
+  return quitting ? 'Quit without a note' : 'Close without a note';
+}
+
+export interface StopPromptState {
+  /** True once the page has said it is showing the prompt. */
+  shown: boolean;
+  /** The person's answer: true closes, false keeps working, null is no answer yet. */
+  decision: boolean | null;
+  /** Milliseconds since main asked the page to show the prompt. */
+  elapsedMs: number;
+}
+
+/**
+ * SL-1: what main does next. A page that never shows the prompt (it hung or
+ * crashed) cannot trap the window: after the timeout main closes without
+ * writing a log. Once the prompt is shown, main waits for the person for as
+ * long as they take.
+ */
+export function stopPromptOutcome(
+  state: StopPromptState,
+  timeoutMs: number = STOP_PROMPT_TIMEOUT_MS,
+): 'wait' | 'close' | 'stay' {
+  if (state.decision === true) return 'close';
+  if (state.decision === false) return 'stay';
+  if (state.shown) return 'wait';
+  return state.elapsedMs >= timeoutMs ? 'close' : 'wait';
+}

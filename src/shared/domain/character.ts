@@ -8,7 +8,8 @@ import type { StoryDate } from '../schema/common';
 import { ageAt, lifeState, lifeYears } from './ages';
 import type { LifeState } from './ages';
 import { isKnown, yearOf } from './dates';
-import { isKnownBy } from './knowledge';
+import { isKnownBy, knownBy } from './knowledge';
+import type { UnknownFact } from './knowledge';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import type { Position } from './position';
@@ -88,6 +89,8 @@ export interface CharacterPage {
     /** Whether they know it at the current position, or null when either year is missing. */
     knownAtPosition: boolean | null;
   }[];
+  /** KN-1: every other fact in the bible, as one they do not know at the knowledge year. Empty when there is no year. */
+  doesNotKnow: UnknownFact[];
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -350,5 +353,6 @@ export function characterPage(
       partners: rel.partners.map((p) => ({ ...p, name: nameOf(p.id) })),
     },
     knowledge,
+    doesNotKnow: knowledgeYear === null ? [] : knownBy(data, id, knowledgeYear).unknown,
   };
 }

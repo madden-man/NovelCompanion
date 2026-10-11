@@ -52,20 +52,22 @@ export function editCommand(
   };
 }
 
-/** PL-3: a reorder changes one number on several entries; undo puts the old numbers back. */
+/**
+ * PL-3: a reorder changes order fields on several entries (a chapter's reading
+ * order and part, a beat's per-arc positions); undo puts the old values back.
+ */
 export function reorderCommand(
   label: string,
   collection: EntryCollection,
-  field: string,
-  changes: readonly { id: string; before: number; after: number }[],
+  changes: readonly { id: string; before: Doc; after: Doc }[],
 ): UndoCommand {
   const step = (from: 'before' | 'after', to: 'before' | 'after'): Op[] =>
     changes.map((c) => ({
       kind: 'update',
       collection,
       id: c.id,
-      patch: { [field]: c[to] },
-      expect: { [field]: c[from] },
+      patch: c[to],
+      expect: c[from],
     }));
   return { label, undo: step('after', 'before'), redo: step('before', 'after') };
 }

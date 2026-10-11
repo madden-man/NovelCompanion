@@ -15,7 +15,7 @@ import { YearView } from './timeline/YearView';
 import { CompareView } from './timeline/CompareView';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
-import { CultureView, PlacesView, RomanizationView } from './culture';
+import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import { OutlineView } from './plot';
 import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
@@ -36,6 +36,7 @@ type View =
   | { kind: 'culture' }
   | { kind: 'places' }
   | { kind: 'romanization' }
+  | { kind: 'glossary' }
   | { kind: 'year' }
   | { kind: 'compare' }
   | { kind: 'trash' }
@@ -127,6 +128,9 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                   )}
                   {railButton('Romanization', view.kind === 'romanization', () =>
                     setView({ kind: 'romanization' }),
+                  )}
+                  {railButton('Glossary table', view.kind === 'glossary', () =>
+                    setView({ kind: 'glossary' }),
                   )}
                 </>
               )}
@@ -234,6 +238,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'culture' && <CultureView onOpen={open} />}
               {view.kind === 'places' && <PlacesView onOpen={open} />}
               {view.kind === 'romanization' && <RomanizationView onOpen={open} />}
+              {view.kind === 'glossary' && <GlossaryTable onOpen={open} />}
             </div>
             <SideInspector />
           </>
