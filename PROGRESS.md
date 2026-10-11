@@ -90,24 +90,42 @@ Open notes from review (carried into M4): character page uses the story-time yea
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| PL-1 | pending | |
-| PL-2 | pending | |
-| PL-3 | pending | |
-| PL-4 | pending | |
-| CU-1 | pending | |
-| CU-2 | pending | |
-| PC-1 | pending | |
-| GL-1 | pending | |
-| GL-2 | pending | |
-| GL-3 | pending | |
-| KN-1 | pending | |
-| KN-2 | pending | |
-| KN-3 | pending | |
-| TH-1 | pending | |
-| OQ-1 | pending | |
-| SL-1 | pending | |
-| CS-1 | pending | |
-| CS-2 | pending | |
-| CS-3 | pending | |
-| SR-1 | pending | |
-| SR-2 | pending | |
+| PL-1 | pass | `tests/unit/plot.test.ts` "PL-1 a chapter can belong to several arcs and each arc is drawn as its own span"; `tests/integration/plot-culture.test.ts` "PL-1 arcs keep scope, owner, and year range; chapters and beats join several arcs". Reviewed independently 2026-10-10. |
+| PL-2 | pass | `tests/unit/plot.test.ts` PL-2 grid rows, story-year order, strands, arc spans; `tests/e2e/plot.spec.ts` "PL-2 the outline is a chapter-by-year grid", "PL-2 the grid flips to story-year order". Reviewed independently 2026-10-10. |
+| PL-3 | pass | `tests/integration/plot-culture.test.ts` "PL-3 plot.reorder moves a chapter within its part, writes revisions, and leaves story years alone", cross-part move in one transaction; `tests/e2e/plot.spec.ts` "PL-3 dragging a chapter within its part; undo restores it". Reviewed independently 2026-10-10. |
+| PL-4 | pass | `tests/unit/plot.test.ts` "PL-4 the chapter page lists places per strand, with their parent places"; `tests/integration/plot-culture.test.ts` "PL-4 chapter.page shows strands with ages, facts in play" and places per strand; `tests/e2e/plot.spec.ts` PL-4 places. First review failed (places never asserted); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| CU-1 | pass | `tests/unit/culture-glossary.test.ts` "CU-1 the same tradition reads differently in 2030 and 2080". Reviewed independently 2026-10-10. |
+| CU-2 | pass | `tests/unit/culture-glossary.test.ts` "CU-2 entriesFor returns the one mooncake entry" (inclusive ends, open ends); `tests/e2e/plot.spec.ts` "CU-2 culture by year lists the entries that apply to a community and year". Reviewed independently 2026-10-10. |
+| PC-1 | pass | `tests/unit/culture-glossary.test.ts` "PC-1 a building shows its city and district in its path", "PC-1 descriptionFor picks the description whose years cover the year"; `tests/e2e/plot.spec.ts` "PC-1 the place tree nests places and shows each description for the year". Reviewed independently 2026-10-10. |
+| GL-1 | pass | `tests/unit/culture-glossary.test.ts` GL-1 Pinyin and Jyutping tables, erhua, interjections, one system per language; `tests/integration/plot-culture.test.ts` GL-1 warning on save and system switch; `tests/e2e/plot.spec.ts` "GL-1 a term that breaks the language system is flagged and listed, and the setting changes that", no-checker note. Reviewed independently 2026-10-10. |
+| GL-2 | pass | `tests/unit/culture-glossary.test.ts` "GL-2 by characters, whole or partial", "GL-2 by romanization with tone marks, without them, or with tone numbers", "GL-2 by meaning". Reviewed independently 2026-10-10. |
+| GL-3 | pass | `tests/e2e/plot.spec.ts` "GL-3 a name with a term links to it; a run with no term offers Add to glossary", "GL-3 the editor shows a Meaning control on a title with Chinese and a preview of a long text field", "GL-3 the glossary table, the culture view, and the chapter page show the meaning on hover and focus"; `tests/e2e/tree.spec.ts` "GL-3 a tree node with a Chinese name shows a visible card with the meaning on keyboard focus and on hover". First review failed (editor fields and tree nodes lacked it); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| KN-1 | pass | `tests/unit/knowledge-session.test.ts` KN-1 whoKnows, knownBy with known and unknown ("not yet in 2059", "never"); `tests/e2e/knowledge.spec.ts` "KN-1 the character page shows what H5 knows and does not know in 2059 and in 2060". First review failed (unknown facts not listed); fixed and re-reviewed pass. Reviewed independently 2026-10-10. |
+| KN-2 | pass | `tests/unit/knowledge-session.test.ts` "KN-2 H5 learning in 2020 raises learned-before-birth"; `tests/e2e/knowledge.spec.ts` warning shown and record saved. Reviewed independently 2026-10-10. |
+| KN-3 | pass | `tests/integration/knowledge-search.test.ts` "KN-3 a chapter keeps who acts on which fact"; `tests/e2e/knowledge.spec.ts` "KN-3 a chapter lists which characters act on which facts". Reviewed independently 2026-10-10. |
+| TH-1 | pass | `tests/integration/knowledge-search.test.ts` "TH-1 a theme keeps appearances by chapter, and the chapter page lists the theme with its note" (appearances are the single source of truth, migration 005). Reviewed independently 2026-10-10. |
+| OQ-1 | pass | `tests/integration/knowledge-search.test.ts` "OQ-1 a question links to any entry, is decided with a decision text, and keeps its history"; `tests/e2e/knowledge.spec.ts` "OQ-1 an open question is marked decided, warns until it has a decision, and filters by state". Reviewed independently 2026-10-10. |
+| SL-1 | pass | `tests/e2e/knowledge.spec.ts` "SL-1 closing the app asks where you stopped, saves the note, and the next launch shows it first" (window close, quit, relaunch, empty answer); close versus quit labels; hung-renderer guard. Reviewed independently 2026-10-10. |
+| CS-1 | pass | `tests/integration/knowledge-search.test.ts` "CS-1 a section with a field of every kind and a brief rule saves through the IPC layer". Reviewed independently 2026-10-10. |
+| CS-2 | pass | `tests/integration/knowledge-search.test.ts` "CS-2 a custom entry has the common fields, status, provenance, links, revisions, and trash", "CS-2 custom entries are found by search". Import and export verified at M5. Reviewed independently 2026-10-10. |
+| CS-3 | pass | `tests/integration/knowledge-search.test.ts` "CS-3 the brief rule persists across a reopen and rejects a value outside the rules". Reviewed independently 2026-10-10. |
+| SR-1 | pass | `tests/unit/search-perf.test.ts` "SR-1 a common word, a rare word, and a Chinese term each return under 200 ms" (5,000 entries); `tests/e2e/knowledge.spec.ts` "SR-1 one search box finds entries, chapter text, briefs, and Chinese". Reviewed independently 2026-10-10. |
+| SR-2 | pass | `tests/unit/search-filters.test.ts` SR-2 every filter; `tests/e2e/knowledge.spec.ts` "SR-2 filters narrow the results by section, status, provenance, family, place, tag, and year range". Reviewed independently 2026-10-10. |
+
+T-5 extended to every M4 manifest (`tests/integration/t5.test.ts` "T-5 the walk reaches every M4 manifest").
+Open notes from review (carried into M5): `themeChanges` in `repository.ts` touches trashed themes' appearances; the stop-prompt `promptShown` flag is not cleared on page reload; duplicate knowledge records list a fact twice.
+
+## M5: Excel and Word import, snapshots, export
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| IM-1 | pending | |
+| IM-2 | pending | |
+| IM-3 | pending | |
+| IM-4 | pending | |
+| IM-6 | pending | |
+| IM-7 | pending | |
+| BK-1 | pending | |
+| BK-2 | pending | |
+| BK-3 | pending | |
+| BK-4 | pending | |
