@@ -182,6 +182,13 @@ app.on('before-quit', () => {
   quitPending = true;
 });
 
-app.on('will-quit', () => {
-  void closeStore();
+// Quitting first stops any Claude run and saves it as stopped, then closes the store.
+// It waits at most a few seconds, so a store that cannot be reached never holds the app open.
+let quitting = false;
+app.on('will-quit', (event) => {
+  if (quitting) return;
+  quitting = true;
+  event.preventDefault();
+  const limit = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+  void Promise.race([closeStore().catch(() => undefined), limit]).finally(() => app.exit(0));
 });

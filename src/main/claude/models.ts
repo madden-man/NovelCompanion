@@ -1,0 +1,31 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { ClaudeFailure } from './client';
+import type { ModelCatalog } from './client';
+
+/**
+ * ARCH-4: the settings model lists come from the live models endpoint,
+ * `GET /v1/models`, read through the official SDK with the stored key. The
+ * same call checks a newly pasted key.
+ */
+export class AnthropicModelCatalog implements ModelCatalog {
+  async list(apiKey: string): Promise<{ id: string; displayName: string }[]> {
+    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 });
+    try {
+      const out: { id: string; displayName: string }[] = [];
+      for await (const m of client.models.list({ limit: 100 })) {
+        out.push({ id: m.id, displayName: m.display_name });
+      }
+      return out.filter((m) => m.id.startsWith('claude-'));
+    } catch (e) {
+      if (
+        e instanceof Anthropic.AuthenticationError ||
+        e instanceof Anthropic.PermissionDeniedError
+      ) {
+        throw new ClaudeFailure('badKey');
+      }
+      if (e instanceof Anthropic.RateLimitError) throw new ClaudeFailure('rateLimit');
+      if (e instanceof Anthropic.APIConnectionError) throw new ClaudeFailure('network');
+      throw new ClaudeFailure('other', 'The list of models could not be read. Try again later.');
+    }
+  }
+}

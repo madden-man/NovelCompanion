@@ -28,6 +28,7 @@ import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
+import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
 import { SettingsView } from './settings';
 
 type View =
@@ -91,6 +92,11 @@ function Frame({ bibles }: { bibles: ReactNode }) {
 
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
+  useClaudeNavigation({
+    settings: () => setView({ kind: 'settings' }),
+    review: () => setView({ kind: 'review' }),
+    entry: open,
+  });
 
   const railButton = (label: string, active: boolean, onClick: () => void) => (
     <button key={label} type="button" aria-current={active ? 'page' : undefined} onClick={onClick}>
@@ -337,6 +343,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         )}
         <StatusBar />
         <StoryTimeGate />
+        <ClaudePanelGate />
       </div>
     </ZhNavProvider>
   );
@@ -367,6 +374,7 @@ function StatusBar() {
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
+      <AskClaudeButton />
     </footer>
   );
 }

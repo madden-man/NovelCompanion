@@ -9,6 +9,7 @@ import { call, plainError } from '../api';
 import { useEntries } from './data';
 import { formatTime } from './format';
 import { ZhHtml } from './Zh';
+import { ImportProposals } from './importProposals';
 
 type WorkbookInfo = Response<'import.workbook'>;
 type Plan = Response<'import.plan'>;
@@ -176,6 +177,13 @@ export function ImportView(props: { initialFile?: PickedFile; heading?: string }
           onError={setError}
         />
       ) : null}
+      {document && !busy && (
+        <ImportProposals
+          key={document.file.id}
+          fileId={document.file.id}
+          fileName={document.file.name}
+        />
+      )}
     </section>
   );
 }

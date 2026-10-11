@@ -23,6 +23,7 @@ import { restoreSnapshot } from '../backup/restore';
 import { parseDocxFile } from '../import/docx';
 import type { ParsedDocument } from '../import/docx';
 import { parseWorkbookFile } from '../import/xlsx';
+import { rememberDocument } from '../import/pickedDocuments';
 import { applyPlan, planDocumentImport, planSheet, planView } from '../import/run';
 import type { DocumentPlan } from '../import/run';
 import type { Channel } from '../../shared/ipc';
@@ -159,6 +160,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
           ? { id: newId(), path, kind, workbook: await parseWorkbookFile(path) }
           : { id: newId(), path, kind, document: await parseDocxFile(path) };
       files.set(p.id, p);
+      if (p.kind === 'document') rememberDocument(p.id, p.document);
       return { file: wireFile(p) };
     },
 

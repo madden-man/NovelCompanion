@@ -11,6 +11,7 @@ import {
 } from './schema';
 import { StoryTimeValue } from './storyTime';
 import { sessionContract } from './ipcSession';
+import { claudeContract, claudeEvents } from './claude';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
 import { driveContract } from './ipcDrive';
@@ -1318,6 +1319,7 @@ export const contract = {
   ...driveContract,
   /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
+  ...claudeContract,
 } as const;
 
 export type Channel = keyof typeof contract;
@@ -1351,6 +1353,7 @@ export const events = {
   'storyTime.changed': z.strictObject({ bible: z.string() }),
   /** The whole bible was replaced by a restore or a file import; views reload everything. */
   'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
+  ...claudeEvents,
 } as const;
 
 export type EventName = keyof typeof events;

@@ -1,0 +1,151 @@
+[
+  {
+    "name": "panel: an age question answered from the tools",
+    "feature": "panel",
+    "match": "How old is Margaret in 2040",
+    "steps": [
+      { "tool": "search_entries", "input": { "query": "Margaret", "section": "characters" } },
+      { "tool": "timeline_for_year", "input": { "year": 2040 } },
+      { "tool": "get_entry", "input": { "section": "characters", "id": "H1" } },
+      { "text": "In 2040 Margaret Hale is 82. " },
+      { "text": "She was born in 1958 and dies in 2041, so she is alive all of that year." },
+      {
+        "result": {
+          "text": "In 2040 Margaret Hale is 82. She was born in 1958 and dies in 2041, so she is alive all of that year."
+        }
+      }
+    ]
+  },
+  {
+    "name": "panel: a follow-up in the same conversation",
+    "feature": "panel",
+    "match": "And her husband",
+    "steps": [
+      { "tool": "relatives_of", "input": { "characterId": "H1" } },
+      {
+        "text": "Her husband was Peter Hale, married 1982 to 2030. He died in 2030, so in 2040 he is dead."
+      },
+      {
+        "result": {
+          "text": "Her husband was Peter Hale, married 1982 to 2030. He died in 2030, so in 2040 he is dead."
+        }
+      }
+    ]
+  },
+  {
+    "name": "panel: a request for prose is declined in one sentence (AI-4)",
+    "feature": "panel",
+    "match": "Write the scene",
+    "steps": [
+      {
+        "text": "I don't write prose for the novel, but I can list the bible facts for that scene: who is there, their ages, and what each of them knows."
+      },
+      {
+        "result": {
+          "text": "I don't write prose for the novel, but I can list the bible facts for that scene: who is there, their ages, and what each of them knows."
+        }
+      }
+    ]
+  },
+  {
+    "name": "panel: a change goes to the review queue (AI-3)",
+    "feature": "panel",
+    "match": "Add the porch by the river as a place",
+    "steps": [
+      { "tool": "get_chapter", "input": { "id": "CH3" } },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "create",
+          "collection": "places",
+          "data": { "title": "The porch by the river", "parentId": "PLC2" },
+          "reason": "The writer asked for the porch in Wedding Weather to be a place."
+        }
+      },
+      {
+        "text": "I proposed a new place, The porch by the river, inside The Hale house. It is waiting in the review queue."
+      },
+      {
+        "result": {
+          "text": "I proposed a new place, The porch by the river, inside The Hale house. It is waiting in the review queue."
+        }
+      }
+    ]
+  },
+  {
+    "name": "panel: a long answer, stopped part way",
+    "feature": "panel",
+    "match": "Tell me everything about the Hale family",
+    "steps": [
+      { "text": "The Hale family begins with Margaret and Peter, " },
+      { "text": "who married in 1982." },
+      { "waitForAbort": true }
+    ]
+  },
+  {
+    "name": "panel: Anthropic limits the key",
+    "feature": "panel",
+    "match": "rate limited",
+    "steps": [{ "fail": "rateLimit" }]
+  },
+  {
+    "name": "panel: no network",
+    "feature": "panel",
+    "match": "while offline",
+    "steps": [{ "fail": "network" }]
+  },
+  {
+    "name": "panel: Anthropic rejects the key",
+    "feature": "panel",
+    "match": "rejected key",
+    "steps": [{ "fail": "badKey" }]
+  },
+  {
+    "name": "import proposals: Wedding Weather (IM-5)",
+    "feature": "importProposals",
+    "match": "Wedding Weather",
+    "steps": [
+      { "text": "{\"summary\": \"A wedding in the rain" },
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "summary": "A wedding in the rain with Peter, Meiling, and Daniel, and a porch over a rising river.",
+            "proposals": [
+              {
+                "op": "create",
+                "collection": "places",
+                "targetId": null,
+                "fields": "{\"title\": \"The porch by the river\", \"parentId\": \"PLC2\"}",
+                "link": null,
+                "paragraphs": [4],
+                "quote": "Daniel found her later on the porch, watching the river rise.",
+                "reason": "The chapter names a porch over a river."
+              },
+              {
+                "op": "link",
+                "collection": "characters",
+                "targetId": "H2",
+                "fields": "{}",
+                "link": { "targetId": "Z1", "kind": "at the wedding with" },
+                "paragraphs": [2],
+                "quote": "It rained on the wedding, and Peter said that was lucky. Meiling said nothing at all.",
+                "reason": "Peter and Meiling are both at the wedding."
+              },
+              {
+                "op": "update",
+                "collection": "characters",
+                "targetId": "H9",
+                "fields": "{\"backstory\": \"Watches the river.\"}",
+                "link": null,
+                "paragraphs": [4],
+                "quote": "watching the river rise",
+                "reason": "The woman on the porch watches the river."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

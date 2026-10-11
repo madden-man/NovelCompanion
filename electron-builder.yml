@@ -8,6 +8,8 @@ files:
   - package.json
 asarUnpack:
   - '**/*.node'
+  # ARCH-4: the Agent SDK spawns its bundled Claude Code binary, which cannot run from inside app.asar.
+  - '**/node_modules/@anthropic-ai/claude-agent-sdk*/**'
 mac:
   target:
     - target: dmg

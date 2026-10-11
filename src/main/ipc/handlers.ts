@@ -22,8 +22,13 @@ import { exportTree } from './exportTree';
 import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
 import type { Handler } from './validate';
+import { claudeDeps } from '../claude';
+import type { ClaudeRuntime } from '../claude';
+import { CLAUDE_CHANNELS, claudeHandlers } from '../claude/handlers';
+import type { ClaudeChannel } from '../claude/handlers';
 
 let store: Store | null = null;
+let claudeRuntime: ClaudeRuntime | null = null;
 let current: { session: OpenBible; name: string; unsubscribe: () => void } | null = null;
 
 const UNREACHABLE =
@@ -75,6 +80,8 @@ export function hasOpenBible(): boolean {
 }
 
 export async function closeStore(): Promise<void> {
+  // Claude runs stop and save as stopped while the store is still open.
+  await claudeRuntime?.stopAll();
   current?.unsubscribe();
   current = null;
   await store?.close();
@@ -112,6 +119,8 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const session = await openBibleForApp(s, slug, {
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
   });
+  // A Claude run belongs to the bible it started in: stop it (saved as stopped) before switching.
+  await claudeRuntime?.stopAll();
   current?.unsubscribe();
   const offChange = session.repo.onChange((e) => broadcast('bible.changed', e));
   const offLists = session.repo.onListsChange(() => broadcast('lists.changed', { bible: slug }));
@@ -270,6 +279,21 @@ export function registerHandlers(): void {
   onDriveApplied = dh.onApplied;
   for (const channel of DRIVE_CHANNELS) {
     handle(channel, dh.handlers[channel] as Handler<DriveChannel>);
+  }
+
+  // Claude (ARCH-4, AI-1 to AI-7, IM-5).
+  const claudeSetup = claudeDeps({
+    isPackaged: app.isPackaged,
+    userData: app.getPath('userData'),
+    appRoot: app.getAppPath(),
+    env: process.env,
+    version: app.getVersion(),
+    emit: (e) => broadcast('claude.stream', e),
+  });
+  claudeRuntime = claudeSetup.runtime;
+  const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
+  for (const channel of CLAUDE_CHANNELS) {
+    handle(channel, claude[channel] as Handler<ClaudeChannel>);
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {

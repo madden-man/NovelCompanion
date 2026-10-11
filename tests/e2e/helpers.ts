@@ -25,6 +25,8 @@ export async function launch(
       NOVEL_COMPANION_TEST_MONGODB_URI: uri,
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
+      // T-3: Claude is the recorded fake and the key lives in memory, never the real keychain.
+      NOVEL_COMPANION_TEST_CLAUDE: '1',
       ...env,
     },
   });
