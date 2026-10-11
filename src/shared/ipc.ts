@@ -10,6 +10,7 @@ import {
   manifests,
 } from './schema';
 import { StoryTimeValue } from './storyTime';
+import { sessionContract } from './ipcSession';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
 import type { EntryCollection } from './schema';
@@ -1312,6 +1313,8 @@ export const contract = {
       z.strictObject({ ok: z.literal(false), message: z.string() }),
     ]),
   },
+  /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
+  ...sessionContract,
 } as const;
 
 export type Channel = keyof typeof contract;

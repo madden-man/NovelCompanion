@@ -4,7 +4,12 @@ import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider, useEntries } from './data';
 import { EntryPane, UndoPanel } from './editor';
-import { LaunchPanel, StopPrompt } from './session';
+import { StopPrompt } from './session';
+import { DashboardView } from './sessions/dashboard';
+import { RelevantView } from './sessions/relevant';
+import { StartSessionView } from './sessions/start';
+import { BriefView } from './sessions/brief';
+import { ManuscriptView } from './sessions/manuscript';
 import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
@@ -47,7 +52,17 @@ type View =
   | { kind: 'review' }
   | { kind: 'import' }
   | { kind: 'backups' }
-  | { kind: 'bibles' };
+  | { kind: 'bibles' }
+  /** DB-1: the screen the app opens on. */
+  | { kind: 'dashboard' }
+  /** Relevant to Session: the SB-2 selection for the chapter being written. */
+  | { kind: 'relevant' }
+  /** DB-2: start a session for a section of plot. */
+  | { kind: 'start' }
+  /** SB-8: one saved brief. */
+  | { kind: 'brief'; id: string }
+  /** MS-1 to MS-4. */
+  | { kind: 'manuscript' };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
 
@@ -65,12 +80,7 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
 }
 
 function Frame({ bibles }: { bibles: ReactNode }) {
-  const [view, setView] = useState<View>({
-    kind: 'section',
-    collection: 'characters',
-    selected: null,
-    creating: false,
-  });
+  const [view, setView] = useState<View>({ kind: 'dashboard' });
 
   const [query, setQuery] = useState('');
   const customSections = useEntries('customSections');
@@ -86,10 +96,12 @@ function Frame({ bibles }: { bibles: ReactNode }) {
 
   return (
     <ZhNavProvider value={open}>
-      <LaunchPanel />
       <StopPrompt />
       <div className="ws-frame" data-testid="workspace">
-        <TopBar />
+        <TopBar
+          onRelevant={() => setView({ kind: 'relevant' })}
+          onStartSession={() => setView({ kind: 'start' })}
+        />
         <nav className="rail ws-rail" aria-label="Sections">
           <div className="field rail-search">
             <label className="sr-only" htmlFor="rail-search">
@@ -119,8 +131,29 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                   )}
                 </>
               )}
-              {g === 'Story' &&
-                railButton('Outline', view.kind === 'outline', () => setView({ kind: 'outline' }))}
+              {g === 'Story' && (
+                <>
+                  {railButton('Outline', view.kind === 'outline', () =>
+                    setView({ kind: 'outline' }),
+                  )}
+                  {railButton('Manuscript', view.kind === 'manuscript', () =>
+                    setView({ kind: 'manuscript' }),
+                  )}
+                </>
+              )}
+              {g === 'Sessions' && (
+                <>
+                  {railButton('Dashboard', view.kind === 'dashboard', () =>
+                    setView({ kind: 'dashboard' }),
+                  )}
+                  {railButton('Relevant to Session', view.kind === 'relevant', () =>
+                    setView({ kind: 'relevant' }),
+                  )}
+                  {railButton('Start session', view.kind === 'start', () =>
+                    setView({ kind: 'start' }),
+                  )}
+                </>
+              )}
               {g === 'World' && (
                 <>
                   {railButton('Timeline', view.kind === 'timeline', () =>
@@ -249,6 +282,46 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'places' && <PlacesView onOpen={open} />}
               {view.kind === 'romanization' && <RomanizationView onOpen={open} />}
               {view.kind === 'glossary' && <GlossaryTable onOpen={open} />}
+              {view.kind === 'dashboard' && (
+                <DashboardView
+                  onStartSession={() => setView({ kind: 'start' })}
+                  onCheckAlignment={() =>
+                    setView({
+                      kind: 'section',
+                      collection: 'findings',
+                      selected: null,
+                      creating: false,
+                    })
+                  }
+                  onOpenQuestions={() =>
+                    setView({
+                      kind: 'section',
+                      collection: 'openQuestions',
+                      selected: null,
+                      creating: false,
+                    })
+                  }
+                  onOpenBrief={(id) => setView({ kind: 'brief', id })}
+                  onOpenChapter={(id) => open('chapters', id)}
+                  onDone={() =>
+                    setView({
+                      kind: 'section',
+                      collection: 'characters',
+                      selected: null,
+                      creating: false,
+                    })
+                  }
+                />
+              )}
+              {view.kind === 'relevant' && <RelevantView onOpen={open} />}
+              {view.kind === 'start' && (
+                <StartSessionView
+                  onOpen={open}
+                  onStarted={(id) => setView({ kind: 'brief', id })}
+                />
+              )}
+              {view.kind === 'brief' && <BriefView key={view.id} id={view.id} onOpen={open} />}
+              {view.kind === 'manuscript' && <ManuscriptView onOpen={open} />}
             </div>
             <SideInspector />
           </>

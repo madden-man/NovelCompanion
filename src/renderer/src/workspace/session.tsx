@@ -2,9 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { stopLogData, stopPromptLabel } from '../../../shared/domain/sessionLog';
 import { entryTitle } from '../../../shared/schema';
-import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
-import { useEntries, useStore } from './data';
+import { useEntries } from './data';
 import { useFocusTrap } from './focusTrap';
 import { useUndo } from './undo';
 
@@ -129,50 +128,5 @@ function StopDialog({ quitting, onCancel }: { quitting: boolean; onCancel: () =>
         </div>
       </div>
     </div>
-  );
-}
-
-type Latest = NonNullable<Response<'sessionLog.latest'>['log']>;
-
-/**
- * SL-1: the newest "where I stopped" note, shown first when a bible opens.
- * The dashboard (M7) replaces this panel.
- */
-export function LaunchPanel() {
-  const { version } = useStore();
-  const [log, setLog] = useState<Latest | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    if (loaded) return;
-    let live = true;
-    void call('sessionLog.latest', {})
-      .then((r) => {
-        if (live) setLog(r.log);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (live) setLoaded(true);
-      });
-    return () => {
-      live = false;
-    };
-  }, [loaded, version]);
-  if (!log || dismissed) return null;
-  return (
-    <section
-      className="panel stack tight launch-panel"
-      aria-label="Last session"
-      data-testid="launch-panel"
-    >
-      <span className="eyebrow">Where you stopped, {log.date}</span>
-      <p data-testid="launch-note">{log.stoppedAt || log.notes}</p>
-      {log.chapter && <p className="example-note">Chapter: {log.chapter}</p>}
-      <div className="row">
-        <button type="button" className="btn small" onClick={() => setDismissed(true)}>
-          Start working
-        </button>
-      </div>
-    </section>
   );
 }

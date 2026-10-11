@@ -1593,6 +1593,37 @@ export class Repository {
     this.model.put('meta', doc);
   }
 
+  // ---------- brief settings (SB-2 window, SB-6 budget), stored in meta ----------
+
+  /** The brief window in years and the size budget in characters, or their defaults (10, 40,000). */
+  briefSettings(): { window: number; budget: number } {
+    const doc = this.model.get('meta', BRIEF_SETTINGS_ID);
+    const int = (v: unknown, min: number, max: number, d: number) =>
+      typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : d;
+    return {
+      window: int(doc?.window, 0, 200, 10),
+      budget: int(doc?.budget, 0, 10_000_000, 40_000),
+    };
+  }
+
+  /** A settings write, like the story time: the meta document only, no entry revision. */
+  async setBriefSettings(next: {
+    window?: number;
+    budget?: number;
+  }): Promise<{ window: number; budget: number }> {
+    const merged = { ...this.briefSettings(), ...next };
+    if (!Number.isInteger(merged.window) || merged.window < 0 || merged.window > 200) {
+      throw new RepositoryError('The brief window is a whole number of years from 0 to 200.');
+    }
+    if (!Number.isInteger(merged.budget) || merged.budget < 0 || merged.budget > 10_000_000) {
+      throw new RepositoryError(
+        'The size budget is a whole number of characters from 0 to 10,000,000.',
+      );
+    }
+    await this.writeMeta({ _id: BRIEF_SETTINGS_ID, ...merged });
+    return this.briefSettings();
+  }
+
   onStoryTimeChange(listener: () => void): () => void {
     this.emitter.on('storyTime', listener);
     return () => this.emitter.off('storyTime', listener);
@@ -1600,6 +1631,7 @@ export class Repository {
 }
 
 const STORY_TIME_ID = 'storyTime';
+const BRIEF_SETTINGS_ID = 'briefSettings';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';

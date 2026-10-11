@@ -1,0 +1,261 @@
+{
+  "$comment": "M7 brief supplement to the section 7 fixture novel. The base fixture has no arcs, beats, themes, open questions, session logs, or place communities, so SB-2 steps 4, 8, 9, and 10 would select nothing from it. Brief selection tests load the fixture, apply these patches, and add these entries. Written by hand; never generated.",
+  "patches": {
+    "places": {
+      "PLC1": { "communityId": "portland" },
+      "PLC3": { "communityId": "guangzhou" }
+    },
+    "chapters": {
+      "CH2": { "arcIds": ["ARC-HALE"] },
+      "CH3": { "arcIds": ["ARC-ZHOU"] },
+      "CH4": { "arcIds": ["ARC-HALE"] },
+      "CH6": {
+        "arcIds": ["ARC-HALE", "ARC-ZHOU"],
+        "strands": [
+          {
+            "id": "CH6-present",
+            "label": "present",
+            "startYear": 2045,
+            "endYear": null,
+            "primary": true,
+            "povCharacterId": "H5",
+            "characterIds": ["H5", "H3"],
+            "placeIds": ["PLC2"]
+          }
+        ]
+      },
+      "CH7": { "arcIds": ["ARC-ZHOU"] }
+    },
+    "worldEvents": {
+      "E2": { "placeIds": ["PLC2"] },
+      "E9": { "placeIds": ["PLC2"] }
+    },
+    "glossaryTerms": {
+      "GL3": { "links": [{ "targetId": "CU4", "kind": "mentions" }] }
+    }
+  },
+  "entries": {
+    "arcs": [
+      {
+        "_id": "ARC-HALE",
+        "title": "The Hale secret",
+        "name": "The Hale secret",
+        "status": "planned",
+        "scope": "family",
+        "familyId": "FAM-HALE",
+        "startYear": 2029,
+        "endYear": 2060
+      },
+      {
+        "_id": "ARC-ZHOU",
+        "title": "Lan comes home",
+        "name": "Lan comes home",
+        "status": "planned",
+        "scope": "character",
+        "ownerCharacterId": "Z3",
+        "startYear": 2027,
+        "endYear": 2060
+      }
+    ],
+    "plotBeats": [
+      {
+        "_id": "B1",
+        "title": "Peter writes the letter",
+        "status": "planned",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": null,
+        "year": 2029,
+        "povCharacterId": "H2",
+        "description": "Peter names the half-brother in a letter he never sends."
+      },
+      {
+        "_id": "B2",
+        "title": "Margaret hides the letter",
+        "status": "canon",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": "CH4",
+        "year": 2032,
+        "povCharacterId": "H1",
+        "description": "After the funeral Margaret puts the letter in her box."
+      },
+      {
+        "_id": "B3",
+        "title": "Ruth reads the letter",
+        "status": "planned",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": "CH8",
+        "year": 2041,
+        "povCharacterId": "H4",
+        "description": "Margaret gives Ruth the letter before she dies."
+      },
+      {
+        "_id": "B4",
+        "title": "Iris finds the letter",
+        "status": "planned",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": "CH6",
+        "year": 2045,
+        "povCharacterId": "H5",
+        "description": "Iris finds an envelope in the attic."
+      },
+      {
+        "_id": "B5",
+        "title": "Iris confronts Daniel",
+        "status": "idea",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": null,
+        "year": 2050,
+        "povCharacterId": "H5",
+        "description": "Years later Iris asks her father outright."
+      },
+      {
+        "_id": "B6",
+        "title": "Lan visits Guangzhou",
+        "status": "planned",
+        "arcIds": ["ARC-ZHOU"],
+        "chapterId": "CH7",
+        "year": 2060,
+        "povCharacterId": "Z3",
+        "description": "Lan shows Iris the street where she grew up."
+      },
+      {
+        "_id": "B7",
+        "title": "Lan keeps the letters",
+        "status": "planned",
+        "arcIds": ["ARC-ZHOU"],
+        "chapterId": null,
+        "year": 2040,
+        "povCharacterId": "Z3",
+        "description": "Lan moves her mother's letters into a locked drawer."
+      },
+      {
+        "_id": "B8",
+        "title": "A beat in the trash",
+        "status": "planned",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": null,
+        "year": 2040,
+        "description": "Never selected: it is in the trash.",
+        "deletedAt": "2026-02-01T09:00:00.000Z"
+      },
+      {
+        "_id": "B9",
+        "title": "A beat with no year",
+        "status": "idea",
+        "arcIds": ["ARC-HALE"],
+        "chapterId": null,
+        "year": null,
+        "description": "Never selected as unresolved: it has no story year."
+      }
+    ],
+    "themes": [
+      {
+        "_id": "TH1",
+        "title": "Letters",
+        "status": "canon",
+        "description": "Paper that outlives the people who wrote it.",
+        "appearances": [
+          { "chapterId": "CH4", "note": "Margaret's box." },
+          { "chapterId": "CH6", "note": "The envelope in the attic." }
+        ]
+      },
+      {
+        "_id": "TH2",
+        "title": "Water",
+        "status": "canon",
+        "description": "The river and the floods.",
+        "appearances": [{ "chapterId": "CH1", "note": "The Archive by the river." }]
+      },
+      {
+        "_id": "TH3",
+        "title": "Food",
+        "status": "planned",
+        "description": "Meals as reunions.",
+        "appearances": [{ "chapterId": "CH7", "note": "Rice porridge in Guangzhou." }]
+      }
+    ],
+    "openQuestions": [
+      {
+        "_id": "Q1",
+        "title": "Does Daniel know about the uncle?",
+        "status": "planned",
+        "question": "Has Daniel heard of the half-brother by 2045?",
+        "state": "open",
+        "links": [{ "targetId": "H3", "kind": "about" }]
+      },
+      {
+        "_id": "Q2",
+        "title": "Is Iris left-handed?",
+        "status": "idea",
+        "question": "Settled: she is.",
+        "state": "decided",
+        "decision": "Left-handed.",
+        "links": [{ "targetId": "H5", "kind": "about" }]
+      },
+      {
+        "_id": "Q3",
+        "title": "Where does Jun live?",
+        "status": "idea",
+        "question": "Guangzhou or Shenzhen?",
+        "state": "open",
+        "links": [{ "targetId": "Z4", "kind": "about" }]
+      },
+      {
+        "_id": "Q4",
+        "title": "How cheap are grid batteries?",
+        "status": "idea",
+        "question": "Can a household afford one in the forties?",
+        "state": "open",
+        "links": [{ "targetId": "ERA-2040", "kind": "about" }]
+      }
+    ],
+    "knowledgeRecords": [
+      {
+        "_id": "K4",
+        "title": "Daniel hears of the letter",
+        "status": "planned",
+        "factId": "F2",
+        "characterId": "H3",
+        "yearLearned": 2044,
+        "chapterLearnedId": null,
+        "how": "Ruth tells him at Christmas."
+      }
+    ],
+    "customEntries": [
+      {
+        "_id": "CE3",
+        "title": "Hale house soda bread",
+        "status": "planned",
+        "sectionId": "CS-RECIPES",
+        "values": { "origin": "Portland, Oregon", "occasion": "Everyday" },
+        "links": [{ "targetId": "CH6", "kind": "chapter" }]
+      }
+    ],
+    "sessionLogs": [
+      {
+        "_id": "SL1",
+        "title": "Session 2026-10-01",
+        "status": "canon",
+        "date": "2026-10-01",
+        "chapterId": "CH6",
+        "stoppedAt": "Iris holds the envelope."
+      },
+      {
+        "_id": "SL2",
+        "title": "Session 2026-10-05",
+        "status": "canon",
+        "date": "2026-10-05",
+        "chapterId": "CH6",
+        "stoppedAt": "Iris reads the first line."
+      },
+      {
+        "_id": "SL3",
+        "title": "Session 2026-10-09",
+        "status": "canon",
+        "date": "2026-10-09",
+        "chapterId": "CH5",
+        "stoppedAt": "Margaret blows out the candles."
+      }
+    ]
+  }
+}

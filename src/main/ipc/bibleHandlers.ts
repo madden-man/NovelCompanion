@@ -6,6 +6,8 @@ import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
 import { importHandlers } from './importHandlers';
 import type { ImportChannel, ImportDeps } from './importHandlers';
+import { sessionHandlers } from './sessionHandlers';
+import type { SessionChannel, SessionDeps } from './sessionHandlers';
 import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
 import { characterPage } from '../../shared/domain/character';
 import { positionYear } from '../../shared/domain/position';
@@ -95,7 +97,8 @@ export type BibleChannel =
   | 'romanization.get'
   | 'romanization.set'
   | 'romanization.check'
-  | ImportChannel;
+  | ImportChannel
+  | SessionChannel;
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -120,7 +123,7 @@ const isFullMoment = (m: {
  */
 export function bibleHandlers(
   current: () => OpenBible | null,
-  deps: ImportDeps = {},
+  deps: ImportDeps & SessionDeps = {},
 ): BibleHandlers {
   const session = (): OpenBible => {
     const s = current();
@@ -199,6 +202,7 @@ export function bibleHandlers(
 
   return {
     ...importHandlers(current, deps),
+    ...sessionHandlers(current, deps),
     'proposal.list': ({ state }) => ({
       proposals: session()
         .repo.listProposals(state)
