@@ -96,6 +96,8 @@ export function guessMapping(
       yearOffset: 0,
       categoryRoot: null,
       categoryList: 'eventCategories',
+      // Bold rows are headings when the sheet has any; otherwise every label-only row is.
+      headingBy: (sheet.boldRows?.length ?? 0) > 0 ? ('style' as const) : ('any' as const),
       addMissingListItems: true,
     } satisfies GridMapping;
   }

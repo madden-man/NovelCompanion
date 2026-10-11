@@ -16,26 +16,47 @@ let store: Store;
 let dir: string;
 let root: string;
 
-async function docx(file: string, children: Paragraph[]) {
+async function docxIn(where: string, file: string, children: Paragraph[]) {
   await writeFile(
-    join(dir, file),
+    join(where, file),
     await Packer.toBuffer(new Document({ sections: [{ children }] })),
   );
 }
 const p = (text: string) => new Paragraph({ text });
 const h1 = (text: string) => new Paragraph({ text, heading: HeadingLevel.HEADING_1 });
 
+interface SourceOptions {
+  /** The title of a Plot v1 chapter the manuscript's chapter 1 should attach to, in its own part. */
+  chapterOne?: string;
+  /** The year of the first Sullivan beat. */
+  firstBeatYear?: number;
+}
+
 /** A small invented stand-in with the same shapes as the real material: no real text. */
-async function writeSources() {
+async function writeSources(where: string, opts: SourceOptions = {}) {
   const wb = new ExcelJS.Workbook();
   const grid = wb.addWorksheet('High Level');
+  const bold = (row: number) => {
+    grid.getRow(row).font = { bold: true };
+  };
   grid.addRow(['Invented world', 9, 10, 11, 12]);
+  // Rows above the Foundational Drivers heading are chapters, parts, and characters, not world events.
+  grid.addRow(['Part One: Roots']);
+  bold(2);
+  grid.addRow(['Ch. 1: A first chapter', 'x', 'y', null, null]);
+  grid.addRow(['Characters']);
+  bold(4);
+  grid.addRow(['Ann', 'born']);
+  grid.addRow(['Foundational Drivers']);
+  bold(6);
   grid.addRow(['Technology']);
+  bold(7);
   grid.addRow(['Robots', 'First robots', null, 'Robots everywhere', null]);
   grid.addRow(['Climate']);
+  bold(9);
   grid.addRow(['Floods', null, 'The first flood', null, null]);
   grid.addRow(['Long project', null, 'A bridge begins', null, null]);
-  grid.mergeCells('C6:E6');
+  grid.mergeCells('C11:E11');
   const beats = (name: string, pov: string[]) => {
     const ws = wb.addWorksheet(name);
     ws.addRow([
@@ -47,7 +68,14 @@ async function writeSources() {
       'How the POV Character Experiences It',
     ]);
     pov.forEach((who, i) =>
-      ws.addRow([`Event ${who} ${i}`, who, 2000 + i, i, `World ${i}`, `Feels ${i}`]),
+      ws.addRow([
+        `Event ${who} ${i}`,
+        who,
+        name === 'Sullivan' && i === 0 ? (opts.firstBeatYear ?? 2000) : 2000 + i,
+        i,
+        `World ${i}`,
+        `Feels ${i}`,
+      ]),
     );
   };
   beats('Sullivan', ['Ann', 'Ben']);
@@ -66,14 +94,22 @@ async function writeSources() {
   plot.mergeCells('B3:F3');
   plot.addRow(['Ann goes to school', 'Ann', 2010, 8, 'A school', 'Nervous']);
   plot.addRow(['Ann meets Ben', 'Ben', 2011, 9, 'A park', 'Happy']);
+  // A part whose merged banner is empty, then chapters.
+  plot.addRow(['Part Two: Branches']);
+  plot.mergeCells('B6:F6');
+  if (opts.chapterOne) plot.addRow([opts.chapterOne, 'Ann', 2012, 10, 'A tree', 'Calm']);
+  plot.addRow(['Ann grows up', 'Ann', 2015, 13, 'A road', 'Proud']);
+  // A part that is only its label.
+  plot.addRow(['Part Three: Leaves']);
+  plot.addRow(['Ann ages', 'Ann', 2018, 16, 'A letter', 'Wistful']);
   plot.addRow(['Book Two']);
   plot.addRow(['Ann leaves', 'Ann', 2020, 18, 'A train', 'Sad']);
   plot.addRow(['Ann misses year', 'Ann', 'later', 19, 'A bad row', 'Fails']);
-  await wb.xlsx.writeFile(join(dir, 'East_Winds_World.xlsx'));
-  await docx('Dawns_Life.docx', [p('Dawn was born.'), p('Dawn grew.')]);
-  await docx('Franks_Life.docx', [p('Frank was born.')]);
-  await docx('Marks_Life.docx', [p('Mark was born.')]);
-  await docx('East_Winds.docx', [
+  await wb.xlsx.writeFile(join(where, 'East_Winds_World.xlsx'));
+  await docxIn(where, 'Dawns_Life.docx', [p('Dawn was born.'), p('Dawn grew.')]);
+  await docxIn(where, 'Franks_Life.docx', [p('Frank was born.')]);
+  await docxIn(where, 'Marks_Life.docx', [p('Mark was born.')]);
+  await docxIn(where, 'East_Winds.docx', [
     h1('East Winds'),
     p('Title page.'),
     h1('Introduction'),
@@ -83,7 +119,7 @@ async function writeSources() {
     h1('Characters'),
     p('Character notes.'),
   ]);
-  await docx('East_Winds_World_Development.docx', [
+  await docxIn(where, 'East_Winds_World_Development.docx', [
     p('THE PREMISE'),
     p('Between 2025 and 2100 it happens, and this paragraph is far too long to be a heading.'),
     p('2025–2038: THE FIRST DIVIDE'),
@@ -97,7 +133,7 @@ beforeAll(async () => {
   store = await localStore();
   dir = await mkdtemp(join(tmpdir(), 'nc-ew-src-'));
   root = await mkdtemp(join(tmpdir(), 'nc-ew-snap-'));
-  await writeSources();
+  await writeSources(dir);
 });
 afterAll(async () => {
   await store.close();
@@ -167,10 +203,19 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
       ['Book Two', 2],
     ]);
     const parts = open.repo.list('parts');
+    // Part Two has an empty merged banner and Part Three only its label: both are parts, not books.
     expect(parts.map((x) => x.title).sort()).toEqual([
       'Chapters with no part named',
       'Part One: Roots',
+      'Part Three: Leaves',
+      'Part Two: Branches',
     ]);
+    const partOf = (title: string) => parts.find((x) => x.title === title)!;
+    expect(partOf('Part Two: Branches').bookId).toBe(books[0]!._id);
+    expect(partOf('Part Three: Leaves').bookId).toBe(books[0]!._id);
+    const byTitle = (t: string) => open.repo.list('chapters').find((c) => c.title === t)!;
+    expect(byTitle('Ann grows up').partId).toBe(partOf('Part Two: Branches')._id);
+    expect(byTitle('Ann ages').partId).toBe(partOf('Part Three: Leaves')._id);
     const roots = parts.find((x) => x.title === 'Part One: Roots')!;
     expect(roots).toMatchObject({ bookId: books[0]!._id, summary: 'Deep dive on Ann' });
     const chapters = open.repo.list('chapters').filter((c) => c.sourceFile === null);
@@ -183,7 +228,7 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
     );
     const plotStep = report.steps.find((s) => s.step.endsWith('sheet Plot v1'))!;
     expect(plotStep.failed).toHaveLength(1);
-    expect(plotStep.failed[0]).toMatchObject({ where: 'Plot v1 row 8' });
+    expect(plotStep.failed[0]).toMatchObject({ where: 'Plot v1 row 12' });
     expect(plotStep.failed[0]!.reason).toMatch(/Story year.*"later" is not a whole number year/);
 
     // The documents.
@@ -195,6 +240,10 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
       '1: Laid the Foundation',
       'Introduction',
     ]);
+    const stepNotes = (name: string) => report.steps.find((st) => st.step.endsWith(name))!.notes;
+    expect(stepNotes('East_Winds.docx, Introduction').join(' ')).toContain(
+      'New chapter placed in the first part with story year',
+    );
     expect(manuscript.find((c) => c.title === 'Introduction')!.manuscriptText).toBe(
       '<h1>East Winds</h1><p>Title page.</p><h1>Introduction</h1><p>Intro text.</p>',
     );
@@ -211,11 +260,158 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
     ]);
 
     // Running it again finds everything already there.
-    const again = await importEastWinds(open, dir);
+    const again = await importEastWinds(open, dir, { yes: true });
+    expect(again.held).toBe(false);
     expect(again.steps.reduce((n, s) => n + s.created + s.updated, 0)).toBe(0);
     expect(again.steps.reduce((n, s) => n + s.unchanged, 0)).toBeGreaterThan(20);
     expect(open.repo.list('worldEvents')).toHaveLength(4);
     expect(open.repo.list('characters').filter((c) => c.title === 'Dawn')).toHaveLength(1);
+  });
+});
+
+async function sources(opts: SourceOptions): Promise<string> {
+  const where = await mkdtemp(join(tmpdir(), 'nc-ew-more-'));
+  await writeSources(where, opts);
+  return where;
+}
+
+describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the import code', () => {
+  test('IM-1 Plot v1 heading rows match by label: a part with an empty merge or only its label is a part, not a book', async () => {
+    const open = await bible();
+    await importEastWinds(open, dir);
+    expect(
+      open.repo
+        .list('books')
+        .map((b) => b.title)
+        .sort(),
+    ).toEqual(['Book One', 'Book Two']);
+    expect(
+      open.repo
+        .list('parts')
+        .map((x) => x.title)
+        .filter((t) => t.startsWith('Part'))
+        .sort(),
+    ).toEqual(['Part One: Roots', 'Part Three: Leaves', 'Part Two: Branches']);
+  });
+
+  test('IM-2 High Level only imports the world events: chapter rows, parts, and the characters block are skipped and reported', async () => {
+    const open = await bible();
+    const report = await importEastWinds(open, dir);
+    const titles = open.repo.list('worldEvents').map((e) => e.title);
+    expect(titles).not.toContain('x');
+    expect(titles).not.toContain('born');
+    const cats = open.repo
+      .lists()
+      .find((l) => l._id === 'eventCategories')!
+      .items.map((c) => c.label);
+    for (const skipped of ['Part One: Roots', 'Ch. 1: A first chapter', 'Characters', 'Ann']) {
+      expect(cats).not.toContain(skipped);
+    }
+    const high = report.steps.find((st) => st.step.endsWith('sheet High Level'))!;
+    expect(high.notes.join(' ')).toMatch(/Skipped 4 rows \(rows 2 to 5\) with 3 filled cells/);
+    expect(high.notes.join(' ')).toContain('Ch. 1: A first chapter');
+    expect(high.created).toBe(4);
+  });
+
+  test('IM-1 IM-6 manuscript chapter 1 attaches to the Plot v1 chapter with the same number, and the introduction sits just before it', async () => {
+    const where = await sources({ chapterOne: '1 Something else' });
+    const open = await bible();
+    const report = await importEastWinds(open, where);
+    const chapters = open.repo.list('chapters');
+    expect(
+      chapters
+        .filter((c) => c.sourceFile === 'East_Winds.docx')
+        .map((c) => c.title)
+        .sort(),
+    ).toEqual(['1 Something else', 'Introduction']);
+    // No second chapter 1.
+    expect(chapters.filter((c) => /Laid the Foundation/.test(c.title))).toEqual([]);
+    const one = chapters.find((c) => c.title === '1 Something else')!;
+    expect(one.manuscriptText).toBe('<h1>1: Laid the Foundation</h1><p>Chapter one text.</p>');
+    const intro = chapters.find((c) => c.title === 'Introduction')!;
+    expect(open.repo.get('parts', one.partId)!.title).toBe('Part Two: Branches');
+    expect(intro.partId).toBe(one.partId);
+    expect(intro.readingOrder).toBeLessThan(one.readingOrder);
+    expect(
+      chapters.filter(
+        (c) => c.readingOrder > intro.readingOrder && c.readingOrder < one.readingOrder,
+      ),
+    ).toEqual([]);
+    // The other chapters keep their order.
+    const order = chapters.sort((a, b) => a.readingOrder - b.readingOrder).map((c) => c.title);
+    expect(order.slice(0, 5)).toEqual([
+      'Ann goes to school',
+      'Ann meets Ben',
+      'Introduction',
+      '1 Something else',
+      'Ann grows up',
+    ]);
+    const step = report.steps.find((st) =>
+      st.step.endsWith('East_Winds.docx, 1: Laid the Foundation'),
+    )!;
+    expect(step.notes.join(' ')).toContain('existing chapter "1 Something else"');
+    // Running it again changes nothing and makes no second chapter.
+    const again = await importEastWinds(open, where, { yes: true });
+    expect(again.steps.reduce((n, st) => n + st.created + st.updated, 0)).toBe(0);
+    expect(open.repo.list('chapters')).toHaveLength(chapters.length);
+  });
+
+  test('IM-1 IM-6 manuscript chapter 1 also attaches by the title text after the number, ignoring case', async () => {
+    const where = await sources({ chapterOne: 'LAID THE FOUNDATION' });
+    const open = await bible();
+    await importEastWinds(open, where);
+    const chapters = open.repo.list('chapters');
+    const one = chapters.find((c) => c.title === 'LAID THE FOUNDATION')!;
+    expect(one.sourceFile).toBe('East_Winds.docx');
+    expect(one.manuscriptText).toContain('Chapter one text.');
+    expect(chapters.filter((c) => c.sourceFile === 'East_Winds.docx')).toHaveLength(2);
+    expect(chapters.find((c) => c.title === 'Introduction')!.partId).toBe(one.partId);
+  });
+
+  test('IM-3 a beat is the same beat when its sheet and title match, so a changed year is an update, not a duplicate', async () => {
+    const open = await bible();
+    await importEastWinds(open, dir);
+    const changed = await sources({ firstBeatYear: 2005 });
+    const report = await importEastWinds(open, changed, { yes: true });
+    const sullivan = report.steps.find((st) => st.step.endsWith('sheet Sullivan'))!;
+    expect(sullivan).toMatchObject({ created: 0, updated: 1 });
+    const beats = open.repo.list('plotBeats');
+    expect(beats).toHaveLength(3);
+    expect(beats.filter((b) => b.title === 'Event Ann 0')).toHaveLength(1);
+    expect(beats.find((b) => b.title === 'Event Ann 0')!.year).toBe(2005);
+  });
+
+  test('IM-3 ED-7 a run on a bible that already holds imported entries reports the change set and writes nothing without --yes', async () => {
+    const open = await bible();
+    await importEastWinds(open, dir);
+    const before = (await open.snapshots!.list()).length;
+    const changed = await sources({ firstBeatYear: 2005 });
+    const held = await importEastWinds(open, changed);
+    expect(held.held).toBe(true);
+    expect(held.snapshot).toBeNull();
+    expect((await open.snapshots!.list()).length).toBe(before);
+    expect(open.repo.list('plotBeats').find((b) => b.title === 'Event Ann 0')!.year).toBe(2000);
+    const sullivan = held.steps.find((st) => st.step.endsWith('sheet Sullivan'))!;
+    expect(sullivan.updated).toBe(1);
+    expect(sullivan.unchanged).toBe(1);
+    expect(sullivan.changes!.changed).toHaveLength(1);
+    expect(sullivan.changes!.changed[0]).toMatchObject({
+      title: 'Event Ann 0',
+      fields: [{ before: '2000', after: '2005', kept: false }],
+    });
+    expect(sullivan.changes!.created.count).toBe(0);
+    // Telling it to apply writes the change.
+    const applied = await importEastWinds(open, changed, { yes: true });
+    expect(applied.held).toBe(false);
+    expect(applied.snapshot).not.toBeNull();
+    expect(open.repo.list('plotBeats').find((b) => b.title === 'Event Ann 0')!.year).toBe(2005);
+  });
+
+  test('IM-3 a first import into a bible with no imported entries applies everything without --yes', async () => {
+    const open = await bible();
+    const first = await importEastWinds(open, dir);
+    expect(first.held).toBe(false);
+    expect(open.repo.list('worldEvents')).toHaveLength(4);
   });
 });
 
@@ -237,15 +433,44 @@ describe('IM-1 the import:eastwinds script', () => {
     const real = await run(common);
     expect(real.stdout).toMatch(/Snapshot taken: \d{4}-/);
     expect(real.stdout).toContain('East_Winds_World.xlsx, sheet Plot v1');
-    expect(real.stdout).toMatch(/failed: Plot v1 row 8: .*"later" is not a whole number year/);
+    expect(real.stdout).toMatch(/failed: Plot v1 row 12: .*"later" is not a whole number year/);
     expect(real.stdout).toMatch(
       /Total: created \d+, updated \d+, unchanged 0, open questions 0, failed rows 1\./,
     );
     expect(real.stdout + real.stderr).not.toMatch(/mongodb(\+srv)?:\/\//);
     const open = await openBibleSession(store, bibleId);
     expect(open.repo.list('worldEvents')).toHaveLength(4);
+    // The bible now holds imported entries: without --yes the run only reports.
     const second = await run(common);
+    expect(second.stdout).toContain('already holds imported entries');
+    expect(second.stdout).toContain('run again with --yes');
+    expect(second.stdout).not.toContain('Snapshot taken');
     expect(second.stdout).toMatch(/Total: created 0, updated 0, unchanged \d+/);
+    const third = await run([...common, '--yes']);
+    expect(third.stdout).not.toContain('already holds imported entries');
+    expect(third.stdout).toContain('Snapshot taken');
+    expect(third.stdout).toMatch(/Total: created 0, updated 0, unchanged \d+/);
+  });
+
+  test('IM-1 a dry run never migrates the cluster: it stops with a plain message when migrations are pending', async () => {
+    const bibleId = freshSlug('ew-old');
+    const registry = store.db.collection<{ _id: string; schemaVersion: number }>('bibles');
+    await registry.insertOne({
+      _id: bibleId,
+      name: 'Old',
+      createdAt: new Date().toISOString(),
+      schemaVersion: 0,
+    } as never);
+    await expect(openBibleSession(store, bibleId, { readOnly: true })).rejects.toThrow(
+      /migrations pending.*never migrates/,
+    );
+    await expect(
+      run(['--dir', dir, '--bible', bibleId, '--snapshots', root, '--dry-run']),
+    ).rejects.toMatchObject({ stderr: expect.stringMatching(/migrations pending/) });
+    expect((await registry.findOne({ _id: bibleId }))!.schemaVersion).toBe(0);
+    // A normal open still migrates it.
+    await openBibleSession(store, bibleId);
+    expect((await registry.findOne({ _id: bibleId }))!.schemaVersion).toBeGreaterThan(0);
   });
 
   test('IM-1 the script refuses an unknown option before it touches the database', async () => {

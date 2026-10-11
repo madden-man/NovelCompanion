@@ -177,3 +177,13 @@ export function coerceCell(spec: FieldSpec, raw: Cell | undefined, env: CoerceEn
       return fail(`${spec.label} cannot be filled from a spreadsheet column`);
   }
 }
+
+/** A saved pattern as a case blind expression, or null when it is not a valid one. */
+export function labelRegex(source: string | undefined): RegExp | null {
+  if (!source) return null;
+  try {
+    return new RegExp(source, 'i');
+  } catch {
+    return null;
+  }
+}

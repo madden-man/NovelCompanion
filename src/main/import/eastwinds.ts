@@ -4,8 +4,10 @@ import {
   cellText,
   erasFromBlocks,
   isBlank,
+  fileOfRef,
   parseYear,
   planEraDocument,
+  shownValue,
   spanOf,
 } from '../../shared/domain/import';
 import type {
@@ -19,7 +21,8 @@ import type {
   SourceFile,
   TableMapping,
 } from '../../shared/domain/import';
-import { entryTitle } from '../../shared/schema';
+import { ENTRY_COLLECTIONS, entryTitle } from '../../shared/schema';
+import type { Chapter } from '../../shared/schema';
 import type { OpenBible } from '../db/session';
 import { parseDocxFile } from './docx';
 import type { ParsedDocument } from './docx';
@@ -47,12 +50,29 @@ export interface StepReport {
   questions: number;
   failed: { where: string; reason: string }[];
   notes: string[];
+  /** The change set, kept when nothing is applied: what is new and what would change (ED-7). */
+  changes?: StepChanges;
+}
+
+export interface StepChanges {
+  /** Titles of entries that would be made, cut to the first few. */
+  created: { count: number; titles: string[] };
+  changed: {
+    title: string;
+    ref: string;
+    fields: { label: string; before: string; after: string; kept: boolean }[];
+  }[];
 }
 
 export interface EastWindsReport {
   steps: StepReport[];
   snapshot: string | null;
   dryRun: boolean;
+  /**
+   * True when the bible already holds imported entries and the run was not
+   * told to apply: the change set was reported and nothing was written.
+   */
+  held: boolean;
 }
 
 const header = (sheet: ParsedSheet, row = 0) => (sheet.cells[row] ?? []).map((c) => cellText(c));
@@ -79,6 +99,11 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
       yearOffset: short ? 2000 : 0,
       categoryRoot: null,
       categoryList: 'eventCategories',
+      // Only the Foundational Drivers block and what follows describes world events. The Part rows, the
+      // chapter rows, and the Characters block above it are skipped and reported. Section headings are the bold rows.
+      startLabel: '^Foundational Drivers$',
+      skipLabels: ['^Ch\\.?\\s*\\d+', '^Part\\b'],
+      headingBy: (high.boldRows?.length ?? 0) > 0 ? 'style' : 'any',
       fixed: { status: 'planned', provenance: 'invented', reality: 'invented' },
       addMissingListItems: true,
       createMissing: false,
@@ -88,19 +113,28 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
   const beatSheet = (name: string, tag: string): TableMapping | null => {
     const sheet = wb.sheets.find((s) => s.name === name);
     if (!sheet) return null;
+    const columns = columnsFor(header(sheet), {
+      title: /^chronological/i,
+      povCharacterId: /^pov$/i,
+      year: /^year$/i,
+      worldContext: /^relevant world/i,
+      experienceNote: /^how the pov/i,
+    });
+    // A beat is the same beat when its sheet and title match, so a changed year updates it. When a
+    // title repeats within the sheet, the point of view tells the repeats apart.
+    const titleAt = columns.find((c) => c.field === 'title')?.index ?? 0;
+    const titles = sheet.cells.slice(1).map((r) => cellText(r[titleAt]).trim().toLowerCase());
+    const repeats = titles.some((t, i) => t !== '' && titles.indexOf(t) !== i);
     return {
       shape: 'table',
       sheet: name,
       target: { collection: 'plotBeats' },
       headerRow: 1,
-      columns: columnsFor(header(sheet), {
-        title: /^chronological/i,
-        povCharacterId: /^pov$/i,
-        year: /^year$/i,
-        worldContext: /^relevant world/i,
-        experienceNote: /^how the pov/i,
-      }),
-      identity: ['title', 'year'],
+      columns,
+      identity:
+        repeats && columns.some((c) => c.field === 'povCharacterId')
+          ? ['title', 'povCharacterId']
+          : ['title'],
       fixed: { status: 'planned', provenance: 'invented', tags: [tag] },
       addMissingListItems: false,
       createMissing: true,
@@ -132,6 +166,7 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
         {
           collection: 'books',
           match: 'single',
+          labelPattern: '^Book\\b',
           linkField: 'bookId',
           numberField: 'number',
           fixed: { status: 'planned', provenance: 'invented' },
@@ -139,6 +174,7 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
         {
           collection: 'parts',
           match: 'banner',
+          labelPattern: '^Part\\b',
           linkField: 'partId',
           parentLinkField: 'bookId',
           textField: 'summary',
@@ -196,20 +232,113 @@ interface Log {
   (line: string): void;
 }
 
+export interface EastWindsOptions {
+  dryRun?: boolean;
+  /** Apply even when the bible already holds imported entries. */
+  yes?: boolean;
+  log?: Log;
+}
+
+const FILE_NAMES: string[] = [
+  EAST_WINDS_FILES.workbook,
+  ...EAST_WINDS_FILES.lives.map(([f]) => f),
+  EAST_WINDS_FILES.manuscript,
+  EAST_WINDS_FILES.worldDevelopment,
+];
+
+/** True when any live entry of the bible came from one of the East Winds files. */
+export function holdsImportedEntries(open: OpenBible): boolean {
+  return ENTRY_COLLECTIONS.some((c) =>
+    open.model.all(c).some((d) => {
+      if (d.deletedAt || typeof d.sourceRef !== 'string') return false;
+      const file = fileOfRef(d.sourceRef);
+      return file !== null && FILE_NAMES.includes(file);
+    }),
+  );
+}
+
+/** A chapter title as a number and the words after it: `1: Laid the Foundation`, `Ch. 1 Laid...`. */
+function numberedTitle(title: string): { number: number | null; words: string } {
+  const m = /^\s*(?:chapter|ch\.?)?\s*(\d+)\s*(?:[:.)\u2013\u2014-]\s*|\s+)?(.*)$/i.exec(title);
+  if (!m) return { number: null, words: title.trim().toLowerCase() };
+  return { number: Number(m[1]), words: (m[2] ?? '').trim().toLowerCase() };
+}
+
+/**
+ * The chapter already in the bible (from Plot v1) that the manuscript's
+ * chapter 1 belongs to: the one numbered 1 at the start of its title, or with
+ * the same words after the number. When several qualify, the one in the
+ * earliest part and reading order wins.
+ */
+export function findChapterOne(open: OpenBible, heading: string): Chapter | undefined {
+  const want = numberedTitle(heading);
+  const parts = new Map(open.repo.list('parts').map((p) => [p._id, p]));
+  const books = new Map(open.repo.list('books').map((b) => [b._id, b]));
+  const rank = (partId: string): [number, number] => {
+    const part = parts.get(partId);
+    return [books.get(part?.bookId ?? '')?.number ?? 0, part?.number ?? 0];
+  };
+  const hits = open.repo
+    .list('chapters')
+    .filter((c) => {
+      const have = numberedTitle(c.title);
+      const sameNumber = want.number !== null && have.number === want.number;
+      const sameWords = want.words !== '' && have.words === want.words;
+      return sameNumber || sameWords;
+    })
+    .sort((a, b) => {
+      const [ab, ap] = rank(a.partId);
+      const [bb, bp] = rank(b.partId);
+      return ab - bb || ap - bp || a.readingOrder - b.readingOrder;
+    });
+  return hits[0];
+}
+
+const CHANGE_LIST_LIMIT = 200;
+const NEW_TITLE_LIMIT = 20;
+
+function changesOf(set: ChangeSet): StepChanges {
+  const created = set.items.filter((i) => i.kind === 'new');
+  return {
+    created: {
+      count: created.length,
+      titles: created.slice(0, NEW_TITLE_LIMIT).map((i) => i.title),
+    },
+    changed: set.items
+      .filter((i) => i.kind === 'changed')
+      .slice(0, CHANGE_LIST_LIMIT)
+      .map((i) => ({
+        title: i.title,
+        ref: i.ref,
+        fields: i.deltas.map((d) => ({
+          label: d.label,
+          before: shownValue(d.before),
+          after: shownValue(d.after),
+          kept: d.outcome === 'keep',
+        })),
+      })),
+  };
+}
+
 /**
  * Import the East Winds material into an open bible (IM-1 to IM-7). With
- * `dryRun` it compares and reports and writes nothing. Otherwise it takes one
+ * `dryRun` it compares and reports and writes nothing. A bible that already
+ * holds imported entries is treated the same way unless `yes` is set: the
+ * change set is reported and nothing is written (ED-7). Otherwise it takes one
  * snapshot first, then applies each step through the write path.
  */
 export async function importEastWinds(
   open: OpenBible,
   dir: string,
-  opts: { dryRun?: boolean; log?: Log } = {},
+  opts: EastWindsOptions = {},
 ): Promise<EastWindsReport> {
   const log = opts.log ?? (() => undefined);
   const dryRun = opts.dryRun === true;
-  const report: EastWindsReport = { steps: [], snapshot: null, dryRun };
-  if (!dryRun && open.snapshots) {
+  const held = !dryRun && opts.yes !== true && holdsImportedEntries(open);
+  // A held run compares exactly as a dry run does.
+  const writes = !dryRun && !held;
+  const report: EastWindsReport = { steps: [], snapshot: null, dryRun, held };
+  if (writes && open.snapshots) {
     const snap = await open.snapshots.take('import', 'East Winds import');
     report.snapshot = snap.id;
     log(`Snapshot taken: ${snap.id}`);
@@ -230,12 +359,13 @@ export async function importEastWinds(
       failed: set.failed.map((f) => ({ where: f.where, reason: f.reason })),
       notes: [...notes, ...set.notes],
     };
-    if (dryRun) {
+    if (!writes) {
       const r = {
         ...base,
         created: set.items.filter((i) => i.kind === 'new').length,
         updated: set.items.filter((i) => i.kind === 'changed').length,
         questions: set.items.filter((i) => i.deltas.some((d) => d.conflict)).length,
+        changes: changesOf(set),
       };
       report.steps.push(r);
       return r;
@@ -260,7 +390,7 @@ export async function importEastWinds(
     const doc = await parseDocxFile(join(dir, file));
     const found = findCharacter(open, name);
     let id = found?._id;
-    if (!id && !dryRun) {
+    if (!id && writes) {
       const made = await open.repo.create('characters', {
         title: name,
         names: { full: name },
@@ -312,11 +442,17 @@ export async function importEastWinds(
       notes: [],
     });
   } else {
-    const part = await partForManuscript(open, dryRun);
-    const year = firstChapterYear(open) ?? 2000;
-    const targets: { title: string; blocks: DocBlock[] }[] = [
-      { title: 'Introduction', blocks: split.introduction },
-      { title: split.chapterTitle, blocks: split.chapterOne },
+    // Chapter 1 belongs to the chapter Plot v1 already made, when there is one.
+    const one = findChapterOne(open, split.chapterTitle);
+    const part = one ? one.partId : await partForManuscript(open, !writes);
+    const year =
+      one?.strands.find((s) => s.primary)?.startYear ??
+      one?.strands[0]?.startYear ??
+      firstChapterYear(open) ??
+      2000;
+    const targets: { title: string; blocks: DocBlock[]; isOne: boolean }[] = [
+      { title: 'Introduction', blocks: split.introduction, isOne: false },
+      { title: split.chapterTitle, blocks: split.chapterOne, isOne: true },
     ];
     for (const t of targets) {
       if (!part) {
@@ -331,24 +467,49 @@ export async function importEastWinds(
         });
         continue;
       }
-      const existing = open.repo
-        .list('chapters')
-        .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName);
+      const existing = t.isOne
+        ? (open.repo
+            .list('chapters')
+            .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName) ?? one)
+        : open.repo
+            .list('chapters')
+            .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName);
       const target: DocumentTarget = existing
         ? { kind: 'chapter', chapterId: existing._id }
         : { kind: 'chapter', chapterId: null, title: t.title, partId: part, year };
       const plan = planDocumentImport(open, manuscript, target, t.blocks);
-      await record(
+      const notes = existing
+        ? t.isOne && one && existing._id === one._id
+          ? [`The text goes into the existing chapter "${one.title}", not a second chapter 1.`]
+          : []
+        : one
+          ? [`New chapter placed in the part of "${one.title}", just before it.`]
+          : [
+              `New chapter placed in the first part with story year ${year}. Edit the year and the part in the app.`,
+            ];
+      const done = await record(
         `${manuscript.fileName}, ${t.title}`,
         plan.set,
         plan.file,
         null,
-        existing
-          ? []
-          : [
-              `New chapter placed in the first part with story year ${year}. Edit the year and the part in the app.`,
-            ],
+        notes,
       );
+      // The introduction reads just before chapter 1: take its number and move the later chapters down one.
+      if (writes && !t.isOne && one && done.created > 0) {
+        const intro = open.repo
+          .list('chapters')
+          .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName);
+        if (intro) {
+          const later = open.repo
+            .list('chapters')
+            .filter((c) => c._id !== intro._id && c.readingOrder >= one.readingOrder)
+            .map((c) => ({ id: c._id, patch: { readingOrder: c.readingOrder + 1 } }));
+          await open.repo.reorder('chapters', [
+            ...later,
+            { id: intro._id, patch: { readingOrder: one.readingOrder, partId: one.partId } },
+          ]);
+        }
+      }
     }
     if (split.rest.length) {
       const section = notesSection(open);

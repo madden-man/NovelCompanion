@@ -4,6 +4,7 @@ import { connect, listBibles } from '../src/main/db';
 import { createBibleWithDefaults, openBibleSession } from '../src/main/db/session';
 import { isLocalMongoUri, mongoUri } from '../src/main/secrets';
 import { importEastWinds } from '../src/main/import/eastwinds';
+import type { StepChanges } from '../src/main/import/eastwinds';
 
 /** Where the app keeps snapshots: the same folder the desktop app uses. */
 export const DEFAULT_SNAPSHOT_ROOT = join(
@@ -19,6 +20,7 @@ interface Args {
   bible: string;
   snapshots: string;
   dryRun: boolean;
+  yes: boolean;
 }
 
 function parse(argv: string[]): Args {
@@ -27,19 +29,40 @@ function parse(argv: string[]): Args {
     bible: 'eastwinds',
     snapshots: DEFAULT_SNAPSHOT_ROOT,
     dryRun: false,
+    yes: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dry-run') args.dryRun = true;
+    else if (a === '--yes') args.yes = true;
     else if (a === '--dir') args.dir = resolve(argv[++i] ?? '');
     else if (a === '--bible') args.bible = argv[++i] ?? args.bible;
     else if (a === '--snapshots') args.snapshots = resolve(argv[++i] ?? '');
     else
       throw new Error(
-        `Unknown option ${String(a)}. Use --dry-run, --dir, --bible, or --snapshots.`,
+        `Unknown option ${String(a)}. Use --dry-run, --yes, --dir, --bible, or --snapshots.`,
       );
   }
   return args;
+}
+
+function printChanges(changes: StepChanges | undefined): void {
+  if (!changes) return;
+  if (changes.created.count) {
+    const shown = changes.created.titles.join('; ');
+    const more = changes.created.count - changes.created.titles.length;
+    console.log(
+      `  new (${changes.created.count}): ${shown}${more > 0 ? `; and ${more} more` : ''}`,
+    );
+  }
+  for (const c of changes.changed) {
+    console.log(`  changed: ${c.title} (${c.ref})`);
+    for (const f of c.fields) {
+      console.log(
+        `    ${f.label}: ${f.before} -> ${f.after}${f.kept ? ' (not applied, the current value is newer)' : ''}`,
+      );
+    }
+  }
 }
 
 /**
@@ -63,12 +86,17 @@ export async function main(argv: string[]): Promise<void> {
       }
       await createBibleWithDefaults(store, args.bible, 'East Winds');
     }
-    const open = await openBibleSession(store, args.bible, { snapshotRoot: args.snapshots });
+    // A dry run never migrates the cluster: it stops with a plain message when migrations are pending.
+    const open = await openBibleSession(store, args.bible, {
+      snapshotRoot: args.snapshots,
+      readOnly: args.dryRun,
+    });
     console.log(
       `${args.dryRun ? 'Dry run (nothing is written)' : 'Importing'} into the bible "${args.bible}" from ${args.dir}`,
     );
     const report = await importEastWinds(open, args.dir, {
       dryRun: args.dryRun,
+      yes: args.yes,
       log: (line) => console.log(line),
     });
     let failed = 0;
@@ -77,6 +105,7 @@ export async function main(argv: string[]): Promise<void> {
         `\n${step.step}\n  created ${step.created}, updated ${step.updated}, unchanged ${step.unchanged}, open questions ${step.questions}, failed ${step.failed.length}`,
       );
       for (const note of step.notes) console.log(`  note: ${note}`);
+      printChanges(step.changes);
       for (const f of step.failed) console.log(`  failed: ${f.where}: ${f.reason}`);
       failed += step.failed.length;
     }
@@ -85,6 +114,11 @@ export async function main(argv: string[]): Promise<void> {
     console.log(
       `\nTotal: created ${total('created')}, updated ${total('updated')}, unchanged ${total('unchanged')}, open questions ${total('questions')}, failed rows ${failed}.`,
     );
+    if (report.held) {
+      console.log(
+        `\nThe bible "${args.bible}" already holds imported entries, so nothing was written. Review the changes above, then run again with --yes to apply them.`,
+      );
+    }
     if (report.snapshot)
       console.log(
         `Snapshot before the import: ${join(args.snapshots, args.bible, report.snapshot)}`,

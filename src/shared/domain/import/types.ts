@@ -20,6 +20,8 @@ export const ParsedSheet = z.strictObject({
   /** `cells[r][c]` is row r+1, column c+1. Every row has the same length. */
   cells: z.array(z.array(Cell)),
   merges: z.array(MergeRange).default([]),
+  /** 1-based rows whose first filled cell is bold, which a grid mapping may use to find heading rows. */
+  boldRows: z.array(z.int().min(1)).optional(),
 });
 export type ParsedSheet = z.infer<typeof ParsedSheet>;
 
@@ -68,6 +70,11 @@ export const HeadingRule = z.strictObject({
    * cell beside it (a part with its description).
    */
   match: z.enum(['single', 'banner']).default('single'),
+  /**
+   * A regular expression (case blind) for the first cell of a heading row, such
+   * as `^Part\\b`. When set, it decides the row, however many cells are filled.
+   */
+  labelPattern: z.string().min(1).optional(),
   /** The field on the rows below (and on deeper headings) that points at this heading. */
   linkField: z.string().min(1),
   /** The field on this heading that points at the heading one level up, such as a part's book. */
@@ -128,6 +135,19 @@ export const GridMapping = z.strictObject({
   categoryRoot: z.string().nullable().default(null),
   /** The list that holds categories. */
   categoryList: z.string().min(1).default('eventCategories'),
+  /**
+   * Which rows with a label and no cells are headings that feed the category
+   * path: `style` (bold, the default), `rows` (the numbers in `headingRows`),
+   * `pattern` (labels matching `headingPattern`), or `any` (every such row).
+   * A row that is not marked is skipped and files nothing.
+   */
+  headingBy: z.enum(['style', 'rows', 'pattern', 'any']).optional(),
+  headingRows: z.array(z.int().min(1)).optional(),
+  headingPattern: z.string().min(1).optional(),
+  /** Rows above the first row whose label matches this expression (case blind) are skipped and reported. */
+  startLabel: z.string().min(1).optional(),
+  /** Rows whose label matches any of these expressions (case blind) are skipped and reported. */
+  skipLabels: z.array(z.string().min(1)).optional(),
 });
 export type GridMapping = z.infer<typeof GridMapping>;
 

@@ -2,10 +2,9 @@ import { join } from 'node:path';
 import { BrowserWindow, app, dialog, shell } from 'electron';
 import { connect, listBibles } from '../db';
 import type { Store } from '../db';
-import { createBibleWithDefaults, openBibleSession } from '../db/session';
+import { createBibleWithDefaults, openBibleForApp } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
-import { needsDailySnapshot } from '../../shared/domain/snapshots';
 import type { ImportDeps } from './importHandlers';
 import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
@@ -102,17 +101,9 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const s = await requireStore();
   const record = (await listBibles(s)).find((b) => b._id === slug);
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
-  const session = await openBibleSession(s, slug, {
+  const session = await openBibleForApp(s, slug, {
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
   });
-  // BK-1: the first launch of the day takes a snapshot. A failure here never blocks opening.
-  try {
-    if (session.snapshots && needsDailySnapshot(await session.snapshots.list(), new Date())) {
-      await session.snapshots.take('daily');
-    }
-  } catch {
-    // The person can still take one on request.
-  }
   current?.unsubscribe();
   const offChange = session.repo.onChange((e) => broadcast('bible.changed', e));
   const offLists = session.repo.onListsChange(() => broadcast('lists.changed', { bible: slug }));

@@ -617,6 +617,8 @@ const ChangeItemWire = z.strictObject({
   title: z.string(),
   ref: z.string(),
   note: z.string().optional(),
+  /** IDs of the new items this one points at (a part, a book, a character stub). Approving it approves them too. */
+  needs: z.array(z.string()).optional(),
   deltas: z.array(
     z.strictObject({
       path: z.string(),

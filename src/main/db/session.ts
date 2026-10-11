@@ -1,6 +1,8 @@
 import { ReadModel } from '../readmodel';
 import { SearchIndex } from '../search';
-import { createBible, migrate, openBible } from './bibles';
+import { createBible, migrate, openBible, schemaVersion } from './bibles';
+import { LATEST_SCHEMA_VERSION } from './migrations';
+import { needsDailySnapshot } from '../../shared/domain/snapshots';
 import type { BibleHandle } from './bibles';
 import type { Store } from './connection';
 import { Repository } from './repository';
@@ -22,6 +24,11 @@ export interface SessionOptions {
   snapshotRoot?: string;
   repository?: RepositoryOptions;
   now?: () => Date;
+  /**
+   * Open without changing anything on the cluster: when the bible has
+   * migrations pending, stop with a plain message instead of running them.
+   */
+  readOnly?: boolean;
 }
 
 /** Open a bible, bring its schema up to date, and load the read model and index. */
@@ -31,7 +38,17 @@ export async function openBibleSession(
   options: SessionOptions = {},
 ): Promise<OpenBible> {
   const handle = await openBible(store, id);
-  await migrate(handle);
+  if (options.readOnly) {
+    const have = await schemaVersion(handle);
+    if (have < LATEST_SCHEMA_VERSION) {
+      const pending = LATEST_SCHEMA_VERSION - have;
+      throw new Error(
+        `The bible "${id}" has ${pending} ${pending === 1 ? 'migration' : 'migrations'} pending (it is at version ${have}; this app needs ${LATEST_SCHEMA_VERSION}). A dry run never migrates a bible, so it stopped. Open the bible in the app to bring it up to date, then run the dry run again.`,
+      );
+    }
+  } else {
+    await migrate(handle);
+  }
   const model = new ReadModel();
   await model.load(handle);
   const search = new SearchIndex();
@@ -66,5 +83,29 @@ export async function createBibleWithDefaults(
   await createBible(store, id, name);
   const session = await openBibleSession(store, id);
   await session.repo.seedDefaultEras();
+  return session;
+}
+
+/**
+ * Open a bible as the app does (BK-1): bring it up to date, and take a
+ * snapshot when none has been taken today. A failed snapshot never blocks
+ * opening.
+ */
+export async function openBibleForApp(
+  store: Store,
+  id: string,
+  options: SessionOptions,
+): Promise<OpenBible> {
+  const session = await openBibleSession(store, id, options);
+  try {
+    if (
+      session.snapshots &&
+      needsDailySnapshot(await session.snapshots.list(), (options.now ?? (() => new Date()))())
+    ) {
+      await session.snapshots.take('daily');
+    }
+  } catch {
+    // The person can still take one on request.
+  }
   return session;
 }

@@ -1,11 +1,14 @@
 import { monotonicFactory } from 'ulid';
 import {
   blocksToBody,
+  itemNeeds,
   mapSheet,
   planChanges,
   planDocument,
+  referencedListAdds,
   shownValue,
   spanOf,
+  withDependencies,
 } from '../../shared/domain/import';
 import type {
   ChangeItem,
@@ -134,19 +137,19 @@ export async function applyPlan(
   approved: ReadonlySet<string> | 'all',
   createSection: DocumentPlan['createSection'] = null,
 ): Promise<ApplyResult> {
-  const items: ChangeItem[] = set.items.filter((i) => approved === 'all' || approved.has(i.id));
-  // New list choices (a category, a community) come with the first approved new entry.
-  const listAdds = items.some((i) => i.kind === 'new') ? set.listAdds : [];
-  if (createSection && items.length) {
-    await open.repo.create('customSections', {
-      _id: createSection.id,
-      name: createSection.name,
-      fields: [],
-      briefRule: 'never',
-    } as never);
-  }
+  // An approved item brings along the new items it points at (a part, a book, a character stub), so no link dangles.
+  const { ids } = approved === 'all' ? { ids: null } : withDependencies(set.items, approved);
+  const items: ChangeItem[] = set.items.filter((i) => ids === null || ids.has(i.id));
+  // List choices (a category, a community) come with the approved items that point at them.
+  const listAdds =
+    items.length === set.items.length ? set.listAdds : referencedListAdds(items, set.listAdds);
   const done = items.length
-    ? await open.repo.applyImport({ file, items, listAdds })
+    ? await open.repo.applyImport({
+        file,
+        items,
+        listAdds,
+        ...(createSection ? { createSections: [createSection] } : {}),
+      })
     : { created: 0, updated: 0, questions: 0 };
   return { ...done, unchanged: set.unchanged, failed: set.failed };
 }
@@ -171,6 +174,7 @@ export function planView(open: OpenBible, planId: string, fileName: string, set:
       title: i.title || entryTitle(i.data ?? {}),
       ref: i.ref,
       ...(i.note ? { note: i.note } : {}),
+      needs: itemNeeds(i, set.items),
       deltas: i.deltas.map((d) => ({
         path: d.path,
         label: d.label,

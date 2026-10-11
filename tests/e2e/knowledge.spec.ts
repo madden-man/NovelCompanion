@@ -379,8 +379,13 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   await view.getByLabel('To year').fill('');
 
   await view.getByLabel('Family').selectOption('FAM-ZHOU');
-  await expect(results).toContainText('Meiling was engaged');
+  // Wait until the list answers the Zhou filter, so stale unfiltered hits cannot satisfy the checks.
+  const region = view.getByTestId('search-region');
+  await expect(region).toHaveAttribute('data-query-key', /FAM-ZHOU/);
+  await expect(region).toHaveAttribute('aria-busy', 'false');
+  await expect(results).toContainText('Iris reads');
   await expect(results).not.toContainText('Ruth reads');
+  await expect(results).not.toContainText('Meiling was engaged');
   await view.getByLabel('Family').selectOption('');
 
   await page.getByRole('searchbox', { name: 'Search the bible' }).fill('door');

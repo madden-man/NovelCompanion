@@ -5,7 +5,7 @@ import { buildEntry } from './build';
 import { cellRef } from './source';
 import { normalizeIdentity, ordinalKey } from './table';
 import type { GridMapping, ListAdd, MapContext, MapOutput, ParsedSheet } from './types';
-import { cellText, isBlank, parseYearHeader } from './values';
+import { cellText, isBlank, labelRegex, parseYearHeader } from './values';
 
 const TITLE_LENGTH = 120;
 
@@ -110,6 +110,10 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
   const counts = new Map<string, number>();
   let heading = '';
   let ordinal = 0;
+  const isHeading = headingTest(sheet, mapping);
+  const skipPatterns = (mapping.skipLabels ?? []).flatMap((p) => labelRegex(p) ?? []);
+  const startAt = startRow(sheet, mapping, header.row, out.notes);
+  const skipped: { row: number; label: string; cells: number }[] = [];
   for (let r = header.row; r < sheet.cells.length; r++) {
     const row = r + 1;
     const cells = sheet.cells[r] ?? [];
@@ -117,8 +121,13 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
     const filled = header.columns.filter(
       (y) => !isBlank(cells[y.column]) && !mergedSlave(sheet, row, y.column + 1),
     );
+    // Rows above the start row, and rows the mapping skips, make nothing and are reported (IM-2).
+    if (row < startAt || (label && skipPatterns.some((re) => re.test(label.trim())))) {
+      if (label || filled.length) skipped.push({ row, label, cells: filled.length });
+      continue;
+    }
     if (filled.length === 0) {
-      if (label) heading = label;
+      if (label && isHeading(row, label)) heading = label;
       continue;
     }
     for (const y of filled) {
@@ -186,7 +195,62 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
     }
   }
   out.listAdds = listAdds;
+  if (skipped.length) out.notes.push(skipNote(skipped));
   return out;
+}
+
+/** The row where entries start: the first row whose label matches `startLabel`, or the row below the years. */
+function startRow(
+  sheet: ParsedSheet,
+  mapping: GridMapping,
+  first: number,
+  notes: string[],
+): number {
+  const re = labelRegex(mapping.startLabel);
+  if (!mapping.startLabel) return 0;
+  if (!re) {
+    notes.push(
+      `The start label "${mapping.startLabel}" is not a valid pattern, so no rows were skipped.`,
+    );
+    return 0;
+  }
+  for (let r = first; r < sheet.cells.length; r++) {
+    if (re.test(cellText(sheet.cells[r]?.[mapping.labelColumn]).trim())) return r + 1;
+  }
+  notes.push(
+    `No row matches the start label "${mapping.startLabel}", so no rows were skipped for it.`,
+  );
+  return 0;
+}
+
+/** Whether a row with a label and no cells is a heading, by the mapping's rule. */
+function headingTest(
+  sheet: ParsedSheet,
+  mapping: GridMapping,
+): (row: number, label: string) => boolean {
+  const by = mapping.headingBy ?? 'style';
+  if (by === 'any') return () => true;
+  if (by === 'rows') {
+    const rows = new Set(mapping.headingRows ?? []);
+    return (row) => rows.has(row);
+  }
+  if (by === 'pattern') {
+    const re = labelRegex(mapping.headingPattern);
+    return (_row, label) => re?.test(label.trim()) ?? false;
+  }
+  const bold = new Set(sheet.boldRows ?? []);
+  return (row) => bold.has(row);
+}
+
+function skipNote(skipped: { row: number; label: string; cells: number }[]): string {
+  const cells = skipped.reduce((n, s) => n + s.cells, 0);
+  const labels = skipped
+    .filter((s) => s.label)
+    .slice(0, 6)
+    .map((s) => s.label);
+  const more = skipped.filter((s) => s.label).length - labels.length;
+  const rows = skipped.map((s) => s.row);
+  return `Skipped ${skipped.length} ${skipped.length === 1 ? 'row' : 'rows'} (rows ${Math.min(...rows)} to ${Math.max(...rows)}) with ${cells} filled ${cells === 1 ? 'cell' : 'cells'} because they are chapters, parts, characters, or other rows the mapping leaves out: ${labels.join('; ')}${more > 0 ? `; and ${more} more` : ''}.`;
 }
 
 export function gridKey(path: string[], year: number): string {
@@ -203,13 +267,15 @@ export function existingGridIdentities(
         items: { id: string; label: string; parentId: string | null }[];
       }
     | undefined,
+  view: (doc: Doc) => Doc = (d) => d,
 ): Map<string, Doc> {
   const counts = new Map<string, number>();
   const out = new Map<string, Doc>();
   for (const d of [...docs].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
-    const start = isPlainObject(d.start) ? d.start.year : undefined;
-    if (typeof start !== 'number' || !list || typeof d.categoryId !== 'string') continue;
-    const path = itemPath(list, d.categoryId).split(' > ');
+    const seen = view(d);
+    const start = isPlainObject(seen.start) ? seen.start.year : undefined;
+    if (typeof start !== 'number' || !list || typeof seen.categoryId !== 'string') continue;
+    const path = itemPath(list, seen.categoryId).split(' > ');
     out.set(ordinalKey(counts, gridKey(path, start)), d);
   }
   return out;

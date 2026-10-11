@@ -2,7 +2,7 @@ import type { Doc } from '../paths';
 import { buildEntry } from './build';
 import { importableFields, readField } from './fields';
 import { nameResolver } from './names';
-import { rowRef } from './source';
+import { cellRef } from './source';
 import type {
   ColumnAssignment,
   HeadingRule,
@@ -12,7 +12,7 @@ import type {
   ParsedSheet,
   TableMapping,
 } from './types';
-import { cellText, coerceCell, isBlank } from './values';
+import { cellText, coerceCell, isBlank, labelRegex } from './values';
 import type { CoerceEnv } from './values';
 
 /** The field paths that identify an entry when the mapping names none. */
@@ -79,9 +79,14 @@ function distinctCells(sheet: ParsedSheet, row: number): DistinctCell[] {
 }
 
 function headingRuleFor(rules: HeadingRule[], cells: DistinctCell[]): number {
-  return rules.findIndex((rule) =>
-    rule.match === 'single' ? cells.length === 1 : cells.length === 2 && (cells[1]?.span ?? 0) >= 3,
-  );
+  const label = cells[0]?.text ?? '';
+  return rules.findIndex((rule) => {
+    // A label pattern decides on the label alone, however many cells are filled.
+    if (rule.labelPattern) return labelRegex(rule.labelPattern)?.test(label.trim()) ?? false;
+    return rule.match === 'single'
+      ? cells.length === 1
+      : cells.length === 2 && (cells[1]?.span ?? 0) >= 3;
+  });
 }
 
 /** Map every row of a table sheet (IM-1): one entry per row, headings making parents. */
@@ -110,6 +115,7 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
     assigned.push({ column: indexes[i] ?? a.index, header: a.header, path: a.field });
   });
   const idPaths = identityPaths(mapping);
+  const identityColumn = assigned.find((a) => a.path === idPaths[0])?.column ?? 0;
   const listAdds: ListAdd[] = [];
   const counts = new Map<string, number>();
   const headingCounts: Map<string, number>[] = [];
@@ -177,10 +183,15 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
     const filled = cells.map((c, i) => (isBlank(c) ? -1 : i)).filter((i) => i >= 0);
     if (filled.length === 0) continue;
     where = `${sheet.name} row ${row}`;
-    ref = rowRef(ctx.file.fileName, sheet.name, row);
-
     const distinct = distinctCells(sheet, row);
     const level = headingRuleFor(mapping.headings, distinct);
+    // A source location names the cell that identifies the row: the label of a heading, the identity column of an entry.
+    ref = cellRef(
+      ctx.file.fileName,
+      sheet.name,
+      row,
+      (level >= 0 ? (distinct[0]?.column ?? 0) : identityColumn) + 1,
+    );
     if (level >= 0) {
       startHeading(level, distinct[0]?.text ?? '', distinct[1]?.text);
       continue;
@@ -269,12 +280,21 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
   return out;
 }
 
-/** The identity of an entry already in the bible, counted the same way as a sheet's rows. */
-export function existingIdentities(docs: Doc[], paths: string[]): Map<string, Doc> {
+/**
+ * The identity of an entry already in the bible, counted the same way as a
+ * sheet's rows. `view` lets the caller read each entry as the import last
+ * left it (see `recordedView`), so a hand edit to an identity field does not
+ * hide the entry from a re-import.
+ */
+export function existingIdentities(
+  docs: Doc[],
+  paths: string[],
+  view: (doc: Doc) => Doc = (d) => d,
+): Map<string, Doc> {
   const counts = new Map<string, number>();
   const out = new Map<string, Doc>();
   for (const d of [...docs].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
-    const key = identityKey(d, paths);
+    const key = identityKey(view(d), paths);
     if (key.replaceAll(SEP, '') === '') continue;
     out.set(ordinalKey(counts, key), d);
   }

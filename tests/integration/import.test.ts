@@ -89,7 +89,7 @@ describe('IM-1 IM-2 IM-6 a workbook imports into a real database through the wri
       birth: { year: 1988 },
       death: null,
       status: 'canon',
-      sourceRef: 'fixture-workbook.xlsx#People!R6',
+      sourceRef: 'fixture-workbook.xlsx#People!B6',
     });
     expect(open.repo.list('families').map((f) => f.name)).toEqual(['Hale', 'Zhou']);
     const iris = people$.find((p) => p.title === 'Iris Hale-Zhou')!;
@@ -217,10 +217,10 @@ describe('IM-7 the newest source wins and an open question lists every source', 
       links: [{ targetId: margaret._id, kind: 'conflict' }],
     });
     expect(questions[0]!.question).toContain(
-      'fixture-workbook.xlsx#People!R2 (modified 2026-01-15) says 1958',
+      'fixture-workbook.xlsx#People!B2 (modified 2026-01-15) says 1958',
     );
     expect(questions[0]!.question).toContain(
-      'fixture-workbook.xlsx#People!R2 (modified 2026-03-01) says 1959 [kept]',
+      'fixture-workbook.xlsx#People!B2 (modified 2026-03-01) says 1959 [kept]',
     );
   });
 
@@ -295,7 +295,7 @@ describe('CS-2 custom entries import like built-in ones', () => {
     expect(soup).toMatchObject({
       sectionId: 'CS-RECIPES',
       values: { origin: 'Portland, Oregon', firstCooked: 1990, occasion: 'Everyday' },
-      sourceRef: 'recipes.xlsx#Recipes!R2',
+      sourceRef: 'recipes.xlsx#Recipes!A2',
       status: 'planned',
     });
     expect((await open.repo.revisions('customEntries', soup._id)).map((r) => r.op)).toEqual([
@@ -451,5 +451,317 @@ describe('IM-1 the IPC channels preview, compare, and apply through the contract
     await expect(
       invoke('import.apply', { planId: plan.planId, approved: [], saveMapping: false }),
     ).rejects.toThrow(/out of date/);
+  });
+});
+
+describe('IM-7 IM-3 review fixes in the write path', () => {
+  test('IM-7 IM-3 an older source imported twice makes one open question, then nothing at all', async () => {
+    const open = await emptyBible('im-twice');
+    const wb = earlier(await parseWorkbookFile(FIXTURE_WORKBOOK), '2026-05-01T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const older = structuredClone(wb);
+    older.modifiedAt = '2026-02-01T09:00:00.000Z';
+    older.sheets[0]!.cells[1]![3] = 1900;
+    const first = await applyPlan(
+      open,
+      planSheet(open, older.sheets[0]!, older, people).set,
+      older,
+      'all',
+    );
+    expect(first.questions).toBe(1);
+    expect(open.repo.list('openQuestions')).toHaveLength(1);
+
+    const again = planSheet(open, older.sheets[0]!, older, people).set;
+    expect(again.items).toEqual([]);
+    const second = await applyPlan(open, again, older, 'all');
+    expect(second).toMatchObject({ created: 0, updated: 0, questions: 0 });
+    expect(open.repo.list('openQuestions')).toHaveLength(1);
+    const margaret = open.repo.list('characters').find((c) => c.title === 'Margaret Hale')!;
+    expect(margaret.birth).toEqual({ year: 1958 });
+  });
+
+  test('IM-7 an open question that already lists the same claims is not asked again by the write path', async () => {
+    const open = await emptyBible('im-ask-once');
+    const wb = earlier(await parseWorkbookFile(FIXTURE_WORKBOOK), '2026-05-01T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const older = structuredClone(wb);
+    older.modifiedAt = '2026-02-01T09:00:00.000Z';
+    older.sheets[0]!.cells[1]![3] = 1900;
+    const plan = planSheet(open, older.sheets[0]!, older, people).set;
+    await applyPlan(open, plan, older, 'all');
+    // The same plan, applied again from a stale comparison, must not add a second question.
+    const stale = structuredClone(plan);
+    for (const item of stale.items) delete item.baseModifiedAt;
+    const done = await applyPlan(open, stale, older, 'all');
+    expect(done.questions).toBe(0);
+    expect(open.repo.list('openQuestions')).toHaveLength(1);
+  });
+
+  test('IM-3 after a hand rename of the identity field, a re-import still finds the entry', async () => {
+    const open = await emptyBible('im-rename');
+    const wb = await parseWorkbookFile(FIXTURE_WORKBOOK);
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const margaret = open.repo.list('characters').find((c) => c.title === 'Margaret Hale')!;
+    await open.repo.update('characters', margaret._id, { title: 'Maggie Hale' });
+    const edited = structuredClone(wb);
+    edited.modifiedAt = new Date(Date.parse(wb.modifiedAt) + 86_400_000).toISOString();
+    edited.sheets[0]!.cells[1]![6] = 'Married to Peter 1982 to 2031';
+    const plan = planSheet(open, edited.sheets[0]!, edited, people).set;
+    expect(plan.items.filter((i) => i.kind === 'new')).toEqual([]);
+    expect(plan.items.filter((i) => i.kind === 'changed')).toHaveLength(1);
+    const done = await applyPlan(open, plan, edited, 'all');
+    expect(done).toMatchObject({ created: 0, updated: 1 });
+    const live = open.repo.list('characters');
+    expect(live).toHaveLength(7);
+    expect(live.filter((c) => c.title === 'Margaret Hale')).toEqual([]);
+    const renamed = live.find((c) => c._id === margaret._id)!;
+    expect(renamed.title).toBe('Maggie Hale');
+    expect(renamed.sourceNote).toBe('Married to Peter 1982 to 2031');
+  });
+
+  test('IM-6 IM-7 a field from a second source: the entry points at the latest source and both are recorded', async () => {
+    const open = await emptyBible('im-two-sources');
+    const wb = earlier(await parseWorkbookFile(FIXTURE_WORKBOOK), '2026-01-15T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const other = structuredClone(wb);
+    other.fileName = 'other-notes.xlsx';
+    other.modifiedAt = '2026-04-01T09:00:00.000Z';
+    other.sheets[0]!.cells[1]![4] = 2043;
+    const across: TableMapping = { ...people, matchIn: 'section' };
+    await applyPlan(open, planSheet(open, other.sheets[0]!, other, across).set, other, 'all');
+    const margaret = open.repo.list('characters').find((c) => c.title === 'Margaret Hale')!;
+    expect(margaret.death).toEqual({ year: 2043 });
+    expect(margaret.sourceRef).toBe('other-notes.xlsx#People!B2');
+    const death = open.repo.sourceRecords(margaret._id).find((r) => r.path === 'death')!;
+    expect([death.ref, ...death.others.map((o) => o.ref)]).toEqual([
+      'other-notes.xlsx#People!B2',
+      'fixture-workbook.xlsx#People!B2',
+    ]);
+    // The first source's other fields are still recorded against it.
+    expect(open.repo.sourceRecords(margaret._id).find((r) => r.path === 'birth')!.ref).toBe(
+      'fixture-workbook.xlsx#People!B2',
+    );
+    // The first file still finds its entry even though the entry now points at the second.
+    const back = planSheet(open, wb.sheets[0]!, wb, people).set;
+    expect(back.items.filter((i) => i.kind === 'new' && i.title === 'Margaret Hale')).toEqual([]);
+  });
+});
+
+describe('IM-3 ED-7 approving an item brings along the new items it points at', () => {
+  const plot: TableMapping = {
+    shape: 'table',
+    sheet: 'Plot',
+    target: { collection: 'chapters' },
+    headerRow: 1,
+    columns: [
+      { header: 'Scene', index: 0, field: 'title' },
+      { header: 'Year', index: 1, field: 'strand.startYear' },
+    ],
+    identity: ['title'],
+    fixed: { status: 'planned' },
+    addMissingListItems: false,
+    createMissing: false,
+    matchIn: 'sheet',
+    headings: [
+      {
+        collection: 'books',
+        match: 'single',
+        labelPattern: '^Book\\b',
+        linkField: 'bookId',
+        numberField: 'number',
+        fixed: {},
+      },
+      {
+        collection: 'parts',
+        match: 'banner',
+        labelPattern: '^Part\\b',
+        linkField: 'partId',
+        parentLinkField: 'bookId',
+        numberField: 'number',
+        fixed: {},
+      },
+    ],
+  };
+  const book: ParsedWorkbook = {
+    fileName: 'plot.xlsx',
+    modifiedAt: '2026-01-15T09:00:00.000Z',
+    sheets: [
+      {
+        name: 'Plot',
+        merges: [],
+        cells: [
+          ['Scene', 'Year'],
+          ['Book One', null],
+          ['Part One', null],
+          ['Opening scene', 2010],
+          ['Closing scene', 2011],
+        ],
+      },
+    ],
+  };
+
+  test('IM-3 ED-7 approving only a chapter also creates its part and book, so no partId dangles', async () => {
+    const open = await emptyBible('im-deps');
+    const { set } = planSheet(open, book.sheets[0]!, book, plot);
+    const chapter = set.items.find((i) => i.title === 'Opening scene')!;
+    expect(set.items.map((i) => i.collection).sort()).toEqual([
+      'books',
+      'chapters',
+      'chapters',
+      'parts',
+    ]);
+    const done = await applyPlan(open, set, book, new Set([chapter.id]));
+    expect(done.created).toBe(3);
+    const written = open.repo.list('chapters');
+    expect(written.map((c) => c.title)).toEqual(['Opening scene']);
+    const part = open.repo.get('parts', written[0]!.partId);
+    expect(part?.title).toBe('Part One');
+    expect(open.repo.get('books', part!.bookId)?.title).toBe('Book One');
+    // The other chapter was not approved and was not written.
+    expect(open.repo.list('chapters')).toHaveLength(1);
+  });
+
+  test('IM-3 ED-7 approving a beat also creates the point of view character stub it names', async () => {
+    const open = await emptyBible('im-deps-pov');
+    const beats: TableMapping = {
+      shape: 'table',
+      sheet: 'Beats',
+      target: { collection: 'plotBeats' },
+      headerRow: 1,
+      columns: [
+        { header: 'Beat', index: 0, field: 'title' },
+        { header: 'POV', index: 1, field: 'povCharacterId' },
+        { header: 'Year', index: 2, field: 'year' },
+      ],
+      identity: ['title'],
+      fixed: { status: 'planned' },
+      addMissingListItems: false,
+      createMissing: true,
+      matchIn: 'sheet',
+      headings: [],
+    };
+    const wb: ParsedWorkbook = {
+      fileName: 'beats.xlsx',
+      modifiedAt: '2026-01-15T09:00:00.000Z',
+      sheets: [
+        {
+          name: 'Beats',
+          merges: [],
+          cells: [
+            ['Beat', 'POV', 'Year'],
+            ['Ann leaves', 'Ann', 2020],
+          ],
+        },
+      ],
+    };
+    const { set } = planSheet(open, wb.sheets[0]!, wb, beats);
+    const beat = set.items.find((i) => i.collection === 'plotBeats')!;
+    await applyPlan(open, set, wb, new Set([beat.id]));
+    const written = open.repo.list('plotBeats')[0]!;
+    expect(open.repo.get('characters', written.povCharacterId!)?.title).toBe('Ann');
+  });
+});
+
+describe('IM-1 IM-3 list choices follow the approved items that point at them', () => {
+  test('IM-1 IM-3 a list choice an approved change points at is written even when no new entry is approved', async () => {
+    const open = await openBibleSession(
+      store,
+      (await loadFixture(store, freshSlug('im-listadds'))).id,
+      { snapshotRoot: root },
+    );
+    const events: TableMapping = {
+      shape: 'table',
+      sheet: 'Events',
+      target: { collection: 'worldEvents' },
+      headerRow: 1,
+      columns: [
+        { header: 'Event', index: 0, field: 'title' },
+        { header: 'Year', index: 1, field: 'start' },
+        { header: 'Category', index: 2, field: 'categoryId' },
+      ],
+      identity: ['title'],
+      fixed: { status: 'planned', reality: 'invented' },
+      addMissingListItems: true,
+      createMissing: false,
+      matchIn: 'sheet',
+      headings: [],
+    };
+    const wb = (category: string, at: string): ParsedWorkbook => ({
+      fileName: 'events.xlsx',
+      modifiedAt: at,
+      sheets: [
+        {
+          name: 'Events',
+          merges: [],
+          cells: [
+            ['Event', 'Year', 'Category'],
+            ['The accord', 2040, category],
+          ],
+        },
+      ],
+    });
+    const first = wb('Technology', '2026-01-15T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, first.sheets[0]!, first, events).set, first, 'all');
+    const second = wb('Diplomacy', '2026-02-15T09:00:00.000Z');
+    const plan = planSheet(open, second.sheets[0]!, second, events).set;
+    expect(plan.items.map((i) => i.kind)).toEqual(['changed']);
+    expect(plan.listAdds.map((a) => a.label)).toEqual(['Diplomacy']);
+    await applyPlan(open, plan, second, new Set([plan.items[0]!.id]));
+    const list = open.repo.lists().find((l) => l._id === 'eventCategories')!;
+    const event = open.repo.list('worldEvents').find((e) => e.title === 'The accord')!;
+    expect(list.items.find((i) => i.id === event.categoryId)?.label).toBe('Diplomacy');
+  });
+});
+
+describe('IM-4 BK-1 a general note makes its section inside the import, after the snapshot', () => {
+  async function planNote(label: string, options: Parameters<typeof openBibleSession>[2]) {
+    const handle = await createBibleWithDefaults(store, freshSlug(label), label);
+    const open = await openBibleSession(store, handle.handle.id, options);
+    const doc = await parseDocxFile(DOCX);
+    const plan = planDocumentImport(open, doc, { kind: 'note', sectionId: '', title: 'A note' });
+    expect(plan.createSection).not.toBeNull();
+    return { open, plan };
+  }
+  const sections = (open: OpenBible) =>
+    open.repo.list('customSections').filter((s) => s.name === 'Notes');
+
+  test('IM-4 a failed snapshot leaves no empty Notes section', async () => {
+    const { open, plan } = await planNote('im-note-snap', { snapshotRoot: root });
+    open.repo.beforeBulk = async () => {
+      throw new Error('The disk is full');
+    };
+    await expect(applyPlan(open, plan.set, plan.file, 'all', plan.createSection)).rejects.toThrow(
+      /disk is full/,
+    );
+    expect(sections(open)).toEqual([]);
+    expect(open.repo.list('customEntries')).toEqual([]);
+  });
+
+  test('IM-4 a write that fails part way leaves no Notes section either', async () => {
+    const { open, plan } = await planNote('im-note-tx', {
+      snapshotRoot: root,
+      repository: {
+        midTransaction: async () => {
+          throw new Error('The connection dropped');
+        },
+      },
+    });
+    await expect(applyPlan(open, plan.set, plan.file, 'all', plan.createSection)).rejects.toThrow(
+      /connection dropped/,
+    );
+    expect(sections(open)).toEqual([]);
+    const fresh = await openBibleSession(store, open.handle.id);
+    expect(fresh.repo.list('customSections')).toEqual([]);
+    expect(fresh.repo.list('customEntries')).toEqual([]);
+  });
+
+  test('IM-4 a good import makes the section and the note together', async () => {
+    const { open, plan } = await planNote('im-note-ok', { snapshotRoot: root });
+    const done = await applyPlan(open, plan.set, plan.file, 'all', plan.createSection);
+    expect(done.created).toBe(1);
+    expect(sections(open)).toHaveLength(1);
+    const note = open.repo.list('customEntries')[0]!;
+    expect(note.sectionId).toBe(sections(open)[0]!._id);
+    expect(note.title).toBe('A note');
   });
 });

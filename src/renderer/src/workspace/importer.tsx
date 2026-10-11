@@ -557,6 +557,49 @@ function GridMappingEditor(props: {
           />
         </label>
       </div>
+      <div className="row">
+        <label className="field">
+          Which rows are headings
+          <select
+            value={mapping.headingBy ?? 'style'}
+            onChange={(e) => onChange({ headingBy: e.target.value as GridMapping['headingBy'] })}
+          >
+            <option value="style">Bold rows with no cells</option>
+            <option value="any">Every row with a label and no cells</option>
+            <option value="pattern">Rows whose label matches a pattern</option>
+            <option value="rows">Rows I list by number</option>
+          </select>
+        </label>
+        {mapping.headingBy === 'pattern' && (
+          <label className="field">
+            Heading label pattern
+            <input
+              value={mapping.headingPattern ?? ''}
+              placeholder="For example ^Section"
+              onChange={(e) =>
+                onChange({ headingPattern: e.target.value.trim() ? e.target.value : undefined })
+              }
+            />
+          </label>
+        )}
+        {mapping.headingBy === 'rows' && (
+          <label className="field">
+            Heading row numbers
+            <input
+              value={(mapping.headingRows ?? []).join(', ')}
+              placeholder="For example 2, 5, 7"
+              onChange={(e) =>
+                onChange({
+                  headingRows: e.target.value
+                    .split(/[\s,]+/)
+                    .map(Number)
+                    .filter((n) => Number.isInteger(n) && n >= 1),
+                })
+              }
+            />
+          </label>
+        )}
+      </div>
     </div>
   );
 }
@@ -850,22 +893,46 @@ function ChangeSetView(props: {
   const [approved, setApproved] = useState<Set<string>>(() => new Set(plan.items.map((i) => i.id)));
   const [saveMapping, setSaveMapping] = useState(true);
   const [busy, setBusy] = useState(false);
+  const byId = new Map(plan.items.map((i) => [i.id, i]));
+  /** Approving an item also approves the new items it points at, and theirs in turn, so no link dangles. */
+  const withNeeds = (ids: Iterable<string>): Set<string> => {
+    const out = new Set<string>();
+    const queue = [...ids];
+    while (queue.length) {
+      const id = queue.pop() as string;
+      if (out.has(id) || !byId.has(id)) continue;
+      out.add(id);
+      queue.push(...(byId.get(id)?.needs ?? []));
+    }
+    return out;
+  };
   const toggle = (id: string, on: boolean) =>
     setApproved((prev) => {
+      if (on) return withNeeds([...prev, id]);
       const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
+      next.delete(id);
       return next;
     });
-  const allNew = created.length > 0 && created.every((i) => approved.has(i.id));
-  const someNew = created.some((i) => approved.has(i.id));
+  // What will be written: the approved items and what they need.
+  const effective = withNeeds(approved);
+  const alsoCreates = (item: (typeof plan.items)[number]) =>
+    (item.needs ?? [])
+      .map((id) => byId.get(id))
+      .filter((n): n is NonNullable<typeof n> => n !== undefined)
+      .map((n) => n.title || 'Untitled');
+  const allNew = created.length > 0 && created.every((i) => effective.has(i.id));
+  const someNew = created.some((i) => effective.has(i.id));
 
   const apply = async () => {
     setBusy(true);
     onError(null);
     try {
       onApplied(
-        await call('import.apply', { planId: plan.planId, approved: [...approved], saveMapping }),
+        await call('import.apply', {
+          planId: plan.planId,
+          approved: [...effective],
+          saveMapping,
+        }),
       );
     } catch (e) {
       onError(plainError(e));
@@ -928,11 +995,17 @@ function ChangeSetView(props: {
               <label className="check">
                 <input
                   type="checkbox"
-                  checked={approved.has(item.id)}
+                  checked={effective.has(item.id)}
                   onChange={(e) => toggle(item.id, e.target.checked)}
                 />{' '}
                 <strong>{item.title}</strong>
                 <span className="example-note"> {item.ref}</span>
+                {effective.has(item.id) && alsoCreates(item).length > 0 && (
+                  <span className="example-note" data-testid="import-also-creates">
+                    {' '}
+                    also creates {alsoCreates(item).join(', ')}
+                  </span>
+                )}
               </label>
               <table className="diff-table">
                 <thead>
@@ -1017,7 +1090,7 @@ function ChangeSetView(props: {
                   <label className="check">
                     <input
                       type="checkbox"
-                      checked={approved.has(i.id)}
+                      checked={effective.has(i.id)}
                       onChange={(e) => toggle(i.id, e.target.checked)}
                     />{' '}
                     {i.title || 'Untitled'}{' '}
@@ -1025,6 +1098,12 @@ function ChangeSetView(props: {
                       {collectionInfo[i.collection].singular}, {i.ref}
                       {i.note ? `. ${i.note}` : ''}
                     </span>
+                    {effective.has(i.id) && alsoCreates(i).length > 0 && (
+                      <span className="example-note" data-testid="import-also-creates">
+                        {' '}
+                        also creates {alsoCreates(i).join(', ')}
+                      </span>
+                    )}
                   </label>
                 </li>
               ))}
@@ -1053,10 +1132,10 @@ function ChangeSetView(props: {
           type="button"
           className="btn primary"
           data-testid="import-apply"
-          disabled={busy || approved.size === 0}
+          disabled={busy || effective.size === 0}
           onClick={() => void apply()}
         >
-          Import {approved.size} {approved.size === 1 ? 'change' : 'changes'}
+          Import {effective.size} {effective.size === 1 ? 'change' : 'changes'}
         </button>
         <button type="button" className="btn" onClick={onBack}>
           Back

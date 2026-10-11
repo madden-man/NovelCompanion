@@ -17,14 +17,9 @@ export function sheetPrefix(fileName: string, sheet: string): string {
   return `${fileName}#${sheet}!`;
 }
 
-/** A cell of a grid sheet, such as `East_Winds_World.xlsx#High Level!C12`. */
+/** A cell of a sheet, such as the name cell of a table row or a grid cell, such as `East_Winds_World.xlsx#High Level!C12`. */
 export function cellRef(fileName: string, sheet: string, row: number, column: number): string {
   return `${sheetPrefix(fileName, sheet)}${columnLetters(column)}${row}`;
-}
-
-/** A whole row of a table sheet, such as `East_Winds_World.xlsx#Sullivan!R12`. */
-export function rowRef(fileName: string, sheet: string, row: number): string {
-  return `${sheetPrefix(fileName, sheet)}R${row}`;
 }
 
 /** A run of paragraphs in a document, such as `Dawns_Life.docx#p1-p42`. */

@@ -125,7 +125,7 @@ describe('IM-2 rows that fail are reported with the reason and the rest import',
     expect(set.failed[0]!.reason).toMatch(
       /Birth.*"not a year" is not a year, a date, or "unknown"/,
     );
-    expect(set.failed[0]!.ref).toBe('fixture-workbook.xlsx#People!R9');
+    expect(set.failed[0]!.ref).toBe('fixture-workbook.xlsx#People!B9');
   });
 
   test('IM-2 a grid cell outside any heading or label fails with a reason', async () => {
@@ -149,8 +149,8 @@ describe('IM-6 every imported entry records its source file and location', () =>
       .plan(wb, people)
       .set.items.filter((i) => i.collection === 'characters');
     expect(t.map((i) => i.data!.sourceRef).slice(0, 2)).toEqual([
-      'fixture-workbook.xlsx#People!R2',
-      'fixture-workbook.xlsx#People!R3',
+      'fixture-workbook.xlsx#People!B2',
+      'fixture-workbook.xlsx#People!B3',
     ]);
     const g = SimBible.empty().plan(wb, grid).set.items;
     expect(g.map((i) => i.data!.sourceRef)).toContain('fixture-workbook.xlsx#High Level!B3');
@@ -187,7 +187,7 @@ describe('IM-3 re-import updates instead of duplicating and shows the change set
     });
     expect(set.items[0]!.patch).toEqual({
       death: { year: 2042 },
-      sourceRef: 'fixture-workbook.xlsx#People!R2',
+      sourceRef: 'fixture-workbook.xlsx#People!B2',
     });
   });
 
@@ -199,6 +199,7 @@ describe('IM-3 re-import updates instead of duplicating and shows the change set
     const moved = structuredClone(wb);
     // An empty row inserted at the top shifts every cell down one row.
     moved.sheets[1]!.cells.splice(1, 0, ['', null, null, null, null, null]);
+    moved.sheets[1]!.boldRows = moved.sheets[1]!.boldRows!.map((r) => (r >= 2 ? r + 1 : r));
     const { set } = sim.plan(moved, grid);
     expect(set.items).toEqual([]);
     expect(set.unchanged).toBe(7);
@@ -583,3 +584,258 @@ const gridBase: GridMapping = {
   createMissing: false,
   matchIn: 'sheet',
 };
+
+describe('review fixes: identity, headings, skipped rows, and sources', () => {
+  test('IM-7 IM-3 an older source imported a second time is already recorded and says nothing new', async () => {
+    const wb = await fixtureWorkbook();
+    const sim = SimBible.empty();
+    sim.apply(sim.plan(wb, people).set);
+    const older = structuredClone(wb);
+    older.sheets[0]!.cells[1]![3] = 1900;
+    const olderFile = { ...FILE, modifiedAt: '2025-06-01T00:00:00.000Z' };
+    const first = sim.plan(older, people, olderFile).set;
+    expect(first.items).toHaveLength(1);
+    sim.apply(first);
+    const second = sim.plan(older, people, olderFile).set;
+    expect(second.items).toEqual([]);
+    expect(second.unchanged).toBe(7);
+  });
+
+  test('IM-3 a hand edit to the identity field does not hide the entry: the recorded value still matches it', async () => {
+    const wb = await fixtureWorkbook();
+    const sim = SimBible.empty();
+    sim.apply(sim.plan(wb, people).set);
+    sim.entries('characters')[0]!.title = 'Maggie Hale';
+    const edited = structuredClone(wb);
+    edited.sheets[0]!.cells[1]![6] = 'Married to Peter 1982 to 2031';
+    const { set } = sim.plan(edited, people, { ...FILE, modifiedAt: '2026-02-01T00:00:00.000Z' });
+    expect(set.items.filter((i) => i.kind === 'new' && i.collection === 'characters')).toEqual([]);
+    expect(set.items.filter((i) => i.kind === 'changed')).toHaveLength(1);
+    expect(set.items[0]).toMatchObject({ kind: 'changed', title: 'Maggie Hale' });
+    // The person's new name stands.
+    expect(set.items[0]!.deltas.map((d) => d.path)).toEqual(['sourceNote']);
+  });
+
+  test('IM-3 a grid event whose title was edited by hand still matches by its recorded category and year', async () => {
+    const wb = await fixtureWorkbook();
+    const sim = SimBible.fromFixture();
+    sim.apply(sim.plan(wb, grid).set);
+    const courier = sim.entries('worldEvents').find((e) => e.title === 'Robot couriers')!;
+    courier.start = { year: 2046 };
+    const { set } = sim.plan(wb, grid);
+    expect(set.items.filter((i) => i.kind === 'new')).toEqual([]);
+    expect(set.unchanged).toBe(7);
+  });
+
+  test('IM-6 a table row ref names the identity column and a grid ref names the cell', async () => {
+    const wb = await fixtureWorkbook();
+    const byName = SimBible.empty().plan(wb, people).rows.rows;
+    expect(byName.find((r) => r.ok && r.data.title === 'Zhou Lan')!.ref).toBe(
+      'fixture-workbook.xlsx#People!B6',
+    );
+    const byChinese = SimBible.empty().plan(wb, { ...people, identity: ['names.chinese'] }).rows
+      .rows;
+    expect(byChinese.find((r) => r.ok && r.data.title === 'Zhou Lan')!.ref).toBe(
+      'fixture-workbook.xlsx#People!C6',
+    );
+    const cells = SimBible.empty().plan(wb, grid).rows.rows;
+    expect(cells.find((r) => r.ok && r.data.title === 'Robot couriers')!.ref).toBe(
+      'fixture-workbook.xlsx#High Level!E3',
+    );
+  });
+
+  test('IM-6 IM-7 a field filled by a second source keeps the newer source on the entry and records both sources', async () => {
+    const wb = await fixtureWorkbook();
+    const sim = SimBible.empty();
+    sim.apply(sim.plan(wb, people).set);
+    const other = structuredClone(wb);
+    other.fileName = 'other-notes.xlsx';
+    other.sheets[0]!.cells[1]![4] = 2043;
+    const across: Mapping = { ...people, matchIn: 'section' };
+    const { set } = sim.plan(other, across, {
+      fileName: 'other-notes.xlsx',
+      modifiedAt: '2026-04-01T00:00:00.000Z',
+    });
+    sim.apply(set);
+    const margaret = sim.entries('characters')[0]!;
+    expect(margaret.sourceRef).toBe('other-notes.xlsx#People!B2');
+    const death = sim.sources.get(String(margaret._id))!.find((r) => r.path === 'death')!;
+    expect(death.ref).toBe('other-notes.xlsx#People!B2');
+    expect(death.others.map((o) => o.ref)).toEqual(['fixture-workbook.xlsx#People!B2']);
+    // The name was filled by the first file and is still recorded against it.
+    expect(sim.sources.get(String(margaret._id))!.find((r) => r.path === 'title')!.ref).toBe(
+      'fixture-workbook.xlsx#People!B2',
+    );
+  });
+
+  test('IM-1 heading rows match by label, so a part with an empty merge or only its label is a part, not a book', () => {
+    const plot = [
+      ['Scene', 'Year', null, null],
+      ['Book One', null, null, null],
+      ['Part One: Roots', 'About the roots', 'About the roots', 'About the roots'],
+      ['A scene', 2010, null, null],
+      ['Part Two: Branches', null, null, null],
+      ['Another scene', 2011, null, null],
+      ['Part Three: Leaves', null, null, null],
+      ['Book Two', null, null, null],
+      ['Last scene', 2020, null, null],
+    ];
+    const book = {
+      fileName: 'plot.xlsx',
+      modifiedAt: '2026-01-15T09:00:00.000Z',
+      sheets: [
+        {
+          name: 'Plot',
+          cells: plot,
+          // Part One has a text banner, Part Two an empty merged banner as the real sheet's parts do, and Part Three only its label.
+          merges: [
+            { top: 3, left: 2, bottom: 3, right: 4 },
+            { top: 5, left: 2, bottom: 5, right: 4 },
+          ],
+        },
+      ],
+    };
+    const mapping: TableMapping = {
+      shape: 'table',
+      sheet: 'Plot',
+      target: { collection: 'chapters' },
+      headerRow: 1,
+      columns: [
+        { header: 'Scene', index: 0, field: 'title' },
+        { header: 'Year', index: 1, field: 'strand.startYear' },
+      ],
+      identity: ['title'],
+      fixed: { status: 'planned' },
+      addMissingListItems: false,
+      createMissing: false,
+      matchIn: 'sheet',
+      headings: [
+        {
+          collection: 'books',
+          match: 'single',
+          labelPattern: '^Book\\b',
+          linkField: 'bookId',
+          numberField: 'number',
+          fixed: {},
+        },
+        {
+          collection: 'parts',
+          match: 'banner',
+          labelPattern: '^Part\\b',
+          linkField: 'partId',
+          parentLinkField: 'bookId',
+          textField: 'summary',
+          numberField: 'number',
+          implicitTitle: 'No part',
+          fixed: {},
+        },
+      ],
+    };
+    const { rows, set } = SimBible.empty().plan(book, mapping);
+    expect(set.failed).toEqual([]);
+    const of = (c: string) => rows.rows.filter((r) => r.ok && r.collection === c);
+    expect(of('books').map((r) => r.data.title)).toEqual(['Book One', 'Book Two']);
+    expect(of('parts').map((r) => [r.data.title, r.data.number])).toEqual([
+      ['Part One: Roots', 1],
+      ['Part Two: Branches', 2],
+      ['Part Three: Leaves', 3],
+      ['No part', 1],
+    ]);
+    const bookOne = of('books')[0]!;
+    expect(
+      of('parts')
+        .slice(0, 3)
+        .every((p) => p.data.bookId === bookOne.newId),
+    ).toBe(true);
+    // Chapters go under the most recent part.
+    const scenes = of('chapters');
+    expect(
+      scenes.map((s) => [s.data.title, of('parts').findIndex((p) => p.newId === s.data.partId)]),
+    ).toEqual([
+      ['A scene', 0],
+      ['Another scene', 1],
+      ['Last scene', 3],
+    ]);
+  });
+
+  test('IM-2 a grid skips chapter rows and a characters block above its start row, and reports what it skipped', async () => {
+    const wb = await fixtureWorkbook();
+    const sheet = structuredClone(wb.sheets[1]!);
+    const bold = new Set(sheet.boldRows ?? []);
+    const before = [
+      ['Part One: Roots', null, null, null, null, null],
+      ['Ch. 1: Mark Feels Free', 'A scene', 'Another scene', null, null, null],
+      ['Characters', null, null, null, null, null],
+      ['Sullivan Family', null, null, null, null, null],
+      ['Frank', 'born', null, null, null, null],
+      ['Foundational Drivers', null, null, null, null, null],
+    ];
+    sheet.cells.splice(1, 0, ...before);
+    sheet.boldRows = [1, 2, 4, 7, ...[...bold].filter((r) => r > 1).map((r) => r + before.length)];
+    const mapping: GridMapping = {
+      ...grid,
+      startLabel: '^Foundational Drivers$',
+      skipLabels: ['^Ch\\.?\\s*\\d+', '^Part\\b'],
+    };
+    const { rows, set } = SimBible.fromFixture().plan(
+      { ...wb, sheets: [wb.sheets[0]!, sheet] },
+      mapping,
+    );
+    expect(set.failed).toEqual([]);
+    expect(rows.rows.filter((r) => r.ok)).toHaveLength(7);
+    expect(set.listAdds.map((a) => a.label).sort()).toEqual(['Floods', 'Trade']);
+    expect(rows.notes).toHaveLength(1);
+    expect(rows.notes[0]).toMatch(/Skipped 5 rows \(rows 2 to 6\) with 3 filled cells/);
+    expect(rows.notes[0]).toContain('Ch. 1: Mark Feels Free');
+    expect(rows.notes[0]).toContain('Frank');
+    // A start label that matches nothing skips nothing and says so.
+    const missing = SimBible.fromFixture().plan(wb, { ...grid, startLabel: '^Nowhere$' });
+    expect(missing.rows.rows.filter((r) => r.ok)).toHaveLength(7);
+    expect(missing.rows.notes[0]).toContain('No row matches the start label');
+  });
+
+  test('IM-1 a label with no cells is a heading only when the mapping marks it: an empty Drones row does not take Ships', () => {
+    const book = {
+      fileName: 'world.xlsx',
+      modifiedAt: '2026-01-15T09:00:00.000Z',
+      sheets: [
+        {
+          name: 'Plot',
+          cells: [
+            ['World', 2030, 2035],
+            ['Technology', null, null],
+            ['Drones', null, null],
+            ['Ships', 'First hull', null],
+          ],
+          merges: [],
+          boldRows: [2],
+        },
+      ],
+    };
+    const path = (mapping: GridMapping) => {
+      const sim = SimBible.empty();
+      const { set } = sim.plan(book, mapping);
+      sim.apply(set);
+      const list = sim.lists.get('eventCategories')!;
+      const event = sim.entries('worldEvents')[0]!;
+      const out: string[] = [];
+      for (let id: string | null = String(event.categoryId); id;) {
+        const item = list.items.find((i) => i.id === id)!;
+        out.unshift(item.label);
+        id = item.parentId;
+      }
+      return out;
+    };
+    expect(path(gridBase)).toEqual(['Technology', 'Ships']);
+    expect(path({ ...gridBase, headingBy: 'rows', headingRows: [2] })).toEqual([
+      'Technology',
+      'Ships',
+    ]);
+    expect(path({ ...gridBase, headingBy: 'pattern', headingPattern: '^Tech' })).toEqual([
+      'Technology',
+      'Ships',
+    ]);
+    // The old reading, every label-only row, is still there when asked for.
+    expect(path({ ...gridBase, headingBy: 'any' })).toEqual(['Drones', 'Ships']);
+  });
+});

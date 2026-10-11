@@ -97,6 +97,20 @@ describe('KN-1 who knows a fact and what a character knows', () => {
     expect(knownBy(twice, 'H5', 2075).known.map((f) => f.factId)).toContain('F1');
   });
 
+  test('KN-1 whoKnows lists a character once per fact and keeps the earliest record', () => {
+    const twice = fromCollections({
+      ...fx,
+      knowledgeRecords: [
+        ...fx.knowledgeRecords!,
+        { _id: 'K8', factId: 'F1', characterId: 'Z3', yearLearned: 2040, how: 'Told again' },
+        { _id: 'K9', factId: 'F1', characterId: 'Z3', yearLearned: null, how: '' },
+      ],
+    });
+    const knowers = whoKnows(twice, 'F1');
+    expect(knowers.map((k) => [k.characterId, k.yearLearned])).toEqual([['Z3', 2028]]);
+    expect(whoKnows(twice, 'F1', 2030)).toHaveLength(1);
+  });
+
   test('KN-1 a record with no year is listed on the fact but never counts as known by a year', () => {
     const withBlank = fromCollections({
       ...fx,

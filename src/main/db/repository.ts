@@ -43,7 +43,7 @@ import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/roma
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
-import { conflictQuestion } from '../../shared/domain/import';
+import { conflictQuestion, questionCovers } from '../../shared/domain/import';
 import type { ChangeItem, ListAdd, SourceRecord } from '../../shared/domain/import';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
@@ -1224,10 +1224,26 @@ export class Repository {
     file: { fileName: string; modifiedAt: string };
     items: ChangeItem[];
     listAdds: ListAdd[];
+    /** Custom sections to make in the same transaction, for a general note. */
+    createSections?: { id: string; name: string }[];
   }): Promise<{ created: number; updated: number; questions: number }> {
     await this.bulkGuard('import');
     const note = `Imported from ${input.file.fileName}`;
     const changes: Change[] = [];
+    // Made only here, after the snapshot, and in the same transaction as the entries that use them.
+    const newSections = new Set<string>();
+    for (const section of input.createSections ?? []) {
+      newSections.add(section.id);
+      changes.push({
+        ...this.buildCreate('customSections', {
+          _id: section.id,
+          name: section.name,
+          fields: [],
+          briefRule: 'never',
+        }),
+        note,
+      });
+    }
     let created = 0;
     let updated = 0;
     let questions = 0;
@@ -1235,10 +1251,14 @@ export class Repository {
     for (const item of input.items) {
       this.assertCollection(item.collection);
       if (item.kind === 'new') {
-        const change = this.buildCreate(item.collection, {
+        const data: Record<string, unknown> = {
           ...(item.data as Record<string, unknown>),
           _id: item.entryId,
-        });
+        };
+        // An entry of a section made in this same import has no section in the read model yet.
+        const change = newSections.has(String(data.sectionId))
+          ? this.buildCreateUnchecked(item.collection, data)
+          : this.buildCreate(item.collection, data);
         changes.push({ ...change, note });
         created += 1;
       } else {
@@ -1256,7 +1276,22 @@ export class Repository {
       if (item.records.length) {
         touched.set(item.entryId, { collection: item.collection, records: item.records });
       }
-      const conflicts = item.deltas.flatMap((d) => (d.conflict ? [d.conflict] : []));
+      // A conflict an open question about this entry already lists (same field, same claims) is not asked again.
+      const asked = this.model
+        .all('openQuestions')
+        .filter(
+          (q) =>
+            !q.deletedAt &&
+            q.state === 'open' &&
+            Array.isArray(q.links) &&
+            (q.links as { targetId?: unknown; kind?: unknown }[]).some(
+              (l) => l.targetId === item.entryId && l.kind === 'conflict',
+            ),
+        )
+        .map((q) => String(q.question ?? ''));
+      const conflicts = item.deltas
+        .flatMap((d) => (d.conflict ? [d.conflict] : []))
+        .filter((c) => !asked.some((text) => questionCovers(text, c)));
       if (conflicts.length) {
         const q = conflictQuestion(item.title, conflicts);
         changes.push({

@@ -31,8 +31,8 @@ const byYear = (a: { yearLearned: number | null }, b: { yearLearned: number | nu
   (a.yearLearned ?? Infinity) - (b.yearLearned ?? Infinity);
 
 /**
- * KN-1: every character who learns a fact, earliest first. With a year, only
- * those who have learned it by then.
+ * KN-1: every character who learns a fact, earliest first, once each (the
+ * earliest record counts). With a year, only those who have learned it by then.
  */
 export function whoKnows(data: TimelineData, factId: string, year?: number): Knower[] {
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
@@ -52,8 +52,9 @@ export function whoKnows(data: TimelineData, factId: string, year?: number): Kno
       chapterLearnedId: str(k.chapterLearnedId) || null,
       how: str(k.how),
     }))
-    .filter((k) => year === undefined || isKnownBy(k.yearLearned, year) === true)
-    .sort((a, b) => byYear(a, b) || a.name.localeCompare(b.name));
+    .sort((a, b) => byYear(a, b) || a.name.localeCompare(b.name))
+    .filter((k, i, all) => all.findIndex((o) => o.characterId === k.characterId) === i)
+    .filter((k) => year === undefined || isKnownBy(k.yearLearned, year) === true);
 }
 
 export interface KnownFact {

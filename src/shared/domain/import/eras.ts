@@ -82,8 +82,9 @@ export function erasFromBlocks(source: DocBlock[]): { eras: EraDraft[]; skipped:
   for (const section of sectionsAt(blocks, eraLevel)) {
     const years = section.heading ? yearsInHeading(section.heading.text) : null;
     if (!section.heading || !years || section.heading.level !== eraLevel) {
+      // A heading above the eras may stand alone (a title), but text under it is kept for the general note.
       const isUpper = section.heading !== null && section.heading.level < eraLevel;
-      if (!isUpper && (section.blocks.length || section.heading)) skipped.push(section);
+      if (section.blocks.length || (section.heading && !isUpper)) skipped.push(section);
       continue;
     }
     const subs = sectionsAt(section.blocks, 4);

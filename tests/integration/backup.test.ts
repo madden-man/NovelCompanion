@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createBible } from '../../src/main/db';
 import type { Store } from '../../src/main/db';
 import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
-import { openBibleSession } from '../../src/main/db/session';
+import { openBibleForApp, openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
 import { dumpBible } from '../../src/main/backup/dump';
 import { exportBibleJson, importBibleJson, isEmptyBible } from '../../src/main/backup/json';
@@ -439,5 +439,34 @@ describe('BK-1 SnapshotService is bound to one bible', () => {
     await one.snapshots!.take('manual');
     expect(await two.snapshots!.list()).toEqual([]);
     expect(new SnapshotService(two.handle, root).folder).toBe(join(root, two.handle.id));
+  });
+});
+
+describe('BK-1 the first open of the day takes one snapshot', () => {
+  test('BK-1 opening a bible twice on one day and once the next day takes exactly one snapshot per day', async () => {
+    const handle = await loadFixture(store, freshSlug('bk-daily'));
+    const daily = join(root, 'bk-daily-root');
+    let clock = new Date('2026-03-10T10:00:00.000Z');
+    const options = { snapshotRoot: daily, now: () => clock };
+    const taken = async () => {
+      const list = await new SnapshotService(handle, daily).list();
+      return list.filter((s) => s.reason === 'daily').map((s) => s.takenAt.slice(0, 10));
+    };
+    await openBibleForApp(store, handle.id, options);
+    expect(await taken()).toEqual(['2026-03-10']);
+    clock = new Date('2026-03-10T10:20:00.000Z');
+    await openBibleForApp(store, handle.id, options);
+    expect(await taken()).toEqual(['2026-03-10']);
+    clock = new Date('2026-03-11T10:00:00.000Z');
+    await openBibleForApp(store, handle.id, options);
+    expect((await taken()).sort()).toEqual(['2026-03-10', '2026-03-11']);
+  });
+
+  test('BK-1 a snapshot that cannot be written never stops the bible from opening', async () => {
+    const handle = await loadFixture(store, freshSlug('bk-daily-fail'));
+    const blocked = join(root, 'bk-daily-blocked');
+    await writeFile(blocked, 'a file where the snapshot folder should be');
+    const open = await openBibleForApp(store, handle.id, { snapshotRoot: blocked });
+    expect(open.repo.get('characters', 'H1')).toBeDefined();
   });
 });

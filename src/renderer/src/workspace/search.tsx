@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ENTRY_COLLECTIONS, collectionInfo, entryTitle } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Request, Response } from '../../../shared/ipc';
@@ -35,8 +35,12 @@ export function SearchView(props: {
   const [tag, setTag] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [hits, setHits] = useState<Hit[]>([]);
-  const [total, setTotal] = useState(0);
+  /** The hits last returned, with the query key they answer. */
+  const [settled, setSettled] = useState<{ key: string; hits: Hit[]; total: number }>({
+    key: '',
+    hits: [],
+    total: 0,
+  });
   const [error, setError] = useState<string | null>(null);
   const ids = {
     q: useId(),
@@ -50,10 +54,8 @@ export function SearchView(props: {
     to: useId(),
   };
 
-  useEffect(() => {
-    if (!query.trim()) return;
-    let live = true;
-    const filters: NonNullable<Request<'search.query'>['filters']> = {
+  const filters = useMemo(() => {
+    const f: NonNullable<Request<'search.query'>['filters']> = {
       ...(section ? { sections: [section as EntryCollection] } : {}),
       ...(status ? { status: [status as 'canon' | 'planned' | 'idea'] } : {}),
       ...(provenance ? { provenance: [provenance as 'researched' | 'invented'] } : {}),
@@ -63,21 +65,33 @@ export function SearchView(props: {
       ...(intOrNull(from) !== null ? { yearFrom: intOrNull(from) } : {}),
       ...(intOrNull(to) !== null ? { yearTo: intOrNull(to) } : {}),
     };
+    return f;
+  }, [section, status, provenance, familyId, placeId, tag, from, to]);
+  /** Names the query and filters the list on screen must answer. */
+  const queryKey = JSON.stringify({ query: query.trim(), filters });
+
+  useEffect(() => {
+    if (!query.trim()) return;
+    let live = true;
     call('search.query', { query, filters, limit: LIMIT })
       .then((r) => {
         if (!live) return;
-        setHits(r.hits);
-        setTotal(r.total);
+        setSettled({ key: queryKey, hits: r.hits, total: r.total });
         setError(null);
       })
       .catch((e: unknown) => {
-        if (live) setError(plainError(e));
+        if (!live) return;
+        setSettled({ key: queryKey, hits: [], total: 0 });
+        setError(plainError(e));
       });
     return () => {
       live = false;
     };
-  }, [query, section, status, provenance, familyId, placeId, tag, from, to, version]);
+  }, [query, filters, queryKey, version]);
 
+  const { hits, total } = settled;
+  // A search is in flight until the hits on screen answer the current query and filters.
+  const busy = query.trim() !== '' && settled.key !== queryKey;
   const shown = query.trim() ? hits : [];
   const yearBad =
     (from.trim() !== '' && intOrNull(from) === null) ||
@@ -187,45 +201,51 @@ export function SearchView(props: {
           {error}
         </p>
       )}
-      {!query.trim() ? (
-        <p className="example-note">Type to search every entry, chapter text, and brief.</p>
-      ) : shown.length === 0 ? (
-        <p className="example-note" data-testid="search-empty" role="status">
-          Nothing matches.
-        </p>
-      ) : (
-        <>
-          <p className="example-note" role="status" data-testid="search-count">
-            {total === 1 ? '1 match' : `${total} matches`}
-            {total > shown.length ? `, showing the first ${shown.length}` : ''}
+      <div
+        data-testid="search-region"
+        aria-busy={busy ? 'true' : 'false'}
+        data-query-key={queryKey}
+      >
+        {!query.trim() ? (
+          <p className="example-note">Type to search every entry, chapter text, and brief.</p>
+        ) : shown.length === 0 ? (
+          <p className="example-note" data-testid="search-empty" role="status">
+            Nothing matches.
           </p>
-          <ul className="stack-list search-results" data-testid="search-results">
-            {shown.map((h) => (
-              <li key={`${h.collection}:${h.id}`}>
-                <button
-                  type="button"
-                  className="entry-row"
-                  data-hit={h.id}
-                  onClick={() => props.onOpen(h.collection, h.id)}
-                >
-                  <span className="row tight">
-                    <span className="eyebrow">{collectionInfo[h.collection].singular}</span>
-                    <span className="entry-title">
-                      <Zh text={h.title} actions={false} />
+        ) : (
+          <>
+            <p className="example-note" role="status" data-testid="search-count">
+              {total === 1 ? '1 match' : `${total} matches`}
+              {total > shown.length ? `, showing the first ${shown.length}` : ''}
+            </p>
+            <ul className="stack-list search-results" data-testid="search-results">
+              {shown.map((h) => (
+                <li key={`${h.collection}:${h.id}`}>
+                  <button
+                    type="button"
+                    className="entry-row"
+                    data-hit={h.id}
+                    onClick={() => props.onOpen(h.collection, h.id)}
+                  >
+                    <span className="row tight">
+                      <span className="eyebrow">{collectionInfo[h.collection].singular}</span>
+                      <span className="entry-title">
+                        <Zh text={h.title} actions={false} />
+                      </span>
+                      {h.status && <span className={`chip ${h.status}`}>{h.status}</span>}
                     </span>
-                    {h.status && <span className={`chip ${h.status}`}>{h.status}</span>}
-                  </span>
-                  {h.snippet && (
-                    <span className="example-note">
-                      <Zh text={h.snippet} actions={false} />
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+                    {h.snippet && (
+                      <span className="example-note">
+                        <Zh text={h.snippet} actions={false} />
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </section>
   );
 }

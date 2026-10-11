@@ -38,16 +38,27 @@ function parseSheet(ws: ExcelJS.Worksheet): ParsedSheet {
   const rows = ws.rowCount;
   const columns = ws.columnCount;
   const cells: Cell[][] = [];
+  const boldRows: number[] = [];
   for (let r = 1; r <= rows; r++) {
     const row = ws.getRow(r);
     const line: Cell[] = [];
-    for (let c = 1; c <= columns; c++) line.push(normalizeCell(row.getCell(c).value));
+    let boldChecked = false;
+    for (let c = 1; c <= columns; c++) {
+      const cell = row.getCell(c);
+      const value = normalizeCell(cell.value);
+      line.push(value);
+      // Heading rows are often set in bold: note the rows whose first filled cell is.
+      if (!boldChecked && value !== null && value !== '') {
+        boldChecked = true;
+        if (cell.font?.bold === true) boldRows.push(r);
+      }
+    }
     cells.push(line);
   }
   const merges = ((ws.model as { merges?: string[] }).merges ?? [])
     .map(parseRange)
     .filter((m): m is MergeRange => m !== null);
-  return { name: ws.name, cells, merges };
+  return { name: ws.name, cells, merges, ...(boldRows.length ? { boldRows } : {}) };
 }
 
 /** Read a workbook's sheets as plain grids (IM-1). Numbers such as 2055.0 come out as 2055. */

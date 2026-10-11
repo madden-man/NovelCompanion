@@ -194,9 +194,30 @@ describe('IM-4 World Development: era states by their headings', () => {
     ]);
     expect(eras[0]!.fields).toEqual({ technology: '<p>Robots.</p>', climate: '<p>Floods.</p>' });
     expect(eras[0]!.body).toBe('<p>It starts quietly.</p>');
-    expect(skipped.map((s) => s.heading?.text ?? null)).toEqual(['A note']);
+    expect(skipped.map((s) => s.heading?.text ?? null)).toEqual([
+      'How the world gets here',
+      'A note',
+    ]);
     expect(yearsInHeading('2040-2049')).toEqual({ start: 2040, end: 2049 });
     expect(yearsInHeading('Nothing here')).toBeNull();
+  });
+
+  test('IM-2 IM-4 text under a heading above the era headings is skipped for the general note, not dropped', () => {
+    const blocks = parseBlocks(
+      '<h1>East Winds: the world</h1><p>Framing paragraph one.</p><p>Framing paragraph two.</p><h2>2025\u20132038: The divide</h2><p>Era text.</p><h2>2039: The hinge</h2><p>More.</p>',
+    );
+    const { eras, skipped } = erasFromBlocks(blocks);
+    expect(eras.map((e) => e.name)).toEqual(['2025\u20132038: The divide', '2039: The hinge']);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]!.heading?.text).toBe('East Winds: the world');
+    expect(skipped[0]!.blocks.map((b) => b.text)).toEqual([
+      'Framing paragraph one.',
+      'Framing paragraph two.',
+    ]);
+    // A bare title above the eras has nothing to lose.
+    expect(
+      erasFromBlocks(parseBlocks('<h1>Title</h1><h2>2039: The hinge</h2><p>x</p>')).skipped,
+    ).toEqual([]);
   });
 
   test('IM-4 a document with no heading styles uses its capital letter lines as headings', () => {

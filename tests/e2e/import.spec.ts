@@ -99,7 +99,7 @@ test('IM-2 IM-3 the compare step shows the change set, and the import writes wha
   ]);
   // IM-6: each entry carries where it came from.
   const lan = people.entries.find((e) => e.entry.title === 'Zhou Lan')!.entry;
-  expect(lan.sourceRef).toBe('fixture-workbook.xlsx#People!R6');
+  expect(lan.sourceRef).toBe('fixture-workbook.xlsx#People!B6');
 });
 
 test('IM-1 a grid sheet imports its cells as world events under the categories the rows and headings give', async () => {
@@ -145,7 +145,7 @@ test('IM-1 IM-3 IM-7 re-importing a changed file reuses the saved mapping, lists
   await expect(change.locator('ins')).toHaveText('2042');
   await expect(view().getByTestId('import-conflict')).toContainText('Sources disagree about Death');
   await expect(view().getByTestId('import-conflict')).toContainText(
-    'fixture-workbook.xlsx#People!R2',
+    'fixture-workbook.xlsx#People!B2',
   );
 
   // Unchecked, nothing is written.
