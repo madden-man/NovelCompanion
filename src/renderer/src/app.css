@@ -1751,7 +1751,7 @@ label.check {
   width: 5.5em;
 }
 .topbar-writing {
-  flex: 1 1 320px;
+  flex: 1 1 240px;
 }
 .topbar-writing select {
   flex: 1;
@@ -1759,4 +1759,59 @@ label.check {
 }
 .topbar-session {
   margin-left: auto;
+}
+
+/* M7: dashboard, Relevant to Session, Start session, briefs, manuscript. */
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.tile-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sel-group h4 {
+  margin: 6px 0 2px;
+  font-size: 0.95rem;
+}
+.sel-detail {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.brief-body h1 {
+  font-size: 1.3rem;
+}
+.brief-body h2 {
+  font-size: 1.1rem;
+  margin-top: 14px;
+}
+.brief-body .cite {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.brief-body .cite.bad {
+  border-color: var(--critical);
+  color: var(--fg);
+  background: color-mix(in oklab, var(--critical) 14%, var(--surface));
+  font-weight: 700;
+}
+.brief-body .uncited {
+  background: color-mix(in oklab, var(--critical) 12%, var(--surface));
+}
+.brief-body .uncited-flag {
+  font-size: 0.8rem;
+  border: 1px solid var(--critical);
+  border-radius: 4px;
+  padding: 0 4px;
 }

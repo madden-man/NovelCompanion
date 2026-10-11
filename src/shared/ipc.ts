@@ -10,6 +10,7 @@ import {
   manifests,
 } from './schema';
 import { StoryTimeValue } from './storyTime';
+import { sessionContract } from './ipcSession';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
 import { driveContract } from './ipcDrive';
@@ -1315,6 +1316,8 @@ export const contract = {
   },
   /** Google Drive (M9): see `ipcDrive.ts`. */
   ...driveContract,
+  /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
+  ...sessionContract,
 } as const;
 
 export type Channel = keyof typeof contract;

@@ -6,6 +6,9 @@ import { createBibleWithDefaults, openBibleForApp } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
 import type { ImportBridge, ImportDeps } from './importHandlers';
+import type { SessionDeps } from './sessionHandlers';
+import { printHtmlToPdf } from '../session/pdf';
+import { fakeSessionClaude, registerSessionClaude } from '../session/claude';
 import { DriveService, setDriveService } from '../drive';
 import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
 import { keychainStore, memoryStore } from '../drive/secrets';
@@ -175,7 +178,7 @@ function makeDriveService(): DriveService {
 let importBridge: ImportBridge | null = null;
 let onDriveApplied: ((origin: string) => Promise<void>) | null = null;
 
-const importDeps: ImportDeps = {
+const importDeps: ImportDeps & SessionDeps = {
   bridge: (b) => {
     importBridge = b;
   },
@@ -205,6 +208,21 @@ const importDeps: ImportDeps = {
     });
     return result.canceled ? null : (result.filePath ?? null);
   },
+  /** SB-8: where an exported brief goes. Test builds may name a folder instead of a dialog. */
+  async pickExportPath(defaultName, format) {
+    const dir = testPath('NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR');
+    if (dir) return join(dir, defaultName);
+    const result = await dialog.showSaveDialog({
+      title: format === 'pdf' ? 'Export the brief as a PDF' : 'Export the brief as Markdown',
+      defaultPath: defaultName,
+      filters:
+        format === 'pdf'
+          ? [{ name: 'PDF', extensions: ['pdf'] }]
+          : [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  },
+  printPdf: (html) => printHtmlToPdf(html),
   async pickBibleFile() {
     const forced = testPath('NOVEL_COMPANION_TEST_BIBLE_FILE');
     if (forced) return forced;
@@ -218,6 +236,10 @@ const importDeps: ImportDeps = {
 };
 
 export function registerHandlers(): void {
+  // T-3: test builds can stand a recorded-response Claude in for briefs and summaries (M7).
+  if (!app.isPackaged && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1') {
+    registerSessionClaude(fakeSessionClaude());
+  }
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());

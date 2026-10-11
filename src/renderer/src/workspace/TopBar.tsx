@@ -1,29 +1,23 @@
 import { useId, useMemo, useState } from 'react';
-import { createCommand } from '../../../shared/domain/undoRunner';
-import { localDateString } from '../../../shared/domain/sessionLog';
-import { entryTitle } from '../../../shared/schema';
-import { call, plainError } from '../api';
 import { useEntries } from './data';
 import { useStoryTime } from './storyTime';
 import { useYearView } from './timeline/common';
 import { useStrandOptions } from './timeline/StoryTimeDialog';
-import { useUndo } from './undo';
 
 /**
  * The bar above every screen of an open bible: the story year slider, the
- * chapter being written, and Start session. All three read and write the one
- * story time (TM-3), so the tree, the timeline, and character ages follow them.
+ * chapter being written, Relevant to Session, and Start session. The first two
+ * read and write the one story time (TM-3), so the tree, the timeline,
+ * character ages, and the session selection follow them. Start session opens
+ * the DB-2 flow with the chapter being written as its section.
  */
-export function TopBar() {
+export function TopBar(props: { onRelevant: () => void; onStartSession: () => void }) {
   const story = useStoryTime();
-  const undo = useUndo();
   const characters = useEntries('characters');
   const strands = useStrandOptions();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const [yearDraft, setYearDraft] = useState<string | null>(null);
-  const [session, setSession] = useState<{ startedAt: string; chapter: string } | null>(null);
-  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const ids = { year: useId(), slider: useId(), writing: useId() };
 
   const bounds = useMemo(() => {
@@ -45,29 +39,6 @@ export function TopBar() {
     const s = strands.find((o) => o.key === key);
     if (!s) story.set({ year: time.year });
     else story.set({ year: s.year, chapterId: s.chapterId, strandId: s.strandId });
-  };
-
-  const startSession = async () => {
-    setNote(null);
-    try {
-      await story.flush();
-      const now = new Date();
-      const startedAt = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      const date = localDateString(now);
-      const data = {
-        title: `Session ${date}`,
-        status: 'canon',
-        date,
-        chapterId: writing?.chapterId ?? null,
-        stoppedAt: '',
-        notes: `Started at ${startedAt}, story time ${time.year}.`,
-      };
-      const { entry } = await call('entry.create', { collection: 'sessionLogs', data });
-      undo.record(createCommand('sessionLogs', entry._id, entryTitle(entry)));
-      setSession({ startedAt, chapter: writing?.label ?? 'no chapter picked' });
-    } catch (e) {
-      setNote({ text: plainError(e), bad: true });
-    }
   };
 
   return (
@@ -121,20 +92,23 @@ export function TopBar() {
         </select>
       </div>
       <div className="topbar-session">
-        {session ? (
-          <span role="status" data-testid="session-status">
-            Session started {session.startedAt} ({session.chapter})
-          </span>
-        ) : (
-          <button type="button" className="btn primary" onClick={() => void startSession()}>
-            Start session
-          </button>
-        )}
-        {note && (
-          <span className={note.bad ? 'callout crit' : 'callout'} role="status">
-            {note.text}
-          </span>
-        )}
+        <button
+          type="button"
+          className="btn small"
+          onClick={props.onRelevant}
+          data-testid="top-relevant"
+          title="The entries that matter for the chapter being written"
+        >
+          Relevant to Session
+        </button>
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={props.onStartSession}
+          data-testid="top-start-session"
+        >
+          Start session
+        </button>
       </div>
     </section>
   );
