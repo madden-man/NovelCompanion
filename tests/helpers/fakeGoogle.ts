@@ -160,8 +160,9 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
           const scopes = fake.consent.grant ?? asked;
           const code = `code-${id('c')}`;
           codes.set(code, {
+            // A set `consent.grant` is exactly what comes back, as if earlier grants were gone.
             scopes:
-              p.get('include_granted_scopes') === 'true'
+              p.get('include_granted_scopes') === 'true' && !fake.consent.grant
                 ? [...new Set([...granted, ...scopes])]
                 : scopes,
             challenge: p.get('code_challenge') ?? '',

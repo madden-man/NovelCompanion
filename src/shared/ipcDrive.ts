@@ -122,7 +122,8 @@ export const driveContract = {
   },
   /** GD-3: record that the current version was looked at, without importing it. */
   'drive.markSeen': {
-    request: z.strictObject({ fileId: DriveId }),
+    /** `modifiedTime` is the version the check showed; a later edit stays unreviewed. */
+    request: z.strictObject({ fileId: DriveId, modifiedTime: z.iso.datetime({ offset: true }) }),
     response: z.strictObject({ ok: z.literal(true) }),
   },
   /** GD-4: folders this app created for exports. */

@@ -231,6 +231,16 @@ describe('GD-1 desktop sign-in, read-only for import, secrets in the keychain on
     expect(secrets.dump()).toEqual({});
   });
 
+  test('GD-1 allowing export with the Drive box unticked drops the old tokens, so status says not connected', async () => {
+    const invoke = wire(null);
+    await connected(invoke);
+    fake.consent = { grant: [FILE] };
+    await expect(invoke('drive.allowExport', {})).rejects.toThrow(/left unticked/);
+    expect(fake.revoked).toHaveLength(1);
+    expect(secrets.dump()[TOKENS_ACCOUNT]).toBeUndefined();
+    expect(await invoke('drive.status', {})).toMatchObject({ connected: false, canExport: false });
+  });
+
   test('GD-1 an expired refresh token disconnects and says to connect again', async () => {
     const open = await emptyBible('gd-expired');
     const invoke = wire(open);
@@ -426,11 +436,32 @@ describe('GD-3 changed linked files are reported, and nothing applies without th
       ['Loose sheet', 'new'],
       ['Chapter 3', 'missing'],
     ]);
-    await invoke('drive.markSeen', { fileId: 'sheetLoose' });
+    const shown = check.files.find((f) => f.fileId === 'sheetLoose')!;
+    await invoke('drive.markSeen', { fileId: 'sheetLoose', modifiedTime: shown.modifiedTime! });
     expect(
       (await invoke('drive.check', {})).files.find((f) => f.fileId === 'sheetLoose')!.state,
     ).toBe('unchanged');
     expect(open.repo.list('characters')).toHaveLength(0);
+  });
+
+  test('GD-3 mark as reviewed records the version shown, so an edit made after the check stays unreviewed', async () => {
+    const open = await emptyBible('gd-seen-shown');
+    const invoke = wire(open);
+    await connected(invoke);
+    await invoke('drive.link', { ids: ['sheetLoose'] });
+    const shown = (await invoke('drive.check', {})).files[0]!;
+    expect(shown).toMatchObject({ state: 'new', modifiedTime: '2026-10-01T10:00:00.000Z' });
+    // Tommy edits the sheet in Drive after the check, then clicks Mark as reviewed on the old row.
+    fake.touch('sheetLoose', '2026-10-05T10:00:00.000Z');
+    await invoke('drive.markSeen', { fileId: 'sheetLoose', modifiedTime: shown.modifiedTime! });
+    expect(open.repo.driveState().seen).toEqual([
+      { fileId: 'sheetLoose', modifiedTime: '2026-10-01T10:00:00.000Z', at: expect.any(String) },
+    ]);
+    expect((await invoke('drive.check', {})).files[0]).toMatchObject({
+      state: 'changed',
+      seenModifiedTime: '2026-10-01T10:00:00.000Z',
+      modifiedTime: '2026-10-05T10:00:00.000Z',
+    });
   });
 });
 
@@ -526,6 +557,41 @@ describe('GD-5 disconnecting removes the tokens; the app works without Drive', (
     expect((await invoke('drive.disconnect', {})).connected).toBe(false);
     expect(secrets.dump()[TOKENS_ACCOUNT]).toBeUndefined();
     fake = await startFakeGoogle();
+  });
+
+  test('GD-5 a token refresh still in flight when Disconnect runs never writes the tokens back', async () => {
+    // A fetch that holds the refresh reply until the test releases it.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let refreshing!: () => void;
+    const started = new Promise<void>((r) => (refreshing = r));
+    const gated: typeof fetch = async (input, init) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      // Google has answered the refresh; the reply is held until after Disconnect.
+      const res = await fetch(input, init);
+      if (String(input).endsWith('/token') && body.includes('grant_type=refresh_token')) {
+        refreshing();
+        await held;
+      }
+      return res;
+    };
+    service = new DriveService({
+      secrets,
+      endpoints: endpointsAt(fake.base),
+      openBrowser: async (url) => void (await fetch(url)),
+      fetch: gated,
+    });
+    const invoke = wire(null);
+    await connected(invoke);
+    const t = JSON.parse(secrets.get(TOKENS_ACCOUNT)!) as Record<string, unknown>;
+    secrets.set(TOKENS_ACCOUNT, JSON.stringify({ ...t, expiresAt: 0 }));
+    const browsing = invoke('drive.browse', {});
+    await started;
+    expect((await invoke('drive.disconnect', {})).connected).toBe(false);
+    release();
+    await expect(browsing).rejects.toThrow(/not connected/);
+    expect(secrets.dump()[TOKENS_ACCOUNT]).toBeUndefined();
+    expect((await invoke('drive.status', {})).connected).toBe(false);
   });
 
   test('GD-5 removing the client clears the client and the tokens', async () => {

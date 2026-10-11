@@ -178,6 +178,9 @@ export class DriveService {
       ...(this.d.authTimeoutMs ? { timeoutMs: this.d.authTimeoutMs } : {}),
     });
     if (!set.scopes.includes(SCOPE_READONLY)) {
+      // Revoking one token of a grant revokes the whole grant, so tokens kept
+      // from an earlier connect stop working too: drop them, so status is true.
+      this.d.secrets.delete(TOKENS_ACCOUNT);
       await revokeToken(set.refreshToken, this.d.endpoints, this.f);
       throw new Error(
         'Google Drive was not connected: the box allowing the app to see your Drive files was left unticked. Connect again and tick it.',
@@ -192,7 +195,11 @@ export class DriveService {
     this.saveTokens({ ...set, email: this.tokens()?.email ?? null });
     try {
       const me = await this.api.about();
-      this.saveTokens({ ...set, email: me.email || null });
+      // A disconnect during the lookup wins: write only over this same grant.
+      const now = this.tokens();
+      if (now?.refreshToken === set.refreshToken) {
+        this.saveTokens({ ...now, email: me.email || null });
+      }
     } catch {
       // The account name is a nicety; the connection works without it.
     }
@@ -215,16 +222,22 @@ export class DriveService {
     if (!force && t.expiresAt - 60_000 > Date.now()) return t.accessToken;
     try {
       const fresh = await refreshAccess(client, t.refreshToken, this.d.endpoints, this.f);
+      // GD-5: a disconnect (or a new connect) while the refresh was in flight
+      // wins. Never write a token set back over a cleared or replaced one.
+      const now = this.tokens();
+      if (now?.refreshToken !== t.refreshToken) throw new DriveError(NOT_CONNECTED, 401);
       this.saveTokens({
-        ...t,
+        ...now,
         accessToken: fresh.accessToken,
         expiresAt: fresh.expiresAt,
-        scopes: fresh.scopes ?? t.scopes,
+        scopes: fresh.scopes ?? now.scopes,
       });
       return fresh.accessToken;
     } catch (e) {
       if (e instanceof GoogleAuthError && e.code === 'invalid_grant') {
-        this.d.secrets.delete(TOKENS_ACCOUNT);
+        if (this.tokens()?.refreshToken === t.refreshToken) {
+          this.d.secrets.delete(TOKENS_ACCOUNT);
+        }
         throw new DriveError(e.message, 401);
       }
       throw e;

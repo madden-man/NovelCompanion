@@ -198,6 +198,7 @@ export function DriveSettingsSection() {
  */
 export function DriveLaunchNotice(props: { onReview: () => void }) {
   const [check, setCheck] = useState<Check | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
     let live = true;
@@ -206,12 +207,45 @@ export function DriveLaunchNotice(props: { onReview: () => void }) {
       .then((c) => {
         if (live) setCheck(c);
       })
-      .catch(() => undefined);
+      .catch((e: unknown) => {
+        if (live) setFailed(plainError(e));
+      });
     return () => {
       live = false;
     };
   }, []);
-  if (dismissed || !check) return null;
+  if (dismissed) return null;
+  if (failed) {
+    return (
+      <section
+        className="panel stack tight launch-panel"
+        aria-label="Google Drive changes"
+        data-testid="drive-launch-notice"
+      >
+        <span className="eyebrow">Google Drive</span>
+        <p data-testid="drive-launch-summary">
+          Linked Drive files were not checked for changes. {failed} If it says to connect again,
+          open Settings and click Connect Google Drive.
+        </p>
+        <div className="row">
+          <button
+            type="button"
+            className="btn small primary"
+            onClick={() => {
+              setDismissed(true);
+              props.onReview();
+            }}
+          >
+            Open Google Drive
+          </button>
+          <button type="button" className="btn small" onClick={() => setDismissed(true)}>
+            Later
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (!check) return null;
   const pending = check.files.filter((f) => f.state !== 'unchanged').length;
   if (!pending && !check.missingFolders.length) return null;
   return (
@@ -424,14 +458,17 @@ function LinkedFiles(props: { onReview: (f: Opened) => void }) {
                         >
                           {f.state === 'new' ? 'Import' : 'Review changes'}
                         </button>
-                        {(f.state === 'changed' || f.state === 'new') && (
+                        {(f.state === 'changed' || f.state === 'new') && f.modifiedTime && (
                           <button
                             type="button"
                             className="btn small"
                             disabled={busy}
                             onClick={() =>
                               void run(async () => {
-                                await call('drive.markSeen', { fileId: f.fileId });
+                                await call('drive.markSeen', {
+                                  fileId: f.fileId,
+                                  modifiedTime: f.modifiedTime ?? '',
+                                });
                                 setCheck(await call('drive.check', {}));
                               })
                             }

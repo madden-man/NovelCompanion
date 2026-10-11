@@ -11,7 +11,7 @@ import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
 import { keychainStore, memoryStore } from '../drive/secrets';
 import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
 import type { DriveChannel } from './driveHandlers';
-import { mongoUri } from '../secrets';
+import { TEST_URI_ENV, mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
@@ -147,12 +147,14 @@ const testPath = (name: string): string | null =>
   !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
 
 /**
- * GD-1: the one Drive service. An unpackaged build may point it at a local
- * fake Google (tests), with tokens held in memory instead of the keychain.
+ * GD-1: the one Drive service. An unpackaged build under test never reads
+ * the keychain (as `mongoUri` skips it for a test database), and may point
+ * Drive at a local fake Google.
  */
 const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
 function makeDriveService(): DriveService {
   const base = testPath(TEST_GOOGLE_ENV);
+  const underTest = base !== null || testPath(TEST_URI_ENV) !== null;
   if (base && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(base)) {
     return new DriveService({
       secrets: memoryStore(),
@@ -163,7 +165,7 @@ function makeDriveService(): DriveService {
     });
   }
   return new DriveService({
-    secrets: keychainStore(),
+    secrets: underTest ? memoryStore() : keychainStore(),
     endpoints: GOOGLE_ENDPOINTS,
     // The consent page opens in the system browser, never in the app's window.
     openBrowser: (url) => shell.openExternal(url),

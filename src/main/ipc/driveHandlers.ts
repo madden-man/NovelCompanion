@@ -148,11 +148,13 @@ export function driveHandlers(
       return { file };
     },
 
-    'drive.markSeen': async ({ fileId }) => {
+    'drive.markSeen': async ({ fileId, modifiedTime }) => {
       const s = session();
-      const meta = await service().api.get(fileId);
-      if (!meta) throw new Error('That file is no longer in Google Drive.');
-      await markSeen(s, fileId, new Date(meta.modifiedTime).toISOString());
+      const known =
+        s.repo.driveState().links.some((l) => l.id === fileId) ||
+        (await service().api.get(fileId)) !== null;
+      if (!known) throw new Error('That file is no longer in Google Drive.');
+      await markSeen(s, fileId, new Date(modifiedTime).toISOString());
       return { ok: true as const };
     },
 
