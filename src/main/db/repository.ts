@@ -43,8 +43,8 @@ import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/roma
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
-import { conflictQuestion, questionCovers } from '../../shared/domain/import';
-import type { ChangeItem, ListAdd, SourceRecord } from '../../shared/domain/import';
+import { conflictQuestion, questionCovers, questionWithConflict } from '../../shared/domain/import';
+import type { ChangeItem, Conflict, ListAdd, SourceRecord } from '../../shared/domain/import';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
@@ -1276,8 +1276,8 @@ export class Repository {
       if (item.records.length) {
         touched.set(item.entryId, { collection: item.collection, records: item.records });
       }
-      // A conflict an open question about this entry already lists (same field, same claims) is not asked again.
-      const asked = this.model
+      // An open question about this entry that already lists a field is brought up to date, not asked again.
+      const askedAbout = this.model
         .all('openQuestions')
         .filter(
           (q) =>
@@ -1287,11 +1287,32 @@ export class Repository {
             (q.links as { targetId?: unknown; kind?: unknown }[]).some(
               (l) => l.targetId === item.entryId && l.kind === 'conflict',
             ),
-        )
-        .map((q) => String(q.question ?? ''));
-      const conflicts = item.deltas
-        .flatMap((d) => (d.conflict ? [d.conflict] : []))
-        .filter((c) => !asked.some((text) => questionCovers(text, c)));
+        );
+      const fresh: Conflict[] = [];
+      const reworded = new Map<string, string>();
+      for (const c of item.deltas.flatMap((d) => (d.conflict ? [d.conflict] : []))) {
+        let handled = false;
+        for (const q of askedAbout) {
+          const text = reworded.get(String(q._id)) ?? String(q.question ?? '');
+          if (questionCovers(text, c)) {
+            handled = true;
+            break;
+          }
+          if (text.split('\n').some((l, i) => i > 0 && l.startsWith(`${c.label}: `))) {
+            const next = questionWithConflict(text, c);
+            if (next !== null) reworded.set(String(q._id), next);
+            handled = true;
+            break;
+          }
+        }
+        if (!handled) fresh.push(c);
+      }
+      for (const [id, text] of reworded) {
+        const prior = askedAbout.find((q) => String(q._id) === id);
+        if (!prior) continue;
+        changes.push({ ...this.buildUpdate('openQuestions', prior, { question: text }), note });
+      }
+      const conflicts = fresh;
       if (conflicts.length) {
         const q = conflictQuestion(item.title, conflicts);
         changes.push({

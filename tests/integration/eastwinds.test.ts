@@ -9,7 +9,7 @@ import { Document, HeadingLevel, Packer, Paragraph } from 'docx';
 import { createBibleWithDefaults, openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
 import type { Store } from '../../src/main/db';
-import { importEastWinds } from '../../src/main/import/eastwinds';
+import { importEastWinds, partForManuscript } from '../../src/main/import/eastwinds';
 import { freshSlug, localStore } from '../helpers/db';
 
 let store: Store;
@@ -218,7 +218,8 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
     expect(byTitle('Ann ages').partId).toBe(partOf('Part Three: Leaves')._id);
     const roots = parts.find((x) => x.title === 'Part One: Roots')!;
     expect(roots).toMatchObject({ bookId: books[0]!._id, summary: 'Deep dive on Ann' });
-    const chapters = open.repo.list('chapters').filter((c) => c.sourceFile === null);
+    // Chapter 1 of the manuscript attaches to the first plot chapter, so that one now names the manuscript file too.
+    const chapters = open.repo.list('chapters').filter((c) => c.title !== 'Introduction');
     expect(chapters.map((c) => [c.title, c.partId === roots._id])).toEqual(
       expect.arrayContaining([
         ['Ann goes to school', true],
@@ -236,13 +237,10 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
       '<p>Dawn was born.</p><p>Dawn grew.</p>',
     );
     const manuscript = open.repo.list('chapters').filter((c) => c.sourceFile === 'East_Winds.docx');
-    expect(manuscript.map((c) => c.title).sort()).toEqual([
-      '1: Laid the Foundation',
-      'Introduction',
-    ]);
+    expect(manuscript.map((c) => c.title).sort()).toEqual(['Ann goes to school', 'Introduction']);
     const stepNotes = (name: string) => report.steps.find((st) => st.step.endsWith(name))!.notes;
     expect(stepNotes('East_Winds.docx, Introduction').join(' ')).toContain(
-      'New chapter placed in the first part with story year',
+      'New chapter placed in the part of "Ann goes to school", just before it.',
     );
     expect(manuscript.find((c) => c.title === 'Introduction')!.manuscriptText).toBe(
       '<h1>East Winds</h1><p>Title page.</p><h1>Introduction</h1><p>Intro text.</p>',
@@ -366,6 +364,97 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     expect(one.manuscriptText).toContain('Chapter one text.');
     expect(chapters.filter((c) => c.sourceFile === 'East_Winds.docx')).toHaveLength(2);
     expect(chapters.find((c) => c.title === 'Introduction')!.partId).toBe(one.partId);
+  });
+
+  test('IM-1 when no plot chapter title carries a number, chapter 1 attaches to the first chapter in reading order and says why', async () => {
+    const open = await bible();
+    const report = await importEastWinds(open, dir);
+    const chapters = open.repo.list('chapters');
+    const one = chapters.find((c) => c.title === 'Ann goes to school')!;
+    expect(one.sourceFile).toBe('East_Winds.docx');
+    expect(one.manuscriptText).toBe('<h1>1: Laid the Foundation</h1><p>Chapter one text.</p>');
+    expect(one.written).toBe(true);
+    expect(chapters.filter((c) => /Laid the Foundation/.test(c.title))).toEqual([]);
+    const intro = chapters.find((c) => c.title === 'Introduction')!;
+    expect(intro.partId).toBe(one.partId);
+    expect(open.repo.get('parts', one.partId)!.title).toBe('Part One: Roots');
+    expect(intro.readingOrder).toBeLessThan(one.readingOrder);
+    expect(
+      chapters.filter(
+        (c) => c.readingOrder > intro.readingOrder && c.readingOrder < one.readingOrder,
+      ),
+    ).toEqual([]);
+    const step = report.steps.find((st) =>
+      st.step.endsWith('East_Winds.docx, 1: Laid the Foundation'),
+    )!;
+    expect(step.notes.join(' ')).toContain(
+      'No plot chapter title carries a number, so chapter 1 was attached to the first chapter in reading order ("Ann goes to school")',
+    );
+    // A second run finds the same chapter again and makes nothing new.
+    const again = await importEastWinds(open, dir, { yes: true });
+    expect(again.steps.reduce((n, st) => n + st.created + st.updated, 0)).toBe(0);
+    expect(open.repo.list('chapters')).toHaveLength(chapters.length);
+  });
+
+  test("IM-3 a re-run never counts the manuscript's own chapter as an existing plot chapter", async () => {
+    const open = await bible();
+    const book = await open.repo.create('books', {
+      title: 'Earlier run',
+      number: 1,
+      status: 'planned',
+    } as never);
+    const part = await open.repo.create('parts', {
+      title: 'Earlier part',
+      bookId: book._id,
+      number: 1,
+      status: 'planned',
+    } as never);
+    const own = await open.repo.create('chapters', {
+      title: '1: Laid the Foundation',
+      partId: part._id,
+      readingOrder: 1,
+      status: 'planned',
+      strands: [{ id: 'S1', label: 'present', startYear: 2000, primary: true }],
+      sourceFile: 'East_Winds.docx',
+      sourceRef: 'East_Winds.docx#p1',
+    } as never);
+    const report = await importEastWinds(open, dir, { yes: true });
+    const step = report.steps.find((st) =>
+      st.step.endsWith('East_Winds.docx, 1: Laid the Foundation'),
+    )!;
+    expect(step.notes.join(' ')).not.toContain('existing chapter');
+    expect(open.repo.get('chapters', own._id)!.manuscriptText).toContain('Chapter one text.');
+    expect(
+      open.repo.list('chapters').filter((c) => c.title === 'Ann goes to school')[0]!.sourceFile,
+    ).toBe(null);
+  });
+
+  test('IM-1 the fallback part is in the lowest numbered book, not just the lowest part number', async () => {
+    const open = await bible();
+    const two = await open.repo.create('books', {
+      title: 'Two',
+      number: 2,
+      status: 'planned',
+    } as never);
+    const twoPart = await open.repo.create('parts', {
+      title: 'Two, Part One',
+      bookId: two._id,
+      number: 1,
+      status: 'planned',
+    } as never);
+    const one = await open.repo.create('books', {
+      title: 'One',
+      number: 1,
+      status: 'planned',
+    } as never);
+    const onePart = await open.repo.create('parts', {
+      title: 'One, Part One',
+      bookId: one._id,
+      number: 1,
+      status: 'planned',
+    } as never);
+    expect(twoPart._id).not.toBe(onePart._id);
+    expect(await partForManuscript(open, false)).toBe(onePart._id);
   });
 
   test('IM-3 a beat is the same beat when its sheet and title match, so a changed year is an update, not a duplicate', async () => {

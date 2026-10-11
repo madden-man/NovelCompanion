@@ -264,13 +264,32 @@ function numberedTitle(title: string): { number: number | null; words: string } 
   return { number: Number(m[1]), words: (m[2] ?? '').trim().toLowerCase() };
 }
 
+export interface ChapterOneMatch {
+  chapter: Chapter;
+  /** `title` when a plot chapter title matched; `first` when the first chapter in reading order was used. */
+  why: 'title' | 'first';
+}
+
+/** True when the chapter was recorded as coming from the workbook. */
+function fromWorkbook(c: Chapter): boolean {
+  const book = EAST_WINDS_FILES.workbook;
+  if (c.sourceFile === book) return true;
+  return typeof c.sourceRef === 'string' && fileOfRef(c.sourceRef) === book;
+}
+
 /**
  * The chapter already in the bible (from Plot v1) that the manuscript's
  * chapter 1 belongs to: the one numbered 1 at the start of its title, or with
  * the same words after the number. When several qualify, the one in the
- * earliest part and reading order wins.
+ * earliest part and reading order wins. Chapters that came from the manuscript
+ * file itself are never hits. When no title matches, the workbook chapter with
+ * the lowest reading order in the lowest part of the lowest book is used.
  */
-export function findChapterOne(open: OpenBible, heading: string): Chapter | undefined {
+export function chapterOneMatch(
+  open: OpenBible,
+  heading: string,
+  manuscriptFile?: string,
+): ChapterOneMatch | undefined {
   const want = numberedTitle(heading);
   const parts = new Map(open.repo.list('parts').map((p) => [p._id, p]));
   const books = new Map(open.repo.list('books').map((b) => [b._id, b]));
@@ -278,20 +297,33 @@ export function findChapterOne(open: OpenBible, heading: string): Chapter | unde
     const part = parts.get(partId);
     return [books.get(part?.bookId ?? '')?.number ?? 0, part?.number ?? 0];
   };
-  const hits = open.repo
+  const byPlace = (a: Chapter, b: Chapter) => {
+    const [ab, ap] = rank(a.partId);
+    const [bb, bp] = rank(b.partId);
+    return ab - bb || ap - bp || a.readingOrder - b.readingOrder;
+  };
+  const others = open.repo
     .list('chapters')
+    .filter((c) => manuscriptFile === undefined || c.sourceFile !== manuscriptFile);
+  const hits = others
     .filter((c) => {
       const have = numberedTitle(c.title);
       const sameNumber = want.number !== null && have.number === want.number;
       const sameWords = want.words !== '' && have.words === want.words;
       return sameNumber || sameWords;
     })
-    .sort((a, b) => {
-      const [ab, ap] = rank(a.partId);
-      const [bb, bp] = rank(b.partId);
-      return ab - bb || ap - bp || a.readingOrder - b.readingOrder;
-    });
-  return hits[0];
+    .sort(byPlace);
+  if (hits[0]) return { chapter: hits[0], why: 'title' };
+  const first = others.filter(fromWorkbook).sort(byPlace)[0];
+  return first ? { chapter: first, why: 'first' } : undefined;
+}
+
+export function findChapterOne(
+  open: OpenBible,
+  heading: string,
+  manuscriptFile?: string,
+): Chapter | undefined {
+  return chapterOneMatch(open, heading, manuscriptFile)?.chapter;
 }
 
 const CHANGE_LIST_LIMIT = 200;
@@ -443,7 +475,19 @@ export async function importEastWinds(
     });
   } else {
     // Chapter 1 belongs to the chapter Plot v1 already made, when there is one.
-    const one = findChapterOne(open, split.chapterTitle);
+    // A chapter an earlier run attached the text to keeps it (its title is not the manuscript's own).
+    const attachedBefore = open.repo
+      .list('chapters')
+      .find(
+        (c) =>
+          c.sourceFile === manuscript.fileName &&
+          c.title !== 'Introduction' &&
+          c.title !== split.chapterTitle,
+      );
+    const match: ChapterOneMatch | undefined = attachedBefore
+      ? { chapter: attachedBefore, why: 'title' }
+      : chapterOneMatch(open, split.chapterTitle, manuscript.fileName);
+    const one = match?.chapter;
     const part = one ? one.partId : await partForManuscript(open, !writes);
     const year =
       one?.strands.find((s) => s.primary)?.startYear ??
@@ -480,7 +524,14 @@ export async function importEastWinds(
       const plan = planDocumentImport(open, manuscript, target, t.blocks);
       const notes = existing
         ? t.isOne && one && existing._id === one._id
-          ? [`The text goes into the existing chapter "${one.title}", not a second chapter 1.`]
+          ? [
+              `The text goes into the existing chapter "${one.title}", not a second chapter 1.`,
+              ...(match?.why === 'first'
+                ? [
+                    `No plot chapter title carries a number, so chapter 1 was attached to the first chapter in reading order ("${one.title}").`,
+                  ]
+                : []),
+            ]
           : []
         : one
           ? [`New chapter placed in the part of "${one.title}", just before it.`]
@@ -554,9 +605,15 @@ function firstChapterYear(open: OpenBible): number | null {
   );
 }
 
-/** The part new manuscript chapters go into: the lowest numbered part, made if the bible has none. */
-async function partForManuscript(open: OpenBible, dryRun: boolean): Promise<string | null> {
-  const parts = open.repo.list('parts').sort((a, b) => a.number - b.number);
+/** The part new manuscript chapters go into: the lowest numbered part of the lowest numbered book, made if the bible has none. */
+export async function partForManuscript(open: OpenBible, dryRun: boolean): Promise<string | null> {
+  const bookNumber = new Map(open.repo.list('books').map((b) => [b._id, b.number]));
+  const parts = open.repo
+    .list('parts')
+    .sort(
+      (a, b) =>
+        (bookNumber.get(a.bookId) ?? 0) - (bookNumber.get(b.bookId) ?? 0) || a.number - b.number,
+    );
   if (parts[0]) return parts[0]._id;
   if (dryRun) return null;
   const book =

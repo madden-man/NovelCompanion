@@ -244,6 +244,52 @@ describe('IM-7 the newest source wins and an open question lists every source', 
   });
 });
 
+describe('IM-7 third versions and stale plans', () => {
+  test('IM-7 a third version of a source updates the open question with the new claim instead of opening a second', async () => {
+    const open = await emptyBible('im-conflict-third');
+    const wb = earlier(await parseWorkbookFile(FIXTURE_WORKBOOK), '2026-01-15T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const second = structuredClone(wb);
+    second.modifiedAt = '2026-03-01T09:00:00.000Z';
+    second.sheets[0]!.cells[1]![3] = 1959;
+    await applyPlan(open, planSheet(open, second.sheets[0]!, second, people).set, second, 'all');
+    const third = structuredClone(wb);
+    third.modifiedAt = '2026-05-01T09:00:00.000Z';
+    third.sheets[0]!.cells[1]![3] = 1960;
+    const done = await applyPlan(
+      open,
+      planSheet(open, third.sheets[0]!, third, people).set,
+      third,
+      'all',
+    );
+    expect(done.questions).toBe(0);
+    const questions = open.repo.list('openQuestions');
+    expect(questions).toHaveLength(1);
+    const text = String(questions[0]!.question);
+    expect(text).toContain('(modified 2026-01-15) says 1958');
+    expect(text).toContain('(modified 2026-03-01) says 1959');
+    expect(text).toContain('(modified 2026-05-01) says 1960 [kept]');
+    expect(text).not.toContain('says 1959 [kept]');
+  });
+
+  test('IM-7 applying a stale plan twice does not append the same losing claim again', async () => {
+    const open = await emptyBible('im-conflict-stale');
+    const wb = earlier(await parseWorkbookFile(FIXTURE_WORKBOOK), '2026-05-01T09:00:00.000Z');
+    await applyPlan(open, planSheet(open, wb.sheets[0]!, wb, people).set, wb, 'all');
+    const older = structuredClone(wb);
+    older.modifiedAt = '2026-02-01T09:00:00.000Z';
+    older.sheets[0]!.cells[1]![3] = 1900;
+    const stale = planSheet(open, older.sheets[0]!, older, people).set;
+    await applyPlan(open, stale, older, 'all');
+    await applyPlan(open, stale, older, 'all');
+    const margaret = open.repo.list('characters').find((c) => c.title === 'Margaret Hale')!;
+    expect(
+      open.repo.sourceRecords(margaret._id).find((r) => r.path === 'birth')!.others,
+    ).toHaveLength(1);
+    expect(open.repo.list('openQuestions')).toHaveLength(1);
+  });
+});
+
 describe('CS-2 custom entries import like built-in ones', () => {
   test('CS-2 a table sheet fills a custom section: choices, years, history, and source location', async () => {
     const open = await openBibleSession(

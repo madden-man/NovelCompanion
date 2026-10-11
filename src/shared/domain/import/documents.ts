@@ -109,7 +109,7 @@ export function planDocument(input: DocumentPlanInput): ChangeSet {
     if (target.chapterId !== null) {
       const doc = input.entries('chapters').find((d) => d._id === target.chapterId);
       if (!doc) return fail('That chapter is not in the bible');
-      const fields = { manuscriptText: body, sourceFile: file.fileName };
+      const fields = { manuscriptText: body, sourceFile: file.fileName, written: true };
       existingChange('chapters', doc, fields);
       return withValues(set, fields);
     }

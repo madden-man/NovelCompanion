@@ -158,6 +158,33 @@ describe('IM-4 the plan for a document', () => {
     });
   });
 
+  test('IM-4 text imported into an existing chapter marks it written, as a new chapter does', () => {
+    const chapter = {
+      _id: 'CH1',
+      title: 'Plot chapter',
+      status: 'planned',
+      partId: 'P1',
+      readingOrder: 1,
+      strands: [{ id: 'S1', label: 'present', startYear: 2000, primary: true }],
+      written: false,
+      manuscriptText: '',
+    };
+    const set = planDocument({
+      file: FILE,
+      body,
+      span: { first: 1, last: 2 },
+      target: { kind: 'chapter', chapterId: 'CH1' },
+      entries: (c) => (c === 'chapters' ? [chapter] : []),
+      sources: empty,
+      newId: () => 'N1',
+    });
+    expect(set.failed).toEqual([]);
+    expect(set.items[0]).toMatchObject({
+      kind: 'changed',
+      patch: { manuscriptText: body, written: true },
+    });
+  });
+
   test('IM-4 an empty document or a missing target is reported, not dropped', () => {
     const base = {
       file: FILE,

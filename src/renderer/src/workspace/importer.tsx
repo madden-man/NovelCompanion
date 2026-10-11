@@ -920,6 +920,11 @@ function ChangeSetView(props: {
       .map((id) => byId.get(id))
       .filter((n): n is NonNullable<typeof n> => n !== undefined)
       .map((n) => n.title || 'Untitled');
+  /** The approved items that point at this one, which is why it cannot be unchecked. */
+  const neededBy = (id: string) =>
+    plan.items
+      .filter((o) => o.id !== id && effective.has(o.id) && (o.needs ?? []).includes(id))
+      .map((o) => o.title || 'Untitled');
   const allNew = created.length > 0 && created.every((i) => effective.has(i.id));
   const someNew = created.some((i) => effective.has(i.id));
 
@@ -1091,6 +1096,7 @@ function ChangeSetView(props: {
                     <input
                       type="checkbox"
                       checked={effective.has(i.id)}
+                      disabled={neededBy(i.id).length > 0}
                       onChange={(e) => toggle(i.id, e.target.checked)}
                     />{' '}
                     {i.title || 'Untitled'}{' '}
@@ -1098,6 +1104,12 @@ function ChangeSetView(props: {
                       {collectionInfo[i.collection].singular}, {i.ref}
                       {i.note ? `. ${i.note}` : ''}
                     </span>
+                    {neededBy(i.id).length > 0 && (
+                      <span className="example-note" data-testid="import-needed-by">
+                        {' '}
+                        needed by {neededBy(i.id).join(', ')}
+                      </span>
+                    )}
                     {effective.has(i.id) && alsoCreates(i).length > 0 && (
                       <span className="example-note" data-testid="import-also-creates">
                         {' '}

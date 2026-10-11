@@ -83,6 +83,24 @@ test('IM-2 IM-3 the compare step shows the change set, and the import writes wha
     '9 new, 0 changed, 0 unchanged, 1 failed',
   );
   await expect(view().getByTestId('import-failed')).toContainText('People row 9');
+  // ED-7: a parent an approved child needs stays checked, and the list says why.
+  await view()
+    .getByLabel(/Add 9 new entries/)
+    .uncheck();
+  await view().getByText('Choose which new entries to add').click();
+  const newList = view().getByTestId('import-new');
+  await newList
+    .getByRole('listitem')
+    .filter({ hasText: 'Margaret Hale' })
+    .getByRole('checkbox')
+    .check();
+  const parent = newList.getByRole('listitem').filter({ hasText: /Hale Family/ });
+  await expect(parent.getByRole('checkbox')).toBeChecked();
+  await expect(parent.getByRole('checkbox')).toBeDisabled();
+  await expect(parent.getByTestId('import-needed-by')).toHaveText('needed by Margaret Hale');
+  await view()
+    .getByLabel(/Add 9 new entries/)
+    .check();
   await view().getByTestId('import-apply').click();
   await expect(view().getByTestId('import-result-counts')).toContainText('Created 9, updated 0');
   await expect(view().getByTestId('import-result')).toContainText('Snapshot taken first');

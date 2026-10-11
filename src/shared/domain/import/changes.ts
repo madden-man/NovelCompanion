@@ -394,6 +394,18 @@ export function changedItem(
   };
 }
 
+/** The losing claims with one more added, unless the same ref, date, and value is already listed. */
+function withClaim(
+  others: SourceRecord['others'],
+  claim: SourceRecord['others'][number],
+): SourceRecord['others'] {
+  if (
+    others.some((o) => o.ref === claim.ref && o.at === claim.at && deepEqual(o.value, claim.value))
+  )
+    return others;
+  return [...others, claim].slice(-10);
+}
+
 /** The source records to write once a change is approved. */
 function sourceUpdates(
   deltas: FieldDelta[],
@@ -411,13 +423,13 @@ function sourceUpdates(
         at: file.modifiedAt,
         value: d.after,
         others: prior
-          ? [...prior.others, { ref: prior.ref, at: prior.at, value: prior.value }].slice(-10)
+          ? withClaim(prior.others, { ref: prior.ref, at: prior.at, value: prior.value })
           : [],
       });
     } else if (prior) {
       out.push({
         ...prior,
-        others: [...prior.others, { ref, at: file.modifiedAt, value: d.after }].slice(-10),
+        others: withClaim(prior.others, { ref, at: file.modifiedAt, value: d.after }),
       });
     }
   }
@@ -456,6 +468,22 @@ export function conflictLine(c: Conflict, withKept = true): string {
 export function questionCovers(questionText: string, c: Conflict): boolean {
   const want = conflictLine(c, false);
   return questionText.split('\n').some((line) => line.replaceAll(' [kept]', '') === want);
+}
+
+/**
+ * The question text with this conflict's line brought up to date: the line for
+ * the same field is replaced, or the line is added when the field is new to the
+ * question. Null when the text already lists exactly these claims.
+ */
+export function questionWithConflict(questionText: string, c: Conflict): string | null {
+  if (questionCovers(questionText, c)) return null;
+  const lines = questionText.split('\n');
+  const prefix = `${c.label}: `;
+  const at = lines.findIndex((l, i) => i > 0 && l.startsWith(prefix));
+  const line = conflictLine(c);
+  if (at >= 0) lines[at] = line;
+  else lines.push(line);
+  return lines.join('\n');
 }
 
 /** The open question that lists every source and its value for the conflicts of one entry (IM-7). */
