@@ -5,6 +5,7 @@ import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider, useEntries } from './data';
 import { EntryPane, UndoPanel } from './editor';
 import { LaunchPanel, StopPrompt } from './session';
+import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
 import { UndoProvider } from './undo';
@@ -88,6 +89,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
       <LaunchPanel />
       <StopPrompt />
       <div className="ws-frame" data-testid="workspace">
+        <TopBar />
         <nav className="rail ws-rail" aria-label="Sections">
           <div className="field rail-search">
             <label className="sr-only" htmlFor="rail-search">

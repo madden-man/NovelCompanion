@@ -538,7 +538,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
 
   return (
     <div className="ws-tree-area" data-testid="tree-view" ref={area}>
-      <section className="tree-main stack" aria-labelledby="tree-title">
+      <section className="tree-main fill stack" aria-labelledby="tree-title">
         <div className="tree-stage stack">
           <div className="list-head">
             <h2 id="tree-title">Family tree</h2>
