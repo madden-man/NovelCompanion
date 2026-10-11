@@ -1,5 +1,6 @@
 import { bibleHandlers } from '../../src/main/ipc/bibleHandlers';
 import type { BibleChannel } from '../../src/main/ipc/bibleHandlers';
+import type { ImportDeps } from '../../src/main/ipc/importHandlers';
 import { runHandler } from '../../src/main/ipc/validate';
 import type { Handler } from '../../src/main/ipc/validate';
 import type { OpenBible } from '../../src/main/db/session';
@@ -11,8 +12,8 @@ import type { Invoke } from './t5';
  * through the same zod contract the preload and main process use, so the
  * payloads round-trip as JSON exactly as they would over IPC.
  */
-export function ipcFor(bible: () => OpenBible | null): Invoke {
-  const handlers = bibleHandlers(bible);
+export function ipcFor(bible: () => OpenBible | null, deps: ImportDeps = {}): Invoke {
+  const handlers = bibleHandlers(bible, deps);
   return async <C extends Channel>(channel: C, request: Request<C>): Promise<Response<C>> => {
     const handler = handlers[channel as BibleChannel] as Handler<C> | undefined;
     if (!handler) throw new Error(`No bible handler for ${channel}`);

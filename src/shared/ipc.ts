@@ -10,6 +10,8 @@ import {
   manifests,
 } from './schema';
 import { StoryTimeValue } from './storyTime';
+import { Cell, Mapping } from './domain/import/types';
+import { SnapshotManifest } from './domain/snapshots';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -573,6 +575,89 @@ const RevisionSummary = z.strictObject({
   proposalId: z.string().nullable(),
 });
 
+// ---------- import, snapshots, and backup (M5) ----------
+
+/** A file the person picked. Main keeps the path; the page holds only this ID. */
+export const ImportFileWire = z.strictObject({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1),
+  kind: z.enum(['workbook', 'document']),
+  modifiedAt: z.iso.datetime({ offset: true }),
+});
+
+const ImportSheetWire = z.strictObject({
+  name: z.string(),
+  rows: z.int().min(0),
+  columns: z.int().min(0),
+  shape: z.enum(['table', 'grid']),
+  headerRow: z.int().min(1),
+  /** The first rows and columns, for choosing a shape and a header row. */
+  preview: z.array(z.array(Cell)),
+});
+
+const ImportRowWire = z.strictObject({
+  where: z.string(),
+  ok: z.boolean(),
+  reason: z.string().optional(),
+  title: z.string(),
+  values: z.array(z.strictObject({ label: z.string(), text: z.string() })),
+});
+
+const ConflictWire = z.strictObject({
+  winner: z.enum(['incoming', 'existing']),
+  claims: z.array(
+    z.strictObject({ ref: z.string(), at: z.string(), value: z.string(), kept: z.boolean() }),
+  ),
+});
+
+const ChangeItemWire = z.strictObject({
+  id: z.string(),
+  kind: z.enum(['new', 'changed']),
+  collection: CollectionName,
+  title: z.string(),
+  ref: z.string(),
+  note: z.string().optional(),
+  deltas: z.array(
+    z.strictObject({
+      path: z.string(),
+      label: z.string(),
+      before: z.string(),
+      after: z.string(),
+      outcome: z.enum(['apply', 'keep']),
+      conflict: ConflictWire.optional(),
+    }),
+  ),
+});
+
+const FailedRowWire = z.strictObject({ where: z.string(), ref: z.string(), reason: z.string() });
+
+export const ImportPlanWire = z.strictObject({
+  planId: z.string().min(1),
+  file: z.string(),
+  created: z.int().min(0),
+  changed: z.int().min(0),
+  unchanged: z.int().min(0),
+  conflicts: z.int().min(0),
+  listAdds: z.array(z.string()),
+  failed: z.array(FailedRowWire),
+  items: z.array(ChangeItemWire),
+  notes: z.array(z.string()),
+});
+
+const DocumentTargetWire = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('backstory'), characterId: EntryId }),
+  z.strictObject({
+    kind: z.literal('chapter'),
+    chapterId: EntryId.nullable(),
+    title: z.string().max(500).optional(),
+    partId: EntryId.optional(),
+    year: z.int().min(-10000).max(10000).optional(),
+  }),
+  z.strictObject({ kind: z.literal('note'), title: z.string().trim().min(1).max(500) }),
+]);
+
+export const SnapshotWire = SnapshotManifest.extend({ id: z.string().min(1) });
+
 /**
  * The IPC contract (ARCHITECTURE rule 3). Every channel the renderer can call
  * has a zod request and response schema. The preload validates both sides,
@@ -1098,6 +1183,125 @@ export const contract = {
     request: z.strictObject({ languageId: z.string().min(1), text: z.string().max(500) }),
     response: z.strictObject({ ok: z.boolean(), message: z.string() }),
   },
+  /** IM-1: open the file picker for a workbook or a Word document. Null when cancelled. */
+  'import.pickFile': {
+    request: z.strictObject({ kind: z.enum(['workbook', 'document']) }),
+    response: z.strictObject({ file: ImportFileWire.nullable() }),
+  },
+  /** IM-1: the sheets of a picked workbook and the mappings saved for this file. */
+  'import.workbook': {
+    request: z.strictObject({ fileId: z.string().min(1) }),
+    response: z.strictObject({
+      file: ImportFileWire,
+      sheets: z.array(ImportSheetWire),
+      saved: z.array(z.strictObject({ sheet: z.string(), mapping: Mapping })),
+    }),
+  },
+  /** IM-1: a starting mapping for a sheet, columns matched to fields by their headers. */
+  'import.guess': {
+    request: z.strictObject({
+      fileId: z.string().min(1),
+      sheet: z.string().min(1),
+      shape: z.enum(['table', 'grid']),
+      collection: CollectionName,
+      sectionId: EntryId.optional(),
+    }),
+    response: z.strictObject({ mapping: Mapping }),
+  },
+  /** IM-1: the fields a column can fill in a section. */
+  'import.fields': {
+    request: z.strictObject({ collection: CollectionName, sectionId: EntryId.optional() }),
+    response: z.strictObject({
+      fields: z.array(z.strictObject({ path: z.string(), label: z.string() })),
+    }),
+  },
+  /** IM-1, IM-2: the first rows of a sheet as the mapping would import them, each with its result. */
+  'import.preview': {
+    request: z.strictObject({
+      fileId: z.string().min(1),
+      mapping: Mapping,
+      limit: z.int().min(1).max(200).default(12),
+    }),
+    response: z.strictObject({
+      rows: z.array(ImportRowWire),
+      total: z.int().min(0),
+      ok: z.int().min(0),
+      failed: z.int().min(0),
+      notes: z.array(z.string()),
+    }),
+  },
+  /** IM-3: compare the sheet with the bible. Nothing is written. */
+  'import.plan': {
+    request: z.strictObject({ fileId: z.string().min(1), mapping: Mapping }),
+    response: ImportPlanWire,
+  },
+  /** ED-7, IM-3: write the changes the person approved, after a snapshot (BK-1). */
+  'import.apply': {
+    request: z.strictObject({
+      planId: z.string().min(1),
+      approved: z.array(z.string().min(1)).max(100000),
+      saveMapping: z.boolean().default(true),
+    }),
+    response: z.strictObject({
+      created: z.int().min(0),
+      updated: z.int().min(0),
+      unchanged: z.int().min(0),
+      questions: z.int().min(0),
+      failed: z.array(FailedRowWire),
+      snapshot: z.string().nullable(),
+    }),
+  },
+  /** IM-4: a Word document as the editor will store it, with its headings. */
+  'import.document': {
+    request: z.strictObject({ fileId: z.string().min(1) }),
+    response: z.strictObject({
+      file: ImportFileWire,
+      title: z.string(),
+      headings: z.array(z.strictObject({ level: z.int(), text: z.string(), index: z.int() })),
+      paragraphs: z.int().min(0),
+      sceneBreaks: z.int().min(0),
+      body: z.string(),
+    }),
+  },
+  /** IM-4, IM-3: what importing the document into an entry would change. */
+  'import.documentPlan': {
+    request: z.strictObject({ fileId: z.string().min(1), target: DocumentTargetWire }),
+    response: ImportPlanWire,
+  },
+  /** BK-1: the snapshots of the open bible, newest first, and how many are kept. */
+  'snapshot.list': {
+    request: z.strictObject({}),
+    response: z.strictObject({ snapshots: z.array(SnapshotWire), keep: z.int().min(1) }),
+  },
+  'snapshot.take': {
+    request: z.strictObject({}),
+    response: z.strictObject({ snapshot: SnapshotWire }),
+  },
+  /** BK-2: restore a snapshot after taking one of the present state. */
+  'snapshot.restore': {
+    request: z.strictObject({ id: z.string().min(1).max(64) }),
+    response: z.strictObject({ restored: SnapshotWire, safety: SnapshotWire }),
+  },
+  'snapshot.keep': {
+    request: z.strictObject({ keep: z.int().min(1).max(1000) }),
+    response: z.strictObject({ keep: z.int().min(1) }),
+  },
+  /** BK-3: write the whole bible to one JSON file the person chooses. Null path when cancelled. */
+  'backup.export': {
+    request: z.strictObject({}),
+    response: z.strictObject({
+      path: z.string().nullable(),
+      counts: z.record(z.string(), z.int().min(0)),
+    }),
+  },
+  /** BK-3: make a new bible from an exported file the person chooses. Null bible when cancelled. */
+  'backup.import': {
+    request: z.strictObject({ slug: BibleSlug, name: BibleName }),
+    response: z.strictObject({
+      bible: BibleSummary.nullable(),
+      counts: z.record(z.string(), z.int().min(0)),
+    }),
+  },
   /** Open a link in the system browser. Only allowlisted hosts are opened. */
   'app.openExternal': {
     request: z.strictObject({ url: z.string().min(1).max(2000) }),
@@ -1137,6 +1341,8 @@ export const events = {
   'lists.changed': z.strictObject({ bible: z.string() }),
   /** The story time was set or cleared (TM-3). */
   'storyTime.changed': z.strictObject({ bible: z.string() }),
+  /** The whole bible was replaced by a restore or a file import; views reload everything. */
+  'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;

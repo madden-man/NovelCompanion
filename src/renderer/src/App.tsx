@@ -12,6 +12,9 @@ export function App() {
   const [list, setList] = useState<BibleList | null>(null);
   const [current, setCurrent] = useState<Bible | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumps when the whole bible was replaced (a restore or a file import), so every view loads again.
+  const [reloads, setReloads] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -28,9 +31,14 @@ export function App() {
     };
     load();
     const off = window.api.on('bibles.changed', load);
+    const offReload = window.api.on('bible.reloaded', (e) => {
+      setReloads((n) => n + 1);
+      setNotice(e.message);
+    });
     return () => {
       live = false;
       off();
+      offReload();
     };
   }, []);
 
@@ -71,7 +79,15 @@ export function App() {
           {error}
         </p>
       )}
-      {current ? <Workspace bibleId={current.id} bibles={bibles} /> : bibles}
+      {notice && (
+        <p className="callout row" role="status" data-testid="reload-notice">
+          <span>{notice}</span>
+          <button type="button" className="btn small" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
+      {current ? <Workspace key={reloads} bibleId={current.id} bibles={bibles} /> : bibles}
     </main>
   );
 }

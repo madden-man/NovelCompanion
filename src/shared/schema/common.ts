@@ -48,6 +48,8 @@ export const EntryBase = z.strictObject({
   status: Status,
   provenance: Provenance.nullable().default(null),
   sourceNote: z.string().default(''),
+  /** Where an import found this entry: file, sheet, row and column, or paragraph (IM-6). */
+  sourceRef: z.string().default(''),
   tags: z.array(z.string().min(1).max(100)).default([]),
   createdAt: Timestamp,
   modifiedAt: Timestamp,

@@ -4,6 +4,8 @@ import type { Channel, WireEntry } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
+import { importHandlers } from './importHandlers';
+import type { ImportChannel, ImportDeps } from './importHandlers';
 import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
 import { characterPage } from '../../shared/domain/character';
 import { positionYear } from '../../shared/domain/position';
@@ -92,7 +94,8 @@ export type BibleChannel =
   | 'place.describe'
   | 'romanization.get'
   | 'romanization.set'
-  | 'romanization.check';
+  | 'romanization.check'
+  | ImportChannel;
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -115,7 +118,10 @@ const isFullMoment = (m: {
  * integration suite can drive the same IPC layer (zod on both sides through
  * `runHandler`) that the renderer uses.
  */
-export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
+export function bibleHandlers(
+  current: () => OpenBible | null,
+  deps: ImportDeps = {},
+): BibleHandlers {
   const session = (): OpenBible => {
     const s = current();
     if (!s) throw new Error(NO_BIBLE);
@@ -192,6 +198,7 @@ export function bibleHandlers(current: () => OpenBible | null): BibleHandlers {
   };
 
   return {
+    ...importHandlers(current, deps),
     'proposal.list': ({ state }) => ({
       proposals: session()
         .repo.listProposals(state)

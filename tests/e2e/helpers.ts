@@ -1,3 +1,5 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
@@ -22,6 +24,7 @@ export async function launch(
       ...process.env,
       NOVEL_COMPANION_TEST_MONGODB_URI: uri,
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
+      NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
       ...env,
     },
   });

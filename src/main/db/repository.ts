@@ -43,6 +43,8 @@ import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/roma
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
+import { conflictQuestion } from '../../shared/domain/import';
+import type { ChangeItem, ListAdd, SourceRecord } from '../../shared/domain/import';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
@@ -91,6 +93,12 @@ export interface ListView {
 }
 
 export type ListViewItem = ListItem & { usage: number; detail?: string };
+
+/** Hooks for tests that need to fail a write part way. */
+export interface RepositoryOptions {
+  /** Called inside every transaction after its writes, before it commits. Throwing aborts it. */
+  midTransaction?: (session: ClientSession) => Promise<void>;
+}
 
 export class RepositoryError extends Error {
   override name = 'RepositoryError';
@@ -142,7 +150,15 @@ export class Repository {
     private readonly model: ReadModel,
     private readonly index: SearchIndex,
     private readonly now: () => Date = () => new Date(),
+    private readonly options: RepositoryOptions = {},
   ) {}
+
+  /** Runs before a bulk change (a list rename, an approved proposal, an import) so it can take a snapshot first (BK-1). */
+  beforeBulk: ((reason: string) => Promise<void>) | null = null;
+
+  private async bulkGuard(reason: string): Promise<void> {
+    await this.beforeBulk?.(reason);
+  }
 
   get name(): string {
     return this.bible.id;
@@ -230,6 +246,13 @@ export class Repository {
       await session.withTransaction(async () => {
         out = await fn(session);
       });
+      // A transaction aborted from inside (a killed write) ends without an error; it saved nothing.
+      const state = (session.transaction as unknown as { state: string }).state;
+      if (state === 'TRANSACTION_ABORTED' || state === 'NO_TRANSACTION') {
+        throw new RepositoryError(
+          'The write was cancelled before it finished, so nothing was saved.',
+        );
+      }
       return out as T;
     } finally {
       await session.endSession();
@@ -277,39 +300,14 @@ export class Repository {
       else listUpdates.push(merged);
     }
     await this.transact(async (session) => {
-      for (const ch of changes) {
-        if (ch.prior === null) {
-          await this.collection(ch.collection).insertOne(ch.next, { session });
-        } else {
-          const res = await this.collection(ch.collection).replaceOne(
-            { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
-            ch.next,
-            { session },
-          );
-          if (res.matchedCount !== 1) {
-            throw new RepositoryError(
-              'This entry changed somewhere else. Reload it and try again.',
-            );
-          }
-        }
-        const revision: Revision = {
-          _id: newId(),
-          collection: ch.collection,
-          entryId: ch.next._id,
-          op: ch.op,
-          at: ch.next.modifiedAt as string,
-          prior: ch.prior,
-          ...(ch.note ? { note: ch.note } : {}),
-          ...(ch.proposalId ? { proposalId: ch.proposalId } : {}),
-        };
-        await this.bible.collection<Revision>('revisions').insertOne(revision, { session });
-      }
+      await this.writeChanges(changes, session);
       for (const list of listUpdates) {
         await this.bible
           .collection<ListDoc>('lists')
           .replaceOne({ _id: list._id }, list, { session, upsert: true });
       }
       await extra?.(session);
+      await this.options.midTransaction?.(session);
     });
     for (const list of listUpdates) this.model.put('lists', list as unknown as StoredDoc);
     for (const ch of changes) {
@@ -325,6 +323,56 @@ export class Repository {
       });
     }
     if (listUpdates.length) this.emitter.emit('lists');
+  }
+
+  /**
+   * Insert the new entries together, replace the changed ones (each only if it
+   * has not changed since it was read), and append the revisions together, so a
+   * large import is a handful of round trips rather than one per entry.
+   */
+  private async writeChanges(changes: Change[], session: ClientSession): Promise<void> {
+    const byCollection = new Map<EntryCollection, Change[]>();
+    for (const ch of changes) {
+      const list = byCollection.get(ch.collection) ?? [];
+      list.push(ch);
+      byCollection.set(ch.collection, list);
+    }
+    for (const [collection, list] of byCollection) {
+      const creates = list.filter((ch) => ch.prior === null);
+      const updates = list.flatMap((ch) => (ch.prior ? [{ prior: ch.prior, next: ch.next }] : []));
+      const target = this.collection(collection);
+      if (creates.length) {
+        await target.insertMany(
+          creates.map((ch) => ch.next),
+          { session, ordered: true },
+        );
+      }
+      for (const u of updates) {
+        const res = await target.replaceOne(
+          { _id: u.prior._id, modifiedAt: u.prior.modifiedAt } as Document,
+          u.next,
+          { session },
+        );
+        if (res.matchedCount !== 1) {
+          throw new RepositoryError('This entry changed somewhere else. Reload it and try again.');
+        }
+      }
+    }
+    if (changes.length) {
+      const revisions: Revision[] = changes.map((ch) => ({
+        _id: newId(),
+        collection: ch.collection,
+        entryId: ch.next._id,
+        op: ch.op,
+        at: ch.next.modifiedAt as string,
+        prior: ch.prior,
+        ...(ch.note ? { note: ch.note } : {}),
+        ...(ch.proposalId ? { proposalId: ch.proposalId } : {}),
+      }));
+      await this.bible
+        .collection<Revision>('revisions')
+        .insertMany(revisions, { session, ordered: true });
+    }
   }
 
   private async current(c: EntryCollection, id: string): Promise<StoredDoc> {
@@ -427,6 +475,8 @@ export class Repository {
       (Array.isArray(t.appearances) ? t.appearances : []) as { chapterId: string; note: string }[];
     const changes: Change[] = [];
     for (const theme of this.model.all('themes')) {
+      // A theme in the trash keeps its appearances; the chapter field never touches it.
+      if (theme.deletedAt) continue;
       const apps = appearancesOf(theme);
       const has = apps.some((a) => a.chapterId === chapterId);
       const wants = want.includes(theme._id);
@@ -846,6 +896,7 @@ export class Repository {
   ): Promise<{ updated: number; from: string }> {
     const to = label.trim();
     if (!to) throw new RepositoryError('A list item needs a name.');
+    await this.bulkGuard('list rename');
     const choice = this.choiceField(listId);
     if (choice) {
       const { section, field } = choice;
@@ -1098,6 +1149,7 @@ export class Repository {
    */
   async applyProposal(id: string): Promise<Proposal> {
     const proposal = this.pending(id);
+    await this.bulkGuard('approved proposal');
     const c = proposal.collection as EntryCollection;
     this.assertCollection(c);
     const data = proposal.data;
@@ -1151,6 +1203,162 @@ export class Repository {
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
+  }
+
+  // ---------- import (IM-3, IM-7) ----------
+
+  /** What earlier imports recorded about where each field's value came from. */
+  sourceRecords(entryId: string): SourceRecord[] {
+    const doc = this.model.get('importSources', entryId);
+    return Array.isArray(doc?.fields) ? (doc.fields as SourceRecord[]) : [];
+  }
+
+  /**
+   * Write the approved changes of an import in one transaction (ED-7, IM-3):
+   * new entries, changes to entries already imported, the list choices they
+   * need, the record of where each field came from, and an open question for
+   * every field where two sources disagreed (IM-7). Either all of it is
+   * written or none. Entries changed since the plan was made are refused.
+   */
+  async applyImport(input: {
+    file: { fileName: string; modifiedAt: string };
+    items: ChangeItem[];
+    listAdds: ListAdd[];
+  }): Promise<{ created: number; updated: number; questions: number }> {
+    await this.bulkGuard('import');
+    const note = `Imported from ${input.file.fileName}`;
+    const changes: Change[] = [];
+    let created = 0;
+    let updated = 0;
+    let questions = 0;
+    const touched = new Map<string, { collection: EntryCollection; records: SourceRecord[] }>();
+    for (const item of input.items) {
+      this.assertCollection(item.collection);
+      if (item.kind === 'new') {
+        const change = this.buildCreate(item.collection, {
+          ...(item.data as Record<string, unknown>),
+          _id: item.entryId,
+        });
+        changes.push({ ...change, note });
+        created += 1;
+      } else {
+        const prior = await this.current(item.collection, item.entryId);
+        if (item.baseModifiedAt !== undefined && prior.modifiedAt !== item.baseModifiedAt) {
+          throw new RepositoryError(
+            `${entryTitle(prior)} changed after the import was compared, so nothing was written. Compare again.`,
+          );
+        }
+        if (item.patch && Object.keys(item.patch).length > 0) {
+          changes.push({ ...this.buildUpdate(item.collection, prior, item.patch), note });
+          updated += 1;
+        }
+      }
+      if (item.records.length) {
+        touched.set(item.entryId, { collection: item.collection, records: item.records });
+      }
+      const conflicts = item.deltas.flatMap((d) => (d.conflict ? [d.conflict] : []));
+      if (conflicts.length) {
+        const q = conflictQuestion(item.title, conflicts);
+        changes.push({
+          ...this.buildCreate('openQuestions', {
+            title: q.title,
+            question: q.question,
+            state: 'open',
+            status: 'planned',
+            sourceRef: item.ref,
+            links: [{ targetId: item.entryId, kind: 'conflict' }],
+          }),
+          note,
+        });
+        questions += 1;
+      }
+    }
+    const lists = this.listsWithAdds(input.listAdds);
+    const sourceDocs = [...touched].map(([entryId, t]) => {
+      const prior = this.sourceRecords(entryId);
+      const fields = [
+        ...prior.filter((r) => !t.records.some((n) => n.path === r.path)),
+        ...t.records,
+      ];
+      return { _id: entryId, collection: t.collection, fields };
+    });
+    await this.commit(
+      changes,
+      async (session) => {
+        for (const doc of sourceDocs) {
+          await this.bible
+            .collection<StoredDoc>('importSources')
+            .replaceOne({ _id: doc._id }, doc, { session, upsert: true });
+        }
+      },
+      lists,
+    );
+    for (const doc of sourceDocs) this.model.put('importSources', doc as unknown as StoredDoc);
+    return { created, updated, questions };
+  }
+
+  /** The lists with the import's new choices added, ready to write. */
+  private listsWithAdds(adds: ListAdd[]): ListDoc[] {
+    const out = new Map<string, ListDoc>();
+    for (const add of adds) {
+      const base =
+        out.get(add.listId) ??
+        (this.model.get('lists', add.listId) as ListDoc | undefined) ??
+        ({ _id: add.listId, label: add.listId, items: [] } as ListDoc);
+      if (base.items.some((i) => i.id === add.id)) continue;
+      out.set(add.listId, {
+        ...base,
+        items: [...base.items, { id: add.id, label: add.label, parentId: add.parentId }],
+      });
+    }
+    return [...out.values()];
+  }
+
+  // ---------- backup settings (BK-1) ----------
+
+  /** How many snapshots to keep; 30 unless the person changed it. */
+  snapshotKeep(): number {
+    const doc = this.model.get('meta', SNAPSHOT_SETTINGS_ID);
+    return typeof doc?.keep === 'number' && doc.keep >= 1 ? Math.floor(doc.keep) : 30;
+  }
+
+  async setSnapshotKeep(keep: number): Promise<number> {
+    if (!Number.isInteger(keep) || keep < 1 || keep > 1000) {
+      throw new RepositoryError('Keep between 1 and 1000 snapshots.');
+    }
+    await this.writeMeta({ _id: SNAPSHOT_SETTINGS_ID, keep });
+    return keep;
+  }
+
+  /** Saved column mappings, keyed by file name and sheet (IM-1). Stored in `meta`. */
+  savedMappings(): Record<string, unknown> {
+    const doc = this.model.get('meta', IMPORT_MAPPINGS_ID);
+    const list = (Array.isArray(doc?.mappings) ? doc.mappings : []) as {
+      key: string;
+      mapping: unknown;
+    }[];
+    return Object.fromEntries(list.map((m) => [m.key, m.mapping]));
+  }
+
+  async saveMapping(key: string, mapping: unknown): Promise<void> {
+    // A list, not an object, because file names and sheet names contain dots.
+    const kept = Object.entries(this.savedMappings())
+      .filter(([k]) => k !== key)
+      .map(([k, m]) => ({ key: k, mapping: m }));
+    await this.writeMeta({
+      _id: IMPORT_MAPPINGS_ID,
+      mappings: [...kept, { key, mapping }],
+    });
+  }
+
+  /** Tell views that the whole bible was replaced, after a restore or a file import. */
+  announceReload(message: string): void {
+    this.emitter.emit('reload', message);
+  }
+
+  onReload(listener: (message: string) => void): () => void {
+    this.emitter.on('reload', listener);
+    return () => this.emitter.off('reload', listener);
   }
 
   // ---------- story time (TM-3, stored in meta, never an entry) ----------
@@ -1336,4 +1544,6 @@ export class Repository {
 }
 
 const STORY_TIME_ID = 'storyTime';
+const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
+const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';

@@ -174,6 +174,9 @@ export const commonFields: FieldSpec[] = [
   f.enum('status', 'Status', STATUS_OPTIONS, { required: true }),
   f.enum('provenance', 'Provenance', PROVENANCE_OPTIONS, { nullable: true }),
   f.longText('sourceNote', 'Source note'),
+  f.text('sourceRef', 'Source location', {
+    hint: 'Where an import found this entry. The importer sets it.',
+  }),
   f.tags('tags', 'Tags'),
   f.system('createdAt', 'Created'),
   f.system('modifiedAt', 'Last changed'),

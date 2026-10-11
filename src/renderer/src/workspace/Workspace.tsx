@@ -19,6 +19,8 @@ import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './cult
 import { OutlineView } from './plot';
 import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
+import { ImportView } from './importer';
+import { BackupsView } from './backups';
 
 type View =
   | {
@@ -42,6 +44,8 @@ type View =
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
+  | { kind: 'import' }
+  | { kind: 'backups' }
   | { kind: 'bibles' };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
@@ -168,6 +172,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               setView({ kind: 'search' }),
             )}
             {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
+            {railButton('Import', view.kind === 'import', () => setView({ kind: 'import' }))}
+            {railButton('Backups', view.kind === 'backups', () => setView({ kind: 'backups' }))}
             {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
             {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
             {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
@@ -232,6 +238,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'trash' && <TrashView onOpen={open} />}
               {view.kind === 'lists' && <ListsView />}
               {view.kind === 'review' && <ReviewQueue />}
+              {view.kind === 'import' && <ImportView />}
+              {view.kind === 'backups' && <BackupsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
               {view.kind === 'year' && <YearView />}
               {view.kind === 'compare' && <CompareView />}

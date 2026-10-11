@@ -1,9 +1,12 @@
-import { BrowserWindow, app, shell } from 'electron';
+import { join } from 'node:path';
+import { BrowserWindow, app, dialog, shell } from 'electron';
 import { connect, listBibles } from '../db';
 import type { Store } from '../db';
 import { createBibleWithDefaults, openBibleSession } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
+import { needsDailySnapshot } from '../../shared/domain/snapshots';
+import type { ImportDeps } from './importHandlers';
 import { mongoUri } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
@@ -99,7 +102,17 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const s = await requireStore();
   const record = (await listBibles(s)).find((b) => b._id === slug);
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
-  const session = await openBibleSession(s, slug);
+  const session = await openBibleSession(s, slug, {
+    snapshotRoot: join(app.getPath('userData'), 'snapshots'),
+  });
+  // BK-1: the first launch of the day takes a snapshot. A failure here never blocks opening.
+  try {
+    if (session.snapshots && needsDailySnapshot(await session.snapshots.list(), new Date())) {
+      await session.snapshots.take('daily');
+    }
+  } catch {
+    // The person can still take one on request.
+  }
   current?.unsubscribe();
   const offChange = session.repo.onChange((e) => broadcast('bible.changed', e));
   const offLists = session.repo.onListsChange(() => broadcast('lists.changed', { bible: slug }));
@@ -109,7 +122,11 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const offTime = session.repo.onStoryTimeChange(() =>
     broadcast('storyTime.changed', { bible: slug }),
   );
+  const offReload = session.repo.onReload((message) =>
+    broadcast('bible.reloaded', { bible: slug, message }),
+  );
   const unsubscribe = () => {
+    offReload();
     offChange();
     offLists();
     offProposals();
@@ -129,6 +146,48 @@ export async function openExternal(url: string): Promise<Response<'app.openExter
   return { ok: true };
 }
 
+/** Test builds may name the file to pick, so no native dialog is needed. */
+const testPath = (name: string): string | null =>
+  !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
+
+const importDeps: ImportDeps = {
+  async pickFile(kind) {
+    const forced = testPath(
+      kind === 'workbook' ? 'NOVEL_COMPANION_TEST_PICK_FILE' : 'NOVEL_COMPANION_TEST_PICK_DOCUMENT',
+    );
+    if (forced) return forced;
+    const result = await dialog.showOpenDialog({
+      title: kind === 'workbook' ? 'Choose an Excel workbook' : 'Choose a Word document',
+      properties: ['openFile'],
+      filters:
+        kind === 'workbook'
+          ? [{ name: 'Excel workbooks', extensions: ['xlsx'] }]
+          : [{ name: 'Word documents', extensions: ['docx'] }],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+  async pickSavePath(defaultName) {
+    const forced = testPath('NOVEL_COMPANION_TEST_SAVE_PATH');
+    if (forced) return forced;
+    const result = await dialog.showSaveDialog({
+      title: 'Export the whole bible',
+      defaultPath: defaultName,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  },
+  async pickBibleFile() {
+    const forced = testPath('NOVEL_COMPANION_TEST_BIBLE_FILE');
+    if (forced) return forced;
+    const result = await dialog.showOpenDialog({
+      title: 'Choose an exported bible',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  },
+};
+
 export function registerHandlers(): void {
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
@@ -145,7 +204,7 @@ export function registerHandlers(): void {
     closePromptShown?.();
     return { ok: true as const };
   });
-  const handlers = bibleHandlers(() => current?.session ?? null);
+  const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);
   }

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
+import { resetOnNavigation } from './promptReset';
 import {
   closeStore,
   hasOpenBible,
@@ -13,6 +14,15 @@ import { STOP_PROMPT_TIMEOUT_MS, stopPromptOutcome } from '../shared/domain/sess
 import { wireEvent } from '../shared/ipc';
 
 const APP_NAME = 'Novel Companion';
+
+// One fixed data folder, so snapshots are always under
+// ~/Library/Application Support/Novel Companion/snapshots/<bible>/. Tests give each run its own.
+app.setPath(
+  'userData',
+  !app.isPackaged && process.env.NOVEL_COMPANION_USER_DATA
+    ? process.env.NOVEL_COMPANION_USER_DATA
+    : join(app.getPath('appData'), APP_NAME),
+);
 
 /** The renderer may load only the bundled app (or the dev server in development). */
 function isAllowedUrl(url: string): boolean {
@@ -102,6 +112,10 @@ function createWindow(): BrowserWindow {
     if (quitPending) app.quit();
     else if (!win.isDestroyed()) win.close();
   };
+  // A reload or navigation removes the prompt, so the flag must not outlive it.
+  resetOnNavigation(win.webContents, () => {
+    promptShown = false;
+  });
   onClosePromptShown(() => {
     promptShown = true;
     clearStopTimer();

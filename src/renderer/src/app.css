@@ -1612,3 +1612,82 @@ tr.is-story-year td {
 .chip[data-state='decided'] {
   background: var(--accent-soft);
 }
+
+/* Import and backups (M5) */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.field.narrow {
+  max-width: 14rem;
+}
+.shape-toggle {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+}
+.shape-toggle legend {
+  color: var(--fg);
+  font-weight: 600;
+  padding: 0 4px;
+}
+.shape-toggle label {
+  display: block;
+}
+label.check {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--fg);
+}
+.import-fail {
+  color: var(--fg);
+  border-left: 3px solid var(--critical);
+  padding-left: 6px;
+}
+.import-values {
+  display: block;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.fail-list,
+.new-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 4px;
+}
+.new-list {
+  list-style: none;
+  padding-left: 0;
+  max-height: 22rem;
+  overflow: auto;
+}
+.doc-outline {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.doc-outline .level-2 {
+  margin-left: 1rem;
+}
+.doc-outline .level-3,
+.doc-outline .level-4 {
+  margin-left: 2rem;
+}
+.doc-preview {
+  max-height: 24rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  background: var(--surface);
+}
+.snapshot-table td,
+.snapshot-table th {
+  vertical-align: top;
+}
+@media (max-width: 480px) {
+  .field.narrow {
+    max-width: none;
+  }
+}

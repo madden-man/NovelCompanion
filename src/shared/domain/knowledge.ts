@@ -107,6 +107,10 @@ export function knownBy(data: TimelineData, characterId: string, year: number): 
     if (learned === null) continue;
     if (learned <= year) {
       knownIds.add(str(k.factId));
+      // Two records of one character learning one fact count once, the earliest.
+      const seen = known.findIndex((x) => x.factId === str(k.factId));
+      if (seen >= 0 && (known[seen]?.yearLearned ?? Infinity) <= learned) continue;
+      if (seen >= 0) known.splice(seen, 1);
       known.push({
         recordId: str(k._id),
         factId: str(k.factId),
