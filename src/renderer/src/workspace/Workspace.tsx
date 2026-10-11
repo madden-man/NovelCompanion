@@ -22,6 +22,8 @@ import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
+import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
+import { SettingsView } from './settings';
 
 type View =
   | {
@@ -47,6 +49,7 @@ type View =
   | { kind: 'review' }
   | { kind: 'import' }
   | { kind: 'backups' }
+  | { kind: 'settings' }
   | { kind: 'bibles' };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
@@ -77,6 +80,11 @@ function Frame({ bibles }: { bibles: ReactNode }) {
 
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
+  useClaudeNavigation({
+    settings: () => setView({ kind: 'settings' }),
+    review: () => setView({ kind: 'review' }),
+    entry: open,
+  });
 
   const railButton = (label: string, active: boolean, onClick: () => void) => (
     <button key={label} type="button" aria-current={active ? 'page' : undefined} onClick={onClick}>
@@ -179,6 +187,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
             {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
             {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
+            {railButton('Settings', view.kind === 'settings', () => setView({ kind: 'settings' }))}
           </div>
         </nav>
         {view.kind === 'section' ? (
@@ -242,6 +251,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'review' && <ReviewQueue />}
               {view.kind === 'import' && <ImportView />}
               {view.kind === 'backups' && <BackupsView />}
+              {view.kind === 'settings' && <SettingsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
               {view.kind === 'year' && <YearView />}
               {view.kind === 'compare' && <CompareView />}
@@ -255,6 +265,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         )}
         <StatusBar />
         <StoryTimeGate />
+        <ClaudePanelGate />
       </div>
     </ZhNavProvider>
   );
@@ -285,6 +296,7 @@ function StatusBar() {
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
+      <AskClaudeButton />
     </footer>
   );
 }

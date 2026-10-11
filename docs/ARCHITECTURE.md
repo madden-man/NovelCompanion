@@ -66,9 +66,36 @@ Verified SDK facts (same docs): package `@anthropic-ai/claude-agent-sdk`; `query
 - Each feature calls the Agent SDK `query()` with `permissionMode: 'dontAsk'`, no built-in tools (`allowedTools` limited to the app's own `mcp__bible__*` tools, `disallowedTools` covering Bash, Edit, Write, WebFetch, WebSearch). The four structured features get all their material in the prompt and only the `propose_change` tool (import proposals and alignment findings) or no tool at all (briefs, summaries). The panel gets the read-only tools plus `propose_change`. `propose_change` writes only to the `proposals` collection (AI-3).
 - Every system prompt contains the sentence "Never draft prose for the novel. Produce only the structured output requested." A unit test asserts it is present in every feature prompt, and a static test asserts no renderer channel sends free-form user text to any Claude feature (AI-4).
 - Streaming partial messages feed the feature's output pane; an AbortController backs the Stop button.
-- The model is read from settings per feature (DB-4): briefs default `claude-opus-5-5`, the others default `claude-sonnet-5-5`.
+- The model is read from settings per feature (DB-4): briefs and alignment checks (CC-3) default `claude-opus-5-5`; chapter summaries, import proposals, and the question panel default `claude-sonnet-5-5` (`DEFAULT_MODELS` in `src/shared/claude.ts`).
 - In the test suite the SDK is replaced by a recorded-response fake behind the same interface (`src/main/claude/client.ts` exports an interface; `fake.ts` and `sdk.ts` implement it).
 - If the key is unset or rejected, the app says so and opens the settings screen.
+
+### Claude runtime (built in M6)
+
+Every Claude call goes through `ClaudeRuntime` in `src/main/claude/runtime.ts`. It reads the key (`keys.ts`, keychain service `novel-companion-anthropic`) and the model for the feature (`settings.ts`, a JSON file `claude-settings.json` in the app's data folder holding models and the per-bible AI-6 confirmation, never a secret), refuses to send anything before the disclosure is confirmed for the open bible, saves the input before sending, streams, stops, validates, queues proposals, and saves the outcome. A failure writes nothing to the bible and keeps the input (AI-7).
+
+```ts
+// src/main/claude/runtime.ts
+interface FeatureDefinition<I, O> {
+  feature: 'briefs' | 'alignment' | 'summaries' | 'importProposals';
+  instructions: string;                 // feature text; systemPrompt() prepends the shared rules and the AI-4 sentence
+  input: z.ZodType<I>;                  // the deterministic input, validated first
+  output: z.ZodType<O>;                 // structured output; sent as outputFormat json_schema, validated with zod
+  title(input: I, session: OpenBible): string;
+  build(input: I, session: OpenBible): { prompt: string; given: EntryRefWire[] }; // deterministic
+  proposals?(output: O, input: I, session: OpenBible): (ProposalDraft | { summary: string; problem: string })[];
+  maxTurns?: number;
+}
+runtime.runFeature(session, def, rawInput, runId): Promise<{ runId; conversationId; done: Promise<ClaudeRun> }>
+runtime.ask(session, { runId, conversationId, question })   // the question panel
+runtime.stop(runId)
+```
+
+- **Adding a feature (M7 briefs and summaries, M8 alignment).** Write `src/main/claude/features/<name>.ts` exporting a `FeatureDefinition`, add it to `FEATURES` in `features/index.ts` (the AI-4 test walks that list), and add one IPC channel to `claudeContract` in `src/shared/claude.ts` whose request carries IDs only (a renderer-picked `runId` plus the IDs of the material) and whose handler in `src/main/claude/handlers.ts` calls `runtime.runFeature`. Put any manuscript or imported text in the prompt through `material(label, text)` (AI-5). Return proposals as `ProposalDraft`s; the runtime checks each against the schema and the read model and queues it with `Repository.propose` (source `claude`), and reports any it refused.
+- **Runs are saved** in the bible's `conversations` collection (schema version 7, index `{ modifiedAt: -1 }`) by `store.ts`, the one place that writes it. A panel conversation is one document with many turns; a feature run is one document with one turn, its `input`, and its validated `output`. Each turn records the model, status (`running`, `done`, `stopped`, `failed`), the error kind and message, the entries read or given (AI-2), and the proposal IDs.
+- **Streaming** goes to the renderer as `claude.stream` events (`text`, `read`, `proposal`, `finished`) keyed by the `runId` the renderer chose, so it listens before the run starts. `useRunStream(runId)` in `src/renderer/src/workspace/claude.tsx` follows one run; `ClaudeErrorNote`, `EntriesRead`, and `ProposalsNote` render its state.
+- **Tools** (`tools.ts`): `search_entries`, `get_entry`, `timeline_for_year`, `relatives_of`, `get_chapter` read the read model through the shared domain functions; `propose_change` writes a proposal only. A static unit test holds `tools.ts` to that.
+- **Client** (`client.ts`): `ClaudeClient.run(request, signal)` yields `text`, `toolCall`, and one `result`, or throws a typed `ClaudeFailure`. `sdk.ts` implements it with `query()` (`tools: []`, `allowedTools` of `mcp__bible__*`, `disallowedTools` of every built-in, `permissionMode: 'dontAsk'`, `settingSources: []`, `persistSession: false`, `includePartialMessages: true`, `outputFormat` for features, an `env` built from nothing with the key and telemetry off, `CLAUDE_CONFIG_DIR` in the app's data folder). `fake.ts` replays `fixtures/claude/recordings.json` (matched by feature and prompt text, running the real tools) and fails plainly on a request it has no recording for. End-to-end runs set `NOVEL_COMPANION_TEST_CLAUDE=1` (honoured only outside a packaged app) for the fake, a key held in memory, and a fake models list.
 
 ## Fixture novel
 

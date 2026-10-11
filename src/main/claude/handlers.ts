@@ -1,0 +1,126 @@
+import { ERROR_MESSAGES, KNOWN_MODELS, claudeContract } from '../../shared/claude';
+import type { OpenBible } from '../db/session';
+import type { Handler } from '../ipc/validate';
+import { ClaudeFailure } from './client';
+import type { ModelCatalog } from './client';
+import { cleanKey } from './keys';
+import type { KeyStore } from './keys';
+import type { ClaudeRuntime } from './runtime';
+import { RunStore, summarize } from './store';
+import { FEATURES } from './features';
+
+export type ClaudeChannel = keyof typeof claudeContract;
+export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
+
+export interface ClaudeDeps {
+  runtime: ClaudeRuntime;
+  keys: KeyStore;
+  catalog: ModelCatalog;
+}
+
+/**
+ * Handlers for the Claude channels, free of Electron so the integration
+ * suite drives the same zod contract the renderer uses. Streaming goes out
+ * through the runtime's `emit`.
+ */
+export function claudeHandlers(
+  current: () => OpenBible | null,
+  deps: ClaudeDeps,
+): { [C in ClaudeChannel]: Handler<C> } {
+  const { runtime, keys, catalog } = deps;
+  let cached: { id: string; displayName: string }[] | null = null;
+  const session = (): OpenBible => {
+    const s = current();
+    if (!s) throw new Error(ERROR_MESSAGES.noBible);
+    return s;
+  };
+  const bibleId = () => current()?.handle.id ?? null;
+
+  return {
+    'claude.status': () => runtime.status(bibleId()),
+    'claude.setKey': async ({ key }) => {
+      const cleaned = cleanKey(key);
+      if (!cleaned.ok)
+        return { ok: false, message: cleaned.message, status: runtime.status(bibleId()) };
+      try {
+        cached = await catalog.list(cleaned.key);
+        keys.set(cleaned.key);
+        return {
+          ok: true,
+          message: 'Saved in the keychain. Anthropic accepted the key.',
+          status: runtime.status(bibleId()),
+        };
+      } catch (e) {
+        const kind = e instanceof ClaudeFailure ? e.kind : 'other';
+        if (kind === 'badKey') {
+          return {
+            ok: false,
+            message:
+              'Anthropic rejected this key, so it was not saved. Check it in the Anthropic Console and paste it again.',
+            status: runtime.status(bibleId()),
+          };
+        }
+        // Offline or busy: keep the key; the first run will say if it is wrong.
+        keys.set(cleaned.key);
+        return {
+          ok: true,
+          message:
+            'Saved in the keychain. The app could not reach Anthropic to check it, so the first run will.',
+          status: runtime.status(bibleId()),
+        };
+      }
+    },
+    'claude.clearKey': () => {
+      keys.clear();
+      cached = null;
+      return runtime.status(bibleId());
+    },
+    'claude.models': async () => {
+      const key = keys.get();
+      if (!key) {
+        return {
+          models: KNOWN_MODELS.map((m) => ({ ...m })),
+          live: false,
+          message: 'Add an API key to see the models it can use.',
+        };
+      }
+      try {
+        cached = await catalog.list(key);
+        return { models: cached, live: true, message: null };
+      } catch (e) {
+        const message = e instanceof ClaudeFailure ? e.message : ERROR_MESSAGES.other;
+        return {
+          models: cached ?? KNOWN_MODELS.map((m) => ({ ...m })),
+          live: false,
+          message: cached ? `Showing the list read earlier. ${message}` : message,
+        };
+      }
+    },
+    'claude.setModel': ({ feature, model }) => runtime.setModel(feature, model, bibleId()),
+    'claude.acknowledge': () => runtime.acknowledge(session().handle.id),
+    'claude.ask': async (req) => {
+      const start = await runtime.ask(session(), req);
+      return { runId: start.runId, conversationId: start.conversationId };
+    },
+    'claude.stop': ({ runId }) => ({ stopped: runtime.stop(runId) }),
+    'claude.runs': ({ feature }) => ({
+      runs: new RunStore(session())
+        .list(feature)
+        .map((r) => summarize(r, (id) => runtime.isActive(id))),
+    }),
+    'claude.run': ({ id }) => {
+      const run = new RunStore(session()).get(id);
+      if (!run) throw new Error('That conversation is not saved.');
+      return { run, active: run.turns.filter((t) => runtime.isActive(t.id)).map((t) => t.id) };
+    },
+    'claude.importProposals': async ({ runId, fileId }) => {
+      const start = await runtime.runFeature(
+        session(),
+        FEATURES.importProposals,
+        { fileId },
+        runId,
+      );
+      return { runId: start.runId, conversationId: start.conversationId };
+    },
+  };
+}

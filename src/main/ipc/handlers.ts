@@ -14,6 +14,9 @@ import { exportTree } from './exportTree';
 import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
 import type { Handler } from './validate';
+import { claudeDeps } from '../claude';
+import { CLAUDE_CHANNELS, claudeHandlers } from '../claude/handlers';
+import type { ClaudeChannel } from '../claude/handlers';
 
 let store: Store | null = null;
 let current: { session: OpenBible; name: string; unsubscribe: () => void } | null = null;
@@ -198,6 +201,21 @@ export function registerHandlers(): void {
   const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, handlers[channel] as Handler<BibleChannel>);
+  }
+  // Claude (ARCH-4, AI-1 to AI-7, IM-5).
+  const claude = claudeHandlers(
+    () => current?.session ?? null,
+    claudeDeps({
+      isPackaged: app.isPackaged,
+      userData: app.getPath('userData'),
+      appRoot: app.getAppPath(),
+      env: process.env,
+      version: app.getVersion(),
+      emit: (e) => broadcast('claude.stream', e),
+    }),
+  );
+  for (const channel of CLAUDE_CHANNELS) {
+    handle(channel, claude[channel] as Handler<ClaudeChannel>);
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {

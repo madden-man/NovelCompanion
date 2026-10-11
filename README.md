@@ -12,22 +12,22 @@ A desktop story bible for writing a novel. Electron, TypeScript, React, and Mong
 
   The command prompts for the value, so it does not land in your shell history.
 
-- **Claude Code CLI, signed in.** Claude features (from milestone M6) use your Claude subscription through the installed Claude Code CLI. Check with `claude auth status`.
+- **An Anthropic API key.** Claude features use the Claude Agent SDK with an API key (amendment A23). Paste it in the app under Settings; it is kept in the macOS keychain under the service `novel-companion-anthropic` and shown only masked. The SDK bundles its own Claude Code binary, so the installed CLI is not needed.
 
 ## Commands
 
-| Command                    | What it does                                                                                            |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `npm install`              | Install the pinned dependencies.                                                                        |
-| `npm run dev`              | Start the app with hot reload.                                                                          |
-| `npm run build`            | Build main, preload, and renderer into `out/`.                                                          |
-| `npm test`                 | Run lint, typecheck, unit, integration, and end-to-end tests in that order. Stops at the first failure. |
-| `npm run test:unit`        | Unit tests only. No database.                                                                           |
-| `npm run test:integration` | Integration tests against a local MongoDB that the tests start themselves.                              |
-| `npm run test:e2e`         | Build the app and drive it with Playwright.                                                             |
-| `npm run test:live`        | The on-demand Claude smoke test. A placeholder until M6. Not part of `npm test`.                        |
-| `npm run package`          | Build an unsigned macOS `.dmg` into `release/`.                                                         |
-| `npm run fixtures:files`   | Rebuild the fixture workbook and Word document in `fixtures/files/`.                                    |
+| Command                    | What it does                                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `npm install`              | Install the pinned dependencies.                                                                                                 |
+| `npm run dev`              | Start the app with hot reload.                                                                                                   |
+| `npm run build`            | Build main, preload, and renderer into `out/`.                                                                                   |
+| `npm test`                 | Run lint, typecheck, unit, integration, and end-to-end tests in that order. Stops at the first failure.                          |
+| `npm run test:unit`        | Unit tests only. No database.                                                                                                    |
+| `npm run test:integration` | Integration tests against a local MongoDB that the tests start themselves.                                                       |
+| `npm run test:e2e`         | Build the app and drive it with Playwright.                                                                                      |
+| `npm run test:live`        | The on-demand Claude smoke test against the real API, with the key in the keychain. Skipped without one. Not part of `npm test`. |
+| `npm run package`          | Build an unsigned macOS `.dmg` into `release/`.                                                                                  |
+| `npm run fixtures:files`   | Rebuild the fixture workbook and Word document in `fixtures/files/`.                                                             |
 
 Tests never touch Atlas. Integration and end-to-end tests start a local MongoDB with `mongodb-memory-server`, which downloads a MongoDB binary the first time it runs.
 

@@ -20,12 +20,14 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:e2e": "electron-vite build && playwright test",
-    "test:live": "node scripts/live-placeholder.ts",
+    "test:live": "vitest run --project live",
     "fixtures:files": "node scripts/make-fixture-files.ts",
     "package": "electron-vite build && electron-builder --mac dmg",
     "import:eastwinds": "node scripts/import-eastwinds.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.290",
+    "@anthropic-ai/sdk": "0.133.0",
     "@napi-rs/keyring": "1.2.0",
     "mammoth": "1.11.0",
     "minisearch": "7.2.0",

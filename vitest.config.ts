@@ -22,6 +22,18 @@ export default defineConfig({
           fileParallelism: false,
         },
       },
+      {
+        // T-3: the on-demand live Claude smoke test (`npm run test:live`), never part of `npm test`.
+        test: {
+          name: 'live',
+          include: ['tests/live/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/helpers/mongoGlobalSetup.ts'],
+          hookTimeout: 300_000,
+          testTimeout: 300_000,
+          fileParallelism: false,
+        },
+      },
     ],
   },
 });
