@@ -670,7 +670,12 @@ legend.ed-label {
   padding: 14px 18px;
   min-width: 0;
   overflow-y: auto;
-  max-height: calc(100vh - 110px);
+  height: calc(100vh - 110px);
+}
+/* Heading, toolbar, and tree take exactly the panel's visible height; the legend and warnings follow below. */
+.tree-stage {
+  flex-shrink: 0;
+  height: 100%;
 }
 .tree-inspector {
   border-left: 1px solid var(--border);
@@ -703,9 +708,20 @@ legend.ed-label {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--chart-surface);
-  height: 480px;
+  /* The tree fills what is left of the first screen of the panel (see .tree-stage). */
+  flex: 1 1 auto;
+  min-height: 240px;
   overflow: hidden;
   touch-action: none;
+}
+.ws-tree-area:fullscreen {
+  background: var(--bg);
+}
+.ws-tree-area:fullscreen .tree-main {
+  height: 100vh;
+}
+.ws-tree-area:fullscreen .tree-inspector {
+  max-height: 100vh;
 }
 .tree-svg {
   width: 100%;
@@ -1051,10 +1067,14 @@ table.compact th {
     grid-row: auto;
   }
   .tree-main {
-    max-height: none;
+    height: auto;
     padding: 12px 16px;
   }
+  .tree-stage {
+    height: auto;
+  }
   .tree-wrap {
+    flex: none;
     height: 360px;
   }
 }

@@ -231,6 +231,9 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const [yearDraft, setYearDraft] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
+  /** The tree and its inspector fill the screen; Escape (or the button) leaves. */
+  const area = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
   /** GL-3: the meaning card of the focused node, placed under it. */
   const [card, setCard] = useState<{ text: string; x: number; y: number } | null>(null);
   const showCard = useCallback((c: { text: string; el: Element } | null) => {
@@ -338,6 +341,30 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     else h = w / ar;
     setView({ x: bbox.x - (w - bbox.width) / 2, y: bbox.y - (h - bbox.height) / 2, w, h });
   }, [bbox]);
+
+  useEffect(() => {
+    const sync = () => setFull(document.fullscreenElement === area.current);
+    // Electron does not leave HTML full screen on Escape by itself, as a browser does.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && document.fullscreenElement) void document.exitFullscreen();
+    };
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+  const toggleFull = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void area.current?.requestFullscreen();
+  }, []);
+  // The tree box changes size on entering or leaving full screen: fit the people to it.
+  useEffect(() => {
+    if (!fitted.current) return;
+    const frame = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(frame);
+  }, [full, fit]);
 
   useEffect(() => {
     if (layout && !fitted.current) {
@@ -510,206 +537,215 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const name = (id: string) => graph.byId.get(id)?.name ?? id;
 
   return (
-    <div className="ws-tree-area" data-testid="tree-view">
+    <div className="ws-tree-area" data-testid="tree-view" ref={area}>
       <section className="tree-main stack" aria-labelledby="tree-title">
-        <div className="list-head">
-          <h2 id="tree-title">Family tree</h2>
-          <span className="example-note">
-            {layout.nodes.size} of {graph.people.length} people shown
-          </span>
-        </div>
-        <div className="tree-toolbar">
-          <div className="field">
-            <label htmlFor={filterId}>Show</label>
-            <select id={filterId} value={filterKey} onChange={(e) => setFilterKey(e.target.value)}>
-              <option value="all">All families</option>
-              {families.map((f) => (
-                <option key={f._id} value={`family:${f._id}`}>
-                  {String(f.name)} only
-                </option>
-              ))}
-              <option value="lineage">Ancestors and descendants of a person</option>
-            </select>
+        <div className="tree-stage stack">
+          <div className="list-head">
+            <h2 id="tree-title">Family tree</h2>
+            <span className="example-note">
+              {layout.nodes.size} of {graph.people.length} people shown
+            </span>
           </div>
-          {filterKey === 'lineage' && (
+          <div className="tree-toolbar">
             <div className="field">
-              <label htmlFor={personId}>Person</label>
-              <select id={personId} value={lineage} onChange={(e) => setLineage(e.target.value)}>
-                <option value="">Pick a person</option>
-                {graph.people.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
+              <label htmlFor={filterId}>Show</label>
+              <select
+                id={filterId}
+                value={filterKey}
+                onChange={(e) => setFilterKey(e.target.value)}
+              >
+                <option value="all">All families</option>
+                {families.map((f) => (
+                  <option key={f._id} value={`family:${f._id}`}>
+                    {String(f.name)} only
                   </option>
                 ))}
+                <option value="lineage">Ancestors and descendants of a person</option>
               </select>
             </div>
-          )}
-          <div className="field year-slider">
-            <label htmlFor={rangeId}>Year slider</label>
-            <input
-              id={rangeId}
-              type="range"
-              min={years.min}
-              max={years.max}
-              step={1}
-              value={year}
-              onChange={(e) => story.setYear(Number(e.target.value))}
-            />
-          </div>
-          <div className="field year-field">
-            <label htmlFor={yearId}>Year</label>
-            <input
-              id={yearId}
-              type="number"
-              className="num"
-              value={yearDraft ?? String(year)}
-              onBlur={() => setYearDraft(null)}
-              onChange={(e) => setYearFrom(e.target.value)}
-              data-testid="tree-year"
-            />
-          </div>
-          <div className="row tight tree-buttons">
-            <button type="button" className="btn" onClick={fit}>
-              Fit to window
-            </button>
-            <button type="button" className="btn" onClick={() => setConfirmTidy(true)}>
-              Tidy layout
-            </button>
-            <button type="button" className="btn" onClick={() => void exportAs('png')}>
-              Export PNG
-            </button>
-            <button type="button" className="btn" onClick={() => void exportAs('pdf')}>
-              Export PDF
-            </button>
-          </div>
-        </div>
-        {confirmTidy && (
-          <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
-            <strong>Tidy the whole layout?</strong>
-            <p>
-              This lays out the tree again from scratch, so every person may move. People you add
-              later are placed without moving anyone.
-            </p>
-            <div className="row">
-              <button type="button" className="btn primary" onClick={() => void tidy()}>
+            {filterKey === 'lineage' && (
+              <div className="field">
+                <label htmlFor={personId}>Person</label>
+                <select id={personId} value={lineage} onChange={(e) => setLineage(e.target.value)}>
+                  <option value="">Pick a person</option>
+                  {graph.people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="field year-slider">
+              <label htmlFor={rangeId}>Year slider</label>
+              <input
+                id={rangeId}
+                type="range"
+                min={years.min}
+                max={years.max}
+                step={1}
+                value={year}
+                onChange={(e) => story.setYear(Number(e.target.value))}
+              />
+            </div>
+            <div className="field year-field">
+              <label htmlFor={yearId}>Year</label>
+              <input
+                id={yearId}
+                type="number"
+                className="num"
+                value={yearDraft ?? String(year)}
+                onBlur={() => setYearDraft(null)}
+                onChange={(e) => setYearFrom(e.target.value)}
+                data-testid="tree-year"
+              />
+            </div>
+            <div className="row tight tree-buttons">
+              <button type="button" className="btn" onClick={fit}>
+                Fit to window
+              </button>
+              <button type="button" className="btn" onClick={() => setConfirmTidy(true)}>
                 Tidy layout
               </button>
-              <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
-                Keep the layout
+              <button type="button" className="btn" onClick={() => void exportAs('png')}>
+                Export PNG
+              </button>
+              <button type="button" className="btn" onClick={() => void exportAs('pdf')}>
+                Export PDF
+              </button>
+              <button type="button" className="btn" aria-pressed={full} onClick={toggleFull}>
+                {full ? 'Exit full screen' : 'Full screen'}
               </button>
             </div>
           </div>
-        )}
-        {exportNote && (
-          <p
-            className={exportNote.bad ? 'callout crit' : 'callout'}
-            role="status"
-            data-testid="export-note"
-          >
-            {exportNote.text}
-          </p>
-        )}
-        <div className="tree-wrap" ref={wrap}>
-          <svg
-            ref={svg}
-            className="tree-svg"
-            viewBox={
-              view
-                ? `${view.x} ${view.y} ${view.w} ${view.h}`
-                : `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`
-            }
-            role="group"
-            aria-label={`Family tree in ${year}`}
-            data-testid="tree-svg"
-            data-year={year}
-            tabIndex={0}
-            onKeyDown={onTreeKey}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-          >
-            <g className="tree-edges">
-              {edges.unions.map((u) => (
-                <g key={u.id} data-union={u.id} data-state={u.state}>
-                  <path
-                    className={`tunion ${unionClass(u.type)} ${u.state}`}
-                    d={u.path}
-                    data-type={u.type}
-                  />
-                  {u.label && u.endYear !== null && (
-                    <text
-                      className="tunion-end"
-                      x={u.label.x}
-                      y={u.label.y - 6}
-                      textAnchor="middle"
-                    >
-                      ended {u.endYear}
-                    </text>
-                  )}
-                </g>
-              ))}
-              {edges.links.map((l) => (
-                <path
-                  key={l.ids.join('+')}
-                  className={`tlink ${linkClass(l.type)}`}
-                  d={l.path}
-                  data-links={l.ids.join(' ')}
-                  data-type={l.type}
-                />
-              ))}
-            </g>
-            <g className="tree-nodes">
-              {graph.people.map((p) => {
-                const at = layout.nodes.get(p.id);
-                if (!at) return null;
-                return (
-                  <TreeNode
-                    key={p.id}
-                    person={p}
-                    hint={zhHint(p.chinese, glossary)}
-                    x={at.x}
-                    y={at.y}
-                    year={year}
-                    selected={selected === p.id}
-                    collapsed={collapsed.has(p.id)}
-                    branch={hasBranch(graph, p.id)}
-                    colors={colorOf(p.familyIds)}
-                    onSelect={setSelected}
-                    onToggle={toggle}
-                    onCard={showCard}
-                  />
-                );
-              })}
-            </g>
-          </svg>
-          {card && (
-            <div
-              className="tree-card"
-              role="tooltip"
-              data-testid="tree-card"
-              style={{ left: card.x, top: card.y }}
-            >
-              {card.text}
+          {confirmTidy && (
+            <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
+              <strong>Tidy the whole layout?</strong>
+              <p>
+                This lays out the tree again from scratch, so every person may move. People you add
+                later are placed without moving anyone.
+              </p>
+              <div className="row">
+                <button type="button" className="btn primary" onClick={() => void tidy()}>
+                  Tidy layout
+                </button>
+                <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
+                  Keep the layout
+                </button>
+              </div>
             </div>
           )}
-          <div className="tree-ctl">
-            <button
-              type="button"
-              className="btn small"
-              aria-label="Zoom in"
-              onClick={() => zoom(0.8)}
+          {exportNote && (
+            <p
+              className={exportNote.bad ? 'callout crit' : 'callout'}
+              role="status"
+              data-testid="export-note"
             >
-              +
-            </button>
-            <button
-              type="button"
-              className="btn small"
-              aria-label="Zoom out"
-              onClick={() => zoom(1.25)}
+              {exportNote.text}
+            </p>
+          )}
+          <div className="tree-wrap" ref={wrap}>
+            <svg
+              ref={svg}
+              className="tree-svg"
+              viewBox={
+                view
+                  ? `${view.x} ${view.y} ${view.w} ${view.h}`
+                  : `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`
+              }
+              role="group"
+              aria-label={`Family tree in ${year}`}
+              data-testid="tree-svg"
+              data-year={year}
+              tabIndex={0}
+              onKeyDown={onTreeKey}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
             >
-              −
-            </button>
+              <g className="tree-edges">
+                {edges.unions.map((u) => (
+                  <g key={u.id} data-union={u.id} data-state={u.state}>
+                    <path
+                      className={`tunion ${unionClass(u.type)} ${u.state}`}
+                      d={u.path}
+                      data-type={u.type}
+                    />
+                    {u.label && u.endYear !== null && (
+                      <text
+                        className="tunion-end"
+                        x={u.label.x}
+                        y={u.label.y - 6}
+                        textAnchor="middle"
+                      >
+                        ended {u.endYear}
+                      </text>
+                    )}
+                  </g>
+                ))}
+                {edges.links.map((l) => (
+                  <path
+                    key={l.ids.join('+')}
+                    className={`tlink ${linkClass(l.type)}`}
+                    d={l.path}
+                    data-links={l.ids.join(' ')}
+                    data-type={l.type}
+                  />
+                ))}
+              </g>
+              <g className="tree-nodes">
+                {graph.people.map((p) => {
+                  const at = layout.nodes.get(p.id);
+                  if (!at) return null;
+                  return (
+                    <TreeNode
+                      key={p.id}
+                      person={p}
+                      hint={zhHint(p.chinese, glossary)}
+                      x={at.x}
+                      y={at.y}
+                      year={year}
+                      selected={selected === p.id}
+                      collapsed={collapsed.has(p.id)}
+                      branch={hasBranch(graph, p.id)}
+                      colors={colorOf(p.familyIds)}
+                      onSelect={setSelected}
+                      onToggle={toggle}
+                      onCard={showCard}
+                    />
+                  );
+                })}
+              </g>
+            </svg>
+            {card && (
+              <div
+                className="tree-card"
+                role="tooltip"
+                data-testid="tree-card"
+                style={{ left: card.x, top: card.y }}
+              >
+                {card.text}
+              </div>
+            )}
+            <div className="tree-ctl">
+              <button
+                type="button"
+                className="btn small"
+                aria-label="Zoom in"
+                onClick={() => zoom(0.8)}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="btn small"
+                aria-label="Zoom out"
+                onClick={() => zoom(1.25)}
+              >
+                −
+              </button>
+            </div>
           </div>
         </div>
         <Legend

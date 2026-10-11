@@ -39,8 +39,9 @@ function lockDownSession(): void {
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     callback({ cancel: !isAllowedUrl(details.url) });
   });
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) =>
-    callback(false),
+  // Every permission is refused except full screen, which the family tree asks for.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
+    callback(permission === 'fullscreen'),
   );
 }
 
