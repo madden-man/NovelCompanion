@@ -12,6 +12,10 @@ A desktop story bible for writing a novel. Electron, TypeScript, React, and Mong
 
   The command prompts for the value, so it does not land in your shell history.
 
+- **Running against a local database.** See "Local development" in `docs/ARCHITECTURE.md`: a local one-node replica set and `NOVEL_COMPANION_TEST_MONGODB_URI`. If `npm run dev` says "Electron uninstall", run `node node_modules/electron/install.js`.
+
+- **Google Drive (optional).** The Desktop OAuth client for Google Cloud project `novel-companion-511219` is stored in the keychain (service `novel-companion-google`, account `oauth-client`). Connect in Settings; `docs/DRIVE-SETUP.md` has the setup and the real-flow checklist.
+
 - **An Anthropic API key.** Claude features use the Claude Agent SDK with an API key (amendment A23). Paste it in the app under Settings; it is kept in the macOS keychain under the service `novel-companion-anthropic` and shown only masked. The SDK bundles its own Claude Code binary, so the installed CLI is not needed.
 
 ## Commands

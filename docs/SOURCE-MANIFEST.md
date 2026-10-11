@@ -5,6 +5,8 @@ Downloaded 2026-10-10 from the shared Drive folder "East Winds"
 Google Docs and Sheets were exported as .docx and .xlsx. Dates are Drive "last modified".
 Precedence for contradictions: the most recently modified source wins.
 
+Re-checked against Drive on 2026-10-11 (files are link-shared and download through their export URLs). Everything matched except one edited sentence in the Introduction of `East Winds` ("...as though his son's outburst reminds him of his existence."), applied to the Introduction's manuscript text in the bible.
+
 | Local file | Drive name | Type | Modified | Drive ID |
 |---|---|---|---|---|
 | East_Winds.docx | East Winds | Google Doc (manuscript: intro, chapter 1, characters, world, philosophies) | 2026-10-10 09:50 | 18enJWLtwaIXR1cop_qV8AmNsFOQwfp0j0mHFn1eOjyQ |
