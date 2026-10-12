@@ -452,13 +452,19 @@ describe('BK-1 the first open of the day takes one snapshot', () => {
       const list = await new SnapshotService(handle, daily).list();
       return list.filter((s) => s.reason === 'daily').map((s) => s.takenAt.slice(0, 10));
     };
-    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
+    await (
+      await openBibleForApp(store, handle.id, options)
+    ).dailySnapshot;
     expect(await taken()).toEqual(['2026-03-10']);
     clock = new Date('2026-03-10T10:20:00.000Z');
-    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
+    await (
+      await openBibleForApp(store, handle.id, options)
+    ).dailySnapshot;
     expect(await taken()).toEqual(['2026-03-10']);
     clock = new Date('2026-03-11T10:00:00.000Z');
-    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
+    await (
+      await openBibleForApp(store, handle.id, options)
+    ).dailySnapshot;
     expect((await taken()).sort()).toEqual(['2026-03-10', '2026-03-11']);
   });
 
