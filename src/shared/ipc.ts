@@ -15,6 +15,7 @@ import { claudeContract, claudeEvents } from './claude';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
 import { driveContract } from './ipcDrive';
+import { appContract, appEvents } from './ipcApp';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -1317,6 +1318,7 @@ export const contract = {
   },
   /** Google Drive (M9): see `ipcDrive.ts`. */
   ...driveContract,
+  ...appContract,
   /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
@@ -1354,6 +1356,7 @@ export const events = {
   /** The whole bible was replaced by a restore or a file import; views reload everything. */
   'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
   ...claudeEvents,
+  ...appEvents,
 } as const;
 
 export type EventName = keyof typeof events;
