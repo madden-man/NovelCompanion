@@ -5,7 +5,7 @@ import type { EntryRefWire } from '../../../shared/claude';
 import type { OpenBible } from '../../db/session';
 import type { ClaudeTool } from '../client';
 import { PROSE_REFUSAL_RULE, material } from '../prompts';
-import { ProposalDraft } from '../proposals';
+import { ProposalDraft, draftSummary } from '../proposals';
 import type { FeatureDefinition, Sink } from '../runtime';
 import { bibleTools } from '../tools';
 
@@ -53,8 +53,9 @@ function listLines(session: OpenBible): string[] {
   return LISTS.map(([id, label]) => {
     const doc = session.model.get('lists', id);
     const items = Array.isArray(doc?.items) ? (doc.items as { id: string; label: string }[]) : [];
-    const text = items.length ? items.map((i) => `${i.id} (${i.label})`).join(', ') : 'none yet';
-    return `${label}: ${text}.`;
+    // AI-5: item labels are words the writer typed, so they go in as material.
+    const text = items.map((i) => `${i.id} (${i.label})`).join(', ');
+    return items.length ? `${label}:\n${material(`list ${id}`, text)}` : `${label}: none yet.`;
   });
 }
 
@@ -75,7 +76,12 @@ export function storyTimeWords(
     : [];
   const strand = strands.find((s) => s.id === t.strandId);
   return {
-    words: `Story year ${date}. The writer is writing Chapter ${String(chapter.readingOrder ?? '')}: ${title} [${t.chapterId}]${strand ? `, strand ${strand.label}` : ''}.`,
+    // AI-5: the chapter title and strand label are the writer's words, wrapped as material.
+    words: [
+      `Story year ${date}. The writer is writing Chapter ${String(chapter.readingOrder ?? '')} [${t.chapterId}], titled:`,
+      material(`chapter ${t.chapterId}`, title),
+      ...(strand ? [`in the strand labelled:`, material(`strand ${strand.id}`, strand.label)] : []),
+    ].join('\n'),
     given: [{ collection: 'chapters', id: String(t.chapterId), title }],
   };
 }
@@ -95,6 +101,10 @@ export function prepareCaptureDraft(draft: ProposalDraft, capturedOn: string): P
   return { ...draft, data };
 }
 
+/** KB-6 names create, change and link; a capture never moves an entry to the trash. */
+export const CAPTURE_NO_DELETE =
+  'A capture adds, changes or links entries; it never deletes one. Propose a change instead.';
+
 /** The AI-2 tools, with every proposal marked as coming from this capture. */
 function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): ClaudeTool[] {
   return bibleTools(session, sink).map((t) =>
@@ -104,6 +114,11 @@ function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): Clau
           ...t,
           handler: async (args) => {
             const parsed = ProposalDraft.safeParse(args);
+            if (parsed.success && parsed.data.op === 'delete') {
+              // Reported with its reason, never silently dropped.
+              sink.rejected(draftSummary(parsed.data), CAPTURE_NO_DELETE);
+              return { text: `Not queued: ${CAPTURE_NO_DELETE}`, isError: true };
+            }
             return t.handler(
               parsed.success ? prepareCaptureDraft(parsed.data, input.capturedOn) : args,
             );
@@ -124,7 +139,8 @@ export const capture: FeatureDefinition<CaptureInput, CaptureOutput> = {
   build(input, session) {
     const time = storyTimeWords(session, input.storyTime);
     const prompt = [
-      `${time.words} Capture date ${input.capturedOn}.`,
+      time.words,
+      `Capture date ${input.capturedOn}.`,
       ...listLines(session),
       'What the writer typed:',
       material('capture box', input.text),

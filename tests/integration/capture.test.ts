@@ -12,6 +12,8 @@ import { FakeClaudeClient, FakeModelCatalog, loadRecordings } from '../../src/ma
 import { MemoryKeyStore } from '../../src/main/claude/keys';
 import { MemorySettingsStore } from '../../src/main/claude/settings';
 import { PROSE_PROHIBITION } from '../../src/main/claude/prompts';
+import { FEATURES } from '../../src/main/claude/features';
+import { CAPTURE_NO_DELETE } from '../../src/main/claude/features/capture';
 import type { ClaudeRun, ClaudeStreamEvent } from '../../src/shared/claude';
 import type { Request, Response } from '../../src/shared/ipc';
 import type { EntryCollection } from '../../src/shared/schema';
@@ -233,6 +235,35 @@ describe('KB-6 capture', () => {
     const filing = await fileCapture(invoke, [asCapture(fact!)], []);
     const backlinks = bible.model.backlinks('Z1').map((b) => b.id);
     expect(backlinks).toContain(filing.filed[0]!.id);
+  });
+});
+
+describe('KB-6 a capture never deletes', () => {
+  test('KB-6 AI-3 propose_change refuses a delete in a capture and says why, and queues nothing', async () => {
+    const rejected: { summary: string; reason: string }[] = [];
+    const proposed: string[] = [];
+    const sink = {
+      label: 'capture, run test',
+      now: () => new Date(),
+      read: () => undefined,
+      proposed: (id: string) => proposed.push(id),
+      rejected: (summary: string, reason: string) => rejected.push({ summary, reason }),
+    };
+    const input = { text: 'x', storyTime: { year: 2034 }, capturedOn: '2026-10-12' };
+    const tool = FEATURES.capture.tools!(input, bible, sink).find(
+      (t) => t.name === 'propose_change',
+    )!;
+    const before = bible.model.all('proposals').length;
+    const out = await tool.handler({
+      op: 'delete',
+      collection: 'characters',
+      targetId: 'U1',
+      reason: 'The capture says the Archivist never existed.',
+    });
+    expect(out).toEqual({ text: `Not queued: ${CAPTURE_NO_DELETE}`, isError: true });
+    expect(rejected).toEqual([{ summary: 'delete characters: U1', reason: CAPTURE_NO_DELETE }]);
+    expect(proposed).toEqual([]);
+    expect(bible.model.all('proposals')).toHaveLength(before);
   });
 });
 

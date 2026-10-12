@@ -141,11 +141,17 @@ export function CaptureBox() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fetched = useRef(new Set<string>());
+  /** Proposals whose diff could not be read; they wait in the review queue. */
+  const [unread, setUnread] = useState<string[]>([]);
+  /** What the last File it could not do (approvals that failed stay pending). */
+  const [notFiled, setNotFiled] = useState(0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
+        // Another modal dialog (Story Time, the stop prompt) holds focus: two focus traps would fight.
+        if (!boxOpen && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         captureNav.open();
       }
     };
@@ -178,6 +184,8 @@ export function CaptureBox() {
     setSaved(null);
     setMessage(null);
     setSent('');
+    setUnread([]);
+    setNotFiled(0);
     fetched.current = new Set();
   }, []);
 
@@ -230,7 +238,12 @@ export function CaptureBox() {
           setCards((cs) =>
             cs.some((c) => c.view.proposal._id === id) ? cs : [...cs, { view, ticked: true }],
           ),
-        (e: unknown) => setMessage(plainError(e)),
+        (e: unknown) => {
+          setUnread((u) => [...u, id]);
+          setMessage(
+            `One proposed change could not be shown and waits in the review queue: ${plainError(e)}`,
+          );
+        },
       );
     }
   }, [proposalIds]);
@@ -241,6 +254,10 @@ export function CaptureBox() {
       (a, b) => order.indexOf(a.view.proposal._id) - order.indexOf(b.view.proposal._id),
     );
   }, [cards, proposalIds]);
+
+  // KB-6: the review shows once every proposal's diff has arrived, so File it never files part of them.
+  const loading = (proposalIds?.length ?? 0) > cards.length + unread.length;
+  const shownPhase: Phase = phase === 'review' && loading ? 'running' : phase;
 
   const send = async () => {
     const body = text.trim();
@@ -259,6 +276,7 @@ export function CaptureBox() {
     watchRun(id);
     fetched.current = new Set();
     setCards([]);
+    setUnread([]);
     setSent(body);
     setRunId(id);
     setPhase('running');
@@ -279,7 +297,7 @@ export function CaptureBox() {
   };
 
   const file = async () => {
-    if (phase !== 'review' || busy || ro.off) return;
+    if (phase !== 'review' || loading || busy || ro.off) return;
     const ticked = ordered.filter((c) => c.ticked).map((c) => toProposal(c.view));
     const unticked = ordered.filter((c) => !c.ticked).map((c) => toProposal(c.view));
     if (ticked.length + unticked.length === 0) return;
@@ -290,6 +308,7 @@ export function CaptureBox() {
       const r = await fileCapture(call, ticked, unticked);
       if (r.command) undo.record(r.command);
       setFiled(r.filed);
+      setNotFiled(r.failed.length);
       setPhase('filed');
       if (r.failed.length) {
         setMessage(
@@ -312,7 +331,9 @@ export function CaptureBox() {
   if (!open) return null;
   return (
     <CaptureDialog
-      phase={phase}
+      phase={shownPhase}
+      running={live?.status === 'running'}
+      notFiled={notFiled}
       text={text}
       setText={setText}
       sent={sent}
@@ -323,7 +344,7 @@ export function CaptureBox() {
       setTicked={(id, ticked) =>
         setCards((cs) => cs.map((c) => (c.view.proposal._id === id ? { ...c, ticked } : c)))
       }
-      streamed={phase === 'running' ? (live?.text ?? '') : answer}
+      streamed={phase === 'running' ? live?.text || 'Claude is looking up what you wrote.' : answer}
       runError={runError}
       filed={filed}
       saved={saved}
@@ -345,6 +366,10 @@ export function CaptureBox() {
 
 function CaptureDialog(props: {
   phase: Phase;
+  /** The run is still streaming (Stop applies). */
+  running: boolean;
+  /** Approvals the last File it could not make; they still wait in the review queue. */
+  notFiled: number;
   text: string;
   setText(t: string): void;
   sent: string;
@@ -463,7 +488,7 @@ function CaptureDialog(props: {
               data-testid="capture-input"
             />
             <p className="capture-hint" id={ids.hint}>
-              Enter files it, Shift+Enter for a new line.
+              Enter sends it to Claude, Shift+Enter for a new line.
               {needsAck ? ' Confirm what Claude sends first.' : ''}
               {props.readOnly.off ? ` ${props.readOnly.tip.title ?? ''}` : ''}
             </p>
@@ -479,10 +504,12 @@ function CaptureDialog(props: {
         {(phase === 'running' || phase === 'review') && (
           <div className="stack tight">
             <div className="capture-answer" aria-live="polite" data-testid="capture-answer">
-              {props.streamed ||
-                (phase === 'running' ? 'Claude is looking up what you wrote.' : '')}
+              {props.streamed}
             </div>
-            {phase === 'running' && (
+            {phase === 'running' && !props.running && (
+              <p data-testid="capture-loading">Loading the proposed changes.</p>
+            )}
+            {phase === 'running' && props.running && (
               <div>
                 <button
                   type="button"
@@ -559,7 +586,11 @@ function CaptureDialog(props: {
               Filed
             </h3>
             {props.filed.length === 0 ? (
-              <p>Nothing was filed; every proposal was rejected.</p>
+              <p>
+                {props.notFiled > 0
+                  ? 'Nothing was filed. The proposals that could not be filed still wait in the review queue.'
+                  : 'Nothing was filed; every proposal was rejected.'}
+              </p>
             ) : (
               <ul className="capture-filed-list">
                 {props.filed.map((f) => (

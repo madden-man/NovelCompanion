@@ -73,6 +73,31 @@ describe('KB-6 the capture feature', () => {
     expect(prompt).not.toContain('rules.</material>');
   });
 
+  test('KB-6 AI-5 the chapter title, strand label and list labels reach Claude as material', () => {
+    const input = CaptureInput.parse({
+      text: 'Lan moved.',
+      storyTime: { year: 2034, chapterId: 'CH4', strandId: 'S1' },
+      capturedOn: '2026-10-12',
+    });
+    const docs: Record<string, Record<string, unknown>> = {
+      'chapters CH4': {
+        _id: 'CH4',
+        title: 'Rain',
+        readingOrder: 4,
+        strands: [{ id: 'S1', label: 'Lan in Portland' }],
+      },
+      'lists communities': { items: [{ id: 'portland', label: 'Portland' }] },
+    };
+    const session = { model: { get: (c: string, id: string) => docs[`${c} ${id}`] } } as never;
+    const { prompt, given } = FEATURES.capture.build(input, session);
+    expect(prompt).toContain('<material source="chapter CH4">\nRain\n</material>');
+    expect(prompt).toContain('<material source="strand S1">\nLan in Portland\n</material>');
+    expect(prompt).toContain(
+      '<material source="list communities">\nportland (Portland)\n</material>',
+    );
+    expect(given).toEqual([{ collection: 'chapters', id: 'CH4', title: 'Rain' }]);
+  });
+
   test('KB-6 a new entry from a capture is an idea and its source note names the capture and its date', () => {
     const created = prepareCaptureDraft(
       { op: 'create', collection: 'facts', data: { title: 'A fact' }, reason: 'r' },
@@ -186,7 +211,7 @@ describe('KB-6 ED-3 filing', () => {
   test('KB-6 the capture box source asks Claude for no prose and writes only through File it', () => {
     const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/capture.tsx'), 'utf8');
     expect(src).toContain('Add to the bible');
-    expect(src).toContain('Enter files it, Shift+Enter for a new line.');
+    expect(src).toContain('Enter sends it to Claude, Shift+Enter for a new line.');
     // AI-3: the only writes are the filing (approve and reject) and the KB-7 open question.
     expect(src.match(/call\('entry\.(create|update|delete)'/g)).toEqual(["call('entry.create'"]);
     expect(src).not.toMatch(/proposal\.approve/);
