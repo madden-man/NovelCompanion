@@ -19,11 +19,13 @@ import {
 import { AlignmentOutput, checkAlignment } from '../../src/shared/domain/continuity/alignment';
 import {
   dismissalFor,
+  fromAlignment,
   fromStructural,
   reconcile,
   resolutionCommand,
   stillDismissed,
 } from '../../src/shared/domain/continuity/findings';
+import type { FreshFinding } from '../../src/shared/domain/continuity/findings';
 import { alignmentMaterial } from '../../src/shared/domain/continuity/plot';
 import { ALIGNMENT_INSTRUCTIONS } from '../../src/main/claude/features/alignment';
 import { Finding } from '../../src/shared/schema';
@@ -296,6 +298,43 @@ describe('CC-3 checking what Claude returns', () => {
     ]);
   });
 
+  test('CC-3 a finding whose lines are in range but whose quote is nowhere in the chapter is refused, not stored with those lines', () => {
+    const out = AlignmentOutput.parse({
+      findings: [{ ...base, lineStart: 1, lineEnd: 2, quote: 'the moon was green' }],
+    });
+    const r = checkAlignment(out, { chapterId: 'CH5', lines, data: briefData(false) });
+    expect(r.findings).toEqual([]);
+    expect(r.rejected.map((x) => x.reason)).toEqual([
+      'Its quote is not in the chapter text, so lines 1 to 2 cannot be trusted.',
+    ]);
+  });
+
+  test('CC-3 AI-4 an explanation or a what-must-change over 300 characters fails the output schema', () => {
+    const long = 'x'.repeat(301);
+    expect(AlignmentOutput.safeParse({ findings: [{ ...base, explanation: long }] }).success).toBe(
+      false,
+    );
+    expect(AlignmentOutput.safeParse({ findings: [{ ...base, mustChange: long }] }).success).toBe(
+      false,
+    );
+    expect(
+      AlignmentOutput.safeParse({ findings: [{ ...base, mustChange: 'x'.repeat(300) }] }).success,
+    ).toBe(true);
+  });
+
+  test('CC-3 a citation of a collection a change set cannot write (a finding, a brief) is refused', () => {
+    const data = briefData(false);
+    const withFinding = {
+      ...data,
+      all: (c: string) =>
+        c === 'findings' ? [{ _id: 'FND1', title: 'f' }] : data.all(c),
+    } as typeof data;
+    const out = AlignmentOutput.parse({ findings: [{ ...base, citedIds: ['FND1'] }] });
+    const r = checkAlignment(out, { chapterId: 'CH5', lines, data: withFinding });
+    expect(r.findings).toEqual([]);
+    expect(r.rejected[0]!.reason).toBe('It cites FND1, which is not part of the story bible.');
+  });
+
   test('CC-3 AI-4 the output and the stored finding have no field for suggested text, and the instructions forbid replacement text', () => {
     const suggested = /suggest|replacement|rewritten|prose|draft|newText|revised/i;
     const props = (schema: z.ZodType) => JSON.stringify(z.toJSONSchema(schema, { io: 'output' }));
@@ -440,6 +479,50 @@ describe('CC-4 dismissals and re-runs', () => {
       kind: 'structural',
       chapterId: 'CH6',
     });
+  });
+
+  test('CC-4 a dismissed alignment finding is found again under a different key (another cited set or order): it stays hidden, and a changed text reopens it', () => {
+    const data = briefData(false);
+    const quote = 'Her mother was seventy and still refused to let anyone else light them.';
+    const dis = dismissalFor(data, { kind: 'alignment', chapterId: 'CH5', entryIds: ['H1'] });
+    const stored = [
+      finding({ check: 'age', quote, dismissal: dis, key: 'alignment:CH5:age:H1' }),
+    ];
+    const fresh = (over: Partial<FreshFinding> = {}): FreshFinding => ({
+      ...fromAlignment(
+        {
+          key: 'alignment:CH5:age:H1+H2',
+          check: 'age',
+          chapterId: 'CH5',
+          title: 't',
+          text: 't',
+          quote,
+          lineStart: 1,
+          lineEnd: 1,
+          entryIds: ['H1', 'H2'],
+          mustChange: '',
+          changeSet: [],
+          rejectedChanges: [],
+        },
+        { storyYear: 2040, runId: 'r' },
+      ),
+      ...over,
+    });
+    const plan = reconcile(stored, [fresh()], (f) => f.kind === 'alignment', data);
+    expect(plan.creates).toEqual([]);
+    expect(plan.hidden).toBe(1);
+    // A different quoted passage is a new finding.
+    const other = reconcile(stored, [fresh({ quote: 'Sam held the matches.' })], () => true, data);
+    expect(other.creates).toHaveLength(1);
+    // The same quote on changed text reopens the stored one.
+    const moved = reconcile(
+      [finding({ check: 'age', quote, dismissal: { textHash: 'x', entryHash: 'y' } })],
+      [fresh()],
+      () => true,
+      data,
+    );
+    expect(moved.creates).toEqual([]);
+    expect(moved.updates.map((u) => [u.id, u.patch.state])).toEqual([['F-1', 'open']]);
   });
 
   test('CC-4 ED-3 a resolution undoes as one step: every changed entry and the finding state, editable fields only', () => {

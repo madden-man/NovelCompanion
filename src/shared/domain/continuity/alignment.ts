@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import type { ChangeSetItem } from '../../schema';
-import { checkChangeSet, collectionOf } from './changeSet';
+import { CHANGE_SET_COLLECTIONS, checkChangeSet, collectionOf } from './changeSet';
 import type { ChangeProblem } from './changeSet';
 import { locateQuote } from './lines';
 import type { NumberedLine } from './lines';
@@ -40,6 +40,9 @@ export const KIND_LABELS: Record<AlignmentKind, string> = {
   other: 'Other',
 };
 
+/** AI-4 defence: a sentence or two, never room for a drafted passage. */
+export const MAX_TEXT = 300;
+
 const ChangeOut = z.strictObject({
   /** The bible section, for example "characters", "plotBeats", or "chapters". */
   collection: z.string(),
@@ -61,9 +64,9 @@ const FindingOut = z.strictObject({
   /** IDs of the entries or beats the passage conflicts with. */
   citedIds: z.array(z.string()),
   /** One or two plain sentences: what the text says, what the bible says. */
-  explanation: z.string(),
+  explanation: z.string().max(MAX_TEXT),
   /** For a rewrite: a plain description of what must change in the text to match the bible. Never replacement text. */
-  mustChange: z.string(),
+  mustChange: z.string().max(MAX_TEXT),
   /** The field changes that would make the bible match the chapter instead. */
   changeSet: z.array(ChangeOut),
 });
@@ -118,6 +121,17 @@ export function checkAlignment(
       });
       continue;
     }
+    const wrongKind = cited.filter((id) => {
+      const c = collectionOf(ctx.data, id);
+      return c !== null && !CHANGE_SET_COLLECTIONS.includes(c);
+    });
+    if (wrongKind.length) {
+      rejected.push({
+        summary,
+        reason: `It cites ${wrongKind.join(', ')}, which ${wrongKind.length === 1 ? 'is' : 'are'} not part of the story bible.`,
+      });
+      continue;
+    }
     const n = ctx.lines.length;
     const inRange = f.lineStart >= 1 && f.lineEnd >= f.lineStart && f.lineEnd <= n;
     let start = f.lineStart;
@@ -126,10 +140,12 @@ export function checkAlignment(
     if (!given) {
       const found = locateQuote(ctx.lines, f.quote);
       if (found) ({ start, end } = found);
-      else if (!inRange) {
+      else {
         rejected.push({
           summary,
-          reason: `Its lines ${f.lineStart} to ${f.lineEnd} are not in the chapter, which has ${n} lines, and its quote is not in the text.`,
+          reason: inRange
+            ? `Its quote is not in the chapter text, so lines ${f.lineStart} to ${f.lineEnd} cannot be trusted.`
+            : `Its lines ${f.lineStart} to ${f.lineEnd} are not in the chapter, which has ${n} lines, and its quote is not in the text.`,
         });
         continue;
       }
