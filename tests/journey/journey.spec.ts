@@ -540,8 +540,11 @@ test('TL-6 WE-1 the timeline draws every lane and filters by family and category
 });
 
 test('TL-7 compare shows Margaret and Iris side by side by year', async () => {
-  await rail(page, 'Compare').click();
-  const view = page.getByTestId('compare-view');
+  // KB-2: Compare is a disclosure in the year dialog.
+  await page.getByTestId('top-open-year').click();
+  const compare = page.getByTestId('story-time-dialog').getByTestId('time-compare');
+  await compare.getByText('Compare two characters', { exact: true }).click();
+  const view = compare.getByTestId('compare-view');
   await view.getByLabel('First').selectOption({ label: 'Margaret Hale' });
   await view.getByLabel('Second').selectOption({ label: 'Iris Hale-Zhou' });
   await view.getByLabel('From').fill('2030');
@@ -549,20 +552,28 @@ test('TL-7 compare shows Margaret and Iris side by side by year', async () => {
   await expect(view.getByTestId('compare-table').locator('tbody tr')).toHaveCount(4);
   await expect(view.locator('tr[data-year="2040"]')).toContainText('82');
   await expect(view.locator('tr[data-year="2045"]')).toContainText('dead (2041)');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('story-time-dialog')).toHaveCount(0);
 });
 
 test('TL-2 TL-5 the year view lists who is alive in 2075 and what Iris lived through', async () => {
   await setTopYear('2075');
-  await rail(page, 'Year view').click();
-  await expect(page.getByRole('heading', { name: 'Who is alive in 2075' })).toBeVisible();
-  const table = page.getByTestId('year-table');
+  // KB-2: the year view is the Story Time dialog.
+  await page.getByTestId('top-open-year').click();
+  const dialog = page.getByTestId('story-time-dialog');
+  await expect(dialog.getByRole('heading', { name: 'Everyone in 2075' })).toBeVisible();
+  const table = dialog.getByTestId('time-states');
   await expect(table.locator('tr[data-person="H3"] [data-testid="year-age"]')).toHaveText('90');
   await expect(table.locator('tr[data-person="H1"] [data-testid="year-age"]')).toHaveText(
     'died 2041',
   );
-  const lived = page.getByTestId('lived-through');
-  await lived.getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
+  const disclosure = dialog.getByTestId('time-lived');
+  await disclosure.getByText('Lived through', { exact: true }).click();
+  const lived = disclosure.getByTestId('lived-through');
+  await lived.getByLabel('Lived through by').selectOption({ label: 'Iris Hale-Zhou' });
   await expect(lived.locator('tr[data-event="E3"]')).toContainText('formative');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
   await setTopYear('2045');
 });
 

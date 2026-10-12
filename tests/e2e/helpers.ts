@@ -53,10 +53,58 @@ export function invokeVia(page: Page): Invoke {
     ] as const) as Promise<Response<C>>;
 }
 
+/** Locator methods that act on the button, so the More disclosure opens first (KB-8). */
+const RAIL_ACTIONS = new Set([
+  'click',
+  'dblclick',
+  'focus',
+  'hover',
+  'press',
+  'tap',
+  'scrollIntoViewIfNeeded',
+  'waitFor',
+]);
+
+/**
+ * A button in the rail. KB-1 puts everything but the five screens under the
+ * "More" disclosure; acting on a button there (click, focus, press, and the
+ * like) opens More first when the button is not visible. The locator matches
+ * hidden buttons too, so `count()` finds one inside a closed More.
+ */
 export function rail(page: Page, name: string): Locator {
-  return page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button', { name, exact: true });
+  const nav = page.getByRole('navigation', { name: 'Sections' });
+  const button = nav.getByRole('button', { name, exact: true, includeHidden: true });
+  const openMore = async () => {
+    await nav.waitFor();
+    if (await button.isVisible()) return;
+    const more = nav.locator('details.rail-more');
+    if (!(await more.count())) return;
+    if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) {
+      await more.locator('summary').click();
+    }
+  };
+  return new Proxy(button, {
+    get(target, prop, receiver) {
+      const value: unknown = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function') return value;
+      const fn = value as (...args: unknown[]) => unknown;
+      if (typeof prop === 'string' && RAIL_ACTIONS.has(prop)) {
+        return async (...args: unknown[]) => {
+          await openMore();
+          return fn.apply(target, args);
+        };
+      }
+      return fn.bind(target);
+    },
+  });
+}
+
+/** Open the rail's More disclosure (KB-1) when it is closed. */
+export async function openMore(page: Page): Promise<void> {
+  const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
+  if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) {
+    await more.locator('summary').click();
+  }
 }
 
 export function field(scope: Locator, path: string): Locator {

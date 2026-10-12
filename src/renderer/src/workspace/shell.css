@@ -1,0 +1,27 @@
+/* KB-1: the five-screen rail with everything else under More; the top bar's year button. */
+.rail-main {
+  margin-bottom: 10px;
+}
+.rail-main button {
+  font-weight: 600;
+}
+.rail-more {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.rail-more > summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-weight: 600;
+}
+.rail-more > summary:hover {
+  background: var(--surface);
+}
+.rail-more > summary:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.topbar-era {
+  font-weight: 600;
+}

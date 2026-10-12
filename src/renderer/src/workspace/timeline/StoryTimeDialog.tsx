@@ -2,12 +2,19 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useWriteGuard } from '../../connection';
 import type { Response } from '../../../../shared/ipc';
 import type { StoryTimeValue } from '../../../../shared/storyTime';
+import type { LifeState } from '../../../../shared/domain/ages';
+import { eventSpans, fromCollections } from '../../../../shared/domain/timeline';
+import type { EntryCollection } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
 import { useEntries } from '../data';
 import { formatMoment, useStoryTime } from '../storyTime';
 import { Zh } from '../Zh';
 import { useFocusTrap } from '../focusTrap';
 import { FamilyChips, StateText, span, useFamilies, useYearView } from './common';
+import { CompareView } from './CompareView';
+import { LivedThrough } from './LivedThrough';
+import { WorldEventsStrip } from './WorldEventsStrip';
+import './year.css';
 
 type Preview = Response<'storyTime.promotePreview'>;
 
@@ -49,12 +56,19 @@ export function useStrandOptions(): StrandOption[] {
 const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
 
 /**
- * The Story Time dialog (TM-1 to TM-5). It opens from every screen with
- * Cmd+T. Setting the time writes only the bible's meta document; "Use as
- * strand year" is the one action here that changes an entry, and it shows
- * the change and waits for approval first (ED-7).
+ * The Story Time dialog (TM-1 to TM-5), which is the year view (KB-2). It
+ * opens from every screen with Cmd+T and from the top bar. Under the time
+ * controls: everyone's state and age (TL-2, TL-4), then the world for the
+ * year (the era, WE-3; the five-year events strip, A33; the chapter strands),
+ * then Compare (TL-7) and Lived through (TL-5) as disclosures. Setting the
+ * time writes only the bible's meta document; "Use as strand year" is the one
+ * action here that changes an entry, and it shows the change and waits for
+ * approval first (ED-7).
  */
-export function StoryTimeDialog() {
+export function StoryTimeDialog(props: {
+  /** Open an entry in the frame; the dialog closes first (KB-2). */
+  onOpen: (collection: EntryCollection, id: string) => void;
+}) {
   const story = useStoryTime();
   const close = story.closeDialog;
   const time: StoryTimeValue = story.time ?? { year: story.year };
@@ -82,6 +96,14 @@ export function StoryTimeDialog() {
     char: useId(),
     age: useId(),
     strand: useId(),
+    everyone: useId(),
+    world: useId(),
+  };
+  const worldEvents = useEntries('worldEvents');
+  const events = useMemo(() => eventSpans(fromCollections({ worldEvents })), [worldEvents]);
+  const openEvent = (id: string) => {
+    close();
+    props.onOpen('worldEvents', id);
   };
 
   useEffect(() => {
@@ -207,26 +229,29 @@ export function StoryTimeDialog() {
     >
       <div
         ref={dialogRef}
-        className="dialog stack"
+        className="dialog stack year-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={ids.title}
         data-testid="story-time-dialog"
       >
         <header className="dialog-head">
-          <div className="stack tight">
-            <span className="eyebrow">Story time</span>
-            <h2 id={ids.title}>Where in the story are you writing?</h2>
+          <div className="row tight year-head">
+            <div className="stack tight">
+              <span className="eyebrow">Story time</span>
+              <h2 id={ids.title}>Year view</h2>
+            </div>
+            <div className="time-now num" data-testid="time-now" aria-live="polite">
+              {formatMoment(time)}
+            </div>
+            {view?.era && <span className="year-era">{view.era.name}</span>}
           </div>
           <button type="button" className="btn" onClick={close}>
             Close
           </button>
         </header>
         <div className="time-controls">
-          <div className="stack">
-            <div className="time-now num" data-testid="time-now" aria-live="polite">
-              {formatMoment(time)}
-            </div>
+          <div className="stack tight">
             <div className="row tight">
               <div className="field">
                 <label htmlFor={ids.year}>Year</label>
@@ -268,7 +293,6 @@ export function StoryTimeDialog() {
                 />
               </div>
             </div>
-            <p className="example-note">Leave month and day blank to work by year.</p>
             <div className="row tight" role="group" aria-label="Step the year">
               <button
                 type="button"
@@ -303,40 +327,43 @@ export function StoryTimeDialog() {
                 +10
               </button>
             </div>
+            <p className="example-note">Leave month and day blank to work by year.</p>
           </div>
-          <div className="stack">
+          <div className="stack tight">
             <span className="eyebrow">Anchor by a character&rsquo;s age</span>
-            <div className="field">
-              <label htmlFor={ids.char}>Character</label>
-              <select
-                id={ids.char}
-                value={anchorChar}
-                onChange={(e) => setAnchorChar(e.target.value)}
-              >
-                <option value="">Pick a character</option>
-                {characters.map((c) => (
-                  <option key={c._id} value={c._id}>
-                    {String((c.names as { full?: string } | undefined)?.full ?? c.title)}
-                  </option>
-                ))}
-              </select>
+            <div className="row tight">
+              <div className="field">
+                <label htmlFor={ids.char}>Character</label>
+                <select
+                  id={ids.char}
+                  value={anchorChar}
+                  onChange={(e) => setAnchorChar(e.target.value)}
+                >
+                  <option value="">Pick a character</option>
+                  {characters.map((c) => (
+                    <option key={c._id} value={c._id}>
+                      {String((c.names as { full?: string } | undefined)?.full ?? c.title)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={ids.age}>is this old</label>
+                <input
+                  id={ids.age}
+                  type="number"
+                  min={0}
+                  className="num date-input"
+                  value={anchorAge}
+                  onChange={(e) => setAnchorAge(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor={ids.age}>is this old</label>
-              <input
-                id={ids.age}
-                type="number"
-                min={0}
-                className="num"
-                value={anchorAge}
-                onChange={(e) => setAnchorAge(e.target.value)}
-              />
-            </div>
-            <button type="button" className="btn" onClick={() => void anchorByAge()}>
+            <button type="button" className="btn small" onClick={() => void anchorByAge()}>
               Set year from age
             </button>
           </div>
-          <div className="stack">
+          <div className="stack tight">
             <span className="eyebrow">Anchor by a chapter strand</span>
             <div className="field">
               <label htmlFor={ids.strand}>Strand</label>
@@ -353,13 +380,9 @@ export function StoryTimeDialog() {
                 ))}
               </select>
             </div>
-            <button type="button" className="btn" onClick={anchorByStrand}>
+            <button type="button" className="btn small" onClick={anchorByStrand}>
               Use this strand&rsquo;s year
             </button>
-            <p className="example-note">
-              Setting the time never changes an entry. To change a strand&rsquo;s year, use the
-              strand year action below and approve the change.
-            </p>
           </div>
         </div>
         {note && (
@@ -371,12 +394,12 @@ export function StoryTimeDialog() {
             {note.text}
           </p>
         )}
-        <div className="panel stack tight" data-testid="time-chapter">
-          <span className="eyebrow">Chapter you are writing</span>
-          {current ? (
-            <>
-              <p>{current.label}</p>
-              <div className="row tight">
+        <div className="year-chapter stack tight" data-testid="time-chapter">
+          <div className="row tight">
+            <span className="eyebrow">Chapter you are writing</span>
+            {current ? (
+              <>
+                <span>{current.label}</span>
                 <button
                   type="button"
                   className="btn small"
@@ -389,11 +412,11 @@ export function StoryTimeDialog() {
                 <button type="button" className="btn small" onClick={clearChapter}>
                   Clear the chapter
                 </button>
-              </div>
-            </>
-          ) : (
-            <p>None set. Anchor by a strand to record the chapter and strand you are writing.</p>
-          )}
+              </>
+            ) : (
+              <span>None set. Anchor by a strand to record it.</span>
+            )}
+          </div>
           {preview && (
             <div
               className="panel stack confirm-change"
@@ -402,6 +425,10 @@ export function StoryTimeDialog() {
               data-testid="promote-preview"
             >
               <strong>Change this strand?</strong>
+              <p className="example-note">
+                Setting the time never changes an entry. This writes the strand&rsquo;s year only
+                after you approve it.
+              </p>
               {preview.unchanged ? (
                 <p>
                   {preview.chapterTitle}, {preview.strandLabel} strand, already has the year{' '}
@@ -450,45 +477,50 @@ export function StoryTimeDialog() {
             </div>
           )}
         </div>
-        <div className="two-col">
-          <section className="panel stack tight" aria-label={`Everyone in ${time.year}`}>
-            <h3>Everyone in {formatMoment(time)}</h3>
-            <div className="table-wrap">
-              <table className="compact state-table" data-testid="time-states">
-                <thead>
-                  <tr>
-                    <th scope="col">Character</th>
-                    <th scope="col">Family</th>
-                    <th scope="col">State</th>
+        <section className="stack tight" aria-labelledby={ids.everyone}>
+          <h3 id={ids.everyone}>Everyone in {formatMoment(time)}</h3>
+          <div className="table-wrap">
+            <table className="compact state-table" data-testid="time-states">
+              <thead>
+                <tr>
+                  <th scope="col">Character</th>
+                  <th scope="col">Family</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(view?.rows ?? []).map((r) => (
+                  <tr key={r.id} data-person={r.id}>
+                    <td>
+                      <Zh text={r.name} /> {r.chinese && <Zh text={r.chinese} />}
+                    </td>
+                    <td>
+                      <FamilyChips ids={r.familyIds} families={families} />
+                    </td>
+                    <td>
+                      <StateText state={r.state} />
+                    </td>
+                    <td className="num" data-testid="year-age">
+                      {ageText(r.state)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {(view?.rows ?? []).map((r) => (
-                    <tr key={r.id} data-person={r.id}>
-                      <td>
-                        <Zh text={r.name} /> {r.chinese && <Zh text={r.chinese} />}
-                      </td>
-                      <td>
-                        <FamilyChips ids={r.familyIds} families={families} />
-                      </td>
-                      <td>
-                        <StateText state={r.state} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <div className="stack">
-            <section className="panel stack tight" data-testid="time-era">
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section className="stack tight" aria-labelledby={ids.world} data-testid="time-world">
+          <h3 id={ids.world}>The world in {time.year}</h3>
+          <div className="year-world">
+            <div className="panel stack tight" data-testid="time-era">
               <span className="eyebrow">Era</span>
               {view?.era ? (
                 <>
-                  <h3>
+                  <strong>
                     {view.era.name}{' '}
                     <span className="num">({span(view.era.startYear, view.era.endYear)})</span>
-                  </h3>
+                  </strong>
                   {view.eras.length > 1 && (
                     <p className="callout warn">
                       {view.eras.length} eras cover {view.year}. The one that started last applies.
@@ -516,23 +548,8 @@ export function StoryTimeDialog() {
               ) : (
                 <p>No era covers {time.year}.</p>
               )}
-            </section>
-            <section className="panel stack tight" data-testid="time-events">
-              <span className="eyebrow">World events in {time.year}</span>
-              {view && view.events.length > 0 ? (
-                <ul className="plain-list">
-                  {view.events.map((e) => (
-                    <li key={e.id}>
-                      <span className="num">{span(e.startYear, e.endYear)}</span> {e.title}
-                      {e.formative && <span className="chip canon">formative</span>}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No world event falls in {time.year}.</p>
-              )}
-            </section>
-            <section className="panel stack tight" data-testid="time-strands">
+            </div>
+            <div className="panel stack tight" data-testid="time-strands">
               <span className="eyebrow">Chapter strands in {time.year}</span>
               {view && view.strands.length > 0 ? (
                 <ul className="plain-list">
@@ -546,10 +563,42 @@ export function StoryTimeDialog() {
               ) : (
                 <p>No chapter strand falls in {time.year}.</p>
               )}
-            </section>
+            </div>
           </div>
-        </div>
+          <WorldEventsStrip
+            events={events}
+            from={time.year - 3}
+            to={time.year + 1}
+            year={time.year}
+            everyYear
+            onOpen={openEvent}
+            label={`World events from ${time.year - 3} to ${time.year + 1}`}
+            testid="time-events"
+          />
+        </section>
+        <details className="year-more" data-testid="time-compare">
+          <summary>Compare two characters</summary>
+          <CompareView />
+        </details>
+        <details className="year-more" data-testid="time-lived">
+          <summary>Lived through</summary>
+          <LivedThrough year={time.year} />
+        </details>
       </div>
     </div>
   );
+}
+
+/** The age column: the age, or why there is none (TL-2). */
+function ageText(s: LifeState): string {
+  switch (s.state) {
+    case 'alive':
+      return String(s.age);
+    case 'dead':
+      return `died ${s.deathYear}`;
+    case 'unborn':
+      return `born ${s.birthYear}`;
+    case 'unknown':
+      return 'unknown';
+  }
 }

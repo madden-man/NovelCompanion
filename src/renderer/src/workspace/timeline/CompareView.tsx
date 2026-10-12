@@ -22,7 +22,11 @@ function cell(s: LifeState): string {
 
 const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
 
-/** TL-7: two characters' ages side by side across a year range, every year or every five. */
+/**
+ * TL-7: two characters' ages side by side across a year range, every year or
+ * every five. It lives in the year dialog's "Compare two characters"
+ * disclosure (KB-2); the range starts at the story year.
+ */
 export function CompareView() {
   const { version } = useStore();
   const story = useStoryTime();
@@ -61,9 +65,7 @@ export function CompareView() {
   ));
 
   return (
-    <section className="ws-wide stack" aria-labelledby="compare-title" data-testid="compare-view">
-      <h2 id="compare-title">Compare two characters</h2>
-      <p className="example-note">Ages side by side across a year range, worked out in code.</p>
+    <div className="stack tight" data-testid="compare-view">
       <div className="tree-toolbar">
         <div className="field">
           <label htmlFor={ids.a}>First</label>
@@ -135,6 +137,6 @@ export function CompareView() {
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }

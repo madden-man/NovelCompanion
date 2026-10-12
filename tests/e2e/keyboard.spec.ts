@@ -104,12 +104,29 @@ async function press(loc: Locator, key = 'Enter') {
   await page.keyboard.press(key);
 }
 
-/** Open a screen from the rail with the keyboard. */
+/**
+ * Open a screen from the rail with the keyboard. A screen under More (KB-1)
+ * is reached by tabbing to the disclosure and opening it with Enter first.
+ */
 async function go(screen: string) {
   const button = rail(page, screen);
   await fromTop();
+  if (!(await button.isVisible())) {
+    await press(page.getByRole('navigation', { name: 'Sections' }).locator('summary'));
+    await expect(button).toBeVisible();
+  }
   await press(button);
   await expect(button).toHaveAttribute('aria-current', 'page');
+}
+
+/** Close the rail's More disclosure with the keyboard, when it is open. */
+async function closeMore() {
+  const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
+  if (await more.evaluate((d) => (d as HTMLDetailsElement).open)) {
+    await fromTop();
+    await press(more.locator('summary'));
+  }
+  await expect(more).not.toHaveAttribute('open', '');
 }
 
 /**
@@ -182,13 +199,20 @@ const status = () => page.getByTestId('status-bar');
 const topBar = () => page.getByTestId('top-bar');
 const editor = () => page.getByTestId('editor');
 
-test('NF-2 every screen in the rail opens from the keyboard, and every control on it takes focus with Tab', async () => {
+test('NF-2 KB-8 every screen in the rail, the five and everything under More, opens from the keyboard, and every control on it takes focus with Tab', async () => {
   test.setTimeout(600_000);
-  const screens = await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button')
-    .allTextContents();
-  expect(screens.length).toBeGreaterThan(40);
+  const nav = page.getByRole('navigation', { name: 'Sections' });
+  await closeMore();
+  // KB-1: five screens, then More, closed, holding the rest.
+  expect(await nav.getByRole('button').allTextContents()).toEqual([
+    'Characters',
+    'Family tree',
+    'Outline',
+    'Timeline',
+    'Entries',
+  ]);
+  const screens = await nav.getByRole('button', { includeHidden: true }).allTextContents();
+  expect(screens.length).toBeGreaterThan(35);
   const missed: Record<string, string[]> = {};
   for (const screen of screens) {
     await go(screen);
@@ -315,21 +339,31 @@ test('NF-2 TL-6 the timeline: the family filter by typing, and an era mark opens
   await expect(page.getByTestId('timeline-inspector')).toContainText(/\d{4}/);
 });
 
-test('NF-2 TL-2 TL-5 the year view: the lived-through picker by typing, and the story time button opens the dialog', async () => {
-  await go('Year view');
-  const view = page.getByTestId('year-view');
-  await tabTo(view.getByRole('combobox').first());
+test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens it, and Lived through opens and picks by typing', async () => {
+  await go('Dashboard');
+  const open = topBar().getByTestId('top-open-year');
+  await fromTop();
+  await press(open);
+  const dialog = page.getByTestId('story-time-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId('time-states')).toContainText('Margaret Hale');
+  const lived = dialog.getByTestId('time-lived');
+  await press(lived.locator('summary'));
+  await tabTo(lived.getByRole('combobox'));
   await page.keyboard.type('Ruth');
-  await expect(view.getByTestId('lived-through')).toContainText('Ruth Hale');
-  await press(view.getByRole('button', { name: 'Change the story time' }));
-  await expect(page.getByTestId('story-time-dialog')).toBeVisible();
+  await expect(lived.getByTestId('lived-through')).toContainText('Ruth Hale');
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('story-time-dialog')).toBeHidden();
+  await expect(dialog).toBeHidden();
+  await expect(open).toBeFocused();
 });
 
-test('NF-2 TL-7 compare: two characters picked by typing fill the table', async () => {
-  await go('Compare');
-  const view = page.getByTestId('compare-view');
+test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and two characters picked by typing fill the table', async () => {
+  await go('Dashboard');
+  await page.keyboard.press('Meta+t');
+  const dialog = page.getByTestId('story-time-dialog');
+  await expect(dialog).toBeVisible();
+  const view = dialog.getByTestId('time-compare');
+  await press(view.locator('summary'));
   const [a, b] = [view.getByRole('combobox').nth(0), view.getByRole('combobox').nth(1)];
   await tabTo(a);
   await page.keyboard.type('Margaret');
@@ -337,6 +371,9 @@ test('NF-2 TL-7 compare: two characters picked by typing fill the table', async 
   await page.keyboard.type('Zhou Meiling');
   await expect(view.getByTestId('compare-table')).toContainText('Zhou Meiling');
   await expect(view.getByTestId('compare-table').locator('tbody tr').first()).toBeVisible();
+  expect(await unreachable('[data-testid="story-time-dialog"]')).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
 });
 
 test('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapter page, and its controls answer the keyboard', async () => {
@@ -492,6 +529,13 @@ test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step button
   await press(dialog.getByRole('button', { name: 'Forward 1 year' }));
   await expect(dialog.getByTestId('time-now')).toHaveText('2042');
   await expect(status()).toContainText('Story time 2042');
+  // KB-2: the world for the year sits under the states; its event titles take focus too.
+  await expect(dialog.getByTestId('time-world')).toContainText('The forties');
+  await tabTo(
+    dialog
+      .getByTestId('time-events')
+      .getByRole('button', { name: 'Grid batteries replace the last coal plant in Guangdong' }),
+  );
   expect(await unreachable('[data-testid="story-time-dialog"]')).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
+import { collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider, useEntries } from './data';
 import { EntryPane, UndoPanel } from './editor';
@@ -18,8 +18,6 @@ import { UndoProvider } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
-import { YearView } from './timeline/YearView';
-import { CompareView } from './timeline/CompareView';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './culture';
@@ -31,6 +29,8 @@ import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
 import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
 import { SettingsView } from './settings';
+import { EntriesView } from './entries/Placeholder';
+import './shell.css';
 
 type View =
   | {
@@ -49,8 +49,8 @@ type View =
   | { kind: 'places' }
   | { kind: 'romanization' }
   | { kind: 'glossary' }
-  | { kind: 'year' }
-  | { kind: 'compare' }
+  /** KB-5: the Entries screen. */
+  | { kind: 'entries' }
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
@@ -72,7 +72,52 @@ type View =
   /** MS-1 to MS-4. */
   | { kind: 'manuscript'; chapterId?: string; openFlow?: boolean };
 
-const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
+/**
+ * KB-1: the raw section lists under More, by group. Characters is one of the
+ * five screens; places, cultural entries, glossary terms and custom entries
+ * belong to the Entries screen (KB-5).
+ */
+const MORE_SECTIONS = {
+  Sessions: ['sessionLogs', 'briefs', 'findings'],
+  People: ['families', 'unions', 'parentLinks', 'relationships'],
+  Story: ['books', 'parts', 'arcs', 'chapters', 'plotBeats'],
+  World: ['worldEvents', 'eraStates'],
+  Knowledge: ['facts', 'knowledgeRecords', 'themes', 'openQuestions'],
+} as const satisfies Record<string, readonly EntryCollection[]>;
+
+/** Lists and tools reached only through the Entries screen, so its rail item lights for them. */
+const ENTRY_ONLY: readonly EntryCollection[] = [
+  'culturalEntries',
+  'places',
+  'glossaryTerms',
+  'customEntries',
+];
+const ENTRY_TOOLS: readonly View['kind'][] = [
+  'entries',
+  'culture',
+  'places',
+  'romanization',
+  'glossary',
+];
+
+/** More's open state, kept per bible (KB-1). Storage can be missing; the rail works without it. */
+function moreKey(bibleId: string): string {
+  return `nc.rail.more.${bibleId}`;
+}
+function readMore(bibleId: string): boolean {
+  try {
+    return window.localStorage.getItem(moreKey(bibleId)) === 'open';
+  } catch {
+    return false;
+  }
+}
+function writeMore(bibleId: string, open: boolean): void {
+  try {
+    window.localStorage.setItem(moreKey(bibleId), open ? 'open' : 'closed');
+  } catch {
+    // Not remembered; nothing else depends on it.
+  }
+}
 
 /** The app frame for an open bible: sections in the rail, a list, the editor, an inspector. */
 export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
@@ -80,15 +125,20 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
     <DataProvider key={props.bibleId}>
       <UndoProvider key={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
-          <Frame bibles={props.bibles} />
+          <Frame bibleId={props.bibleId} bibles={props.bibles} />
         </StoryTimeProvider>
       </UndoProvider>
     </DataProvider>
   );
 }
 
-function Frame({ bibles }: { bibles: ReactNode }) {
+function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
   const [view, setView] = useState<View>({ kind: 'dashboard' });
+  const [moreOpen, setMoreState] = useState(() => readMore(bibleId));
+  const setMoreOpen = (open: boolean) => {
+    setMoreState(open);
+    writeMore(bibleId, open);
+  };
 
   const [query, setQuery] = useState('');
   const customSections = useEntries('customSections');
@@ -106,6 +156,15 @@ function Frame({ bibles }: { bibles: ReactNode }) {
       {label}
     </button>
   );
+  const sectionButton = (c: EntryCollection) =>
+    railButton(
+      collectionInfo[c].plural,
+      view.kind === 'section' && view.collection === c && !view.sectionId,
+      () => setView({ kind: 'section', collection: c, selected: null, creating: false }),
+    );
+  const entriesActive =
+    ENTRY_TOOLS.includes(view.kind) ||
+    (view.kind === 'section' && ENTRY_ONLY.includes(view.collection) && !view.sectionId);
 
   return (
     <ZhNavProvider value={open}>
@@ -133,102 +192,80 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               }}
             />
           </div>
-          {GROUPS.map((g) => (
-            <div key={g} className="rail-group">
-              <span className="eyebrow">{g}</span>
-              {g === 'People' && (
-                <>
-                  {railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
-                  {railButton('Year view', view.kind === 'year', () => setView({ kind: 'year' }))}
-                  {railButton('Compare', view.kind === 'compare', () =>
-                    setView({ kind: 'compare' }),
-                  )}
-                </>
-              )}
-              {g === 'Story' && (
-                <>
-                  {railButton('Outline', view.kind === 'outline', () =>
-                    setView({ kind: 'outline' }),
-                  )}
-                  {railButton('Manuscript', view.kind === 'manuscript', () =>
-                    setView({ kind: 'manuscript' }),
-                  )}
-                </>
-              )}
-              {g === 'Sessions' && (
-                <>
-                  {railButton('Dashboard', view.kind === 'dashboard', () =>
-                    setView({ kind: 'dashboard' }),
-                  )}
-                  {railButton('Relevant to Session', view.kind === 'relevant', () =>
-                    setView({ kind: 'relevant' }),
-                  )}
-                  {railButton('Start session', view.kind === 'start', () =>
-                    setView({ kind: 'start' }),
-                  )}
-                </>
-              )}
-              {g === 'World' && (
-                <>
-                  {railButton('Timeline', view.kind === 'timeline', () =>
-                    setView({ kind: 'timeline' }),
-                  )}
-                  {railButton('Culture by year', view.kind === 'culture', () =>
-                    setView({ kind: 'culture' }),
-                  )}
-                  {railButton('Place tree', view.kind === 'places', () =>
-                    setView({ kind: 'places' }),
-                  )}
-                  {railButton('Romanization', view.kind === 'romanization', () =>
-                    setView({ kind: 'romanization' }),
-                  )}
-                  {railButton('Glossary table', view.kind === 'glossary', () =>
-                    setView({ kind: 'glossary' }),
-                  )}
-                </>
-              )}
-              {ENTRY_COLLECTIONS.filter((c) => collectionInfo[c].group === g).map((c) =>
-                railButton(
-                  collectionInfo[c].plural,
-                  view.kind === 'section' && view.collection === c && !view.sectionId,
-                  () =>
-                    setView({ kind: 'section', collection: c, selected: null, creating: false }),
-                ),
-              )}
-              {g === 'Custom' &&
-                customSections
-                  .filter((sec) => sec.deletedAt === undefined)
-                  .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                  .map((sec) =>
-                    railButton(
-                      String(sec.name),
-                      view.kind === 'section' && view.sectionId === sec._id,
-                      () =>
-                        setView({
-                          kind: 'section',
-                          collection: 'customEntries',
-                          selected: null,
-                          creating: false,
-                          sectionId: sec._id,
-                        }),
-                    ),
-                  )}
-            </div>
-          ))}
-          <div className="rail-group">
-            <span className="eyebrow">Manage</span>
-            {railButton('Search and filters', view.kind === 'search', () =>
-              setView({ kind: 'search' }),
-            )}
-            {railButton('Review queue', view.kind === 'review', () => setView({ kind: 'review' }))}
-            {railButton('Import', view.kind === 'import', () => setView({ kind: 'import' }))}
-            {railButton('Backups', view.kind === 'backups', () => setView({ kind: 'backups' }))}
-            {railButton('Google Drive', view.kind === 'drive', () => setView({ kind: 'drive' }))}
-            {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
-            {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
-            {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
-            {railButton('Settings', view.kind === 'settings', () => setView({ kind: 'settings' }))}
+          <div className="rail-group rail-main" data-testid="rail-main">
+            {sectionButton('characters')}
+            {railButton('Family tree', view.kind === 'tree', () => setView({ kind: 'tree' }))}
+            {railButton('Outline', view.kind === 'outline', () => setView({ kind: 'outline' }))}
+            {railButton('Timeline', view.kind === 'timeline', () => setView({ kind: 'timeline' }))}
+            {railButton('Entries', entriesActive, () => setView({ kind: 'entries' }))}
           </div>
+          <details
+            className="rail-more"
+            open={moreOpen}
+            onToggle={(e) => setMoreOpen(e.currentTarget.open)}
+            data-testid="rail-more"
+          >
+            <summary>More</summary>
+            <div className="rail-group">
+              <span className="eyebrow">Sessions</span>
+              {railButton('Dashboard', view.kind === 'dashboard', () =>
+                setView({ kind: 'dashboard' }),
+              )}
+              {railButton('Manuscript', view.kind === 'manuscript', () =>
+                setView({ kind: 'manuscript' }),
+              )}
+              {railButton('Relevant to Session', view.kind === 'relevant', () =>
+                setView({ kind: 'relevant' }),
+              )}
+              {railButton('Start session', view.kind === 'start', () => setView({ kind: 'start' }))}
+              {MORE_SECTIONS.Sessions.map(sectionButton)}
+            </div>
+            {(['People', 'Story', 'World', 'Knowledge'] as const).map((g) => (
+              <div key={g} className="rail-group">
+                <span className="eyebrow">{g}</span>
+                {MORE_SECTIONS[g].map(sectionButton)}
+              </div>
+            ))}
+            <div className="rail-group">
+              <span className="eyebrow">Custom</span>
+              {sectionButton('customSections')}
+              {customSections
+                .filter((sec) => sec.deletedAt === undefined)
+                .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+                .map((sec) =>
+                  railButton(
+                    String(sec.name),
+                    view.kind === 'section' && view.sectionId === sec._id,
+                    () =>
+                      setView({
+                        kind: 'section',
+                        collection: 'customEntries',
+                        selected: null,
+                        creating: false,
+                        sectionId: sec._id,
+                      }),
+                  ),
+                )}
+            </div>
+            <div className="rail-group">
+              <span className="eyebrow">Manage</span>
+              {railButton('Search and filters', view.kind === 'search', () =>
+                setView({ kind: 'search' }),
+              )}
+              {railButton('Review queue', view.kind === 'review', () =>
+                setView({ kind: 'review' }),
+              )}
+              {railButton('Import', view.kind === 'import', () => setView({ kind: 'import' }))}
+              {railButton('Backups', view.kind === 'backups', () => setView({ kind: 'backups' }))}
+              {railButton('Google Drive', view.kind === 'drive', () => setView({ kind: 'drive' }))}
+              {railButton('Lists', view.kind === 'lists', () => setView({ kind: 'lists' }))}
+              {railButton('Trash', view.kind === 'trash', () => setView({ kind: 'trash' }))}
+              {railButton('Bibles', view.kind === 'bibles', () => setView({ kind: 'bibles' }))}
+              {railButton('Settings', view.kind === 'settings', () =>
+                setView({ kind: 'settings' }),
+              )}
+            </div>
+          </details>
         </nav>
         {view.kind === 'section' ? (
           <>
@@ -302,8 +339,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'drive' && <DriveView />}
               {view.kind === 'settings' && <SettingsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
-              {view.kind === 'year' && <YearView />}
-              {view.kind === 'compare' && <CompareView />}
+              {view.kind === 'entries' && (
+                <EntriesView
+                  onSection={(c) =>
+                    setView({ kind: 'section', collection: c, selected: null, creating: false })
+                  }
+                  onTool={(kind) => setView({ kind })}
+                />
+              )}
               {view.kind === 'culture' && <CultureView onOpen={open} />}
               {view.kind === 'places' && <PlacesView onOpen={open} />}
               {view.kind === 'romanization' && <RomanizationView onOpen={open} />}
@@ -364,16 +407,16 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           </>
         )}
         <StatusBar />
-        <StoryTimeGate />
+        <StoryTimeGate onOpen={open} />
         <ClaudePanelGate />
       </div>
     </ZhNavProvider>
   );
 }
 
-function StoryTimeGate() {
+function StoryTimeGate({ onOpen }: { onOpen: (collection: EntryCollection, id: string) => void }) {
   const story = useStoryTime();
-  return story.dialogOpen ? <StoryTimeDialog /> : null;
+  return story.dialogOpen ? <StoryTimeDialog onOpen={onOpen} /> : null;
 }
 
 /** TM-3: the current story time, its era, and the chapter being written, on every screen. */

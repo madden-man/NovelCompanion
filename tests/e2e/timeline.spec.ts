@@ -193,43 +193,6 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
   await closeDialog();
 });
 
-test('TL-2 TL-5 the year view lists everyone at the story time and what a character lived through', async () => {
-  await invoke('storyTime.set', { time: { year: 2075 } });
-  await rail(page, 'Year view').click();
-  const table = page.getByTestId('year-table');
-  await expect(page.getByRole('heading', { name: 'Who is alive in 2075' })).toBeVisible();
-  await expect(table.locator('tr[data-person="H3"] [data-testid="year-age"]')).toHaveText('90');
-  await expect(table.locator('tr[data-person="Z5"] [data-testid="year-age"]')).toHaveText('17');
-  await expect(table.locator('tr[data-person="H1"] [data-testid="year-age"]')).toHaveText(
-    'died 2041',
-  );
-  await expect(table.locator('tr[data-person="U1"] [data-testid="year-age"]')).toHaveText(
-    'unknown',
-  );
-  const lived = page.getByTestId('lived-through');
-  await lived.getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
-  await expect(lived.locator('tr[data-event="E3"]')).toContainText('2034');
-  await expect(lived.locator('tr[data-event="E3"] td').nth(1)).toHaveText('3');
-  await expect(lived.locator('tr[data-event="E3"]')).toContainText('formative');
-  await expect(lived.locator('tr[data-event="E10"]')).toHaveCount(0);
-});
-
-test('TL-7 compare shows two characters side by side, every 5 years or every year', async () => {
-  await rail(page, 'Compare').click();
-  const view = page.getByTestId('compare-view');
-  await view.getByLabel('First').selectOption({ label: 'Margaret Hale' });
-  await view.getByLabel('Second').selectOption({ label: 'Iris Hale-Zhou' });
-  await view.getByLabel('From').fill('2030');
-  await view.getByLabel('To').fill('2045');
-  const rows = view.getByTestId('compare-table').locator('tbody tr');
-  await expect(rows).toHaveCount(4);
-  await expect(view.locator('tr[data-year="2040"]')).toContainText('82');
-  await expect(view.locator('tr[data-year="2040"]')).toContainText('73 years');
-  await expect(view.locator('tr[data-year="2045"]')).toContainText('dead (2041)');
-  await view.getByLabel('Step').selectOption({ label: 'Every year' });
-  await expect(rows).toHaveCount(16);
-});
-
 test('TL-6 WE-1 the timeline draws every lane with a cursor; filters by family, status, category, and place', async () => {
   await invoke('storyTime.set', { time: { year: 2040 } });
   await rail(page, 'Timeline').click();

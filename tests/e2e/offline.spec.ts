@@ -114,8 +114,11 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await page.locator('#rail-search').fill('Margaret');
   await expect(page.getByTestId('search-results')).toContainText('Margaret Hale');
 
-  await rail(page, 'Year view').click();
-  await expect(page.getByTestId('year-table')).toBeVisible();
+  // KB-2: the year view is the Story Time dialog.
+  await page.getByTestId('top-open-year').click();
+  await expect(page.getByTestId('story-time-dialog').getByTestId('time-states')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('story-time-dialog')).toHaveCount(0);
   await rail(page, 'Family tree').click();
   await expect(page.locator('.tree-stage svg').first()).toBeVisible();
 

@@ -6,6 +6,7 @@ import { useStrandOptions } from './timeline/StoryTimeDialog';
 
 /**
  * The bar above every screen of an open bible: the story year slider, the
+ * era as a button that opens the year view (KB-2, as Cmd+T does), the
  * chapter being written, Relevant to Session, and Start session. The first two
  * read and write the one story time (TM-3), so the tree, the timeline,
  * character ages, and the session selection follow them. Start session opens
@@ -78,7 +79,16 @@ export function TopBar(props: { onRelevant: () => void; onStartSession: () => vo
           }}
           data-testid="top-year"
         />
-        {view?.era && <span className="example-note">{view.era.name}</span>}
+        <button
+          type="button"
+          className="btn small topbar-era"
+          onClick={story.openDialog}
+          aria-label={view?.era ? `Open the year, ${view.era.name}` : 'Open the year'}
+          title="Everyone and the world in this year (Cmd T)"
+          data-testid="top-open-year"
+        >
+          {view?.era?.name ?? 'Open the year'}
+        </button>
       </div>
       <div className="topbar-writing">
         <label htmlFor={ids.writing}>Writing</label>
