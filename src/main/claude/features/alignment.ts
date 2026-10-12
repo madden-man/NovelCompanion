@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AlignmentOutput } from '../../../shared/domain/continuity/alignment';
 import { alignmentMaterial } from '../../../shared/domain/continuity/plot';
-import { numberedText } from '../../../shared/domain/continuity/lines';
+import { numberedText, textHash } from '../../../shared/domain/continuity/lines';
 import { entryTitle } from '../../../shared/schema';
 import type { OpenBible } from '../../db/session';
 import { material } from '../prompts';
@@ -17,7 +17,11 @@ import type { FeatureDefinition } from '../runtime';
  * anything is stored.
  */
 
-export const AlignmentInput = z.strictObject({ chapterId: z.string().min(1).max(64) });
+export const AlignmentInput = z.strictObject({
+  chapterId: z.string().min(1).max(64),
+  /** Hash of the chapter text Claude is sent; the run keeps it so the findings are only recorded against the same text. */
+  textHash: z.string().max(32).optional(),
+});
 export type AlignmentInput = z.infer<typeof AlignmentInput>;
 
 export const ALIGNMENT_INSTRUCTIONS = `You check one chapter of the writer's novel against the story bible and report every place where the text and the bible disagree.
@@ -41,6 +45,13 @@ export const alignment: FeatureDefinition<AlignmentInput, AlignmentOutput> = {
     const m = alignmentMaterial(session.model, input.chapterId, session.repo.briefSettings());
     if (!m.lines.length)
       throw new Error('This chapter has no manuscript text to check. Import it first.');
+    const chapter = session.model.get('chapters', input.chapterId);
+    if (
+      input.textHash &&
+      chapter &&
+      textHash(String(chapter.manuscriptText ?? '')) !== input.textHash
+    )
+      throw new Error('The chapter text changed just now. Check it again.');
     const prompt = [
       `The plot as stored for ${m.heading}:`,
       material(`Stored plot for ${m.heading}`, m.plot),

@@ -11,6 +11,12 @@ const Entry = z.looseObject({ _id: z.string().min(1), modifiedAt: z.string() });
 
 export const FindingState = z.enum(['open', 'manuscriptWins', 'rewrite', 'dismissed']);
 
+const ShownEntry = z.strictObject({
+  collection: z.string(),
+  id: z.string(),
+  modifiedAt: z.string(),
+});
+
 /** A finding as the alignment screens show it: lines quoted, entries named, the change set as a diff. */
 export const FindingWire = z.strictObject({
   id: z.string(),
@@ -53,6 +59,8 @@ export const FindingWire = z.strictObject({
     }),
   ),
   rejectedChanges: z.array(z.strictObject({ summary: z.string(), reason: z.string() })),
+  /** The entries the change set writes and the revision of each as it stands, so Apply can refuse a diff that went stale. */
+  shown: z.array(ShownEntry),
   createdAt: z.string(),
 });
 export type FindingWire = z.infer<typeof FindingWire>;
@@ -96,11 +104,24 @@ export const continuityContract = {
     request: z.strictObject({
       id: EntryId,
       action: z.enum(['manuscriptWins', 'rewrite', 'dismiss', 'done']),
+      /** Manuscript wins: the revisions the diff was shown against; an entry changed since refuses the apply. */
+      shown: z.array(ShownEntry).max(200).optional(),
     }),
     response: z.strictObject({
       finding: FindingWire,
       changes: z.array(
         z.strictObject({ collection: z.string(), id: z.string(), before: Entry, after: Entry }),
+      ),
+      /** ED-10: the field warnings of each entry a Manuscript wins changed, as the entry editor would show them. */
+      warnings: z.array(
+        z.strictObject({
+          collection: z.string(),
+          id: z.string(),
+          entry: z.string(),
+          path: z.string(),
+          code: z.string(),
+          message: z.string(),
+        }),
       ),
     }),
   },
