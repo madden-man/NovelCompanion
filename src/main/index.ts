@@ -3,6 +3,7 @@ import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
 import { resetOnNavigation } from './promptReset';
 import {
+  applyStoredAppearance,
   closeStore,
   hasOpenBible,
   onCloseDecision,
@@ -168,6 +169,7 @@ void app.whenReady().then(() => {
   lockDownSession();
   applyContentSecurityPolicy(isDev);
   registerHandlers();
+  applyStoredAppearance();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

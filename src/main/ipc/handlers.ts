@@ -125,6 +125,15 @@ export async function closeStore(): Promise<void> {
 }
 
 async function bibleList(): Promise<Response<'bible.list'>> {
+  // ARCH-6: a snapshot open read-only lists only itself, without waiting on MongoDB.
+  if (current?.readOnly) {
+    const st = await conn().status();
+    return {
+      connection: 'unavailable',
+      message: st.message ?? undefined,
+      bibles: [{ id: current.session.handle.id, name: current.name }],
+    };
+  }
   const s = await getStore();
   if (!s.ok) return { connection: 'unavailable', message: s.message, bibles: [] };
   try {
@@ -349,7 +358,7 @@ export function registerHandlers(): void {
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());
-  handle('bible.create', ({ slug, name }) => bibleCreate(slug, name));
+  handle('bible.create', guard('bible.create', ({ slug, name }) => bibleCreate(slug, name)));
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
   handle('tree.export', (req) => exportTree(req));
@@ -361,9 +370,10 @@ export function registerHandlers(): void {
     closePromptShown?.();
     return { ok: true as const };
   });
+  registerAppHandlers();
   const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
   for (const channel of BIBLE_CHANNELS) {
-    handle(channel, handlers[channel] as Handler<BibleChannel>);
+    handle(channel, guard(channel, handlers[channel] as Handler<BibleChannel>));
   }
   // Google Drive (M9).
   const drive = makeDriveService();
@@ -377,7 +387,7 @@ export function registerHandlers(): void {
   );
   onDriveApplied = dh.onApplied;
   for (const channel of DRIVE_CHANNELS) {
-    handle(channel, dh.handlers[channel] as Handler<DriveChannel>);
+    handle(channel, guard(channel, dh.handlers[channel] as Handler<DriveChannel>));
   }
 
   // Claude (ARCH-4, AI-1 to AI-7, IM-5).
@@ -400,10 +410,57 @@ export function registerHandlers(): void {
   );
   const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
   for (const channel of CLAUDE_CHANNELS) {
-    handle(channel, claude[channel] as Handler<ClaudeChannel>);
+    handle(channel, guard(channel, claude[channel] as Handler<ClaudeChannel>));
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {
-    handle('test.propose', testHandlers(() => current?.session ?? null)['test.propose']);
+    handle(
+      'test.propose',
+      guard('test.propose', testHandlers(() => current?.session ?? null)['test.propose']),
+    );
   }
+}
+
+/**
+ * ARCH-6: every bible, Drive, and Claude channel runs through this. A write
+ * while a snapshot is open read-only is refused before it runs; a request
+ * that fails because MongoDB went away says so and marks the connection lost.
+ */
+function guard<C extends Channel>(channel: C, handler: Handler<C>): Handler<C> {
+  return guardHandler(channel, handler, {
+    readOnly: () => current?.readOnly === true,
+    lost: () => conn().lost(),
+  });
+}
+
+let appSettings: AppSettingsStore | null = null;
+const settingsStore = (): AppSettingsStore =>
+  (appSettings ??= new FileAppSettingsStore(join(app.getPath('userData'), 'app-settings.json')));
+
+/** ST-1: the window follows the appearance too (title bar, scroll bars, and `system`). */
+export function applyStoredAppearance(): void {
+  nativeTheme.themeSource = settingsStore().read().appearance;
+}
+
+/** ST-1 and ARCH-6: the connection, the connection string, and appearance. */
+function registerAppHandlers(): void {
+  handle('connection.status', () => conn().status());
+  handle('connection.retry', () => retryConnection());
+  handle('connection.openSnapshot', () => openLatestSnapshot());
+  handle('mongo.status', () => conn().mongoSettings());
+  handle('mongo.test', ({ uri }) => conn().test(uri));
+  handle('mongo.replace', async ({ uri }) => {
+    const reopen = current?.session.handle.id ?? null;
+    const r = await conn().replace(uri);
+    // Switch over only after the test passed: the open bible opens again on the new connection.
+    if (r.switched) await reopenAfterSwitch(reopen);
+    return { ok: r.ok, message: r.message, mongo: conn().mongoSettings() };
+  });
+  handle('appearance.get', () => ({ appearance: settingsStore().read().appearance }));
+  handle('appearance.set', ({ appearance }) => {
+    const store = settingsStore();
+    store.write({ ...store.read(), appearance });
+    nativeTheme.themeSource = appearance;
+    return { appearance };
+  });
 }

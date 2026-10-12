@@ -4,17 +4,31 @@ import type { Response } from '../../shared/ipc';
 import { BIBLE_SLUG_RULE, BibleSlug, slugify } from '../../shared/bible';
 import { plainError } from './api';
 import { Workspace } from './workspace/Workspace';
+import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
+import { useAppearance } from './appearance';
+import { MongoSettings } from './workspace/settings';
 
 type BibleList = Response<'bible.list'>;
 type Bible = Response<'bible.open'>['bible'];
 
 export function App() {
+  useAppearance();
+  return (
+    <ConnectionProvider>
+      <Shell />
+    </ConnectionProvider>
+  );
+}
+
+function Shell() {
   const [list, setList] = useState<BibleList | null>(null);
   const [current, setCurrent] = useState<Bible | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumps when the whole bible was replaced (a restore or a file import), so every view loads again.
   const [reloads, setReloads] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  // ARCH-6: when the connection comes back (or goes), the list of bibles loads again.
+  const connectionState = useConnection().status?.state;
 
   useEffect(() => {
     let live = true;
@@ -40,7 +54,7 @@ export function App() {
       off();
       offReload();
     };
-  }, []);
+  }, [connectionState]);
 
   const open = async (id: string) => {
     setError(null);
@@ -59,6 +73,12 @@ export function App() {
         <BibleSwitcher list={list} current={current} onOpen={open} />
       </section>
       {list?.connection === 'connected' && <NewBible onError={setError} />}
+      {list?.connection === 'unavailable' && !current && (
+        <section className="panel stack" aria-labelledby="mongo-launch-heading">
+          <h2 id="mongo-launch-heading">MongoDB connection</h2>
+          <MongoSettings />
+        </section>
+      )}
     </>
   );
 
@@ -74,6 +94,7 @@ export function App() {
           <p className="lede">Choose a bible to open, or make a new one.</p>
         )}
       </header>
+      <ConnectionBanner onOpened={(bible) => setCurrent(bible)} />
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -98,10 +119,13 @@ function BibleSwitcher(props: {
   onOpen: (id: string) => Promise<void>;
 }) {
   const { list, current, onOpen } = props;
+  // The connection banner already says why MongoDB is out of reach.
+  const state = useConnection().status?.state;
+  const banner = state === 'unavailable' || state === 'readOnly';
   if (!list) return <p aria-live="polite">Loading bibles.</p>;
   return (
     <>
-      {list.connection === 'unavailable' && list.message && (
+      {list.connection === 'unavailable' && list.message && !banner && (
         <p className="callout warn" role="status">
           {list.message}
         </p>
