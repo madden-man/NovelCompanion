@@ -83,7 +83,7 @@ test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with th
   await expect(box().getByRole('heading', { name: 'Add to the bible' })).toBeVisible();
   await expect(box().getByTestId('capture-time')).toContainText('Story time 2034');
   await expect(input()).toBeFocused();
-  await expect(box()).toContainText('Enter files it, Shift+Enter for a new line.');
+  await expect(box()).toContainText('Enter sends it to Claude, Shift+Enter for a new line.');
   // Shift+Enter is a new line, and the unsent text is there when the box opens again.
   await input().pressSequentially('First line');
   await input().press('Shift+Enter');
@@ -112,6 +112,16 @@ test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with th
   await expect(box()).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(add).toBeFocused();
+});
+
+test('KB-6 NF-2 Cmd+K does nothing while another dialog holds focus', async () => {
+  await page.keyboard.press('Meta+t');
+  const story = page.getByTestId('story-time-dialog');
+  await expect(story).toBeVisible();
+  await page.keyboard.press('Meta+k');
+  await expect(box()).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(story).toBeHidden();
 });
 
 test('KB-6 Enter shows two proposal cards with diffs; unticking one and Cmd+Enter files the other; the Filed link opens it', async () => {
@@ -211,6 +221,20 @@ test('KB-6 Review later leaves the proposal pending in the review queue', async 
   await page.keyboard.press('Meta+k');
   await expect(input()).toHaveValue('');
   await page.keyboard.press('Escape');
+});
+
+test('KB-6 Escape in the review leaves the proposals pending, as Review later does', async () => {
+  const pending = async () =>
+    (await invoke('proposal.list', { state: 'pending' })).proposals.filter(
+      (p) => p.proposal.data.title === 'Meiling and Ruth shared one recipe box',
+    ).length;
+  const before = await pending();
+  await send(RECIPE);
+  await expect(cards()).toHaveCount(1);
+  await expect(box()).toHaveAttribute('data-phase', 'review');
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+  expect(await pending()).toBe(before + 1);
 });
 
 test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, with a link', async () => {
