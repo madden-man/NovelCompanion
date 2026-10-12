@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useWriteGuard } from '../connection';
 import { manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
@@ -81,6 +82,7 @@ export function HistoryDrawer(props: {
     };
   }, [collection, id, selected, reloads]);
 
+  const ro = useWriteGuard();
   const restore = async () => {
     if (!diff) return;
     setError(null);
@@ -179,7 +181,13 @@ export function HistoryDrawer(props: {
                   </tbody>
                 </table>
                 <div className="row">
-                  <button type="button" className="btn primary" onClick={() => void restore()}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void restore()}
+                    disabled={ro.off}
+                    {...ro.tip}
+                  >
                     Restore this version
                   </button>
                 </div>

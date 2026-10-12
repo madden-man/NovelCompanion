@@ -1,3 +1,4 @@
+import { useWriteGuard } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import {
   citationProblems,
@@ -38,6 +39,7 @@ export function BriefView({
   const ed = useAutosave('briefs', id);
   const undo = useUndo();
   const [editing, setEditing] = useState(false);
+  const ro = useWriteGuard();
   const [add, setAdd] = useState<string[]>([]);
   const [remove, setRemove] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -148,7 +150,13 @@ export function BriefView({
         </p>
       )}
       <div className="row">
-        <button type="button" className="btn small" onClick={() => setEditing((v) => !v)}>
+        <button
+          type="button"
+          className="btn small"
+          onClick={() => setEditing((v) => !v)}
+          disabled={ro.off && !editing}
+          {...ro.tip}
+        >
           {editing ? 'Show the brief' : 'Edit the text'}
         </button>
         <button type="button" className="btn small" onClick={() => void exportAs('markdown')}>
@@ -199,7 +207,8 @@ export function BriefView({
           <button
             type="button"
             className="btn primary"
-            disabled={busy || claude.disclosure !== null}
+            disabled={busy || claude.disclosure !== null || ro.off}
+            {...ro.tip}
             onClick={regenerate}
             data-testid="brief-regenerate"
           >

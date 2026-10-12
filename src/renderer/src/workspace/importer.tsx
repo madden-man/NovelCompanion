@@ -1,3 +1,4 @@
+import { useWriteGuard } from '../connection';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { ENTRY_COLLECTIONS, collectionInfo, entryTitle } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
@@ -964,6 +965,7 @@ function ChangeSetView(props: {
   const allNew = created.length > 0 && created.every((i) => effective.has(i.id));
   const someNew = created.some((i) => effective.has(i.id));
 
+  const ro = useWriteGuard();
   const apply = async () => {
     setBusy(true);
     onError(null);
@@ -1180,7 +1182,8 @@ function ChangeSetView(props: {
           type="button"
           className="btn primary"
           data-testid="import-apply"
-          disabled={busy || effective.size === 0}
+          disabled={busy || effective.size === 0 || ro.off}
+          {...ro.tip}
           onClick={() => void apply()}
         >
           Import {effective.size} {effective.size === 1 ? 'change' : 'changes'}

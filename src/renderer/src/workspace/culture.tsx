@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
+import { useWriteGuard } from '../connection';
 import { descriptionFor, placeOutline } from '../../../shared/domain/culture';
 import type { Response } from '../../../shared/ipc';
 import { entryTitle } from '../../../shared/schema';
@@ -194,6 +195,7 @@ export function PlacesView(props: { onOpen: Open }) {
 
 /** GL-1: one romanization system per language, and the terms that do not follow it. */
 export function RomanizationView(props: { onOpen: Open }) {
+  const ro = useWriteGuard();
   const { version } = useStore();
   const [data, setData] = useState<Response<'romanization.get'> | null>(null);
   const [terms, setTerms] = useState<Response<'entry.list'>['entries']>([]);
@@ -246,6 +248,8 @@ export function RomanizationView(props: { onOpen: Open }) {
             <select
               id={`roman-${l.id}`}
               value={l.systemId ?? ''}
+              disabled={ro.off}
+              {...ro.tip}
               onChange={(e) => void choose(l.id, e.target.value)}
             >
               <option value="">No system</option>

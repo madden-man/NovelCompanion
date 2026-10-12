@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useWriteGuard } from '../../connection';
 import type { Response } from '../../../../shared/ipc';
 import type { StoryTimeValue } from '../../../../shared/storyTime';
 import { call, plainError } from '../../api';
@@ -175,6 +176,7 @@ export function StoryTimeDialog() {
       setNote({ text: plainError(e), bad: true });
     }
   };
+  const ro = useWriteGuard();
   const promote = async () => {
     if (!preview) return;
     try {
@@ -375,7 +377,13 @@ export function StoryTimeDialog() {
             <>
               <p>{current.label}</p>
               <div className="row tight">
-                <button type="button" className="btn small" onClick={() => void askPromote()}>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => void askPromote()}
+                  disabled={ro.off}
+                  {...ro.tip}
+                >
                   Use {time.year} as strand year
                 </button>
                 <button type="button" className="btn small" onClick={clearChapter}>
@@ -429,6 +437,8 @@ export function StoryTimeDialog() {
                     type="button"
                     className="btn primary small"
                     onClick={() => void promote()}
+                    disabled={ro.off}
+                    {...ro.tip}
                   >
                     Approve and write
                   </button>

@@ -39,3 +39,79 @@ export function mongoUri(env: NodeJS.ProcessEnv, opts: { isPackaged: boolean }):
     message: `No MongoDB connection string is stored in the keychain. Add it under the service "${KEYCHAIN_SERVICE}" and the account "${KEYCHAIN_ACCOUNT}".`,
   };
 }
+
+/**
+ * ST-1, ARCH-5: where the MongoDB connection string is kept. The app reads it
+ * here and replaces it here; nothing else stores it, and it never reaches the
+ * renderer, a log, or an export.
+ */
+export interface MongoUriStore {
+  get(): string | null;
+  set(uri: string): void;
+  /** Where it is kept, in plain words for the settings screen. */
+  readonly where: string;
+}
+
+export class KeychainMongoUriStore implements MongoUriStore {
+  readonly where = `the macOS keychain (service "${KEYCHAIN_SERVICE}")`;
+  private entry(): Entry {
+    return new Entry(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+  }
+  get(): string | null {
+    try {
+      return this.entry().getPassword() || null;
+    } catch {
+      return null;
+    }
+  }
+  set(uri: string): void {
+    this.entry().setPassword(uri);
+  }
+}
+
+/** Tests and end-to-end runs: the string lives in memory, so the keychain is never touched. */
+export class MemoryMongoUriStore implements MongoUriStore {
+  readonly where = 'memory, for this test run';
+  constructor(private uri: string | null = null) {}
+  get(): string | null {
+    return this.uri;
+  }
+  set(uri: string): void {
+    this.uri = uri;
+  }
+}
+
+/**
+ * The connection string as the settings screen shows it: the scheme and the
+ * last few characters of the host, never the user name, password, or options.
+ */
+export function maskMongoUri(uri: string): string {
+  const m = /^(mongodb(?:\+srv)?):\/\/(?:[^@/?#]*@)?([^/?#]*)/.exec(uri.trim());
+  if (!m) return 'a connection string the app cannot read';
+  const host = m[2] ?? '';
+  const tail = host.length > 10 ? host.slice(-10) : host.slice(-Math.ceil(host.length / 2));
+  return `${m[1]}://…${tail}`;
+}
+
+/** A pasted connection string: trimmed, one line, and shaped like a MongoDB address. */
+export function cleanMongoUri(
+  raw: string,
+  opts: { localOnly: boolean },
+): { ok: true; uri: string } | { ok: false; message: string } {
+  const uri = raw.trim();
+  if (!uri) return { ok: false, message: 'Paste the connection string first.' };
+  if (/\s/.test(uri)) {
+    return { ok: false, message: 'A connection string has no spaces or line breaks.' };
+  }
+  if (!/^mongodb(\+srv)?:\/\/[^/?#]+/.test(uri)) {
+    return {
+      ok: false,
+      message:
+        'A MongoDB connection string starts with "mongodb+srv://" or "mongodb://". Copy it again from Atlas under Connect, then Drivers.',
+    };
+  }
+  if (opts.localOnly && !isLocalMongoUri(uri)) {
+    return { ok: false, message: 'The test database address must be a local MongoDB.' };
+  }
+  return { ok: true, uri };
+}

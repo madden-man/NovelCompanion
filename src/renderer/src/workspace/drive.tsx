@@ -1,3 +1,4 @@
+import { WriteFieldset } from '../connection';
 import { useCallback, useEffect, useId, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Response } from '../../../shared/ipc';
@@ -327,8 +328,10 @@ export function DriveView() {
             bible draws on. A check shows what changed in Drive; nothing changes here until you
             review and approve it.
           </p>
-          <LinkedFiles key={checks} onReview={setReviewing} />
-          <DriveExport status={status} onStatus={setStatus} />
+          <WriteFieldset className="stack">
+            <LinkedFiles key={checks} onReview={setReviewing} />
+            <DriveExport status={status} onStatus={setStatus} />
+          </WriteFieldset>
         </>
       )}
     </section>

@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { WriteFieldset } from '../connection';
 import type { FormEvent } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { entryTitle } from '../../../shared/schema';
@@ -144,39 +145,45 @@ export function FactSummary(props: {
         )}
       </div>
       <form className="stack tight" onSubmit={(e) => void record(e)} data-testid="fact-record-form">
-        <span className="eyebrow">Record who learned it</span>
-        <div className="field">
-          <label htmlFor={ids.who}>Character</label>
-          <select id={ids.who} value={characterId} onChange={(e) => setCharacterId(e.target.value)}>
-            <option value="">Pick a character</option>
-            {[...characters]
-              .sort((a, b) => entryTitle(a).localeCompare(entryTitle(b)))
-              .map((c) => (
-                <option key={c._id} value={c._id}>
-                  {entryTitle(c)}
-                </option>
-              ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.year}>Year learned</label>
-          <input
-            id={ids.year}
-            className="num year-input"
-            inputMode="numeric"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={ids.how}>How they learn it</label>
-          <input id={ids.how} value={how} onChange={(e) => setHow(e.target.value)} />
-        </div>
-        <div className="row">
-          <button type="submit" className="btn primary small">
-            Record who learned it
-          </button>
-        </div>
+        <WriteFieldset className="stack tight">
+          <span className="eyebrow">Record who learned it</span>
+          <div className="field">
+            <label htmlFor={ids.who}>Character</label>
+            <select
+              id={ids.who}
+              value={characterId}
+              onChange={(e) => setCharacterId(e.target.value)}
+            >
+              <option value="">Pick a character</option>
+              {[...characters]
+                .sort((a, b) => entryTitle(a).localeCompare(entryTitle(b)))
+                .map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {entryTitle(c)}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor={ids.year}>Year learned</label>
+            <input
+              id={ids.year}
+              className="num year-input"
+              inputMode="numeric"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={ids.how}>How they learn it</label>
+            <input id={ids.how} value={how} onChange={(e) => setHow(e.target.value)} />
+          </div>
+          <div className="row">
+            <button type="submit" className="btn primary small">
+              Record who learned it
+            </button>
+          </div>
+        </WriteFieldset>
         {message && (
           <div role="status" data-testid="fact-record-result" className="stack tight">
             <p className={message.bad ? 'callout crit' : 'callout'}>{message.text}</p>

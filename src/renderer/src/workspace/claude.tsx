@@ -1,3 +1,4 @@
+import { useWriteGuard } from '../connection';
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { CLAUDE_FEATURES, FEATURE_INFO, needsSettings } from '../../../shared/claude';
 import type {
@@ -468,9 +469,10 @@ function ClaudePanel() {
     );
   });
 
+  const ro = useWriteGuard();
   const ask = async () => {
     const question = draft.trim();
-    if (!question || runId || !status?.acknowledgedAt) return;
+    if (!question || runId || !status?.acknowledgedAt || ro.off) return;
     setError(null);
     const id = newRunId();
     watchRun(id);
@@ -615,7 +617,8 @@ function ClaudePanel() {
           <button
             type="submit"
             className="btn primary"
-            disabled={running || !draft.trim() || !status?.acknowledgedAt}
+            disabled={running || !draft.trim() || !status?.acknowledgedAt || ro.off}
+            {...ro.tip}
             data-testid="claude-send"
           >
             Ask

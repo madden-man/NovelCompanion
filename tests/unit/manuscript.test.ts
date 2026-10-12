@@ -95,7 +95,7 @@ describe('MS-5 the app never writes to a manuscript', () => {
     expect(members).toEqual(['id', 'label', 'picker', 'pick', 'read']);
   });
 
-  test("MS-5 every file write in the main process is a backup, an export, a temporary print page, or the app's Claude settings file", () => {
+  test("MS-5 every file write in the main process is a backup, an export, a temporary print page, or the app's own settings files", () => {
     const writers = sourceFiles(join(ROOT, 'src'))
       .filter((f) =>
         /\b(writeFile|writeFileSync|createWriteStream|appendFile|copyFile)\b/.test(
@@ -105,6 +105,8 @@ describe('MS-5 the app never writes to a manuscript', () => {
       .map((f) => relative(ROOT, f))
       .sort();
     expect(writers).toEqual([
+      // ST-1: the appearance setting, in app-settings.json in the app's data folder.
+      'src/main/appSettings.ts',
       'src/main/backup/snapshots.ts',
       'src/main/claude/settings.ts',
       'src/main/ipc/exportTree.ts',

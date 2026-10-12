@@ -1,3 +1,4 @@
+import { WriteFieldset, useWriteGuard } from '../connection';
 import { useEffect, useId, useState } from 'react';
 import type { FormEvent } from 'react';
 import { BIBLE_SLUG_RULE, BibleSlug, slugify } from '../../../shared/bible';
@@ -12,6 +13,7 @@ const total = (counts: Record<string, number>) => Object.values(counts).reduce((
 
 /** Backups (BK-1 to BK-3): snapshots to take and restore, and the whole-bible JSON file. */
 export function BackupsView() {
+  const ro = useWriteGuard();
   const [data, setData] = useState<Snapshots | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +78,8 @@ export function BackupsView() {
           <button
             type="button"
             className="btn primary"
-            disabled={busy}
+            disabled={busy || ro.off}
+            {...ro.tip}
             data-testid="snapshot-take"
             onClick={() =>
               void act(async () => {
@@ -105,10 +108,11 @@ export function BackupsView() {
                 min={1}
                 max={1000}
                 value={keep}
+                disabled={ro.off}
                 onChange={(e) => setKeep(e.target.value)}
               />
             </label>
-            <button type="submit" className="btn" disabled={busy}>
+            <button type="submit" className="btn" disabled={busy || ro.off} {...ro.tip}>
               Save the number
             </button>
           </form>
@@ -143,7 +147,8 @@ export function BackupsView() {
                           <button
                             type="button"
                             className="btn small danger"
-                            disabled={busy}
+                            disabled={busy || ro.off}
+                            {...ro.tip}
                             data-testid="snapshot-confirm"
                             onClick={() =>
                               void act(async () => {
@@ -167,7 +172,8 @@ export function BackupsView() {
                         <button
                           type="button"
                           className="btn small"
-                          disabled={busy}
+                          disabled={busy || ro.off}
+                          {...ro.tip}
                           data-testid="snapshot-restore"
                           onClick={() => setConfirm(s.id)}
                         >
@@ -197,7 +203,8 @@ export function BackupsView() {
           <button
             type="button"
             className="btn"
-            disabled={busy}
+            disabled={busy || ro.off}
+            {...ro.tip}
             data-testid="backup-export"
             onClick={() =>
               void act(async () => {
@@ -245,43 +252,45 @@ function LoadBibleFile(props: {
   };
 
   return (
-    <form
-      className="panel stack"
-      onSubmit={(e) => void submit(e)}
-      aria-labelledby="load-file-title"
-    >
-      <h3 id="load-file-title">Load an exported bible into a new bible</h3>
-      <p>Choose a file made by Export. It becomes a new bible, so nothing here is replaced.</p>
-      <div className="row">
-        <label className="field">
-          Name of the new bible
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </label>
-        <label className="field">
-          ID
-          <input
-            value={shown}
-            aria-describedby="load-slug-rule"
-            onChange={(e) => {
-              setEdited(true);
-              setSlug(e.target.value);
-            }}
-          />
-        </label>
-      </div>
-      <p id="load-slug-rule" className="example-note">
-        {BIBLE_SLUG_RULE}
-      </p>
-      <div className="row">
-        <button
-          type="submit"
-          className="btn"
-          data-testid="backup-import"
-          disabled={busy || !name.trim() || !valid}
-        >
-          Choose a file and load it
-        </button>
-      </div>
-    </form>
+    <WriteFieldset>
+      <form
+        className="panel stack"
+        onSubmit={(e) => void submit(e)}
+        aria-labelledby="load-file-title"
+      >
+        <h3 id="load-file-title">Load an exported bible into a new bible</h3>
+        <p>Choose a file made by Export. It becomes a new bible, so nothing here is replaced.</p>
+        <div className="row">
+          <label className="field">
+            Name of the new bible
+            <input value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label className="field">
+            ID
+            <input
+              value={shown}
+              aria-describedby="load-slug-rule"
+              onChange={(e) => {
+                setEdited(true);
+                setSlug(e.target.value);
+              }}
+            />
+          </label>
+        </div>
+        <p id="load-slug-rule" className="example-note">
+          {BIBLE_SLUG_RULE}
+        </p>
+        <div className="row">
+          <button
+            type="submit"
+            className="btn"
+            data-testid="backup-import"
+            disabled={busy || !name.trim() || !valid}
+          >
+            Choose a file and load it
+          </button>
+        </div>
+      </form>
+    </WriteFieldset>
   );
 }

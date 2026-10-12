@@ -1,4 +1,5 @@
 import { deleteCommand, editCommand, restoreCommand } from '../../../shared/domain/undoRunner';
+import { WriteFieldset, useWriteGuard } from '../connection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -222,6 +223,7 @@ export function TrashControls(props: {
 }) {
   const { collection, id, title } = props;
   const undo = useUndo();
+  const ro = useWriteGuard();
   const [confirmDelete, setConfirmDelete] = useState<Response<'entry.linkedFrom'> | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -257,11 +259,23 @@ export function TrashControls(props: {
       <div className="row">
         {props.extra}
         {props.inTrash ? (
-          <button type="button" className="btn" onClick={() => void doRestore()}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void doRestore()}
+            disabled={ro.off}
+            {...ro.tip}
+          >
             Restore from trash
           </button>
         ) : (
-          <button type="button" className="btn danger" onClick={() => void askDelete()}>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => void askDelete()}
+            disabled={ro.off}
+            {...ro.tip}
+          >
             Move to trash
           </button>
         )}
@@ -397,18 +411,20 @@ export function EntryPane(props: {
         {collection === 'characters' && <CharacterSummary id={id} onOpen={props.onOpen} />}
         {collection === 'facts' && <FactSummary id={id} onOpen={props.onOpen} />}
         <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
-          {editableFields(manifest).map((spec) => (
-            <Field
-              key={spec.name}
-              spec={spec}
-              value={draft[spec.name]}
-              path={spec.name}
-              messages={messages}
-              root={draft}
-              onMention={onMention}
-              onChange={(v) => ed.setField(spec.name, v)}
-            />
-          ))}
+          <WriteFieldset>
+            {editableFields(manifest).map((spec) => (
+              <Field
+                key={spec.name}
+                spec={spec}
+                value={draft[spec.name]}
+                path={spec.name}
+                messages={messages}
+                root={draft}
+                onMention={onMention}
+                onChange={(v) => ed.setField(spec.name, v)}
+              />
+            ))}
+          </WriteFieldset>
         </form>
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
@@ -533,18 +549,20 @@ export function EmbeddedEditor(props: {
         }}
       />
       <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
-        {editableFields(manifest).map((spec) => (
-          <Field
-            key={spec.name}
-            spec={spec}
-            value={draft[spec.name]}
-            path={spec.name}
-            messages={messages}
-            root={draft}
-            onMention={onMention}
-            onChange={(v) => ed.setField(spec.name, v)}
-          />
-        ))}
+        <WriteFieldset>
+          {editableFields(manifest).map((spec) => (
+            <Field
+              key={spec.name}
+              spec={spec}
+              value={draft[spec.name]}
+              path={spec.name}
+              messages={messages}
+              root={draft}
+              onMention={onMention}
+              onChange={(v) => ed.setField(spec.name, v)}
+            />
+          ))}
+        </WriteFieldset>
       </form>
     </section>
   );

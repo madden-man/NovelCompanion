@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, shell } from 'electron';
-import { connect, listBibles } from '../db';
+import { BrowserWindow, app, dialog, nativeTheme, shell } from 'electron';
+import { listBibles } from '../db';
 import type { Store } from '../db';
 import { createBibleWithDefaults, openBibleForApp } from '../db/session';
 import type { OpenBible } from '../db/session';
@@ -16,7 +16,21 @@ import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
 import { keychainStore, memoryStore } from '../drive/secrets';
 import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
 import type { DriveChannel } from './driveHandlers';
-import { TEST_URI_ENV, mongoUri } from '../secrets';
+import {
+  ALLOW_TEST_URI_ENV,
+  KEYCHAIN_ACCOUNT,
+  KEYCHAIN_SERVICE,
+  KeychainMongoUriStore,
+  MemoryMongoUriStore,
+  TEST_URI_ENV,
+  mongoUri,
+} from '../secrets';
+import { ConnectionManager } from '../connection';
+import { openSnapshotReadOnly } from '../db/readOnly';
+import { FileAppSettingsStore } from '../appSettings';
+import type { AppSettingsStore } from '../appSettings';
+import { guardHandler } from './offline';
+import type { Channel } from '../../shared/ipc';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
@@ -29,25 +43,46 @@ import type { ClaudeRuntime } from '../claude';
 import { CLAUDE_CHANNELS, claudeHandlers } from '../claude/handlers';
 import type { ClaudeChannel } from '../claude/handlers';
 
-let store: Store | null = null;
 let claudeRuntime: ClaudeRuntime | null = null;
-let current: { session: OpenBible; name: string; unsubscribe: () => void } | null = null;
+let current: {
+  session: OpenBible;
+  name: string;
+  unsubscribe: () => void;
+  /** ARCH-6: set when this is a local snapshot open read-only. */
+  readOnly?: true;
+} | null = null;
 
-const UNREACHABLE =
-  'The app could not reach the MongoDB deployment. Check your network connection and try again.';
+/**
+ * ARCH-5, ST-1: the connection string lives in the keychain. An unpackaged
+ * build under test keeps it in memory instead, seeded from the test address,
+ * and accepts only local addresses, so a test never reads the keychain or
+ * reaches Atlas.
+ */
+function makeConnection(): ConnectionManager {
+  const underTest =
+    process.env[TEST_URI_ENV] !== undefined &&
+    (!app.isPackaged || process.env[ALLOW_TEST_URI_ENV] === '1');
+  // Under test this never reads the keychain: it returns the local test address or refuses it.
+  const lookup = underTest ? mongoUri(process.env, { isPackaged: app.isPackaged }) : null;
+  return new ConnectionManager({
+    uris: underTest
+      ? new MemoryMongoUriStore(lookup?.ok ? lookup.uri : null)
+      : new KeychainMongoUriStore(),
+    localOnly: underTest,
+    missingMessage:
+      lookup && !lookup.ok
+        ? lookup.message
+        : `No MongoDB connection string is stored in the keychain (service "${KEYCHAIN_SERVICE}", account "${KEYCHAIN_ACCOUNT}"). Paste one under MongoDB connection, then click Replace connection.`,
+    snapshotRoot: join(app.getPath('userData'), 'snapshots'),
+    onStatus: (status) => broadcast('connection.changed', status),
+  });
+}
 
-async function getStore(): Promise<{ ok: true; store: Store } | { ok: false; message: string }> {
-  if (store) return { ok: true, store };
-  const lookup = mongoUri(process.env, { isPackaged: app.isPackaged });
-  if (!lookup.ok) return lookup;
-  try {
-    // connect() closes its own client when it fails, so nothing is left open.
-    store = await connect(lookup.uri);
-    return { ok: true, store };
-  } catch {
-    store = null;
-    return { ok: false, message: UNREACHABLE };
-  }
+let connection: ConnectionManager | null = null;
+const conn = (): ConnectionManager => (connection ??= makeConnection());
+
+function getStore() {
+  return conn().getStore();
 }
 
 async function requireStore(): Promise<Store> {
@@ -76,9 +111,9 @@ export function onCloseDecision(fn: (proceed: boolean) => void): void {
   closeDecision = fn;
 }
 
-/** True when a bible is open, so closing the app should ask where the writing stopped. */
+/** True when a bible is open, so closing the app should ask where the writing stopped. A read-only snapshot has nowhere to save the note. */
 export function hasOpenBible(): boolean {
-  return current !== null;
+  return current !== null && !current.readOnly;
 }
 
 export async function closeStore(): Promise<void> {
@@ -86,11 +121,19 @@ export async function closeStore(): Promise<void> {
   await claudeRuntime?.stopAll();
   current?.unsubscribe();
   current = null;
-  await store?.close();
-  store = null;
+  await connection?.close();
 }
 
 async function bibleList(): Promise<Response<'bible.list'>> {
+  // ARCH-6: a snapshot open read-only lists only itself, without waiting on MongoDB.
+  if (current?.readOnly) {
+    const st = await conn().status();
+    return {
+      connection: 'unavailable',
+      message: st.message ?? undefined,
+      bibles: [{ id: current.session.handle.id, name: current.name }],
+    };
+  }
   const s = await getStore();
   if (!s.ok) return { connection: 'unavailable', message: s.message, bibles: [] };
   try {
@@ -121,6 +164,16 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const session = await openBibleForApp(s, slug, {
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
   });
+  return adopt(session, record.name, false);
+}
+
+/** Make an opened bible (or a read-only snapshot of one) the current one, and follow its changes. */
+async function adopt(
+  session: OpenBible,
+  name: string,
+  readOnly: boolean,
+): Promise<Response<'bible.open'>> {
+  const slug = session.handle.id;
   // A Claude run belongs to the bible it started in: stop it (saved as stopped) before switching.
   await claudeRuntime?.stopAll();
   current?.unsubscribe();
@@ -142,10 +195,65 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
     offProposals();
     offTime();
   };
-  current = { session, name: record.name, unsubscribe };
-  const bible = { id: slug, name: record.name };
+  current = { session, name, unsubscribe, ...(readOnly ? { readOnly: true as const } : {}) };
+  conn().lastBible = slug;
+  const bible = { id: slug, name };
   broadcast('bibles.changed', { current: bible });
   return { bible };
+}
+
+/**
+ * ARCH-6: open the most recent local snapshot read-only, when MongoDB cannot
+ * be reached. Refused while MongoDB is reachable, so a snapshot never stands
+ * in for the real bible by mistake.
+ */
+async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>> {
+  const c = conn();
+  if (!c.readOnly && c.current) {
+    const st = await c.status();
+    if (st.state === 'connected') {
+      throw new Error(
+        'MongoDB is connected, so the bible opens as usual. Snapshots open read-only only when MongoDB cannot be reached.',
+      );
+    }
+  }
+  const latest = await c.latest();
+  if (!latest) {
+    throw new Error(
+      'There is no local snapshot on this Mac yet, so there is nothing to open read-only. Check your network connection, then click Try again.',
+    );
+  }
+  const opened = await openSnapshotReadOnly(join(app.getPath('userData'), 'snapshots'), latest);
+  const { bible } = await adopt(opened.session, opened.snapshot.bible, true);
+  c.enterReadOnly(opened.snapshot);
+  return { bible, status: await c.status() };
+}
+
+/**
+ * ARCH-6: try MongoDB again. When it answers, the bible that was open (or the
+ * one shown read-only) opens again from MongoDB, so nothing stays read-only
+ * and nothing stays tied to the client that was lost.
+ */
+async function retryConnection(): Promise<Response<'connection.retry'>> {
+  const c = conn();
+  const reopen = current?.session.handle.id ?? null;
+  const r = await c.retry();
+  if (r.ok) await reopenAfterSwitch(reopen);
+  return c.status();
+}
+
+/** After a reconnect or a new connection string, open the same bible again on the new client. */
+async function reopenAfterSwitch(slug: string | null): Promise<void> {
+  if (!slug) return;
+  try {
+    await bibleOpen(slug);
+  } catch {
+    // The bible is not on this deployment: go back to the list of bibles.
+    await claudeRuntime?.stopAll();
+    current?.unsubscribe();
+    current = null;
+    broadcast('bibles.changed', { current: null });
+  }
 }
 
 /** Open an allowlisted link in the system browser. Used by IPC and by the window open handler. */
@@ -250,7 +358,10 @@ export function registerHandlers(): void {
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());
-  handle('bible.create', ({ slug, name }) => bibleCreate(slug, name));
+  handle(
+    'bible.create',
+    guard('bible.create', ({ slug, name }) => bibleCreate(slug, name)),
+  );
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
   handle('tree.export', (req) => exportTree(req));
@@ -262,9 +373,10 @@ export function registerHandlers(): void {
     closePromptShown?.();
     return { ok: true as const };
   });
+  registerAppHandlers();
   const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
   for (const channel of BIBLE_CHANNELS) {
-    handle(channel, handlers[channel] as Handler<BibleChannel>);
+    handle(channel, guard(channel, handlers[channel] as Handler<BibleChannel>));
   }
   // Google Drive (M9).
   const drive = makeDriveService();
@@ -278,7 +390,7 @@ export function registerHandlers(): void {
   );
   onDriveApplied = dh.onApplied;
   for (const channel of DRIVE_CHANNELS) {
-    handle(channel, dh.handlers[channel] as Handler<DriveChannel>);
+    handle(channel, guard(channel, dh.handlers[channel] as Handler<DriveChannel>));
   }
 
   // Claude (ARCH-4, AI-1 to AI-7, IM-5).
@@ -301,10 +413,61 @@ export function registerHandlers(): void {
   );
   const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
   for (const channel of CLAUDE_CHANNELS) {
-    handle(channel, claude[channel] as Handler<ClaudeChannel>);
+    handle(channel, guard(channel, claude[channel] as Handler<ClaudeChannel>));
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {
-    handle('test.propose', testHandlers(() => current?.session ?? null)['test.propose']);
+    handle(
+      'test.propose',
+      guard('test.propose', testHandlers(() => current?.session ?? null)['test.propose']),
+    );
   }
+}
+
+/**
+ * ARCH-6: every bible, Drive, and Claude channel runs through this. A write
+ * while a snapshot is open read-only is refused before it runs; a request
+ * that fails because MongoDB went away says so and marks the connection lost.
+ */
+function guard<C extends Channel>(channel: C, handler: Handler<C>): Handler<C> {
+  return guardHandler(channel, handler, {
+    readOnly: () => current?.readOnly === true,
+    lost: () => conn().lost(),
+  });
+}
+
+let appSettings: AppSettingsStore | null = null;
+const settingsStore = (): AppSettingsStore =>
+  (appSettings ??= new FileAppSettingsStore(join(app.getPath('userData'), 'app-settings.json')));
+
+/** ST-1: the window follows the appearance too (title bar, scroll bars, and `system`). */
+export function applyStoredAppearance(): void {
+  nativeTheme.themeSource = settingsStore().read().appearance;
+}
+
+/** ST-1 and ARCH-6: the connection, the connection string, and appearance. */
+function registerAppHandlers(): void {
+  handle('connection.status', async () => {
+    // The first question at launch waits for the first attempt, so the state is never a guess.
+    if (!conn().tried) await conn().getStore();
+    return conn().status();
+  });
+  handle('connection.retry', () => retryConnection());
+  handle('connection.openSnapshot', () => openLatestSnapshot());
+  handle('mongo.status', () => conn().mongoSettings());
+  handle('mongo.test', ({ uri }) => conn().test(uri));
+  handle('mongo.replace', async ({ uri }) => {
+    const reopen = current?.session.handle.id ?? null;
+    const r = await conn().replace(uri);
+    // Switch over only after the test passed: the open bible opens again on the new connection.
+    if (r.switched) await reopenAfterSwitch(reopen);
+    return { ok: r.ok, message: r.message, mongo: conn().mongoSettings() };
+  });
+  handle('appearance.get', () => ({ appearance: settingsStore().read().appearance }));
+  handle('appearance.set', ({ appearance }) => {
+    const store = settingsStore();
+    store.write({ ...store.read(), appearance });
+    nativeTheme.themeSource = appearance;
+    return { appearance };
+  });
 }

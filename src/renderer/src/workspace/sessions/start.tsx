@@ -1,3 +1,4 @@
+import { useWriteGuard } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
 import { createCommand } from '../../../../shared/domain/undoRunner';
@@ -127,6 +128,7 @@ export function StartSessionView(props: {
     });
   };
 
+  const ro = useWriteGuard();
   return (
     <div className="ws-wide stack" data-testid="start-session">
       <h2>Start session</h2>
@@ -234,7 +236,8 @@ export function StartSessionView(props: {
           <button
             type="button"
             className="btn primary"
-            disabled={!input || busy || claude.disclosure !== null}
+            disabled={!input || busy || claude.disclosure !== null || ro.off}
+            {...ro.tip}
             onClick={start}
             data-testid="start-session-go"
           >

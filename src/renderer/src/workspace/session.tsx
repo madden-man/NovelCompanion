@@ -1,3 +1,4 @@
+import { useReadOnly } from '../connection';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { stopLogData, stopPromptLabel } from '../../../shared/domain/sessionLog';
@@ -14,8 +15,12 @@ import { useUndo } from './undo';
  */
 export function StopPrompt() {
   const [open, setOpen] = useState<{ quitting: boolean } | null>(null);
+  // ARCH-6: a read-only snapshot has nowhere to save the note, so main never asks (and neither does this).
+  const readOnly = useReadOnly() !== null;
   useEffect(() => window.api.on('app.closeRequested', ({ quitting }) => setOpen({ quitting })), []);
-  return open ? <StopDialog quitting={open.quitting} onCancel={() => setOpen(null)} /> : null;
+  return open && !readOnly ? (
+    <StopDialog quitting={open.quitting} onCancel={() => setOpen(null)} />
+  ) : null;
 }
 
 function StopDialog({ quitting, onCancel }: { quitting: boolean; onCancel: () => void }) {

@@ -1,3 +1,4 @@
+import { useWriteGuard } from '../connection';
 import { useId, useState } from 'react';
 import { FEATURE_INFO } from '../../../shared/claude';
 import type { ClaudeRun, ClaudeStatusWire } from '../../../shared/claude';
@@ -19,6 +20,7 @@ import {
  * is saved until each one is approved there.
  */
 export function ImportProposals(props: { fileId: string; fileName: string }) {
+  const ro = useWriteGuard();
   const [status, setStatus] = useClaudeStatus();
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<ClaudeRun | null>(null);
@@ -79,7 +81,8 @@ export function ImportProposals(props: { fileId: string; fileName: string }) {
         <button
           type="button"
           className="btn"
-          disabled={runId !== null || asking}
+          disabled={runId !== null || asking || ro.off}
+          {...ro.tip}
           onClick={() => {
             // AI-6: the first use in this bible says what is sent before anything is.
             if (status && !status.acknowledgedAt) setAsking(true);
