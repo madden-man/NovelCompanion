@@ -4,13 +4,9 @@ A desktop story bible for writing a novel. Electron, TypeScript, React, and Mong
 
 ## Before you run it
 
-- **MongoDB connection string in the keychain.** The app reads it from the macOS keychain under the service `novel-companion-mongodb` and the account `novel-companion`. It is never stored in a file. To add it:
+- **MongoDB connection string.** Paste it on the first screen (it shows a MongoDB connection box whenever nothing is stored) or later under Settings. The app keeps it in the macOS keychain under the service `novel-companion-mongodb` and the account `novel-companion`, never in a file. `docs/RUN-ON-ANOTHER-MAC.md` covers a second Mac.
 
-  ```sh
-  security add-generic-password -s novel-companion-mongodb -a novel-companion -w
-  ```
-
-  The command prompts for the value, so it does not land in your shell history.
+- **Installing the app.** `npm run install:app` builds, signs with the local "Novel Companion Local" certificate (make it once with `sh scripts/make-signing-identity.sh`) and installs into /Applications. With that certificate the keychain asks to allow access once, not after every rebuild.
 
 - **Running against a local database.** See "Local development" in `docs/ARCHITECTURE.md`: a local one-node replica set and `NOVEL_COMPANION_TEST_MONGODB_URI`. If `npm run dev` says "Electron uninstall", run `node node_modules/electron/install.js`.
 
