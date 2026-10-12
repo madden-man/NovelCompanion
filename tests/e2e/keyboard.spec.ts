@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { collectionInfo } from '../../src/shared/schema';
+import { collectionInfo, entryTitle } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
@@ -204,12 +204,17 @@ test('NF-2 every section list opens an entry into its editor from the keyboard, 
     await expect(page.getByRole('heading', { name: info.plural, level: 2 })).toBeVisible();
     const stored = (await invoke('entry.list', { collection: c, trash: 'exclude' })).entries;
     const rows = list.locator('button.entry-row');
-    // Wait for this section's own list, not the one the screen showed before.
-    if (stored.length) await expect(rows).toHaveCount(stored.length);
-    else await expect(empty).toBeVisible();
+    // Wait for this section's own list, not the one the screen showed before:
+    // two sections can hold the same number of entries, so match the titles too.
+    const titles = new Set(stored.map((e) => entryTitle(e.entry)));
+    const rowTitle = async () => (await rows.first().innerText()).split('\n')[0]!.trim();
+    if (stored.length) {
+      await expect(rows).toHaveCount(stored.length);
+      await expect.poll(async () => titles.has(await rowTitle())).toBe(true);
+    } else await expect(empty).toBeVisible();
     const first = rows.first();
     if (stored.length) {
-      const title = (await first.innerText()).split('\n')[0]!.trim();
+      const title = await rowTitle();
       await press(first);
       await expect(editor()).toBeVisible();
       await expect(editor()).toContainText(title.slice(0, 12));
