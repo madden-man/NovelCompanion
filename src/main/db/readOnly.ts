@@ -88,8 +88,7 @@ function readOnlyCollection(docs: () => Document[]): unknown {
       const hit = docs().find((d) => matches(d, filter));
       return hit ? structuredClone(hit) : null;
     },
-    countDocuments: async (filter: Filter = {}) =>
-      docs().filter((d) => matches(d, filter)).length,
+    countDocuments: async (filter: Filter = {}) => docs().filter((d) => matches(d, filter)).length,
     estimatedDocumentCount: async () => docs().length,
   };
   return new Proxy(reads, {
