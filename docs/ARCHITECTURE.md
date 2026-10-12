@@ -13,7 +13,7 @@ Binding for every builder. `SPEC.md` says what; this file says how. Change it on
 | Validation | `zod` schemas in `src/shared/schema/` are the single definition of every entity; the driver stores what zod accepts | ED-10 field warnings come from the same schemas |
 | Read model | `src/main/readmodel/`: in-memory maps of every collection, loaded on connect, updated by the one write path | NF-1 timeline and tree queries never hit the network |
 | Search | `minisearch` with a custom tokenizer: Latin words plus CJK character bigrams; index rebuilt from the read model and patched on writes | ARCH-2, SR-1, GL-2 |
-| Secrets | `@napi-rs/keyring` for the macOS keychain. Service `novel-companion-mongodb`, account `novel-companion` holds the connection string (already stored on Tommy's Mac) | ARCH-5 |
+| Secrets | `@napi-rs/keyring` for the macOS keychain. Service `novel-companion-mongodb`, account `novel-companion` holds the Atlas connection string (stored on Tommy's Mac 2026-10-11). Service `novel-companion-anthropic` holds the Anthropic API key (set in Settings). Service `novel-companion-google` holds the Desktop OAuth client (account `oauth-client`, stored 2026-10-11 for Google Cloud project `novel-companion-511219`) and the tokens (account `oauth-tokens`). The first read by a new Electron binary asks for keychain access; choose Always Allow. | ARCH-5 |
 | Claude | `@anthropic-ai/claude-agent-sdk` from the main process, API key from the keychain (A23). See "Claude" below. | ARCH-4, A23 |
 | Google | Drive v3 REST and Google's OAuth endpoints over Node's `fetch` from main (no `googleapis` package; see "Google Drive" below), installed-app loopback flow with PKCE; scopes `drive.readonly` for import and `drive.file` for export, asked separately | GD-1, GD-4 |
 | Excel / Word | `exceljs` for workbooks, `mammoth` for .docx to HTML (keeps italics and headings), Google Docs exported as .docx through the Drive API | IM-1, IM-4, MS-1 |
@@ -122,10 +122,29 @@ M7 asks for Claude through two small services in `src/main/session/claude.ts` (`
 - **Streaming and Stop** (AI-1). `session.start`, `brief.regenerate`, and `chapter.summarize` take an optional renderer-picked `runId`; the page follows `claude.stream` for it and Stop calls `claude.stop`. `useClaudeRun` (`src/renderer/src/workspace/sessions/claudeRun.tsx`) shows the AI-6 disclosure on the first use in a bible, the streamed character count, and Stop. A stopped or failed run is saved as such in `conversations`, and the brief falls back to the structured one with the reason in its note.
 - **Recordings** (T-3). `fixtures/claude/recordings.json` holds a Chapter 6 brief (all citations in the manifest), a Chapter 2 brief with an uncited line, a foreign citation, a planned entry called canon, and a later event in the wrong section, a Chapter 5 brief that waits to be stopped, and a Chapter 6 summary.
 
+## App shell (2026-10-11)
+
+- **Top bar (A27).** `src/renderer/src/workspace/TopBar.tsx` is the first row of `.ws-frame` (grid area `top`) on every screen: story year slider and box with the era, the Writing picker over every chapter strand, Relevant to Session (`SB-10`, A28), and Start session (`DB-2`). All of it reads and writes the one story time (`storyTime.tsx`, TM-3); picking a strand sets `{ year, chapterId, strandId }`. The status bar at the bottom keeps the story time readout and Ask Claude (M6).
+- **Panel heights.** Panels scroll inside `calc(100vh - var(--ws-chrome))`; `--ws-chrome` on `.ws-frame` is the app header plus the top bar. Scrolling boxes inside a `.stack` panel set `flex-shrink: 0` (the tree stage, the outline's `.ol-scroll`), or the flex column squeezes them to a sliver; that was the "tree too narrow" bug.
+- **Family tree (A26).** `.tree-main.fill` has a fixed height; `.tree-stage` holds the heading, toolbar, and tree at exactly that height with the tree taking the rest; legend and warnings follow below. Full screen uses the HTML Fullscreen API on `.ws-tree-area` (tree and inspector). Electron does not leave HTML full screen on Escape by itself, so `TreeView` handles Escape. `lockDownSession` in `src/main/index.ts` grants the `fullscreen` permission and refuses every other one.
+
+## Schema versions
+
+`src/main/db/migrations/` runs in order on open. Version 7 (`007-conversations.ts`, the `conversations` collection with `{ modifiedAt: -1 }`) was written on 2026-10-11 to match what the East Winds bible in Atlas already carried from a build that was never pushed; M6 stores question-panel conversations and feature runs there. A bible newer than the app refuses to open ("Update the app before opening it").
+
+## Local development
+
+- `npm run dev` runs against Atlas with the keychain connection string.
+- To run against a throwaway local database instead, start a one-node replica set (the repository uses transactions; a plain `mongod` will not do), for example `MongoMemoryReplSet` from `mongodb-memory-server` with a fixed port and `dbPath`, and run `NOVEL_COMPANION_TEST_MONGODB_URI='mongodb://127.0.0.1:<port>/?replicaSet=testset' NOVEL_COMPANION_USER_DATA=<dir> npm run dev`. The variable is honoured only for a localhost address in an unpackaged build, and the keychain is not read.
+- If `npm run dev` fails with "Electron uninstall", the Electron binary was not downloaded by `npm install`; run `node node_modules/electron/install.js`.
+- Bulk data work on a real bible goes through `Repository` (validation, revisions, the own-ancestor check), never raw driver writes, and starts with a manual snapshot so Backups can restore it. Rehearse against a local copy of `novel_companion` first.
+
 ## Fixture novel
 
 `fixtures/novel/` holds the Hale and Zhou families from SPEC section 7 exactly, including the planted errors S1, S2, S3, P1, P2, the two-strand chapter, categories, and the grid-shaped workbook. `fixtures/expected/` holds the TL-2 known answers and the expected structural findings as hand-written JSON. Tests load the fixture into a fresh local MongoDB per file.
 
 ## Builder workflow
+
+M8 and M10 are Tommy's to run separately (A30); the architect does not start them.
 
 A builder gets the milestone's criteria, this file, and the files it may touch. It writes code and tests, runs `npm test` until green, and reports which tests cover which criteria. The architect runs `npm test` again and then sends the spec and the code (not the builder's report) to a fresh reviewer.
