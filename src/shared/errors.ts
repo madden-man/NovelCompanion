@@ -163,3 +163,20 @@ export function plainErrorMessage(e: unknown): string {
   }
   return message;
 }
+
+/**
+ * What the renderer shows for a failed call: Electron wraps main's message
+ * ("Error invoking remote method 'nc:x': Error: ..."); keep the message and
+ * map it again, which also covers what the preload throws itself.
+ */
+export function plainCallError(e: unknown): string {
+  const text = e instanceof Error ? e.message : String(e);
+  const name = e instanceof Error ? e.name : '';
+  const stripped = text.replace(/^Error invoking remote method '[^']*': (\w*Error: )?/, '');
+  return plainErrorMessage(name && name !== 'Error' ? { name, message: stripped } : stripped);
+}
+
+/** The editor's line when a save failed (ED-2, NF-3); `error` is already plain. */
+export function notSavedText(error: string | null): string {
+  return `Not saved${error ? `: ${error}` : '. Fix the marked fields.'}`;
+}

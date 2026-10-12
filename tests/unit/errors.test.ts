@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test, vi } from 'vitest';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { MongoClient, MongoNetworkError, MongoServerError } from 'mongodb';
 import { z } from 'zod';
-import { PLAIN, looksRaw } from '../../src/shared/errors';
+import {
+  PLAIN,
+  looksRaw,
+  notSavedText,
+  plainCallError as plainError,
+} from '../../src/shared/errors';
 import { ValidationError, RepositoryError } from '../../src/main/db/repository';
 import { DriveApi, DriveError } from '../../src/main/drive/api';
 import { endpointsAt } from '../../src/main/drive/oauth';
@@ -21,8 +24,6 @@ vi.mock('electron', () => ({
 }));
 
 const { handle } = await import('../../src/main/ipc/handle');
-const { plainError } = await import('../../src/renderer/src/api');
-const { SaveState } = await import('../../src/renderer/src/workspace/editor');
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const NEXT_STEP =
@@ -207,10 +208,8 @@ describe('NF-3 Drive and the editor show mapped text', () => {
 
   test('NF-3 the editor\'s "Not saved:" line shows the mapped text from main, and maps anything raw', () => {
     const fromMain = `Error invoking remote method 'nc:entry.update': Error: ${PLAIN.unreachable}`;
-    const html = renderToStaticMarkup(
-      createElement(SaveState, { status: 'error', error: plainError(new Error(fromMain)) }),
-    );
-    expect(html).toContain(`Not saved: ${PLAIN.unreachable}`);
+    // editor.tsx SaveState renders notSavedText(plainError(e)).
+    expect(notSavedText(plainError(new Error(fromMain)))).toBe(`Not saved: ${PLAIN.unreachable}`);
     const raw = `Error invoking remote method 'nc:entry.update': MongoServerSelectionError: Server selection timed out after 30000 ms`;
     expect(plainError(new Error(raw))).toBe(PLAIN.unreachable);
     const preload = Object.assign(new Error('The request for entry.update is not valid: ✖ x'), {
