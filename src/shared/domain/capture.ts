@@ -131,7 +131,7 @@ export function captureQuestionData(
   capturedOn: string,
 ): Record<string, unknown> {
   const trimmed = text.trim();
-  const first = trimmed.split('\n')[0]!.trim();
+  const first = (trimmed.split('\n')[0] ?? '').trim();
   const title = first.length > 120 ? `${first.slice(0, 119)}…` : first;
   const paragraphs = trimmed
     .split(/\n+/)

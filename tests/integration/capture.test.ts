@@ -185,7 +185,9 @@ describe('KB-6 capture', () => {
     });
     expect(bible.model.get('proposals', event!.id)).toMatchObject({ state: 'approved' });
     expect(bible.model.get('proposals', place!.id)).toMatchObject({ state: 'rejected' });
-    const lan = bible.model.get('characters', 'Z3') as { placesLived: { place: string }[] };
+    const lan = bible.model.get('characters', 'Z3') as unknown as {
+      placesLived: { place: string }[];
+    };
     expect(lan.placesLived.map((p) => p.place)).not.toContain('Seattle');
 
     // One undo step takes the whole filing back; redo files it again.
@@ -205,7 +207,8 @@ describe('KB-6 capture', () => {
     const filing = await fileCapture(invoke, ticked, []);
     expect(filing.filed.map((f) => f.collection)).toEqual(['characters', 'worldEvents']);
     const lan = () =>
-      (bible.model.get('characters', 'Z3') as { placesLived: { place: string }[] }).placesLived;
+      (bible.model.get('characters', 'Z3') as unknown as { placesLived: { place: string }[] })
+        .placesLived;
     expect(lan().map((p) => p.place)).toContain('Seattle');
     const undo = new UndoManager();
     undo.record(filing.command!);

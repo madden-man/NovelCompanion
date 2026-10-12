@@ -293,7 +293,7 @@ export function CaptureBox() {
       setPhase('filed');
       if (r.failed.length) {
         setMessage(
-          `${r.failed.length === 1 ? 'One proposal was' : `${r.failed.length} proposals were`} not filed and still wait in the review queue: ${r.failed[0]!.message}`,
+          `${r.failed.length === 1 ? 'One proposal was' : `${r.failed.length} proposals were`} not filed and still wait in the review queue: ${r.failed[0]?.message ?? ''}`,
         );
       }
     } catch (e) {
@@ -367,7 +367,7 @@ function CaptureDialog(props: {
   onAnother(): void;
   onSaveQuestion(): void;
 }) {
-  const { phase, status, cards } = props;
+  const { phase, status, cards, saved } = props;
   const ids = { title: useId(), input: useId(), hint: useId(), time: useId() };
   const dialogRef = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -592,7 +592,7 @@ function CaptureDialog(props: {
           </div>
         )}
 
-        {phase === 'saved' && props.saved && (
+        {phase === 'saved' && saved && (
           <div className="stack tight" data-testid="capture-saved" role="status">
             {props.runError && (
               <p>{props.runError.message.replace(/ Your question is kept\.$/, '')}</p>
@@ -606,12 +606,11 @@ function CaptureDialog(props: {
                 type="button"
                 className="link-btn"
                 onClick={() => {
-                  const id = props.saved!.id;
                   props.onClose();
-                  claudeNav.openEntry('openQuestions', id);
+                  claudeNav.openEntry('openQuestions', saved.id);
                 }}
               >
-                {props.saved.title}
+                {saved.title}
               </button>
             </p>
             <div className="row">

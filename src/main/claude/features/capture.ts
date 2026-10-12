@@ -118,7 +118,7 @@ export const capture: FeatureDefinition<CaptureInput, CaptureOutput> = {
   input: CaptureInput,
   output: CaptureOutput,
   title: (input) => {
-    const line = input.text.split('\n')[0]!.trim();
+    const line = (input.text.split('\n')[0] ?? '').trim();
     return `Capture: ${line.length > 70 ? `${line.slice(0, 69)}…` : line}`;
   },
   build(input, session) {
