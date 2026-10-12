@@ -1,3 +1,4 @@
+import { plainErrorMessage } from '../../shared/errors';
 /**
  * Handlers for sessions, briefs, the dashboard, and the manuscript (M7).
  * Independent of Electron: the host passes dialogs, the PDF printer, and the
@@ -132,7 +133,7 @@ export function sessionHandlers(
       });
       return { content: r.content, synthesized: true, model: r.model, note: null };
     } catch (e) {
-      const why = e instanceof Error ? e.message : 'it failed';
+      const why = plainErrorMessage(e).replace(/\.$/, '');
       return {
         content: structured,
         synthesized: false,
@@ -233,7 +234,7 @@ export function sessionHandlers(
       } catch (e) {
         await repo.setStoryTime(before);
         throw new Error(
-          `The session was not started, and nothing was saved: ${e instanceof Error ? e.message : 'the write failed'}.`,
+          `The session was not started, and nothing was saved: ${plainErrorMessage(e).replace(/\.$/, '')}.`,
           { cause: e },
         );
       }
@@ -418,7 +419,7 @@ export function sessionHandlers(
           available: true,
           draft: '',
           model: null,
-          message: `Claude could not write a summary (${e instanceof Error ? e.message : 'it failed'}). Write it yourself, or try again.`,
+          message: `Claude could not write a summary (${plainErrorMessage(e).replace(/\.$/, '')}). Write it yourself, or try again.`,
         };
       }
     },

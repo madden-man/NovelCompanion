@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { stat } from 'node:fs/promises';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import type { Cell, MergeRange, ParsedSheet, ParsedWorkbook } from '../../shared/domain/import';
 
 type Raw = ExcelJS.CellValue;
@@ -66,7 +66,9 @@ export async function parseWorkbookBuffer(
   data: Buffer | ArrayBuffer,
   source: { fileName: string; modifiedAt: string },
 ): Promise<ParsedWorkbook> {
-  const wb = new ExcelJS.Workbook();
+  // Loaded on first use: exceljs is large, and launch never needs it (NF-1).
+  const { default: Excel } = await import('exceljs');
+  const wb = new Excel.Workbook();
   await wb.xlsx.load(data as ArrayBuffer);
   return {
     fileName: source.fileName,

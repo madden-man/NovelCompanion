@@ -108,6 +108,7 @@ describe('MS-5 the app never writes to a manuscript', () => {
       // ST-1: the appearance setting, in app-settings.json in the app's data folder.
       'src/main/appSettings.ts',
       'src/main/backup/snapshots.ts',
+      // The Claude settings file in the app's data folder (models, AI-6 confirmations).
       'src/main/claude/settings.ts',
       'src/main/ipc/exportTree.ts',
       'src/main/ipc/importHandlers.ts',

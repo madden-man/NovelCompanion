@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { ClaudeFailure } from './client';
 import type { ModelCatalog } from './client';
 
@@ -12,6 +11,8 @@ export const ANTHROPIC_API_URL = 'https://api.anthropic.com';
  */
 export class AnthropicModelCatalog implements ModelCatalog {
   async list(apiKey: string): Promise<{ id: string; displayName: string }[]> {
+    // Loaded on first use, so launch never waits for it (NF-1).
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({
       apiKey,
       baseURL: ANTHROPIC_API_URL,

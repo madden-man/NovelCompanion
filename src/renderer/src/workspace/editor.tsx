@@ -17,6 +17,7 @@ import { fieldIssues, labelPath } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import type { FieldWarning } from '../../../shared/domain/warnings';
 import { call, plainError } from '../api';
+import { notSavedText } from '../../../shared/errors';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { formatTime } from './format';
@@ -199,7 +200,7 @@ export function SaveState({ status, error }: { status: SaveStatus; error: string
             ? 'Loading'
             : status === 'missing'
               ? 'Not found'
-              : `Not saved${error ? `: ${error}` : '. Fix the marked fields.'}`;
+              : notSavedText(error);
   return (
     <span className={`autosave ${status}`} data-testid="autosave" role="status" aria-live="polite">
       {text}
