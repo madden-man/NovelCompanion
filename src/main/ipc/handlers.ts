@@ -228,7 +228,11 @@ async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>
     );
   }
   const opened = await openSnapshotReadOnly(join(app.getPath('userData'), 'snapshots'), latest);
-  const { bible } = await adopt(opened.session, opened.snapshot.bible, true);
+  const { bible } = await adopt(
+    opened.session,
+    opened.snapshot.name ?? opened.snapshot.bible,
+    true,
+  );
   c.enterReadOnly(opened.snapshot);
   return { bible, status: await c.status() };
 }

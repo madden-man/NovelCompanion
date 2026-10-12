@@ -14,6 +14,7 @@ import type { driveContract } from '../../shared/ipcDrive';
 import type { OpenBible } from '../db/session';
 import { exportBibleJson } from '../backup/json';
 import { REGISTRY } from '../db/bibles';
+import { ReadOnlyError } from '../db/readOnly';
 import { parseDocxBuffer } from '../import/docx';
 import { parseWorkbookBuffer } from '../import/xlsx';
 import type { DriveService } from '../drive/service';
@@ -155,8 +156,8 @@ export function driveHandlers(
       const missingFolders = found.missingFolders.map(
         (id) => links.find((l) => l.id === id)?.name ?? id,
       );
-      // GD-3: remember what each folder holds, so a later check can say what vanished.
-      //
+      // GD-3: remember what each folder holds, so a later check can say what vanished. On a
+      // snapshot open read-only (ARCH-6) the check still reports and the memory stays as it was.
       await exclusive(async () => {
         const now = s.repo.driveState();
         const fresh = knownFrom(found.remote);
@@ -165,7 +166,11 @@ export function driveHandlers(
         const keep = now.known.filter((k) => now.links.some((l) => l.id === k.linkId));
         const next = [...fresh, ...keep.filter((k) => !fresh.some((o) => o.fileId === k.fileId))];
         if (JSON.stringify(next) !== JSON.stringify(now.known)) {
-          await s.repo.setDriveState({ links: now.links, seen: now.seen, known: next });
+          await s.repo
+            .setDriveState({ links: now.links, seen: now.seen, known: next })
+            .catch((e: unknown) => {
+              if (!(e instanceof ReadOnlyError)) throw e;
+            });
         }
       });
       const unreadable = found.unreadable.map((id) => links.find((l) => l.id === id)?.name ?? id);

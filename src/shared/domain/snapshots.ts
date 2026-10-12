@@ -16,6 +16,10 @@ export const SnapshotManifest = z.strictObject({
   format: z.literal('novel-companion-snapshot'),
   version: z.literal(1),
   bible: z.string().min(1),
+  /** The bible's name when the snapshot was taken (older snapshots have none). */
+  name: z.string().min(1).optional(),
+  /** When the bible was created (older snapshots have none). */
+  createdAt: z.string().min(1).optional(),
   takenAt: z.iso.datetime({ offset: true }),
   reason: z.enum(SNAPSHOT_REASONS),
   /** What triggered it, in plain words, such as "list rename". */

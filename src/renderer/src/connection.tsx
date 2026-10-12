@@ -146,7 +146,7 @@ export function ConnectionBanner(props: {
           <strong>Read-only snapshot</strong>
           <span id={READ_ONLY_NOTE_ID} data-testid="read-only-reason">
             {status.snapshot
-              ? `You are looking at the snapshot of ${status.snapshot.bible} taken ${when(status.snapshot.takenAt)}. `
+              ? `You are looking at the snapshot of ${status.snapshot.name} taken ${when(status.snapshot.takenAt)}. `
               : ''}
             {READ_ONLY_REASON}
           </span>
@@ -157,7 +157,7 @@ export function ConnectionBanner(props: {
           <span data-testid="connection-message">{status.message}</span>
           {status.snapshot && (
             <span>
-              The most recent snapshot is of {status.snapshot.bible}, taken{' '}
+              The most recent snapshot is of {status.snapshot.name}, taken{' '}
               {when(status.snapshot.takenAt)}.
             </span>
           )}

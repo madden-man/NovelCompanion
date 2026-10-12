@@ -203,8 +203,7 @@ export function BackupsView() {
           <button
             type="button"
             className="btn"
-            disabled={busy || ro.off}
-            {...ro.tip}
+            disabled={busy}
             data-testid="backup-export"
             onClick={() =>
               void act(async () => {

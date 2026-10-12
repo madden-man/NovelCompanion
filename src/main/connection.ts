@@ -101,7 +101,11 @@ export class ConnectionManager {
       return {
         state: 'readOnly',
         message: this.message,
-        snapshot: { bible: this.readOnlySnapshot.bible, takenAt: this.readOnlySnapshot.takenAt },
+        snapshot: {
+          bible: this.readOnlySnapshot.bible,
+          name: this.readOnlySnapshot.name ?? this.readOnlySnapshot.bible,
+          takenAt: this.readOnlySnapshot.takenAt,
+        },
       };
     }
     if (this.state === 'connected') return { state: 'connected', message: null, snapshot: null };
@@ -109,7 +113,9 @@ export class ConnectionManager {
     return {
       state: 'unavailable',
       message: `${this.message ?? UNREACHABLE}${latest ? WITH_SNAPSHOT : NO_SNAPSHOT}`,
-      snapshot: latest ? { bible: latest.bible, takenAt: latest.takenAt } : null,
+      snapshot: latest
+        ? { bible: latest.bible, name: latest.name ?? latest.bible, takenAt: latest.takenAt }
+        : null,
     };
   }
 
@@ -129,7 +135,7 @@ export class ConnectionManager {
     this.readOnlySnapshot = snapshot;
     this.setState(
       'readOnly',
-      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed. Click Try again when your network is back.`,
+      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.name ?? snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed. Click Try again when your network is back.`,
     );
   }
 
