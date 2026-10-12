@@ -54,7 +54,7 @@ docs/              this file, findings, briefs, setup notes (SPEC.md, PROGRESS.m
 7. **Status and provenance** fields exist on every entry (see rule 5 for what is not an entry); the fixture and tests assert they survive import and export.
 8. **No telemetry, no analytics, no crash reporters.** ARCH-7.
 9. **Copy standards.** Plain copy, active voice, no em dashes in any string, labels never in muted grey, both themes designed, keyboard reachable. The mockups are the reference.
-10. **Tests prove criteria.** Each test names the criterion it covers in its title, for example `test('TL-4 dying year is listed as alive and flagged', ...)`. A reviewer maps criteria to tests from those names.
+10. **Tests prove criteria.** Each test names the criterion it covers in its title, for example `test('TL-4 dying year is listed as alive and flagged', ...)`. A reviewer maps criteria to tests from those names. The fixture tests are the one exception: they cover SPEC section 7, not a numbered criterion, so their titles start with "Section 7" (19 titles in `tests/unit/fixture.test.ts` and `tests/integration/fixture.test.ts`).
 
 ## Claude
 
