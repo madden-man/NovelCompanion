@@ -319,6 +319,8 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
     'Start session with claude-opus-5-5',
   );
   await view.getByTestId('start-session-go').click();
+  // AI-6: the first Claude use in this bible says what is sent before anything is.
+  await view.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
   const brief = page.getByTestId('brief-view');
   await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
   await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
@@ -399,4 +401,78 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 import a chapter from Word, mark it written, appr
   await expect(ch.getByTestId('summary-stale')).toBeVisible();
   // MS-5: reading never wrote to the manuscript.
   expect(readFileSync(docPath).equals(bytes)).toBe(true);
+});
+
+test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run through the Claude runtime: disclosure, streaming, Stop, saved runs', async () => {
+  await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
+  // T-3: the recorded Claude (NOVEL_COMPANION_TEST_CLAUDE) with a key held in memory.
+  await start({
+    NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-session-key-0123456789abcdef',
+    NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '60',
+  });
+  await openBible();
+
+  // ST-1 DB-4: the brief and summary models with their defaults, and the brief window and budget.
+  await rail(page, 'Settings').click();
+  const settings = page.getByTestId('settings-view');
+  await expect(settings.getByTestId('claude-model-briefs')).toHaveValue('claude-opus-5-5');
+  await expect(settings.getByTestId('claude-model-summaries')).toHaveValue('claude-sonnet-5-5');
+  await expect(settings.getByTestId('settings-briefs')).toContainText(
+    'Briefs are written with claude-opus-5-5',
+  );
+  await expect(
+    settings.getByTestId('settings-briefs').getByLabel('Size budget (characters)'),
+  ).toHaveValue('40000');
+
+  // DB-2 SB-4 AI-6: the first brief asks for the disclosure, then Claude writes it.
+  await page.getByTestId('top-start-session').click();
+  const view = page.getByTestId('start-session');
+  await view.getByTestId('start-chapter').selectOption('CH6');
+  await expect(view.getByTestId('start-session-go')).toHaveText(
+    'Start session with claude-opus-5-5',
+  );
+  await view.getByTestId('start-session-go').click();
+  await view.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
+  await expect(view.getByTestId('claude-progress')).toBeVisible();
+  const brief = page.getByTestId('brief-view');
+  await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
+  await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
+  await expect(brief.getByTestId('brief-uncited')).toHaveCount(0);
+  await expect(brief.getByTestId('brief-missing-lead')).toHaveCount(0);
+  await expect(brief.getByTestId('brief-body').locator('h2').first()).toHaveText(
+    '1. Characters and their ages',
+  );
+  await expect(brief.getByTestId('brief-body')).toContainText('Planned ahead (after 2045)');
+  const runs = (await invoke('claude.runs', { feature: 'briefs' })).runs;
+  expect(runs[0]).toMatchObject({ feature: 'briefs', status: 'done' });
+
+  // AI-1: Stop ends a brief run; the structured brief is saved and the note says why.
+  await page.getByTestId('top-start-session').click();
+  await view.getByTestId('start-chapter').selectOption('CH5');
+  await view.getByTestId('start-session-go').click();
+  await expect(view.getByTestId('claude-progress')).toContainText('Claude is writing the brief');
+  await view.getByTestId('claude-run-stop').click();
+  await expect(brief.getByTestId('brief-model')).toHaveText('Structured brief, no synthesis');
+  await expect(brief.getByTestId('brief-note')).toContainText('you stopped it');
+  expect((await invoke('claude.runs', { feature: 'briefs' })).runs[0]).toMatchObject({
+    status: 'stopped',
+  });
+
+  // MS-2: the written chapter's summary is drafted by the summary model; nothing saved yet.
+  const before = (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary;
+  await rail(page, 'Manuscript').click();
+  const ms = page.getByTestId('manuscript-view');
+  await ms.locator('[data-chapter="CH6"]').click();
+  await ms.getByRole('button', { name: 'Summary and promotions' }).click();
+  const flow = ms.getByTestId('written-flow');
+  await expect(flow.getByLabel('Summary to approve')).toHaveValue(
+    'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
+  );
+  await expect(flow).toContainText('Generated summary (claude-sonnet-5-5)');
+  expect((await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary).toBe(
+    before,
+  );
+  expect((await invoke('claude.runs', { feature: 'summaries' })).runs[0]).toMatchObject({
+    status: 'done',
+  });
 });

@@ -53,10 +53,38 @@ function isUncited(line: string): boolean {
  * construction, so this is checked on synthesized briefs.
  */
 export function uncitedLines(content: string): string[] {
+  const notes = appNoteLines(content);
   return content
     .split('\n')
-    .filter(isUncited)
+    .filter((l, i) => !notes.has(i) && isUncited(l))
     .map((l) => l.trim().replace(/^[-*]\s+/, ''));
+}
+
+/** Sections the app writes about the selection itself, not claims about the story. */
+const APP_SECTIONS = /^##\s+(left out|over budget)\s*$/i;
+/** The app's own opening line under the title ("Story year 2045. ..."). */
+const APP_INTRO = /^story year -?\d+\. /i;
+
+/**
+ * Line numbers the app wrote about the brief rather than the story: the
+ * opening line under the title, and the "Over budget" and "Left out"
+ * sections (SB-6). They name no entry in the manifest, so they cite nothing
+ * by design and are never flagged.
+ */
+function appNoteLines(content: string): Set<number> {
+  const out = new Set<number>();
+  let inNotes = false;
+  let beforeSections = true;
+  content.split('\n').forEach((raw, i) => {
+    const l = raw.trim();
+    if (/^##\s/.test(l)) {
+      beforeSections = false;
+      inNotes = APP_SECTIONS.test(l);
+      return;
+    }
+    if (inNotes || (beforeSections && APP_INTRO.test(l))) out.add(i);
+  });
+  return out;
 }
 
 /** DB-2: the lead sections a brief is missing or has out of order, by heading text. */
@@ -250,8 +278,10 @@ export function markdownToHtml(
   opts: { flagUncited?: boolean } = {},
 ): string {
   const ids = manifest ? new Set(manifest) : null;
+  const notes = opts.flagUncited ? appNoteLines(md) : new Set<number>();
+  let at = -1;
   const mark = (l: string, html: string) =>
-    opts.flagUncited && isUncited(l)
+    opts.flagUncited && !notes.has(at) && isUncited(l)
       ? `<span class="uncited" title="This line cites no entry">${html} <strong class="uncited-flag">cites nothing</strong></span>`
       : html;
   const out: string[] = [];
@@ -261,6 +291,7 @@ export function markdownToHtml(
     list = false;
   };
   for (const raw of md.split('\n')) {
+    at++;
     const l = raw.trimEnd();
     const h = /^(#{1,4})\s+(.*)$/.exec(l);
     if (h) {
