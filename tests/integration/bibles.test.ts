@@ -189,6 +189,27 @@ describe('ARCH-2 versioned migrations per bible', () => {
   });
 });
 
+describe('CC-4 migration 8 clears findings that were written without a key', () => {
+  test('CC-4 a finding with no key goes to the trash, a keyed one stays, and a re-run of the migration changes nothing', async () => {
+    const bible = await createBible(store, freshSlug('finding-keys'), 'Findings');
+    const at = '2026-01-15T09:00:00.000Z';
+    const base = { title: 't', status: 'planned', state: 'open', kind: 'alignment', createdAt: at };
+    await bible.collection('findings').insertMany([
+      { _id: 'old', ...base, modifiedAt: at },
+      { _id: 'empty', ...base, key: '', modifiedAt: at },
+      { _id: 'keyed', ...base, key: 'alignment:CH1:age:H1', modifiedAt: at },
+    ] as never);
+    await store.db
+      .collection(REGISTRY)
+      .updateOne({ _id: bible.id as never }, { $set: { schemaVersion: 7 } });
+    await migrate(bible);
+    const get = (id: string) => bible.collection('findings').findOne({ _id: id as never });
+    expect(await get('old')).toHaveProperty('deletedAt');
+    expect(await get('empty')).toHaveProperty('deletedAt');
+    expect(await get('keyed')).not.toHaveProperty('deletedAt');
+  });
+});
+
 describe('PL-3 TH-1 migrations carry old data forward', () => {
   test('PL-3 a beat with one order number becomes one position in each of its arcs', async () => {
     const bible = await createBible(store, freshSlug('beat-orders'), 'Beats');

@@ -35,7 +35,7 @@ import {
   reconcile,
 } from '../../shared/domain/continuity/findings';
 import type { FreshFinding, ReconcilePlan } from '../../shared/domain/continuity/findings';
-import { numberedLines } from '../../shared/domain/continuity/lines';
+import { numberedLines, textHash } from '../../shared/domain/continuity/lines';
 import { chapterYear } from '../../shared/domain/position';
 import type { Doc } from '../../shared/domain/paths';
 import type { OpenBible } from '../db/session';
@@ -108,14 +108,24 @@ export async function recordAlignment(
   chapterId: string,
   run: ClaudeRun,
   runId: string,
-): Promise<{ found: number; hidden: number; rejected: ChangeProblem[] }> {
+): Promise<{ found: number; hidden: number; rejected: ChangeProblem[]; skipped: string | null }> {
+  const none = { found: 0, hidden: 0, rejected: [] as ChangeProblem[], skipped: null };
   const turn = run.turns.find((t) => t.id === runId) ?? run.turns[0];
   const parsed = AlignmentOutput.safeParse(run.output);
-  if (!turn || turn.status !== 'done' || !parsed.success)
-    return { found: 0, hidden: 0, rejected: [] };
+  if (!turn || turn.status !== 'done' || !parsed.success) return none;
   const data = session.model;
   const chapter = findEntry(data, 'chapters', chapterId);
-  if (!chapter) return { found: 0, hidden: 0, rejected: [] };
+  if (!chapter) return none;
+  // The line numbers Claude used belong to the text it was sent: check it is still the text now.
+  const sent = (run.input as { textHash?: unknown } | undefined)?.textHash;
+  const text = typeof chapter.manuscriptText === 'string' ? chapter.manuscriptText : '';
+  if (typeof sent !== 'string' || sent !== textHash(text)) {
+    return {
+      ...none,
+      skipped:
+        'The chapter text changed while Claude was reading it, so its line numbers no longer match and nothing was recorded. Check this chapter again.',
+    };
+  }
   const checked = checkAlignment(parsed.data, {
     chapterId,
     lines: numberedLines(chapter.manuscriptText),
@@ -131,13 +141,31 @@ export async function recordAlignment(
     data,
   );
   await write(session, plan, `Alignment check, run ${runId}`);
-  return { found: fresh.length, hidden: plan.hidden, rejected: checked.rejected };
+  return { found: fresh.length, hidden: plan.hidden, rejected: checked.rejected, skipped: null };
 }
 
 function labelOf(f: Doc): string {
   const check = str(f.check);
   if (f.kind === 'structural') return CHECK_LABELS[check as StructuralCheck] ?? 'Structural';
   return KIND_LABELS[check as AlignmentKind] ?? 'Alignment';
+}
+
+/** The entries a change set writes, each with the revision it has now. */
+function shownRevisions(
+  data: OpenBible['model'],
+  changeSet: FreshFinding['changeSet'],
+): FindingWire['shown'] {
+  const out = new Map<string, FindingWire['shown'][number]>();
+  for (const c of changeSet) {
+    const d = findEntry(data, c.collection, c.id);
+    if (d)
+      out.set(`${c.collection}:${c.id}`, {
+        collection: c.collection,
+        id: c.id,
+        modifiedAt: str(d.modifiedAt),
+      });
+  }
+  return [...out.values()];
 }
 
 /** A stored finding as the screens show it, with the change set compared against the bible now. */
@@ -180,6 +208,7 @@ export function findingWire(session: OpenBible, f: Doc): FindingWire {
       : 'open') as FindingWire['state'],
     changes: describeChangeSet(data, changeSet),
     rejectedChanges: Array.isArray(f.rejectedChanges) ? (f.rejectedChanges as ChangeProblem[]) : [],
+    shown: shownRevisions(data, changeSet),
     createdAt: str(f.createdAt),
   };
 }
@@ -220,10 +249,26 @@ export async function resolveFinding(
   session: OpenBible,
   id: string,
   action: 'manuscriptWins' | 'rewrite' | 'dismiss' | 'done',
+  shown?: readonly { collection: string; id: string; modifiedAt: string }[],
 ) {
   const data = session.model;
   const f = findEntry(data, 'findings', id);
   if (!f) throw new Error('That finding is not in the bible.');
+  // A resolution starts from the state the person saw: an open finding, or a rewrite task for Done.
+  const needs = action === 'done' ? 'rewrite' : 'open';
+  if (f.state !== needs) {
+    throw new Error(
+      action === 'done'
+        ? 'This finding is not a rewrite task, so it cannot be marked done.'
+        : f.state === 'dismissed'
+          ? 'This finding was already dismissed.'
+          : f.state === 'manuscriptWins'
+            ? 'The bible was already updated from this finding.'
+            : f.state === 'rewrite'
+              ? 'This finding is already a rewrite task. Mark it done from the rewrite tasks.'
+              : 'This finding is not open.',
+    );
+  }
   const ops: Parameters<OpenBible['repo']['writeBatch']>[0] = [];
   const before = new Map<string, { collection: EntryCollection; id: string; doc: Doc }>();
   let note: string;
@@ -235,7 +280,14 @@ export async function resolveFinding(
         'This finding has no change set to apply. Choose Rewrite recommended or Dismiss.',
       );
     }
-    for (const p of changeSetPatches(data, changeSet)) {
+    const patches = changeSetPatches(data, changeSet);
+    for (const p of patches) {
+      const seen = shown?.find((x) => x.collection === p.collection && x.id === p.id);
+      if (shown && (!seen || seen.modifiedAt !== str(p.before.modifiedAt))) {
+        throw new Error(
+          `${entryTitle(p.before)} changed after this comparison was shown, so nothing was applied. Close the comparison and open it again.`,
+        );
+      }
       before.set(`${p.collection}:${p.id}`, { collection: p.collection, id: p.id, doc: p.before });
       ops.push({ op: 'update', collection: p.collection, id: p.id, patch: p.patch });
     }
@@ -271,8 +323,21 @@ export async function resolveFinding(
     before: b.doc as Doc & { _id: string; modifiedAt: string },
     after: after.get(b.id) as unknown as Doc & { _id: string; modifiedAt: string },
   }));
+  const warnings = changes
+    .filter((c) => c.collection !== ('findings' as string) && c.after)
+    .flatMap((c) =>
+      session.repo.warnings(c.collection, c.after as never).map((w) => ({
+        collection: c.collection,
+        id: c.id,
+        entry: entryTitle(c.after),
+        path: w.path,
+        code: w.code,
+        message: w.message,
+      })),
+    );
   return {
     finding: findingWire(session, (findEntry(session.model, 'findings', id) ?? f) as Doc),
     changes,
+    warnings,
   };
 }

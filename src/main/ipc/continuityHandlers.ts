@@ -22,6 +22,6 @@ export function continuityHandlers(current: () => OpenBible | null): {
   return {
     'continuity.check': ({ chapterId }) => checkStructure(session(), chapterId),
     'continuity.findings': ({ chapterId, states }) => listFindings(session(), chapterId, states),
-    'continuity.resolve': ({ id, action }) => resolveFinding(session(), id, action),
+    'continuity.resolve': ({ id, action, shown }) => resolveFinding(session(), id, action, shown),
   };
 }

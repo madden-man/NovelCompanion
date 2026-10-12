@@ -311,6 +311,8 @@ export const claudeContract = {
       found: z.int().min(0),
       hidden: z.int().min(0),
       rejected: z.array(z.strictObject({ summary: z.string(), reason: z.string() })),
+      /** Why a finished run recorded nothing (the chapter text changed while Claude read it), or null. */
+      skipped: z.string().nullable(),
     }),
   },
 } as const;

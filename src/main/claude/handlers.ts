@@ -10,6 +10,7 @@ import type { ClaudeRuntime } from './runtime';
 import { RunStore, summarize } from './store';
 import { FEATURES } from './features';
 import { recordAlignment } from '../continuity';
+import { textHash } from '../../shared/domain/continuity/lines';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
@@ -148,7 +149,13 @@ export function claudeHandlers(
     },
     'claude.alignment': async ({ runId, chapterId }) => {
       const s = session();
-      const start = await runtime.runFeature(s, FEATURES.alignment, { chapterId }, runId);
+      const text = s.model.get('chapters', chapterId)?.manuscriptText;
+      const start = await runtime.runFeature(
+        s,
+        FEATURES.alignment,
+        { chapterId, textHash: textHash(typeof text === 'string' ? text : '') },
+        runId,
+      );
       const run = await start.done;
       const turn = run.turns.find((t) => t.id === runId) ?? run.turns[0];
       // CC-3: the checked findings are stored before the call returns.

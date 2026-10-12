@@ -194,7 +194,22 @@ export function reconcile(
   for (const f of fresh) {
     if (found.has(f.key)) continue;
     found.add(f.key);
-    const s = byKey.get(f.key);
+    let s = byKey.get(f.key);
+    // A live model may cite a different set or order, which makes a new key. A
+    // dismissed finding of the same chapter and kind on the same quoted lines is the same finding.
+    if (!s && f.kind === 'alignment') {
+      const qh = textHash(f.quote);
+      s = live.find(
+        (d) =>
+          d.state === 'dismissed' &&
+          d.kind === 'alignment' &&
+          d.chapterId === f.chapterId &&
+          d.check === f.check &&
+          typeof d.quote === 'string' &&
+          textHash(d.quote) === qh,
+      );
+      if (s) found.add(String(s.key));
+    }
     if (!s) {
       plan.creates.push(newFindingData(f));
       continue;
