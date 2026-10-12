@@ -1,21 +1,30 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useWriteGuard } from '../../connection';
 import {
   ENTRIES_COLLECTIONS,
+  ENTRIES_PAGE,
   ENTRIES_TABS,
   entryKinds,
-  filterEntries,
-  firstLine,
+  filterIndexed,
+  indexEntries,
   isEntriesTab,
-  kindKeyOf,
 } from '../../../../shared/domain/entries';
 import type {
   EntriesCollection,
-  EntriesRow,
   EntriesTab,
   EntryKind,
   EntryStatus,
+  IndexedEntry,
 } from '../../../../shared/domain/entries';
 import { entryTitle } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
@@ -25,6 +34,7 @@ import { useEntries } from '../data';
 import { EmbeddedEditor, EntryPane, UndoPanel } from '../editor';
 import { NewEntryForm } from '../views';
 import { Zh } from '../Zh';
+import { useStatusLabel } from './statusLabel';
 import './entries.css';
 
 type Open = (collection: EntryCollection, id: string) => void;
@@ -197,80 +207,90 @@ type Pane =
   | { kind: 'pick' }
   | { kind: 'new'; entryKind: EntryKind };
 
+/** How long typing must pause before the search channel is asked (SR-1). */
+const SEARCH_PAUSE_MS = 150;
+/** The most hits the search channel returns in one answer. */
+const SEARCH_LIMIT = 100;
+
+/** The indexed live entries of one collection, recomputed only when that collection changes. */
+function useIndexed(collection: EntriesCollection): IndexedEntry[] {
+  const entries = useEntries(collection);
+  return useMemo(() => indexEntries(collection, entries), [collection, entries]);
+}
+
 /** The list of every kind, its filters, and the editor beside it. */
 function EntriesList(props: { onOpen: Open }) {
-  const facts = useEntries('facts');
-  const cultural = useEntries('culturalEntries');
-  const places = useEntries('places');
-  const glossary = useEntries('glossaryTerms');
-  const themes = useEntries('themes');
-  const questions = useEntries('openQuestions');
-  const custom = useEntries('customEntries');
+  const facts = useIndexed('facts');
+  const cultural = useIndexed('culturalEntries');
+  const places = useIndexed('places');
+  const glossary = useIndexed('glossaryTerms');
+  const themes = useIndexed('themes');
+  const questions = useIndexed('openQuestions');
+  const custom = useIndexed('customEntries');
   const sections = useEntries('customSections');
   const ro = useWriteGuard();
+  const statusLabel = useStatusLabel();
 
   const kinds = useMemo(() => entryKinds(sections), [sections]);
-  const byKey = useMemo(() => new Map(kinds.map((k) => [k.key, k])), [kinds]);
+  const labels = useMemo(() => new Map(kinds.map((k) => [k.key, k.label])), [kinds]);
   /** Kinds turned off; every kind, a new custom section included, starts on. */
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   const [status, setStatus] = useState<EntryStatus | null>(null);
   const [query, setQuery] = useState('');
-  const [hits, setHits] = useState<{ query: string; ids: ReadonlySet<string> }>({
+  /** The list follows typing without holding up the box (NF-1). */
+  const deferred = useDeferredValue(query.trim());
+  const [hits, setHits] = useState<{ query: string; ids: ReadonlySet<string>; more: boolean }>({
     query: '',
     ids: new Set(),
+    more: false,
   });
+  const [limit, setLimit] = useState(ENTRIES_PAGE);
   const [pane, setPane] = useState<Pane>({ kind: 'none' });
   const ids = { status: useId(), search: useId(), title: useId() };
 
-  // SR-1: the search channel also finds what plain text cannot, such as tone-free romanization.
+  // SR-1: once typing pauses, the search channel also finds what plain text cannot,
+  // such as tone-free romanization.
   useEffect(() => {
     const q = query.trim();
     if (!q) return;
     let live = true;
-    call('search.query', { query: q, collections: [...ENTRIES_COLLECTIONS], limit: 100 })
-      .then((r) => {
-        if (live) setHits({ query: q, ids: new Set(r.hits.map((h) => h.id)) });
-      })
-      .catch(() => undefined);
+    const timer = window.setTimeout(() => {
+      call('search.query', { query: q, collections: [...ENTRIES_COLLECTIONS], limit: SEARCH_LIMIT })
+        .then((r) => {
+          if (live) {
+            setHits({
+              query: q,
+              ids: new Set(r.hits.map((h) => h.id)),
+              more: r.total > r.hits.length,
+            });
+          }
+        })
+        .catch(() => undefined);
+    }, SEARCH_PAUSE_MS);
     return () => {
       live = false;
+      window.clearTimeout(timer);
     };
   }, [query]);
 
+  const all = useMemo(
+    () => [...facts, ...cultural, ...places, ...glossary, ...themes, ...questions, ...custom],
+    [facts, cultural, places, glossary, themes, questions, custom],
+  );
+  const searched = hits.query === deferred ? hits : null;
   const rows = useMemo(() => {
-    const all: EntriesRow[] = [];
-    const add = (collection: EntriesCollection, list: readonly Record<string, unknown>[]) => {
-      for (const entry of list) all.push({ collection, entry });
-    };
-    add('facts', facts);
-    add('culturalEntries', cultural);
-    add('places', places);
-    add('glossaryTerms', glossary);
-    add('themes', themes);
-    add('openQuestions', questions);
-    add('customEntries', custom);
     const on = new Set(kinds.map((k) => k.key).filter((k) => !off.has(k)));
-    const q = query.trim();
-    return filterEntries(all, {
-      kinds: on,
-      status,
-      query: q,
-      hits: hits.query === q ? hits.ids : undefined,
-    });
-  }, [
-    facts,
-    cultural,
-    places,
-    glossary,
-    themes,
-    questions,
-    custom,
-    kinds,
-    off,
-    status,
-    query,
-    hits,
-  ]);
+    return filterIndexed(all, { kinds: on, status, query: deferred, hits: searched?.ids });
+  }, [all, kinds, off, status, deferred, searched]);
+
+  // A new filter starts the list from the top again.
+  const filterKey = `${deferred}|${status ?? ''}|${[...off].join(',')}`;
+  const [seenKey, setSeenKey] = useState(filterKey);
+  if (seenKey !== filterKey) {
+    setSeenKey(filterKey);
+    setLimit(ENTRIES_PAGE);
+  }
+  const shown = rows.length > limit ? rows.slice(0, limit) : rows;
 
   const toggle = (key: string) =>
     setOff((prev) => {
@@ -284,6 +304,10 @@ function EntriesList(props: { onOpen: Open }) {
     if (isListed(collection)) setPane({ kind: 'entry', collection, id });
     else props.onOpen(collection, id);
   };
+  const select = useCallback(
+    (collection: EntriesCollection, id: string) => setPane({ kind: 'entry', collection, id }),
+    [],
+  );
 
   const selectedId = pane.kind === 'entry' ? pane.id : null;
   const inspector = (
@@ -292,6 +316,7 @@ function EntriesList(props: { onOpen: Open }) {
       <UndoPanel />
     </aside>
   );
+  const settled = deferred === query.trim() && (!deferred || searched !== null);
 
   return (
     <>
@@ -348,8 +373,18 @@ function EntriesList(props: { onOpen: Open }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <p className="example-note" aria-live="polite" data-testid="entries-count">
+        <p
+          className="example-note"
+          aria-live="polite"
+          data-testid="entries-count"
+          data-query={deferred}
+          data-settled={settled ? 'true' : 'false'}
+        >
           {rows.length === 1 ? '1 entry' : `${rows.length} entries`}
+          {rows.length > shown.length ? `, showing the newest ${shown.length}` : ''}.
+          {searched?.more
+            ? ` Search matched more than ${SEARCH_LIMIT} entries by romanization or characters; type more to narrow it.`
+            : ''}
         </p>
         {rows.length === 0 ? (
           <p className="example-note" data-testid="entries-empty">
@@ -357,39 +392,26 @@ function EntriesList(props: { onOpen: Open }) {
           </p>
         ) : (
           <ul className="entry-list" data-testid="entries-list">
-            {rows.map(({ collection, entry }) => {
-              const kind = byKey.get(kindKeyOf(collection, entry));
-              const line = firstLine(entry);
-              const id = String(entry._id);
-              return (
-                <li key={`${collection}:${id}`}>
-                  <button
-                    type="button"
-                    className="entry-row entries-row"
-                    data-kind={kind?.key ?? collection}
-                    data-id={id}
-                    aria-current={selectedId === id ? 'true' : undefined}
-                    onClick={() => setPane({ kind: 'entry', collection, id })}
-                  >
-                    <span className="row tight entries-row-head">
-                      <span className="entries-kind">{kind?.label ?? 'Custom entry'}</span>
-                      {typeof entry.status === 'string' && (
-                        <span className={`chip ${entry.status}`}>{entry.status}</span>
-                      )}
-                    </span>
-                    <span className="entry-title">
-                      <Zh text={entryTitle(entry)} actions={false} />
-                    </span>
-                    {line && (
-                      <span className="entries-line">
-                        <Zh text={line} actions={false} />
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
+            {shown.map((r) => (
+              <EntryRow
+                key={`${r.collection}:${r.id}`}
+                row={r}
+                kindLabel={labels.get(r.kindKey) ?? 'Custom entry'}
+                statusLabel={typeof r.entry.status === 'string' ? statusLabel(r.entry.status) : ''}
+                current={selectedId === r.id}
+                onSelect={select}
+              />
+            ))}
           </ul>
+        )}
+        {rows.length > shown.length && (
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => setLimit((n) => n + ENTRIES_PAGE)}
+          >
+            Show {Math.min(ENTRIES_PAGE, rows.length - shown.length)} more
+          </button>
         )}
       </section>
       {pane.kind === 'entry' ? (
@@ -440,6 +462,47 @@ function EntriesList(props: { onOpen: Open }) {
     </>
   );
 }
+
+/** One row: kind, status, title, and the first line. Redrawn only when its entry changes. */
+const EntryRow = memo(function EntryRow(props: {
+  row: IndexedEntry;
+  kindLabel: string;
+  statusLabel: string;
+  current: boolean;
+  onSelect: (collection: EntriesCollection, id: string) => void;
+}) {
+  const { row } = props;
+  const status = row.entry.status;
+  return (
+    <li>
+      <button
+        type="button"
+        className="entry-row entries-row"
+        data-kind={row.kindKey}
+        data-id={row.id}
+        aria-current={props.current ? 'true' : undefined}
+        onClick={() => props.onSelect(row.collection, row.id)}
+      >
+        <span className="row tight entries-row-head">
+          <span className="entries-kind">{props.kindLabel}</span>
+          {typeof status === 'string' && (
+            <span className={`chip ${status}`} data-status={status}>
+              {props.statusLabel}
+            </span>
+          )}
+        </span>
+        <span className="entry-title">
+          <Zh text={entryTitle(row.entry)} actions={false} />
+        </span>
+        {row.firstLine && (
+          <span className="entries-line">
+            <Zh text={row.firstLine} actions={false} />
+          </span>
+        )}
+      </button>
+    </li>
+  );
+});
 
 /** New entry, step one: what kind. One button per kind, custom sections included. */
 function KindPicker(props: {

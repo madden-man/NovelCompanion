@@ -16,6 +16,7 @@ import { EmbeddedEditor, UndoPanel } from '../editor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { Zh } from '../Zh';
+import { useStatusLabel } from '../entries/statusLabel';
 import { span, useFamilies } from './common';
 import { WorldEventsStrip } from './WorldEventsStrip';
 import './world.css';
@@ -429,7 +430,7 @@ export function TimelineView() {
               ))}
             </select>
           </div>
-          {filters !== NONE && (
+          {Object.values(filters).some((v) => v !== null) && (
             <button type="button" className="btn small" onClick={() => setFilters(NONE)}>
               Clear filters
             </button>
@@ -685,6 +686,7 @@ function WorldList(props: {
   const events = useEntries('worldEvents');
   const eras = useEntries('eraStates');
   const categories = useList('eventCategories');
+  const statusLabel = useStatusLabel();
   const [order, setOrder] = useState<WorldOrder>('year');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -779,7 +781,11 @@ function WorldList(props: {
               >
                 <span className="row tight">
                   <span className="world-years num">{span(r.startYear, r.endYear)}</span>
-                  {r.status && <span className={`chip ${r.status}`}>{r.status}</span>}
+                  {r.status && (
+                    <span className={`chip ${r.status}`} data-status={r.status}>
+                      {statusLabel(r.status)}
+                    </span>
+                  )}
                 </span>
                 <span className="entry-title">
                   <Zh text={r.title} actions={false} />
