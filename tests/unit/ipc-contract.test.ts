@@ -273,6 +273,13 @@ const BAD: Record<string, unknown[]> = {
   'claude.stop': [{}, { runId: '' }, { runId: 7 }],
   'claude.runs': [{ feature: 'nope' }, { extra: 1 }],
   'claude.run': [{}, { id: '' }],
+  'claude.alignment': [
+    {},
+    { chapterId: 'CH1' },
+    { runId: 5, chapterId: 'CH1' },
+    { runId: 'r', chapterId: '' },
+    { runId: 'r', chapterId: 'CH1', extra: 1 },
+  ],
   'claude.importProposals': [{}, { runId: 'run-12345678' }, { runId: 'bad', fileId: 'f' }],
   'session.start': [{}, { input: { kind: 'chapter' } }, { input: { kind: 'nope' } }],
   'session.relevant': [{}, { input: { kind: 'chapter' } }, { input: 5 }],
