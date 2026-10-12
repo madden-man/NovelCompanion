@@ -3,7 +3,7 @@ import { CLAUDE_FEATURES, DEFAULT_MODELS, FEATURE_INFO } from '../../../shared/c
 import type { ClaudeFeature } from '../../../shared/claude';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
-import { Disclosure, useClaudeStatus } from './claude';
+import { Disclosure } from './claude';
 import { DriveSettingsSection } from './drive';
 import { BriefSettings } from './sessions/relevant';
 import { APPEARANCES } from '../../../shared/ipcApp';
@@ -12,6 +12,16 @@ import { applyAppearance } from '../appearance';
 import { WriteFieldset, useConnection } from '../connection';
 
 type Models = Response<'claude.models'>;
+type ClaudeStatus = Response<'claude.status'>;
+
+/** NF-3: a setting that could not be read says so, in place of "Loading" that never ends. */
+function LoadFailed(props: { what: string; error: string; testId: string }) {
+  return (
+    <p className="callout crit" role="alert" data-testid={props.testId}>
+      {props.what} could not be read. {props.error}
+    </p>
+  );
+}
 
 /**
  * Settings (ST-1), one screen: Claude (the API key, masked and replace only,
@@ -58,13 +68,18 @@ type Romanization = Response<'romanization.get'>;
 function RomanizationSettings() {
   const [data, setData] = useState<Romanization | null>(null);
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
-    void call('romanization.get', {}).then(setData);
-    const off = window.api.on(
-      'lists.changed',
-      () => void call('romanization.get', {}).then(setData),
-    );
-    return off;
+    const load = () =>
+      void call('romanization.get', {}).then(
+        (r) => {
+          setData(r);
+          setFailed(null);
+        },
+        (e: unknown) => setFailed(plainError(e)),
+      );
+    load();
+    return window.api.on('lists.changed', load);
   }, []);
   const set = async (languageId: string, label: string, systemId: string) => {
     setNote(null);
@@ -75,6 +90,15 @@ function RomanizationSettings() {
       setNote({ text: plainError(e), bad: true });
     }
   };
+  if (!data && failed) {
+    return (
+      <LoadFailed
+        what="The romanization systems"
+        error={failed}
+        testId="settings-romanization-failed"
+      />
+    );
+  }
   if (!data) return <p>Loading the romanization systems.</p>;
   return (
     <div className="panel stack tight" data-testid="settings-romanization">
@@ -136,12 +160,16 @@ function SnapshotSettings() {
   const [keep, setKeep] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const id = useId();
   useEffect(() => {
-    void call('snapshot.list', {}).then((r) => {
-      setKeep(r.keep);
-      setDraft(String(r.keep));
-    });
+    call('snapshot.list', {}).then(
+      (r) => {
+        setKeep(r.keep);
+        setDraft(String(r.keep));
+      },
+      (e: unknown) => setFailed(plainError(e)),
+    );
   }, []);
   const save = async () => {
     const n = Number(draft);
@@ -158,6 +186,11 @@ function SnapshotSettings() {
       setNote({ text: plainError(e), bad: true });
     }
   };
+  if (keep === null && failed) {
+    return (
+      <LoadFailed what="The snapshot setting" error={failed} testId="settings-snapshots-failed" />
+    );
+  }
   if (keep === null) return <p>Loading the snapshot setting.</p>;
   return (
     <div className="panel stack tight" data-testid="settings-snapshots">
@@ -204,8 +237,9 @@ export function MongoSettings() {
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const { refresh } = useConnection();
   const ids = { input: useId(), hint: useId() };
+  const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
-    void call('mongo.status', {}).then(setMongo);
+    call('mongo.status', {}).then(setMongo, (e: unknown) => setFailed(plainError(e)));
   }, []);
 
   const test = async () => {
@@ -238,6 +272,11 @@ export function MongoSettings() {
     }
   };
 
+  if (!mongo && failed) {
+    return (
+      <LoadFailed what="The MongoDB connection setting" error={failed} testId="mongo-failed" />
+    );
+  }
   if (!mongo) return <p>Loading the MongoDB connection.</p>;
   return (
     <div className="stack tight" data-testid="mongo-settings">
@@ -313,7 +352,10 @@ function AppearanceSettings() {
   const [error, setError] = useState<string | null>(null);
   const name = useId();
   useEffect(() => {
-    void call('appearance.get', {}).then((r) => setValue(r.appearance));
+    call('appearance.get', {}).then(
+      (r) => setValue(r.appearance),
+      (e: unknown) => setError(plainError(e)),
+    );
   }, []);
   const choose = async (next: Appearance) => {
     setValue(next);
@@ -325,7 +367,14 @@ function AppearanceSettings() {
       setError(plainError(e));
     }
   };
-  if (!value) return null;
+  if (!value) {
+    return error ? (
+      <div className="stack" data-testid="appearance-settings">
+        <h3>Appearance</h3>
+        <LoadFailed what="The appearance setting" error={error} testId="appearance-failed" />
+      </div>
+    ) : null;
+  }
   return (
     <div className="stack" data-testid="appearance-settings">
       <h3>Appearance</h3>
@@ -355,8 +404,11 @@ function AppearanceSettings() {
 }
 
 function ClaudeSettings() {
-  const [status, setStatus] = useClaudeStatus();
+  const [status, setStatus] = useState<ClaudeStatus | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const [models, setModels] = useState<Models | null>(null);
+  const [modelsFailed, setModelsFailed] = useState<string | null>(null);
+  const [modelNote, setModelNote] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -365,9 +417,31 @@ function ClaudeSettings() {
 
   useEffect(() => {
     let live = true;
-    void call('claude.models', {}).then((m) => {
-      if (live) setModels(m);
-    });
+    call('claude.status', {}).then(
+      (s) => {
+        if (live) setStatus(s);
+      },
+      (e: unknown) => {
+        if (live) setFailed(plainError(e));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    call('claude.models', {}).then(
+      (m) => {
+        if (!live) return;
+        setModels(m);
+        setModelsFailed(null);
+      },
+      (e: unknown) => {
+        if (live) setModelsFailed(plainError(e));
+      },
+    );
     return () => {
       live = false;
     };
@@ -390,14 +464,26 @@ function ClaudeSettings() {
 
   const remove = async () => {
     setNote(null);
-    setStatus(await call('claude.clearKey', {}));
-    setNote({ text: 'The key was removed from the keychain.', bad: false });
+    try {
+      setStatus(await call('claude.clearKey', {}));
+      setNote({ text: 'The key was removed from the keychain.', bad: false });
+    } catch (e) {
+      setNote({ text: `The key was not removed. ${plainError(e)}`, bad: true });
+    }
   };
 
   const setModel = async (feature: ClaudeFeature, model: string) => {
-    setStatus(await call('claude.setModel', { feature, model }));
+    setModelNote(null);
+    try {
+      setStatus(await call('claude.setModel', { feature, model }));
+    } catch (e) {
+      setModelNote(`The model was not changed. ${plainError(e)}`);
+    }
   };
 
+  if (!status && failed) {
+    return <LoadFailed what="The Claude settings" error={failed} testId="claude-settings-failed" />;
+  }
   if (!status) return <p>Loading the Claude settings.</p>;
   const choices = (current: string) => {
     const list = models?.models ?? [];
@@ -467,6 +553,11 @@ function ClaudeSettings() {
       <div className="panel stack tight">
         <h4>Model for each feature</h4>
         {models?.message && <p className="example-note">{models.message}</p>}
+        {modelsFailed && (
+          <p className="callout crit" role="alert" data-testid="claude-models-failed">
+            The list of models could not be read. {modelsFailed}
+          </p>
+        )}
         {CLAUDE_FEATURES.map((f) => (
           <ModelSelect
             key={f}
@@ -476,6 +567,11 @@ function ClaudeSettings() {
             onChange={(m) => void setModel(f, m)}
           />
         ))}
+        {modelNote && (
+          <p className="callout crit" role="alert" data-testid="claude-model-note">
+            {modelNote}
+          </p>
+        )}
       </div>
       <BriefSettings variant="panel" key={status.models.briefs} />
       <Disclosure confirmedAt={status.acknowledgedAt} />
