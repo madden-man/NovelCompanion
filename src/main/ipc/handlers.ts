@@ -120,6 +120,9 @@ export function hasOpenBible(): boolean {
 export async function closeStore(): Promise<void> {
   // Claude runs stop and save as stopped while the store is still open.
   await claudeRuntime?.stopAll();
+  // BK-1: the day's snapshot is written in the background after opening; let it
+  // finish, so quitting soon after opening still leaves today's snapshot (ARCH-6).
+  await current?.session.dailySnapshot;
   current?.unsubscribe();
   current = null;
   await connection?.close();
