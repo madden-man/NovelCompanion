@@ -45,6 +45,8 @@ export interface FeatureDefinition<I, O> {
   proposals?(output: O, input: I, session: OpenBible): DraftOrProblem[];
   /** Tool round trips allowed; features get their material in the prompt, so the default is small. */
   maxTurns?: number;
+  /** The tools the run may call; none unless given. Capture (KB-6) gets the AI-2 tools and propose_change. */
+  tools?(input: I, session: OpenBible, sink: Sink): ClaudeTool[];
 }
 
 /** A proposal draft, or why one the output carries could not become a draft. */
@@ -275,7 +277,7 @@ export class ClaudeRuntime {
       feature: def.feature,
       system: featureSystemPrompt(def),
       prompt,
-      tools: () => [],
+      tools: (sink) => def.tools?.(input, session, sink) ?? [],
       outputSchema: jsonSchemaFor(def.output),
       maxTurns: def.maxTurns ?? 3,
       finish: async (result, sink) => {

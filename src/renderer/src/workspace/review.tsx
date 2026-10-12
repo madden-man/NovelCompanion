@@ -79,7 +79,7 @@ export function ReviewQueue() {
 }
 
 function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void }) {
-  const { proposal, changes, conflict, targetTitle } = view;
+  const { proposal, conflict, targetTitle } = view;
   const collection = proposal.collection as EntryCollection;
   const manifest = manifests[collection];
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -124,32 +124,7 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
           </button>
         </div>
       )}
-      {changes.length === 0 ? (
-        <p className="example-note">This proposal would change nothing.</p>
-      ) : (
-        <table className="diff-table" data-testid="proposal-diff">
-          <thead>
-            <tr>
-              <th scope="col">Field</th>
-              <th scope="col">Now</th>
-              <th scope="col">Proposed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {changes.map((c) => (
-              <tr key={c.path}>
-                <th scope="row">{labelPath(manifest, c.path)}</th>
-                <td>
-                  <del>{showValue(c.before)}</del>
-                </td>
-                <td>
-                  <ins>{showValue(c.after)}</ins>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <ProposalDiff view={view} />
       <WriteFieldset className="stack">
         {editing && (
           <form
@@ -220,5 +195,41 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
         </p>
       )}
     </article>
+  );
+}
+
+/** ED-7: what a proposal would change, field by field, against the entry as it is now. */
+export function ProposalDiff({ view }: { view: ProposalView }) {
+  const { changes } = view;
+  const manifest = manifests[view.proposal.collection as EntryCollection];
+  return (
+    <>
+      {changes.length === 0 ? (
+        <p className="example-note">This proposal would change nothing.</p>
+      ) : (
+        <table className="diff-table" data-testid="proposal-diff">
+          <thead>
+            <tr>
+              <th scope="col">Field</th>
+              <th scope="col">Now</th>
+              <th scope="col">Proposed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {changes.map((c) => (
+              <tr key={c.path}>
+                <th scope="row">{labelPath(manifest, c.path)}</th>
+                <td>
+                  <del>{showValue(c.before)}</del>
+                </td>
+                <td>
+                  <ins>{showValue(c.after)}</ins>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
   );
 }

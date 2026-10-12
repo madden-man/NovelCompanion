@@ -1,12 +1,13 @@
 import { alignment } from './alignment';
 import { briefs } from './briefs';
+import { capture } from './capture';
 import { importProposals } from './importProposals';
 import { summaries } from './summaries';
 
 /**
  * Every structured Claude feature, by name: session briefs (SB-4, DB-2),
- * chapter summaries (MS-2), import proposals (IM-5), and alignment checks
- * (CC-3). Each is a `FeatureDefinition` (see `../runtime.ts`). The AI-4 test
+ * chapter summaries (MS-2), import proposals (IM-5), alignment checks
+ * (CC-3), and capture (KB-6). Each is a `FeatureDefinition` (see `../runtime.ts`). The AI-4 test
  * walks this list, so a feature added here is checked for the prose
  * prohibition.
  */
@@ -15,6 +16,7 @@ export const FEATURES = {
   summaries,
   importProposals,
   alignment,
+  capture,
 };
 
 export type FeatureName = keyof typeof FEATURES;

@@ -11,6 +11,7 @@ import { RunStore, summarize } from './store';
 import { FEATURES } from './features';
 import { recordAlignment } from '../continuity';
 import { textHash } from '../../shared/domain/continuity/lines';
+import { localDateString } from '../../shared/domain/sessionLog';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
@@ -143,6 +144,15 @@ export function claudeHandlers(
         session(),
         FEATURES.importProposals,
         { fileId },
+        runId,
+      );
+      return { runId: start.runId, conversationId: start.conversationId };
+    },
+    'claude.capture': async ({ runId, text, storyTime }) => {
+      const start = await runtime.runFeature(
+        session(),
+        FEATURES.capture,
+        { text, storyTime, capturedOn: localDateString(new Date()) },
         runId,
       );
       return { runId: start.runId, conversationId: start.conversationId };

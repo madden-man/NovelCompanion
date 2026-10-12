@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { StoryTimeValue } from './storyTime';
 
 /**
  * Claude in the app (ARCH-4, AI-1 to AI-7, DB-4): the five features, their
@@ -13,6 +14,7 @@ export const CLAUDE_FEATURES = [
   'summaries',
   'importProposals',
   'panel',
+  'capture',
 ] as const;
 export const ClaudeFeature = z.enum(CLAUDE_FEATURES);
 export type ClaudeFeature = z.infer<typeof ClaudeFeature>;
@@ -31,6 +33,7 @@ export const DEFAULT_MODELS: Record<ClaudeFeature, string> = {
   summaries: 'claude-sonnet-5-5',
   importProposals: 'claude-sonnet-5-5',
   panel: 'claude-sonnet-5-5',
+  capture: 'claude-sonnet-5-5',
 };
 
 /** Shown in settings when the live list cannot be reached. */
@@ -63,6 +66,11 @@ export const FEATURE_INFO: Record<ClaudeFeature, { label: string; sends: string 
     label: 'Import proposals',
     sends:
       'the text of the imported document and the section, ID and title of up to 600 existing entries from every section',
+  },
+  capture: {
+    label: 'Capture',
+    sends:
+      'the text you type in the capture box (Cmd+K), the story time, and the entries Claude looks up to file it',
   },
 };
 
@@ -227,8 +235,9 @@ const Started = z.strictObject({ runId: z.string(), conversationId: z.string() }
 
 /**
  * The Claude channels of the IPC contract (`src/shared/ipc.ts` spreads them
- * in). AI-4: only `claude.ask` carries free text, the question typed into the
- * panel; every feature channel takes IDs of the material it works on.
+ * in). AI-4: only `claude.ask` (the question typed into the panel) and
+ * `claude.capture` (the sentence typed into the capture box, KB-6) carry free
+ * text; every other feature channel takes IDs of the material it works on.
  */
 export const claudeContract = {
   /** ARCH-4, AI-6, DB-4: key status (masked), disclosure, and the model per feature. */
@@ -289,6 +298,21 @@ export const claudeContract = {
   'claude.run': {
     request: z.strictObject({ id: z.string().min(1).max(64) }),
     response: z.strictObject({ run: ClaudeRun, active: z.array(z.string()) }),
+  },
+  /**
+   * KB-6: the capture box (Cmd+K). The typed text goes to Claude as material
+   * (AI-5) with the story time; Claude looks names up and proposes where each
+   * fact belongs. The proposals stream as `claude.stream` events and wait for
+   * approval in the box (AI-3). KB-7: the renderer saves the text as an open
+   * question when the run cannot happen.
+   */
+  'claude.capture': {
+    request: z.strictObject({
+      runId: RunIdWire,
+      text: z.string().trim().min(1).max(8000),
+      storyTime: StoryTimeValue,
+    }),
+    response: Started,
   },
   /** IM-5: Claude reads a Word document picked in Import and proposes entries for review. */
   'claude.importProposals': {

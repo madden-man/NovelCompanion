@@ -28,6 +28,7 @@ import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
 import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
+import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
 import './shell.css';
 
@@ -158,6 +159,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
     <ZhNavProvider value={open}>
       <DriveLaunchNotice onReview={() => setView({ kind: 'drive' })} />
       <StopPrompt />
+      <CaptureBox />
       <div className="ws-frame" data-testid="workspace">
         <TopBar
           onRelevant={() => setView({ kind: 'relevant' })}
@@ -416,6 +418,7 @@ function StatusBar() {
         Story time <kbd>Cmd T</kbd>
       </button>
       <AskClaudeButton />
+      <CaptureButton />
     </footer>
   );
 }
