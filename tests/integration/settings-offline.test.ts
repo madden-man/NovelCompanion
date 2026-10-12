@@ -52,8 +52,12 @@ async function closedPort(): Promise<number> {
 }
 
 /** The bible channels as main registers them: guarded, validated both ways, JSON on the wire. */
-function guardedIpc(bible: () => OpenBible | null, guard: { readOnly(): boolean; lost(): void }) {
-  const handlers = bibleHandlers(bible, {});
+function guardedIpc(
+  bible: () => OpenBible | null,
+  guard: { readOnly(): boolean; lost(): void },
+  deps: Parameters<typeof bibleHandlers>[1] = {},
+) {
+  const handlers = bibleHandlers(bible, deps);
   return async <C extends Channel>(channel: C, request: Request<C>): Promise<Response<C>> => {
     const handler = handlers[channel as BibleChannel] as Handler<C> | undefined;
     if (!handler) throw new Error(`No bible handler for ${channel}`);
@@ -232,6 +236,27 @@ describe('ARCH-6 a snapshot opens read-only', () => {
       .collection<{ _id: string; [k: string]: unknown }>(`${slug}.characters`)
       .findOne({ _id: 'H1' });
     expect(live?.birthplace).toBe('Before the snapshot');
+  });
+
+  test('ARCH-6 BK-3 the snapshot keeps the bible name, and the whole-bible export works from it read-only', async () => {
+    const latest = await latestSnapshot(snaps, slug);
+    expect(latest?.name).toBe('Fixture novel');
+    const out = join(snaps, 'export-from-snapshot.json');
+    const ipc = guardedIpc(
+      () => session,
+      { readOnly: () => true, lost: () => undefined },
+      { pickSavePath: async () => out },
+    );
+    const r = await ipc('backup.export', {});
+    expect(r.path).toBe(out);
+    expect(r.counts.characters).toBeGreaterThan(0);
+    const file = JSON.parse(await readFile(out, 'utf8')) as { bible: { id: string; name: string } };
+    expect(file.bible).toMatchObject({ id: slug, name: 'Fixture novel' });
+    // The export loads into an empty bible like any other (BK-3).
+    const target = await createBible(store, freshSlug('arch6-ro-import'), 'From the snapshot');
+    await importBibleJson(target, await readFile(out, 'utf8'));
+    const back = await openBibleSession(store, target.id);
+    expect(back.model.get('characters', 'H1')?.birthplace).toBe('Before the snapshot');
   });
 
   test('ARCH-6 every write channel is a channel of the contract and is refused before it runs', async () => {

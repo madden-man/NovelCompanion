@@ -7,21 +7,30 @@ import type { FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
 import type { Invoke } from '../helpers/t5';
+import { EXECUTABLE } from '../package/paths';
 
 const ROOT = join(import.meta.dirname, '../..');
 
 /**
  * Start the built app against a local MongoDB. The "Where did you stop?" prompt
  * (SL-1) is off unless a test turns it on, so closing the app never waits on a person.
+ *
+ * With `packaged`, the packaged app in release/ starts instead (T-4), under the
+ * one documented exception, NOVEL_COMPANION_ALLOW_TEST_URI=1 with the local
+ * test database, which is also what lets it honour the recorded Claude, the
+ * fake Google, and the pickers named here. A packaged app ignores the skip
+ * flag for the stop prompt, so its tests exit the app rather than close it.
  */
 export async function launch(
   uri: string,
   env: Record<string, string> = {},
+  opts: { packaged?: boolean } = {},
 ): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
-    args: [ROOT],
+    ...(opts.packaged ? { executablePath: EXECUTABLE, args: [] } : { args: [ROOT] }),
     env: {
       ...process.env,
+      ...(opts.packaged ? { NOVEL_COMPANION_ALLOW_TEST_URI: '1' } : {}),
       NOVEL_COMPANION_TEST_MONGODB_URI: uri,
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),

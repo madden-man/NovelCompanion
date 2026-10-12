@@ -25,6 +25,7 @@ import {
   TEST_URI_ENV,
   mongoUri,
   testDatabaseHonoured,
+  testSeamsHonoured,
 } from '../secrets';
 import { ConnectionManager } from '../connection';
 import { openSnapshotReadOnly } from '../db/readOnly';
@@ -228,7 +229,11 @@ async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>
     );
   }
   const opened = await openSnapshotReadOnly(join(app.getPath('userData'), 'snapshots'), latest);
-  const { bible } = await adopt(opened.session, opened.snapshot.bible, true);
+  const { bible } = await adopt(
+    opened.session,
+    opened.snapshot.name ?? opened.snapshot.bible,
+    true,
+  );
   c.enterReadOnly(opened.snapshot);
   return { bible, status: await c.status() };
 }
@@ -268,13 +273,16 @@ export async function openExternal(url: string): Promise<Response<'app.openExter
   return { ok: true };
 }
 
+/** True when the test seams are honoured (T-4): unpackaged, or packaged under the allow flag with a local test database. */
+const seams = (): boolean => testSeamsHonoured(process.env, { isPackaged: app.isPackaged });
+
 /** Test builds may name the file to pick, so no native dialog is needed. */
 const testPath = (name: string): string | null =>
-  !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
+  seams() && process.env[name] ? (process.env[name] as string) : null;
 
 /**
  * GD-1: the one Drive service. A build on a test database never reads the
- * keychain (as `mongoUri` skips it), and an unpackaged one may point Drive at
+ * keychain (as `mongoUri` skips it), and one honouring the test seams may point Drive at
  * a local fake Google.
  */
 const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
@@ -401,6 +409,7 @@ export function registerHandlers(): void {
   // Claude (ARCH-4, AI-1 to AI-7, IM-5).
   const claudeSetup = claudeDeps({
     isPackaged: app.isPackaged,
+    testSeams: seams(),
     testDatabase: testDatabaseHonoured(process.env, { isPackaged: app.isPackaged }),
     userData: app.getPath('userData'),
     appRoot: app.getAppPath(),

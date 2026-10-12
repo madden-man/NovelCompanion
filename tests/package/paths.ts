@@ -4,22 +4,31 @@ import { join } from 'node:path';
 export const ROOT = join(import.meta.dirname, '../..');
 export const RELEASE = join(ROOT, 'release');
 export const APP = join(RELEASE, 'mac-arm64', 'Novel Companion.app');
-export const EXECUTABLE = join(APP, 'Contents', 'MacOS', 'Novel Companion');
-export const UNPACKED = join(APP, 'Contents', 'Resources', 'app.asar.unpacked');
-export const SDK_BINARY = join(
-  UNPACKED,
-  'node_modules',
-  '@anthropic-ai',
-  'claude-agent-sdk-darwin-arm64',
-  'claude',
-);
-export const KEYRING_NODE = join(
-  UNPACKED,
-  'node_modules',
-  '@napi-rs',
-  'keyring-darwin-arm64',
-  'keyring.darwin-arm64.node',
-);
+
+/** Where the parts the tests check sit inside an app bundle (in release/, or on the mounted dmg). */
+export function inApp(app: string) {
+  const unpacked = join(app, 'Contents', 'Resources', 'app.asar.unpacked');
+  return {
+    EXECUTABLE: join(app, 'Contents', 'MacOS', 'Novel Companion'),
+    UNPACKED: unpacked,
+    SDK_BINARY: join(
+      unpacked,
+      'node_modules',
+      '@anthropic-ai',
+      'claude-agent-sdk-darwin-arm64',
+      'claude',
+    ),
+    KEYRING_NODE: join(
+      unpacked,
+      'node_modules',
+      '@napi-rs',
+      'keyring-darwin-arm64',
+      'keyring.darwin-arm64.node',
+    ),
+  };
+}
+
+export const { EXECUTABLE, UNPACKED, SDK_BINARY, KEYRING_NODE } = inApp(APP);
 
 /** The arm64 dmg `npm run package` writes, or null when there is none. */
 export function findDmg(): string | null {

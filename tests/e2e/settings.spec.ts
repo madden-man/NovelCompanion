@@ -144,6 +144,42 @@ test('ST-1 the API key and the MongoDB connection string are shown masked, never
   await expect(view.getByTestId('mongo-input')).toHaveAttribute('type', 'password');
 });
 
+test('ST-1 NF-3 a setting that cannot be read, or a key that cannot be removed, says so on screen', async () => {
+  // Main answers these channels with a failure, as a broken settings file or keychain would.
+  const fail = (channels: string[]) =>
+    app!.evaluate(({ ipcMain }, list) => {
+      for (const c of list) {
+        ipcMain.removeHandler(`nc:${c}`);
+        ipcMain.handle(`nc:${c}`, () => {
+          throw new Error('The keychain did not answer. Restart the app, then try again.');
+        });
+      }
+    }, channels);
+  await fail(['snapshot.list', 'appearance.get', 'claude.clearKey']);
+  try {
+    await invoke('claude.setKey', { key: KEY });
+    // Leave Settings first, so it mounts again and reads every setting afresh.
+    await rail(page, 'Characters').click();
+    const view = await openSettings();
+    await expect(view.getByTestId('settings-snapshots-failed')).toHaveText(
+      'The snapshot setting could not be read. The keychain did not answer. Restart the app, then try again.',
+    );
+    await expect(view.getByTestId('appearance-failed')).toContainText(
+      'The appearance setting could not be read.',
+    );
+    await expect(view.getByText('Loading the snapshot setting.')).toHaveCount(0);
+    await view.getByRole('button', { name: 'Remove key' }).click();
+    await expect(view.getByTestId('claude-key-note')).toHaveText(
+      'The key was not removed. The keychain did not answer. Restart the app, then try again.',
+    );
+    await expect(view.getByTestId('claude-key-status')).toContainText('A key is stored');
+  } finally {
+    // A fresh launch registers the real handlers again.
+    await app?.close();
+    await start();
+  }
+});
+
 test('ST-1 Test connection reports success and failure plainly; Replace switches only after the test passes', async () => {
   const view = await openSettings();
   const note = view.getByTestId('mongo-note');

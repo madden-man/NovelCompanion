@@ -17,9 +17,10 @@ export type { ClaudeClient, ClaudeRequest, ClaudeEvent, ClaudeTool } from './cli
 export { PROSE_PROHIBITION, systemPrompt, material } from './prompts';
 
 /**
- * End-to-end tests set this (outside a packaged app only) so the app uses a
- * key held in memory, the fake model list, and recorded Claude responses:
- * no test touches the real keychain or the API (T-3).
+ * End-to-end tests set this so the app uses a key held in memory, the fake
+ * model list, and recorded Claude responses: no test touches the real
+ * keychain or the API (T-3). Honoured outside a packaged app, and in a
+ * packaged one only when `testSeams` says so (T-4, `testSeamsHonoured`).
  */
 export const TEST_CLAUDE_ENV = 'NOVEL_COMPANION_TEST_CLAUDE';
 export const TEST_ANTHROPIC_KEY_ENV = 'NOVEL_COMPANION_TEST_ANTHROPIC_KEY';
@@ -42,13 +43,16 @@ export function claudeDeps(opts: {
   isPackaged: boolean;
   /** On a test database the key is held in memory, so the keychain is never read (NF-4 smoke test). */
   testDatabase?: boolean;
+  /** T-4: a packaged app honours the recorded Claude only when this is true. */
+  testSeams?: boolean;
   userData: string;
   appRoot: string;
   env: NodeJS.ProcessEnv;
   version: string;
   emit(event: ClaudeStreamEvent): void;
 }): ClaudeDeps {
-  const testing = !opts.isPackaged && opts.env[TEST_CLAUDE_ENV] === '1';
+  const testing =
+    (!opts.isPackaged || opts.testSeams === true) && opts.env[TEST_CLAUDE_ENV] === '1';
   let keys: KeyStore;
   let catalog: ModelCatalog;
   let client: ClaudeClient;

@@ -13,8 +13,10 @@ export const Appearance = z.enum(APPEARANCES);
 export type Appearance = z.infer<typeof Appearance>;
 
 const SnapshotRef = z.strictObject({
-  /** The bible the snapshot belongs to. */
+  /** The bible the snapshot belongs to (its ID). */
   bible: z.string().min(1),
+  /** The bible's name, as people know it (the ID for a snapshot taken before names were kept). */
+  name: z.string().min(1),
   /** When it was taken (ISO time). */
   takenAt: z.string().min(1),
 });
@@ -102,6 +104,9 @@ export const appEvents = {
  * ARCH-6: every channel that changes a bible (or runs Claude, which saves its
  * runs in the bible). While a snapshot is open read-only, main refuses these
  * before anything runs, and the renderer disables the controls that send them.
+ * tests/unit/write-channels.test.ts checks this list against every main
+ * handler that reaches a write, in both directions. `backup.export` only
+ * reads, so it works on a read-only snapshot too.
  */
 export const WRITE_CHANNELS = [
   'bible.create',
@@ -129,7 +134,6 @@ export const WRITE_CHANNELS = [
   'snapshot.restore',
   'snapshot.keep',
   'backup.import',
-  'backup.export',
   'brief.settings.set',
   'session.start',
   'brief.regenerate',
@@ -137,6 +141,9 @@ export const WRITE_CHANNELS = [
   'chapter.summarize',
   'claude.ask',
   'claude.importProposals',
+  'claude.alignment',
+  'continuity.check',
+  'continuity.resolve',
   'drive.link',
   'drive.unlink',
   'drive.markSeen',

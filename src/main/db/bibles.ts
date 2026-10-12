@@ -39,6 +39,11 @@ export interface BibleHandle {
   collection<T extends Document = Document>(collection: string): Collection<T>;
   /** This bible's collection names, without the prefix. */
   collectionNames(): Promise<string[]>;
+  /**
+   * ARCH-6: set only on a local snapshot opened read-only, which has no
+   * registry and no sessions: the bible record the snapshot carries.
+   */
+  readonly snapshotOf?: { name: string; createdAt: string; schemaVersion: number };
 }
 
 function escapeRegex(s: string): string {

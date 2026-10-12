@@ -10,7 +10,8 @@ import { launch, rail } from './helpers';
 
 /**
  * NF-1 and T-6 in the built app: launch to the dashboard with 5,000 entries
- * and 100 chapters, and the tree redraw with the 200-person tree.
+ * and 100 chapters, and the tree redraw both inside that bible (1,200
+ * characters) and on the 200-person, six-generation tree alone (FT-8).
  *
  * Timing and concurrency: other suites and builds run on this machine at the
  * same time, so a single sample can be slowed by a neighbour. Each limit is
@@ -29,7 +30,8 @@ test.beforeAll(async () => {
   server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   const store = await connect(server.getUri());
   try {
-    await loadBigBible(store, BIG_SLUG, BIG_NAME);
+    const { docs } = await loadBigBible(store, BIG_SLUG, BIG_NAME);
+    expect(docs.characters).toHaveLength(BIG.characters);
     const tree = await createBible(store, TREE_SLUG, 'Two hundred people');
     const { characters, unions, parentLinks } = generatedTree(BIG.treePeople, 6);
     const stamp = { provenance: 'invented', modifiedAt: '2026-01-15T09:00:00.000Z' };
@@ -95,55 +97,90 @@ test('NF-1 T-6 launch to the dashboard with 5,000 entries and 100 chapters takes
   expect(median(samples)).toBeLessThan(3000);
 });
 
+/**
+ * Redraw the open tree at a year: set the tree's year box as a person typing
+ * would and time it until the SVG shows that year and two frames are painted.
+ */
+function redrawer(page: Page) {
+  return (year: number) =>
+    page.evaluate(
+      (y) =>
+        new Promise<number>((resolve) => {
+          const input = document.querySelector<HTMLInputElement>('[data-testid="tree-year"]')!;
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+          const start = performance.now();
+          setter.call(input, String(y));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          // The tree year box commits on Enter (TM-3), like the top bar.
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          const check = () => {
+            const svg = document.querySelector('[data-testid="tree-svg"]')!;
+            if (svg.getAttribute('data-year') === String(y)) {
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve(performance.now() - start)),
+              );
+            } else requestAnimationFrame(check);
+          };
+          check();
+        }),
+      year,
+    );
+}
+
+/** The median of three redraws to each year, each from a different year first. */
+async function redrawMedians(page: Page): Promise<Record<number, number>> {
+  const redraw = redrawer(page);
+  const medians: Record<number, number> = {};
+  for (const year of [1950, 2000, 2030, 2060, 2080]) {
+    const samples: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      await redraw(year - 7 - i);
+      samples.push(await redraw(year));
+    }
+    medians[year] = median(samples);
+  }
+  return medians;
+}
+
+async function openTree(page: Page, slug: string): Promise<void> {
+  await page.evaluate((s) => window.api.invoke('bible.open', { slug: s }), slug);
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await rail(page, 'Family tree').click();
+  await expect(page.getByTestId('tree-view')).toBeVisible();
+}
+
 test('NF-1 FT-8 the 200-person, six-generation tree redraws in under 500 ms', async () => {
   test.setTimeout(300_000);
   const { app, page } = await launch(server.getUri());
   try {
-    await page.evaluate((slug) => window.api.invoke('bible.open', { slug }), TREE_SLUG);
-    await expect(page.getByTestId('workspace')).toBeVisible();
-    await rail(page, 'Family tree').click();
-    await expect(page.getByTestId('tree-view')).toBeVisible();
+    await openTree(page, TREE_SLUG);
     await expect(page.locator('g.tnode')).toHaveCount(BIG.treePeople);
-    const redraw = (year: number) =>
-      page.evaluate(
-        (y) =>
-          new Promise<number>((resolve) => {
-            const input = document.querySelector<HTMLInputElement>('[data-testid="tree-year"]')!;
-            const setter = Object.getOwnPropertyDescriptor(
-              HTMLInputElement.prototype,
-              'value',
-            )!.set!;
-            const start = performance.now();
-            setter.call(input, String(y));
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-            const check = () => {
-              const svg = document.querySelector('[data-testid="tree-svg"]')!;
-              if (svg.getAttribute('data-year') === String(y)) {
-                requestAnimationFrame(() =>
-                  requestAnimationFrame(() => resolve(performance.now() - start)),
-                );
-              } else requestAnimationFrame(check);
-            };
-            check();
-          }),
-        year,
-      );
-    const medians: Record<number, number> = {};
-    for (const year of [1950, 2000, 2030, 2060, 2080]) {
-      const samples: number[] = [];
-      // Three redraws to this year, each from a different year first.
-      for (let i = 0; i < 3; i++) {
-        await redraw(year - 7 - i);
-        samples.push(await redraw(year));
-      }
-      medians[year] = median(samples);
-    }
+    const medians = await redrawMedians(page);
     process.stdout.write(`NF-1 tree redraw medians (ms): ${JSON.stringify(medians)}\n`);
     const states = await page
       .locator('g.tnode')
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-state')));
     expect(states.filter((s) => s === 'alive').length).toBeGreaterThan(0);
+    for (const ms of Object.values(medians)) expect(ms).toBeLessThan(500);
+  } finally {
+    await app.close();
+  }
+});
+
+test('NF-1 T-6 the tree redraws in under 500 ms inside the 5,000-entry bible, with all 1,200 characters', async () => {
+  test.setTimeout(300_000);
+  const { app, page } = await launch(server.getUri());
+  try {
+    await openTree(page, BIG_SLUG);
+    // Every character of the big bible is a person on the tree: the 200 in the generated
+    // families and the 1,000 others, each in a family (FT-4, people with no known parents).
+    await expect(page.locator('g.tnode')).toHaveCount(BIG.characters, { timeout: 60_000 });
+    const medians = await redrawMedians(page);
+    test.info().annotations.push({
+      type: 'NF-1 big bible tree redraw medians (ms)',
+      description: JSON.stringify(medians),
+    });
+    process.stdout.write(`NF-1 big bible tree redraw medians (ms): ${JSON.stringify(medians)}\n`);
     for (const ms of Object.values(medians)) expect(ms).toBeLessThan(500);
   } finally {
     await app.close();

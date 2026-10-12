@@ -1,3 +1,4 @@
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
@@ -17,12 +18,19 @@ import type { Rgba, Rule } from '../helpers/contrast';
  * 4.5:1 for text, 3:1 for large text (24px, or 18.66px bold) and for the
  * borders, strokes, and focus indicators that carry meaning (WCAG 1.4.11).
  */
-const R = join(import.meta.dirname, '../../src/renderer/src');
-const rules = readRules([
-  join(R, 'theme.css'),
-  join(R, 'app.css'),
-  join(R, 'workspace/claude.css'),
-]);
+const R = join(import.meta.dirname, '../../src/renderer');
+/** Every stylesheet under src/renderer, the token file first so its tokens resolve. */
+function cssFiles(dir: string): string[] {
+  return readdirSync(dir)
+    .sort()
+    .flatMap((n) => {
+      const p = join(dir, n);
+      return statSync(p).isDirectory() ? cssFiles(p) : n.endsWith('.css') ? [p] : [];
+    });
+}
+const THEME = join(R, 'src/theme.css');
+const CSS = [THEME, ...cssFiles(R).filter((f) => f !== THEME)];
+const rules = readRules(CSS);
 const THEMES = ['light', 'dark'] as const;
 
 /** The surfaces any element without its own background can sit on. */
@@ -218,6 +226,17 @@ function pairs(theme: (typeof THEMES)[number]): { pairs: Pair[]; unresolved: str
 }
 
 describe('NF-2 contrast of the token pairs in both themes', () => {
+  test('NF-2 every stylesheet under src/renderer is read, the alignment screen among them', () => {
+    expect(CSS.map((f) => f.slice(R.length + 1))).toEqual(
+      expect.arrayContaining([
+        'src/theme.css',
+        'src/app.css',
+        'src/workspace/claude.css',
+        'src/workspace/sessions/alignment.css',
+      ]),
+    );
+  });
+
   test('NF-2 the system dark preference and the dark setting use the same tokens', () => {
     const media = mediaDarkTokens(rules);
     const dark = themeTokens(rules, 'dark');

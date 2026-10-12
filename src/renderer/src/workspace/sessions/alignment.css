@@ -6,7 +6,7 @@
   padding: 10px 12px;
 }
 .al-finding[data-state='manuscriptWins'] {
-  border-color: var(--good);
+  border-color: var(--good-ink);
 }
 .al-finding[data-state='rewrite'] {
   border-color: var(--planned);

@@ -14,6 +14,14 @@ export interface BibleDump {
  * transaction so the dump is consistent even while a write lands (BK-1).
  */
 export async function dumpBible(handle: BibleHandle): Promise<BibleDump> {
+  // ARCH-6: a snapshot open read-only is already consistent and has no sessions to open.
+  if (handle.snapshotOf) {
+    const collections: CollectionDocs = {};
+    for (const name of await handle.collectionNames()) {
+      collections[name] = await handle.collection(name).find({}).toArray();
+    }
+    return { bible: { id: handle.id, ...handle.snapshotOf }, collections };
+  }
   const session = handle.client.startSession();
   try {
     let collections: CollectionDocs = {};

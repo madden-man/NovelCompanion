@@ -103,7 +103,11 @@ function readOnlyCollection(docs: () => Document[]): unknown {
 }
 
 /** A bible handle over a snapshot's documents: reads from memory, every write refused. */
-export function snapshotHandle(id: string, collections: CollectionDocs): BibleHandle {
+export function snapshotHandle(
+  id: string,
+  collections: CollectionDocs,
+  record?: BibleHandle['snapshotOf'],
+): BibleHandle {
   const refuse = () => {
     throw new ReadOnlyError();
   };
@@ -117,6 +121,7 @@ export function snapshotHandle(id: string, collections: CollectionDocs): BibleHa
     collection: ((c: string) =>
       readOnlyCollection(() => collections[c] ?? [])) as BibleHandle['collection'],
     collectionNames: async () => Object.keys(collections).sort(),
+    ...(record ? { snapshotOf: record } : {}),
   };
 }
 
@@ -179,10 +184,17 @@ export async function openSnapshotReadOnly(
   info: { bible: string; id: string },
 ): Promise<ReadOnlyBible> {
   const collections: CollectionDocs = {};
-  const handle = snapshotHandle(info.bible, collections);
+  // Filled in once the manifest is read, so an export of the snapshot names the bible.
+  const record = { name: info.bible, createdAt: '', schemaVersion: 0 };
+  const handle = snapshotHandle(info.bible, collections, record);
   const service = new SnapshotService(handle, root);
   const data = await service.read(info.id);
   Object.assign(collections, data.collections);
+  Object.assign(record, {
+    name: data.manifest.name ?? info.bible,
+    createdAt: data.manifest.createdAt ?? data.manifest.takenAt,
+    schemaVersion: data.manifest.schemaVersion,
+  });
   const model = new ReadModel();
   await model.load(handle);
   const search = new SearchIndex();

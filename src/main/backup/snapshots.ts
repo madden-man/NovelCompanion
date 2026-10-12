@@ -52,6 +52,8 @@ export class SnapshotService {
       format: 'novel-companion-snapshot',
       version: 1,
       bible: this.handle.id,
+      name: dump.bible.name,
+      createdAt: dump.bible.createdAt,
       takenAt: id,
       reason,
       label,

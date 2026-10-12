@@ -5,8 +5,10 @@ import type { Handler } from './validate';
 
 /**
  * Driver errors that mean MongoDB cannot be reached, as opposed to a refused
- * or invalid write: no server to select, a dropped socket, or a client that
- * was closed under the app.
+ * or invalid write: no server to select, a dropped socket, a connection pool
+ * closed or cleared, a wait for a connection or an operation that ran out of
+ * time, or a client or server that was closed under the app. These are the
+ * `name` values the mongodb driver (6.x) gives its error classes.
  */
 const CONNECTION_ERRORS = new Set([
   'MongoNetworkError',
@@ -15,7 +17,13 @@ const CONNECTION_ERRORS = new Set([
   'MongoTopologyClosedError',
   'MongoNotConnectedError',
   'MongoExpiredSessionError',
-  'PoolClosedError',
+  'MongoPoolClosedError',
+  'MongoPoolClearedError',
+  'PoolClearedOnNetworkError',
+  'MongoServerClosedError',
+  'MongoClientClosedError',
+  'MongoOperationTimeoutError',
+  'MongoWaitQueueTimeoutError',
 ]);
 
 /** ARCH-6: true when the error, or anything it was caused by, is a lost connection. */
