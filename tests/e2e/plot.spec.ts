@@ -151,7 +151,8 @@ test('PL-3 dragging a chapter within its part changes the reading order and no s
     .getByTestId('outline-label')
     .dragTo(grid().locator('[data-chapter="CH1"]').getByTestId('outline-label'));
   await expect.poll(() => readingOrder('CH2')).toBe(1);
-  expect(await readingOrder('CH1')).toBe(2);
+  // The two chapters are written one after the other; wait for the second too.
+  await expect.poll(() => readingOrder('CH1')).toBe(2);
   expect(
     JSON.stringify(
       (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.strands,
@@ -161,7 +162,7 @@ test('PL-3 dragging a chapter within its part changes the reading order and no s
   await expect(labels.first()).toContainText('Two Kitchens');
   await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
   await expect.poll(() => readingOrder('CH2')).toBe(2);
-  expect(await readingOrder('CH1')).toBe(1);
+  await expect.poll(() => readingOrder('CH1')).toBe(1);
 });
 
 test('PL-4 a chapter in one strand shows its place, and a chapter with none shows no places line', async () => {
