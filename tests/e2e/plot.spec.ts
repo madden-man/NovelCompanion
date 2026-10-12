@@ -770,7 +770,7 @@ test('KB-3 PL-3 beats on the chapter page move with Up and Down and by dragging,
   await label('CH2').click();
   const beats = inspector().getByTestId('chapter-beats');
   const titles = () => beats.locator('.beat-title').allTextContents();
-  expect(await titles()).toEqual(['The kitchen', 'The song']);
+  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
   await expect(beats.getByRole('button', { name: 'Move The kitchen up' })).toBeDisabled();
   await beats.getByRole('button', { name: 'Move The song up' }).click();
   await expect.poll(titles).toEqual(['The song', 'The kitchen']);
