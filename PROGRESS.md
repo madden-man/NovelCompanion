@@ -199,3 +199,14 @@ Built on branch `m6-claude`; awaiting the independent review. No test calls the 
 | IM-5 | pending | `tests/integration/claude.test.ts` "IM-5 AI-3 Claude reads an imported Word document and its proposals wait in the review queue" (chapter-03.docx picked through `import.pickFile`; two proposals pending with source `claude` and `sourceRef` `chapter-03.docx paragraph 4`; the proposal naming a missing entry is reported, not dropped; no entry written; the prompt numbers the paragraphs inside `<material>`), "AI-5 IM-5 an instruction inside an imported document..."; `tests/unit/claude.test.ts` "IM-5 the import proposal output schema becomes JSON Schema for structured output, with no delete"; `tests/e2e/claude.spec.ts` "IM-5 AI-6 a Word document in Import can be read by Claude, and its proposals go to the review queue". |
 
 Defaults recorded (DB-4): briefs and alignment checks `claude-opus-5-5`; chapter summaries, import proposals, and the question panel `claude-sonnet-5-5`. The Settings screen added here holds only the Claude section; the rest of ST-1 is M10.
+
+## Amendments A26 to A31 (2026-10-11)
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| A26 (FT-8 tree height, full screen) | pending | `tests/e2e/tree.spec.ts` FT-8 pan, zoom, collapse, fit pass with the new layout; full screen checked by hand 2026-10-11 (enter, Exit full screen, Escape leaves). No automated test for full screen yet. |
+| A27 (top bar) | pending | `tests/e2e/session.spec.ts` "TM-4 picking a chapter strand in Writing moves the story year to that strand year"; top bar Start session in "DB-2 DB-3 SB-7 Start session from the top bar ...". The story year slider has no dedicated test yet. |
+| A28 / SB-10 (Relevant to Session) | pending | `tests/e2e/session.spec.ts` "SB-1 SB-2 Relevant to Session opens from every screen and shows the selection for the chapter being written, primary strand first". |
+| A29 (High Level chapter plan) | open | Applied to the East Winds bible (see `docs/EASTWINDS-DATA.md`). The East Winds default import mapping still maps Plot v1 rows to chapters; not changed yet. |
+| A30 (M8, M10 with Tommy) | n/a | Process. |
+| A31 (Drive scopes, export folder) | open | Awaiting Tommy's confirmation of the export-folder reading. |
