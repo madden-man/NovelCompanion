@@ -142,7 +142,7 @@ test('DB-1 the app opens on the dashboard: last note, story time, position, open
   await expect(dash.getByTestId('dash-tasks')).toContainText('No open rewrite tasks.');
   await expect(dash.getByRole('button', { name: 'Start session' })).toBeVisible();
   await dash.getByRole('button', { name: 'Check alignment' }).click();
-  await expect(page.getByRole('heading', { name: 'Continuity findings', level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
   await rail(page, 'Dashboard').click();
   await expect(page.getByTestId('dashboard')).toBeVisible();
 });

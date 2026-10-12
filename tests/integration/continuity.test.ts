@@ -340,5 +340,31 @@ describe('CC-4 the three resolutions', () => {
     });
     expect(res).toMatchObject({ status: 'failed', error: { kind: 'network' }, found: 0 });
     expect(bible.model.all('findings').length).toBe(before);
+
+    // AI-1: Stop ends a streaming alignment run; it is saved as stopped and records nothing.
+    const waiting = new FakeClaudeClient([
+      {
+        name: 'waits',
+        feature: 'alignment',
+        steps: [{ text: '{"findings": [' }, { waitForAbort: true }],
+      },
+    ]);
+    const rt = new ClaudeRuntime({
+      client: waiting,
+      keys,
+      settings: new MemorySettingsStore(),
+      emit: () => undefined,
+    });
+    rt.acknowledge(bible.handle.id);
+    const h2 = claudeHandlers(() => bible, { runtime: rt, keys, catalog: new FakeModelCatalog() });
+    const id = runId();
+    const pending = runHandler('claude.alignment', h2['claude.alignment'], {
+      runId: id,
+      chapterId: 'CH5',
+    });
+    for (let i = 0; i < 100 && !rt.isActive(id); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(rt.stop(id)).toBe(true);
+    expect(await pending).toMatchObject({ status: 'stopped', found: 0 });
+    expect(bible.model.all('findings').length).toBe(before);
   });
 });

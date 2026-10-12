@@ -4,6 +4,7 @@ import { call } from '../../api';
 import { useStore } from '../data';
 import { formatMoment, useStoryTime } from '../storyTime';
 import { useYearView } from '../timeline/common';
+import { RewriteTasks } from './alignment';
 
 type Dashboard = Response<'dashboard.get'>;
 
@@ -117,21 +118,7 @@ export function DashboardView(props: {
       </div>
       <section className="panel stack tight" aria-label="Rewrite tasks" data-testid="dash-tasks">
         <span className="eyebrow">Rewrite tasks</span>
-        {d && d.rewriteTasks.length ? (
-          <ul className="plain-list stack tight">
-            {d.rewriteTasks.map((t) => (
-              <li key={t.id}>
-                <strong>
-                  {t.chapter ?? 'No chapter'}
-                  {t.lines ? `, ${t.lines}` : ''}:
-                </strong>{' '}
-                {t.quote && <q>{t.quote}</q>} {t.text}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="example-note">No open rewrite tasks.</p>
-        )}
+        <RewriteTasks chapterId={null} onOpenChapter={props.onOpenChapter} />
       </section>
       {d && d.recentLogs.length > 0 && (
         <section className="panel stack tight" aria-label="Session log">

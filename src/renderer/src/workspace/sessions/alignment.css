@@ -1,0 +1,45 @@
+/* M8 alignment check: findings, quoted lines, change set diffs, rewrite tasks. Tokens from theme.css, both themes. */
+.al-finding {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.al-finding[data-state='manuscriptWins'] {
+  border-color: var(--good);
+}
+.al-finding[data-state='rewrite'] {
+  border-color: var(--planned);
+}
+.al-quote {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.al-quote p {
+  margin: 2px 0;
+}
+.al-ln {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  margin-right: 6px;
+  color: var(--fg);
+}
+.al-cite {
+  font-family: var(--font-mono);
+}
+.al-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.al-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

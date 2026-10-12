@@ -10,6 +10,7 @@ import { RelevantView } from './sessions/relevant';
 import { StartSessionView } from './sessions/start';
 import { BriefView } from './sessions/brief';
 import { ManuscriptView } from './sessions/manuscript';
+import { AlignmentView } from './sessions/alignment';
 import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
@@ -62,6 +63,8 @@ type View =
   | { kind: 'dashboard' }
   /** Relevant to Session: the SB-2 selection for the chapter being written. */
   | { kind: 'relevant' }
+  /** CC-1: the alignment check, from Check alignment on the dashboard. */
+  | { kind: 'alignment' }
   /** DB-2: start a session for a section of plot. */
   | { kind: 'start' }
   /** SB-8: one saved brief. */
@@ -300,14 +303,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'dashboard' && (
                 <DashboardView
                   onStartSession={() => setView({ kind: 'start' })}
-                  onCheckAlignment={() =>
-                    setView({
-                      kind: 'section',
-                      collection: 'findings',
-                      selected: null,
-                      creating: false,
-                    })
-                  }
+                  onCheckAlignment={() => setView({ kind: 'alignment' })}
                   onOpenQuestions={() =>
                     setView({
                       kind: 'section',
@@ -329,6 +325,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 />
               )}
               {view.kind === 'relevant' && <RelevantView onOpen={open} />}
+              {view.kind === 'alignment' && <AlignmentView onOpen={open} />}
               {view.kind === 'start' && (
                 <StartSessionView
                   onOpen={open}
