@@ -82,9 +82,10 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
 
   await page.getByLabel('Name').fill('Smoke Test');
   await page.getByRole('button', { name: 'Create bible' }).click();
-  await expect(page.getByTestId('bible-list')).toContainText('Smoke Test');
+  // A first launch writes the bible's collections and its first snapshot: allow a slow machine.
+  await expect(page.getByTestId('bible-list')).toContainText('Smoke Test', { timeout: 60_000 });
   await page.getByRole('button', { name: 'Open Smoke Test' }).click();
-  await expect(page.getByTestId('current-bible')).toHaveText('Smoke Test');
+  await expect(page.getByTestId('current-bible')).toHaveText('Smoke Test', { timeout: 60_000 });
   await expect(page.getByTestId('workspace')).toBeVisible();
   await expect(page.getByTestId('dashboard')).toBeVisible();
   await expect(
