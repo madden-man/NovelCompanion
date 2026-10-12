@@ -358,7 +358,10 @@ export function registerHandlers(): void {
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());
-  handle('bible.create', guard('bible.create', ({ slug, name }) => bibleCreate(slug, name)));
+  handle(
+    'bible.create',
+    guard('bible.create', ({ slug, name }) => bibleCreate(slug, name)),
+  );
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
   handle('tree.export', (req) => exportTree(req));
@@ -444,7 +447,11 @@ export function applyStoredAppearance(): void {
 
 /** ST-1 and ARCH-6: the connection, the connection string, and appearance. */
 function registerAppHandlers(): void {
-  handle('connection.status', () => conn().status());
+  handle('connection.status', async () => {
+    // The first question at launch waits for the first attempt, so the state is never a guess.
+    if (!conn().tried) await conn().getStore();
+    return conn().status();
+  });
   handle('connection.retry', () => retryConnection());
   handle('connection.openSnapshot', () => openLatestSnapshot());
   handle('mongo.status', () => conn().mongoSettings());

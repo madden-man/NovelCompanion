@@ -11,7 +11,8 @@ import type { SnapshotInfo } from '../shared/domain/snapshots';
 export const UNREACHABLE =
   'The app could not reach the MongoDB deployment. Check your network connection, then click Try again.';
 const WITH_SNAPSHOT = ' Until then you can open the most recent local snapshot read-only.';
-const NO_SNAPSHOT = ' There is no local snapshot on this Mac yet, so there is nothing to open read-only.';
+const NO_SNAPSHOT =
+  ' There is no local snapshot on this Mac yet, so there is nothing to open read-only.';
 
 /** Server types a write can go to. With none of these in the topology, writes cannot land. */
 const WRITABLE = new Set(['RSPrimary', 'Standalone', 'Mongos', 'LoadBalancer']);
@@ -58,8 +59,28 @@ export class ConnectionManager {
   }
 
   /** The open store, connecting first when there is none. */
-  async getStore(): Promise<{ ok: true; store: Store } | { ok: false; message: string }> {
-    if (this.store) return { ok: true, store: this.store };
+  getStore(): Promise<{ ok: true; store: Store } | { ok: false; message: string }> {
+    if (this.store) return Promise.resolve({ ok: true, store: this.store });
+    // One attempt at a time: callers that arrive while it runs share its outcome.
+    this.pending ??= this.connectOnce().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
+  }
+
+  /** True once a connection has been tried (or made), so the state is known. */
+  get tried(): boolean {
+    return this.attempted;
+  }
+
+  private pending: Promise<{ ok: true; store: Store } | { ok: false; message: string }> | null =
+    null;
+  private attempted = false;
+
+  private async connectOnce(): Promise<
+    { ok: true; store: Store } | { ok: false; message: string }
+  > {
+    this.attempted = true;
     const uri = this.deps.uris.get();
     if (!uri) {
       this.setState('unavailable', this.deps.missingMessage);
@@ -140,7 +161,11 @@ export class ConnectionManager {
   /** ST-1: the stored connection string, masked. */
   mongoSettings(): MongoSettingsWire {
     const uri = this.deps.uris.get();
-    return { set: uri !== null, masked: uri ? maskMongoUri(uri) : null, where: this.deps.uris.where };
+    return {
+      set: uri !== null,
+      masked: uri ? maskMongoUri(uri) : null,
+      where: this.deps.uris.where,
+    };
   }
 
   /**

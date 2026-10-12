@@ -97,9 +97,13 @@ describe('ARCH-6 the connection drops mid-session', () => {
     expect(tags?.items.some((i) => i.label === 'Ghost') ?? false).toBe(false);
 
     // And MongoDB holds nothing of it.
-    const doc = await store.db.collection(`${handle.id}.characters`).findOne({ _id: 'H1' });
+    const doc = await store.db
+      .collection<{ _id: string; [k: string]: unknown }>(`${handle.id}.characters`)
+      .findOne({ _id: 'H1' });
     expect(doc?.birthplace).toEqual(before.birthplace);
-    const stored = await store.db.collection(`${handle.id}.lists`).findOne({ _id: 'tags' });
+    const stored = await store.db
+      .collection<{ _id: string; [k: string]: unknown }>(`${handle.id}.lists`)
+      .findOne({ _id: 'tags' });
     expect(JSON.stringify(stored ?? {})).not.toContain('Ghost');
   });
 
@@ -223,7 +227,9 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     for (const [f, text] of Object.entries(snapshotFiles)) {
       expect(await readFile(join(dir, f), 'utf8')).toBe(text);
     }
-    const live = await store.db.collection(`${slug}.characters`).findOne({ _id: 'H1' });
+    const live = await store.db
+      .collection<{ _id: string; [k: string]: unknown }>(`${slug}.characters`)
+      .findOne({ _id: 'H1' });
     expect(live?.birthplace).toBe('Before the snapshot');
   });
 
