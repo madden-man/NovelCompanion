@@ -10,6 +10,7 @@ import { useStrandOptions } from '../timeline/StoryTimeDialog';
 import { useUndo } from '../undo';
 import { SelectionBody } from './common';
 import type { OpenEntry } from './common';
+import { useClaudeRun } from './claudeRun';
 import { useSelection } from './relevant';
 import type { BriefInput } from './relevant';
 
@@ -30,7 +31,7 @@ const KINDS: { kind: Kind; label: string }[] = [
  */
 export function StartSessionView(props: {
   onOpen: OpenEntry;
-  onStarted: (briefId: string) => void;
+  onStarted: (briefId: string, note: string | null) => void;
 }) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
@@ -83,20 +84,23 @@ export function StartSessionView(props: {
 
   const { result, error: selError } = useSelection(input);
 
-  const start = async () => {
+  const claude = useClaudeRun('the brief');
+  const start = () => {
     if (!input) return;
-    setBusy(true);
     setError(null);
-    try {
-      await story.flush();
-      const r = await call('session.start', { input, add: [], remove: [] });
-      undo.record(createCommand('briefs', r.brief._id, entryTitle(r.brief)));
-      undo.record(createCommand('sessionLogs', r.log._id, entryTitle(r.log)));
-      props.onStarted(r.brief._id);
-    } catch (e) {
-      setError(plainError(e));
-      setBusy(false);
-    }
+    claude.begin(settings?.claudeAvailable === true, async (runId) => {
+      setBusy(true);
+      try {
+        await story.flush();
+        const r = await call('session.start', { input, add: [], remove: [], runId });
+        undo.record(createCommand('briefs', r.brief._id, entryTitle(r.brief)));
+        undo.record(createCommand('sessionLogs', r.log._id, entryTitle(r.log)));
+        props.onStarted(r.brief._id, r.note);
+      } catch (e) {
+        setError(plainError(e));
+        setBusy(false);
+      }
+    });
   };
 
   return (
@@ -196,8 +200,8 @@ export function StartSessionView(props: {
           <button
             type="button"
             className="btn primary"
-            disabled={!input || busy}
-            onClick={() => void start()}
+            disabled={!input || busy || claude.disclosure !== null}
+            onClick={start}
             data-testid="start-session-go"
           >
             {settings?.claudeAvailable ? `Start session with ${settings.model}` : 'Start session'}
@@ -207,8 +211,9 @@ export function StartSessionView(props: {
               Claude is not available, so the brief will be the selected entries with no synthesis.
             </span>
           )}
-          {busy && <span role="status">Writing the brief.</span>}
+          {claude.progress ?? (busy && <span role="status">Writing the brief.</span>)}
         </div>
+        {claude.disclosure}
         {(error ?? selError) && (
           <p className="callout crit" role="alert">
             {error ?? selError}

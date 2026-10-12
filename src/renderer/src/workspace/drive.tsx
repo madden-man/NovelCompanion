@@ -228,7 +228,7 @@ export function DriveLaunchNotice(props: { onReview: () => void }) {
   if (failed) {
     return (
       <section
-        className="panel stack tight launch-panel"
+        className="panel launch-panel"
         aria-label="Google Drive changes"
         data-testid="drive-launch-notice"
       >
@@ -260,7 +260,7 @@ export function DriveLaunchNotice(props: { onReview: () => void }) {
   if (!pending && !check.missingFolders.length) return null;
   return (
     <section
-      className="panel stack tight launch-panel"
+      className="panel launch-panel"
       aria-label="Google Drive changes"
       data-testid="drive-launch-notice"
     >
@@ -508,7 +508,16 @@ function LinkedFiles(props: { onReview: (f: Opened) => void }) {
   );
 }
 
-function DriveBrowser(props: { linked: Set<string>; onLinked: (links: Link[]) => void }) {
+/**
+ * GD-2: browse My Drive, Shared with me, or search by name. By default it
+ * links the chosen files and folders; with `pick` it chooses one document
+ * instead (MS-1: a chapter from a Google Doc), and links nothing.
+ */
+function DriveBrowser(props: {
+  linked: Set<string>;
+  onLinked?: (links: Link[]) => void;
+  pick?: { onPick(item: { id: string; name: string }): void; onCancel(): void };
+}) {
   const [place, setPlace] = useState<'myDrive' | 'shared'>('myDrive');
   const [trail, setTrail] = useState<{ id: string; name: string }[]>([]);
   const [search, setSearch] = useState('');
@@ -625,17 +634,27 @@ function DriveBrowser(props: { linked: Set<string>; onLinked: (links: Link[]) =>
       ) : (
         <ul className="stack tight" data-testid="drive-items">
           {data.items.map((item) => {
-            const linkable = item.kind !== 'other';
+            const linkable = props.pick ? item.kind === 'document' : item.kind !== 'other';
             const already = props.linked.has(item.id);
             return (
               <li key={item.id} className="row" data-testid="drive-item">
                 <label className="row tight">
-                  <input
-                    type="checkbox"
-                    disabled={!linkable || already}
-                    checked={already || chosen.has(item.id)}
-                    onChange={() => toggle(item.id)}
-                  />
+                  {props.pick ? (
+                    <input
+                      type="radio"
+                      name="drive-pick"
+                      disabled={!linkable}
+                      checked={chosen.has(item.id)}
+                      onChange={() => setChosen(new Set([item.id]))}
+                    />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      disabled={!linkable || already}
+                      checked={already || chosen.has(item.id)}
+                      onChange={() => toggle(item.id)}
+                    />
+                  )}
                   {item.name}
                 </label>
                 <span className="chip">{KIND_LABEL[item.kind]}</span>
@@ -657,31 +676,86 @@ function DriveBrowser(props: { linked: Set<string>; onLinked: (links: Link[]) =>
           })}
         </ul>
       )}
-      <div className="row">
-        <button
-          type="button"
-          className="btn primary"
-          disabled={busy || chosen.size === 0}
-          data-testid="drive-link-selected"
-          onClick={() => {
-            setBusy(true);
-            setError(null);
-            call('drive.link', { ids: [...chosen] })
-              .then((r) => {
-                setChosen(new Set());
-                props.onLinked(r.links);
-              })
-              .catch((e: unknown) => setError(plainError(e)))
-              .finally(() => setBusy(false));
-          }}
-        >
-          Link {chosen.size === 1 ? 'the chosen item' : `${chosen.size} chosen items`}
-        </button>
-      </div>
+      {props.pick ? (
+        <div className="row">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={chosen.size !== 1}
+            data-testid="drive-pick-selected"
+            onClick={() => {
+              const item = data?.items.find((i) => chosen.has(i.id));
+              if (item) props.pick?.onPick({ id: item.id, name: item.name });
+            }}
+          >
+            Read the chosen document
+          </button>
+          <button type="button" className="btn" onClick={props.pick.onCancel}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="row">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy || chosen.size === 0}
+            data-testid="drive-link-selected"
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              call('drive.link', { ids: [...chosen] })
+                .then((r) => {
+                  setChosen(new Set());
+                  props.onLinked?.(r.links);
+                })
+                .catch((e: unknown) => setError(plainError(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Link {chosen.size === 1 ? 'the chosen item' : `${chosen.size} chosen items`}
+          </button>
+        </div>
+      )}
       <p className="example-note">
-        A linked folder covers every Word, Excel, Google Docs, and Google Sheets file inside it,
-        including files added later.
+        {props.pick
+          ? 'Choose a Google Doc or a Word file. The app reads it and never changes it.'
+          : 'A linked folder covers every Word, Excel, Google Docs, and Google Sheets file inside it, including files added later.'}
       </p>
+    </div>
+  );
+}
+
+/**
+ * MS-1: choose a chapter's Google Doc with the Drive browser. Needs a Drive
+ * connection; without one it says where to connect.
+ */
+export function DriveDocumentPicker(props: {
+  onPick(item: { id: string; name: string }): void;
+  onCancel(): void;
+  onOpenSettings(): void;
+}) {
+  const { status } = useDriveStatus();
+  if (!status) return <p aria-live="polite">Checking the Google Drive connection.</p>;
+  if (!status.connected) {
+    return (
+      <div className="callout stack tight" data-testid="drive-pick-unconnected">
+        <span>Connect Google Drive in Settings to read a chapter from a Google Doc.</span>
+        <div className="row tight">
+          <button type="button" className="btn small" onClick={props.onOpenSettings}>
+            Open settings
+          </button>
+          <button type="button" className="btn small" onClick={props.onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="sunken stack" data-testid="drive-picker">
+      <span className="eyebrow">Choose the chapter&apos;s Google Doc</span>
+      <DriveBrowser linked={new Set()} pick={{ onPick: props.onPick, onCancel: props.onCancel }} />
     </div>
   );
 }

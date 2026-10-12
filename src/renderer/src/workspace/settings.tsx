@@ -5,6 +5,7 @@ import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { Disclosure, useClaudeStatus } from './claude';
 import { DriveSettingsSection } from './drive';
+import { BriefSettings } from './sessions/relevant';
 
 type Models = Response<'claude.models'>;
 
@@ -12,7 +13,8 @@ type Models = Response<'claude.models'>;
  * Settings (ST-1). This milestone adds the Claude section: the Anthropic API
  * key, kept in the macOS keychain and never shown in full (ARCH-4, ARCH-5),
  * the model per feature from the live models list (DB-4), and what Claude
- * sends to Anthropic (AI-6). M9 adds the Google Drive connection below it;
+ * sends to Anthropic (AI-6), and the brief window and size budget (SB-2,
+ * SB-6, kept in the bible). M9 adds the Google Drive connection below it;
  * the other settings arrive in M10.
  */
 export function SettingsView() {
@@ -148,6 +150,7 @@ function ClaudeSettings() {
           />
         ))}
       </div>
+      <BriefSettings variant="panel" key={status.models.briefs} />
       <Disclosure confirmedAt={status.acknowledgedAt} />
     </div>
   );

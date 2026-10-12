@@ -163,6 +163,68 @@ test('GD-4 export asks for drive.file, makes a folder, and writes Markdown by se
   );
 });
 
+test('MS-1 MS-5 a chapter is read from a Google Doc chosen in the Drive browser, keeping italics, and Drive is never written', async () => {
+  await invoke('entry.createMany', {
+    items: [
+      {
+        collection: 'books',
+        data: { _id: 'BKW', title: 'Tide Lines', status: 'planned', number: 1 },
+      },
+      {
+        collection: 'parts',
+        data: { _id: 'PTW', title: 'High Water', status: 'planned', bookId: 'BKW', number: 1 },
+      },
+      {
+        collection: 'chapters',
+        data: {
+          _id: 'CHW',
+          title: 'Wedding Weather',
+          status: 'planned',
+          partId: 'PTW',
+          readingOrder: 3,
+          strands: [
+            {
+              id: 'CHW-present',
+              label: 'present',
+              startYear: 2031,
+              endYear: null,
+              primary: true,
+              povCharacterId: null,
+              characterIds: [],
+              placeIds: [],
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const writesBefore = fake.calls.filter((c) => /^(PATCH|PUT|DELETE) /.test(c)).length;
+  const uploadsBefore = fake.uploads.length;
+  await rail(page, 'Manuscript').click();
+  const view = page.getByTestId('manuscript-view');
+  await view.locator('[data-chapter="CHW"]').click();
+  const ch = view.getByTestId('ms-chapter');
+  await ch.getByRole('button', { name: 'Import from a Google Doc' }).click();
+  const browser = ch.getByTestId('drive-picker').getByTestId('drive-browser');
+  await browser.getByRole('button', { name: 'Open Novel', exact: true }).click();
+  await expect(browser.getByRole('radio', { name: 'Map.pdf' })).toBeDisabled();
+  await browser.getByRole('radio', { name: 'Chapter 3' }).check();
+  await browser.getByTestId('drive-pick-selected').click();
+  const compare = ch.getByTestId('ms-compare');
+  await expect(compare).toContainText('Chapter 3 (Google Doc)');
+  await compare.getByRole('button', { name: 'Apply' }).click();
+  await expect(ch.getByTestId('ms-source')).toHaveText('Source: Chapter 3 (Google Doc)');
+  const stored = (await invoke('entry.get', { collection: 'chapters', id: 'CHW' })).entry;
+  expect(stored.manuscriptSource).toBe('gdoc:docCh3');
+  expect(stored.manuscriptText).toContain('<em>lucky</em>');
+  // MS-4: reading the linked Doc again with no change reports none.
+  await ch.getByRole('button', { name: 'Read the linked file again' }).click();
+  await expect(compare).toContainText('no change from the text in the bible');
+  // MS-5: nothing was uploaded, changed, or deleted in Drive.
+  expect(fake.calls.filter((c) => /^(PATCH|PUT|DELETE) /.test(c)).length).toBe(writesBefore);
+  expect(fake.uploads.length).toBe(uploadsBefore);
+});
+
 test('GD-5 disconnecting removes the tokens and the app keeps working without Drive', async () => {
   await rail(page, 'Settings').click();
   const conn = settings().getByTestId('drive-connection');
