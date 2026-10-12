@@ -326,8 +326,7 @@ describe('CC-3 checking what Claude returns', () => {
     const data = briefData(false);
     const withFinding = {
       ...data,
-      all: (c: string) =>
-        c === 'findings' ? [{ _id: 'FND1', title: 'f' }] : data.all(c),
+      all: (c: string) => (c === 'findings' ? [{ _id: 'FND1', title: 'f' }] : data.all(c)),
     } as typeof data;
     const out = AlignmentOutput.parse({ findings: [{ ...base, citedIds: ['FND1'] }] });
     const r = checkAlignment(out, { chapterId: 'CH5', lines, data: withFinding });
@@ -485,9 +484,7 @@ describe('CC-4 dismissals and re-runs', () => {
     const data = briefData(false);
     const quote = 'Her mother was seventy and still refused to let anyone else light them.';
     const dis = dismissalFor(data, { kind: 'alignment', chapterId: 'CH5', entryIds: ['H1'] });
-    const stored = [
-      finding({ check: 'age', quote, dismissal: dis, key: 'alignment:CH5:age:H1' }),
-    ];
+    const stored = [finding({ check: 'age', quote, dismissal: dis, key: 'alignment:CH5:age:H1' })];
     const fresh = (over: Partial<FreshFinding> = {}): FreshFinding => ({
       ...fromAlignment(
         {

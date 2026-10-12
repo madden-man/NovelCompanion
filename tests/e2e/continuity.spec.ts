@@ -109,6 +109,8 @@ test('CC-1 CC-2 CC-3 CC-5 Check alignment from the dashboard finds S1 to S3 in c
   await expect(view().getByTestId('alignment-rejected')).toContainText(
     'It cites Z9, which is not in the bible.',
   );
+  // AI-2: the entries Claude was given are listed, each one click from its page.
+  await expect(view().getByTestId('claude-entries')).toContainText('Margaret Hale');
 });
 
 test('CC-4 ED-3 Manuscript wins shows the change set as a diff, applies it, and undoes', async () => {
@@ -186,4 +188,35 @@ test('CC-4 Dismiss hides a finding, and it stays hidden when the check runs agai
   await dismiss.focus();
   await page.keyboard.press('Enter');
   await expect(finding('fact-acted-on-before-learned')).toHaveCount(0);
+});
+
+test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records no new findings', async () => {
+  await rail(page, 'Dashboard').click();
+  await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
+  const all = view().getByTestId('alignment-findings').getByTestId('finding');
+  const before = await all.count();
+  // A marker in chapter 8's text selects the recording that waits for Stop.
+  const ch8 = (await invoke('entry.get', { collection: 'chapters', id: 'CH8' })).entry;
+  const text = String(ch8.manuscriptText);
+  await invoke('entry.update', {
+    collection: 'chapters',
+    id: 'CH8',
+    patch: { manuscriptText: `${text}<p>E2E-HOLD-UNTIL-STOPPED</p>` },
+  });
+  await view().getByTestId('alignment-scope').selectOption('CH8');
+  await view().getByTestId('alignment-run').click();
+  await expect(view().getByTestId('alignment-status')).toContainText('Claude is reading', {
+    timeout: 30_000,
+  });
+  await view().getByTestId('alignment-stop').click();
+  await expect(view().getByTestId('alignment-status')).toContainText('Stopped', {
+    timeout: 30_000,
+  });
+  await expect(view().getByTestId('alignment-stop')).toBeDisabled();
+  await expect(all).toHaveCount(before);
+  await invoke('entry.update', {
+    collection: 'chapters',
+    id: 'CH8',
+    patch: { manuscriptText: text },
+  });
 });

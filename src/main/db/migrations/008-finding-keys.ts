@@ -19,7 +19,7 @@ export const findingKeys: Migration = {
     const at = new Date().toISOString();
     await bible.collection('findings').updateMany(
       {
-        deletedAt: { $in: [null, undefined] },
+        deletedAt: null,
         $or: [{ key: { $exists: false } }, { key: null }, { key: '' }],
       } as never,
       { $set: { deletedAt: at, modifiedAt: at } } as never,

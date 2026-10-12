@@ -1,3 +1,5 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { Store } from '../../src/main/db';
@@ -13,6 +15,9 @@ import { MemoryKeyStore } from '../../src/main/claude/keys';
 import { MemorySettingsStore } from '../../src/main/claude/settings';
 import { RunStore } from '../../src/main/claude/store';
 import { PROSE_PROHIBITION } from '../../src/main/claude/prompts';
+import type { ClaudeRun } from '../../src/shared/claude';
+import { recordAlignment } from '../../src/main/continuity';
+import { textHash } from '../../src/shared/domain/continuity/lines';
 import { resolutionCommand } from '../../src/shared/domain/continuity/findings';
 import { UndoManager } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
@@ -32,12 +37,16 @@ let bible: OpenBible;
 let invoke: Invoke;
 let fake: FakeClaudeClient;
 let claude: <C extends ClaudeChannel>(channel: C, req: Request<C>) => Promise<Response<C>>;
+let snapshotRoot: string;
 let n = 0;
 const runId = () => `align${Date.now()}${n++}`;
 
 beforeAll(async () => {
   store = await localStore();
-  bible = await openBibleSession(store, (await loadBriefFixture(store, freshSlug('m8'))).id);
+  snapshotRoot = await mkdtemp(join(tmpdir(), 'nc-m8-'));
+  bible = await openBibleSession(store, (await loadBriefFixture(store, freshSlug('m8'))).id, {
+    snapshotRoot,
+  });
   invoke = ipcFor(() => bible);
   fake = new FakeClaudeClient(RECORDINGS);
   const keys = new MemoryKeyStore('sk-ant-api03-integration-test-key-0123456789abcdef');
@@ -58,6 +67,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await store.close();
+  await rm(snapshotRoot, { recursive: true, force: true });
 });
 
 /** What the dashboard and the alignment screen do: structural checks, then Claude on each chapter with text. */
@@ -171,7 +181,9 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
     expect(req.system).toContain(PROSE_PROHIBITION);
     expect(req.tools).toEqual([]);
     // AI-5: the plot and the selected entries are material too, never loose in the prompt.
-    const blocks = [...req.prompt.matchAll(/<material source="([^"]*)">\n([\s\S]*?)\n<\/material>/g)];
+    const blocks = [
+      ...req.prompt.matchAll(/<material source="([^"]*)">\n([\s\S]*?)\n<\/material>/g),
+    ];
     expect(blocks.map((b) => b[1])).toEqual([
       'Stored plot for Chapter 6: The Letter [CH6]',
       'Selected entries for Chapter 6: The Letter [CH6]',
@@ -210,13 +222,29 @@ describe('CC-4 the three resolutions', () => {
   test('CC-4 ED-3 Manuscript wins applies the whole change set after a snapshot in one transaction, with revisions, and undoes from the stack', async () => {
     const p1 = byCheck(await open('CH5'), 'CH5', 'age');
     const snapshots: string[] = [];
+    const takeSnapshot = bible.repo.beforeBulk;
     bible.repo.beforeBulk = async (reason) => {
       snapshots.push(
         `${reason}:${String(bible.model.get('characters', 'H1')!.birth && (bible.model.get('characters', 'H1')!.birth as { year: number }).year)}`,
       );
+      await takeSnapshot?.(reason);
     };
-    const r = await invoke('continuity.resolve', { id: p1.id, action: 'manuscriptWins' });
-    bible.repo.beforeBulk = null;
+    const r = await invoke('continuity.resolve', {
+      id: p1.id,
+      action: 'manuscriptWins',
+      shown: p1.shown,
+    });
+    bible.repo.beforeBulk = takeSnapshot;
+    // A real snapshot record exists, taken before the write: it still holds the old birth year.
+    const taken = (await bible.snapshots!.list()).find(
+      (x) => x.reason === 'bulk' && x.label === 'manuscript wins',
+    )!;
+    expect(taken).toBeTruthy();
+    const dumped = JSON.parse(
+      await readFile(join(snapshotRoot, bible.handle.id, taken.id, 'characters.json'), 'utf8'),
+    ) as { _id: string; birth?: { year: number } }[];
+    expect(dumped.find((c) => c._id === 'H1')!.birth).toEqual({ year: 1958 });
+    expect(r.warnings.filter((w) => w.code === 'death-before-birth')).toEqual([]);
     // The snapshot is taken before anything is written.
     expect(snapshots).toEqual(['manuscript wins:1958']);
     expect(bible.model.get('characters', 'H1')!.birth).toEqual({ year: 1970 });
@@ -377,5 +405,106 @@ describe('CC-4 the three resolutions', () => {
     expect(rt.stop(id)).toBe(true);
     expect(await pending).toMatchObject({ status: 'stopped', found: 0 });
     expect(bible.model.all('findings').length).toBe(before);
+  });
+});
+
+describe('CC-3 CC-4 ED-10 recording and resolving guards', () => {
+  const synthetic = (chapterId: string, hash: string, findings: unknown[]): ClaudeRun =>
+    ({
+      turns: [{ id: 'synthetic', status: 'done' }],
+      output: { findings },
+      input: { chapterId, textHash: hash },
+    }) as unknown as ClaudeRun;
+  const dateFinding = {
+    kind: 'date',
+    lineStart: 1,
+    lineEnd: 1,
+    quote: 'Her mother was seventy',
+    citedIds: ['H1'],
+    explanation: 'The text and the bible disagree about when Margaret was born.',
+    mustChange: 'The stated age must match the bible.',
+    changeSet: [{ collection: 'characters', id: 'H1', field: 'birth', value: '{"year": 2100}' }],
+  };
+  const textOf = () => String(bible.model.get('chapters', 'CH5')!.manuscriptText);
+
+  test('CC-3 a run records nothing, and says why, when the chapter text changed after Claude was sent it', async () => {
+    const before = bible.model.all('findings').length;
+    const stale = await recordAlignment(
+      bible,
+      'CH5',
+      synthetic('CH5', textHash(`${textOf()} changed`), [dateFinding]),
+      'synthetic',
+    );
+    expect(stale).toMatchObject({ found: 0, hidden: 0, rejected: [] });
+    expect(stale.skipped).toMatch(/chapter text changed while Claude was reading/);
+    expect(bible.model.all('findings').length).toBe(before);
+    // A run with no hash at all is treated the same way.
+    const unhashed = await recordAlignment(
+      bible,
+      'CH5',
+      { ...synthetic('CH5', '', [dateFinding]), input: { chapterId: 'CH5' } } as ClaudeRun,
+      'synthetic',
+    );
+    expect(unhashed.skipped).not.toBeNull();
+    const ok = await recordAlignment(
+      bible,
+      'CH5',
+      synthetic('CH5', textHash(textOf()), [dateFinding]),
+      'synthetic',
+    );
+    expect(ok).toMatchObject({ found: 1, skipped: null });
+  });
+
+  test('CC-4 ED-3 ED-10 a stale diff is refused, Manuscript wins returns the entry warnings, and a second apply or a wrong-state action is refused', async () => {
+    const f = byCheck(await open('CH5'), 'CH5', 'date');
+    // The shown revision is behind an edit made since: nothing is applied.
+    const oldShown = f.shown;
+    await invoke('entry.update', {
+      collection: 'characters',
+      id: 'H1',
+      patch: { backstory: 'Edited after the diff was shown.' },
+    });
+    await expect(
+      invoke('continuity.resolve', { id: f.id, action: 'manuscriptWins', shown: oldShown }),
+    ).rejects.toThrow(/changed after this comparison was shown, so nothing was applied/);
+    expect(bible.model.get('characters', 'H1')!.birth).not.toEqual({ year: 2100 });
+    expect(bible.model.get('findings', f.id)!.state).toBe('open');
+
+    const fresh = byCheck(await open('CH5'), 'CH5', 'date');
+    const r = await invoke('continuity.resolve', {
+      id: f.id,
+      action: 'manuscriptWins',
+      shown: fresh.shown,
+    });
+    // ED-10: Margaret dies in 2041, so a birth in 2100 carries the warning the editor would show.
+    expect(r.warnings).toContainEqual(
+      expect.objectContaining({ id: 'H1', entry: 'Margaret Hale', code: 'death-before-birth' }),
+    );
+    // Applied once: a second apply, a dismiss, a rewrite, and a Done are all refused.
+    for (const action of ['manuscriptWins', 'dismiss', 'rewrite', 'done'] as const) {
+      await expect(invoke('continuity.resolve', { id: f.id, action })).rejects.toThrow(
+        /already updated|not a rewrite task/,
+      );
+    }
+    expect(bible.model.get('findings', f.id)!.state).toBe('manuscriptWins');
+  });
+
+  test('CC-4 Done only works on a rewrite task, and a dismissed or rewrite finding cannot be applied', async () => {
+    const p2 = byCheck(await open('CH7'), 'CH7', 'place');
+    expect(p2.state).toBe('rewrite');
+    await expect(
+      invoke('continuity.resolve', { id: p2.id, action: 'manuscriptWins' }),
+    ).rejects.toThrow(/already a rewrite task/);
+    await expect(invoke('continuity.resolve', { id: p2.id, action: 'rewrite' })).rejects.toThrow(
+      /already a rewrite task/,
+    );
+    const done = await invoke('continuity.resolve', { id: p2.id, action: 'done' });
+    expect(done.finding.state).toBe('dismissed');
+    await expect(invoke('continuity.resolve', { id: p2.id, action: 'done' })).rejects.toThrow(
+      /not a rewrite task/,
+    );
+    await expect(
+      invoke('continuity.resolve', { id: p2.id, action: 'manuscriptWins' }),
+    ).rejects.toThrow(/already dismissed/);
   });
 });

@@ -6,7 +6,16 @@ import { isEntryCollection } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { resolutionCommand } from '../../../../shared/domain/continuity/findings';
 import { call, plainError } from '../../api';
-import { ClaudeErrorNote, Disclosure, newRunId, useRunStream, watchRun } from '../claude';
+import { WriteFieldset, useWriteGuard } from '../../connection';
+import type { EntryRefWire } from '../../../../shared/claude';
+import {
+  ClaudeErrorNote,
+  Disclosure,
+  EntriesRead,
+  newRunId,
+  useRunStream,
+  watchRun,
+} from '../claude';
 import { useEntries, useStore } from '../data';
 import { useUndo } from '../undo';
 import type { OpenEntry } from './common';
@@ -71,11 +80,20 @@ function useAlignmentRun() {
     null,
   );
   const [rejected, setRejected] = useState<Rejected>([]);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [given, setGiven] = useState<EntryRefWire[]>([]);
   const [error, setError] = useState<RunError | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [asking, setAsking] = useState<((ok: boolean) => void) | null>(null);
   const stopped = useRef(false);
-  const live = useRunStream(current?.runId ?? null);
+  // AI-2: every entry Claude was given, across the chapters of this run.
+  const live = useRunStream(current?.runId ?? null, (finished) => {
+    setGiven((prior) => {
+      const have = new Set(prior.map((e) => `${e.collection}:${e.id}`));
+      const more = finished.entries.filter((e) => !have.has(`${e.collection}:${e.id}`));
+      return more.length ? [...prior, ...more] : prior;
+    });
+  });
 
   const confirmed = async (): Promise<boolean> => {
     const status = await call('claude.status', {});
@@ -88,6 +106,8 @@ function useAlignmentRun() {
     setBusy(true);
     setDone(null);
     setRejected([]);
+    setSkipped([]);
+    setGiven([]);
     setError(null);
     setFailure(null);
     let found = 0;
@@ -109,6 +129,7 @@ function useAlignmentRun() {
           });
           const r = await call('claude.alignment', { runId, chapterId: c.id });
           setRejected((prior) => [...prior, ...r.rejected]);
+          if (r.skipped) setSkipped((prior) => [...prior, r.skipped as string]);
           found += r.found;
           if (r.status === 'done') read++;
           if (r.status === 'stopped') stopped.current = true;
@@ -147,12 +168,27 @@ function useAlignmentRun() {
     />
   ) : null;
 
-  return { run, stop, busy, structural, current, live, done, rejected, error, failure, disclosure };
+  return {
+    run,
+    stop,
+    busy,
+    structural,
+    current,
+    live,
+    done,
+    rejected,
+    skipped,
+    given,
+    error,
+    failure,
+    disclosure,
+  };
 }
 
 /** CC-1: Check alignment for one chapter or the whole manuscript, with the model, progress, and Stop. */
 function AlignmentRunner(props: { scope: Scope; label: string }) {
   const r = useAlignmentRun();
+  const guard = useWriteGuard();
   const [model, setModel] = useState<string | null>(null);
   useEffect(() => {
     void call('claude.status', {}).then(
@@ -166,7 +202,8 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
         <button
           type="button"
           className="btn primary"
-          disabled={r.busy}
+          disabled={r.busy || guard.off}
+          {...guard.tip}
           onClick={() => void r.run(props.scope)}
           data-testid="alignment-run"
         >
@@ -175,7 +212,8 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
         <button
           type="button"
           className="btn"
-          disabled={!r.busy}
+          disabled={!r.busy || guard.off}
+          {...guard.tip}
           onClick={r.stop}
           data-testid="alignment-stop"
         >
@@ -201,6 +239,12 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
               : 'Not run yet.'}
       </p>
       {r.error && <ClaudeErrorNote error={r.error} />}
+      {r.skipped.map((x, i) => (
+        <p key={i} className="callout warn" role="alert" data-testid="alignment-skipped">
+          {x}
+        </p>
+      ))}
+      <EntriesRead entries={r.given} label="Entries given to Claude" />
       {r.failure && (
         <p className="callout crit" role="alert">
           {r.failure}
@@ -233,6 +277,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
   const [showDiff, setShowDiff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const diffId = useId();
 
   const resolve = async (
@@ -240,8 +285,14 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
     label: string,
   ) => {
     setError(null);
+    setWarnings([]);
     try {
-      const r = await call('continuity.resolve', { id: f.id, action });
+      const r = await call('continuity.resolve', {
+        id: f.id,
+        action,
+        ...(action === 'manuscriptWins' ? { shown: f.shown } : {}),
+      });
+      setWarnings(r.warnings.map((w) => `${w.entry}: ${w.message}`));
       undo.record(
         resolutionCommand(
           `${label}: ${f.title}`,
@@ -325,41 +376,43 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
         </p>
       )}
       {f.state === 'open' && (
-        <div className="row tight" data-testid="finding-actions">
-          {f.kind === 'alignment' && (
-            <>
-              <button
-                type="button"
-                className="btn small"
-                aria-expanded={showDiff}
-                aria-controls={diffId}
-                disabled={f.changes.length === 0}
-                title={
-                  f.changes.length === 0
-                    ? 'No change set was prepared for this finding.'
-                    : undefined
-                }
-                onClick={() => setShowDiff((v) => !v)}
-              >
-                Manuscript wins
-              </button>
-              <button
-                type="button"
-                className="btn small"
-                onClick={() => void resolve('rewrite', 'Rewrite recommended')}
-              >
-                Rewrite recommended
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => void resolve('dismiss', 'Dismissed')}
-          >
-            Dismiss
-          </button>
-        </div>
+        <WriteFieldset className="row tight">
+          <div className="row tight" data-testid="finding-actions">
+            {f.kind === 'alignment' && (
+              <>
+                <button
+                  type="button"
+                  className="btn small"
+                  aria-expanded={showDiff}
+                  aria-controls={diffId}
+                  disabled={f.changes.length === 0}
+                  title={
+                    f.changes.length === 0
+                      ? 'No change set was prepared for this finding.'
+                      : undefined
+                  }
+                  onClick={() => setShowDiff((v) => !v)}
+                >
+                  Manuscript wins
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => void resolve('rewrite', 'Rewrite recommended')}
+                >
+                  Rewrite recommended
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => void resolve('dismiss', 'Dismissed')}
+            >
+              Dismiss
+            </button>
+          </div>
+        </WriteFieldset>
       )}
       {f.state === 'open' && f.kind === 'alignment' && f.changes.length === 0 && (
         <p className="example-note">
@@ -393,7 +446,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
               ))}
             </tbody>
           </table>
-          <div className="row tight">
+          <WriteFieldset className="row tight">
             <button
               type="button"
               className="btn primary small"
@@ -403,7 +456,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
               Apply all
             </button>
             <span>Changes the bible to match the chapter. Nothing in the manuscript changes.</span>
-          </div>
+          </WriteFieldset>
         </div>
       )}
       {f.rejectedChanges.length > 0 && (
@@ -427,6 +480,16 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
             </button>
           )}
         </p>
+      )}
+      {warnings.length > 0 && (
+        <div className="callout warn stack tight" data-testid="finding-warnings">
+          <span>The bible was updated, and these fields now carry a warning:</span>
+          <ul className="plain-list">
+            {warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {error && (
         <p className="callout crit" role="alert">
@@ -495,6 +558,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
 export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: string) => void }) {
   const data = useFindings(props.chapterId, ['rewrite']);
   const undo = useUndo();
+  const guard = useWriteGuard();
   const [error, setError] = useState<string | null>(null);
   const tasks = data?.findings ?? [];
   const markDone = async (f: FindingWire) => {
@@ -545,7 +609,13 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
                     Open chapter
                   </button>
                 )}
-                <button type="button" className="btn small" onClick={() => void markDone(t)}>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={guard.off}
+                  {...guard.tip}
+                  onClick={() => void markDone(t)}
+                >
                   Done
                 </button>
               </div>

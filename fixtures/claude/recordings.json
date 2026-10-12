@@ -217,7 +217,7 @@
         "text": "ned\", \"strand\": null, \"cites\": [\"CU4\"]}], \"sections\": [{\"heading\": \"Places\", \"items\": [{\"text\": \"The Hale house: a narrow two-story house with the kitchen at the back.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"PLC2\"]}]}, {\"heading\": \"Who knows what\", \"items\": [{\"text\": \"Daniel has known about Peter's letter since 2044; Iris does not know.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"F2\", \"K4\"]}]}, {\"heading\": \"Previous chapters\", \"items\": [{\"text\": \"Chapter 5, Candles: Margaret's birthday.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH5\"]}, {\"text\": \"Chapter 4, After the Funeral: the Hales gather at the house.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH4\"]}, {\"text\": \"Chapter 1: Iris and Noor visit the Archivist.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH1\"]}, {\"text\": \"Chapter 3: Daniel and Lan marry in the rain.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH3\"]}]}, {\"heading\": \"Beats\", \"items\": [{\"text\": \"Planned here: Iris finds an envelope in the attic.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B4\"]}, {\"text\": \"Unresolved: Peter writes the letter, Ruth reads it, "
       },
       {
-        "text": "Lan keeps her mother's letters.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B1\", \"B3\", \"B7\"]}]}, {\"heading\": \"Glossary, themes, and open questions\", \"items\": [{\"text\": \"晓曦 xiǎoxī, dawn light: Iris's Chinese name. 团圆 tuányuán, family reunion.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"GL1\", \"GL3\"]}, {\"text\": \"Themes: letters that outlive their writers; water.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"TH1\", \"TH2\"]}, {\"text\": \"Open: does Daniel know about the uncle? How cheap are grid batteries?\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q1\", \"Q4\"]}, {\"text\": \"Decided: Iris is left-handed.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q2\"]}]}, {\"heading\": \"Custom entries\", \"items\": [{\"text\": \"Hale house soda bread, an everyday family recipe.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"CE3\"]}]}, {\"heading\": \"Last session note\", \"items\": [{\"text\": \"Last session: Iris reads the first line.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"SL2\"]}]}], \"plannedAhead\": [{\"text\": \"By 2072 household robots outnumber cars in Portland.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E9\"]}]}"
+        "text": "Lan keeps her mother's letters.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B1\", \"B3\", \"B7\"]}]}, {\"heading\": \"Glossary, themes, and open questions\", \"items\": [{\"text\": \"\u6653\u66e6 xi\u01ceox\u012b, dawn light: Iris's Chinese name. \u56e2\u5706 tu\u00e1nyu\u00e1n, family reunion.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"GL1\", \"GL3\"]}, {\"text\": \"Themes: letters that outlive their writers; water.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"TH1\", \"TH2\"]}, {\"text\": \"Open: does Daniel know about the uncle? How cheap are grid batteries?\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q1\", \"Q4\"]}, {\"text\": \"Decided: Iris is left-handed.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q2\"]}]}, {\"heading\": \"Custom entries\", \"items\": [{\"text\": \"Hale house soda bread, an everyday family recipe.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"CE3\"]}]}, {\"heading\": \"Last session note\", \"items\": [{\"text\": \"Last session: Iris reads the first line.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"SL2\"]}]}], \"plannedAhead\": [{\"text\": \"By 2072 household robots outnumber cars in Portland.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E9\"]}]}"
       },
       {
         "result": {
@@ -350,7 +350,7 @@
                 "heading": "Glossary, themes, and open questions",
                 "items": [
                   {
-                    "text": "晓曦 xiǎoxī, dawn light: Iris's Chinese name. 团圆 tuányuán, family reunion.",
+                    "text": "\u6653\u66e6 xi\u01ceox\u012b, dawn light: Iris's Chinese name. \u56e2\u5706 tu\u00e1nyu\u00e1n, family reunion.",
                     "status": "canon",
                     "strand": null,
                     "cites": ["GL1", "GL3"]
@@ -624,6 +624,19 @@
             ]
           }
         }
+      }
+    ]
+  },
+  {
+    "name": "alignment: a chapter whose text ends with the stop marker waits until Stop (AI-1)",
+    "feature": "alignment",
+    "match": "E2E-HOLD-UNTIL-STOPPED",
+    "steps": [
+      {
+        "text": "{\"findings\": ["
+      },
+      {
+        "waitForAbort": true
       }
     ]
   },
