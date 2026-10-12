@@ -730,7 +730,8 @@ test('SL-1 a session log entry is written and listed newest first', async () => 
 // Every section's form and editor (T-4, ED-1)
 
 /** The entries the walk makes, one per collection, for the trash step after it. */
-const trial: { collection: EntryCollection; id: string; title: string }[] = [];
+/** `rail` is the rail item the entry is listed under: its section, or for a custom entry its custom section (KB-4). */
+const trial: { collection: EntryCollection; id: string; title: string; rail: string }[] = [];
 
 /**
  * What a new entry in Tide Lines can point at, read from the bible: the first
@@ -812,7 +813,12 @@ test('ED-1 one entry of every section is created from its form, every field is c
       const w = JSON.stringify(want[spec.name] ?? null);
       if (g !== w) failures.push(`${c}.${spec.name}: expected ${w}, found ${g}`);
     }
-    trial.push({ collection: c, id, title: entryTitle(saved) });
+    trial.push({
+      collection: c,
+      id,
+      title: entryTitle(saved),
+      rail: c === 'customEntries' ? await ctx.titleOf(String(saved.sectionId)) : info.plural,
+    });
     if (pools.get(c)!.length === 0) pools.get(c)!.push(id);
   }
   expect(failures).toEqual([]);
@@ -825,7 +831,7 @@ test('ED-5 the trial entries are moved to the trash from their pages, and the Tr
   // The fixture already has one entry in the trash (the M7 supplement).
   const before = (await invoke('trash.list', {})).entries.length;
   for (const t of trial) {
-    await rail(page, collectionInfo[t.collection].plural).click();
+    await rail(page, t.rail).click();
     await pick(new RegExp(escape(t.title)))
       .first()
       .click();
