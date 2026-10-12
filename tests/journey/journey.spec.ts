@@ -20,7 +20,16 @@ import type { GenContext, Invoke } from '../helpers/t5';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
-import { field, invokeVia, launch, rail, setField, waitSaved, withoutSystem } from '../e2e/helpers';
+import {
+  field,
+  invokeVia,
+  launch,
+  openListFor,
+  rail,
+  setField,
+  waitSaved,
+  withoutSystem,
+} from '../e2e/helpers';
 import type { UiContext } from '../e2e/helpers';
 import { makeJourneyFiles } from './setup';
 import type { JourneyFiles } from './setup';
@@ -777,12 +786,12 @@ test('ED-1 one entry of every section is created from its form, every field is c
     const manifest = manifests[c];
     const a = build(manifest, 0, ctx, 'full', true);
     const b = build(manifest, 1, ctx, 'full', true);
-    await rail(page, info.plural).click();
-    await page
-      .getByRole('button', { name: `New ${info.singular.toLowerCase()}`, exact: true })
-      .click();
+    const { newButton, preset } = await openListFor(page, ctx, c, a);
+    await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
-    for (const spec of manifest.filter((s) => s.required && s.kind !== 'system')) {
+    for (const spec of manifest.filter(
+      (s) => s.required && s.kind !== 'system' && !(s.name in preset),
+    )) {
       await setField(ctx, form, spec, spec.name, a[spec.name], a);
     }
     await form.getByRole('button', { name: `Create ${info.singular.toLowerCase()}` }).click();

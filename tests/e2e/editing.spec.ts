@@ -16,6 +16,7 @@ import {
   fileDb,
   invokeVia,
   launch,
+  openListFor,
   rail,
   setField,
   waitSaved,
@@ -124,12 +125,12 @@ test('ED-1 every field of every entity can be created and changed through the ed
     const manifest = manifests[c];
     const a = build(manifest, 0, ctx, 'full', true);
     const b = build(manifest, 1, ctx, 'full', true);
-    await rail(page, info.plural).click();
-    await page
-      .getByRole('button', { name: `New ${info.singular.toLowerCase()}`, exact: true })
-      .click();
+    const { newButton, preset } = await openListFor(page, ctx, c, a);
+    await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
-    for (const spec of manifest.filter((s) => s.required && s.kind !== 'system')) {
+    for (const spec of manifest.filter(
+      (s) => s.required && s.kind !== 'system' && !(s.name in preset),
+    )) {
       await setField(ctx, form, spec, spec.name, a[spec.name], a);
     }
     await form.getByRole('button', { name: `Create ${info.singular.toLowerCase()}` }).click();

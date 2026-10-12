@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
-import type { FieldSpec } from '../../src/shared/schema';
+import { collectionInfo } from '../../src/shared/schema';
+import type { EntryCollection, FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
 import type { Invoke } from '../helpers/t5';
@@ -188,6 +189,28 @@ export function withoutSystem(specs: readonly FieldSpec[], value: unknown): unkn
     } else out[s.name] = v;
   }
   return out;
+}
+
+/**
+ * Open the list an entry of `collection` is made on, and return the name of
+ * its New button and the fields its form presets there and does not show.
+ * Every section has a rail item named for it, except custom entries (KB-4):
+ * those are listed per custom section, each its own rail item named for the
+ * section, and the form on it presets the section.
+ */
+export async function openListFor(
+  page: Page,
+  ctx: UiContext,
+  collection: EntryCollection,
+  entry: Record<string, unknown>,
+): Promise<{ newButton: string; preset: Record<string, unknown> }> {
+  if (collection === 'customEntries') {
+    const section = await ctx.titleOf(String(entry.sectionId));
+    await rail(page, section).click();
+    return { newButton: `New entry in ${section}`, preset: { sectionId: entry.sectionId } };
+  }
+  await rail(page, collectionInfo[collection].plural).click();
+  return { newButton: `New ${collectionInfo[collection].singular.toLowerCase()}`, preset: {} };
 }
 
 export interface UiContext {
