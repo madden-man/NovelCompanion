@@ -111,6 +111,8 @@ export const SelectionWire = z.strictObject({
       reason: z.enum(['budget', 'removed']),
     }),
   ),
+  /** Strands left out because they have no start year. */
+  skippedStrands: z.array(z.string()),
   added: z.array(z.string()),
   removed: z.array(z.string()),
   window: z.number(),
