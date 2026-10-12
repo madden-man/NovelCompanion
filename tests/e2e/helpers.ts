@@ -71,7 +71,7 @@ const RAIL_ACTIONS = new Set([
  * like) opens More first when the button is not visible. The locator matches
  * hidden buttons too, so `count()` finds one inside a closed More. A name the
  * rail no longer has at all (Places, Glossary, Culture by year: KB-5) is
- * reached through the Entries screen when that screen has a button for it.
+ * reached through the Entries screen: its tabs, or a button it has for the name.
  */
 export function rail(page: Page, name: string): Locator {
   const nav = page.getByRole('navigation', { name: 'Sections' });
@@ -94,6 +94,9 @@ export function rail(page: Page, name: string): Locator {
     await entries.click();
     const view = page.getByTestId('entries-view');
     await view.waitFor();
+    // KB-5: Culture by year, Place tree, Romanization and Glossary table are tabs of Entries.
+    const tab = view.getByRole('tab', { name, exact: true });
+    if (await tab.count()) return tab;
     const there = view.getByRole('button', { name, exact: true });
     return (await there.count()) ? there : null;
   };

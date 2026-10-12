@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type { Response } from '../../../../shared/ipc';
+import { entryTitle, manifests } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
-import { coverageMessages } from '../../../../shared/domain/timeline';
+import { blankEntry } from '../../../../shared/domain/blank';
+import { orderWorldRows } from '../../../../shared/domain/entries';
+import type { WorldOrder } from '../../../../shared/domain/entries';
+import { coverageMessages, eventSpans, fromCollections } from '../../../../shared/domain/timeline';
 import { itemPath } from '../../../../shared/domain/lists';
-import { call } from '../../api';
+import { createCommand } from '../../../../shared/domain/undoRunner';
+import { useWriteGuard } from '../../connection';
+import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { EmbeddedEditor, UndoPanel } from '../editor';
 import { useStoryTime } from '../storyTime';
+import { useUndo } from '../undo';
+import { Zh } from '../Zh';
 import { span, useFamilies } from './common';
+import { WorldEventsStrip } from './WorldEventsStrip';
+import './world.css';
 
 type Chart = Response<'timeline.chart'>;
 
@@ -48,9 +58,12 @@ interface Filters {
 const NONE: Filters = { familyId: null, placeId: null, status: null, categoryId: null };
 
 /**
- * The timeline (TL-6): one horizontal axis with era bands, world events,
- * chapter strands, and lifespans; filters for family, place, status, and
- * category; the story-time cursor; and editing in the inspector. Arrow keys
+ * The Timeline screen is the world (KB-4). At the top the TL-6 chart: one
+ * horizontal axis with era bands, world events, chapter strands, and
+ * lifespans; filters for family, place, status, and category; the story-time
+ * cursor. Under it the whole-span world events strip (A33), then the world
+ * events and era states in view as a list, with New world event and New era
+ * state. Every mark, strip title, and row edits in the inspector. Arrow keys
  * move between marks and Enter opens one (NF-2).
  */
 export function TimelineView() {
@@ -426,7 +439,7 @@ export function TimelineView() {
           <p aria-live="polite">Loading the timeline.</p>
         ) : (
           <>
-            <div className="tl-frame">
+            <div className="tl-frame tl-fixed" data-testid="timeline-chart">
               <div className="tl-wrap" ref={wrap} onMouseLeave={() => setTip(null)}>
                 <svg
                   className="tl-svg"
@@ -576,6 +589,14 @@ export function TimelineView() {
             )}
           </>
         )}
+        <WorldEventsTimeline onSelect={(id) => setSelected({ collection: 'worldEvents', id })} />
+        {chart && (
+          <WorldList
+            chart={chart}
+            selected={selected}
+            onOpen={(collection, id) => setSelected({ collection, id })}
+          />
+        )}
       </section>
       <aside
         className="inspector tree-inspector"
@@ -603,10 +624,230 @@ export function TimelineView() {
             />
           </>
         ) : (
-          <p className="example-note">Pick a mark on the timeline to edit it here.</p>
+          <p className="example-note">
+            Pick a mark, a strip title, or a row in the list to edit it here.
+          </p>
         )}
         <UndoPanel />
       </aside>
     </div>
+  );
+}
+
+/**
+ * A33, KB-4: every world event on one strip of years, the story year marked,
+ * each title opening its event in the inspector.
+ */
+export function WorldEventsTimeline({ onSelect }: { onSelect: (id: string) => void }) {
+  const entries = useEntries('worldEvents');
+  const story = useStoryTime();
+  const events = useMemo(() => eventSpans(fromCollections({ worldEvents: entries })), [entries]);
+  if (!events.length) return null;
+  const from = Math.min(story.year, ...events.map((e) => e.startYear));
+  const to = Math.max(story.year, ...events.map((e) => e.endYear));
+  return (
+    <WorldEventsStrip
+      events={events}
+      from={from}
+      to={to}
+      year={story.year}
+      everyYear={false}
+      onOpen={onSelect}
+      label="World events timeline"
+      testid="we-timeline"
+    />
+  );
+}
+
+interface WorldItem {
+  id: string;
+  title: string;
+  startYear: number;
+  endYear: number;
+  modifiedAt: string;
+  status: string;
+}
+
+/**
+ * KB-4: the world events and era states the chart shows (its filters apply),
+ * newest change first or by year, each row opening in the inspector. New
+ * world event and New era state write at the story year and open the entry.
+ */
+function WorldList(props: {
+  chart: Chart;
+  selected: { collection: EntryCollection; id: string } | null;
+  onOpen: (collection: EntryCollection, id: string) => void;
+}) {
+  const { chart } = props;
+  const story = useStoryTime();
+  const undo = useUndo();
+  const ro = useWriteGuard();
+  const events = useEntries('worldEvents');
+  const eras = useEntries('eraStates');
+  const categories = useList('eventCategories');
+  const [order, setOrder] = useState<WorldOrder>('year');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const rows = useMemo(() => {
+    const meta = new Map([...events, ...eras].map((e) => [e._id, e]));
+    const item = (id: string, title: string, startYear: number, endYear: number): WorldItem => ({
+      id,
+      title,
+      startYear,
+      endYear,
+      modifiedAt: String(meta.get(id)?.modifiedAt ?? ''),
+      status: String(meta.get(id)?.status ?? ''),
+    });
+    return {
+      events: orderWorldRows(
+        chart.events.map((e) => item(e.id, e.title, e.startYear, e.endYear)),
+        order,
+      ),
+      eras: orderWorldRows(
+        chart.eras.map((e) => item(e.id, e.name, e.startYear, e.endYear)),
+        order,
+      ),
+    };
+  }, [chart, events, eras, order]);
+
+  const create = async (collection: 'worldEvents' | 'eraStates') => {
+    setError(null);
+    const year = story.year;
+    let data: Record<string, unknown>;
+    if (collection === 'worldEvents') {
+      const categoryId = categories?.items[0]?.id;
+      if (!categoryId) {
+        setError('Add an event category on the Lists screen first.');
+        return;
+      }
+      data = {
+        ...blankEntry(manifests.worldEvents),
+        title: 'New world event',
+        status: 'idea',
+        start: { year },
+        end: null,
+        reality: 'invented',
+        categoryId,
+      };
+    } else {
+      data = {
+        ...blankEntry(manifests.eraStates),
+        title: 'New era',
+        name: 'New era',
+        status: 'idea',
+        startYear: year,
+        endYear: year,
+      };
+    }
+    setBusy(true);
+    try {
+      const { entry } = await call('entry.create', { collection, data });
+      undo.record(createCommand(collection, entry._id, entryTitle(entry)));
+      props.onOpen(collection, entry._id);
+    } catch (e) {
+      setError(plainError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const column = (
+    collection: 'worldEvents' | 'eraStates',
+    heading: string,
+    list: WorldItem[],
+    empty: string,
+  ) => (
+    <div className="world-col stack tight" data-testid={`world-list-${collection}`}>
+      <h3>{heading}</h3>
+      {list.length === 0 ? (
+        <p className="example-note">{empty}</p>
+      ) : (
+        <ul className="entry-list">
+          {list.map((r) => (
+            <li key={r.id}>
+              <button
+                type="button"
+                className="entry-row world-row"
+                data-id={r.id}
+                aria-current={
+                  props.selected?.collection === collection && props.selected.id === r.id
+                    ? 'true'
+                    : undefined
+                }
+                onClick={() => props.onOpen(collection, r.id)}
+              >
+                <span className="row tight">
+                  <span className="world-years num">{span(r.startYear, r.endYear)}</span>
+                  {r.status && <span className={`chip ${r.status}`}>{r.status}</span>}
+                </span>
+                <span className="entry-title">
+                  <Zh text={r.title} actions={false} />
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  return (
+    <section
+      className="stack world-list"
+      aria-labelledby="world-list-title"
+      data-testid="world-list"
+    >
+      <div className="list-head">
+        <h2 id="world-list-title">World events and eras in view</h2>
+        <span className="row tight">
+          <span className="row tight" role="group" aria-label="Order">
+            <button
+              type="button"
+              className="btn small"
+              aria-pressed={order === 'year'}
+              onClick={() => setOrder('year')}
+            >
+              By year
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              aria-pressed={order === 'newest'}
+              onClick={() => setOrder('newest')}
+            >
+              Newest first
+            </button>
+          </span>
+          <button
+            type="button"
+            className="btn small primary"
+            disabled={ro.off || busy}
+            {...ro.tip}
+            onClick={() => void create('worldEvents')}
+          >
+            New world event
+          </button>
+          <button
+            type="button"
+            className="btn small"
+            disabled={ro.off || busy}
+            {...ro.tip}
+            onClick={() => void create('eraStates')}
+          >
+            New era state
+          </button>
+        </span>
+      </div>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="world-cols">
+        {column('worldEvents', 'World events', rows.events, 'No world event matches the filters.')}
+        {column('eraStates', 'Era states', rows.eras, 'No era matches the filters.')}
+      </div>
+    </section>
   );
 }

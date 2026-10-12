@@ -20,16 +20,15 @@ import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
-import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import { OutlineView } from './plot';
 import { ZhNavProvider } from './Zh';
-import { EntryList, ListsView, NewEntryForm, TrashView, WorldEventsTimeline } from './views';
+import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
+import { EntriesView } from './entries/EntriesView';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
 import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
 import { SettingsView } from './settings';
-import { EntriesView } from './entries/Placeholder';
 import './shell.css';
 
 type View =
@@ -45,10 +44,6 @@ type View =
   | { kind: 'tree' }
   | { kind: 'timeline' }
   | { kind: 'outline' }
-  | { kind: 'culture' }
-  | { kind: 'places' }
-  | { kind: 'romanization' }
-  | { kind: 'glossary' }
   /** KB-5: the Entries screen. */
   | { kind: 'entries' }
   | { kind: 'trash' }
@@ -85,19 +80,12 @@ const MORE_SECTIONS = {
   Knowledge: ['facts', 'knowledgeRecords', 'themes', 'openQuestions'],
 } as const satisfies Record<string, readonly EntryCollection[]>;
 
-/** Lists and tools reached only through the Entries screen, so its rail item lights for them. */
+/** Lists reached only through the Entries screen (KB-5), so its rail item lights for them. */
 const ENTRY_ONLY: readonly EntryCollection[] = [
   'culturalEntries',
   'places',
   'glossaryTerms',
   'customEntries',
-];
-const ENTRY_TOOLS: readonly View['kind'][] = [
-  'entries',
-  'culture',
-  'places',
-  'romanization',
-  'glossary',
 ];
 
 /** More's open state, kept per bible (KB-1). Storage can be missing; the rail works without it. */
@@ -163,7 +151,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
       () => setView({ kind: 'section', collection: c, selected: null, creating: false }),
     );
   const entriesActive =
-    ENTRY_TOOLS.includes(view.kind) ||
+    view.kind === 'entries' ||
     (view.kind === 'section' && ENTRY_ONLY.includes(view.collection) && !view.sectionId);
 
   return (
@@ -304,11 +292,6 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
             ) : (
               <>
                 <div className="ws-editor empty-editor stack">
-                  {view.collection === 'worldEvents' && (
-                    <WorldEventsTimeline
-                      onSelect={(id) => setView({ ...view, selected: id, creating: false })}
-                    />
-                  )}
                   <p className="lede">
                     Pick an entry to edit it, or make a new{' '}
                     {collectionInfo[view.collection].singular.toLowerCase()}.
@@ -329,6 +312,8 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
           <TreeView onOpen={open} />
         ) : view.kind === 'timeline' ? (
           <TimelineView />
+        ) : view.kind === 'entries' ? (
+          <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (
           <OutlineView />
         ) : (
@@ -342,18 +327,6 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
               {view.kind === 'drive' && <DriveView />}
               {view.kind === 'settings' && <SettingsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
-              {view.kind === 'entries' && (
-                <EntriesView
-                  onSection={(c) =>
-                    setView({ kind: 'section', collection: c, selected: null, creating: false })
-                  }
-                  onTool={(kind) => setView({ kind })}
-                />
-              )}
-              {view.kind === 'culture' && <CultureView onOpen={open} />}
-              {view.kind === 'places' && <PlacesView onOpen={open} />}
-              {view.kind === 'romanization' && <RomanizationView onOpen={open} />}
-              {view.kind === 'glossary' && <GlossaryTable onOpen={open} />}
               {view.kind === 'dashboard' && (
                 <DashboardView
                   onStartSession={() => setView({ kind: 'start' })}

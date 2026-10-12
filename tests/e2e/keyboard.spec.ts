@@ -119,12 +119,6 @@ async function go(screen: string) {
   await expect(button).toHaveAttribute('aria-current', 'page');
 }
 
-/** KB-5: a view that left the rail opens from the Entries screen (until integration, its placeholder). */
-async function goEntries(name: string) {
-  await go('Entries');
-  await press(page.getByTestId('entries-view').getByRole('button', { name, exact: true }));
-}
-
 /** Close the rail's More disclosure with the keyboard, when it is open. */
 async function closeMore() {
   const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
@@ -401,10 +395,15 @@ test('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapter page
   await expect(chapter).toBeHidden();
 });
 
-test('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table answer the keyboard', async () => {
+test('NF-2 KB-5 CU-2 GL-1 the Entries tabs: culture by year, the place tree, and the glossary table answer the keyboard', async () => {
   // This bible starts with no communities; the screen needs one to pick.
   await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
-  await goEntries('Culture by year');
+  await go('Entries');
+  const tabs = page.getByRole('tablist', { name: 'Entries screens' });
+  const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
+  await press(tabs.getByRole('tab', { selected: true }), 'Home');
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('Culture by year')).toHaveAttribute('aria-selected', 'true');
   const culture = page.getByTestId('culture-view');
   await tabTo(culture.getByRole('spinbutton', { name: 'Year' }));
   await page.keyboard.press('Meta+a');
@@ -413,13 +412,17 @@ test('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table ans
     culture.getByTestId('culture-results').or(culture.getByTestId('culture-empty')),
   ).toBeVisible();
 
-  await goEntries('Place tree');
+  await press(tab('Culture by year'), 'ArrowRight');
+  await expect(tab('Place tree')).toHaveAttribute('aria-selected', 'true');
   await press(page.getByTestId('places-view').getByRole('button', { name: 'Portland' }));
   await expect(editor()).toContainText('Portland');
 
-  await goEntries('Glossary table');
+  await press(tab('Place tree'), 'End');
+  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
   await press(page.getByRole('button', { name: 'Edit 团圆' }));
   await expect(editor()).toContainText('团圆');
+  await press(tab('Glossary table'), 'Home');
+  await expect(tab('Entries')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('NF-2 KN-2 a fact page records who learned it from the keyboard', async () => {

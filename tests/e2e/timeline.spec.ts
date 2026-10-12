@@ -319,15 +319,98 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
   await expect(page.getByTestId('tree-keys')).toContainText('I opens the inspector for anyone');
 });
 
-test('A33 TL-6 the World events section opens with a strip of every event year, the story year marked, and a title opens its event', async () => {
-  await rail(page, 'World events').click();
-  const strip = page.getByTestId('we-timeline');
+test('KB-4 A33 the whole-span strip sits under the chart, the story year marked, and a title opens the inspector', async () => {
+  await invoke('storyTime.set', { time: { year: 2040 } });
+  await rail(page, 'Timeline').click();
+  const view = page.getByTestId('timeline-view');
+  await expect(view.getByTestId('timeline-chart')).toBeVisible();
+  const strip = view.getByTestId('we-timeline');
   await expect(strip).toBeVisible();
+  // The chart comes first, then the strip, then the list.
+  const top = async (id: string) => (await view.getByTestId(id).boundingBox())!.y;
+  expect(await top('timeline-chart')).toBeLessThan(await top('we-timeline'));
+  expect(await top('we-timeline')).toBeLessThan(await top('world-list'));
   // Eleven fixture events in eleven distinct years; years with no event collapse to a tick.
   await expect(strip.locator('.we-col:not(.empty)')).toHaveCount(11);
   await expect(strip.locator('.we-col').first()).toHaveAttribute('data-year', '2008');
   await expect(strip.locator('.we-col').last()).toHaveAttribute('data-year', '2090');
-  await expect(strip.locator('.we-col.current')).toHaveCount(1);
+  await expect(strip.locator('.we-col.current')).toHaveAttribute('data-year', '2040');
   await strip.getByRole('button', { name: 'Care robots licensed for home use in Oregon' }).click();
-  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'E2');
+  await expect(view.getByTestId('timeline-inspector').getByTestId('editor')).toHaveAttribute(
+    'data-entry-id',
+    'E2',
+  );
+});
+
+test('KB-4 the list under the chart shows the events and eras in view; a row opens the inspector and an edit saves', async () => {
+  const view = page.getByTestId('timeline-view');
+  const events = view.getByTestId('world-list-worldEvents').locator('.world-row');
+  const eras = view.getByTestId('world-list-eraStates').locator('.world-row');
+  await expect(events).toHaveCount(11);
+  await expect(eras).toHaveCount(8);
+  // By year: the earliest first.
+  await expect(events.first()).toHaveAttribute('data-id', 'E1');
+  await expect(eras.first()).toHaveAttribute('data-id', 'ERA-2025');
+  // The chart filters narrow the list as they narrow the chart.
+  const filters = view.getByRole('group', { name: 'Timeline filters' });
+  await filters.getByLabel('Category', { exact: true }).selectOption({ label: 'Technology' });
+  await expect(events).toHaveCount(4);
+  await filters.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(events).toHaveCount(11);
+
+  await view.locator('.world-row[data-id="ERA-2040"]').click();
+  const editor = view.getByTestId('timeline-inspector').getByTestId('editor');
+  await expect(editor).toHaveAttribute('data-entry-id', 'ERA-2040');
+  await field(editor, 'technology').locator('textarea').fill('Home robots in most kitchens.');
+  await expect(editor.getByTestId('autosave')).toHaveText('Saved');
+  expect(
+    (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.technology,
+  ).toBe('Home robots in most kitchens.');
+  await expect(view.locator('.world-row[data-id="ERA-2040"]')).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  // Newest first puts the era just edited at the top of its column.
+  await view.getByRole('button', { name: 'Newest first' }).click();
+  await expect(eras.first()).toHaveAttribute('data-id', 'ERA-2040');
+  await view.getByRole('button', { name: 'By year' }).click();
+  await expect(eras.first()).toHaveAttribute('data-id', 'ERA-2025');
+});
+
+test('KB-4 New world event writes one at the story year and opens it in the inspector; New era state too', async () => {
+  await invoke('storyTime.set', { time: { year: 2047 } });
+  const view = page.getByTestId('timeline-view');
+  const before = (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' }))
+    .entries.length;
+  await view.getByRole('button', { name: 'New world event' }).click();
+  const editor = view.getByTestId('timeline-inspector').getByTestId('editor');
+  await expect(editor).toContainText('New world event');
+  const id = (await editor.getAttribute('data-entry-id'))!;
+  const made = (await invoke('entry.get', { collection: 'worldEvents', id })).entry;
+  expect(made.start).toEqual({ year: 2047 });
+  expect(
+    (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' })).entries,
+  ).toHaveLength(before + 1);
+  await field(editor, 'title').locator('input').fill('Harbor seawall finished');
+  await expect(editor.getByTestId('autosave')).toHaveText('Saved');
+  await expect(view.locator(`.world-row[data-id="${id}"]`)).toContainText(
+    'Harbor seawall finished',
+  );
+  await expect(view.getByTestId('we-timeline').locator('.we-col[data-year="2047"]')).toContainText(
+    'Harbor seawall finished',
+  );
+  await expect(view.getByTestId('timeline-svg').locator(`g[data-key="event:${id}"]`)).toHaveCount(
+    1,
+  );
+
+  await view.getByRole('button', { name: 'New era state' }).click();
+  await expect(editor).toContainText('New era');
+  const eraId = (await editor.getAttribute('data-entry-id'))!;
+  const era = (await invoke('entry.get', { collection: 'eraStates', id: eraId })).entry;
+  expect(era).toMatchObject({ startYear: 2047, endYear: 2047 });
+  await expect(view.locator(`.world-row[data-id="${eraId}"]`)).toBeVisible();
+  // Undo takes the new era away again (ED-3).
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect(view.locator(`.world-row[data-id="${eraId}"]`)).toHaveCount(0);
 });

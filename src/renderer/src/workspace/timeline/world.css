@@ -1,0 +1,36 @@
+/* m11-world, KB-4: the Timeline screen is the world. Colors come only from theme tokens. */
+.tl-frame.tl-fixed {
+  /* The chart keeps one height so the strip and the list stay in reach below it. */
+  height: 340px;
+  overflow-y: auto;
+  border-radius: 8px;
+}
+.world-list h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+.world-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 18px;
+  align-items: start;
+}
+.world-col h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+.world-col .entry-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+.world-years {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.world-list .btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--fg);
+}
