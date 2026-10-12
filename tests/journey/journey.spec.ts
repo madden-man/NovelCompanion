@@ -114,6 +114,12 @@ const status = () => page.getByTestId('status-time');
 const entryList = () => page.getByTestId('entry-list');
 const pick = (name: RegExp | string) => entryList().getByRole('button', { name });
 
+/** The top bar's year box commits on Enter or when it loses focus (M7), not on every digit. */
+async function setTopYear(year: string): Promise<void> {
+  await page.getByTestId('top-year').fill(year);
+  await page.getByTestId('top-year').press('Enter');
+}
+
 async function openEntry(section: string, name: RegExp): Promise<void> {
   await rail(page, section).click();
   await pick(name).first().click();
@@ -167,7 +173,7 @@ test('A27 TM-3 TM-4 SB-10 the top bar: year slider and year box, the Writing pic
   await page.getByTestId('top-year-slider').fill('2050');
   await expect(page.getByTestId('top-year')).toHaveValue('2050');
   await expect(status()).toContainText('Story time 2050');
-  await page.getByTestId('top-year').fill('2045');
+  await setTopYear('2045');
   await expect(page.getByTestId('top-year-slider')).toHaveValue('2045');
   await expect(status()).toContainText('Story time 2045');
   await page
@@ -181,8 +187,15 @@ test('A27 TM-3 TM-4 SB-10 the top bar: year slider and year box, the Writing pic
   await page.getByTestId('top-relevant').click();
   const relevant = page.getByTestId('relevant-view');
   await expect(relevant).toBeVisible();
-  await expect(page.getByTestId('relevant-label')).toHaveText('Chapter 2: Two Kitchens');
-  await expect(relevant.getByTestId('relevant-strand')).toHaveCount(2);
+  await expect(page.getByTestId('relevant-label')).toHaveText(
+    'Chapter 2: Two Kitchens, present, 2045',
+  );
+  // SB-1: a picked strand is that strand alone.
+  await expect(relevant.getByTestId('relevant-strand')).toHaveCount(1);
+  await expect(relevant.getByTestId('relevant-strand')).toHaveAttribute(
+    'data-strand',
+    'CH2-present',
+  );
   await expect(relevant.getByTestId('relevant-strand').first()).toContainText('writing now');
 });
 
@@ -287,7 +300,7 @@ test('TL-7 compare shows Margaret and Iris side by side by year', async () => {
 });
 
 test('TL-2 TL-5 the year view lists who is alive in 2075 and what Iris lived through', async () => {
-  await page.getByTestId('top-year').fill('2075');
+  await setTopYear('2075');
   await rail(page, 'Year view').click();
   await expect(page.getByRole('heading', { name: 'Who is alive in 2075' })).toBeVisible();
   const table = page.getByTestId('year-table');
@@ -298,7 +311,7 @@ test('TL-2 TL-5 the year view lists who is alive in 2075 and what Iris lived thr
   const lived = page.getByTestId('lived-through');
   await lived.getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
   await expect(lived.locator('tr[data-event="E3"]')).toContainText('formative');
-  await page.getByTestId('top-year').fill('2045');
+  await setTopYear('2045');
 });
 
 // ---------------------------------------------------------------------------
@@ -387,10 +400,10 @@ test("KN-1 Iris does not know about Peter's letter in 2045 and knows it from 206
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2045.');
   const missing = page.getByTestId('does-not-know');
   await expect(missing.locator('[data-fact="F2"]')).toContainText('They learn it in 2060.');
-  await page.getByTestId('top-year').fill('2060');
+  await setTopYear('2060');
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2060.');
   await expect(page.getByTestId('knowledge')).toContainText("Peter's letter");
-  await page.getByTestId('top-year').fill('2045');
+  await setTopYear('2045');
 });
 
 test('TH-1 a theme gets an appearance in a chapter', async () => {
@@ -739,6 +752,7 @@ test('DB-2 SB-4 SB-7 Start session on the new chapter: Claude writes the brief f
   const id = (
     await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })
   ).entries.find((e) => e.entry.title === CHAPTER)!.entry._id;
+  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
   await view.getByTestId('start-chapter').selectOption(id);
   await expect(view.getByTestId('start-session-go')).toHaveText(
     'Start session with claude-opus-5-5',
@@ -807,35 +821,87 @@ test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary
   );
 });
 
-const M8 =
-  'M8 (alignment check) is being built on branch m8-continuity; this step switches on after that merge.';
+const alignment = () => page.getByTestId('alignment-view');
+const finding = (check: string) =>
+  alignment().locator(`[data-testid="finding"][data-check="${check}"]`);
 
 test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists structural and Claude findings', async () => {
-  test.fixme(true, M8);
-  // Controls from docs/briefs/M8.md and mockups/brief-continuity.html.
   await rail(page, 'Dashboard').click();
   await dash().getByRole('button', { name: 'Check alignment' }).click();
-  await page.getByRole('button', { name: 'Check alignment', exact: true }).click();
-  await expect(page.locator('.finding.align').first()).toBeVisible();
-  await expect(page.locator('.finding')).toContainText(['S1']);
+  await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
+  await expect(alignment().getByTestId('alignment-runner')).toContainText('Model: claude-opus-5-5');
+  await alignment().getByTestId('alignment-run').click();
+  // AI-6 was confirmed for this bible in the question panel, so the check starts at once.
+  await expect(alignment().getByTestId('alignment-status')).toContainText(
+    'Done. Structural checks: 3 found. Claude read 8 chapters and found 2.',
+    { timeout: 60_000 },
+  );
+  // S1 to S3, found in code.
+  await expect(alignment().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(
+    3,
+  );
+  await expect(finding('character-present-while-dead')).toContainText(
+    'Peter Hale (H2) as present. Peter Hale died in 2030.',
+  );
+  await expect(finding('fact-acted-on-before-learned')).toContainText('K2');
+  await expect(finding('event-linked-as-happened-after-story-year')).toContainText(
+    'E10 is dated 2090',
+  );
+  // P1 and P2, the recorded Claude findings, each with its chapter, line, and quote.
+  await expect(finding('age')).toContainText('Chapter 5: Candles');
+  await expect(finding('age').getByTestId('finding-quote')).toContainText(
+    'Ruth counted the candles twice',
+  );
+  await expect(finding('place')).toContainText('Chapter 7: Rain in Guangzhou');
+  await expect(finding('place').getByTestId('finding-quote')).toContainText(
+    'Lan had grown up in Shanghai',
+  );
+  // CC-3: a change to a field that does not exist, and a citation outside the bible, are refused.
+  await expect(finding('place').getByTestId('finding-rejected')).toContainText(
+    'hometown is not a field of characters',
+  );
+  await expect(alignment().getByTestId('alignment-rejected')).toContainText(
+    'It cites Z9, which is not in the bible.',
+  );
 });
+
 test('CC-4 one finding is resolved with Manuscript wins, which changes the bible, and the change is undone', async () => {
-  test.fixme(true, M8);
-  const finding = page.locator('.finding.align').first();
-  await finding.getByRole('button', { name: 'Manuscript wins' }).click();
-  await finding.getByRole('button', { name: 'Apply all' }).click();
-  await expect(finding).toContainText('Saved, undo available');
-  await finding.getByRole('button', { name: 'Undo' }).click();
-  await expect(finding.getByRole('button', { name: 'Manuscript wins' })).toBeEnabled();
+  const p1 = finding('age');
+  await p1.getByRole('button', { name: 'Manuscript wins' }).click();
+  const diff = p1.getByTestId('finding-diff');
+  await expect(diff.locator('tbody tr')).toHaveText([/Margaret Hale\s*Birth\s*1958\s*1970/]);
+  await diff.getByTestId('finding-apply').click();
+  await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
+  await expect(p1).toContainText('bible updated');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.birth,
+    )
+    .toEqual({ year: 1970 });
+  await p1.getByRole('button', { name: 'Undo' }).click();
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.birth,
+    )
+    .toEqual({ year: 1958 });
+  await expect(finding('age')).toHaveAttribute('data-state', 'open');
 });
 
 test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on the dashboard', async () => {
-  test.fixme(true, M8);
-  const finding = page.locator('.finding.align').nth(1);
-  await finding.getByRole('button', { name: 'Rewrite recommended' }).click();
-  await expect(finding).toContainText('rewrite task');
+  await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
+  await expect(finding('place')).toHaveCount(0);
+  const task = alignment().getByTestId('rewrite-task');
+  await expect(task).toHaveCount(1);
+  await expect(task).toContainText('Chapter 7: Rain in Guangzhou');
+  await expect(task).toContainText('Line 1:Lan had grown up in Shanghai');
+  // AI-4: the task says what must change; it never writes the replacement prose.
+  await expect(task).toContainText(
+    'What must change: The city Lan grew up in must be Guangzhou, as the bible records.',
+  );
   await rail(page, 'Dashboard').click();
-  await expect(dash().getByTestId('dash-tasks')).not.toContainText('No open rewrite tasks.');
+  const tile = dash().getByTestId('dash-tasks');
+  await expect(tile).not.toContainText('No open rewrite tasks.');
+  await expect(tile.getByTestId('rewrite-task')).toContainText('Lan had grown up in Shanghai');
 });
 
 // ---------------------------------------------------------------------------
