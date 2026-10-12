@@ -224,8 +224,8 @@ export function Disclosure(props: {
       <p>
         When you use a Claude feature, the app sends the content listed below to Anthropic, the
         company that runs Claude, over the internet. Nothing is sent until you start a Claude
-        feature. The only other time the app sends part of your bible off this computer is when you
-        start an export to Google Drive.
+        feature. Your bible itself is stored in the MongoDB deployment you set up for this app, and
+        the app sends it to Google only when you start an export to Google Drive.
       </p>
       <ul>
         {CLAUDE_FEATURES.map((f) => (

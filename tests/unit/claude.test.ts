@@ -88,6 +88,17 @@ describe('AI-4 Claude never drafts prose', () => {
     expect(freeText.sort()).toEqual(['claude.ask.question', 'claude.setKey.key']);
   });
 
+  test('AI-6 the disclosure says what is sent, where the bible lives, and that Drive export is the other way out', () => {
+    const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/claude.tsx'), 'utf8');
+    expect(src).toMatch(/stored in the MongoDB deployment you set up/);
+    expect(src).not.toMatch(/off this computer/);
+    expect(src).toMatch(/Google Drive/);
+    expect(FEATURE_INFO.importProposals.sends).toMatch(
+      /up to 600 existing entries from every section/,
+    );
+    expect(FEATURE_INFO.importProposals.sends).not.toMatch(/matching/);
+  });
+
   test('AI-4 no screen or control in the renderer asks Claude for prose', () => {
     const asks =
       /\b(write|draft|generate|compose|continue)\s+(the|a|this|my)\s+(scene|chapter|paragraph|dialogue|prose|opening)/i;

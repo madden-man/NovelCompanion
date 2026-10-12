@@ -112,8 +112,8 @@ export const importProposals: FeatureDefinition<ImportProposalsInput, ImportProp
       .join('\n');
     const listed = given.map((e) => `${e.collection} ${e.id}: ${e.title}`).join('\n');
     const prompt = [
-      `Existing entries (section, ID, title):\n${listed || '(none)'}`,
-      `The document "${doc.fileName}", one paragraph per line with its number:`,
+      `Existing entries (section, ID, title):\n${listed ? material('existing entry titles', listed) : '(none)'}`,
+      'The document, one paragraph per line with its number:',
       material(doc.fileName, paragraphs),
       'Propose the entries this document establishes.',
     ].join('\n\n');
