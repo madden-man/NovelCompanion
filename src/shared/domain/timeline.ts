@@ -185,6 +185,15 @@ export function eventsUpTo(data: TimelineData, at: StoryMoment, window?: number)
   );
 }
 
+/**
+ * The events that have not begun by this moment but start within `ahead`
+ * years of it, in date order: next year's events for the brief window (A33).
+ */
+export function eventsAhead(data: TimelineData, at: StoryMoment, ahead: number): EventSpan[] {
+  const y = momentYear(at);
+  return eventSpans(data).filter((e) => !begunBy(e, at) && e.startYear <= y + ahead);
+}
+
 /** TM-2: events whose date or range includes the year. */
 export function eventsIn(data: TimelineData, year: number): EventSpan[] {
   return eventSpans(data).filter((e) => e.startYear <= year && e.endYear >= year);

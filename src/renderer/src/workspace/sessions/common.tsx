@@ -2,7 +2,10 @@ import type { ReactNode } from 'react';
 import { isEntryCollection } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import type { Response } from '../../../../shared/ipc';
-import { GROUP_TITLES } from '../../../../shared/domain/brief/selection';
+import { GROUP_TITLES, WINDOW_AHEAD } from '../../../../shared/domain/brief/selection';
+import { span } from '../timeline/common';
+import { WorldEventsStrip } from '../timeline/WorldEventsStrip';
+import type { StripEvent } from '../timeline/WorldEventsStrip';
 import { patchBetween } from '../../../../shared/domain/diff';
 import { editCommand } from '../../../../shared/domain/undoRunner';
 import { entryTitle } from '../../../../shared/schema';
@@ -92,6 +95,66 @@ function GroupBlock(props: {
   );
 }
 
+/** The world events of a strand's window as strip events: titles only, placed by year (A33). */
+function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
+  const out: StripEvent[] = [];
+  for (const g of groups) {
+    if (g.kind !== 'eventsWindow' && g.kind !== 'plannedAhead') continue;
+    for (const it of g.items) {
+      if (typeof it.year !== 'number' || it.year > to) continue;
+      const endYear = it.endYear ?? it.year;
+      if (endYear < from) continue;
+      out.push({ id: it.id, title: it.title, status: it.status, startYear: it.year, endYear });
+    }
+  }
+  return out;
+}
+
+/**
+ * A33: the world events of the window as a strip of years, in place of the
+ * list. Planned-ahead events inside the window sit on the strip too, so the
+ * list under "Planned ahead" keeps only what lies past it.
+ */
+function EventsWindow(props: {
+  strand: SelectionView['strands'][number];
+  group: Group;
+  window: number;
+  onOpen: OpenEntry;
+  action?: (item: Item) => ReactNode;
+}) {
+  const { strand, group } = props;
+  const from = strand.year - props.window;
+  const to = strand.year + WINDOW_AHEAD;
+  const events = stripEvents(strand.groups, from, to);
+  const items = new Map<string, Item>();
+  for (const g of strand.groups) for (const it of g.items) items.set(it.id, it);
+  const action = props.action;
+  return (
+    <section className="sel-group" data-testid="sel-group" data-kind={group.kind}>
+      <h4>
+        World events <span className="num">{span(from, to)}</span>{' '}
+        <span className="num">({events.length})</span>
+      </h4>
+      <WorldEventsStrip
+        events={events}
+        from={from}
+        to={to}
+        year={strand.year}
+        everyYear
+        onOpen={(id) => props.onOpen('worldEvents', id)}
+        action={
+          action &&
+          ((id) => {
+            const it = items.get(id);
+            return it ? action(it) : null;
+          })
+        }
+        label={`World events ${span(from, to)}`}
+      />
+    </section>
+  );
+}
+
 /**
  * A selection as the "Relevant to Session" view and the brief show it: one
  * section per strand, primary first, then what the section shares. Every item
@@ -130,15 +193,38 @@ export function SelectionBody(props: {
                 <span>Community: {s.communities.map((c) => c.label).join(', ')}</span>
               )}
             </div>
-            {s.groups.map((g) => (
-              <GroupBlock
-                key={g.kind}
-                group={g}
-                onOpen={onOpen}
-                action={props.action}
-                showEmpty={g.kind === 'characters' || g.kind === 'culture' || g.kind === 'era'}
-              />
-            ))}
+            {s.groups.map((g) => {
+              if (g.kind === 'eventsWindow') {
+                return (
+                  <EventsWindow
+                    key={g.kind}
+                    strand={s}
+                    group={g}
+                    window={sel.window}
+                    onOpen={onOpen}
+                    action={props.action}
+                  />
+                );
+              }
+              const group =
+                g.kind === 'plannedAhead'
+                  ? {
+                      ...g,
+                      items: g.items.filter(
+                        (it) => typeof it.year !== 'number' || it.year > s.year + WINDOW_AHEAD,
+                      ),
+                    }
+                  : g;
+              return (
+                <GroupBlock
+                  key={g.kind}
+                  group={group}
+                  onOpen={onOpen}
+                  action={props.action}
+                  showEmpty={g.kind === 'characters' || g.kind === 'culture' || g.kind === 'era'}
+                />
+              );
+            })}
           </section>
         );
       })}

@@ -197,6 +197,19 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect(groupIds(s, 'era')).toHaveAttribute('data-id', 'ERA-2040');
   await expect(groupIds(s, 'culture')).toHaveAttribute('data-id', 'CU4');
   await expect(groupIds(s, 'plannedAhead')).toHaveAttribute('data-id', 'E9');
+  // A33: the window is a strip of five year columns, 2042 to 2046 around 2045, titles only.
+  const strip = s.locator('[data-testid="sel-group"][data-kind="eventsWindow"]');
+  await expect(strip.locator('h4')).toHaveText('World events 2042 to 2046 (1)');
+  const cols = strip.locator('.we-col');
+  await expect(cols).toHaveCount(5);
+  await expect(cols.first()).toHaveAttribute('data-year', '2042');
+  await expect(cols.last()).toHaveAttribute('data-year', '2046');
+  await expect(cols.nth(3)).toHaveAttribute('aria-current', 'date');
+  await expect(groupIds(s, 'eventsWindow')).toHaveAttribute('data-id', 'E5');
+  await expect(groupIds(s, 'eventsWindow').getByRole('button')).toHaveText(
+    'Grid batteries replace the last coal plant in Guangdong',
+  );
+  await expect(strip).not.toContainText('planned');
   await expect(groupIds(s, 'povUnknown')).toContainText(
     'Daniel Hale knows; Iris Hale-Zhou does not',
   );
@@ -286,19 +299,19 @@ test('SB-9 removing and adding entries in the brief view, then regenerating', as
   const brief = page.getByTestId('brief-view');
   const sel = brief.getByTestId('brief-selection');
   await sel
-    .locator('[data-testid="sel-item"][data-id="E4"]')
+    .locator('[data-testid="sel-item"][data-id="E5"]')
     .first()
     .getByRole('button', { name: /^Remove/ })
     .click();
   await sel.getByPlaceholder('Add an entry to the selection').fill('Zhou Jun');
   await sel.getByRole('option').filter({ hasText: 'Zhou Jun' }).first().click();
   await expect(brief.getByTestId('brief-pending')).toContainText('To add: Z4');
-  await expect(brief.getByTestId('brief-pending')).toContainText('To remove: E4');
+  await expect(brief.getByTestId('brief-pending')).toContainText('To remove: E5');
   await brief.getByTestId('brief-regenerate').click();
   await expect(brief.getByTestId('brief-note')).toBeVisible();
   const saved = (await invoke('entry.get', { collection: 'briefs', id: briefId })).entry;
   expect(saved.entryIds).toContain('Z4');
-  expect(saved.entryIds).not.toContain('E4');
+  expect(saved.entryIds).not.toContain('E5');
   await expect(brief.getByTestId('brief-body')).toContainText('11. Added by you');
   await expect(brief.getByTestId('brief-body')).toContainText('removed by you');
 });

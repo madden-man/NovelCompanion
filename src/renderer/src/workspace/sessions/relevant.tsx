@@ -112,7 +112,7 @@ export function BriefSettings({
     <WriteFieldset className="stack tight">
       <div className="row">
         <div className="field">
-          <label htmlFor={ids.window}>World events window (years)</label>
+          <label htmlFor={ids.window}>World events window (years before, plus one ahead)</label>
           <input
             id={ids.window}
             type="number"

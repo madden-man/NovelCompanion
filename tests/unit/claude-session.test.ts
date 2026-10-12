@@ -77,7 +77,7 @@ describe('DB-2 SB-4 SB-5 the brief is laid out by code from Claude structured it
         worldEvents: [
           item('The forties.', ['ERA-2040'], 'canon'),
           item('Robots outnumber cars.', ['E9'], 'canon'),
-          item('The trade accord.', ['E4'], 'canon'),
+          item('The king tide.', ['E3'], 'canon'),
         ],
       },
       input,
@@ -86,8 +86,8 @@ describe('DB-2 SB-4 SB-5 the brief is laid out by code from Claude structured it
     const lines = md.split('\n');
     const at = (s: string) => lines.findIndex((l) => l.includes(s));
     expect(at('Planned or idea:')).toBeLessThan(at('[[ERA-2040]]'));
-    expect(at('Canon:')).toBeLessThan(at('[[E4]]'));
-    expect(at('[[E4]]')).toBeLessThan(at('Planned or idea:'));
+    expect(at('Canon:')).toBeLessThan(at('[[E3]]'));
+    expect(at('[[E3]]')).toBeLessThan(at('Planned or idea:'));
     expect(at('## Planned ahead (after 2045)')).toBeLessThan(at('[[E9]]'));
   });
 
@@ -96,11 +96,13 @@ describe('DB-2 SB-4 SB-5 the brief is laid out by code from Claude structured it
       model as never,
       { kind: 'chapter', chapterId: 'CH6' },
       undefined,
-      { remove: ['E4'] },
+      { remove: ['E5'] },
     );
     const md = renderBrief(empty, briefsInput(removed, briefMaterial(removed)), removed);
     expect(md).toContain('## Left out');
-    expect(md).toMatch(/- Pacific Rim trade accord signed \(.*\): removed by you/);
+    expect(md).toMatch(
+      /- Grid batteries replace the last coal plant in Guangdong \(.*\): removed by you/,
+    );
     expect(uncitedLines(md)).toEqual([]);
     expect(markdownToHtml(md, removed.ids, { flagUncited: true })).not.toContain('uncited-flag');
   });

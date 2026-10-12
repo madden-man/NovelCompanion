@@ -74,6 +74,7 @@ const ItemWire = z.strictObject({
   refs: z.array(z.string()),
   state: LifeState.optional(),
   year: z.number().nullable().optional(),
+  endYear: z.number().optional(),
 });
 
 const GroupWire = z.strictObject({

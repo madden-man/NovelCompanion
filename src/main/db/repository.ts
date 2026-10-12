@@ -36,6 +36,7 @@ import {
   tagsUsed,
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
+import { DEFAULT_SELECTION_SETTINGS } from '../../shared/domain/brief/selection';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
@@ -1685,13 +1686,13 @@ export class Repository {
 
   // ---------- brief settings (SB-2 window, SB-6 budget), stored in meta ----------
 
-  /** The brief window in years and the size budget in characters, or their defaults (10, 40,000). */
+  /** The brief window in years before the story year and the size budget in characters, or their defaults (3, 40,000; A33). */
   briefSettings(): { window: number; budget: number } {
     const doc = this.model.get('meta', BRIEF_SETTINGS_ID);
     const int = (v: unknown, min: number, max: number, d: number) =>
       typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : d;
     return {
-      window: int(doc?.window, 0, 200, 10),
+      window: int(doc?.window, 0, 200, DEFAULT_SELECTION_SETTINGS.window),
       budget: int(doc?.budget, 0, 10_000_000, 40_000),
     };
   }

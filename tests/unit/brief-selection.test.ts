@@ -207,14 +207,31 @@ describe('SB-2 the selection matches the hand-written known answers (fixtures/ex
     expect(sel.ids).not.toContain('B8');
   });
 
-  test('SB-2 the window is a setting: a 3 year window keeps only events still running since 2042', () => {
-    const sel = selectForSession(
+  test('SB-2 A33 the window is a setting: a 10 year window keeps events still running since 2035, the default 3 keeps those since 2042', () => {
+    const wide = selectForSession(
       briefData(false),
       { kind: 'chapter', chapterId: 'CH2' },
-      { window: 3, budget: 40_000 },
+      { window: 10, budget: 40_000 },
     );
+    expect(group(wide.strands[0]!.groups, 'eventsWindow').map((it) => it.id)).toEqual(['E4', 'E5']);
+    expect(wide.window).toBe(10);
+    const sel = selectForSession(briefData(false), { kind: 'chapter', chapterId: 'CH2' });
     expect(group(sel.strands[0]!.groups, 'eventsWindow').map((it) => it.id)).toEqual(['E5']);
     expect(sel.window).toBe(3);
+  });
+
+  test('SB-2 A33 SB-5 the window looks one year ahead: the event of the year after sits under Planned ahead, never in the window', () => {
+    const sel = selectForSession(briefData(false), {
+      kind: 'pov',
+      year: 2047,
+      povCharacterId: 'H5',
+    });
+    const s = sel.strands[0]!;
+    expect(group(s.groups, 'eventsWindow').map((it) => it.id)).toEqual([]);
+    expect(
+      group(s.groups, 'plannedAhead').map((it) => [it.id, it.note, it.year, it.endYear]),
+    ).toEqual([['E6', '2048 to 2051, next year', 2048, 2051]]);
+    expect(sel.ids).toContain('E6');
   });
 });
 
@@ -370,15 +387,15 @@ describe('SB-9 add and remove entries, then select again', () => {
       briefData(true),
       { kind: 'chapter', chapterId: 'CH6' },
       undefined,
-      { add: ['Z4', 'GL1'], remove: ['E4', 'GL1'] },
+      { add: ['Z4', 'GL1'], remove: ['E5', 'GL1'] },
     );
-    expect(sel.ids).not.toContain('E4');
+    expect(sel.ids).not.toContain('E5');
     expect(sel.ids).not.toContain('GL1');
     expect(sel.ids).toContain('Z4');
     expect(group(sel.shared, 'added').map((it) => [it.id, it.title])).toEqual([['Z4', 'Zhou Jun']]);
-    expect(sel.removed).toEqual(['E4', 'GL1']);
+    expect(sel.removed).toEqual(['E5', 'GL1']);
     expect(sel.omitted.map((o) => [o.id, o.reason])).toEqual([
-      ['E4', 'removed'],
+      ['E5', 'removed'],
       ['GL1', 'removed'],
     ]);
     expect(structuredBrief(sel)).toContain('## 11. Added by you');

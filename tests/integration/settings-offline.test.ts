@@ -225,7 +225,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     );
     await expect(session.repo.setStoryTime({ year: 2040 })).rejects.toBeInstanceOf(ReadOnlyError);
     expect(session.model.get('characters', 'H1')?.birthplace).toBe('Before the snapshot');
-    expect(session.repo.briefSettings().window).toBe(10);
+    expect(session.repo.briefSettings().window).toBe(3);
 
     const latest = await latestSnapshot(snaps, slug);
     const dir = join(snaps, slug, latest!.id);

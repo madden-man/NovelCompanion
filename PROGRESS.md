@@ -268,7 +268,7 @@ Timing numbers below were measured on 2026-10-11 while other suites ran on the s
 
 Open notes from the 2026-10-11 review (should-fix): `connection.ts` reports every launch connect failure as a network problem although `connectionFailure()` distinguishes a wrong password; `--series-*` family colours are exempt from the 3:1 contrast check; `KeychainMongoUriStore` is executed by no test, record a manual check after a dmg install; the A26 full-screen test is order-dependent and cannot run alone. Final-audit spot-check of M0 to M5 rows (ARCH-7, ED-2, FT-5, BK-4, IM-3): each genuinely exercises its criterion.
 
-## Amendments A26 to A32 (2026-10-11)
+## Amendments A26 to A33 (2026-10-11, A33 2026-10-12)
 
 | Criterion | Status | Evidence |
 |---|---|---|
@@ -279,4 +279,5 @@ Open notes from the 2026-10-11 review (should-fix): `connection.ts` reports ever
 | A30 (M8, M10 with Tommy) | n/a | Withdrawn by A32. |
 | A31 (Drive scopes, export folder) | open | Awaiting Tommy's confirmation of the export-folder reading. |
 | A32 (M8 and M10 built now) | n/a | Process. M8 and M10 are being built on 2026-10-11 as Opus sub agents under the section 9 protocol (M10 in three parts: settings and offline, performance and accessibility and errors, packaging and journey); the final audit runs after M8 merges. |
+| A33 (five year events window, titles-only strip) | pass | `tests/unit/brief-selection.test.ts` "SB-2 A33 the window is a setting" and "SB-2 A33 SB-5 the window looks one year ahead"; `tests/unit/timeline.test.ts` "A33 eventsAhead"; known answers in `fixtures/expected/sb2-selection.json` updated for the default window of 3; `tests/e2e/session.spec.ts` SB-9 removes E5 from the strip. Strip: `src/renderer/src/workspace/timeline/WorldEventsStrip.tsx`, on every strand in Relevant to Session and above the World events list. Built 2026-10-12. |
 

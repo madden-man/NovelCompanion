@@ -355,3 +355,16 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
   );
   await expect(page.getByTestId('tree-keys')).toContainText('I opens the inspector for anyone');
 });
+
+test('A33 TL-6 the World events section opens with a strip of every event year, the story year marked, and a title opens its event', async () => {
+  await rail(page, 'World events').click();
+  const strip = page.getByTestId('we-timeline');
+  await expect(strip).toBeVisible();
+  // Eleven fixture events in eleven distinct years; years with no event collapse to a tick.
+  await expect(strip.locator('.we-col:not(.empty)')).toHaveCount(11);
+  await expect(strip.locator('.we-col').first()).toHaveAttribute('data-year', '2008');
+  await expect(strip.locator('.we-col').last()).toHaveAttribute('data-year', '2090');
+  await expect(strip.locator('.we-col.current')).toHaveCount(1);
+  await strip.getByRole('button', { name: 'Care robots licensed for home use in Oregon' }).click();
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'E2');
+});

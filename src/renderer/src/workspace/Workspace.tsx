@@ -25,7 +25,7 @@ import { TreeView } from './tree/TreeView';
 import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import { OutlineView } from './plot';
 import { ZhNavProvider } from './Zh';
-import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
+import { EntryList, ListsView, NewEntryForm, TrashView, WorldEventsTimeline } from './views';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
@@ -263,7 +263,12 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               />
             ) : (
               <>
-                <div className="ws-editor empty-editor">
+                <div className="ws-editor empty-editor stack">
+                  {view.collection === 'worldEvents' && (
+                    <WorldEventsTimeline
+                      onSelect={(id) => setView({ ...view, selected: id, creating: false })}
+                    />
+                  )}
                   <p className="lede">
                     Pick an entry to edit it, or make a new{' '}
                     {collectionInfo[view.collection].singular.toLowerCase()}.

@@ -61,7 +61,7 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await summaries.selectOption('claude-haiku-5-5');
   // Brief window and size budget (SB-2, SB-6): typed, then Tab moves on and saves.
   const briefs = view.getByTestId('settings-briefs');
-  await briefs.getByLabel('World events window (years)').fill('7');
+  await briefs.getByLabel('World events window (years before, plus one ahead)').fill('7');
   await page.keyboard.press('Tab');
   await briefs.getByLabel('Size budget (characters)').fill('12345');
   await page.keyboard.press('Tab');
@@ -99,7 +99,9 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const again = await openSettings();
   await expect(again.getByTestId('claude-model-summaries')).toHaveValue('claude-haiku-5-5');
-  await expect(again.getByLabel('World events window (years)')).toHaveValue('7');
+  await expect(again.getByLabel('World events window (years before, plus one ahead)')).toHaveValue(
+    '7',
+  );
   await expect(again.getByLabel('Size budget (characters)')).toHaveValue('12345');
   await expect(again.getByTestId('settings-romanization-cantonese')).toHaveValue('');
   await expect(again.getByTestId('settings-romanization-mandarin')).not.toHaveValue('');

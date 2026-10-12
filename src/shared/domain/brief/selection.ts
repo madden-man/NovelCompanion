@@ -17,7 +17,9 @@
  *   by the story year and not ended before it; everyone in the fallback is
  *   alive in the story year.
  * - World events linked to the strand's places that start after the story
- *   year go under "Planned ahead" (SB-5) instead of being left out.
+ *   year go under "Planned ahead" (SB-5) instead of being left out, as do the
+ *   events of the year after the story year (A33: the window looks one year
+ *   ahead, and SB-5 keeps anything after the story year under that heading).
  * - Step 9 lists still-open questions and decided questions (A24) apart.
  * - With a year and point of view but no chapter, step 7 is the chapter with
  *   that point of view whose strand year is latest at or before the story
@@ -35,7 +37,7 @@ import { knownBy } from '../knowledge';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { latestLog } from '../sessionLog';
-import { characterName, eraFor, eventSpans, eventsUpTo, stateIn } from '../timeline';
+import { characterName, eraFor, eventSpans, eventsAhead, eventsUpTo, stateIn } from '../timeline';
 import type { EventSpan, TimelineData } from '../timeline';
 import { ENTRY_COLLECTIONS } from '../../schema';
 
@@ -55,13 +57,20 @@ export type BriefInput =
     };
 
 export interface SelectionSettings {
-  /** SB-2 step 3: years before the story year that world events are taken from. */
+  /** SB-2 step 3 (A33): years before the story year that world events are taken from. */
   window: number;
   /** SB-6: the most characters of selected text a brief takes. */
   budget: number;
 }
 
-export const DEFAULT_SELECTION_SETTINGS: SelectionSettings = { window: 10, budget: 40_000 };
+export const DEFAULT_SELECTION_SETTINGS: SelectionSettings = { window: 3, budget: 40_000 };
+
+/**
+ * A33: the window also looks this many years past the story year, so a five
+ * year window around 2051 runs from 2048 to 2052. Those later events sit under
+ * "Planned ahead" (SB-5), never among the events in the window.
+ */
+export const WINDOW_AHEAD = 1;
 
 /** SB-9: entries the person added to, or removed from, the selection. */
 export interface SelectionOverrides {
@@ -194,6 +203,8 @@ export interface SelectedItem {
   state?: LifeState;
   /** For events and beats: the year it starts. */
   year?: number | null;
+  /** For events: the year it ends (the start year for a single date). */
+  endYear?: number;
 }
 
 export interface SelectionGroup {
@@ -554,6 +565,7 @@ export function selectForSession(
     detail: joinText(plain(eventDocs.get(e.id)?.body), e.regions.join(', ')),
     refs: [],
     year: e.startYear,
+    endYear: e.endYear,
   });
 
   const strands: StrandSelection[] = section.strands.map((spec) => {
@@ -603,11 +615,16 @@ export function selectForSession(
       });
     }
 
-    // 3. World events: the window, formative in a lifetime, and linked to the places.
+    // 3. World events: the window (A33: `window` years back and WINDOW_AHEAD
+    // years on), formative in a lifetime, and linked to the places.
     const taken = new Set<string>();
     for (const e of eventsUpTo(data, Y, settings.window)) {
       taken.add(e.id);
       push('eventsWindow', eventItem(e, ''));
+    }
+    for (const e of eventsAhead(data, Y, WINDOW_AHEAD)) {
+      taken.add(e.id);
+      push('plannedAhead', eventItem(e, e.startYear === Y ? 'later this year' : 'next year'));
     }
     const lifetimes = present
       .map((id) => characters.get(id))

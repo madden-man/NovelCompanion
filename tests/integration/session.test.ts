@@ -39,7 +39,6 @@ const CH6_IDS = [
   'E1',
   'E2',
   'E3',
-  'E4',
   'E5',
   'E9',
   'ERA-2040',
@@ -94,7 +93,7 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
 
   test('SB-6 SB-2 the window and the budget are settings that change the selection', async () => {
     expect(await invoke('brief.settings.get', {})).toEqual({
-      window: 10,
+      window: 3,
       budget: 40_000,
       model: 'claude-opus-5-5',
       claudeAvailable: false,
@@ -105,7 +104,7 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
         input: { kind: 'chapter', chapterId: 'CH6' },
       });
       // A25: the lead sections stay, and the brief says it is over budget.
-      expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E4', 'E5', 'H3', 'H5']);
+      expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E5', 'H3', 'H5']);
       expect(tight.selection.overBudget).toBe(true);
       expect(tight.selection.omitted[0]).toMatchObject({ id: 'E9', reason: 'budget' });
       expect(tight.structured).toContain('## Left out');
@@ -118,7 +117,7 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
       expect(win.items.map((i) => i.id)).toEqual(['E5']);
     } finally {
       // Restore the defaults even when an assertion fails, so later tests do not inherit a budget of 0.
-      await invoke('brief.settings.set', { budget: 40_000, window: 10 });
+      await invoke('brief.settings.set', { budget: 40_000, window: 3 });
     }
     await expect(invoke('brief.settings.set', { window: 500 } as never)).rejects.toThrow();
   });
@@ -249,13 +248,13 @@ describe('SB-8 SB-9 saved briefs: edit, regenerate, export', () => {
 
   test('SB-9 removing and adding entries, then regenerating, keeps the brief and changes its manifest', async () => {
     const before = (await invoke('revisions.list', { collection: 'briefs', id })).revisions.length;
-    const r = await invoke('brief.regenerate', { id, remove: ['E4', 'GL1'], add: ['Z4'] });
+    const r = await invoke('brief.regenerate', { id, remove: ['E5', 'GL1'], add: ['Z4'] });
     expect(r.brief._id).toBe(id);
     const brief = bible.model.get('briefs', id)!;
-    expect(brief.entryIds).not.toContain('E4');
+    expect(brief.entryIds).not.toContain('E5');
     expect(brief.entryIds).not.toContain('GL1');
     expect(brief.entryIds).toContain('Z4');
-    expect(brief.removed).toEqual(['E4', 'GL1']);
+    expect(brief.removed).toEqual(['E5', 'GL1']);
     expect(brief.added).toEqual(['Z4']);
     expect(String(brief.content)).toContain('## 11. Added by you');
     expect(String(brief.content)).toContain('removed by you');

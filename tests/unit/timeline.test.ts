@@ -11,6 +11,7 @@ import {
   eraFor,
   eraSpans,
   erasFor,
+  eventsAhead,
   eventsIn,
   eventsUpTo,
   everyoneIn,
@@ -261,6 +262,16 @@ describe('WE-2 WE-3 eras and events', () => {
     expect(eventsUpTo(data(), 2050, 0).map((e) => e.id)).toEqual(['E6']);
     expect(eventsUpTo(data(), 2100).map((e) => e.id)).toHaveLength(11);
     expect(eventsUpTo(data(), 2007)).toEqual([]);
+  });
+
+  test('A33 eventsAhead: the events not yet begun that start within the years ahead', () => {
+    expect(eventsAhead(data(), 2047, 1).map((e) => e.id)).toEqual(['E6']);
+    expect(eventsAhead(data(), 2048, 1).map((e) => e.id)).toEqual([]);
+    expect(eventsAhead(data(), 2056, 1).map((e) => e.id)).toEqual(['E7']);
+    expect(eventsAhead(data(), { year: 2008, month: 8, day: 7 }, 0).map((e) => e.id)).toEqual([
+      'E1',
+    ]);
+    expect(eventsAhead(data(), 2045, 0)).toEqual([]);
   });
 
   test('WE-3 with a full date, an event later in the same year has not happened yet', () => {
