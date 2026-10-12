@@ -136,7 +136,6 @@ export const WRITE_CHANNELS = [
   'manuscript.apply',
   'chapter.summarize',
   'claude.ask',
-  'claude.run',
   'claude.importProposals',
   'drive.link',
   'drive.unlink',

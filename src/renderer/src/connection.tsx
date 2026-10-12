@@ -31,7 +31,9 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => {
-    void refresh();
+    void call('connection.status', {})
+      .then(setStatus)
+      .catch(() => undefined);
     const off = window.api.on('connection.changed', setStatus);
     const offBibles = window.api.on('bibles.changed', () => void refresh());
     return () => {
@@ -96,7 +98,9 @@ const when = (iso: string): string => {
  * is open read-only. It says what happened, what to do next, and offers the
  * most recent local snapshot.
  */
-export function ConnectionBanner(props: { onOpened?: (bible: { id: string; name: string }) => void }) {
+export function ConnectionBanner(props: {
+  onOpened?: (bible: { id: string; name: string }) => void;
+}) {
   const { status, setStatus } = useConnection();
   const [busy, setBusy] = useState<'retry' | 'open' | null>(null);
   const [error, setError] = useState<string | null>(null);

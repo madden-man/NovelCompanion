@@ -60,7 +60,10 @@ function RomanizationSettings() {
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   useEffect(() => {
     void call('romanization.get', {}).then(setData);
-    const off = window.api.on('lists.changed', () => void call('romanization.get', {}).then(setData));
+    const off = window.api.on(
+      'lists.changed',
+      () => void call('romanization.get', {}).then(setData),
+    );
     return off;
   }, []);
   const set = async (languageId: string, label: string, systemId: string) => {
@@ -79,7 +82,9 @@ function RomanizationSettings() {
       <p className="example-note">
         Glossary terms that do not follow their language&apos;s system are flagged.
       </p>
-      {data.languages.length === 0 && <p>The Languages list is empty. Add a language under Lists.</p>}
+      {data.languages.length === 0 && (
+        <p>The Languages list is empty. Add a language under Lists.</p>
+      )}
       {data.languages.map((l) => (
         <LanguageSystem
           key={l.id}
@@ -283,18 +288,14 @@ export function MongoSettings() {
         </div>
       </form>
       {note && (
-        <p
-          className={note.bad ? 'callout crit' : 'callout'}
-          role="status"
-          data-testid="mongo-note"
-        >
+        <p className={note.bad ? 'callout crit' : 'callout'} role="status" data-testid="mongo-note">
           {note.text}
         </p>
       )}
       <p id={ids.hint} className="example-note">
         Test connection checks the string you pasted, or the stored one when the box is empty, and
-        saves nothing. Replace connection tests the new string first and switches to it only when
-        it connects. The app shows only the start of the string and the end of the cluster address.
+        saves nothing. Replace connection tests the new string first and switches to it only when it
+        connects. The app shows only the start of the string and the end of the cluster address.
       </p>
     </div>
   );

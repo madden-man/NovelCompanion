@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { WriteFieldset, useWriteGuard } from '../../connection';
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -273,6 +274,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   }, [filterKey, lineage]);
 
   const saveSeq = useRef(0);
+  const ro = useWriteGuard();
   // Stored positions are kept; only new people are placed (FT-10).
   const placed = useMemo(
     () => (graph && data ? placeLayout(graph, data.positions) : null),
@@ -280,13 +282,14 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   );
 
   useEffect(() => {
-    if (!placed?.changed) return;
+    // ARCH-6: a read-only snapshot places new people on screen without saving them.
+    if (!placed?.changed || ro.off) return;
     const positions = placed.positions;
     const seq = ++saveSeq.current;
     void call('tree.savePositions', { positions }).then(() => {
       if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
     });
-  }, [placed]);
+  }, [placed, ro.off]);
 
   const layout = useMemo(() => {
     if (!graph || !placed) return null;
@@ -604,7 +607,13 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
               <button type="button" className="btn" onClick={fit}>
                 Fit to window
               </button>
-              <button type="button" className="btn" onClick={() => setConfirmTidy(true)}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setConfirmTidy(true)}
+                disabled={ro.off}
+                {...ro.tip}
+              >
                 Tidy layout
               </button>
               <button type="button" className="btn" onClick={() => void exportAs('png')}>
@@ -1019,101 +1028,103 @@ function AddRelativeForm(props: {
   };
 
   return (
-    <form
-      className="panel stack"
-      onSubmit={(e) => void submit(e)}
-      aria-label={title}
-      data-testid="add-form"
-    >
-      <strong>{title}</strong>
-      {noParents && (
-        <p className="callout warn">
-          {anchor?.name} has no known parents, so a sibling has no one to link to. Add a parent
-          first.
-        </p>
-      )}
-      <div className="field">
-        <label htmlFor={ids.name}>Name</label>
-        <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-      </div>
-      <div className="field">
-        <label htmlFor={ids.born}>Birth year</label>
-        <input
-          id={ids.born}
-          type="number"
-          className="num"
-          value={born}
-          placeholder="Blank for unknown"
-          onChange={(e) => setBorn(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor={ids.status}>Status</label>
-        <select
-          id={ids.status}
-          value={status}
-          onChange={(e) => setStatus(e.target.value as Status)}
-        >
-          <option value="canon">Canon</option>
-          <option value="planned">Planned</option>
-          <option value="idea">Idea</option>
-        </select>
-      </div>
-      {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
+    <WriteFieldset>
+      <form
+        className="panel stack"
+        onSubmit={(e) => void submit(e)}
+        aria-label={title}
+        data-testid="add-form"
+      >
+        <strong>{title}</strong>
+        {noParents && (
+          <p className="callout warn">
+            {anchor?.name} has no known parents, so a sibling has no one to link to. Add a parent
+            first.
+          </p>
+        )}
         <div className="field">
-          <label htmlFor={ids.type}>Link type</label>
-          <select id={ids.type} value={linkType} onChange={(e) => setLinkType(e.target.value)}>
-            {linkTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
+          <label htmlFor={ids.name}>Name</label>
+          <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div className="field">
+          <label htmlFor={ids.born}>Birth year</label>
+          <input
+            id={ids.born}
+            type="number"
+            className="num"
+            value={born}
+            placeholder="Blank for unknown"
+            onChange={(e) => setBorn(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={ids.status}>Status</label>
+          <select
+            id={ids.status}
+            value={status}
+            onChange={(e) => setStatus(e.target.value as Status)}
+          >
+            <option value="canon">Canon</option>
+            <option value="planned">Planned</option>
+            <option value="idea">Idea</option>
           </select>
         </div>
-      )}
-      {kind === 'partner' && (
-        <div className="field">
-          <label htmlFor={ids.type}>Union type</label>
-          <select id={ids.type} value={unionType} onChange={(e) => setUnionType(e.target.value)}>
-            {unionTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+        {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
+          <div className="field">
+            <label htmlFor={ids.type}>Link type</label>
+            <select id={ids.type} value={linkType} onChange={(e) => setLinkType(e.target.value)}>
+              {linkTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {kind === 'partner' && (
+          <div className="field">
+            <label htmlFor={ids.type}>Union type</label>
+            <select id={ids.type} value={unionType} onChange={(e) => setUnionType(e.target.value)}>
+              {unionTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {kind === 'child' && (
+          <div className="field">
+            <label htmlFor={ids.co}>Other parent</label>
+            <select id={ids.co} value={coParent} onChange={(e) => setCoParent(e.target.value)}>
+              <option value="">No other parent</option>
+              {partners.map((p) => (
+                <option key={p} value={p}>
+                  {graph.byId.get(p)?.name ?? p}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {error && (
+          <p className="callout crit" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="row tight">
+          <button
+            type="submit"
+            className="btn primary small"
+            disabled={busy || !name.trim() || noParents}
+          >
+            {kind === 'person' ? 'Add the person' : `Add the ${kind}`}
+          </button>
+          <button type="button" className="btn small" onClick={() => props.onDone(null)}>
+            Cancel
+          </button>
         </div>
-      )}
-      {kind === 'child' && (
-        <div className="field">
-          <label htmlFor={ids.co}>Other parent</label>
-          <select id={ids.co} value={coParent} onChange={(e) => setCoParent(e.target.value)}>
-            <option value="">No other parent</option>
-            {partners.map((p) => (
-              <option key={p} value={p}>
-                {graph.byId.get(p)?.name ?? p}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {error && (
-        <p className="callout crit" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="row tight">
-        <button
-          type="submit"
-          className="btn primary small"
-          disabled={busy || !name.trim() || noParents}
-        >
-          {kind === 'person' ? 'Add the person' : `Add the ${kind}`}
-        </button>
-        <button type="button" className="btn small" onClick={() => props.onDone(null)}>
-          Cancel
-        </button>
-      </div>
-    </form>
+      </form>
+    </WriteFieldset>
   );
 }
 
@@ -1126,6 +1137,7 @@ function LinkList(props: {
 }) {
   const { graph, person } = props;
   const undo = useUndo();
+  const ro = useWriteGuard();
   const linkTypes = useListItems('parentLinkTypes');
   const unionTypes = useListItems('unionTypes');
   const [error, setError] = useState<string | null>(null);
@@ -1215,6 +1227,8 @@ function LinkList(props: {
                 <select
                   id={`type-${r.id}`}
                   value={r.type}
+                  disabled={ro.off}
+                  {...ro.tip}
                   onChange={(e) => void setType(r.collection, r.id, e.target.value)}
                 >
                   {(r.collection === 'unions' ? unionTypes : linkTypes).map((t) => (
@@ -1236,6 +1250,8 @@ function LinkList(props: {
                   className="btn small danger"
                   aria-label={`Remove the link with ${name(r.other)}`}
                   onClick={() => void remove(r.collection, r.id, r.title)}
+                  disabled={ro.off}
+                  {...ro.tip}
                 >
                   Remove
                 </button>
@@ -1291,57 +1307,63 @@ function LinkExistingForm({ graph, person }: { graph: TreeGraph; person: TreePer
   };
 
   return (
-    <form
-      className="panel stack"
-      onSubmit={(e) => void submit(e)}
-      aria-label="Link someone already in the tree"
-    >
-      <strong>Link someone already in the tree</strong>
-      <div className="field">
-        <label htmlFor={ids.kind}>They are {person.name}&apos;s</label>
-        <select id={ids.kind} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-          <option value="parent">Parent</option>
-          <option value="child">Child</option>
-          <option value="partner">Partner</option>
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor={ids.other}>Person</label>
-        <select id={ids.other} value={other} onChange={(e) => setOther(e.target.value)}>
-          <option value="">Pick a person</option>
-          {graph.people
-            .filter((p) => p.id !== person.id)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
+    <WriteFieldset>
+      <form
+        className="panel stack"
+        onSubmit={(e) => void submit(e)}
+        aria-label="Link someone already in the tree"
+      >
+        <strong>Link someone already in the tree</strong>
+        <div className="field">
+          <label htmlFor={ids.kind}>They are {person.name}&apos;s</label>
+          <select
+            id={ids.kind}
+            value={kind}
+            onChange={(e) => setKind(e.target.value as typeof kind)}
+          >
+            <option value="parent">Parent</option>
+            <option value="child">Child</option>
+            <option value="partner">Partner</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={ids.other}>Person</label>
+          <select id={ids.other} value={other} onChange={(e) => setOther(e.target.value)}>
+            <option value="">Pick a person</option>
+            {graph.people
+              .filter((p) => p.id !== person.id)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor={ids.type}>{kind === 'partner' ? 'Union type' : 'Link type'}</label>
+          <select id={ids.type} value={shownType} onChange={(e) => setType(e.target.value)}>
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
               </option>
             ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor={ids.type}>{kind === 'partner' ? 'Union type' : 'Link type'}</label>
-        <select id={ids.type} value={shownType} onChange={(e) => setType(e.target.value)}>
-          {types.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="row tight">
-        <button type="submit" className="btn small" disabled={!other}>
-          Link
-        </button>
-      </div>
-      {message && (
-        <p
-          className={message.bad ? 'callout crit' : 'callout'}
-          role={message.bad ? 'alert' : 'status'}
-          data-testid="link-message"
-        >
-          {message.text}
-        </p>
-      )}
-    </form>
+          </select>
+        </div>
+        <div className="row tight">
+          <button type="submit" className="btn small" disabled={!other}>
+            Link
+          </button>
+        </div>
+        {message && (
+          <p
+            className={message.bad ? 'callout crit' : 'callout'}
+            role={message.bad ? 'alert' : 'status'}
+            data-testid="link-message"
+          >
+            {message.text}
+          </p>
+        )}
+      </form>
+    </WriteFieldset>
   );
 }

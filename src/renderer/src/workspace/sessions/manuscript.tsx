@@ -1,3 +1,4 @@
+import { WriteFieldset } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
 import { editCommand } from '../../../../shared/domain/undoRunner';
@@ -150,7 +151,7 @@ function ChapterManuscript({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEn
           The summary may be out of date: the text changed after it was written.
         </p>
       )}
-      <div className="row">
+      <WriteFieldset className="row">
         {sources.map((s) => (
           <button
             key={s.id}
@@ -176,7 +177,7 @@ function ChapterManuscript({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEn
             Mark as written
           </button>
         )}
-      </div>
+      </WriteFieldset>
       {error && (
         <p className="callout crit" role="alert">
           {error}

@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
+import { useWriteGuard } from '../connection';
 import type { DragEvent } from 'react';
 import { describeState } from '../../../shared/domain/ages';
 import { beatsOfArc } from '../../../shared/domain/outline';
@@ -22,6 +23,7 @@ const COL = 26;
 /** Move a chapter or a beat and record one undo step for the whole reorder (PL-3). */
 function useReorder() {
   const undo = useUndo();
+  const ro = useWriteGuard();
   const [error, setError] = useState<string | null>(null);
   const run = async (
     kind: 'chapters' | 'beats',
@@ -31,6 +33,8 @@ function useReorder() {
     label: string,
   ) => {
     setError(null);
+    // ARCH-6: a read-only snapshot cannot be reordered, by drag or by button.
+    if (ro.off) return;
     try {
       const r = await call('plot.reorder', { kind, groupId, movedId, toIndex });
       if (r.changes.length) {
@@ -40,7 +44,7 @@ function useReorder() {
       setError(plainError(e));
     }
   };
-  return { run, error };
+  return { run, error, ro };
 }
 
 /**
@@ -214,7 +218,7 @@ export function OutlineView() {
                   >
                     <div
                       className="ol-label"
-                      draggable={outline.order === 'reading'}
+                      draggable={outline.order === 'reading' && !reorder.ro.off}
                       onDragStart={(e) => {
                         setDragging(row.id);
                         e.dataTransfer.effectAllowed = 'move';
@@ -312,7 +316,8 @@ export function OutlineView() {
               <button
                 type="button"
                 className="btn small"
-                disabled={selIndex <= 0 || outline?.order !== 'reading'}
+                disabled={selIndex <= 0 || outline?.order !== 'reading' || reorder.ro.off}
+                {...reorder.ro.tip}
                 onClick={() => move(sel, -1)}
               >
                 Move earlier in its part
@@ -321,8 +326,12 @@ export function OutlineView() {
                 type="button"
                 className="btn small"
                 disabled={
-                  selIndex < 0 || selIndex >= siblings.length - 1 || outline?.order !== 'reading'
+                  selIndex < 0 ||
+                  selIndex >= siblings.length - 1 ||
+                  outline?.order !== 'reading' ||
+                  reorder.ro.off
                 }
+                {...reorder.ro.tip}
                 onClick={() => move(sel, 1)}
               >
                 Move later in its part
@@ -334,6 +343,8 @@ export function OutlineView() {
                 <select
                   id={`${orderId}-part`}
                   value=""
+                  disabled={reorder.ro.off}
+                  {...reorder.ro.tip}
                   onChange={(e) => toPart(sel, e.target.value)}
                 >
                   <option value="">Pick a part</option>
@@ -569,7 +580,8 @@ function ArcBeats({ reorder }: { reorder: ReturnType<typeof useReorder> }) {
                   <button
                     type="button"
                     className="btn small"
-                    disabled={i === 0}
+                    disabled={i === 0 || reorder.ro.off}
+                    {...reorder.ro.tip}
                     aria-label={`Move ${entryTitle(b)} up`}
                     onClick={() => moveTo(b._id, i - 1)}
                   >
@@ -578,7 +590,8 @@ function ArcBeats({ reorder }: { reorder: ReturnType<typeof useReorder> }) {
                   <button
                     type="button"
                     className="btn small"
-                    disabled={i === list.length - 1}
+                    disabled={i === list.length - 1 || reorder.ro.off}
+                    {...reorder.ro.tip}
                     aria-label={`Move ${entryTitle(b)} down`}
                     onClick={() => moveTo(b._id, i + 1)}
                   >

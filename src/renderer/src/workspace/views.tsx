@@ -1,4 +1,5 @@
 import { createCommand, renameCommand, restoreCommand } from '../../../shared/domain/undoRunner';
+import { WriteFieldset, useWriteGuard } from '../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
@@ -79,11 +80,18 @@ export function EntryList(props: {
     return rows.sort((a, b) => entryTitle(a.entry).localeCompare(entryTitle(b.entry)));
   }, [entries, filter, state, collection, sectionId]);
 
+  const ro = useWriteGuard();
   return (
     <section className="ws-list" aria-labelledby="list-title">
       <div className="list-head">
         <h2 id="list-title">{heading}</h2>
-        <button type="button" className="btn primary small" onClick={props.onNew}>
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={props.onNew}
+          disabled={ro.off}
+          {...ro.tip}
+        >
           {section ? `New entry in ${heading}` : `New ${info.singular.toLowerCase()}`}
         </button>
       </div>
@@ -248,31 +256,33 @@ export function NewEntryForm(props: {
         Fill in what this entry needs to exist. Every other field is editable once it is made.
       </p>
       <form className="editor-fields" onSubmit={(e) => void submit(e)} data-testid="new-entry">
-        {required.map((spec) => (
-          <Field
-            key={spec.name}
-            spec={spec}
-            value={draft[spec.name]}
-            path={spec.name}
-            messages={{ warnings: [], issues }}
-            root={draft}
-            onMention={() => undefined}
-            onChange={(v) => setDraft((d) => ({ ...d, [spec.name]: v }))}
-          />
-        ))}
-        {error && (
-          <p className="callout crit" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="row">
-          <button type="submit" className="btn primary" disabled={busy}>
-            Create {info.singular.toLowerCase()}
-          </button>
-          <button type="button" className="btn" onClick={props.onCancel}>
-            Cancel
-          </button>
-        </div>
+        <WriteFieldset>
+          {required.map((spec) => (
+            <Field
+              key={spec.name}
+              spec={spec}
+              value={draft[spec.name]}
+              path={spec.name}
+              messages={{ warnings: [], issues }}
+              root={draft}
+              onMention={() => undefined}
+              onChange={(v) => setDraft((d) => ({ ...d, [spec.name]: v }))}
+            />
+          ))}
+          {error && (
+            <p className="callout crit" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="row">
+            <button type="submit" className="btn primary" disabled={busy}>
+              Create {info.singular.toLowerCase()}
+            </button>
+            <button type="button" className="btn" onClick={props.onCancel}>
+              Cancel
+            </button>
+          </div>
+        </WriteFieldset>
       </form>
     </section>
   );
@@ -282,6 +292,7 @@ export function NewEntryForm(props: {
 export function TrashView(props: { onOpen: (collection: EntryCollection, id: string) => void }) {
   const { version } = useStore();
   const undo = useUndo();
+  const ro = useWriteGuard();
   const [entries, setEntries] = useState<Response<'trash.list'>['entries'] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -353,6 +364,8 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
                   type="button"
                   className="btn small primary"
                   onClick={() => void restore(collection, entry._id, entryTitle(entry))}
+                  disabled={ro.off}
+                  {...ro.tip}
                 >
                   Restore {entryTitle(entry)}
                 </button>
@@ -447,103 +460,105 @@ function ListPanel({ list }: { list: WireList }) {
   return (
     <div className="panel stack" data-list={list._id}>
       <h3>{list.label}</h3>
-      {list.items.length === 0 ? (
-        <p className="example-note">No items yet.</p>
-      ) : (
-        <ul className="list-items">
-          {list.items.map((item) => (
-            <li key={item.id}>
-              {editing === item.id ? (
-                <form
-                  className="row tight"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void rename(item.id);
-                  }}
-                >
-                  <label className="sr-only" htmlFor={`rename-${list._id}-${item.id}`}>
-                    New name for {item.label}
-                  </label>
-                  <input
-                    id={`rename-${list._id}-${item.id}`}
-                    value={label}
-                    autoFocus
-                    onChange={(e) => setLabel(e.target.value)}
-                  />
-                  <button type="submit" className="btn small primary" disabled={!label.trim()}>
-                    Save name
-                  </button>
-                  <button type="button" className="btn small" onClick={() => setEditing(null)}>
-                    Cancel
-                  </button>
-                </form>
-              ) : (
-                <div className="row tight item-row">
-                  <span className="item-label">
-                    {hierarchical ? itemPath(asDoc, item.id) : item.label}
-                  </span>
-                  {item.detail && <span className="example-note">{item.detail}</span>}
-                  <span className="example-note">
-                    {item.usage === 1 ? 'used once' : `used ${item.usage} times`}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn small"
-                    aria-label={`Rename ${item.label}`}
-                    onClick={() => {
-                      setEditing(item.id);
-                      setLabel(item.label);
+      <WriteFieldset className="stack tight">
+        {list.items.length === 0 ? (
+          <p className="example-note">No items yet.</p>
+        ) : (
+          <ul className="list-items">
+            {list.items.map((item) => (
+              <li key={item.id}>
+                {editing === item.id ? (
+                  <form
+                    className="row tight"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void rename(item.id);
                     }}
                   >
-                    Rename
-                  </button>
-                  {!list.fixedItems && (
+                    <label className="sr-only" htmlFor={`rename-${list._id}-${item.id}`}>
+                      New name for {item.label}
+                    </label>
+                    <input
+                      id={`rename-${list._id}-${item.id}`}
+                      value={label}
+                      autoFocus
+                      onChange={(e) => setLabel(e.target.value)}
+                    />
+                    <button type="submit" className="btn small primary" disabled={!label.trim()}>
+                      Save name
+                    </button>
+                    <button type="button" className="btn small" onClick={() => setEditing(null)}>
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <div className="row tight item-row">
+                    <span className="item-label">
+                      {hierarchical ? itemPath(asDoc, item.id) : item.label}
+                    </span>
+                    {item.detail && <span className="example-note">{item.detail}</span>}
+                    <span className="example-note">
+                      {item.usage === 1 ? 'used once' : `used ${item.usage} times`}
+                    </span>
                     <button
                       type="button"
-                      className="btn small danger"
-                      aria-label={`Remove ${item.label}`}
-                      onClick={() => void remove(item.id)}
+                      className="btn small"
+                      aria-label={`Rename ${item.label}`}
+                      onClick={() => {
+                        setEditing(item.id);
+                        setLabel(item.label);
+                      }}
                     >
-                      Remove
+                      Rename
                     </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {!list.fixedItems && (
-        <form className="row tight" onSubmit={(e) => void add(e)}>
-          <label className="sr-only" htmlFor={addId}>
-            New item for {list.label}
-          </label>
-          <input
-            id={addId}
-            value={newLabel}
-            placeholder="New item"
-            onChange={(e) => setNewLabel(e.target.value)}
-          />
-          {hierarchical && (
-            <>
-              <label className="sr-only" htmlFor={parentId}>
-                Inside
-              </label>
-              <select id={parentId} value={parent} onChange={(e) => setParent(e.target.value)}>
-                <option value="">At the top</option>
-                {list.items.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    Inside {itemPath(asDoc, i.id)}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-          <button type="submit" className="btn small" disabled={!newLabel.trim()}>
-            Add to {list.label}
-          </button>
-        </form>
-      )}
+                    {!list.fixedItems && (
+                      <button
+                        type="button"
+                        className="btn small danger"
+                        aria-label={`Remove ${item.label}`}
+                        onClick={() => void remove(item.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {!list.fixedItems && (
+          <form className="row tight" onSubmit={(e) => void add(e)}>
+            <label className="sr-only" htmlFor={addId}>
+              New item for {list.label}
+            </label>
+            <input
+              id={addId}
+              value={newLabel}
+              placeholder="New item"
+              onChange={(e) => setNewLabel(e.target.value)}
+            />
+            {hierarchical && (
+              <>
+                <label className="sr-only" htmlFor={parentId}>
+                  Inside
+                </label>
+                <select id={parentId} value={parent} onChange={(e) => setParent(e.target.value)}>
+                  <option value="">At the top</option>
+                  {list.items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      Inside {itemPath(asDoc, i.id)}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <button type="submit" className="btn small" disabled={!newLabel.trim()}>
+              Add to {list.label}
+            </button>
+          </form>
+        )}
+      </WriteFieldset>
       {message && (
         <p className={message.bad ? 'callout crit' : 'callout'} role="status">
           {message.text}

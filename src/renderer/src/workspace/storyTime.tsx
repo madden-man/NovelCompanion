@@ -1,3 +1,4 @@
+import { useReadOnly } from '../connection';
 import {
   createContext,
   useCallback,
@@ -83,9 +84,15 @@ export function StoryTimeProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   const pending = useRef<StoryTimeValue | null>(null);
-  const save = useCallback(async (value: StoryTimeValue) => {
-    setStored(await call('storyTime.set', { time: value }));
-  }, []);
+  // ARCH-6: in a read-only snapshot the story time moves on screen but is not saved anywhere.
+  const readOnly = useReadOnly() !== null;
+  const save = useCallback(
+    async (value: StoryTimeValue) => {
+      if (readOnly) return;
+      setStored(await call('storyTime.set', { time: value }));
+    },
+    [readOnly],
+  );
 
   const set = useCallback(
     (value: StoryTimeValue) => {

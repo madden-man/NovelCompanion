@@ -1,3 +1,4 @@
+import { WriteFieldset } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Request, Response } from '../../../../shared/ipc';
 import { characterName } from '../../../../shared/domain/timeline';
@@ -87,7 +88,7 @@ export function BriefSettings({
     }
   };
   const fields = (
-    <>
+    <WriteFieldset className="stack tight">
       <div className="row">
         <div className="field">
           <label htmlFor={ids.window}>World events window (years)</label>
@@ -117,7 +118,7 @@ export function BriefSettings({
           {error}
         </p>
       )}
-    </>
+    </WriteFieldset>
   );
   if (variant === 'panel') {
     return (

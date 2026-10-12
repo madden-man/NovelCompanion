@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useWriteGuard } from '../connection';
+import { WriteFieldset } from '../connection';
 import { collectionInfo, manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { ProposalView } from '../../../shared/ipc';
@@ -84,6 +86,7 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
   const [message, setMessage] = useState<string | null>(null);
   const title = `${OP_TEXT[proposal.op]} ${collectionInfo[collection].singular.toLowerCase()}${targetTitle ? ` ${targetTitle}` : ''}`;
 
+  const ro = useWriteGuard();
   const act = async (fn: () => Promise<unknown>) => {
     setMessage(null);
     try {
@@ -113,6 +116,8 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
           <button
             type="button"
             className="btn small"
+            disabled={ro.off}
+            {...ro.tip}
             onClick={() => void act(() => call('proposal.refresh', { id: proposal._id }))}
           >
             Compare again
@@ -145,68 +150,70 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
           </tbody>
         </table>
       )}
-      {editing && (
-        <form
-          className="editor-fields"
-          aria-label="Edit the proposed values"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(async () => {
-              await call('proposal.edit', { id: proposal._id, data: editing });
-              setEditing(null);
-            });
-          }}
-        >
-          {manifest
-            .filter((s) => editKeys.includes(s.name))
-            .map((spec) => (
-              <Field
-                key={spec.name}
-                spec={spec}
-                value={editing[spec.name]}
-                path={spec.name}
-                messages={{ warnings: [], issues: [] }}
-                root={editing}
-                onMention={() => undefined}
-                onChange={(v) => setEditing((d) => (d ? ({ ...d, [spec.name]: v } as Entry) : d))}
-              />
-            ))}
-          <div className="row">
-            <button type="submit" className="btn primary">
-              Save proposed values
-            </button>
-            <button type="button" className="btn" onClick={() => setEditing(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-      <div className="row">
-        <button
-          type="button"
-          className="btn primary"
-          disabled={conflict}
-          onClick={() => void act(() => call('proposal.approve', { id: proposal._id }))}
-        >
-          Approve
-        </button>
-        {proposal.op !== 'delete' && !editing && (
+      <WriteFieldset className="stack">
+        {editing && (
+          <form
+            className="editor-fields"
+            aria-label="Edit the proposed values"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void act(async () => {
+                await call('proposal.edit', { id: proposal._id, data: editing });
+                setEditing(null);
+              });
+            }}
+          >
+            {manifest
+              .filter((s) => editKeys.includes(s.name))
+              .map((spec) => (
+                <Field
+                  key={spec.name}
+                  spec={spec}
+                  value={editing[spec.name]}
+                  path={spec.name}
+                  messages={{ warnings: [], issues: [] }}
+                  root={editing}
+                  onMention={() => undefined}
+                  onChange={(v) => setEditing((d) => (d ? ({ ...d, [spec.name]: v } as Entry) : d))}
+                />
+              ))}
+            <div className="row">
+              <button type="submit" className="btn primary">
+                Save proposed values
+              </button>
+              <button type="button" className="btn" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="row">
           <button
             type="button"
-            className="btn"
-            onClick={() => setEditing({ ...proposal.data } as Entry)}
+            className="btn primary"
+            disabled={conflict}
+            onClick={() => void act(() => call('proposal.approve', { id: proposal._id }))}
           >
-            Edit
+            Approve
           </button>
-        )}
-        <button
-          type="button"
-          className="btn danger"
-          onClick={() => void act(() => call('proposal.reject', { id: proposal._id }))}
-        >
-          Reject
-        </button>
-      </div>
+          {proposal.op !== 'delete' && !editing && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setEditing({ ...proposal.data } as Entry)}
+            >
+              Edit
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => void act(() => call('proposal.reject', { id: proposal._id }))}
+          >
+            Reject
+          </button>
+        </div>
+      </WriteFieldset>
       {message && (
         <p className="callout crit" role="alert">
           {message}

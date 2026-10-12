@@ -1,4 +1,5 @@
 import { createContext, useContext, useId, useMemo, useState } from 'react';
+import { useWriteGuard } from '../connection';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { zhPieces } from '../../../shared/domain/zh';
@@ -40,6 +41,7 @@ function ZhRun(props: { text: string; term: ZhTerm | null; actions: boolean }) {
     if (linked) nav('glossaryTerms', term.id);
   };
 
+  const ro = useWriteGuard();
   const add = async () => {
     setMessage(null);
     try {
@@ -97,6 +99,8 @@ function ZhRun(props: { text: string; term: ZhTerm | null; actions: boolean }) {
               <button
                 type="button"
                 className="btn small"
+                disabled={ro.off}
+                {...ro.tip}
                 onClick={(e) => {
                   e.stopPropagation();
                   void add();
