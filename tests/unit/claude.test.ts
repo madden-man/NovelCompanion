@@ -46,7 +46,13 @@ describe('AI-4 Claude never drafts prose', () => {
       { name: 'panel', text: panelSystemPrompt() },
       ...FEATURE_LIST.map((f) => ({ name: f.feature, text: featureSystemPrompt(f) })),
     ];
-    expect(prompts.map((p) => p.name)).toEqual(['panel', 'briefs', 'summaries', 'importProposals']);
+    expect(prompts.map((p) => p.name)).toEqual([
+      'panel',
+      'briefs',
+      'summaries',
+      'importProposals',
+      'alignment',
+    ]);
     for (const p of prompts) {
       expect(p.text, p.name).toContain(
         'Never draft prose for the novel. Produce only the structured output requested.',
@@ -267,6 +273,6 @@ describe('T-3 recorded responses', () => {
       'update',
       'link',
     ]);
-    expect(Object.keys(FEATURES)).toEqual(['briefs', 'summaries', 'importProposals']);
+    expect(Object.keys(FEATURES)).toEqual(['briefs', 'summaries', 'importProposals', 'alignment']);
   });
 });

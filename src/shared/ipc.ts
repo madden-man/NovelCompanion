@@ -15,6 +15,7 @@ import { claudeContract, claudeEvents } from './claude';
 import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
 import { driveContract } from './ipcDrive';
+import { continuityContract } from './ipcContinuity';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -1320,6 +1321,8 @@ export const contract = {
   /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
+  /** M8 alignment check (src/shared/ipcContinuity.ts). */
+  ...continuityContract,
 } as const;
 
 export type Channel = keyof typeof contract;

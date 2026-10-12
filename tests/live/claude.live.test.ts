@@ -143,5 +143,34 @@ describe.skipIf(!hasKey)('T-3 live Claude smoke test', () => {
     expect(t.proposalIds.length + t.rejected.length).toBeGreaterThan(0);
   });
 
-  test.skip('CC-3 alignment finds P1 and P2 (the alignment feature arrives in M8)', () => {});
+  test('CC-3 T-3 report whether the real model finds P1 (Chapter 5) and P2 (Chapter 7); informs, never gates', async () => {
+    const bibleIpc = ipcFor(() => bible);
+    const found: Record<string, boolean> = {};
+    for (const [label, chapterId, cite, pattern] of [
+      ['P1', 'CH5', 'H1', /seventy/i],
+      ['P2', 'CH7', 'Z3', /Shanghai/i],
+    ] as const) {
+      const id = runId();
+      const r = await call('claude.alignment', { runId: id, chapterId });
+      const run = await finished(id);
+      report(`Alignment: ${chapterId}`, run);
+      const { findings } = await bibleIpc('continuity.findings', { chapterId });
+      const hit = findings.some(
+        (f) =>
+          f.kind === 'alignment' &&
+          f.entries.some((e) => e.id === cite) &&
+          f.lines.some((l) => pattern.test(l.text)),
+      );
+      found[label] = hit;
+      say(
+        `${label} ${hit ? 'FOUND' : 'NOT FOUND'} (${r.status}; ${r.found} kept, ${r.rejected.length} refused${
+          r.rejected.length ? `: ${JSON.stringify(r.rejected)}` : ''
+        })`,
+      );
+      expect(r.status).toBe('done');
+    }
+    say(
+      `Alignment smoke test: P1 ${found.P1 ? 'found' : 'missed'}, P2 ${found.P2 ? 'found' : 'missed'}.`,
+    );
+  });
 });

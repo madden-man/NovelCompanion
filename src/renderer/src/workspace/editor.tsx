@@ -23,6 +23,7 @@ import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterSummary } from './character';
 import { FactSummary } from './knowledge';
+import { ChapterAlignment } from './sessions/alignment';
 import { Zh } from './Zh';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
@@ -409,6 +410,9 @@ export function EntryPane(props: {
             />
           ))}
         </form>
+        {collection === 'chapters' && !inTrash && (
+          <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
+        )}
       </section>
       <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
         <span className="eyebrow">Inspector</span>

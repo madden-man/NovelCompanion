@@ -294,6 +294,24 @@ export const claudeContract = {
     request: z.strictObject({ runId: RunIdWire, fileId: z.string().min(1).max(64) }),
     response: Started,
   },
+  /**
+   * CC-3: Claude reads one chapter against its selected entries and the stored
+   * plot. Resolves when the run ends (it streams meanwhile); the checked
+   * findings are stored, and the ones Claude made that failed the checks are
+   * returned with the reason.
+   */
+  'claude.alignment': {
+    request: z.strictObject({ runId: RunIdWire, chapterId: z.string().min(1).max(64) }),
+    response: z.strictObject({
+      runId: z.string(),
+      conversationId: z.string(),
+      status: RunStatus,
+      error: RunError.nullable(),
+      found: z.int().min(0),
+      hidden: z.int().min(0),
+      rejected: z.array(z.strictObject({ summary: z.string(), reason: z.string() })),
+    }),
+  },
 } as const;
 
 export const claudeEvents = {

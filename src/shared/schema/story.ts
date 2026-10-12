@@ -339,6 +339,26 @@ export const briefFields: FieldSpec[] = [
   f.system('selection', 'Selection'),
 ];
 
+/**
+ * One field change in a finding's prepared change set (CC-4, Manuscript wins):
+ * the entry, the field (a top-level field, or `strands.<strand ID>.<field>` on
+ * a chapter), and the value that makes the bible match the chapter. Checked
+ * against the schema and the read model before it is stored or applied.
+ */
+export const ChangeSetItem = z.strictObject({
+  collection: z.string().min(1).max(64),
+  id: Id,
+  field: z.string().min(1).max(200),
+  value: z.unknown(),
+});
+export type ChangeSetItem = z.infer<typeof ChangeSetItem>;
+
+/** CC-4, Dismiss: what the finding was dismissed against, so a change brings it back. */
+export const Dismissal = z.strictObject({
+  textHash: z.string().max(64),
+  entryHash: z.string().max(64),
+});
+
 /** A continuity finding (CC-2, CC-3). Editable like anything else (ED-6). */
 export const Finding = entry({
   chapterId: Id.nullable().default(null),
@@ -350,6 +370,21 @@ export const Finding = entry({
   entryIds: z.array(Id).default([]),
   state: z.enum(['open', 'manuscriptWins', 'rewrite', 'dismissed']).default('open'),
   resolutionNote: z.string().default(''),
+  /** M8: the stable identity of the finding across runs (check, chapter, strand, entries). */
+  key: z.string().max(500).default(''),
+  /** The structural check, or the alignment kind (age, date, place, ...). */
+  check: z.string().max(100).default(''),
+  strandId: z.string().max(64).nullable().default(null),
+  storyYear: Year.nullable().default(null),
+  /** CC-4 Rewrite recommended: a plain description of what must change. Never replacement prose (AI-4). */
+  mustChange: z.string().default(''),
+  /** CC-4 Manuscript wins: the checked change set that makes the bible match the chapter. */
+  changeSet: z.array(ChangeSetItem).default([]),
+  /** Changes Claude prepared that failed the checks, with the reason, so they are shown and never applied. */
+  rejectedChanges: z.array(z.strictObject({ summary: z.string(), reason: z.string() })).default([]),
+  dismissal: Dismissal.nullable().default(null),
+  /** The alignment run that produced it (AI-1). */
+  runId: z.string().max(64).nullable().default(null),
 });
 export type Finding = z.infer<typeof Finding>;
 
@@ -376,6 +411,17 @@ export const findingFields: FieldSpec[] = [
     { value: 'dismissed', label: 'Dismissed' },
   ]),
   f.longText('resolutionNote', 'Resolution note'),
+  f.system('key', 'Finding key'),
+  f.system('check', 'Check'),
+  f.system('strandId', 'Strand'),
+  f.system('storyYear', 'Story year'),
+  f.longText('mustChange', 'What must change', {
+    hint: 'For a rewrite task: what must change in the text to match the bible. Never replacement text.',
+  }),
+  f.system('changeSet', 'Prepared change set'),
+  f.system('rejectedChanges', 'Changes that failed the checks'),
+  f.system('dismissal', 'Dismissed against'),
+  f.system('runId', 'Alignment run'),
 ];
 
 function yearRangeLines(): FieldSpec[] {

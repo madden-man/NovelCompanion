@@ -5,6 +5,7 @@ import { beatArcOrders } from './004-beat-arc-orders';
 import { themeAppearances } from './005-theme-appearances';
 import { importSources } from './006-import-sources';
 import { conversations } from './007-conversations';
+import { findingKeys } from './008-finding-keys';
 import type { Migration } from './types';
 
 export type { Migration } from './types';
@@ -18,6 +19,7 @@ export const migrations: readonly Migration[] = [
   themeAppearances,
   importSources,
   conversations,
+  findingKeys,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.length;

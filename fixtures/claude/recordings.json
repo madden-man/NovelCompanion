@@ -532,5 +532,116 @@
         }
       }
     ]
+  },
+  {
+    "name": "alignment: Chapter 5, Candles, finds P1 (CC-3)",
+    "feature": "alignment",
+    "match": "Chapter 5: Candles [CH5]",
+    "steps": [
+      {
+        "text": "{\"findings\": [{\"kind\": \"age\", \"lineStart\": 1, \"lineEnd\": 1, "
+      },
+      {
+        "text": "\"quote\": \"Her mother was seventy\", \"citedIds\": [\"H1\"], \"explanation\": \"The text calls Margaret seventy. The bible has her born in 1958, so in 2040 she is 82.\", \"mustChange\": \"Margaret's stated age must match the bible: she is 82 in 2040.\", \"changeSet\": [{\"collection\": \"characters\", \"id\": \"H1\", \"field\": \"birth\", \"value\": \"{\\\"year\\\": 1970}\"}]}]}"
+      },
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "findings": [
+              {
+                "kind": "age",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "quote": "Her mother was seventy",
+                "citedIds": ["H1"],
+                "explanation": "The text calls Margaret seventy. The bible has her born in 1958, so in 2040 she is 82.",
+                "mustChange": "Margaret's stated age must match the bible: she is 82 in 2040.",
+                "changeSet": [
+                  {
+                    "collection": "characters",
+                    "id": "H1",
+                    "field": "birth",
+                    "value": "{\"year\": 1970}"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "alignment: Chapter 7, Rain in Guangzhou, finds P2, with one bad change and one bad citation (CC-3)",
+    "feature": "alignment",
+    "match": "Chapter 7: Rain in Guangzhou [CH7]",
+    "steps": [
+      {
+        "text": "{\"findings\": [{\"kind\": \"place\", \"lineStart\": 1, \"lineEnd\": 1"
+      },
+      {
+        "text": ", \"quote\": \"Lan had grown up in Shanghai\", \"citedIds\": [\"Z3\"], \"explanation\": \"The text says Lan grew up in Shanghai. The bible says Zhou Lan was raised in Guangzhou.\", \"mustChange\": \"The city Lan grew up in must be Guangzhou, as the bible records.\", \"changeSet\": [{\"collection\": \"characters\", \"id\": \"Z3\", \"field\": \"birthplace\", \"value\": \"\\\"Shanghai\\\"\"}, {\"collection\": \"characters\", \"id\": \"Z3\", \"field\": \"hometown\", \"value\": \"\\\"Shanghai\\\"\"}]}, {\"kind\": \"other\", \"lineStart\": 2, \"lineEnd\": 2, \"quote\": \"waited out the storm\", \"citedIds\": [\"Z9\"], \"explanation\": \"A character the bible does not hold.\", \"mustChange\": \"Nothing.\", \"changeSet\": []}]}"
+      },
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "findings": [
+              {
+                "kind": "place",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "quote": "Lan had grown up in Shanghai",
+                "citedIds": ["Z3"],
+                "explanation": "The text says Lan grew up in Shanghai. The bible says Zhou Lan was raised in Guangzhou.",
+                "mustChange": "The city Lan grew up in must be Guangzhou, as the bible records.",
+                "changeSet": [
+                  {
+                    "collection": "characters",
+                    "id": "Z3",
+                    "field": "birthplace",
+                    "value": "\"Shanghai\""
+                  },
+                  {
+                    "collection": "characters",
+                    "id": "Z3",
+                    "field": "hometown",
+                    "value": "\"Shanghai\""
+                  }
+                ]
+              },
+              {
+                "kind": "other",
+                "lineStart": 2,
+                "lineEnd": 2,
+                "quote": "waited out the storm",
+                "citedIds": ["Z9"],
+                "explanation": "A character the bible does not hold.",
+                "mustChange": "Nothing.",
+                "changeSet": []
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "alignment: any other chapter agrees with the bible (CC-3)",
+    "feature": "alignment",
+    "steps": [
+      {
+        "text": "{\"findings\": []}"
+      },
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "findings": []
+          }
+        }
+      }
+    ]
   }
 ]
