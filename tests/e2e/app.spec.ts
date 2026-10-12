@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { rail } from './helpers';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -182,10 +183,7 @@ test('ARCH-8 opening a bible makes it current and shows its name in the window',
 
 test('ARCH-8 a second bible made with the New bible form can be switched to', async () => {
   // With a bible open, the bible list and the New bible form live under Bibles in the rail.
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button', { name: 'Bibles' })
-    .click();
+  await rail(page, 'Bibles').click();
   await page.getByLabel('Name').fill('East Winds');
   await expect(page.getByLabel('ID')).toHaveValue('east-winds');
   await page.getByRole('button', { name: 'Create bible' }).click();
@@ -199,10 +197,7 @@ test('ARCH-8 a second bible made with the New bible form can be switched to', as
     bible: { id: 'east-winds', name: 'East Winds' },
   });
 
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('button', { name: 'Bibles' })
-    .click();
+  await rail(page, 'Bibles').click();
   await page.getByRole('button', { name: 'Open Tide Lines' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines');
   expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual({
