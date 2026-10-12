@@ -142,6 +142,7 @@ export const WRITE_CHANNELS = [
   'claude.ask',
   'claude.importProposals',
   'claude.alignment',
+  'claude.capture',
   'continuity.check',
   'continuity.resolve',
   'drive.link',

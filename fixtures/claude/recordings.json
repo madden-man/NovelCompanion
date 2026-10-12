@@ -656,5 +656,161 @@
         }
       }
     ]
+  },
+  {
+    "name": "capture: a move files on the character and a new world event in the story year (KB-6)",
+    "feature": "capture",
+    "match": "Zhou Lan moved to Seattle when Portland started rationing water",
+    "steps": [
+      {
+        "tool": "search_entries",
+        "input": {
+          "query": "Zhou Lan",
+          "section": "characters"
+        }
+      },
+      {
+        "tool": "get_entry",
+        "input": {
+          "section": "characters",
+          "id": "Z3"
+        }
+      },
+      {
+        "tool": "search_entries",
+        "input": {
+          "query": "rationing water"
+        }
+      },
+      {
+        "tool": "timeline_for_year",
+        "input": {
+          "year": 2034
+        }
+      },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "update",
+          "collection": "characters",
+          "targetId": "Z3",
+          "data": {
+            "placesLived": [
+              {
+                "place": "Guangzhou",
+                "startYear": 1988,
+                "endYear": 2027
+              },
+              {
+                "place": "Portland, Oregon",
+                "startYear": 2027,
+                "endYear": 2034
+              },
+              {
+                "place": "Seattle",
+                "startYear": 2034,
+                "endYear": null
+              }
+            ]
+          },
+          "reason": "The capture says Zhou Lan moved to Seattle; the text gives no year, so the story year 2034 is used."
+        }
+      },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "create",
+          "collection": "worldEvents",
+          "data": {
+            "title": "Portland rations water",
+            "start": {
+              "year": 2034
+            },
+            "reality": "invented",
+            "categoryId": "climate",
+            "regions": ["Pacific Northwest"],
+            "placeIds": ["PLC1"],
+            "characterIds": ["Z3"],
+            "status": "idea"
+          },
+          "reason": "The capture names Portland's water rationing as what made Zhou Lan move; no event holds it yet."
+        }
+      },
+      {
+        "text": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034."
+      },
+      {
+        "result": {
+          "text": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034.",
+          "structured": {
+            "summary": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034."
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "capture: a fact about two characters is linked to both (KB-6)",
+    "feature": "capture",
+    "match": "Meiling and Ruth kept the same recipe box",
+    "steps": [
+      {
+        "tool": "search_entries",
+        "input": {
+          "query": "Meiling",
+          "section": "characters"
+        }
+      },
+      {
+        "tool": "search_entries",
+        "input": {
+          "query": "Ruth",
+          "section": "characters"
+        }
+      },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "create",
+          "collection": "facts",
+          "data": {
+            "title": "Meiling and Ruth shared one recipe box",
+            "body": "<p>Zhou Meiling and Ruth Hale kept the same recipe box, passed between the two families.</p>",
+            "links": [
+              {
+                "targetId": "Z1",
+                "kind": "concerns"
+              },
+              {
+                "targetId": "H4",
+                "kind": "concerns"
+              }
+            ]
+          },
+          "reason": "The capture is a fact about Zhou Meiling and Ruth Hale together."
+        }
+      },
+      {
+        "text": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale."
+      },
+      {
+        "result": {
+          "text": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale.",
+          "structured": {
+            "summary": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale."
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "capture: no network, so the box keeps the text as an open question (KB-7)",
+    "feature": "capture",
+    "match": "The ferry to Macau stopped running in winter",
+    "steps": [
+      {
+        "fail": "network"
+      }
+    ]
   }
 ]

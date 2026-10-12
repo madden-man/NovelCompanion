@@ -1,0 +1,88 @@
+/* Capture box (KB-6, KB-7): Cmd+K or Add in the status bar, over every screen. Theme tokens only. */
+.capture-box {
+  width: min(720px, 100%);
+  margin-top: 8vh;
+}
+.capture-time {
+  margin: 0;
+  color: var(--fg-2);
+}
+.capture-input {
+  width: 100%;
+  min-height: 3.2em;
+  max-height: 50vh;
+  resize: none;
+  overflow-y: auto;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+.capture-hint {
+  margin: 4px 0 0;
+  color: var(--fg-2);
+  font-size: 0.9rem;
+}
+.capture-sent {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.capture-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.capture-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.capture-card {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+}
+.capture-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--fg);
+  cursor: pointer;
+}
+.capture-card-head input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.capture-reason {
+  margin: 0;
+  color: var(--fg);
+}
+.capture-card .diff-table {
+  width: 100%;
+}
+.capture-actions {
+  justify-content: flex-start;
+}
+.capture-filed-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.capture-kind {
+  color: var(--fg-2);
+}
+.capture-box h3:focus-visible,
+.capture-box strong:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

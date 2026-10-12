@@ -53,6 +53,7 @@ describe('AI-4 Claude never drafts prose', () => {
       'summaries',
       'importProposals',
       'alignment',
+      'capture',
     ]);
     for (const p of prompts) {
       expect(p.text, p.name).toContain(
@@ -98,7 +99,7 @@ describe('AI-4 Claude never drafts prose', () => {
     }
   });
 
-  test('AI-4 only the panel question carries free text to Claude; every feature channel takes IDs', () => {
+  test('AI-4 KB-6 only the panel question and the capture text carry free text to Claude; every other feature channel takes IDs', () => {
     const freeText: string[] = [];
     for (const [channel, spec] of Object.entries(claudeContract)) {
       const schema = z.toJSONSchema(spec.request, { io: 'input' }) as {
@@ -113,7 +114,11 @@ describe('AI-4 Claude never drafts prose', () => {
       }
     }
     // The key is pasted into settings; it is never sent to Claude.
-    expect(freeText.sort()).toEqual(['claude.ask.question', 'claude.setKey.key']);
+    expect(freeText.sort()).toEqual([
+      'claude.ask.question',
+      'claude.capture.text',
+      'claude.setKey.key',
+    ]);
   });
 
   test('AI-6 the disclosure says what is sent, where the bible lives, and that Drive export is the other way out', () => {
@@ -243,6 +248,7 @@ describe('DB-4 model per feature', () => {
       summaries: 'claude-sonnet-5-5',
       importProposals: 'claude-sonnet-5-5',
       panel: 'claude-sonnet-5-5',
+      capture: 'claude-sonnet-5-5',
     });
     expect(modelsWithDefaults({ models: { panel: 'claude-haiku-5-5' }, acknowledged: {} })).toEqual(
       {
@@ -312,6 +318,12 @@ describe('T-3 recorded responses', () => {
       'update',
       'link',
     ]);
-    expect(Object.keys(FEATURES)).toEqual(['briefs', 'summaries', 'importProposals', 'alignment']);
+    expect(Object.keys(FEATURES)).toEqual([
+      'briefs',
+      'summaries',
+      'importProposals',
+      'alignment',
+      'capture',
+    ]);
   });
 });
