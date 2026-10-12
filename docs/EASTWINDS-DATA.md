@@ -21,3 +21,12 @@ Snapshot "Before the High Level chapter plan" (2026-10-11T21:37:08.162Z).
 - Manuscript chapter 1 is on "Ch. 1: Mark Feels Free" (open question: or Ch. 2, "Mark Meets Dawn").
 - The Introduction is 2078. Book Two keeps its Plot v1 chapters.
 - Reading order renumbered 1 to 99.
+
+## 2026-10-11: title cleanup (PL-3)
+
+Snapshot "Before the title cleanup 2026-10-11" (2026-10-12T02:47:32.936Z). `scripts/clean-titles-eastwinds.ts` was rehearsed on a local copy, then applied through `Repository.writeBatch`, with a revision note on each write.
+
+- 55 titles lost a structural number that repeated their number field or place: 46 chapters ("Ch. 3: Mark Gets Drunk" is now "Mark Gets Drunk"), 8 parts ("Part One: Sins of the Father" is now "Sins of the Father"), 1 book ("Book Two: I Take Refuge in You" is now "I Take Refuge in You"). The app shows "Chapter N" from reading order and "Part N" / "Book N" from the number fields.
+- Every chapter number matched the chapter's place in its part (the Introduction not counted), so no open question was needed.
+- Left alone: "Book One" (only a number, no name to keep); the two chapters Tommy had already renamed and reordered ("Mark Meets Dawn", "Mark Feels Free"); open question titles that quote the source sheet's "Ch. N" names; primary strand labels such as "Mark: College Arc" (the A29 arc span names).
+- The write path also filled two missing schema defaults on the 46 chapters (`summaryOutOfDate: false`, `manuscriptSource: null`); nothing else changed.
