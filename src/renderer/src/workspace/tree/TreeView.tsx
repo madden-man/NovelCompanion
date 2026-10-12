@@ -508,11 +508,11 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     }
   };
 
-  const setYearFrom = (text: string) => {
-    if (/^-?\d{1,5}$/.test(text.trim())) {
-      setYearDraft(null);
-      story.setYear(Number(text));
-    } else setYearDraft(text);
+  // The typed year commits on Enter or blur, never per keystroke (2045 must not set 2, 20, 204).
+  const commitYear = () => {
+    const t = yearDraft;
+    setYearDraft(null);
+    if (t !== null && /^-?\d{1,5}$/.test(t.trim())) story.setYear(Number(t));
   };
 
   const years = useMemo(() => {
@@ -598,8 +598,12 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
                 type="number"
                 className="num"
                 value={yearDraft ?? String(year)}
-                onBlur={() => setYearDraft(null)}
-                onChange={(e) => setYearFrom(e.target.value)}
+                onBlur={commitYear}
+                onChange={(e) => setYearDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitYear();
+                  else if (e.key === 'Escape') setYearDraft(null);
+                }}
                 data-testid="tree-year"
               />
             </div>

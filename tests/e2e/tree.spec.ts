@@ -327,6 +327,7 @@ test('FT-5 the year control redraws every node for 2040, 2041, and 2075 as in th
   const yearInput = page.getByTestId('tree-year');
   for (const y of tl2.years) {
     await yearInput.fill(String(y.year));
+    await yearInput.press('Enter');
     await expect(svgEl()).toHaveAttribute('data-year', String(y.year));
     for (const a of y.alive) {
       const n = node(fixtureName(a.id));
@@ -355,6 +356,7 @@ test('FT-5 the year control redraws every node for 2040, 2041, and 2075 as in th
   }
   // Unions: in 2040 Margaret and Peter's has ended and Iris and Tomas's has not begun; in 2060 it is active.
   await yearInput.fill('2040');
+  await yearInput.press('Enter');
   await expect(page.locator('g[data-union][data-state="ended"]')).toHaveCount(1);
   await expect(page.locator('g[data-union][data-state="future"]')).toHaveCount(1);
   await page.getByLabel('Year slider').fill('2060');
@@ -364,6 +366,7 @@ test('FT-5 the year control redraws every node for 2040, 2041, and 2075 as in th
   // The year control is bound to the story time, which persists.
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2060);
   await yearInput.fill('2040');
+  await yearInput.press('Enter');
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2040);
 });
 
@@ -577,6 +580,82 @@ test('FT-8 pan by drag, zoom with the buttons and the wheel, collapse and expand
   await expect(node('Sam Hale')).toHaveCount(1);
 });
 
+test('TM-3 the tree year box sets the story year on Enter or blur, not on every keystroke', async () => {
+  const box = page.getByTestId('tree-year');
+  await box.fill('');
+  await box.pressSequentially('2041', { delay: 20 });
+  // Typed but not committed: the tree and the story year are still where they were.
+  await expect(svgEl()).not.toHaveAttribute('data-year', '2041');
+  await expect(svgEl()).not.toHaveAttribute('data-year', '2');
+  await expect(svgEl()).not.toHaveAttribute('data-year', '204');
+  expect((await invoke('storyTime.get', {})).time?.year).not.toBe(204);
+  await box.press('Enter');
+  await expect(svgEl()).toHaveAttribute('data-year', '2041');
+  await box.fill('2042');
+  await expect(svgEl()).toHaveAttribute('data-year', '2041');
+  await box.blur();
+  await expect(svgEl()).toHaveAttribute('data-year', '2042');
+  await box.fill('2045');
+  await box.press('Enter');
+  await expect(svgEl()).toHaveAttribute('data-year', '2045');
+});
+
+test('FT-8 A26 the tree fills the panel height, Full screen sets document.fullscreenElement, Escape leaves it, and every permission but full screen is refused', async () => {
+  const sizes = () =>
+    page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>('.tree-main')!;
+      const stage = document.querySelector<HTMLElement>('.tree-stage')!;
+      const pad = getComputedStyle(main);
+      const chrome = parseFloat(getComputedStyle(main).getPropertyValue('--ws-chrome'));
+      return {
+        stage: stage.getBoundingClientRect().height,
+        inner: window.innerHeight,
+        chrome,
+        padding: parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom),
+        main: main.getBoundingClientRect().height,
+      };
+    });
+  const z = await sizes();
+  // The panel is the window minus the chrome; the stage is that, less the panel's own padding.
+  expect(Math.abs(z.main - (z.inner - z.chrome))).toBeLessThanOrEqual(2);
+  expect(Math.abs(z.stage - (z.main - z.padding))).toBeLessThanOrEqual(2);
+
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.fullscreenElement?.getAttribute('data-testid') ?? null),
+    )
+    .toBe('tree-view');
+  await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+  // Escape only works once the window has finished entering full screen.
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isFullScreen()),
+    )
+    .toBe(true);
+  // macOS ignores a leave request while its enter animation is still running.
+  await page.waitForTimeout(3000);
+  await page.keyboard.press('Escape');
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement === null), { timeout: 15000 })
+    .toBe(true);
+  await expect(page.getByRole('button', { name: 'Full screen' })).toBeVisible();
+
+  // The session grants full screen and nothing else, to a request or to a check.
+  const states = await page.evaluate(async () => {
+    const out: Record<string, string> = {};
+    for (const name of ['geolocation', 'notifications', 'camera', 'microphone']) {
+      try {
+        out[name] = (await navigator.permissions.query({ name: name as PermissionName })).state;
+      } catch {
+        out[name] = 'unsupported';
+      }
+    }
+    return out;
+  });
+  for (const v of Object.values(states)) expect(v).not.toBe('granted');
+});
+
 test('FT-8 NF-2 the tree works from the keyboard: arrows pan, Shift for larger steps, + and - zoom, F fits, Enter and Space collapse', async () => {
   const box = async () => (await svgEl().getAttribute('viewBox'))!.split(' ').map(Number);
   await page.getByRole('button', { name: 'Fit to window' }).click();
@@ -752,6 +831,7 @@ test('FT-4 a person with two unions: both draw, the ended one with its year, eac
   await select('Zhou Lan');
   await add('child', 'Kai Chen', 2012, { type: 'biological', coParent: 'Chen Bo' });
   await page.getByTestId('tree-year').fill('2040');
+  await page.getByTestId('tree-year').press('Enter');
   const lanUnions = page.locator('g[data-union]');
   await expect(lanUnions).toHaveCount(5);
   await expect(page.locator('text.tunion-end', { hasText: 'ended 2020' })).toHaveCount(1);
@@ -879,6 +959,7 @@ test('CH-4 a character with an unknown birth year is reported as age unknown on 
   await openTree();
   for (const y of ['1900', '2040', '2100']) {
     await page.getByTestId('tree-year').fill(y);
+    await page.getByTestId('tree-year').press('Enter');
     await expect(byId('U1').getByTestId('node-state')).toHaveText('age unknown');
   }
 });
@@ -886,6 +967,7 @@ test('CH-4 a character with an unknown birth year is reported as age unknown on 
 test('CH-3 the story time drives the ages on character pages', async () => {
   await openTree();
   await page.getByTestId('tree-year').fill('2041');
+  await page.getByTestId('tree-year').press('Enter');
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2041);
   const p = await openCharacter('Margaret Hale');
   // Both ages: at the current position (the last written chapter) and at the story time.
@@ -899,6 +981,7 @@ test('CH-3 the story time drives the ages on character pages', async () => {
   await openTree();
   await expect(byId('H1')).toHaveAttribute('data-state', 'dying');
   await page.getByTestId('tree-year').fill('2075');
+  await page.getByTestId('tree-year').press('Enter');
   await openCharacter('Margaret Hale');
   await expect(page.getByTestId('char-age-story')).toHaveText(
     'Age at story time (year 2075): dead since 2041',
@@ -976,6 +1059,7 @@ test('FT-8 a tree of 200 people across six generations redraws in under 500 ms i
           const start = performance.now();
           setter.call(input, String(y));
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
           const check = () => {
             const svg = document.querySelector('[data-testid="tree-svg"]')!;
             if (svg.getAttribute('data-year') === String(y)) {

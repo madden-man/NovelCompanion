@@ -235,9 +235,11 @@ test('FT-5 FT-1 the tree shows ages for 2045, filters to one family, and the yea
   await page.getByLabel('Show').selectOption({ label: 'All families' });
   await expect(page.locator('g.tnode')).toHaveCount(13);
   await page.getByTestId('tree-year').fill('2075');
+  await page.getByTestId('tree-year').press('Enter');
   await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2075');
   await expect(node('Z5')).toHaveAttribute('data-age', '17');
   await page.getByTestId('tree-year').fill('2045');
+  await page.getByTestId('tree-year').press('Enter');
   await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2045');
 });
 

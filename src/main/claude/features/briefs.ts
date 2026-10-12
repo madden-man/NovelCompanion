@@ -253,7 +253,7 @@ export function renderBrief(output: BriefsOutput, input: BriefsInput, sel?: Sele
     ...(sel?.skippedStrands ?? []).map((n) => `- ${n}: strand has no start year`),
     ...(sel?.omitted ?? []).map(
       (x) =>
-        `- ${x.title} (${GROUP_TITLES[x.kind].toLowerCase()}): ${x.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel!.budget} characters`}`,
+        `- ${x.title} (${GROUP_TITLES[x.kind].toLowerCase()}): ${x.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel?.budget} characters`}`,
     ),
   ];
   if (left.length) section('Left out', left);

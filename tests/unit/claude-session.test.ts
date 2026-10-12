@@ -5,7 +5,7 @@ import {
   renderBrief,
   BriefsOutput,
 } from '../../src/main/claude/features/briefs';
-import type { BriefItem, BriefsOutput } from '../../src/main/claude/features/briefs';
+import type { BriefItem } from '../../src/main/claude/features/briefs';
 import { summaries } from '../../src/main/claude/features/summaries';
 import { featureSystemPrompt, jsonSchemaFor } from '../../src/main/claude/runtime';
 import { MATERIAL_RULE, PROSE_PROHIBITION } from '../../src/main/claude/prompts';

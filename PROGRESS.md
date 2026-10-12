@@ -192,7 +192,9 @@ Open readings for Tommy (flagged by the 2026-10-11 re-review; they follow the te
 - SB-2 step 8 counts beats assigned to later, unwritten chapters as unresolved, because A18 says unresolved means assigned to no chapter or to a chapter not marked written.
 - Formative events dated after the story year are dropped from the brief, not listed under Planned ahead.
 - A place's events match its exact place IDs only, with no walk up to enclosing places.
-- SB-2 step 1 lists the point of view character first.
+- SB-2 step 1 lists the point of view character first, always (even when it is already in the strand's cast); the code now does this.
+- SB-6 DROP_ORDER also drops planned-ahead, custom and decided questions first, an extension of SB-6 the spec does not name.
+- A strand with no start year is left out of the selection and named under "Left out", not selected as year 0.
 
 ## M8: alignment check (continuity)
 
