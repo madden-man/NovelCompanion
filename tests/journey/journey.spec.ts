@@ -224,7 +224,7 @@ test('TM-1 TM-2 TM-4 the Story Time dialog: an age anchor gives the year, and th
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
-  await dialog.getByLabel('is this old').fill('9');
+  await dialog.getByLabel('Age', { exact: true }).fill('9');
   await dialog.getByRole('button', { name: 'Set year from age' }).click();
   await expect(dialog.getByTestId('time-now')).toHaveText('2040');
   await expect(dialog.getByTestId('time-note')).toContainText('Iris Hale-Zhou is 9 in 2040');
