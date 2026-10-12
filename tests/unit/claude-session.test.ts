@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { briefs, briefsInput, renderBrief } from '../../src/main/claude/features/briefs';
+import {
+  briefs,
+  briefsInput,
+  renderBrief,
+  BriefsOutput,
+} from '../../src/main/claude/features/briefs';
 import type { BriefItem, BriefsOutput } from '../../src/main/claude/features/briefs';
 import { summaries } from '../../src/main/claude/features/summaries';
 import { featureSystemPrompt, jsonSchemaFor } from '../../src/main/claude/runtime';
@@ -98,6 +103,76 @@ describe('DB-2 SB-4 SB-5 the brief is laid out by code from Claude structured it
     expect(md).toMatch(/- Pacific Rim trade accord signed \(.*\): removed by you/);
     expect(uncitedLines(md)).toEqual([]);
     expect(markdownToHtml(md, removed.ids, { flagUncited: true })).not.toContain('uncited-flag');
+  });
+
+  test('SB-6 A25 the over-budget note gives the lead sections size, not the whole selection size', () => {
+    const over = selectForSession(
+      model as never,
+      { kind: 'chapter', chapterId: 'CH6' },
+      { window: 10, budget: 0 },
+    );
+    expect(over.overBudget).toBe(true);
+    const md = renderBrief(empty, briefsInput(over, briefMaterial(over)), over);
+    expect(md).toContain(
+      `The lead sections alone are ${over.leadSize} characters, over the budget of 0.`,
+    );
+    expect(over.leadSize).toBeLessThanOrEqual(over.size);
+  });
+
+  test('A24 an item citing a decided question moves to a code-written Decided block, apart from the open ones', () => {
+    const decided = input.material.find((m) => m.group === 'decidedQuestions')!;
+    const open = input.material.find((m) => m.group === 'openQuestions')!;
+    const md = renderBrief(
+      {
+        ...empty,
+        sections: [
+          {
+            heading: 'Open questions',
+            items: [
+              item('Open: still unsure.', [open.id], 'planned'),
+              item('Decided: Iris is left-handed.', [decided.id], 'planned'),
+            ],
+          },
+        ],
+      },
+      input,
+      sel,
+    );
+    const lines = md.split('\n');
+    const at = (t: string) => lines.findIndex((l) => l.includes(t));
+    expect(at('### Decided')).toBeGreaterThan(at('Open: still unsure.'));
+    expect(at('Decided: Iris is left-handed.')).toBeGreaterThan(at('### Decided'));
+    expect(uncitedLines(md)).toEqual([]);
+  });
+
+  test('SB-4 a cite that is not one manifest ID, and [[ID]] typed into the text, are flagged as uncited', () => {
+    const md = renderBrief(
+      {
+        ...empty,
+        characters: [
+          item('Iris and Daniel.', ['H5, H3']),
+          item('Iris is 14 [[H5]].', []),
+          item('Iris is 14 [[H5]].', ['H5']),
+        ],
+      },
+      input,
+      sel,
+    );
+    expect(md).not.toContain('[[H5, H3]]');
+    expect(uncitedLines(md)).toEqual(['Iris and Daniel.', 'Iris is 14 .']);
+    expect(md).toContain('- Iris is 14 . [[H5]]');
+    expect(BriefsOutput.safeParse({ ...empty, characters: [item('x', ['H5, H3'])] }).success).toBe(
+      false,
+    );
+  });
+
+  test('SB-5 a cited ID with no material, such as a chapter ID, is not canon', () => {
+    const md = renderBrief({ ...empty, culture: [item('Chapter six.', ['CH6'])] }, input, sel);
+    const lines = md.split('\n');
+    expect(lines.findIndex((l) => l === 'Planned or idea:')).toBeLessThan(
+      lines.findIndex((l) => l.includes('[[CH6]]')),
+    );
+    expect(md).not.toContain('Canon:\n- Chapter six.');
   });
 
   test('SB-4 AI-5 the brief prompt holds the selection material only, wrapped as material', () => {
