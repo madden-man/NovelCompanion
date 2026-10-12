@@ -390,3 +390,21 @@ describe('AI-1 a chapter summary streams and can be stopped', () => {
     expect(bible.model.get('chapters', 'CH6')!.summary).toBe(before);
   });
 });
+
+describe('AI-1 a Stop that arrives before the run starts is not lost', () => {
+  test('AI-1 stopping a run ID the runtime has not seen yet ends the run at once when it does start', async () => {
+    const id = runId();
+    expect(runtime.stop(id)).toBe(false);
+    const r = await invoke('session.start', {
+      input: { kind: 'chapter', chapterId: 'CH5' },
+      runId: id,
+    });
+    expect(r.synthesized).toBe(false);
+    expect(r.note).toMatch(/you stopped it/);
+    expect(finished(id)).toMatchObject({ status: 'stopped' });
+    expect(events.some((e) => e.runId === id && e.kind === 'text')).toBe(false);
+    // Only that ID was stopped: the next run is untouched.
+    const next = await invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
+    expect(next.synthesized).toBe(true);
+  });
+});
