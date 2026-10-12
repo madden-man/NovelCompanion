@@ -71,7 +71,11 @@ function report(open: OpenBible): void {
     for (const c of m) console.log('  ' + line(c, parts));
   }
   const q = open.model.get('openQuestions', QUESTION_ID) as Doc | undefined;
-  console.log(q ? `Question ${q._id}: state ${q.state}\n  ${q.title}\n  ${q.question}\n  decision: "${q.decision}"` : `Question ${QUESTION_ID} NOT FOUND`);
+  console.log(
+    q
+      ? `Question ${q._id}: state ${q.state}\n  ${q.title}\n  ${q.question}\n  decision: "${q.decision}"`
+      : `Question ${QUESTION_ID} NOT FOUND`,
+  );
 }
 
 async function counts(open: OpenBible): Promise<Record<string, string>> {
@@ -80,7 +84,9 @@ async function counts(open: OpenBible): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const [name, docs] of Object.entries(dump)) {
     const max = docs.reduce((m: string, d: Record<string, unknown>) => {
-      const v = d.modifiedAt ? String(d.modifiedAt instanceof Date ? d.modifiedAt.toISOString() : d.modifiedAt) : '';
+      const v = d.modifiedAt
+        ? String(d.modifiedAt instanceof Date ? d.modifiedAt.toISOString() : d.modifiedAt)
+        : '';
       return v > m ? v : m;
     }, '');
     out[name] = `${docs.length} docs, latest modifiedAt ${max}`;
@@ -98,13 +104,21 @@ async function apply(open: OpenBible): Promise<void> {
   if (!q) throw new Error(`No open question ${QUESTION_ID}.`);
   const holders = chapters.filter((c) => hasText(c) && c._id !== intro[0]._id);
   if (holders.length > 1) throw new Error(`${holders.length} non-Introduction chapters hold text.`);
-  const ops: { op: 'update'; collection: 'chapters' | 'openQuestions'; id: string; patch: Record<string, unknown> }[] = [];
+  const ops: {
+    op: 'update';
+    collection: 'chapters' | 'openQuestions';
+    id: string;
+    patch: Record<string, unknown>;
+  }[] = [];
   // sourceRef on these chapters is the plan sheet's row reference, not the manuscript's, so it stays.
   const wrong = holders.find((h) => h._id !== dawn[0]._id);
   if (wrong) {
-    if (hasText(dawn[0])) throw new Error('Mark Meets Dawn already holds text and so does another chapter.');
+    if (hasText(dawn[0]))
+      throw new Error('Mark Meets Dawn already holds text and so does another chapter.');
     ops.push({
-      op: 'update', collection: 'chapters', id: dawn[0]._id,
+      op: 'update',
+      collection: 'chapters',
+      id: dawn[0]._id,
       patch: {
         manuscriptText: wrong.manuscriptText,
         manuscriptSource: wrong.manuscriptSource,
@@ -115,9 +129,13 @@ async function apply(open: OpenBible): Promise<void> {
       },
     });
     ops.push({
-      op: 'update', collection: 'chapters', id: wrong._id,
+      op: 'update',
+      collection: 'chapters',
+      id: wrong._id,
       patch: {
-        manuscriptText: '', manuscriptSource: null, sourceFile: null,
+        manuscriptText: '',
+        manuscriptSource: null,
+        sourceFile: null,
         ...(String(wrong.summary ?? '').trim() ? { summary: '', summaryOutOfDate: false } : {}),
       },
     });
@@ -131,7 +149,9 @@ async function apply(open: OpenBible): Promise<void> {
     }
   }
   ops.push({
-    op: 'update', collection: 'openQuestions', id: QUESTION_ID,
+    op: 'update',
+    collection: 'openQuestions',
+    id: QUESTION_ID,
     patch: { state: 'decided', decision: DECISION },
   });
   console.log(`Writing ${ops.length} updates.`);
@@ -167,7 +187,9 @@ export async function main(argv: string[]): Promise<void> {
     report(fresh);
     const after = await counts(fresh);
     for (const k of Object.keys({ ...before, ...after }))
-      console.log(`${before[k] === after[k] ? 'same   ' : 'CHANGED'} ${k}: ${before[k]} -> ${after[k]}`);
+      console.log(
+        `${before[k] === after[k] ? 'same   ' : 'CHANGED'} ${k}: ${before[k]} -> ${after[k]}`,
+      );
   } finally {
     await store.close();
   }
@@ -181,9 +203,16 @@ if (!import.meta.url.endsWith('.mjs')) {
   mkdirSync(outDir, { recursive: true });
   await build({
     entryPoints: [join(root, 'scripts/set-written-eastwinds.ts')],
-    outfile, bundle: true, format: 'esm', platform: 'node', packages: 'external', logLevel: 'error',
+    outfile,
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    packages: 'external',
+    logLevel: 'error',
   });
-  const mod = (await import(pathToFileURL(outfile).href)) as { main: (a: string[]) => Promise<void> };
+  const mod = (await import(pathToFileURL(outfile).href)) as {
+    main: (a: string[]) => Promise<void>;
+  };
   await mod.main(process.argv.slice(2)).catch((e: unknown) => {
     console.error(e instanceof Error ? e.message : String(e));
     process.exitCode = 1;
