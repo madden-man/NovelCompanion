@@ -227,11 +227,26 @@ export function TrashControls(props: {
   const ro = useWriteGuard();
   const [confirmDelete, setConfirmDelete] = useState<Response<'entry.linkedFrom'> | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const trashButton = useRef<HTMLButtonElement | null>(null);
+  const keepButton = useRef<HTMLButtonElement | null>(null);
+
+  // NF-2: the confirm takes focus on its safe choice, and Escape or Keep it hands focus back.
+  useEffect(() => {
+    if (confirmDelete) keepButton.current?.focus();
+  }, [confirmDelete]);
+  const keep = () => {
+    setConfirmDelete(null);
+    trashButton.current?.focus();
+  };
 
   const askDelete = async () => {
     setActionError(null);
-    await props.beforeDelete();
-    setConfirmDelete(await call('entry.linkedFrom', { id }));
+    try {
+      await props.beforeDelete();
+      setConfirmDelete(await call('entry.linkedFrom', { id }));
+    } catch (e) {
+      setActionError(plainError(e));
+    }
   };
 
   const doDelete = async () => {
@@ -271,6 +286,7 @@ export function TrashControls(props: {
           </button>
         ) : (
           <button
+            ref={trashButton}
             type="button"
             className="btn danger"
             onClick={() => void askDelete()}
@@ -287,7 +303,17 @@ export function TrashControls(props: {
         </p>
       )}
       {confirmDelete && (
-        <div className="panel stack confirm" role="dialog" aria-label="Move to trash">
+        <div
+          className="panel stack confirm"
+          role="dialog"
+          aria-label="Move to trash"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            keep();
+          }}
+        >
           <strong>Move {title} to the trash?</strong>
           {confirmDelete.count === 0 ? (
             <p>Nothing links here.</p>
@@ -312,7 +338,7 @@ export function TrashControls(props: {
             <button type="button" className="btn danger" onClick={() => void doDelete()}>
               Move to trash
             </button>
-            <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>
+            <button ref={keepButton} type="button" className="btn" onClick={keep}>
               Keep it
             </button>
           </div>

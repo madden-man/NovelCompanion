@@ -9,6 +9,7 @@ import type { EntryCollection } from '../../src/shared/schema';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
+import { readSupplement } from '../helpers/briefFixture';
 import type { Invoke } from '../helpers/t5';
 import { invokeVia, launch, rail } from './helpers';
 
@@ -494,4 +495,157 @@ test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step button
   expect(await unreachable('[data-testid="story-time-dialog"]')).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
+});
+
+test('NF-2 ED-5 the delete confirm: Move to trash opens it, every control in it takes focus, and Keep it and Escape close it', async () => {
+  await go('Characters');
+  await press(
+    page
+      .getByTestId('entry-list')
+      .getByRole('button', { name: /Daniel Hale/ })
+      .first(),
+  );
+  await expect(editor()).toBeVisible();
+  const inspector = page.getByTestId('inspector');
+  await press(inspector.getByRole('button', { name: 'Move to trash' }));
+  const dialog = inspector.getByRole('dialog', { name: 'Move to trash' });
+  await expect(dialog).toBeVisible();
+  expect(await unreachable('[role="dialog"]')).toEqual([]);
+  await press(dialog.getByRole('button', { name: 'Keep it' }));
+  await expect(dialog).toBeHidden();
+  await press(inspector.getByRole('button', { name: 'Move to trash' }));
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  const h3 = await invoke('entry.get', { collection: 'characters', id: 'H3' });
+  expect(h3.entry.deletedAt ?? null).toBeNull();
+});
+
+test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every control in the drawer takes focus', async () => {
+  // A second revision, so there is an older one to compare.
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H3',
+    patch: { birthplace: 'Hood River, Oregon' },
+  });
+  await go('Characters');
+  await press(
+    page
+      .getByTestId('entry-list')
+      .getByRole('button', { name: /Daniel Hale/ })
+      .first(),
+  );
+  await press(page.getByTestId('inspector').getByRole('button', { name: 'History' }));
+  const drawer = page.getByTestId('history');
+  await expect(drawer).toBeVisible();
+  const revisions = drawer
+    .getByRole('list', { name: 'Revisions, newest first' })
+    .getByRole('button');
+  await expect(revisions.first()).toBeVisible();
+  await press(revisions.last());
+  await expect(drawer.getByTestId('revision-diff')).toBeVisible();
+  expect(await unreachable('[data-testid="history"]')).toEqual([]);
+  await press(drawer.getByRole('button', { name: 'Close' }));
+  await expect(drawer).toBeHidden();
+});
+
+test('NF-2 ED-7 the review queue with a proposal diff open: every control takes focus, and Reject answers Enter', async () => {
+  await invoke('test.propose', {
+    source: 'import',
+    op: 'update',
+    collection: 'characters',
+    targetId: 'H1',
+    data: { birthplace: 'Astoria, Oregon' },
+  });
+  await go('Review queue');
+  const queue = page.getByTestId('review-queue');
+  await expect(queue.getByTestId('proposal-diff')).toContainText('Astoria, Oregon');
+  expect(await unreachable()).toEqual([]);
+  await press(queue.getByRole('button', { name: 'Reject' }).first());
+  await expect(queue.getByTestId('proposal-diff')).toHaveCount(0);
+});
+
+test('NF-2 SB-7 the brief view after generation: every control takes focus', async () => {
+  await go('Start session');
+  const view = page.getByTestId('start-session');
+  await press(view.getByRole('button', { name: 'A chapter', exact: true }));
+  await expect(view.getByTestId('start-chapter')).toBeVisible();
+  await press(view.getByTestId('start-session-go'));
+  const brief = page.getByTestId('brief-view');
+  await expect(brief).toBeVisible({ timeout: 60_000 });
+  await expect(brief.getByTestId('brief-body').locator('h2').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  expect(await unreachable()).toEqual([]);
+});
+
+test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its diff, Rewrite recommended, and Dismiss, all by keyboard', async () => {
+  test.setTimeout(300_000);
+  // A launch whose recorded Claude streams slowly, so Stop can be reached while a run is going.
+  await app.close();
+  ({ app, page } = await launch(server.getUri(), {
+    NOVEL_COMPANION_TEST_ANTHROPIC_KEY: KEY,
+    NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '400',
+  }));
+  invoke = invokeVia(page);
+  await invoke('bible.open', { slug: SLUG });
+  // The M7 supplement gives the chapters their manuscript text, which the recorded check reads.
+  const supplement = readSupplement();
+  for (const c of ['arcs', 'plotBeats']) {
+    const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
+    await invoke('entry.createMany', {
+      items: docs.map((d) => ({ collection: c as never, data: strip(d) })),
+    });
+  }
+  for (const [id, patch] of Object.entries(supplement.patches.chapters ?? {})) {
+    await invoke('entry.update', { collection: 'chapters', id, patch });
+  }
+  await invoke('bible.open', { slug: SLUG });
+  await expect(page.getByTestId('dashboard')).toBeVisible();
+
+  await fromTop();
+  await press(page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }));
+  const view = page.getByTestId('alignment-view');
+  const run = view.getByTestId('alignment-run');
+  const stop = view.getByTestId('alignment-stop');
+  const status = view.getByTestId('alignment-status');
+  const acknowledge = async () => {
+    const ok = page.getByTestId('claude-acknowledge');
+    if (await ok.isVisible().catch(() => false)) await press(ok);
+  };
+
+  // Run, then Stop while Claude is reading.
+  await press(run);
+  await expect(
+    page.getByTestId('claude-acknowledge').or(status.filter({ hasText: 'Claude is reading' })),
+  ).toBeVisible({ timeout: 30_000 });
+  await acknowledge();
+  await expect(status).toContainText('Claude is reading', { timeout: 30_000 });
+  await press(stop);
+  await expect(status).toContainText('Stopped.', { timeout: 30_000 });
+
+  // Run to the end; then every control on the screen, findings and actions included, takes focus.
+  await press(run);
+  await acknowledge();
+  await expect(status).toContainText('Done.', { timeout: 120_000 });
+  const finding = (check: string) => view.locator(`[data-testid="finding"][data-check="${check}"]`);
+  await expect(finding('age')).toBeVisible();
+  expect(await unreachable('[data-testid="alignment-view"]')).toEqual([]);
+
+  // Manuscript wins opens the change set as a diff, and its controls take focus too.
+  await press(finding('age').getByRole('button', { name: 'Manuscript wins' }));
+  await expect(finding('age').getByTestId('finding-diff')).toBeVisible();
+  expect(await unreachable('[data-testid="alignment-view"]')).toEqual([]);
+  await press(finding('age').getByTestId('finding-apply'));
+  await expect(finding('age')).toHaveAttribute('data-state', 'manuscriptWins');
+
+  await press(finding('place').getByRole('button', { name: 'Rewrite recommended' }));
+  await expect(view.getByTestId('rewrite-task')).toHaveCount(1);
+
+  const structural = view.getByTestId('structural-findings').getByTestId('finding');
+  const before = await structural.count();
+  expect(before).toBeGreaterThan(0);
+  await press(structural.first().getByRole('button', { name: 'Dismiss' }));
+  await expect(structural).toHaveCount(before - 1);
+  expect(await unreachable('[data-testid="alignment-view"]')).toEqual([]);
 });
