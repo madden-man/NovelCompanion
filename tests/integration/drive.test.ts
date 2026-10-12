@@ -237,6 +237,9 @@ describe('GD-1 desktop sign-in, read-only for import, secrets in the keychain on
     await connected(invoke);
     fake.consent = { grant: [FILE] };
     await expect(invoke('drive.allowExport', {})).rejects.toThrow(/left unticked/);
+    // The Allow export URL is its own authorization request: both scopes, no incremental grant.
+    expect(fake.lastAuth!.has('include_granted_scopes')).toBe(false);
+    expect(fake.lastAuth!.get('scope')).toContain(FILE);
     expect(fake.revoked).toHaveLength(1);
     expect(secrets.dump()[TOKENS_ACCOUNT]).toBeUndefined();
     expect(await invoke('drive.status', {})).toMatchObject({ connected: false, canExport: false });

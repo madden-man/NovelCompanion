@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
+import { contract } from '../../src/shared/ipc';
 import {
   CLAUDE_FEATURES,
   DEFAULT_MODELS,
@@ -68,6 +69,33 @@ describe('AI-4 Claude never drafts prose', () => {
   test('AI-4 the panel prompt tells Claude to decline a prose request in one sentence and offer the facts', () => {
     expect(PANEL_INSTRUCTIONS).toMatch(/exactly one sentence that declines/);
     expect(PANEL_INSTRUCTIONS).toMatch(/offers to list the bible facts/);
+  });
+
+  test('AI-4 the session, brief and summary channels take IDs and choices only, never prose', () => {
+    for (const channel of ['session.start', 'brief.regenerate', 'chapter.summarize'] as const) {
+      const schema = z.toJSONSchema(contract[channel].request, { io: 'input' }) as Record<
+        string,
+        unknown
+      >;
+      const strings: string[] = [];
+      const walk = (node: unknown, path: string) => {
+        if (Array.isArray(node)) return node.forEach((n, i) => walk(n, `${path}[${i}]`));
+        if (!node || typeof node !== 'object') return;
+        const o = node as Record<string, unknown>;
+        if (
+          o.type === 'string' &&
+          !o.enum &&
+          !o.pattern &&
+          !o.const &&
+          (o.maxLength === undefined || Number(o.maxLength) > 100)
+        ) {
+          strings.push(path);
+        }
+        for (const [k, v] of Object.entries(o)) walk(v, `${path}.${k}`);
+      };
+      walk(schema, channel);
+      expect(strings, channel).toEqual([]);
+    }
   });
 
   test('AI-4 only the panel question carries free text to Claude; every feature channel takes IDs', () => {
