@@ -19,7 +19,10 @@ export default defineConfig({
           // The first run downloads a MongoDB binary.
           hookTimeout: 300_000,
           testTimeout: 60_000,
-          fileParallelism: false,
+          // Files run on parallel workers against the one server; every test
+          // uses its own fresh bible IDs, so files never meet.
+          fileParallelism: true,
+          maxWorkers: 4,
         },
       },
       {
