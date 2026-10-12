@@ -1,10 +1,11 @@
-import { mkdtempSync, openSync, readSync, closeSync, statSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, openSync, readSync, closeSync, statSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { APP, EXECUTABLE, KEYRING_NODE, SDK_BINARY, findDmg } from './paths';
+import { APP, EXECUTABLE, KEYRING_NODE, ROOT, SDK_BINARY, findDmg, inApp } from './paths';
 
 /**
  * NF-4 and T-4 against the packaged build in release/ (made by `npm run package`).
@@ -48,6 +49,77 @@ test('NF-4 ARCH-4 the Agent SDK binary and the keyring native module are unpacke
   expect(machO(KEYRING_NODE)).toBe('arm64');
 });
 
+test('NF-4 ARCH-4 the dmg holds the app with the Agent SDK binary and the keyring native module unpacked', () => {
+  const dmg = findDmg();
+  expect(dmg, 'run npm run package first').not.toBeNull();
+  const mount = mkdtempSync(join(tmpdir(), 'nc-dmg-'));
+  // Mounted read-only and out of sight in Finder; always detached again.
+  execFileSync('hdiutil', [
+    'attach',
+    dmg!,
+    '-readonly',
+    '-nobrowse',
+    '-noautoopen',
+    '-mountpoint',
+    mount,
+  ]);
+  try {
+    const app = join(mount, 'Novel Companion.app');
+    expect(existsSync(app)).toBe(true);
+    const exe = inApp(app).EXECUTABLE;
+    expect(machO(exe)).toBe('arm64');
+    const sdk = inApp(app).SDK_BINARY;
+    expect(existsSync(sdk), sdk).toBe(true);
+    expect(statSync(sdk).mode & 0o111).not.toBe(0);
+    expect(machO(sdk)).toBe('arm64');
+    const keyring = inApp(app).KEYRING_NODE;
+    expect(existsSync(keyring), keyring).toBe(true);
+    expect(machO(keyring)).toBe('arm64');
+    // The same bytes as the app folder npm run package wrote beside it.
+    expect(statSync(sdk).size).toBe(statSync(SDK_BINARY).size);
+    expect(statSync(keyring).size).toBe(statSync(KEYRING_NODE).size);
+  } finally {
+    execFileSync('hdiutil', ['detach', mount, '-force']);
+    rmSync(mount, { recursive: true, force: true });
+  }
+});
+
+test('T-4 without a local test database the packaged app refuses the test seams, and reads no keychain', async () => {
+  test.setTimeout(120_000);
+  const refused = await electron.launch({
+    executablePath: EXECUTABLE,
+    args: [],
+    env: {
+      ...process.env,
+      // The allow flag with an address that is not local: the exception does not apply.
+      NOVEL_COMPANION_ALLOW_TEST_URI: '1',
+      NOVEL_COMPANION_TEST_MONGODB_URI: 'mongodb+srv://cluster0.example.mongodb.net/',
+      NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-package-refused-')),
+      NOVEL_COMPANION_TEST_CLAUDE: '1',
+      NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-should-be-ignored-0000',
+    },
+  });
+  try {
+    const p = await refused.firstWindow();
+    await p.waitForLoadState('domcontentloaded');
+    expect(await refused.evaluate(({ app: electron }) => electron.isPackaged)).toBe(true);
+    await expect(p.getByTestId('connection-banner')).toContainText(
+      'The test database address must be a local MongoDB.',
+      { timeout: 30_000 },
+    );
+    // No recorded Claude and no key from the environment.
+    const status = await p.evaluate(() => window.api.invoke('claude.status', {}));
+    expect(status.key).toEqual({ set: false, masked: null });
+    const models = await p.evaluate(() => window.api.invoke('claude.models', {}));
+    expect(models.live).toBe(false);
+  } finally {
+    // Wait until it has gone, so the next launch is not the second instance of a running app.
+    const gone = refused.waitForEvent('close');
+    await refused.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
+    await gone;
+  }
+});
+
 let server: MongoMemoryReplSet;
 let app: ElectronApplication;
 let page: Page;
@@ -69,9 +141,11 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
       NOVEL_COMPANION_ALLOW_TEST_URI: '1',
       NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri(),
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-package-')),
-      // Test seams a packaged app must refuse.
+      // T-4: under the exception, with a local test database, the recorded Claude is honoured.
       NOVEL_COMPANION_TEST_CLAUDE: '1',
-      NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-should-be-ignored-0000',
+      NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-package-key-0123456789abcdef',
+      // The packaged app holds no fixtures, so the recordings are named from the checkout.
+      NOVEL_COMPANION_TEST_CLAUDE_RECORDINGS: join(ROOT, 'fixtures/claude/recordings.json'),
     },
   });
   page = await app.firstWindow();
@@ -95,7 +169,8 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
   // The data folder came from the environment, not ~/Library/Application Support.
   const userData = await app.evaluate(({ app: electron }) => electron.getPath('userData'));
   expect(userData).toContain('nc-package-');
-  // The test seams are refused: no proposal seam, and Claude has no key (the fake key was ignored).
+  // The proposal seam is refused in every packaged build; the recorded Claude and its key in
+  // memory are honoured under the exception, so the keychain is never read.
   const seam = await page.evaluate(async () => {
     try {
       await window.api.invoke('test.propose', {
@@ -111,5 +186,5 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
   });
   expect(seam).toBe('refused');
   const status = await page.evaluate(() => window.api.invoke('claude.status', {}));
-  expect(status.key).toEqual({ set: false, masked: null });
+  expect(status.key).toEqual({ set: true, masked: expect.stringMatching(/^sk-ant-.*cdef$/) });
 });

@@ -25,7 +25,7 @@
     "package": "electron-vite build && electron-builder --mac dmg",
     "import:eastwinds": "node scripts/import-eastwinds.ts",
     "test:package-smoke": "npm run package && playwright test -c playwright.package.config.ts",
-    "test:journey": "electron-vite build && playwright test -c playwright.journey.config.ts"
+    "test:journey": "node scripts/ensure-package.ts && playwright test -c playwright.journey.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.290",

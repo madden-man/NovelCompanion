@@ -12,8 +12,8 @@ import { makeJourneyFiles } from './setup';
 import type { JourneyFiles } from './setup';
 
 /**
- * T-4: one writer's session through the whole app, in order, against the built
- * app (see playwright.journey.config.ts for why not the packaged one). Every
+ * T-4: one writer's session through the whole app, in order, against the
+ * packaged app in release/ (see playwright.journey.config.ts). Every
  * step asserts what is on screen; the afterEach hook saves a screenshot, and
  * tests/journey/reporter.ts writes test-results/journey/report.md and
  * report.html. Writes go through the interface; `invoke` only reads, to check
@@ -33,22 +33,28 @@ const CHAPTER = 'Harbor Lights';
 test.describe.configure({ mode: 'serial' });
 
 async function start(): Promise<void> {
-  ({ app, page } = await launch(server.getUri(), {
-    // SL-1: the stop prompt is on, as for a person.
-    NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
-    // T-3: the recorded Claude with a key held in memory; never the real API or keychain.
-    NOVEL_COMPANION_TEST_ANTHROPIC_KEY: KEY,
-    NOVEL_COMPANION_TEST_CLAUDE_RECORDINGS: files.recordings,
-    // GD-1: Drive is the fake Google on 127.0.0.1.
-    NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
-    // The files a person would choose in the open and save dialogs.
-    NOVEL_COMPANION_TEST_BIBLE_FILE: files.bibleFile,
-    NOVEL_COMPANION_TEST_PICK_FILE: files.workbook,
-    NOVEL_COMPANION_TEST_PICK_DOCUMENT: files.wedding,
-    NOVEL_COMPANION_TEST_SAVE_PATH: files.exportJson,
-    NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR: files.briefDir,
-  }));
+  ({ app, page } = await launch(
+    server.getUri(),
+    {
+      // SL-1: the stop prompt is on, as for a person.
+      NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
+      // T-3: the recorded Claude with a key held in memory; never the real API or keychain.
+      NOVEL_COMPANION_TEST_ANTHROPIC_KEY: KEY,
+      NOVEL_COMPANION_TEST_CLAUDE_RECORDINGS: files.recordings,
+      // GD-1: Drive is the fake Google on 127.0.0.1.
+      NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
+      // The files a person would choose in the open and save dialogs.
+      NOVEL_COMPANION_TEST_BIBLE_FILE: files.bibleFile,
+      NOVEL_COMPANION_TEST_PICK_FILE: files.workbook,
+      NOVEL_COMPANION_TEST_PICK_DOCUMENT: files.wedding,
+      NOVEL_COMPANION_TEST_SAVE_PATH: files.exportJson,
+      NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR: files.briefDir,
+    },
+    { packaged: true },
+  ));
   invoke = invokeVia(page);
+  // T-4: this is the packaged app from release/, not the electron-vite build.
+  expect(await app.evaluate(({ app: electron }) => electron.isPackaged)).toBe(true);
 }
 
 /** The next Word document the open dialog returns, as a person picking another file. */

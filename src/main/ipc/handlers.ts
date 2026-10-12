@@ -25,6 +25,7 @@ import {
   TEST_URI_ENV,
   mongoUri,
   testDatabaseHonoured,
+  testSeamsHonoured,
 } from '../secrets';
 import { ConnectionManager } from '../connection';
 import { openSnapshotReadOnly } from '../db/readOnly';
@@ -272,13 +273,16 @@ export async function openExternal(url: string): Promise<Response<'app.openExter
   return { ok: true };
 }
 
+/** True when the test seams are honoured (T-4): unpackaged, or packaged under the allow flag with a local test database. */
+const seams = (): boolean => testSeamsHonoured(process.env, { isPackaged: app.isPackaged });
+
 /** Test builds may name the file to pick, so no native dialog is needed. */
 const testPath = (name: string): string | null =>
-  !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
+  seams() && process.env[name] ? (process.env[name] as string) : null;
 
 /**
  * GD-1: the one Drive service. A build on a test database never reads the
- * keychain (as `mongoUri` skips it), and an unpackaged one may point Drive at
+ * keychain (as `mongoUri` skips it), and one honouring the test seams may point Drive at
  * a local fake Google.
  */
 const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
@@ -405,6 +409,7 @@ export function registerHandlers(): void {
   // Claude (ARCH-4, AI-1 to AI-7, IM-5).
   const claudeSetup = claudeDeps({
     isPackaged: app.isPackaged,
+    testSeams: seams(),
     testDatabase: testDatabaseHonoured(process.env, { isPackaged: app.isPackaged }),
     userData: app.getPath('userData'),
     appRoot: app.getAppPath(),
@@ -417,7 +422,7 @@ export function registerHandlers(): void {
   // stoppable, saved per AI-1, with the models from Claude settings (DB-4). T-3: test builds can
   // instead stand M7's synthesizer stand-in in for both.
   registerSessionClaude(
-    !app.isPackaged && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1'
+    seams() && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1'
       ? fakeSessionClaude()
       : runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
   );

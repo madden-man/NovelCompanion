@@ -31,6 +31,19 @@ export function testDatabaseHonoured(
   return env[TEST_URI_ENV] !== undefined && (!opts.isPackaged || env[ALLOW_TEST_URI_ENV] === '1');
 }
 
+/**
+ * T-4: whether the test seams are honoured: the recorded Claude, the fake
+ * Google, and the file pickers a test names. Always in an unpackaged build;
+ * in a packaged build only under the one documented exception, the allow flag
+ * with a local test database, so the end-to-end journey can drive the
+ * packaged app. Without both, a packaged build refuses every seam.
+ */
+export function testSeamsHonoured(env: NodeJS.ProcessEnv, opts: { isPackaged: boolean }): boolean {
+  if (!opts.isPackaged) return true;
+  const uri = env[TEST_URI_ENV];
+  return env[ALLOW_TEST_URI_ENV] === '1' && uri !== undefined && isLocalMongoUri(uri);
+}
+
 export type UriLookup = { ok: true; uri: string } | { ok: false; message: string };
 
 /** Read the MongoDB connection string (ARCH-5). It is never logged or stored. */
