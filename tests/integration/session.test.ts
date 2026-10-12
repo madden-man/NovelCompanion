@@ -99,23 +99,27 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
       model: 'claude-opus-5-5',
       claudeAvailable: false,
     });
-    await invoke('brief.settings.set', { budget: 0 });
-    const tight = await invoke('session.relevant', {
-      input: { kind: 'chapter', chapterId: 'CH6' },
-    });
-    // A25: the lead sections stay, and the brief says it is over budget.
-    expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E4', 'E5', 'H3', 'H5']);
-    expect(tight.selection.overBudget).toBe(true);
-    expect(tight.selection.omitted[0]).toMatchObject({ id: 'E9', reason: 'budget' });
-    expect(tight.structured).toContain('## Left out');
-    expect(tight.structured).toContain('## Over budget');
-    await invoke('brief.settings.set', { budget: 40_000, window: 3 });
-    const narrow = await invoke('session.relevant', {
-      input: { kind: 'chapter', chapterId: 'CH6' },
-    });
-    const win = narrow.selection.strands[0]!.groups.find((g) => g.kind === 'eventsWindow')!;
-    expect(win.items.map((i) => i.id)).toEqual(['E5']);
-    await invoke('brief.settings.set', { window: 10 });
+    try {
+      await invoke('brief.settings.set', { budget: 0 });
+      const tight = await invoke('session.relevant', {
+        input: { kind: 'chapter', chapterId: 'CH6' },
+      });
+      // A25: the lead sections stay, and the brief says it is over budget.
+      expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E4', 'E5', 'H3', 'H5']);
+      expect(tight.selection.overBudget).toBe(true);
+      expect(tight.selection.omitted[0]).toMatchObject({ id: 'E9', reason: 'budget' });
+      expect(tight.structured).toContain('## Left out');
+      expect(tight.structured).toContain('## Over budget');
+      await invoke('brief.settings.set', { budget: 40_000, window: 3 });
+      const narrow = await invoke('session.relevant', {
+        input: { kind: 'chapter', chapterId: 'CH6' },
+      });
+      const win = narrow.selection.strands[0]!.groups.find((g) => g.kind === 'eventsWindow')!;
+      expect(win.items.map((i) => i.id)).toEqual(['E5']);
+    } finally {
+      // Restore the defaults even when an assertion fails, so later tests do not inherit a budget of 0.
+      await invoke('brief.settings.set', { budget: 40_000, window: 10 });
+    }
     await expect(invoke('brief.settings.set', { window: 500 } as never)).rejects.toThrow();
   });
 });

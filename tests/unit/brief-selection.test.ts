@@ -18,6 +18,7 @@ import {
 } from '../../src/shared/domain/brief/render';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { briefCollections, briefData } from '../helpers/briefFixture';
+import { SelectionWire } from '../../src/shared/ipcSession';
 
 interface StrandCase {
   strandId: string | null;
@@ -471,5 +472,23 @@ describe('SB-1 SB-6 A25 M7 review fixes', () => {
     expect(structuredBrief(tight)).toContain(
       `The lead sections alone are ${tight.leadSize} characters`,
     );
+  });
+  test('SB-2 the wire schema accepts every field a real selection carries, including an undated strand', () => {
+    const whole = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
+    expect(SelectionWire.parse(whole)).toEqual(whole);
+    const cols = briefCollections(false);
+    cols.chapters = cols.chapters!.map((c) =>
+      c._id === 'CH2'
+        ? {
+            ...c,
+            strands: (c.strands as Record<string, unknown>[]).map((s, i) =>
+              i === 0 ? { ...s, startYear: undefined } : s,
+            ),
+          }
+        : c,
+    );
+    const skipped = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH2' });
+    expect(skipped.skippedStrands).toHaveLength(1);
+    expect(SelectionWire.parse(skipped)).toEqual(skipped);
   });
 });
