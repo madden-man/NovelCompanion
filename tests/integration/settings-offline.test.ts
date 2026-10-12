@@ -112,6 +112,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const own = await connect(uri());
     const handle = await loadFixture(own, freshSlug('arch6-retry'));
     const opened = await openBibleForApp(own, handle.id, { snapshotRoot: snaps });
+    await opened.dailySnapshot; // taken in the background after the open (NF-1)
     expect((await opened.snapshots!.list()).length).toBe(1); // the daily snapshot
     const uris = new MemoryMongoUriStore(uri());
     const events: string[] = [];
