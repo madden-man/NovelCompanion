@@ -10,6 +10,12 @@ import { Year } from './schema/common';
 import { StoryTimeValue } from './storyTime';
 
 const EntryId = z.string().min(1).max(64);
+/**
+ * AI-1: a run ID the renderer picks before a Claude-written brief or summary
+ * starts, so it follows the stream (`claude.stream`) and can stop the run
+ * (`claude.stop`). The same shape as `RUN_ID` in src/main/claude/runtime.ts.
+ */
+const RunId = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);
 const Entry = z.looseObject({ _id: z.string().min(1), modifiedAt: z.string() });
 
 export const BriefInputWire = z.union([
@@ -176,12 +182,12 @@ export const sessionContract = {
    * story time to the section's year.
    */
   'session.start': {
-    request: z.strictObject({ input: BriefInputWire, ...Overrides }),
+    request: z.strictObject({ input: BriefInputWire, ...Overrides, runId: RunId.optional() }),
     response: BriefResult.extend({ log: Entry, time: StoryTimeValue.nullable() }),
   },
   /** SB-9: change what the brief selects and write it again. The brief keeps its ID. */
   'brief.regenerate': {
-    request: z.strictObject({ id: EntryId, ...Overrides }),
+    request: z.strictObject({ id: EntryId, ...Overrides, runId: RunId.optional() }),
     response: BriefResult,
   },
   /** SB-8: save a brief as Markdown or PDF where the person chooses. */
@@ -193,7 +199,14 @@ export const sessionContract = {
   'manuscript.sources': {
     request: z.strictObject({}),
     response: z.strictObject({
-      sources: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+      sources: z.array(
+        z.strictObject({
+          id: z.string(),
+          label: z.string(),
+          /** Where the document is chosen: a file dialog in main, or the Drive browser in the page. */
+          picker: z.enum(['dialog', 'drive']),
+        }),
+      ),
     }),
   },
   /**
@@ -202,7 +215,12 @@ export const sessionContract = {
    * holds. Nothing is written. Null token when the person cancelled.
    */
   'manuscript.read': {
-    request: z.strictObject({ chapterId: EntryId, sourceId: z.string().min(1).max(32).optional() }),
+    request: z.strictObject({
+      chapterId: EntryId,
+      sourceId: z.string().min(1).max(32).optional(),
+      /** For a source picked in the page (Google Docs): the document chosen there. */
+      locator: z.string().min(1).max(256).optional(),
+    }),
     response: z.strictObject({
       token: z.string().nullable(),
       name: z.string(),
@@ -237,7 +255,7 @@ export const sessionContract = {
   },
   /** MS-2: a generated summary to approve or edit. Nothing is saved. */
   'chapter.summarize': {
-    request: z.strictObject({ chapterId: EntryId }),
+    request: z.strictObject({ chapterId: EntryId, runId: RunId.optional() }),
     response: z.strictObject({
       available: z.boolean(),
       draft: z.string(),

@@ -9,7 +9,9 @@ import type { ImportBridge, ImportDeps } from './importHandlers';
 import type { SessionDeps } from './sessionHandlers';
 import { printHtmlToPdf } from '../session/pdf';
 import { fakeSessionClaude, registerSessionClaude } from '../session/claude';
-import { DriveService, setDriveService } from '../drive';
+import { DriveService, fetchDriveFile, setDriveService } from '../drive';
+import { gdocSource, registerManuscriptSource } from '../session/sources';
+import { runtimeSessionClaude } from '../claude/session';
 import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
 import { keychainStore, memoryStore } from '../drive/secrets';
 import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
@@ -245,10 +247,6 @@ const importDeps: ImportDeps & SessionDeps = {
 };
 
 export function registerHandlers(): void {
-  // T-3: test builds can stand a recorded-response Claude in for briefs and summaries (M7).
-  if (!app.isPackaged && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1') {
-    registerSessionClaude(fakeSessionClaude());
-  }
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());
@@ -271,6 +269,8 @@ export function registerHandlers(): void {
   // Google Drive (M9).
   const drive = makeDriveService();
   setDriveService(drive);
+  // MS-1: chapters can be read from Google Docs through the same Drive service (read only, MS-5).
+  registerManuscriptSource(gdocSource(fetchDriveFile));
   const dh = driveHandlers(
     () => current?.session ?? null,
     () => drive,
@@ -291,6 +291,14 @@ export function registerHandlers(): void {
     emit: (e) => broadcast('claude.stream', e),
   });
   claudeRuntime = claudeSetup.runtime;
+  // Briefs (SB-4, DB-2) and chapter summaries (MS-2) run through the same runtime: streamed,
+  // stoppable, saved per AI-1, with the models from Claude settings (DB-4). T-3: test builds can
+  // instead stand M7's synthesizer stand-in in for both.
+  registerSessionClaude(
+    !app.isPackaged && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1'
+      ? fakeSessionClaude()
+      : runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
+  );
   const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
   for (const channel of CLAUDE_CHANNELS) {
     handle(channel, claude[channel] as Handler<ClaudeChannel>);
