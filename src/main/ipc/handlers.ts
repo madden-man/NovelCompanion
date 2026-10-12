@@ -8,7 +8,7 @@ import { checkExternalUrl } from '../links';
 import type { ImportBridge, ImportDeps } from './importHandlers';
 import type { SessionDeps } from './sessionHandlers';
 import { printHtmlToPdf } from '../session/pdf';
-import { fakeSessionClaude, registerSessionClaude } from '../session/claude';
+import { registerSessionClaude } from '../session/claude';
 import { DriveService, fetchDriveFile, setDriveService } from '../drive';
 import { gdocSource, registerManuscriptSource } from '../session/sources';
 import { runtimeSessionClaude } from '../claude/session';
@@ -410,12 +410,10 @@ export function registerHandlers(): void {
   });
   claudeRuntime = claudeSetup.runtime;
   // Briefs (SB-4, DB-2) and chapter summaries (MS-2) run through the same runtime: streamed,
-  // stoppable, saved per AI-1, with the models from Claude settings (DB-4). T-3: test builds can
-  // instead stand M7's synthesizer stand-in in for both.
+  // stoppable, saved per AI-1, with the models from Claude settings (DB-4). Test builds get the
+  // recorded Claude from NOVEL_COMPANION_TEST_CLAUDE, like every other Claude feature.
   registerSessionClaude(
-    !app.isPackaged && process.env.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1'
-      ? fakeSessionClaude()
-      : runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
+    runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
   );
   const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
   for (const channel of CLAUDE_CHANNELS) {

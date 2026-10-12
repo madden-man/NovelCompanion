@@ -180,8 +180,8 @@ export class ClaudeRuntime {
     if (!a) {
       this.earlyStops.add(runId);
       // Remember only the latest few; an ID that never starts is not kept forever.
-      if (this.earlyStops.size > 100)
-        this.earlyStops.delete(this.earlyStops.values().next().value!);
+      const oldest = this.earlyStops.size > 100 ? this.earlyStops.values().next().value : undefined;
+      if (oldest !== undefined) this.earlyStops.delete(oldest);
       return false;
     }
     a.controller.abort();

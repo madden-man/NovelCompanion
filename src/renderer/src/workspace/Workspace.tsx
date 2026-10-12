@@ -338,7 +338,13 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 />
               )}
               {view.kind === 'brief' && (
-                <BriefView key={view.id} id={view.id} note={view.note ?? null} noteSettings={view.noteSettings === true} onOpen={open} />
+                <BriefView
+                  key={view.id}
+                  id={view.id}
+                  note={view.note ?? null}
+                  noteSettings={view.noteSettings === true}
+                  onOpen={open}
+                />
               )}
               {view.kind === 'manuscript' && (
                 <ManuscriptView
