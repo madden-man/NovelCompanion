@@ -566,6 +566,8 @@ test('NF-2 ED-7 the review queue with a proposal diff open: every control takes 
 });
 
 test('NF-2 SB-7 the brief view after generation: every control takes focus', async () => {
+  // Without a key the brief is the structured one (SB-7): this test is about the keyboard, not Claude.
+  await invoke('claude.clearKey', {});
   await go('Start session');
   const view = page.getByTestId('start-session');
   await press(view.getByRole('button', { name: 'A chapter', exact: true }));
