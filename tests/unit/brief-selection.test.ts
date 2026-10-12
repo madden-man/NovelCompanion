@@ -223,10 +223,12 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
   });
 
   test('SB-6 an event in two strands is left out only when it leaves both', () => {
-    const full = selectForSession(briefData(false), { kind: 'chapter', chapterId: 'CH2' });
+    // Read the fixture once: the loop runs once per budget, thousands of times.
+    const data = briefData(false);
+    const full = selectForSession(data, { kind: 'chapter', chapterId: 'CH2' });
     for (let b = full.size - 1; b >= 0; b -= 1) {
       const s = selectForSession(
-        briefData(false),
+        data,
         { kind: 'chapter', chapterId: 'CH2' },
         { window: 10, budget: b },
       );
