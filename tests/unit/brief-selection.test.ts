@@ -235,7 +235,7 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
         `budget ${b}`,
       ).toEqual([]);
     }
-  }, 60_000);
+  });
 
   test('SB-6 a budget one character short drops only the lowest priority item', () => {
     const full = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
