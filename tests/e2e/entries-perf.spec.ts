@@ -144,13 +144,22 @@ test('NF-1 KB-5 the Entries screen opens over the 5,000-entry bible within 500 m
 test('NF-1 KB-5 a typed query answers in the list within 200 ms and settles with the search channel within the pause plus 200 ms', async () => {
   test.setTimeout(120_000);
   const results: Record<string, { listed: number; settled: number }> = {};
-  for (const q of ['r', 'harbor', 'lantern ferry', '团圆', 'fact 12']) {
+  // Three different queries of each shape, each typed once, so no sample reuses the search
+  // channel's answer to an earlier one and every sample waits out the pause.
+  const shapes: Record<string, string[]> = {
+    'one letter': ['r', 'e', 'a'],
+    'one word': ['harbor', 'lantern', 'ferry'],
+    'two words': ['lantern ferry', 'rain kitchen', 'window harbor'],
+    Chinese: ['团圆', '外婆', '月饼'],
+    'title and number': ['fact 12', 'fact 13', 'fact 14'],
+  };
+  for (const [shape, queries] of Object.entries(shapes)) {
     const samples: { listed: number; settled: number }[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (const q of queries) {
       await typeQuery('');
       samples.push(await typeQuery(q));
     }
-    results[q] = {
+    results[shape] = {
       listed: median(samples.map((s) => s.listed)),
       settled: median(samples.map((s) => s.settled)),
     };
