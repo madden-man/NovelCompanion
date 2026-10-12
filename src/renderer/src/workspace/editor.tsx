@@ -320,13 +320,12 @@ export function EntryPane(props: {
   const [showHistory, setShowHistory] = useState(false);
   const [offerWritten, setOfferWritten] = useState(false);
   const writtenNow = ed.draft?.written === true;
-  const writtenBefore = useRef<boolean | null>(null);
-  useEffect(() => {
-    if (!ed.draft || collection !== 'chapters') return;
-    if (writtenBefore.current === false && writtenNow) setOfferWritten(true);
-    if (!writtenNow) setOfferWritten(false);
-    writtenBefore.current = writtenNow;
-  }, [ed.draft, writtenNow, collection]);
+  const [seenWritten, setSeenWritten] = useState<boolean | null>(null);
+  if (ed.draft && collection === 'chapters' && seenWritten !== writtenNow) {
+    // Adjusted during render: offer the flow only on a false to true change.
+    setSeenWritten(writtenNow);
+    setOfferWritten(seenWritten === false && writtenNow);
+  }
   const info = collectionInfo[collection];
   const manifest = manifests[collection];
   const draft = ed.draft;
