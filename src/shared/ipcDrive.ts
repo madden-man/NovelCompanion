@@ -74,6 +74,8 @@ export const driveContract = {
   'drive.clearClient': { request: Empty, response: DriveStatusWire },
   /** GD-1: sign in through the system browser, read-only for import. */
   'drive.connect': { request: Empty, response: DriveStatusWire },
+  /** GD-1: stop waiting for the browser sign-in. `cancelled` is false when none was open. */
+  'drive.cancelConnect': { request: Empty, response: z.strictObject({ cancelled: z.boolean() }) },
   /** GD-4: add access to files the app creates, for export only. */
   'drive.allowExport': { request: Empty, response: DriveStatusWire },
   /** GD-5: revoke and delete the stored tokens. */

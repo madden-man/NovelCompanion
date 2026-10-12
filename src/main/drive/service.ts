@@ -166,17 +166,35 @@ export class DriveService {
     return this.signIn([SCOPE_READONLY, SCOPE_FILE]);
   }
 
+  private signing: AbortController | null = null;
+
+  /** GD-1: stop waiting for the browser. True when a sign-in was open. */
+  cancelConnect(): boolean {
+    if (!this.signing) return false;
+    this.signing.abort();
+    return true;
+  }
+
   private async signIn(scopes: string[]): Promise<DriveStatus> {
     const client = this.client();
     if (!client) throw new Error(NOT_SET_UP);
-    const set = await authorize({
-      client,
-      scopes,
-      endpoints: this.d.endpoints,
-      openBrowser: this.d.openBrowser,
-      fetch: this.f,
-      ...(this.d.authTimeoutMs ? { timeoutMs: this.d.authTimeoutMs } : {}),
-    });
+    this.signing?.abort();
+    const controller = new AbortController();
+    this.signing = controller;
+    let set: TokenSet;
+    try {
+      set = await authorize({
+        client,
+        scopes,
+        endpoints: this.d.endpoints,
+        openBrowser: this.d.openBrowser,
+        fetch: this.f,
+        signal: controller.signal,
+        ...(this.d.authTimeoutMs ? { timeoutMs: this.d.authTimeoutMs } : {}),
+      });
+    } finally {
+      if (this.signing === controller) this.signing = null;
+    }
     if (!set.scopes.includes(SCOPE_READONLY)) {
       // Revoking one token of a grant revokes the whole grant, so tokens kept
       // from an earlier connect stop working too: drop them, so status is true.
@@ -272,29 +290,43 @@ export class DriveService {
   // ---------- change detection (GD-3) ----------
 
   /** What Drive says now about every linked file, and every supported file inside linked folders. */
-  async check(
-    links: readonly DriveLink[],
-  ): Promise<{ remote: RemoteFile[]; missing: string[]; missingFolders: string[] }> {
+  async check(links: readonly DriveLink[]): Promise<{
+    remote: RemoteFile[];
+    missing: string[];
+    missingFolders: string[];
+    /** Links Drive could not answer for this time (not "gone"), or folders read only in part. */
+    unreadable: string[];
+  }> {
     const remote: RemoteFile[] = [];
     const missing: string[] = [];
     const missingFolders: string[] = [];
+    const unreadable: string[] = [];
     for (const link of links) {
-      const meta = await this.api.get(link.id);
-      if (!meta || meta.trashed) {
-        (link.kind === 'folder' ? missingFolders : missing).push(link.id);
-        continue;
+      try {
+        const meta = await this.api.get(link.id);
+        if (!meta || meta.trashed) {
+          (link.kind === 'folder' ? missingFolders : missing).push(link.id);
+          continue;
+        }
+        if (link.kind !== 'folder') {
+          remote.push({ ...pick(meta), linkId: link.id });
+          continue;
+        }
+        const walked = await this.walk(meta.id);
+        for (const f of walked.files) remote.push({ ...pick(f), linkId: link.id });
+        if (!walked.complete) unreadable.push(link.id);
+      } catch (e) {
+        // One link Drive cannot answer for (a 500, a 403) does not hide the others.
+        // No connection, or a sign-in that no longer works, stops the whole check.
+        if (!(e instanceof DriveError) || e.status === 401 || e.status === 0) throw e;
+        unreadable.push(link.id);
       }
-      if (link.kind !== 'folder') {
-        remote.push({ ...pick(meta), linkId: link.id });
-        continue;
-      }
-      for (const f of await this.walk(meta.id)) remote.push({ ...pick(f), linkId: link.id });
     }
-    return { remote, missing, missingFolders };
+    return { remote, missing, missingFolders, unreadable };
   }
 
   /** Supported files in a folder and its subfolders, at most four levels and 1,000 files. */
-  private async walk(folderId: string): Promise<DriveFile[]> {
+  private async walk(folderId: string): Promise<{ files: DriveFile[]; complete: boolean }> {
     const out: DriveFile[] = [];
     let level = [folderId];
     for (let depth = 0; depth < 4 && level.length && out.length < 1000; depth++) {
@@ -308,7 +340,8 @@ export class DriveService {
       }
       level = next;
     }
-    return out.slice(0, 1000);
+    // Past four levels or 1,000 files the folder was read only in part.
+    return { files: out.slice(0, 1000), complete: level.length === 0 && out.length <= 1000 };
   }
 
   // ---------- fetching (GD-2, and MS-1 for M7) ----------

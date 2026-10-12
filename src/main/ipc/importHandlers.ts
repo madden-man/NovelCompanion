@@ -141,6 +141,8 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
           ? { id: newId(), path: '', kind: 'workbook', workbook: source.workbook, origin }
           : { id: newId(), path: '', kind: 'document', document: source.document, origin };
       files.set(p.id, p);
+      // IM-5: Claude reads a Drive-opened document by the same ID as a picked one.
+      if (p.kind === 'document') rememberDocument(p.id, p.document);
       return wireFile(p);
     },
   });

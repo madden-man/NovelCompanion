@@ -146,7 +146,10 @@ test('GD-4 export asks for drive.file, makes a folder, and writes Markdown by se
   await rail(page, 'Google Drive').click();
   const exp = drive().getByTestId('drive-export');
   await exp.getByTestId('drive-allow-export').click();
+  // The consent round trip is done when the export controls appear; only then is lastAuth the new request.
+  await expect(exp.getByRole('button', { name: 'Make the folder' })).toBeVisible();
   expect(fake.lastAuth?.get('scope')).toBe(`${READONLY} ${FILE}`);
+  expect(fake.lastAuth?.has('include_granted_scopes')).toBe(false);
   await exp.getByRole('button', { name: 'Make the folder' }).click();
   await expect(exp.getByLabel('Export folder')).toHaveValue(/.+/);
   await exp.getByTestId('drive-export-now').click();

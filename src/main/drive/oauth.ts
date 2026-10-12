@@ -100,8 +100,6 @@ export function authUrl(
     access_type: 'offline',
     // Ask again on every connect, so Google always returns a refresh token.
     prompt: 'consent',
-    // Adding the export scope keeps the import scope already granted.
-    include_granted_scopes: 'true',
   }).toString();
   return url.toString();
 }
@@ -120,6 +118,8 @@ export interface AuthorizeOptions {
   fetch?: typeof fetch;
   /** How long to wait for the person to finish in the browser. */
   timeoutMs?: number;
+  /** Aborted when the person cancels while the browser sign-in is open. */
+  signal?: AbortSignal;
 }
 
 /** Run the whole sign-in: listener, browser, code, token exchange. */
@@ -160,6 +160,9 @@ export async function authorize(opts: AuthorizeOptions): Promise<TokenSet> {
   const port = (server.address() as AddressInfo).port;
   const redirectUri = `http://127.0.0.1:${port}`;
   const timer = setTimeout(() => settle({ error: 'timeout' }), timeoutMs);
+  const onAbort = () => settle({ error: 'cancelled' });
+  if (opts.signal?.aborted) onAbort();
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
   try {
     await opts.openBrowser(
       authUrl(opts.endpoints, {
@@ -175,15 +178,18 @@ export async function authorize(opts: AuthorizeOptions): Promise<TokenSet> {
       throw new GoogleAuthError(
         outcome.error === 'access_denied'
           ? 'Google Drive was not connected: access was declined in the browser.'
-          : outcome.error === 'timeout'
-            ? 'Google Drive was not connected: the browser sign-in took more than five minutes. Try again.'
-            : `Google Drive was not connected. Google said: ${outcome.error}.`,
+          : outcome.error === 'cancelled'
+            ? 'Google Drive was not connected: you cancelled the sign-in.'
+            : outcome.error === 'timeout'
+              ? 'Google Drive was not connected: the browser sign-in took more than five minutes. Try again.'
+              : `Google Drive was not connected. Google said: ${outcome.error}.`,
         outcome.error,
       );
     }
     return await exchangeCode(opts, outcome.code, verifier, redirectUri);
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', onAbort);
     server.closeAllConnections();
     server.close();
   }

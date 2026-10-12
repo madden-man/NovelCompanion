@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from 'vitest';
 import {
   bibleMarkdown,
   changeSummary,
+  knownFrom,
   classifyFiles,
   driveKind,
   exportFolderName,
@@ -82,7 +83,6 @@ describe('GD-1 scopes, PKCE, and where secrets live', () => {
       state: 'abc',
       access_type: 'offline',
       prompt: 'consent',
-      include_granted_scopes: 'true',
     });
   });
 
@@ -112,7 +112,7 @@ describe('GD-1 scopes, PKCE, and where secrets live', () => {
     expect(parseResponse('drive.status', status)).toEqual(status);
     expect(() => parseResponse('drive.status', { ...status, refreshToken: 'rt' })).toThrow();
     expect(() => parseResponse('drive.status', { ...status, clientSecret: 's' })).toThrow();
-    expect(Object.keys(contract).filter((c) => c.startsWith('drive.'))).toHaveLength(16);
+    expect(Object.keys(contract).filter((c) => c.startsWith('drive.'))).toHaveLength(17);
   });
 });
 
@@ -193,6 +193,40 @@ describe('GD-3 change detection', () => {
     expect(changeSummary(files.filter((f) => f.state === 'unchanged'))).toBe(
       'Every linked Drive file matches what you imported.',
     );
+  });
+});
+
+describe('GD-3 files remembered from an earlier check', () => {
+  const sheet = 'application/vnd.google-apps.spreadsheet';
+  const link = (id: string, kind: 'folder' | 'workbook') => ({
+    id,
+    name: id,
+    mimeType: kind === 'folder' ? 'application/vnd.google-apps.folder' : sheet,
+    kind,
+    linkedAt: '',
+  });
+  const remote = [
+    { id: 'a', name: 'A', mimeType: sheet, modifiedTime: '2026-01-01T00:00:00Z', linkId: 'F' },
+  ];
+  const known = knownFrom([
+    ...remote,
+    { id: 'b', name: 'B', mimeType: sheet, modifiedTime: '2026-01-01T00:00:00Z', linkId: 'F' },
+    { id: 'pdf', name: 'P', mimeType: 'application/pdf', modifiedTime: '', linkId: 'F' },
+  ]);
+
+  test('GD-3 a remembered file the folder no longer returns is missing; a folder that could not be read or is itself missing hides nothing', () => {
+    expect(known.map((k) => k.fileId)).toEqual(['a', 'b']);
+    const folder = [link('F', 'folder')];
+    const states = (missing: string[], unreadable: string[]) =>
+      classifyFiles(folder, remote, missing, [], known, unreadable).map((f) => [f.fileId, f.state]);
+    expect(states([], [])).toEqual([
+      ['a', 'new'],
+      ['b', 'missing'],
+    ]);
+    expect(states([], ['F'])).toEqual([['a', 'new']]);
+    expect(states(['F'], [])).toEqual([['a', 'new']]);
+    // Remembered files of an unlinked folder are not reported.
+    expect(classifyFiles([link('G', 'folder')], remote, [], [], known, [])).toHaveLength(1);
   });
 });
 

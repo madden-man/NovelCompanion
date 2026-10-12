@@ -181,7 +181,17 @@ export function DriveConnection(props: { onChange?: (s: Status) => void }) {
         )}
       </div>
       {busy && !status.connected && status.clientConfigured && (
-        <p aria-live="polite">Finish signing in in your browser, then come back here.</p>
+        <div className="row tight">
+          <p aria-live="polite">Finish signing in in your browser, then come back here.</p>
+          <button
+            type="button"
+            className="btn"
+            data-testid="drive-cancel-connect"
+            onClick={() => void call('drive.cancelConnect', {}).catch(() => undefined)}
+          >
+            Cancel sign-in
+          </button>
+        </div>
       )}
     </div>
   );
@@ -815,6 +825,16 @@ function DriveExport(props: { status: Status; onStatus: (s: Status) => void }) {
             >
               {busy ? 'Waiting for the browser' : 'Allow export'}
             </button>
+            {busy && (
+              <button
+                type="button"
+                className="btn"
+                data-testid="drive-cancel-export-allow"
+                onClick={() => void call('drive.cancelConnect', {}).catch(() => undefined)}
+              >
+                Cancel sign-in
+              </button>
+            )}
           </div>
         </>
       ) : (

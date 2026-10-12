@@ -69,6 +69,28 @@ export interface RemoteFile {
   linkId: string;
 }
 
+/** A file a check found inside a linked folder, remembered so a later check can tell it vanished (GD-3). */
+export interface DriveKnown {
+  fileId: string;
+  linkId: string;
+  name: string;
+  mimeType: string;
+  kind: 'workbook' | 'document';
+}
+
+/** The files a check remembers: the supported ones, once each. */
+export function knownFrom(remote: readonly RemoteFile[]): DriveKnown[] {
+  const out = new Map<string, DriveKnown>();
+  for (const f of remote) {
+    const kind = driveKind(f.mimeType, f.name);
+    if (kind !== 'workbook' && kind !== 'document') continue;
+    if (!out.has(f.id)) {
+      out.set(f.id, { fileId: f.id, linkId: f.linkId, name: f.name, mimeType: f.mimeType, kind });
+    }
+  }
+  return [...out.values()];
+}
+
 export type FileState = 'new' | 'changed' | 'unchanged' | 'missing';
 
 export interface CheckedFile {
@@ -88,13 +110,18 @@ const ORDER: Record<FileState, number> = { changed: 0, new: 1, missing: 2, uncha
  * GD-3: compare what Drive reports now with what was last brought in.
  * `new` is a linked file never imported, `changed` one modified since,
  * `missing` a linked file Drive no longer returns (deleted, trashed, or
- * unshared). A file reached through two links is reported once.
+ * unshared). A file reached through two links is reported once. A file
+ * `known` from an earlier check inside a linked folder that the folder no
+ * longer returns is `missing` too, unless the folder could not be read in
+ * full (`unreadableLinkIds`) or is itself missing.
  */
 export function classifyFiles(
   links: readonly DriveLink[],
   remote: readonly RemoteFile[],
   missingLinkIds: readonly string[],
   seen: readonly DriveSeen[],
+  known: readonly DriveKnown[] = [],
+  unreadableLinkIds: readonly string[] = [],
 ): CheckedFile[] {
   const seenBy = new Map(seen.map((s) => [s.fileId, s]));
   const out = new Map<string, CheckedFile>();
@@ -130,6 +157,21 @@ export function classifyFiles(
       mimeType: link.mimeType,
       modifiedTime: null,
       seenModifiedTime: seenBy.get(id)?.modifiedTime ?? null,
+      state: 'missing',
+    });
+  }
+  const folderIds = new Set(links.filter((l) => l.kind === 'folder').map((l) => l.id));
+  const skip = new Set([...missingLinkIds, ...unreadableLinkIds]);
+  for (const k of known) {
+    if (!folderIds.has(k.linkId) || skip.has(k.linkId) || out.has(k.fileId)) continue;
+    out.set(k.fileId, {
+      fileId: k.fileId,
+      linkId: k.linkId,
+      name: k.name,
+      kind: k.kind,
+      mimeType: k.mimeType,
+      modifiedTime: null,
+      seenModifiedTime: seenBy.get(k.fileId)?.modifiedTime ?? null,
       state: 'missing',
     });
   }

@@ -51,7 +51,12 @@ export function ImportProposals(props: { fileId: string; fileName: string }) {
   const turn = run?.turns[0];
   const output = run?.output as { summary?: string } | null | undefined;
   return (
-    <div className="panel stack tight" aria-labelledby={headingId} data-testid="import-claude">
+    <div
+      className="panel stack tight"
+      role="group"
+      aria-labelledby={headingId}
+      data-testid="import-claude"
+    >
       <h3 id={headingId}>Ask Claude to propose entries</h3>
       <p>
         Optional. Claude reads {props.fileName} and suggests characters, dates, relationships, and

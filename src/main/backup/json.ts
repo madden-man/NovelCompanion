@@ -51,6 +51,26 @@ export async function exportBibleJson(
   };
 }
 
+/** Every entry and settings document of the current schema, checked one by one (BK-3). */
+function validateCollections(collections: Record<string, Record<string, unknown>[]>): void {
+  for (const [name, docs] of Object.entries(collections)) {
+    const schema = isEntryCollection(name)
+      ? entrySchemas[name]
+      : Object.hasOwn(configSchemas, name)
+        ? configSchemas[name as keyof typeof configSchemas]
+        : null;
+    if (!schema) continue;
+    for (const doc of docs) {
+      const r = schema.safeParse(doc);
+      if (!r.success) {
+        throw new BibleFileError(
+          `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${z.prettifyError(r.error)}`,
+        );
+      }
+    }
+  }
+}
+
 /** What the file says, checked completely before anything is written (BK-3). */
 export function readBibleFile(text: string): BibleFile {
   let raw: unknown;
@@ -67,26 +87,14 @@ export function readBibleFile(text: string): BibleFile {
   if (file.bible.schemaVersion > LATEST_SCHEMA_VERSION) {
     throw new BibleFileError('That file is from a newer version of the app. Update the app first.');
   }
-  for (const [name, docs] of Object.entries(file.collections)) {
+  for (const name of Object.keys(file.collections)) {
     if (!COLLECTION_FILE.test(name)) {
       throw new BibleFileError(`The file has a collection with an unusable name: ${name}.`);
     }
-    if (file.bible.schemaVersion !== LATEST_SCHEMA_VERSION) continue;
-    // Entries of the current schema are checked one by one; older files are migrated after loading.
-    const schema = isEntryCollection(name)
-      ? entrySchemas[name]
-      : Object.hasOwn(configSchemas, name)
-        ? configSchemas[name as keyof typeof configSchemas]
-        : null;
-    if (!schema) continue;
-    for (const doc of docs) {
-      const r = schema.safeParse(doc);
-      if (!r.success) {
-        throw new BibleFileError(
-          `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${z.prettifyError(r.error)}`,
-        );
-      }
-    }
+  }
+  // Entries of the current schema are checked now; older files are checked after they are migrated.
+  if (file.bible.schemaVersion === LATEST_SCHEMA_VERSION) {
+    validateCollections(file.collections as Record<string, Record<string, unknown>[]>);
   }
   return file;
 }
@@ -109,6 +117,20 @@ export async function importBibleJson(handle: BibleHandle, text: string): Promis
   if (!(await isEmptyBible(handle))) {
     throw new BibleFileError('Import into an empty bible. This one already has entries.');
   }
+  if (file.bible.schemaVersion === LATEST_SCHEMA_VERSION) {
+    await replaceBible(handle, file.collections as CollectionDocs, file.bible.schemaVersion);
+    return file.collections as CollectionDocs;
+  }
+  // An older file is migrated by the app's own migrations, then every document is checked against
+  // the current schemas. A document the migration left invalid puts the bible back as it was.
+  const before = await dumpBible(handle);
   await replaceBible(handle, file.collections as CollectionDocs, file.bible.schemaVersion);
-  return file.collections as CollectionDocs;
+  const after = await dumpBible(handle);
+  try {
+    validateCollections(after.collections as Record<string, Record<string, unknown>[]>);
+  } catch (e) {
+    await replaceBible(handle, before.collections, before.bible.schemaVersion);
+    throw e;
+  }
+  return after.collections as CollectionDocs;
 }

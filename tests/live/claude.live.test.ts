@@ -120,7 +120,12 @@ describe.skipIf(!hasKey)('T-3 live Claude smoke test', () => {
     const run = await finished(id);
     report('Panel: write the scene', run);
     const answer = run.turns[0]!.answer.trim();
+    // A refusal, not an empty answer: at least exactly one sentence that offers the facts.
+    expect(answer.length).toBeGreaterThan(0);
+    expect(answer.match(/[.!?](\s|$)/g)?.length ?? 0).toBeGreaterThanOrEqual(1);
     expect(answer.match(/[.!?](\s|$)/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(answer).toMatch(/\b(facts?|ages?|who|bible)\b/i);
+    expect(answer).not.toMatch(/\n\s*\n/);
   });
 
   test('IM-5 import proposals read chapter 3 and queue proposals for review', async () => {
