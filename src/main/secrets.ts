@@ -97,11 +97,20 @@ export class MemoryMongoUriStore implements MongoUriStore {
 /**
  * The connection string as the settings screen shows it: the scheme and the
  * last few characters of the host, never the user name, password, or options.
+ * The host is what follows the last `@` of the address part, as the driver
+ * reads it; a user name or password holding an unencoded `/`, `?`, or `#` is
+ * one the driver refuses too, and is never shown at all.
  */
 export function maskMongoUri(uri: string): string {
-  const m = /^(mongodb(?:\+srv)?):\/\/(?:[^@/?#]*@)?([^/?#]*)/.exec(uri.trim());
-  if (!m) return 'a connection string the app cannot read';
-  const host = m[2] ?? '';
+  const unreadable = 'a connection string the app cannot read';
+  const m = /^(mongodb(?:\+srv)?):\/\/(.*)$/s.exec(uri.trim());
+  if (!m) return unreadable;
+  const rest = m[2] ?? '';
+  const at = rest.lastIndexOf('@');
+  const credentials = at < 0 ? '' : rest.slice(0, at);
+  if (/[/?#]/.test(credentials)) return unreadable;
+  const host = /^[^/?#]*/.exec(rest.slice(at + 1))?.[0] ?? '';
+  if (!host) return unreadable;
   const tail = host.length > 10 ? host.slice(-10) : host.slice(-Math.ceil(host.length / 2));
   return `${m[1]}://…${tail}`;
 }

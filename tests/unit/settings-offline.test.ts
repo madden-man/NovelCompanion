@@ -54,6 +54,15 @@ describe('ST-1 the MongoDB connection string is shown masked', () => {
       expect(masked.length).toBeLessThan(uri.length);
     }
     expect(maskMongoUri('nonsense')).toBe('a connection string the app cannot read');
+    // A password with an unencoded /, ?, or # never shows, not even its end.
+    for (const uri of [
+      'mongodb+srv://tommy:pa/ss-tail@cluster0.ab1cd.mongodb.net/',
+      'mongodb://tommy:pa?ss-tail@host.example.net',
+      'mongodb://tommy:pa#ss-tail@host.example.net/db',
+    ]) {
+      expect(maskMongoUri(uri)).toBe('a connection string the app cannot read');
+    }
+    expect(maskMongoUri('mongodb://u:p@x@host.example.net/')).toBe('mongodb://…xample.net');
   });
 
   test('ST-1 a pasted string is checked for shape before anything connects', () => {
