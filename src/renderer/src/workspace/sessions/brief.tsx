@@ -13,6 +13,7 @@ import type { Entry } from '../data';
 import { SaveState, useAutosave } from '../editor';
 import { EntryPicker } from '../pickers';
 import { useUndo } from '../undo';
+import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
 import { SelectionBody } from './common';
 import type { OpenEntry, SelectionView } from './common';
@@ -30,11 +31,14 @@ export function BriefView({
   id,
   onOpen,
   note: startNote = null,
+  noteSettings = false,
 }: {
   id: string;
   onOpen: OpenEntry;
   /** Why a just-started brief is the structured one (SB-7), from Start session. */
   note?: string | null;
+  /** The start note is about a missing or rejected key, so it links to Settings. */
+  noteSettings?: boolean;
 }) {
   const ed = useAutosave('briefs', id);
   const undo = useUndo();
@@ -43,8 +47,8 @@ export function BriefView({
   const [add, setAdd] = useState<string[]>([]);
   const [remove, setRemove] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(
-    startNote ? { text: startNote, bad: false } : null,
+  const [note, setNote] = useState<{ text: string; bad: boolean; settings?: boolean } | null>(
+    startNote ? { text: startNote, bad: false, settings: noteSettings } : null,
   );
   const claude = useClaudeRun('the brief');
   const [claudeAvailable, setClaudeAvailable] = useState(false);
@@ -90,7 +94,11 @@ export function BriefView({
       );
       setAdd([]);
       setRemove([]);
-      setNote(r.note ? { text: r.note, bad: false } : { text: 'Brief written again.', bad: false });
+      setNote(
+        r.note
+          ? { text: r.note, bad: false, settings: r.needsSettings }
+          : { text: 'Brief written again.', bad: false },
+      );
       ed.reload();
     } catch (e) {
       setNote({ text: plainError(e), bad: true });
@@ -167,9 +175,18 @@ export function BriefView({
         </button>
       </div>
       {note && (
-        <p className={note.bad ? 'callout crit' : 'callout'} role="status" data-testid="brief-note">
-          {note.text}
-        </p>
+        <div
+          className={note.bad ? 'callout crit stack tight' : 'callout stack tight'}
+          role="status"
+          data-testid="brief-note"
+        >
+          <span>{note.text}</span>
+          {note.settings && (
+            <div>
+              <OpenSettingsButton />
+            </div>
+          )}
+        </div>
       )}
       {editing ? (
         <div className="field">

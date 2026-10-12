@@ -57,7 +57,7 @@ The keychain items are in Keychain Access under the name `novel-companion-google
 
 ## 6. Exporting: one more permission
 
-Export is a separate, explicit action. The first time, **Google Drive** > **Export to Drive** shows **Allow export**. Click it; the browser lists both permissions: **See and download all your Google Drive files** (the import permission, asked again together with the new one) and **See, edit, create, and delete only the specific Google Drive files you use with this app**. Keep both ticked and click **Continue**. If either is unticked, the app says so and export stays off.
+Export is a separate, explicit action. The first time, **Google Drive** > **Export to Drive** shows **Allow export**. Click it; the browser lists both permissions: **See and download all your Google Drive files** (the import permission, asked again together with the new one) and **See, edit, create, and delete only the specific Google Drive files you use with this app**. Keep both ticked and click **Continue**. If the "only the specific files" box is unticked, the app says so, export stays off, and importing keeps working. If the "see and download" box is unticked, Google revokes the whole grant, so Drive is disconnected too and you connect again from the start.
 
 With that access the app can write only into folders it created itself. Click **Make the folder** to create an export folder (it appears at the top of My Drive). You may move that folder anywhere in Drive afterwards; exports keep going to it. Each export makes a new dated folder inside it, so nothing earlier is overwritten.
 

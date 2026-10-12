@@ -177,9 +177,9 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
           dead: groups.dead.map((p) => ({ ...p, name: named(p.id) })),
           unborn: groups.unborn.map((id) => ({ id, name: named(id) })),
           unknown: groups.unknown.map((id) => ({ id, name: named(id) })),
-          era,
-          events,
-          strands: strandsIn(model, year),
+          era: wrapFreeText(`era ${year}`, era),
+          events: wrapFreeText(`events ${year}`, events),
+          strands: wrapFreeText(`strands ${year}`, strandsIn(model, year)),
         });
       }),
     },
@@ -218,7 +218,10 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
         sink.read([ref('chapters', id)]);
         const text = typeof chapter.manuscriptText === 'string' ? chapter.manuscriptText : '';
         // AI-5: the manuscript is material to analyse, never instructions.
-        return out({ page, text: text ? material(`chapter ${id}`, text) : '' });
+        return out({
+          page: wrapFreeText(`chapter ${id}`, page),
+          text: text ? material(`chapter ${id}`, text) : '',
+        });
       }),
     },
     {

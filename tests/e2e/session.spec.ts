@@ -246,6 +246,11 @@ test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured
   const brief = page.getByTestId('brief-view');
   await expect(brief).toBeVisible();
   await expect(brief.getByTestId('brief-model')).toHaveText('Structured brief, no synthesis');
+  // ARCH-4: with no key stored the note says so and links to Settings.
+  await expect(brief.getByTestId('brief-note')).toContainText('No Anthropic API key is stored');
+  await expect(
+    brief.getByTestId('brief-note').getByRole('button', { name: 'Open settings' }),
+  ).toBeVisible();
   await expect(brief.getByTestId('brief-body').locator('h2')).toHaveText([
     '1. Characters and their ages',
     '2. World events ongoing',
@@ -320,12 +325,14 @@ test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and
 
 test('SB-4 DB-4 with Claude available the brief is written by the brief model from the selection', async () => {
   await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
-  await start({ NOVEL_COMPANION_TEST_FAKE_CLAUDE: '1' });
+  await start({
+    NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-session-key-0123456789abcdef',
+  });
   await openBible();
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
   await view.getByRole('button', { name: 'A chapter', exact: true }).click();
-  await view.getByTestId('start-chapter').selectOption('CH2');
+  await view.getByTestId('start-chapter').selectOption('CH6');
   await expect(view.getByTestId('start-session-go')).toHaveText(
     'Start session with claude-opus-5-5',
   );
@@ -375,7 +382,10 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 import a chapter from Word, mark it written, appr
   await ch.getByRole('button', { name: 'Mark as written' }).click();
   const flow = ch.getByTestId('written-flow');
   const draft = flow.getByLabel('Summary to approve');
-  await expect(draft).toHaveValue(/^The Letter: /);
+  // The recorded Claude (T-3) drafts it from the imported chapter text.
+  await expect(draft).toHaveValue(
+    'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
+  );
   expect((await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary).toBe(
     'Iris starts asking questions.',
   );

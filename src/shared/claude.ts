@@ -61,7 +61,8 @@ export const FEATURE_INFO: Record<ClaudeFeature, { label: string; sends: string 
   },
   importProposals: {
     label: 'Import proposals',
-    sends: 'the text of the imported document and the titles of matching entries',
+    sends:
+      'the text of the imported document and the section, ID and title of up to 600 existing entries from every section',
   },
 };
 

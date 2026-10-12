@@ -68,7 +68,7 @@ type View =
   /** DB-2: start a session for a section of plot. */
   | { kind: 'start' }
   /** SB-8: one saved brief. */
-  | { kind: 'brief'; id: string; note?: string | null }
+  | { kind: 'brief'; id: string; note?: string | null; noteSettings?: boolean }
   /** MS-1 to MS-4. */
   | { kind: 'manuscript'; chapterId?: string; openFlow?: boolean };
 
@@ -332,11 +332,19 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'start' && (
                 <StartSessionView
                   onOpen={open}
-                  onStarted={(id, note) => setView({ kind: 'brief', id, note })}
+                  onStarted={(id, note, noteSettings) =>
+                    setView({ kind: 'brief', id, note, noteSettings })
+                  }
                 />
               )}
               {view.kind === 'brief' && (
-                <BriefView key={view.id} id={view.id} note={view.note ?? null} onOpen={open} />
+                <BriefView
+                  key={view.id}
+                  id={view.id}
+                  note={view.note ?? null}
+                  noteSettings={view.noteSettings === true}
+                  onOpen={open}
+                />
               )}
               {view.kind === 'manuscript' && (
                 <ManuscriptView

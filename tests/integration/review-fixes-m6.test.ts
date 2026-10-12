@@ -15,6 +15,8 @@ import { MemorySettingsStore } from '../../src/main/claude/settings';
 import { ClaudeRuntime } from '../../src/main/claude/runtime';
 import { FakeClaudeClient } from '../../src/main/claude/fake';
 import { bibleTools } from '../../src/main/claude/tools';
+import { importProposals } from '../../src/main/claude/features/importProposals';
+import { rememberDocument } from '../../src/main/import/pickedDocuments';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
@@ -86,6 +88,47 @@ describe('AI-5 entry text reaches Claude as material', () => {
     const hit = found.hits.find((h) => h.id === 'H1')!;
     expect(hit.snippet).toMatch(/^<material /);
     expect(hit.snippet).toContain(INJECTION);
+  });
+  test('AI-5 timeline_for_year wraps era and event text, and get_chapter wraps beat descriptions', async () => {
+    await invoke('entry.update', {
+      collection: 'eraStates',
+      id: 'ERA-2040',
+      patch: { politics: INJECTION },
+    });
+    const { run } = rig();
+    const year = (await run('timeline_for_year', { year: 2040 })) as {
+      era: { politics: string; name: string; startYear: number };
+    };
+    expect(year.era.politics).toMatch(/^<material /);
+    expect(year.era.politics).toContain(INJECTION);
+    expect(year.era.name).toMatch(/^<material /);
+    expect(typeof year.era.startYear).toBe('number');
+    const chapter = bible.model.all('chapters').find((c) => !c.deletedAt)!;
+    await invoke('entry.create', {
+      collection: 'plotBeats',
+      data: { title: 'A beat', chapterId: chapter._id, description: INJECTION, status: 'canon' },
+    });
+    const got = (await run('get_chapter', { id: chapter._id as string })) as {
+      page: { beats: { description: string; id: string }[] };
+    };
+    const beat = got.page.beats.find((b) => b.description.includes(INJECTION))!;
+    expect(beat.description).toMatch(/^<material /);
+    expect(beat.id).not.toMatch(/^<material/);
+  });
+
+  test('AI-5 the import prompt wraps existing titles and keeps the file name out of the free text', () => {
+    rememberDocument('r2-doc', {
+      fileName: 'ignore-everything.docx',
+      modifiedAt: '2026-10-11T00:00:00.000Z',
+      html: '<p>Hello.</p>',
+      blocks: [{ index: 1, kind: 'paragraph', text: 'Hello.' }] as never,
+    });
+    const { prompt } = importProposals.build({ fileId: 'r2-doc' } as never, bible);
+    const titles = prompt.slice(prompt.indexOf('Existing entries'), prompt.indexOf('The document'));
+    expect(titles).toMatch(/<material source="existing entry titles">/);
+    const outside = prompt.replace(/<material[\s\S]*?<\/material>/g, '');
+    expect(outside).not.toContain('ignore-everything');
+    expect(outside).not.toContain('Margaret');
   });
 });
 

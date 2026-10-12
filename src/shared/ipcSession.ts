@@ -132,6 +132,8 @@ const BriefResult = z.strictObject({
   synthesized: z.boolean(),
   /** Why the brief is the structured one, in plain words, or null. */
   note: z.string().nullable(),
+  /** ARCH-4: the note is about a missing or rejected key, so the screen links to Settings. */
+  needsSettings: z.boolean(),
   /** SB-4: cited IDs that are not in the manifest. */
   problems: z.array(z.string()),
   /** SB-4: lines of a Claude-written brief that cite nothing. */
@@ -261,6 +263,7 @@ export const sessionContract = {
       draft: z.string(),
       model: z.string().nullable(),
       message: z.string().nullable(),
+      needsSettings: z.boolean(),
     }),
   },
   /** DB-1: what the dashboard shows. */

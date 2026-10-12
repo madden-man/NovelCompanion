@@ -124,6 +124,12 @@ export class ClaudeRuntime {
     string,
     { controller: AbortController; conversationId: string; done: Promise<unknown> }
   >();
+  /**
+   * AI-1: run IDs the writer stopped before the run reached this process (the
+   * renderer flushes edits first, so Stop can arrive ahead of the start). A run
+   * that starts under one of these ends at once.
+   */
+  private readonly earlyStops = new Set<string>();
   private readonly newId = monotonicFactory();
   private readonly now: () => Date;
 
@@ -171,7 +177,13 @@ export class ClaudeRuntime {
   /** Stop a streaming run. What streamed so far is kept, marked stopped. */
   stop(runId: string): boolean {
     const a = this.active.get(runId);
-    if (!a) return false;
+    if (!a) {
+      this.earlyStops.add(runId);
+      // Remember only the latest few; an ID that never starts is not kept forever.
+      const oldest = this.earlyStops.size > 100 ? this.earlyStops.values().next().value : undefined;
+      if (oldest !== undefined) this.earlyStops.delete(oldest);
+      return false;
+    }
     a.controller.abort();
     return true;
   }
@@ -301,6 +313,7 @@ export class ClaudeRuntime {
     const controller = new AbortController();
     const slot = { controller, conversationId, done: Promise.resolve() as Promise<unknown> };
     this.active.set(id, slot);
+    if (this.earlyStops.delete(id)) controller.abort();
 
     const store = new RunStore(l.session);
     const at = () => this.now().toISOString();

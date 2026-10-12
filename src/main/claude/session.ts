@@ -1,6 +1,6 @@
 import { monotonicFactory } from 'ulid';
 import { ClaudeFeature } from '../../shared/claude';
-import type { ClaudeRun } from '../../shared/claude';
+import type { ClaudeErrorKind, ClaudeRun } from '../../shared/claude';
 import type { OpenBible } from '../db/session';
 import type { SessionClaude } from '../session/claude';
 import { briefs, briefsInput, renderBrief } from './features/briefs';
@@ -22,14 +22,22 @@ import type { ClaudeRuntime, RunStart } from './runtime';
 const newId = monotonicFactory();
 
 /** A run that did not finish, said in a few words for M7's fallback note. */
-class RunEnded extends Error {}
+export class RunEnded extends Error {
+  constructor(
+    message: string,
+    /** Why the run failed, when Anthropic or the key was the reason (ARCH-4). */
+    readonly kind?: ClaudeErrorKind,
+  ) {
+    super(message);
+  }
+}
 
 function outcome(run: ClaudeRun, runId: string) {
   const turn = run.turns.find((t) => t.id === runId) ?? run.turns[0];
   if (!turn || turn.status === 'stopped') throw new RunEnded('you stopped it');
   if (turn.status !== 'done') {
     const why = (turn.error?.message ?? 'it failed').replace(/\s*Your question is kept\.$/, '');
-    throw new RunEnded(why.replace(/\.$/, ''));
+    throw new RunEnded(why.replace(/\.$/, ''), turn.error?.kind);
   }
   return { turn, output: run.output };
 }

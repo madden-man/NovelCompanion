@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
+import { contract } from '../../src/shared/ipc';
 import {
   CLAUDE_FEATURES,
   DEFAULT_MODELS,
@@ -70,6 +71,33 @@ describe('AI-4 Claude never drafts prose', () => {
     expect(PANEL_INSTRUCTIONS).toMatch(/offers to list the bible facts/);
   });
 
+  test('AI-4 the session, brief and summary channels take IDs and choices only, never prose', () => {
+    for (const channel of ['session.start', 'brief.regenerate', 'chapter.summarize'] as const) {
+      const schema = z.toJSONSchema(contract[channel].request, { io: 'input' }) as Record<
+        string,
+        unknown
+      >;
+      const strings: string[] = [];
+      const walk = (node: unknown, path: string) => {
+        if (Array.isArray(node)) return node.forEach((n, i) => walk(n, `${path}[${i}]`));
+        if (!node || typeof node !== 'object') return;
+        const o = node as Record<string, unknown>;
+        if (
+          o.type === 'string' &&
+          !o.enum &&
+          !o.pattern &&
+          !o.const &&
+          (o.maxLength === undefined || Number(o.maxLength) > 100)
+        ) {
+          strings.push(path);
+        }
+        for (const [k, v] of Object.entries(o)) walk(v, `${path}.${k}`);
+      };
+      walk(schema, channel);
+      expect(strings, channel).toEqual([]);
+    }
+  });
+
   test('AI-4 only the panel question carries free text to Claude; every feature channel takes IDs', () => {
     const freeText: string[] = [];
     for (const [channel, spec] of Object.entries(claudeContract)) {
@@ -86,6 +114,17 @@ describe('AI-4 Claude never drafts prose', () => {
     }
     // The key is pasted into settings; it is never sent to Claude.
     expect(freeText.sort()).toEqual(['claude.ask.question', 'claude.setKey.key']);
+  });
+
+  test('AI-6 the disclosure says what is sent, where the bible lives, and that Drive export is the other way out', () => {
+    const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/claude.tsx'), 'utf8');
+    expect(src).toMatch(/stored in the MongoDB deployment you set up/);
+    expect(src).not.toMatch(/off this computer/);
+    expect(src).toMatch(/Google Drive/);
+    expect(FEATURE_INFO.importProposals.sends).toMatch(
+      /up to 600 existing entries from every section/,
+    );
+    expect(FEATURE_INFO.importProposals.sends).not.toMatch(/matching/);
   });
 
   test('AI-4 no screen or control in the renderer asks Claude for prose', () => {
