@@ -137,12 +137,15 @@ export function ArcPanel(props: {
   const arc = arcs.find((a) => a._id === id) ?? null;
   const list = useMemo(() => beatsOfArc(beats, id), [beats, id]);
   if (!arc) {
+    // Not among the live arcs: in the trash (the editor says so and offers Restore) or still loading.
     return (
-      <div className="stack tight">
-        <p className="example-note">Loading the arc.</p>
-        <button type="button" className="btn small" onClick={props.onClose}>
-          Close the arc
-        </button>
+      <div className="stack" data-testid="arc-panel" data-arc-id={id}>
+        <div className="row tight">
+          <button type="button" className="btn small" onClick={props.onClose}>
+            Close the arc
+          </button>
+        </div>
+        <EmbeddedEditor key={`arc:${id}`} collection="arcs" id={id} />
       </div>
     );
   }
