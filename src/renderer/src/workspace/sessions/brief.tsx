@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   citationProblems,
   markdownToHtml,
@@ -12,6 +12,7 @@ import type { Entry } from '../data';
 import { SaveState, useAutosave } from '../editor';
 import { EntryPicker } from '../pickers';
 import { useUndo } from '../undo';
+import { useClaudeRun } from './claudeRun';
 import { SelectionBody } from './common';
 import type { OpenEntry, SelectionView } from './common';
 
@@ -24,14 +25,30 @@ const ids = (v: unknown): string[] =>
  * selection it came from, where entries can be removed or added before
  * regenerating (SB-9); and export to Markdown and PDF.
  */
-export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
+export function BriefView({
+  id,
+  onOpen,
+  note: startNote = null,
+}: {
+  id: string;
+  onOpen: OpenEntry;
+  /** Why a just-started brief is the structured one (SB-7), from Start session. */
+  note?: string | null;
+}) {
   const ed = useAutosave('briefs', id);
   const undo = useUndo();
   const [editing, setEditing] = useState(false);
   const [add, setAdd] = useState<string[]>([]);
   const [remove, setRemove] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
+  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(
+    startNote ? { text: startNote, bad: false } : null,
+  );
+  const claude = useClaudeRun('the brief');
+  const [claudeAvailable, setClaudeAvailable] = useState(false);
+  useEffect(() => {
+    void call('brief.settings.get', {}).then((s) => setClaudeAvailable(s.claudeAvailable));
+  }, []);
   const textId = useId();
   const brief = ed.draft;
   const content = typeof brief?.content === 'string' ? brief.content : '';
@@ -50,9 +67,13 @@ export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
   if (!brief) return <p aria-live="polite">Loading the brief.</p>;
   const selection = brief.selection as SelectionView | null;
 
-  const regenerate = async () => {
-    setBusy(true);
+  const regenerate = () => {
     setNote(null);
+    claude.begin(claudeAvailable, (runId) => write(runId));
+  };
+
+  const write = async (runId: string | undefined) => {
+    setBusy(true);
     try {
       await ed.flush();
       const before = (await call('entry.get', { collection: 'briefs', id })).entry as Entry;
@@ -60,6 +81,7 @@ export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
         id,
         add: [...ids(brief.added).filter((x) => !remove.includes(x)), ...add],
         remove: [...ids(brief.removed).filter((x) => !add.includes(x)), ...remove],
+        runId,
       });
       undo.record(
         editCommand(`Regenerated ${entryTitle(r.brief)}`, 'briefs', id, before, r.brief as Entry),
@@ -177,14 +199,15 @@ export function BriefView({ id, onOpen }: { id: string; onOpen: OpenEntry }) {
           <button
             type="button"
             className="btn primary"
-            disabled={busy}
-            onClick={() => void regenerate()}
+            disabled={busy || claude.disclosure !== null}
+            onClick={regenerate}
             data-testid="brief-regenerate"
           >
             Regenerate
           </button>
-          {busy && <span role="status">Writing the brief.</span>}
+          {claude.progress ?? (busy && <span role="status">Writing the brief.</span>)}
         </div>
+        {claude.disclosure}
         {(add.length > 0 || remove.length > 0) && (
           <p data-testid="brief-pending">
             {add.length > 0 && `To add: ${add.join(', ')}. `}

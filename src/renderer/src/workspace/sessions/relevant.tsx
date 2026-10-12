@@ -59,7 +59,17 @@ export function useSelection(
   return { result: input ? result : null, error };
 }
 
-function BriefSettings({ onChanged }: { onChanged: () => void }) {
+/**
+ * SB-2 step 3 window and SB-6 size budget, stored in the bible (ST-1). Shown
+ * folded in Relevant to Session and as a panel in Settings.
+ */
+export function BriefSettings({
+  onChanged,
+  variant = 'details',
+}: {
+  onChanged?: () => void;
+  variant?: 'details' | 'panel';
+}) {
   const [s, setS] = useState<Response<'brief.settings.get'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ids = { window: useId(), budget: useId() };
@@ -71,14 +81,13 @@ function BriefSettings({ onChanged }: { onChanged: () => void }) {
     try {
       setS(await call('brief.settings.set', patch));
       setError(null);
-      onChanged();
+      onChanged?.();
     } catch (e) {
       setError(plainError(e));
     }
   };
-  return (
-    <details className="sunken" data-testid="brief-settings">
-      <summary>Brief settings</summary>
+  const fields = (
+    <>
       <div className="row">
         <div className="field">
           <label htmlFor={ids.window}>World events window (years)</label>
@@ -108,6 +117,20 @@ function BriefSettings({ onChanged }: { onChanged: () => void }) {
           {error}
         </p>
       )}
+    </>
+  );
+  if (variant === 'panel') {
+    return (
+      <div className="panel stack tight" data-testid="settings-briefs">
+        <h4>Session briefs</h4>
+        {fields}
+      </div>
+    );
+  }
+  return (
+    <details className="sunken" data-testid="brief-settings">
+      <summary>Brief settings</summary>
+      {fields}
     </details>
   );
 }

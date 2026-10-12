@@ -116,7 +116,7 @@ export function sessionHandlers(
   };
 
   /** SB-4, SB-7, DB-4: write the brief's text from the selection. */
-  const write = async (sel: Selection) => {
+  const write = async (sel: Selection, runId?: string) => {
     const structured = structuredBrief(sel);
     const c = claude();
     if (!c.briefs) {
@@ -125,6 +125,7 @@ export function sessionHandlers(
     try {
       const r = await c.briefs.synthesize({
         model: briefModel(c),
+        ...(runId ? { runId } : {}),
         selection: sel,
         material: briefMaterial(sel),
         structured,
@@ -196,10 +197,10 @@ export function sessionHandlers(
       await session().repo.setBriefSettings(req);
       return settings();
     },
-    'session.start': async ({ input, add, remove }) => {
+    'session.start': async ({ input, add, remove, runId }) => {
       const { repo } = session();
       const sel = select(input, add, remove);
-      const text = await write(sel);
+      const text = await write(sel, runId);
       const briefId = newId();
       // DB-3 as one step: the story time first (a settings write), then the brief and the log
       // in one transaction. If that transaction fails, the story time goes back as it was.
@@ -247,12 +248,12 @@ export function sessionHandlers(
         time,
       };
     },
-    'brief.regenerate': async ({ id, add, remove }) => {
+    'brief.regenerate': async ({ id, add, remove, runId }) => {
       const { repo, model } = session();
       const brief = model.get('briefs', id);
       if (!brief || brief.deletedAt) throw new Error('That brief is not in the bible.');
       const sel = select(inputOf(brief), add, remove);
-      const text = await write(sel);
+      const text = await write(sel, runId);
       const next = await repo.update('briefs', id, briefData(sel, text) as never);
       return {
         brief: next as unknown as Response<'brief.regenerate'>['brief'],
@@ -291,9 +292,9 @@ export function sessionHandlers(
       return { saved: true, path };
     },
     'manuscript.sources': () => ({
-      sources: sources().map((s) => ({ id: s.id, label: s.label })),
+      sources: sources().map((s) => ({ id: s.id, label: s.label, picker: s.picker ?? 'dialog' })),
     }),
-    'manuscript.read': async ({ chapterId, sourceId }) => {
+    'manuscript.read': async ({ chapterId, sourceId, locator: chosen }) => {
       const { model } = session();
       const chapter = model.get('chapters', chapterId);
       if (!chapter || chapter.deletedAt) throw new Error('That chapter is not in the bible.');
@@ -303,7 +304,8 @@ export function sessionHandlers(
       if (sourceId) {
         source = list.find((s) => s.id === sourceId);
         if (!source) throw new Error('That manuscript source is not available.');
-        locator = await source.pick();
+        // A Google Doc is chosen in the page (the Drive browser); a Word file in a dialog here.
+        locator = source.picker === 'drive' ? (chosen ?? null) : await source.pick();
       } else {
         const linked = parseLocator(str(chapter.manuscriptSource));
         if (!linked) {
@@ -378,7 +380,7 @@ export function sessionHandlers(
     'chapter.establishes': ({ chapterId }) => ({
       items: establishedPlanned(session().model, chapterId),
     }),
-    'chapter.summarize': async ({ chapterId }) => {
+    'chapter.summarize': async ({ chapterId, runId }) => {
       const chapter = session().model.get('chapters', chapterId);
       if (!chapter || chapter.deletedAt) throw new Error('That chapter is not in the bible.');
       const c = claude();
@@ -405,6 +407,7 @@ export function sessionHandlers(
       try {
         const r = await c.summaries.summarize({
           model: modelName,
+          ...(runId ? { runId } : {}),
           chapterId,
           title: entryTitle(chapter),
           text,
