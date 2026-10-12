@@ -98,11 +98,15 @@ async function apply(open: OpenBible): Promise<void> {
   const chapters = live(open, 'chapters');
   const intro = chapters.filter((c) => c.title === 'Introduction');
   const dawn = chapters.filter((c) => c.title === 'Mark Meets Dawn');
+  const introChapter = intro[0];
+  const dawnChapter = dawn[0];
+  if (!introChapter) throw new Error('No chapter titled Introduction.');
+  if (!dawnChapter) throw new Error('No chapter titled Mark Meets Dawn.');
   if (intro.length !== 1) throw new Error(`Expected one Introduction, found ${intro.length}.`);
   if (dawn.length !== 1) throw new Error(`Expected one Mark Meets Dawn, found ${dawn.length}.`);
   const q = open.model.get('openQuestions', QUESTION_ID) as Doc | undefined;
   if (!q) throw new Error(`No open question ${QUESTION_ID}.`);
-  const holders = chapters.filter((c) => hasText(c) && c._id !== intro[0]._id);
+  const holders = chapters.filter((c) => hasText(c) && c._id !== introChapter._id);
   if (holders.length > 1) throw new Error(`${holders.length} non-Introduction chapters hold text.`);
   const ops: {
     op: 'update';
@@ -111,14 +115,14 @@ async function apply(open: OpenBible): Promise<void> {
     patch: Record<string, unknown>;
   }[] = [];
   // sourceRef on these chapters is the plan sheet's row reference, not the manuscript's, so it stays.
-  const wrong = holders.find((h) => h._id !== dawn[0]._id);
+  const wrong = holders.find((h) => h._id !== dawnChapter._id);
   if (wrong) {
-    if (hasText(dawn[0]))
+    if (hasText(dawnChapter))
       throw new Error('Mark Meets Dawn already holds text and so does another chapter.');
     ops.push({
       op: 'update',
       collection: 'chapters',
-      id: dawn[0]._id,
+      id: dawnChapter._id,
       patch: {
         manuscriptText: wrong.manuscriptText,
         manuscriptSource: wrong.manuscriptSource,
@@ -141,7 +145,7 @@ async function apply(open: OpenBible): Promise<void> {
     });
   }
   for (const c of chapters) {
-    const want = c._id === intro[0]._id;
+    const want = c._id === introChapter._id;
     if (Boolean(c.written) !== want) {
       const prior = ops.find((o) => o.id === c._id);
       if (prior) prior.patch.written = want;
