@@ -312,10 +312,21 @@ export function EntryPane(props: {
   id: string;
   onOpen: (collection: EntryCollection, id: string) => void;
   onClosed: () => void;
+  /** MS-2: a chapter was ticked Written here; open its summary and promotions. */
+  onWritten?: (chapterId: string) => void;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
   const [showHistory, setShowHistory] = useState(false);
+  const [offerWritten, setOfferWritten] = useState(false);
+  const writtenNow = ed.draft?.written === true;
+  const writtenBefore = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!ed.draft || collection !== 'chapters') return;
+    if (writtenBefore.current === false && writtenNow) setOfferWritten(true);
+    if (!writtenNow) setOfferWritten(false);
+    writtenBefore.current = writtenNow;
+  }, [ed.draft, writtenNow, collection]);
   const info = collectionInfo[collection];
   const manifest = manifests[collection];
   const draft = ed.draft;
@@ -369,6 +380,14 @@ export function EntryPane(props: {
         {inTrash && (
           <p className="callout warn" role="status">
             This entry is in the trash. Restore it to bring it back with its links.
+          </p>
+        )}
+        {offerWritten && props.onWritten && (
+          <p className="callout" role="status" data-testid="written-offer">
+            This chapter is marked as written.{' '}
+            <button type="button" className="link-btn" onClick={() => props.onWritten?.(id)}>
+              Review its summary and promote planned entries
+            </button>
           </p>
         )}
         {collection === 'characters' && <CharacterSummary id={id} onOpen={props.onOpen} />}

@@ -438,6 +438,8 @@ describe('SB-1 SB-6 A25 M7 review fixes', () => {
     expect(sel.overBudget).toBe(false);
     expect(structuredBrief(sel)).not.toContain('## Over budget');
     const tight = selectForSession(briefData(true), input, { window: 10, budget: 0 });
-    expect(structuredBrief(tight)).toContain(`The lead sections alone are ${tight.leadSize} characters`);
+    expect(structuredBrief(tight)).toContain(
+      `The lead sections alone are ${tight.leadSize} characters`,
+    );
   });
 });

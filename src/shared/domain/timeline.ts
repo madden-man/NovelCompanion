@@ -14,6 +14,9 @@ import { itemPath } from './lists';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 
+/** Locale-independent text order, so the same bible sorts the same on every machine. */
+const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Anything that hands out the live and trashed entries of a collection: the read model, or plain arrays. */
 export interface TimelineData {
   all(collection: string): Doc[];
@@ -108,7 +111,7 @@ export function everyoneIn(data: TimelineData, at: StoryMoment): EveryoneIn {
     (a, b) =>
       STATE_ORDER[a.state.state] - STATE_ORDER[b.state.state] ||
       (a.birthYear ?? 0) - (b.birthYear ?? 0) ||
-      a.name.localeCompare(b.name),
+      byCode(a.name, b.name),
   );
   return out;
 }
@@ -162,9 +165,7 @@ export function eventSpans(data: TimelineData): EventSpan[] {
     const s = eventSpan(e);
     if (s) out.push(s);
   }
-  return out.sort(
-    (a, b) => (compareStoryDates(a.start, b.start) ?? 0) || a.title.localeCompare(b.title),
-  );
+  return out.sort((a, b) => (compareStoryDates(a.start, b.start) ?? 0) || byCode(a.title, b.title));
 }
 
 /** True when the event has begun by this moment: its year is earlier, or the same with no later day. */
@@ -579,7 +580,7 @@ export function timelineChart(data: TimelineData): TimelineChart {
       deathYear: yearOf(asDate(c.death)),
     });
   }
-  lifespans.sort((a, b) => a.birthYear - b.birthYear || a.name.localeCompare(b.name));
+  lifespans.sort((a, b) => a.birthYear - b.birthYear || byCode(a.name, b.name));
   return {
     eras: eraSpans(data),
     events: eventSpans(data).map((e) => ({

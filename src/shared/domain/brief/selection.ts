@@ -433,10 +433,13 @@ function sortPeople(ids: string[], characters: Map<string, Doc>): string[] {
 function family(data: TimelineData, pov: string, year: number): string[] {
   const characters = index(data, 'characters');
   // A parent link counts from its start year; one with no start year always counts.
-  const links = data.all('parentLinks').filter(live).filter((l) => {
-    const s = num(l.startYear);
-    return s === null || s <= year;
-  });
+  const links = data
+    .all('parentLinks')
+    .filter(live)
+    .filter((l) => {
+      const s = num(l.startYear);
+      return s === null || s <= year;
+    });
   const parents = links.filter((l) => l.childId === pov).map((l) => str(l.parentId));
   const children = links.filter((l) => l.parentId === pov).map((l) => str(l.childId));
   const siblings = links

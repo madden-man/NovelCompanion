@@ -164,12 +164,19 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
     await page.getByTestId('top-relevant').click();
     await expect(relevant()).toBeVisible();
   }
+  // SB-1: a picked strand is that strand alone; a chapter with no strand picked is every strand.
+  await expect(page.getByTestId('relevant-label')).toHaveText(
+    'Chapter 2: Two Kitchens, present, 2045',
+  );
+  await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
+  await expect(strand('CH2-backstory')).toHaveCount(0);
+  await expect(strand('CH2-present')).toContainText('writing now');
+  await invoke('storyTime.set', { time: { year: 2045, chapterId: 'CH2' } });
   await expect(page.getByTestId('relevant-label')).toHaveText('Chapter 2: Two Kitchens');
   const strands = relevant().getByTestId('relevant-strand');
   await expect(strands).toHaveCount(2);
   await expect(strands.nth(0)).toHaveAttribute('data-strand', 'CH2-present');
   await expect(strands.nth(1)).toHaveAttribute('data-strand', 'CH2-backstory');
-  await expect(strand('CH2-present')).toContainText('writing now');
   await expect(groupIds(strand('CH2-present'), 'characters')).toHaveText([
     /Daniel Hale.*alive, age 60/,
     /Zhou Lan.*alive, age 57/,
@@ -183,7 +190,9 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
 
   // The view follows the Writing picker live.
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
-  await expect(page.getByTestId('relevant-label')).toHaveText('Chapter 6: The Letter');
+  await expect(page.getByTestId('relevant-label')).toHaveText(
+    'Chapter 6: The Letter, present, 2045',
+  );
   const s = strand('CH6-present');
   await expect(groupIds(s, 'era')).toHaveAttribute('data-id', 'ERA-2040');
   await expect(groupIds(s, 'culture')).toHaveAttribute('data-id', 'CU4');
@@ -227,7 +236,8 @@ test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
   await expect(view).toBeVisible();
-  await expect(view.getByTestId('start-chapter')).toHaveValue('CH6');
+  // SB-1: the strand being written is the section, not the whole chapter.
+  await expect(view.getByTestId('start-strand')).toHaveValue('CH6|CH6-present');
   await expect(view.getByTestId('claude-unavailable')).toBeVisible();
   await expect(view).toContainText('What the bible selects: Chapter 6: The Letter');
   const logsBefore = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
@@ -299,11 +309,11 @@ test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and
   await brief.getByRole('button', { name: 'Show the brief' }).click();
   await expect(brief.locator('.cite.bad')).toHaveText('Z2 not in the selection');
   await brief.getByRole('button', { name: 'Export Markdown' }).click();
-  const md = join(exportDir, 'Brief Chapter 6 The Letter.md');
+  const md = join(exportDir, 'Brief Chapter 6 The Letter present 2045.md');
   await expect(brief.getByTestId('brief-note')).toHaveText(`Saved to ${md}`);
   expect(readFileSync(md, 'utf8')).toBe(text);
   await brief.getByRole('button', { name: 'Export PDF' }).click();
-  const pdf = join(exportDir, 'Brief Chapter 6 The Letter.pdf');
+  const pdf = join(exportDir, 'Brief Chapter 6 The Letter present 2045.pdf');
   await expect(brief.getByTestId('brief-note')).toHaveText(`Saved to ${pdf}`);
   expect(readFileSync(pdf).subarray(0, 5).toString()).toBe('%PDF-');
 });

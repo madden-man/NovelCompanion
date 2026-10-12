@@ -21,7 +21,7 @@ export function TopBar(props: { onRelevant: () => void; onStartSession: () => vo
   const ids = { year: useId(), slider: useId(), writing: useId() };
 
   const bounds = useMemo(() => {
-    const ys = [story.year, ...strands.map((s) => s.year)];
+    const ys = [story.year, ...strands.map((s) => s.year).filter((y): y is number => y !== null)];
     for (const c of characters) {
       for (const d of [c.birth, c.death] as unknown[]) {
         if (d && typeof d === 'object' && 'year' in d)
@@ -35,10 +35,17 @@ export function TopBar(props: { onRelevant: () => void; onStartSession: () => vo
     (s) => s.chapterId === time.chapterId && s.strandId === time.strandId,
   );
 
+  // The typed year commits on Enter or blur, never per keystroke (2045 must not set 2, 20, 204).
+  const commitYear = () => {
+    const t = yearDraft;
+    setYearDraft(null);
+    if (t !== null && /^-?\d{1,5}$/.test(t.trim())) story.setYear(Number(t));
+  };
+
   const pickChapter = (key: string) => {
     const s = strands.find((o) => o.key === key);
     if (!s) story.set({ year: time.year });
-    else story.set({ year: s.year, chapterId: s.chapterId, strandId: s.strandId });
+    else story.set({ year: s.year ?? time.year, chapterId: s.chapterId, strandId: s.strandId });
   };
 
   return (
@@ -61,15 +68,13 @@ export function TopBar(props: { onRelevant: () => void; onStartSession: () => vo
           id={ids.year}
           type="number"
           className="num"
-          aria-label="Story year"
+          aria-label="Type a story year"
           value={yearDraft ?? String(time.year)}
-          onBlur={() => setYearDraft(null)}
-          onChange={(e) => {
-            const t = e.target.value;
-            if (/^-?\d{1,5}$/.test(t.trim())) {
-              setYearDraft(null);
-              story.setYear(Number(t));
-            } else setYearDraft(t);
+          onChange={(e) => setYearDraft(e.target.value)}
+          onBlur={commitYear}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitYear();
+            else if (e.key === 'Escape') setYearDraft(null);
           }}
           data-testid="top-year"
         />
