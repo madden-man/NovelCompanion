@@ -79,7 +79,7 @@ describe('T-4 the packaged app honours the test seams only under the documented 
     const handlers = readFileSync(join(ROOT, 'src/main/ipc/handlers.ts'), 'utf8');
     // Every test seam in main reads the environment only through seams().
     expect(handlers).toMatch(/const testPath = \(name: string\): string \| null =>\s+seams\(\)/);
-    expect(handlers).toMatch(/seams\(\) && process\.env\.NOVEL_COMPANION_TEST_FAKE_CLAUDE === '1'/);
+    // The NOVEL_COMPANION_TEST_FAKE_CLAUDE stand-in was retired: briefs and summaries use the runtime fake.
     expect(handlers).toMatch(/testSeams: seams\(\)/);
     // The proposal seam stays refused in every packaged build.
     expect(handlers).toMatch(/if \(!app\.isPackaged\) \{\s+handle\(\s+'test\.propose'/);
