@@ -140,6 +140,11 @@ describe('SB-4 DB-2 DB-4 AI-1 briefs through the Claude runtime', () => {
     const ahead = content.indexOf('## Planned ahead (after 2045)');
     expect(ahead).toBeGreaterThan(0);
     expect(content.indexOf('[[E9]]')).toBeGreaterThan(ahead);
+    // A24: the recorded "Decided: Iris is left-handed" is under a code-written Decided block, after the open ones.
+    const decidedAt = content.indexOf('### Decided');
+    expect(decidedAt).toBeGreaterThan(0);
+    expect(content.indexOf('Decided: Iris is left-handed.')).toBeGreaterThan(decidedAt);
+    expect(content.indexOf('Open: does Daniel know')).toBeLessThan(decidedAt);
 
     // The request: the brief model, the AI-4 and AI-5 rules, no tools, the material wrapped,
     // and nothing in it but entries of the manifest.
