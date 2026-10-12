@@ -1,6 +1,25 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import {
+  MongoClientClosedError,
+  MongoExpiredSessionError,
+  MongoNetworkTimeoutError,
+  MongoOperationTimeoutError,
+  MongoServerClosedError,
+  MongoServerError,
+} from 'mongodb';
+
+// The pool errors are not exported from the package root; these are the driver's own classes.
+type PoolError = new (pool: { address: string }) => Error;
+const { PoolClearedError, PoolClearedOnNetworkError, PoolClosedError, WaitQueueTimeoutError } =
+  createRequire(import.meta.url)('mongodb/lib/cmap/errors.js') as {
+    PoolClosedError: PoolError;
+    PoolClearedError: PoolError;
+    PoolClearedOnNetworkError: PoolError;
+    WaitQueueTimeoutError: new (message: string, address: string) => Error;
+  };
 import { cleanMongoUri, maskMongoUri } from '../../src/main/secrets';
 import { guardHandler, isConnectionError } from '../../src/main/ipc/offline';
 import { ReadOnlyError } from '../../src/main/db/readOnly';
@@ -92,7 +111,6 @@ describe('ARCH-6 offline behaviour in the IPC layer', () => {
       'MongoServerSelectionError',
       'MongoTopologyClosedError',
       'MongoNotConnectedError',
-      'PoolClosedError',
     ]) {
       expect(isConnectionError(named(n))).toBe(true);
       expect(isConnectionError(new Error('wrapped', { cause: named(n) }))).toBe(true);
@@ -100,6 +118,40 @@ describe('ARCH-6 offline behaviour in the IPC layer', () => {
     expect(isConnectionError(named('MongoServerError'))).toBe(false);
     expect(isConnectionError(new Error('This entry is not valid'))).toBe(false);
     expect(isConnectionError('text')).toBe(false);
+  });
+
+  test('ARCH-6 the driver pool, close, and timeout errors count as a lost connection', () => {
+    const pool = { address: '127.0.0.1:27017' };
+    const real: Error[] = [
+      new PoolClosedError(pool),
+      new PoolClearedError(pool),
+      new PoolClearedOnNetworkError(pool),
+      new WaitQueueTimeoutError('Timed out while checking out a connection', pool.address),
+      new MongoServerClosedError(),
+      new MongoClientClosedError(),
+      new MongoOperationTimeoutError('Timed out'),
+      new MongoNetworkTimeoutError('socket timed out'),
+      new MongoExpiredSessionError(),
+    ];
+    expect(real.map((e) => e.name)).toEqual([
+      'MongoPoolClosedError',
+      'MongoPoolClearedError',
+      'PoolClearedOnNetworkError',
+      'MongoWaitQueueTimeoutError',
+      'MongoServerClosedError',
+      'MongoClientClosedError',
+      'MongoOperationTimeoutError',
+      'MongoNetworkTimeoutError',
+      'MongoExpiredSessionError',
+    ]);
+    for (const e of real) {
+      expect(isConnectionError(e), e.name).toBe(true);
+      expect(isConnectionError(new Error('wrapped', { cause: e })), e.name).toBe(true);
+    }
+    // A refused write from the server is not a lost connection.
+    expect(isConnectionError(new MongoServerError({ message: 'not authorized', code: 13 }))).toBe(
+      false,
+    );
   });
 
   test('ARCH-6 a write that fails because the connection went is reported as not saved and marks the connection lost', async () => {
