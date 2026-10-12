@@ -34,10 +34,15 @@ import {
 import {
   beatsOfArc,
   chapterPage,
+  moveBeatInChapter,
   moveChapter,
+  moveNumbered,
+  newChapterPlace,
   outlineGrid,
   reorderBeatsInArc,
 } from '../../shared/domain/outline';
+import type { BeatPatch } from '../../shared/domain/outline';
+import { newNestedId } from '../../shared/domain/blank';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
 import { factPage, knownBy, whoKnows } from '../../shared/domain/knowledge';
@@ -94,6 +99,7 @@ export type BibleChannel =
   | 'outline.get'
   | 'chapter.page'
   | 'plot.reorder'
+  | 'outline.newChapter'
   | 'culture.entriesFor'
   | 'place.describe'
   | 'romanization.get'
@@ -424,16 +430,63 @@ export function bibleHandlers(
           }),
         };
       }
-      const group = beatsOfArc(model.all('plotBeats'), req.groupId);
-      if (!group.some((d) => d._id === req.movedId)) {
-        throw new Error('That item is not in this group.');
+      if (req.kind === 'parts' || req.kind === 'books') {
+        const collection = req.kind;
+        const moved = model.get(collection, req.movedId);
+        if (!moved || moved.deletedAt) {
+          throw new Error(`That ${req.kind === 'parts' ? 'part' : 'book'} does not exist.`);
+        }
+        let siblings = model.all('books');
+        if (req.kind === 'parts') {
+          const book = model.get('books', req.groupId);
+          if (!book || book.deletedAt) throw new Error('That book does not exist.');
+          if (moved.bookId !== req.groupId) throw new Error('That part is not in this book.');
+          siblings = model.all('parts').filter((p) => p.bookId === req.groupId);
+        }
+        const patches = moveNumbered(siblings, req.movedId, req.toIndex);
+        const before = new Map(siblings.map((d) => [d._id, d]));
+        await repo.writeBatch(
+          patches.map((p) => ({
+            op: 'update' as const,
+            collection,
+            id: p.id,
+            patch: { number: p.number },
+          })),
+          { note: req.kind === 'parts' ? 'Reordered parts' : 'Reordered books' },
+        );
+        return {
+          collection,
+          changes: patches.map((p) => ({
+            id: p.id,
+            before: { number: Number(before.get(p.id)?.number ?? 0) },
+            after: { number: p.number },
+          })),
+        };
       }
-      const patches = reorderBeatsInArc(
-        model.all('plotBeats'),
-        req.groupId,
-        req.movedId,
-        req.toIndex,
-      );
+      let patches: BeatPatch[];
+      let group: StoredDoc[];
+      if (req.kind === 'chapterBeats') {
+        const chapter = model.get('chapters', req.groupId);
+        if (!chapter || chapter.deletedAt) throw new Error('That chapter does not exist.');
+        const beat = model.get('plotBeats', req.movedId);
+        if (!beat || beat.deletedAt || beat.chapterId !== req.groupId) {
+          throw new Error('That item is not in this group.');
+        }
+        const move = moveBeatInChapter(model.all('plotBeats'), chapter, req.movedId, req.by);
+        if (!move) {
+          throw new Error(
+            'No beat that way is in the arc that orders this one. Put the beats in the same arc to order them here.',
+          );
+        }
+        patches = move.patches;
+        group = beatsOfArc(model.all('plotBeats'), move.arcId);
+      } else {
+        group = beatsOfArc(model.all('plotBeats'), req.groupId);
+        if (!group.some((d) => d._id === req.movedId)) {
+          throw new Error('That item is not in this group.');
+        }
+        patches = reorderBeatsInArc(model.all('plotBeats'), req.groupId, req.movedId, req.toIndex);
+      }
       const before = new Map(group.map((b) => [b._id, b]));
       await repo.reorder(
         'plotBeats',
@@ -445,6 +498,56 @@ export function bibleHandlers(
           id: p.id,
           before: { arcOrders: (before.get(p.id)?.arcOrders ?? []) as unknown },
           after: { arcOrders: p.arcOrders },
+        })),
+      };
+    },
+    'outline.newChapter': async ({ partId, title, year }) => {
+      const { model, repo } = session();
+      const part = model.get('parts', partId);
+      if (!part || part.deletedAt) throw new Error('That part does not exist.');
+      const place = newChapterPlace(
+        model.all('chapters'),
+        model.all('parts'),
+        model.all('books'),
+        partId,
+      );
+      const before = new Map(model.all('chapters').map((c) => [c._id, c]));
+      const written = await repo.writeBatch([
+        {
+          op: 'create',
+          collection: 'chapters',
+          data: {
+            title: title.trim(),
+            partId,
+            readingOrder: place.readingOrder,
+            status: 'idea',
+            strands: [
+              {
+                id: newNestedId(),
+                label: 'present',
+                startYear: year,
+                endYear: null,
+                primary: true,
+                povCharacterId: null,
+                characterIds: [],
+                placeIds: [],
+              },
+            ],
+          },
+        },
+        ...place.shifts.map((p) => ({
+          op: 'update' as const,
+          collection: 'chapters' as const,
+          id: p.id,
+          patch: { readingOrder: p.readingOrder },
+        })),
+      ]);
+      return {
+        entry: wire(written[0] as StoredDoc),
+        changes: place.shifts.map((p) => ({
+          id: p.id,
+          before: { readingOrder: Number(before.get(p.id)?.readingOrder ?? 0) },
+          after: { readingOrder: p.readingOrder },
         })),
       };
     },

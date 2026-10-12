@@ -434,6 +434,8 @@ const OutlineStrandWire = z.strictObject({
   primary: z.boolean(),
   startYear: z.number(),
   endYear: z.number(),
+  pov: z.string().nullable(),
+  present: z.array(z.string()),
 });
 
 const OutlineWire = z.strictObject({
@@ -443,11 +445,23 @@ const OutlineWire = z.strictObject({
   rows: z.array(
     z.union([
       z.strictObject({
-        kind: z.enum(['book', 'part']),
+        kind: z.literal('book'),
         id: z.string(),
         title: z.string(),
         number: z.number().nullable(),
         label: z.string(),
+        missing: z.boolean(),
+        partCount: z.number(),
+      }),
+      z.strictObject({
+        kind: z.literal('part'),
+        id: z.string(),
+        bookId: z.string(),
+        title: z.string(),
+        number: z.number().nullable(),
+        label: z.string(),
+        missing: z.boolean(),
+        chapterCount: z.number(),
       }),
       z.strictObject({
         kind: z.literal('chapter'),
@@ -548,6 +562,8 @@ const ChapterPageWire = z.strictObject({
       year: z.number().nullable(),
       description: z.string(),
       arcs: z.array(z.string()),
+      canMoveUp: z.boolean(),
+      canMoveDown: z.boolean(),
     }),
   ),
   themes: z.array(z.strictObject({ id: z.string(), title: z.string(), note: z.string() })),
@@ -1130,6 +1146,8 @@ export const contract = {
    * PL-3: move a chapter to a place in a part (its own or another, where it
    * takes the target part), or a beat within one arc (only that arc's
    * position changes). Story years never change. Returns what changed, for undo.
+   * KB-3: also a part among the parts of its book, a book among the books, and
+   * a beat to another place on its chapter page (a move in the arc that orders it).
    */
   'plot.reorder': {
     request: z.union([
@@ -1145,10 +1163,53 @@ export const contract = {
         movedId: EntryId,
         toIndex: z.int().min(0).max(5000),
       }),
+      z.strictObject({
+        kind: z.literal('chapterBeats'),
+        /** The chapter. */
+        groupId: EntryId,
+        movedId: EntryId,
+        /** Earlier (-1) or later (1), past the nearest beat the same arc orders. */
+        by: z.union([z.literal(-1), z.literal(1)]),
+      }),
+      z.strictObject({
+        kind: z.literal('parts'),
+        /** The book. */
+        groupId: EntryId,
+        movedId: EntryId,
+        toIndex: z.int().min(0).max(5000),
+      }),
+      z.strictObject({
+        kind: z.literal('books'),
+        movedId: EntryId,
+        toIndex: z.int().min(0).max(5000),
+      }),
     ]),
     response: z.strictObject({
-      collection: z.enum(['chapters', 'plotBeats']),
-      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a beat's per-arc positions). */
+      collection: z.enum(['chapters', 'plotBeats', 'parts', 'books']),
+      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a beat's per-arc positions, a part's or book's number). */
+      changes: z.array(
+        z.strictObject({
+          id: z.string(),
+          before: z.record(z.string(), z.unknown()),
+          after: z.record(z.string(), z.unknown()),
+        }),
+      ),
+    }),
+  },
+  /**
+   * KB-3: a new chapter made from a part heading, last in that part, with one
+   * primary strand at the given story year. Chapters after it move up in
+   * reading order as far as they must; all of it is one transaction. Returns
+   * the new chapter and the reading-order changes, for one undo step.
+   */
+  'outline.newChapter': {
+    request: z.strictObject({
+      partId: EntryId,
+      title: z.string().trim().min(1).max(500),
+      year: z.int().min(-10000).max(10000),
+    }),
+    response: z.strictObject({
+      entry: WireEntry,
       changes: z.array(
         z.strictObject({
           id: z.string(),

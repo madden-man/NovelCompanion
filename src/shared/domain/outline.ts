@@ -31,6 +31,10 @@ export interface OutlineStrand {
   primary: boolean;
   startYear: number;
   endYear: number;
+  /** The point-of-view character's name, or null. */
+  pov: string | null;
+  /** The names of the characters present, in order. */
+  present: string[];
 }
 
 export interface OutlineArcSpan {
@@ -55,11 +59,34 @@ export interface OutlineChapter {
   arcSpans: OutlineArcSpan[];
 }
 
-export type OutlineRow =
-  /** `label` is what the row shows: the number from the number field and the name ("Part 2: Lost Spirits", PL-3). */
-  | { kind: 'book'; id: string; title: string; number: number | null; label: string }
-  | { kind: 'part'; id: string; title: string; number: number | null; label: string }
-  | OutlineChapter;
+/**
+ * `label` is what a heading shows: the number from the number field and the
+ * name ("Part 2: Lost Spirits", PL-3). `missing` marks a heading for chapters
+ * or parts whose book or part is gone (in the trash or never made); it cannot
+ * be renamed or added to.
+ */
+export interface OutlineBook {
+  kind: 'book';
+  id: string;
+  title: string;
+  number: number | null;
+  label: string;
+  missing: boolean;
+  partCount: number;
+}
+
+export interface OutlinePart {
+  kind: 'part';
+  id: string;
+  bookId: string;
+  title: string;
+  number: number | null;
+  label: string;
+  missing: boolean;
+  chapterCount: number;
+}
+
+export type OutlineRow = OutlineBook | OutlinePart | OutlineChapter;
 
 export interface Outline {
   order: 'reading' | 'story';
@@ -69,19 +96,22 @@ export interface Outline {
   cursorYear: number | null;
 }
 
-function strandsOf(chapter: Doc): OutlineStrand[] {
+function strandsOf(chapter: Doc, characters: Map<string, Doc>): OutlineStrand[] {
   const raw = Array.isArray(chapter.strands) ? chapter.strands.filter(isPlainObject) : [];
   const out: OutlineStrand[] = [];
   for (const s of raw) {
     const start = num(s.startYear);
     if (start === null) continue;
     const end = num(s.endYear) ?? start;
+    const pov = str(s.povCharacterId);
     out.push({
       id: str(s.id),
       label: str(s.label),
       primary: s.primary === true,
       startYear: Math.min(start, end),
       endYear: Math.max(start, end),
+      pov: pov ? characterName(characters.get(pov), pov) : null,
+      present: idList(s.characterIds).map((id) => characterName(characters.get(id), id)),
     });
   }
   return out;
@@ -97,6 +127,82 @@ function arcColor(arc: Doc, families: Map<string, Doc>, characters: Map<string, 
     if (f) return str(f.color) || 'series-4';
   }
   return 'series-4';
+}
+
+/**
+ * KB-3: the reading-order rows. Every live book and part has a heading, even
+ * with nothing in it yet, so a part or chapter can be made under it. Books
+ * sort by number, parts by number within their book, chapters by reading
+ * order. Parts whose book is gone and chapters whose part is gone sit under a
+ * "No book" or "No part" heading marked missing, first, as before.
+ */
+function groupedRows(
+  books: readonly Doc[],
+  parts: readonly Doc[],
+  chapters: readonly OutlineChapter[],
+  byReading: (a: OutlineChapter, b: OutlineChapter) => number,
+): OutlineRow[] {
+  const bookById = new Map(books.map((b) => [str(b._id), b]));
+  const partById = new Map(parts.map((p) => [str(p._id), p]));
+  const byNumber = (a: Doc | undefined, b: Doc | undefined) =>
+    (num(a?.number) ?? 0) - (num(b?.number) ?? 0) || title(a).localeCompare(title(b));
+
+  /** Part ID to the book it sits in; a missing part sits in no book (''). */
+  const partBook = new Map<string, string>();
+  for (const p of parts) partBook.set(str(p._id), str(p.bookId));
+  for (const c of chapters) if (!partById.has(c.partId)) partBook.set(c.partId, '');
+
+  const bookIds = new Set<string>(books.map((b) => str(b._id)));
+  for (const b of partBook.values()) bookIds.add(b);
+  const orderedBooks = [...bookIds].sort((a, b) => {
+    const da = bookById.get(a);
+    const db = bookById.get(b);
+    if (!da || !db) return (da ? 1 : 0) - (db ? 1 : 0) || a.localeCompare(b);
+    return byNumber(da, db);
+  });
+
+  const rows: OutlineRow[] = [];
+  for (const bookId of orderedBooks) {
+    const book = bookById.get(bookId);
+    const partIds = [...partBook]
+      .filter(([, b]) => b === bookId)
+      .map(([p]) => p)
+      .sort((a, b) => {
+        const da = partById.get(a);
+        const db = partById.get(b);
+        if (!da || !db) return (da ? 1 : 0) - (db ? 1 : 0) || a.localeCompare(b);
+        return byNumber(da, db);
+      });
+    const t = title(book, 'No book');
+    const n = book ? num(book.number) : null;
+    rows.push({
+      kind: 'book',
+      id: bookId,
+      title: t,
+      number: n,
+      label: book ? groupLabel('book', n, t) : t,
+      missing: !book,
+      partCount: partIds.filter((p) => partById.has(p)).length,
+    });
+    for (const partId of partIds) {
+      const part = partById.get(partId);
+      const inPart = chapters.filter((c) => c.partId === partId).sort(byReading);
+      const pt = title(part, 'No part');
+      const pn = part ? num(part.number) : null;
+      rows.push({
+        kind: 'part',
+        id: partId,
+        bookId,
+        title: pt,
+        number: pn,
+        label: part ? groupLabel('part', pn, pt) : pt,
+        missing: !part,
+        chapterCount: inPart.length,
+      });
+      rows.push(...inPart);
+    }
+  }
+  return rows;
 }
 
 /**
@@ -118,14 +224,12 @@ export function outlineGrid(
   );
   const families = new Map(data.all('families').map((f) => [str(f._id), f]));
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
-  const partById = new Map(parts.map((p) => [str(p._id), p]));
-  const bookById = new Map(books.map((b) => [str(b._id), b]));
 
   const chapters: OutlineChapter[] = data
     .all('chapters')
     .filter(live)
     .map((c) => {
-      const strands = strandsOf(c);
+      const strands = strandsOf(c, characters);
       const lo = strands.length ? Math.min(...strands.map((s) => s.startYear)) : null;
       const hi = strands.length ? Math.max(...strands.map((s) => s.endYear)) : null;
       const spans: OutlineArcSpan[] = [];
@@ -160,55 +264,12 @@ export function outlineGrid(
   const byReading = (a: OutlineChapter, b: OutlineChapter) =>
     a.readingOrder - b.readingOrder || a.title.localeCompare(b.title);
 
-  let rows: OutlineRow[] = [];
-  if (opts.order === 'story') {
-    rows = [...chapters].sort(
-      (a, b) => (a.storyYear ?? Infinity) - (b.storyYear ?? Infinity) || byReading(a, b),
-    );
-  } else {
-    const bookNo = (partId: string) =>
-      num(bookById.get(str(partById.get(partId)?.bookId))?.number) ?? 0;
-    const partNo = (partId: string) => num(partById.get(partId)?.number) ?? 0;
-    const sorted = [...chapters].sort(
-      (a, b) =>
-        bookNo(a.partId) - bookNo(b.partId) ||
-        partNo(a.partId) - partNo(b.partId) ||
-        byReading(a, b),
-    );
-    let lastBook: string | null = null;
-    let lastPart: string | null = null;
-    for (const c of sorted) {
-      const part = partById.get(c.partId);
-      const bookId = str(part?.bookId);
-      if (bookId !== lastBook) {
-        lastBook = bookId;
-        lastPart = null;
-        const book = bookById.get(bookId);
-        const t = title(book, 'No book');
-        const n = book ? num(book.number) : null;
-        rows.push({
-          kind: 'book',
-          id: bookId,
-          title: t,
-          number: n,
-          label: groupLabel('book', n, t),
-        });
-      }
-      if (c.partId !== lastPart) {
-        lastPart = c.partId;
-        const t = title(part, 'No part');
-        const n = part ? num(part.number) : null;
-        rows.push({
-          kind: 'part',
-          id: c.partId,
-          title: t,
-          number: n,
-          label: groupLabel('part', n, t),
-        });
-      }
-      rows.push(c);
-    }
-  }
+  const rows: OutlineRow[] =
+    opts.order === 'story'
+      ? [...chapters].sort(
+          (a, b) => (a.storyYear ?? Infinity) - (b.storyYear ?? Infinity) || byReading(a, b),
+        )
+      : groupedRows(books, parts, chapters, byReading);
 
   const years = new Set<number>();
   for (const c of chapters) {
@@ -415,7 +476,16 @@ export interface ChapterPage {
     characters: { id: string; name: string; state: LifeState }[];
     places: { id: string; name: string }[];
   }[];
-  beats: { id: string; title: string; year: number | null; description: string; arcs: string[] }[];
+  beats: {
+    id: string;
+    title: string;
+    year: number | null;
+    description: string;
+    arcs: string[];
+    /** KB-3: whether an earlier or later beat on the page is ordered by the same arc, so the beat can trade places with it. */
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+  }[];
   themes: { id: string; title: string; note: string }[];
   factsInPlay: {
     factId: string;
@@ -434,6 +504,70 @@ function chapterBeatOrder(beat: Doc, chapterArcs: readonly string[]): number {
   const arcs = idList(beat.arcIds);
   const arc = chapterArcs.find((a) => arcs.includes(a)) ?? arcs[0];
   return arc === undefined ? 0 : beatOrderIn(beat, arc);
+}
+
+/** The arc whose order places a beat on a chapter page, or null when it is in none. */
+function orderArcOf(beat: Doc, chapterArcs: readonly string[]): string | null {
+  const arcs = idList(beat.arcIds);
+  return chapterArcs.find((a) => arcs.includes(a)) ?? arcs[0] ?? null;
+}
+
+/** The live beats of one chapter in the order the chapter page shows them. */
+export function beatsOfChapter<T extends Doc>(
+  beats: readonly T[],
+  chapterId: string,
+  chapterArcs: readonly string[],
+): T[] {
+  return beats
+    .filter((b) => live(b) && b.chapterId === chapterId)
+    .sort(
+      (a, b) =>
+        chapterBeatOrder(a, chapterArcs) - chapterBeatOrder(b, chapterArcs) ||
+        title(a).localeCompare(title(b)),
+    );
+}
+
+/**
+ * The nearest beat before (-1) or after (1) a place on a chapter page that the
+ * same arc orders, or -1 when there is none.
+ */
+function neighbourIndex(
+  list: readonly Doc[],
+  at: number,
+  by: -1 | 1,
+  chapterArcs: readonly string[],
+): number {
+  const arc = orderArcOf(list[at] as Doc, chapterArcs);
+  if (arc === null) return -1;
+  for (let i = at + by; i >= 0 && i < list.length; i += by) {
+    if (orderArcOf(list[i] as Doc, chapterArcs) === arc) return i;
+  }
+  return -1;
+}
+
+/**
+ * KB-3: move a beat earlier or later on its chapter page. A chapter keeps no
+ * beat order of its own; the order comes from the arc that orders the beat
+ * (the first of the chapter's arcs it is in), so the beat trades places with
+ * the nearest beat that arc also orders, and only that arc's positions
+ * change (PL-3). Returns null when no such beat lies that way.
+ */
+export function moveBeatInChapter(
+  beats: readonly Doc[],
+  chapter: Doc,
+  movedId: string,
+  by: -1 | 1,
+): { arcId: string; patches: BeatPatch[] } | null {
+  const chapterArcs = idList(chapter.arcIds);
+  const list = beatsOfChapter(beats, str(chapter._id), chapterArcs);
+  const at = list.findIndex((b) => str(b._id) === movedId);
+  if (at < 0) return null;
+  const other = neighbourIndex(list, at, by, chapterArcs);
+  const arcId = orderArcOf(list[at] as Doc, chapterArcs);
+  if (other < 0 || arcId === null) return null;
+  const inArc = beatsOfArc(beats, arcId);
+  const to = inArc.findIndex((b) => b._id === (list[other] as Doc)._id);
+  return { arcId, patches: reorderBeatsInArc(beats, arcId, movedId, to) };
 }
 
 /** PL-4: a chapter with its beats, who is present and how old, places, themes, and facts in play. */
@@ -467,21 +601,16 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
   );
 
   const chapterArcs = idList(chapter.arcIds);
-  const beats = data
-    .all('plotBeats')
-    .filter((b) => live(b) && b.chapterId === id)
-    .sort(
-      (a, b) =>
-        chapterBeatOrder(a, chapterArcs) - chapterBeatOrder(b, chapterArcs) ||
-        title(a).localeCompare(title(b)),
-    )
-    .map((b) => ({
-      id: str(b._id),
-      title: title(b, 'Untitled beat'),
-      year: num(b.year),
-      description: str(b.description),
-      arcs: idList(b.arcIds).map((a) => arcName(arcs.get(a), a)),
-    }));
+  const ordered = beatsOfChapter(data.all('plotBeats'), id, chapterArcs);
+  const beats = ordered.map((b, i) => ({
+    id: str(b._id),
+    title: title(b, 'Untitled beat'),
+    year: num(b.year),
+    description: str(b.description),
+    arcs: idList(b.arcIds).map((a) => arcName(arcs.get(a), a)),
+    canMoveUp: neighbourIndex(ordered, i, -1, chapterArcs) >= 0,
+    canMoveDown: neighbourIndex(ordered, i, 1, chapterArcs) >= 0,
+  }));
 
   // A theme's appearances are the one record of which chapters it is in (TH-1).
   const themeNotes = new Map<string, string>();
@@ -521,4 +650,87 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
     themes,
     factsInPlay,
   };
+}
+
+export interface NumberPatch {
+  id: string;
+  number: number;
+}
+
+/**
+ * KB-3: move a book among the books, or a part among the parts of its book.
+ * The numbers already in use are handed back out in the new order, so a part
+ * numbering that runs on across books keeps its range; when two share a
+ * number the group is numbered from its lowest number up instead. Returns
+ * only the entries whose number changes.
+ */
+export function moveNumbered(
+  siblings: readonly Doc[],
+  movedId: string,
+  toIndex: number,
+): NumberPatch[] {
+  const items = siblings
+    .filter(live)
+    .map((d) => ({ id: str(d._id), value: num(d.number) ?? 0, title: title(d) }))
+    .sort((a, b) => a.value - b.value || a.title.localeCompare(b.title));
+  const distinct = new Set(items.map((i) => i.value)).size === items.length;
+  if (distinct) {
+    return reorder(items, movedId, toIndex, 'reuse').map((r) => ({ id: r.id, number: r.value }));
+  }
+  const lo = Math.max(1, Math.min(...items.map((i) => i.value)));
+  return reorder(items, movedId, toIndex, 'sequence').map((r) => ({
+    id: r.id,
+    number: r.value + lo - 1,
+  }));
+}
+
+/** KB-3: the number a new book, or a new part in a book, takes: one past the highest. */
+export function nextNumber(siblings: readonly Doc[]): number {
+  const used = siblings.filter(live).map((d) => num(d.number) ?? 0);
+  return used.length ? Math.max(...used) + 1 : 1;
+}
+
+/**
+ * KB-3: where a new chapter goes when it is made from a part heading: last in
+ * that part. Reading order runs across the whole outline, so it takes the
+ * number after the chapter before it, and the chapters after it move up only
+ * as far as they must to stay after it. Returns the new reading order and the
+ * chapters whose reading order changes.
+ */
+export function newChapterPlace(
+  chapters: readonly Doc[],
+  parts: readonly Doc[],
+  books: readonly Doc[],
+  partId: string,
+): { readingOrder: number; shifts: ChapterPatch[] } {
+  const partById = new Map(parts.map((p) => [str(p._id), p]));
+  const bookNo = new Map(books.map((b) => [str(b._id), num(b.number) ?? 0]));
+  const rank = (pid: string): [number, number] => {
+    const part = partById.get(pid);
+    return [bookNo.get(str(part?.bookId)) ?? 0, num(part?.number) ?? 0];
+  };
+  const sorted = chapters
+    .filter(live)
+    .map((c) => ({ id: str(c._id), partId: str(c.partId), order: num(c.readingOrder) ?? 0 }))
+    .sort((a, b) => {
+      const [ab, ap] = rank(a.partId);
+      const [bb, bp] = rank(b.partId);
+      return ab - bb || ap - bp || a.order - b.order;
+    });
+  const [tb, tp] = rank(partId);
+  const at = sorted.filter((c) => {
+    const [b, p] = rank(c.partId);
+    return b < tb || (b === tb && p <= tp);
+  }).length;
+  const before = sorted[at - 1];
+  const after = sorted[at];
+  const readingOrder = before ? before.order + 1 : Math.max(1, after ? after.order : 1);
+  const shifts: ChapterPatch[] = [];
+  let last = readingOrder;
+  for (const c of sorted.slice(at)) {
+    if (c.order > last) break;
+    last += 1;
+    shifts.push({ id: c.id, readingOrder: last, partId: c.partId });
+  }
+  return { readingOrder, shifts };
 }

@@ -1,0 +1,165 @@
+/* m11-outline (KB-3): headings that edit in place, the chapter page editors, arcs. Colors come only from theme tokens. */
+
+.ol-grid .ol-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ol-grid .ol-group .ol-heading {
+  position: sticky;
+  left: 8px;
+  width: max-content;
+  max-width: calc(100vw - 420px);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ol-grid .ol-group .ol-name-form {
+  position: sticky;
+  left: 8px;
+  width: max-content;
+}
+.ol-name {
+  all: unset;
+  cursor: text;
+  color: var(--fg);
+  font-weight: inherit;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.ol-name:hover {
+  background: var(--accent-soft);
+}
+.ol-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ol-name[disabled] {
+  cursor: default;
+}
+.ol-name.missing {
+  font-style: italic;
+}
+.ol-rename {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  min-width: 16em;
+}
+.ol-count {
+  font-weight: 400;
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+.ol-menu > summary {
+  display: inline-block;
+  cursor: pointer;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--fg);
+  padding: 2px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  list-style: none;
+}
+.ol-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.ol-menu > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ol-menu[open] > summary {
+  background: var(--accent-soft);
+}
+.ol-menu {
+  position: relative;
+}
+.ol-menu-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 420px;
+  flex-wrap: wrap;
+  padding: 8px;
+  font-weight: 400;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+}
+.ol-name-form {
+  flex-wrap: wrap;
+  align-items: center;
+  font-weight: 400;
+}
+.ol-name-form input {
+  min-width: 14em;
+}
+.ol-arc.hl {
+  height: 7px;
+  box-shadow: 0 0 0 1px var(--fg);
+  z-index: 1;
+}
+.ol-arc.dim {
+  opacity: 0.35;
+}
+.ol-chapter-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+}
+.ol-strand {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--surface);
+}
+.ol-strand-head {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ol-strand-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px 8px;
+}
+.ol-present-list {
+  max-height: none;
+  overflow: visible;
+}
+.ol-present {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px 8px;
+}
+.ol-present > .row {
+  flex-wrap: nowrap;
+}
+.ol-arcs > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ol-arcs > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ol-arc-list .link-btn[aria-pressed='true'] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+.ol-more > summary {
+  cursor: pointer;
+  color: var(--fg);
+}
+.ol-grid .ol-group:has(.ol-menu[open]) {
+  z-index: 4;
+}
