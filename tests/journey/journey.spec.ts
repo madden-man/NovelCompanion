@@ -4,10 +4,24 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import type { Invoke } from '../helpers/t5';
+import { assembleGraph, buildGraph, generations, layoutTree } from '../../src/shared/domain/tree';
+import type { TreeGraph } from '../../src/shared/domain/tree';
+import {
+  ENTRY_COLLECTIONS,
+  collectionInfo,
+  customFieldSpecs,
+  editableFields,
+  entryTitle,
+  manifests,
+} from '../../src/shared/schema';
+import type { CustomSection, EntryCollection } from '../../src/shared/schema';
+import { build } from '../helpers/t5';
+import type { GenContext, Invoke } from '../helpers/t5';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
-import { field, invokeVia, launch, rail, waitSaved } from '../e2e/helpers';
+import { readFixture } from '../helpers/loadFixture';
+import { field, invokeVia, launch, rail, setField, waitSaved, withoutSystem } from '../e2e/helpers';
+import type { UiContext } from '../e2e/helpers';
 import { makeJourneyFiles } from './setup';
 import type { JourneyFiles } from './setup';
 
@@ -276,6 +290,236 @@ test('FT-9 the tree exports as a PNG image', async () => {
   expect([...readFileSync(png).subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
 });
 
+// ---------------------------------------------------------------------------
+// The fixture tree, built by hand in the empty Scratch bible (T-4)
+
+const fixture = readFixture();
+const treeInspector = () => page.getByTestId('tree-inspector');
+const treeEditor = () => treeInspector().getByTestId('editor');
+const treeNode = (name: string) => page.locator(`g.tnode[aria-label^="${name},"]`);
+
+/** Switch bibles the way a person does: the Bibles screen in the rail, then Open. */
+async function openBible(name: string): Promise<void> {
+  await rail(page, 'Bibles').click();
+  await page.getByRole('button', { name: `Open ${name}`, exact: true }).click();
+  await expect(page.getByTestId('current-bible')).toHaveText(name);
+  await expect(page.getByTestId('workspace')).toBeVisible();
+}
+
+async function selectPerson(name: string): Promise<void> {
+  await treeNode(name).dispatchEvent('click');
+  await expect(treeInspector().getByTestId('inspector-name')).toHaveText(name);
+}
+
+async function addPerson(
+  kind: 'person' | 'parent' | 'child' | 'sibling' | 'partner',
+  name: string,
+  born: number | null,
+  opts: { status?: string; type?: string; coParent?: string } = {},
+): Promise<void> {
+  await treeInspector()
+    .getByRole('button', { name: kind === 'person' ? 'Add person' : `Add ${kind}`, exact: true })
+    .click();
+  const form = treeInspector().getByTestId('add-form');
+  await form.getByLabel('Name').fill(name);
+  if (born !== null) await form.getByLabel('Birth year').fill(String(born));
+  await form.getByLabel('Status').selectOption(opts.status ?? 'canon');
+  if (opts.type && kind === 'partner') await form.getByLabel('Union type').selectOption(opts.type);
+  else if (opts.type) await form.getByLabel('Link type').selectOption(opts.type);
+  if (opts.coParent !== undefined) {
+    await form.getByLabel('Other parent').selectOption({ label: opts.coParent });
+  }
+  await form.getByRole('button', { name: /^Add the/ }).click();
+  await expect(treeNode(name)).toHaveCount(1);
+  await expect(treeInspector().getByTestId('inspector-name')).toHaveText(name);
+}
+
+async function setLifeYear(path: 'birth' | 'death', year: number): Promise<void> {
+  const f = field(treeEditor(), path);
+  await f.getByLabel('Kind of date').selectOption('year');
+  await f.getByLabel('Year', { exact: true }).fill(String(year));
+  await waitSaved(page);
+}
+
+/** The families a person belongs to, picked by name as a person would. */
+async function setFamilies(titles: string[]): Promise<void> {
+  const f = field(treeEditor(), 'familyIds');
+  const chips = f.locator(':scope > .chips .chip-remove');
+  while ((await chips.count()) > 0) await chips.first().click();
+  for (const label of titles) await f.locator(':scope > select').selectOption({ label });
+  await waitSaved(page);
+}
+
+async function editLink(withName: string, values: Record<string, string | number>): Promise<void> {
+  await treeInspector()
+    .getByRole('button', { name: `Edit the link with ${withName}` })
+    .click();
+  for (const [path, v] of Object.entries(values)) {
+    await field(treeEditor(), path).locator(':scope > input').fill(String(v));
+  }
+  await waitSaved(page);
+  await treeInspector()
+    .getByRole('button', { name: /^Back to/ })
+    .click();
+}
+
+/**
+ * People, unions, and links by name, so the tree built here compares with the
+ * fixture whatever IDs the app gave them; families by name for the same reason.
+ */
+function signature(g: TreeGraph, familyName: (id: string) => string) {
+  const n = (id: string) => g.byId.get(id)!.name;
+  const yr = (d: unknown) =>
+    d && typeof d === 'object' && 'year' in d ? (d as { year: number }).year : null;
+  const gen = generations(g);
+  return {
+    people: g.people
+      .map((p) => [
+        p.name,
+        yr(p.birth),
+        yr(p.death),
+        p.familyIds.map(familyName).sort().join('+'),
+        p.status,
+        gen.get(p.id),
+      ])
+      .sort(),
+    unions: g.unions
+      .map((u) => [n(u.a), n(u.b), u.type, u.startYear, u.endYear, u.endReason])
+      .sort(),
+    links: g.links.map((l) => [n(l.parentId), n(l.childId), l.type, l.startYear]).sort(),
+  };
+}
+
+function layoutByName(g: TreeGraph) {
+  const l = layoutTree(g, new Set(g.people.map((p) => p.id)));
+  return Object.fromEntries([...l.nodes].map(([id, p]) => [g.byId.get(id)!.name, [p.x, p.y]]));
+}
+
+test('ARCH-8 FT-2 the Scratch bible is opened from the Bibles screen, its two families are made, and the Hales are added from the tree', async () => {
+  test.setTimeout(300_000);
+  await openBible('Scratch');
+  for (const f of fixture.families!) {
+    await rail(page, 'Families').click();
+    await page.getByRole('button', { name: 'New family', exact: true }).click();
+    const form = page.getByTestId('new-entry');
+    await field(form, 'title').locator(':scope > input').fill(String(f.title));
+    await field(form, 'name').locator(':scope > input').fill(String(f.name));
+    await form.getByRole('button', { name: 'Create family' }).click();
+    await expect(
+      page.getByTestId('editor').getByRole('heading', { name: String(f.title) }),
+    ).toBeVisible();
+    await waitSaved(page);
+  }
+  await rail(page, 'Family tree').click();
+  await expect(page.getByTestId('tree-view')).toBeVisible();
+  await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
+
+  await addPerson('person', 'Margaret Hale', 1958);
+  await setLifeYear('death', 2041);
+  await setFamilies(['Hale family']);
+  await addPerson('partner', 'Peter Hale', 1956, { type: 'married' });
+  await setLifeYear('death', 2030);
+  await setFamilies(['Hale family']);
+  await editLink('Margaret Hale', { startYear: 1982, endYear: 2030, endReason: 'death' });
+  await selectPerson('Margaret Hale');
+  await addPerson('child', 'Daniel Hale', 1985, { type: 'biological', coParent: 'Peter Hale' });
+  await selectPerson('Margaret Hale');
+  await addPerson('child', 'Ruth Hale', 1990, { type: 'biological', coParent: 'Peter Hale' });
+  await setLifeYear('death', 2067);
+  await expect(page.locator('g.tnode')).toHaveCount(4);
+  await expect(page.locator('text.tunion-end')).toHaveText(['ended 2030']);
+});
+
+test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tree by hand, and it matches the fixture graph and layout', async () => {
+  test.setTimeout(300_000);
+  await selectPerson('Daniel Hale');
+  await addPerson('partner', 'Zhou Lan', 1988, { type: 'married' });
+  await setFamilies(['Zhou family']);
+  await editLink('Daniel Hale', { startYear: 2029 });
+  await addPerson('parent', 'Zhou Meiling', 1962, { type: 'biological' });
+  await setLifeYear('death', 2050);
+  await addPerson('partner', 'Zhou Wei', 1960, { type: 'partnered' });
+  await setLifeYear('death', 2055);
+  await setFamilies(['Zhou family']);
+  // Link the existing Zhou Wei as Zhou Lan's other parent.
+  await selectPerson('Zhou Lan');
+  const linkForm = treeInspector().getByRole('form', { name: 'Link someone already in the tree' });
+  await linkForm.getByLabel(/They are/).selectOption('parent');
+  await linkForm.getByLabel('Person', { exact: true }).selectOption({ label: 'Zhou Wei' });
+  await linkForm.getByLabel('Link type').selectOption('biological');
+  await linkForm.getByRole('button', { name: 'Link', exact: true }).click();
+  await expect(linkForm.getByTestId('link-message')).toHaveText(/^Linked\./);
+  await addPerson('sibling', 'Zhou Jun', 1993, { type: 'biological', status: 'planned' });
+  await setLifeYear('death', 2070);
+
+  await selectPerson('Daniel Hale');
+  await addPerson('child', 'Iris Hale-Zhou', 2031, { type: 'biological', coParent: 'Zhou Lan' });
+  await setFamilies(['Hale family', 'Zhou family']);
+  await selectPerson('Ruth Hale');
+  await addPerson('child', 'Sam Hale', 2012, { type: 'adoptive' });
+  await editLink('Ruth Hale', { startYear: 2015 });
+  await selectPerson('Iris Hale-Zhou');
+  await addPerson('partner', 'Tomas Reyes', 2030, { type: 'partnered', status: 'planned' });
+  await editLink('Iris Hale-Zhou', { startYear: 2056, endYear: 2064, endReason: 'separated' });
+  await selectPerson('Iris Hale-Zhou');
+  await addPerson('child', 'Noor Zhou', 2058, {
+    type: 'biological',
+    coParent: 'Tomas Reyes',
+    status: 'planned',
+  });
+  await setFamilies(['Zhou family']);
+  await addPerson('person', 'The Archivist', null, { status: 'idea' });
+
+  await expect(page.locator('g.tnode')).toHaveCount(13);
+  const t = await invoke('tree.get', {});
+  const built = assembleGraph(t.people, t.unions, t.links);
+  const expected = buildGraph(fixture.characters!, fixture.unions!, fixture.parentLinks!);
+  const families = (await invoke('entry.list', { collection: 'families', trash: 'exclude' }))
+    .entries;
+  const builtFamily = (id: string) =>
+    String(families.find((f) => f.entry._id === id)?.entry.name ?? id);
+  const fixtureFamily = (id: string) =>
+    String(fixture.families!.find((f) => f._id === id)?.name ?? id);
+  // The same people, unions, and parent links as section 7, under the app's own IDs.
+  expect(signature(built, builtFamily)).toEqual(signature(expected, fixtureFamily));
+  // The same graph lays out the same way, whatever order it was entered in.
+  expect(layoutByName(built)).toEqual(layoutByName(expected));
+  expect(t.warnings).toEqual([]);
+  // Tidy layout draws exactly that layout.
+  await page.getByRole('button', { name: 'Tidy layout' }).click();
+  await page
+    .getByRole('dialog', { name: 'Tidy layout' })
+    .getByRole('button', { name: 'Tidy layout' })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
+  const want = layoutByName(built);
+  await expect
+    .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])
+    .toEqual({ x: want[t.people[0]!.name]![0], y: want[t.people[0]!.name]![1] });
+  const shown = await page
+    .locator('g.tnode')
+    .evaluateAll((els) =>
+      els.map((e) => [e.getAttribute('aria-label')!.split(',')[0], e.getAttribute('transform')]),
+    );
+  for (const [name, transform] of shown) {
+    const [x, y] = want[name!]!;
+    expect(transform, name!).toBe(`translate(${x},${y})`);
+  }
+  // FT-4: the adoptive link and both ended unions are drawn as such.
+  await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
+  await expect(page.locator('text.tunion-end')).toHaveText(['ended 2030', 'ended 2064']);
+});
+
+test('ARCH-8 Tide Lines is opened again from the Bibles screen, with its own tree and its story time still 2045', async () => {
+  await openBible('Tide Lines');
+  await expect(status()).toContainText('Story time 2045');
+  // The bibles share nothing: Tide Lines still has its 13 people and Hope Hale.
+  await rail(page, 'Family tree').click();
+  await expect(page.getByTestId('tree-view')).toBeVisible();
+  await expect(page.locator('g.tnode')).toHaveCount(14);
+  await expect(page.getByTestId('tree-year')).toHaveValue('2045');
+});
+
 test('TL-6 WE-1 the timeline draws every lane and filters by family and category', async () => {
   await rail(page, 'Timeline').click();
   const view = page.getByTestId('timeline-view');
@@ -460,6 +704,135 @@ test('SL-1 a session log entry is written and listed newest first', async () => 
   await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Iris at the harbor');
   await waitSaved(page);
   await expect(entryList().getByRole('button').first()).toContainText('Journey session');
+});
+
+// ---------------------------------------------------------------------------
+// Every section's form and editor (T-4, ED-1)
+
+/** The entries the walk makes, one per collection, for the trash step after it. */
+const trial: { collection: EntryCollection; id: string; title: string }[] = [];
+
+/**
+ * What a new entry in Tide Lines can point at, read from the bible: the first
+ * entries of each collection, the list items, and the custom section's fields.
+ * The people are three whose links can never close a loop, since FT-6 refuses a
+ * parent link that would make someone their own ancestor.
+ */
+async function walkContext(): Promise<{
+  ctx: GenContext & UiContext;
+  pools: Map<string, string[]>;
+}> {
+  const pools = new Map<string, string[]>();
+  for (const c of ENTRY_COLLECTIONS) {
+    const { entries } = await invoke('entry.list', { collection: c, trash: 'exclude' });
+    pools.set(c, entries.map((e) => e.entry._id).slice(0, 8));
+  }
+  pools.set('characters', ['X1', 'U1', 'H6']);
+  const sections = (await invoke('entry.list', { collection: 'customSections', trash: 'exclude' }))
+    .entries;
+  const { lists } = await invoke('lists.get', {});
+  const titles = new Map<string, string>();
+  const ctx: GenContext & UiContext = {
+    page,
+    pool: (c) => pools.get(c === '*' ? 'characters' : c) ?? [],
+    listItems: (id) => lists.find((l) => l._id === id)?.items.map((i) => i.id) ?? [],
+    customSpecs: (id) => {
+      const s = sections.find((x) => x.entry._id === id)?.entry as unknown as
+        CustomSection | undefined;
+      return s ? customFieldSpecs(s) : undefined;
+    },
+    titleOf: async (id) => {
+      if (!titles.has(id)) {
+        const { entries } = await invoke('entry.lookup', { ids: [id] });
+        titles.set(id, entries[0]?.title ?? id);
+      }
+      return titles.get(id)!;
+    },
+  };
+  return { ctx, pools };
+}
+
+test('ED-1 one entry of every section is created from its form, every field is changed in the editor, and the saved values read back', async () => {
+  test.setTimeout(600_000);
+  const { ctx, pools } = await walkContext();
+  // A section with no entries yet (briefs, before the first session) goes first,
+  // so the entry made here is there for the sections that point at it.
+  const order = [...ENTRY_COLLECTIONS].sort(
+    (a, b) => Number(pools.get(a)!.length > 0) - Number(pools.get(b)!.length > 0),
+  );
+  const failures: string[] = [];
+  for (const c of order) {
+    const info = collectionInfo[c];
+    const manifest = manifests[c];
+    const a = build(manifest, 0, ctx, 'full', true);
+    const b = build(manifest, 1, ctx, 'full', true);
+    await rail(page, info.plural).click();
+    await page
+      .getByRole('button', { name: `New ${info.singular.toLowerCase()}`, exact: true })
+      .click();
+    const form = page.getByTestId('new-entry');
+    for (const spec of manifest.filter((s) => s.required && s.kind !== 'system')) {
+      await setField(ctx, form, spec, spec.name, a[spec.name], a);
+    }
+    await form.getByRole('button', { name: `Create ${info.singular.toLowerCase()}` }).click();
+    const editor = page.getByTestId('editor');
+    await expect(editor).toBeVisible();
+    await waitSaved(page);
+    for (const spec of editableFields(manifest)) {
+      await setField(ctx, editor, spec, spec.name, b[spec.name], b);
+    }
+    await waitSaved(page);
+    const id = await editor.getAttribute('data-entry-id');
+    if (!id) throw new Error(`The ${c} editor shows no entry ID`);
+    const { entry: saved } = await invoke('entry.get', { collection: c, id });
+    const got = withoutSystem(manifest, saved) as Record<string, unknown>;
+    const want = withoutSystem(manifest, b) as Record<string, unknown>;
+    for (const spec of editableFields(manifest)) {
+      const g = JSON.stringify(got[spec.name] ?? null);
+      const w = JSON.stringify(want[spec.name] ?? null);
+      if (g !== w) failures.push(`${c}.${spec.name}: expected ${w}, found ${g}`);
+    }
+    trial.push({ collection: c, id, title: entryTitle(saved) });
+    if (pools.get(c)!.length === 0) pools.get(c)!.push(id);
+  }
+  expect(failures).toEqual([]);
+  expect(trial.map((t) => t.collection).sort()).toEqual([...ENTRY_COLLECTIONS].sort());
+});
+
+test('ED-5 the trial entries are moved to the trash from their pages, and the Trash screen lists every one', async () => {
+  test.setTimeout(300_000);
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // The fixture already has one entry in the trash (the M7 supplement).
+  const before = (await invoke('trash.list', {})).entries.length;
+  for (const t of trial) {
+    await rail(page, collectionInfo[t.collection].plural).click();
+    await pick(new RegExp(escape(t.title)))
+      .first()
+      .click();
+    const editor = page.getByTestId('editor');
+    await expect(editor).toHaveAttribute('data-entry-id', t.id);
+    const inspector = page.getByTestId('inspector');
+    await inspector.getByRole('button', { name: 'Move to trash' }).click();
+    await inspector
+      .getByRole('dialog', { name: 'Move to trash' })
+      .getByRole('button', { name: 'Move to trash' })
+      .click();
+    await expect(editor).toContainText('This entry is in the trash.');
+  }
+  await rail(page, 'Trash').click();
+  const trash = page.getByTestId('trash-list');
+  await expect(trash.getByRole('button', { name: /^Restore / })).toHaveCount(before + trial.length);
+  for (const t of trial) {
+    await expect(
+      trash
+        .locator('li')
+        .filter({ hasText: collectionInfo[t.collection].singular })
+        .filter({ hasText: t.title }),
+    ).not.toHaveCount(0);
+    expect(
+      (await invoke('entry.get', { collection: t.collection, id: t.id })).entry.deletedAt,
+    ).toBeTruthy();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1047,7 +1420,7 @@ test('SL-1 closing the app asks where you stopped and saves the note', async () 
   await prompt
     .getByLabel('Where did you stop?', { exact: true })
     .fill('Iris is at the harbor with Lan.');
-  const shot = test.info().outputPath('49-stop-prompt.png');
+  const shot = test.info().outputPath(`${String(stepNo + 1).padStart(2, '0')}-stop-prompt.png`);
   await page.screenshot({ path: shot });
   test.info().attachments.push({ name: 'screenshot', path: shot, contentType: 'image/png' });
   await prompt.getByRole('button', { name: 'Save note and quit' }).click();
