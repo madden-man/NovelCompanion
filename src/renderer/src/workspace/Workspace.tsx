@@ -199,13 +199,16 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
             {railButton('Timeline', view.kind === 'timeline', () => setView({ kind: 'timeline' }))}
             {railButton('Entries', entriesActive, () => setView({ kind: 'entries' }))}
           </div>
-          <details
-            className="rail-more"
-            open={moreOpen}
-            onToggle={(e) => setMoreOpen(e.currentTarget.open)}
-            data-testid="rail-more"
-          >
-            <summary>More</summary>
+          <details className="rail-more" open={moreOpen} data-testid="rail-more">
+            {/* The state is set here, not from the toggle event, so it is saved at once. */}
+            <summary
+              onClick={(e) => {
+                e.preventDefault();
+                setMoreOpen(!moreOpen);
+              }}
+            >
+              More
+            </summary>
             <div className="rail-group">
               <span className="eyebrow">Sessions</span>
               {railButton('Dashboard', view.kind === 'dashboard', () =>

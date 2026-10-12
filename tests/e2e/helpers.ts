@@ -69,7 +69,9 @@ const RAIL_ACTIONS = new Set([
  * A button in the rail. KB-1 puts everything but the five screens under the
  * "More" disclosure; acting on a button there (click, focus, press, and the
  * like) opens More first when the button is not visible. The locator matches
- * hidden buttons too, so `count()` finds one inside a closed More.
+ * hidden buttons too, so `count()` finds one inside a closed More. A name the
+ * rail no longer has at all (Places, Glossary, Culture by year: KB-5) is
+ * reached through the Entries screen when that screen has a button for it.
  */
 export function rail(page: Page, name: string): Locator {
   const nav = page.getByRole('navigation', { name: 'Sections' });
@@ -83,6 +85,18 @@ export function rail(page: Page, name: string): Locator {
       await more.locator('summary').click();
     }
   };
+  /** The Entries screen's button for a name the rail lacks, or null. */
+  const viaEntries = async (): Promise<Locator | null> => {
+    await nav.waitFor();
+    if (await button.count()) return null;
+    const entries = nav.getByRole('button', { name: 'Entries', exact: true });
+    if (!(await entries.count())) return null;
+    await entries.click();
+    const view = page.getByTestId('entries-view');
+    await view.waitFor();
+    const there = view.getByRole('button', { name, exact: true });
+    return (await there.count()) ? there : null;
+  };
   return new Proxy(button, {
     get(target, prop, receiver) {
       const value: unknown = Reflect.get(target, prop, receiver);
@@ -90,6 +104,11 @@ export function rail(page: Page, name: string): Locator {
       const fn = value as (...args: unknown[]) => unknown;
       if (typeof prop === 'string' && RAIL_ACTIONS.has(prop)) {
         return async (...args: unknown[]) => {
+          const there = await viaEntries();
+          if (there) {
+            const act = Reflect.get(there, prop) as (...a: unknown[]) => unknown;
+            return act.apply(there, args);
+          }
           await openMore();
           return fn.apply(target, args);
         };

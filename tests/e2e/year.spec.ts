@@ -242,9 +242,9 @@ test('KB-2 an event title in the strip opens its entry and closes the dialog', a
 });
 
 test('KB-2 TL-2 TL-5 the dialog lists everyone at 2075 and what a character lived through', async () => {
-  await invoke('storyTime.set', { time: { year: 2075 } });
   await page.keyboard.press('Meta+t');
   await expect(dialog()).toBeVisible();
+  await dialog().getByTestId('time-year').fill('2075');
   await expect(dialog().getByTestId('time-now')).toHaveText('2075');
   const table = dialog().getByTestId('time-states');
   await expect(table.locator('tr[data-person="H3"] [data-testid="year-age"]')).toHaveText('90');

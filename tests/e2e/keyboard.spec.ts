@@ -119,6 +119,12 @@ async function go(screen: string) {
   await expect(button).toHaveAttribute('aria-current', 'page');
 }
 
+/** KB-5: a view that left the rail opens from the Entries screen (until integration, its placeholder). */
+async function goEntries(name: string) {
+  await go('Entries');
+  await press(page.getByTestId('entries-view').getByRole('button', { name, exact: true }));
+}
+
 /** Close the rail's More disclosure with the keyboard, when it is open. */
 async function closeMore() {
   const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
@@ -229,8 +235,16 @@ test('NF-2 every section list opens an entry into its editor from the keyboard, 
   let opened = 0;
   for (const c of sections) {
     const info = collectionInfo[c];
-    if (!(await rail(page, info.plural).count())) continue;
-    await go(info.plural);
+    if (await rail(page, info.plural).count()) await go(info.plural);
+    else {
+      // KB-5: a list with no rail item of its own opens from the Entries screen.
+      await go('Entries');
+      const kind = page
+        .getByTestId('entries-view')
+        .getByRole('button', { name: info.plural, exact: true });
+      if (!(await kind.count())) continue;
+      await press(kind);
+    }
     const list = page.getByTestId('entry-list');
     const empty = page.getByText(`No ${info.plural.toLowerCase()} yet.`, { exact: true });
     await expect(page.getByRole('heading', { name: info.plural, level: 2 })).toBeVisible();
@@ -390,7 +404,7 @@ test('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapter page
 test('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table answer the keyboard', async () => {
   // This bible starts with no communities; the screen needs one to pick.
   await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
-  await go('Culture by year');
+  await goEntries('Culture by year');
   const culture = page.getByTestId('culture-view');
   await tabTo(culture.getByRole('spinbutton', { name: 'Year' }));
   await page.keyboard.press('Meta+a');
@@ -399,11 +413,11 @@ test('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table ans
     culture.getByTestId('culture-results').or(culture.getByTestId('culture-empty')),
   ).toBeVisible();
 
-  await go('Place tree');
+  await goEntries('Place tree');
   await press(page.getByTestId('places-view').getByRole('button', { name: 'Portland' }));
   await expect(editor()).toContainText('Portland');
 
-  await go('Glossary table');
+  await goEntries('Glossary table');
   await press(page.getByRole('button', { name: 'Edit 团圆' }));
   await expect(editor()).toContainText('团圆');
 });
@@ -530,7 +544,7 @@ test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step button
   await expect(dialog.getByTestId('time-now')).toHaveText('2042');
   await expect(status()).toContainText('Story time 2042');
   // KB-2: the world for the year sits under the states; its event titles take focus too.
-  await expect(dialog.getByTestId('time-world')).toContainText('The forties');
+  await expect(dialog.getByTestId('time-era')).toContainText('2040 to 2049');
   await tabTo(
     dialog
       .getByTestId('time-events')
