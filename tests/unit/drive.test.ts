@@ -112,7 +112,7 @@ describe('GD-1 scopes, PKCE, and where secrets live', () => {
     expect(parseResponse('drive.status', status)).toEqual(status);
     expect(() => parseResponse('drive.status', { ...status, refreshToken: 'rt' })).toThrow();
     expect(() => parseResponse('drive.status', { ...status, clientSecret: 's' })).toThrow();
-    expect(Object.keys(contract).filter((c) => c.startsWith('drive.'))).toHaveLength(16);
+    expect(Object.keys(contract).filter((c) => c.startsWith('drive.'))).toHaveLength(17);
   });
 });
 
@@ -220,8 +220,8 @@ describe('GD-3 files remembered from an earlier check', () => {
     const states = (missing: string[], unreadable: string[]) =>
       classifyFiles(folder, remote, missing, [], known, unreadable).map((f) => [f.fileId, f.state]);
     expect(states([], [])).toEqual([
-      ['b', 'missing'],
       ['a', 'new'],
+      ['b', 'missing'],
     ]);
     expect(states([], ['F'])).toEqual([['a', 'new']]);
     expect(states(['F'], [])).toEqual([['a', 'new']]);

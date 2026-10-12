@@ -325,6 +325,28 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     await expect(importBibleJson(handle, exported.text)).rejects.toThrow(/empty bible/);
   });
 
+  test('BK-3 a file from an older schema is checked after it is migrated, and an invalid entry leaves the bible as it was', async () => {
+    const a = await fixtureSession('bk-older-src');
+    const exported = await exportBibleJson(a.handle);
+    const handle = await createBible(store, freshSlug('bk-older'), 'Older');
+    const untouched = await dumpBible(handle);
+    const older = JSON.parse(exported.text) as {
+      bible: { schemaVersion: number };
+      collections: { characters: Record<string, unknown>[] };
+    };
+    older.bible.schemaVersion = LATEST_SCHEMA_VERSION - 1;
+    older.collections.characters[0]!.status = 'maybe';
+    await expect(importBibleJson(handle, JSON.stringify(older))).rejects.toThrow(
+      /is not valid, so nothing was imported/,
+    );
+    expect((await dumpBible(handle)).collections).toEqual(untouched.collections);
+    expect(await isEmptyBible(handle)).toBe(true);
+    // The same older file without the damage loads and is migrated.
+    older.collections.characters[0]!.status = 'canon';
+    await importBibleJson(handle, JSON.stringify(older));
+    expect(await isEmptyBible(handle)).toBe(false);
+  });
+
   test('BK-3 the IPC export writes the file, and the file loads into a new bible through the app', async () => {
     const a = await fixtureSession('bk-ipc-export');
     const dir = await mkdtemp(join(tmpdir(), 'nc-export-'));

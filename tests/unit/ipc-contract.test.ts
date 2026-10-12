@@ -247,3 +247,80 @@ describe('ARCH-1 IPC contract', () => {
     ).toThrow(IpcValidationError);
   });
 });
+
+/**
+ * ARCH-1: every channel added after the first milestones rejects bad input on
+ * the request side, which is what the preload and main both run. One row per
+ * channel; a channel with no row fails the first test, so a new channel cannot
+ * ship without bad-input cases.
+ */
+const LONG = 'x'.repeat(10_000);
+const BAD: Record<string, unknown[]> = {
+  'claude.status': [{ extra: 1 }],
+  'claude.setKey': [{}, { key: 5 }, { key: LONG }, { key: 'k', extra: 1 }],
+  'claude.clearKey': [{ extra: 1 }],
+  'claude.models': [{ extra: 1 }],
+  'claude.setModel': [{}, { feature: 'nope', model: 'm' }, { feature: 'panel', model: '' }],
+  'claude.acknowledge': [{ extra: 1 }],
+  'claude.ask': [
+    {},
+    { runId: 'short', conversationId: null, question: 'q' },
+    { runId: 'run-12345678', conversationId: null, question: '' },
+    { runId: 'run-12345678', conversationId: null, question: LONG },
+    { runId: 'run 12345678', conversationId: null, question: 'q' },
+    { runId: 'run-12345678', conversationId: '', question: 'q' },
+  ],
+  'claude.stop': [{}, { runId: '' }, { runId: 7 }],
+  'claude.runs': [{ feature: 'nope' }, { extra: 1 }],
+  'claude.run': [{}, { id: '' }],
+  'claude.importProposals': [{}, { runId: 'run-12345678' }, { runId: 'bad', fileId: 'f' }],
+  'session.start': [{}, { input: { kind: 'chapter' } }, { input: { kind: 'nope' } }],
+  'session.relevant': [{}, { input: { kind: 'chapter' } }, { input: 5 }],
+  'brief.settings.get': [{ extra: 1 }],
+  'brief.settings.set': [{ window: -1 }, { window: 1.5 }, { budget: 10_000_001 }, { window: 'a' }],
+  'brief.regenerate': [{}, { id: '' }, { id: 'b', runId: 'short' }, { id: 'b', add: [''] }],
+  'brief.export': [{}, { id: 'b' }, { id: 'b', format: 'docx' }],
+  'manuscript.sources': [{ extra: 1 }],
+  'manuscript.read': [{}, { chapterId: '' }, { chapterId: 'c', sourceId: LONG }],
+  'manuscript.apply': [{}, { token: '', baseModifiedAt: 'x' }, { token: 't' }],
+  'chapter.page': [{}, { id: '' }, { id: LONG }],
+  'chapter.establishes': [{}, { chapterId: '' }],
+  'chapter.summarize': [{}, { chapterId: '' }, { chapterId: 'c', runId: 'short' }],
+  'dashboard.get': [{ extra: 1 }],
+  'drive.cancelConnect': [{ extra: 1 }, null, 'x'],
+};
+
+describe('ARCH-1 every newer channel rejects bad input on the request side', () => {
+  test('ARCH-1 each claude, session, brief, manuscript, chapter, dashboard and drive.cancelConnect channel has bad-input rows', () => {
+    const wanted = CHANNELS.filter(
+      (c) =>
+        /^(claude|session|brief|manuscript|chapter|dashboard)\./.test(c) ||
+        c === 'drive.cancelConnect',
+    );
+    expect(Object.keys(BAD).sort()).toEqual([...wanted].sort());
+  });
+
+  test.each(Object.entries(BAD))(
+    'ARCH-1 %s rejects its bad requests and non-objects',
+    (channel, bads) => {
+      for (const bad of [...bads, null, 'x', 7, [], { __unknown: true }]) {
+        expect(
+          () => parseRequest(channel as never, bad),
+          `${channel} ${JSON.stringify(bad)}`,
+        ).toThrow(IpcValidationError);
+      }
+    },
+  );
+
+  test('ARCH-1 claude.stream rejects a payload that is not one of its event kinds', () => {
+    for (const bad of [
+      {},
+      { kind: 'nope' },
+      { runId: 'r', conversationId: 'c', kind: 'text' },
+      { runId: 'r', conversationId: 'c', kind: 'finished', status: 'maybe', error: null },
+      null,
+    ]) {
+      expect(events['claude.stream'].safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  });
+});
