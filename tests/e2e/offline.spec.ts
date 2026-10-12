@@ -12,6 +12,8 @@ import type { Invoke } from '../helpers/t5';
 import { field, invokeVia, launch, rail } from './helpers';
 
 const SLUG = 'offline';
+/** The fixture bible's name, which the snapshot keeps (ARCH-6). */
+const NAME = 'Fixture novel';
 let server: MongoMemoryReplSet;
 let app: ElectronApplication | null = null;
 let page: Page;
@@ -91,12 +93,12 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await start(await closedUri());
   const banner = page.getByTestId('connection-banner');
   await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
-  await expect(banner).toContainText(`The most recent snapshot is of ${SLUG}`);
+  await expect(banner).toContainText(`The most recent snapshot is of ${NAME}`);
   await banner.getByTestId('open-snapshot').click();
   await expect(banner).toHaveAttribute('data-state', 'readOnly');
   await expect(page.getByTestId('read-only-reason')).toContainText(READ_ONLY_REASON);
   await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(page.getByTestId('current-bible')).toHaveText(SLUG);
+  await expect(page.getByTestId('current-bible')).toHaveText(NAME);
 
   // Reading works: an entry, search, and the deterministic views.
   await openMargaret();
@@ -150,4 +152,56 @@ test('ARCH-6 when MongoDB goes away mid-session, an edit shows Not saved, never 
     field(page.getByTestId('editor'), 'birthplace').locator('input').first(),
   ).toHaveValue('Lost town');
   await stop();
+});
+
+test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens the live bible once MongoDB is back', async () => {
+  // A server of its own, whose one member is stopped and started again with its data and port.
+  const own = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: 'wiredTiger' },
+  });
+  const member = own.servers[0]!;
+  const store = await connect(own.getUri());
+  await loadFixture(store, SLUG);
+  await store.close();
+  await start(own.getUri());
+  await invoke('bible.open', { slug: SLUG });
+  await openMargaret();
+  const editor = page.getByTestId('editor');
+  const birthplace = () => field(page.getByTestId('editor'), 'birthplace').locator('input').first();
+  await expect(editor.getByTestId('autosave').first()).toHaveText('Saved');
+  await member.stop({ doCleanup: false, force: true });
+
+  // The lost connection shows on the next write, and the snapshot opens read-only mid-session.
+  await birthplace().fill('Offline town');
+  await expect(editor.getByTestId('autosave').first()).toContainText('Not saved', {
+    timeout: 60_000,
+  });
+  const banner = page.getByTestId('connection-banner');
+  await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
+  await banner.getByTestId('open-snapshot').click();
+  await expect(banner).toHaveAttribute('data-state', 'readOnly');
+  await expect(page.getByTestId('read-only-reason')).toContainText(
+    `You are looking at the snapshot of ${NAME}`,
+  );
+  await expect(page.getByTestId('current-bible')).toHaveText(NAME);
+  await openMargaret();
+  await expect(birthplace()).toBeDisabled();
+  await expect(birthplace()).not.toHaveValue('Offline town');
+
+  // MongoDB is back: Try again closes the snapshot and opens the live bible, writable again.
+  await member.start(true);
+  await banner.getByTestId('connection-retry').click();
+  await expect(page.getByTestId('connection-banner')).toHaveCount(0, { timeout: 60_000 });
+  expect((await invoke('connection.status', {})).state).toBe('connected');
+  await expect(page.getByTestId('current-bible')).toHaveText(NAME);
+  await openMargaret();
+  await expect(birthplace()).toBeEnabled();
+  await birthplace().fill('Back online');
+  await expect(page.getByTestId('editor').getByTestId('autosave').first()).toHaveText('Saved', {
+    timeout: 30_000,
+  });
+  const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
+  expect(h1.entry.birthplace).toBe('Back online');
+  await stop();
+  await own.stop();
 });
