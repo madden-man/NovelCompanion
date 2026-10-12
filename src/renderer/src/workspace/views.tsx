@@ -18,15 +18,12 @@ import { itemPath } from '../../../shared/domain/lists';
 import { filterQuestions, questionCounts } from '../../../shared/domain/questions';
 import type { QuestionFilter } from '../../../shared/domain/questions';
 import { logsNewestFirst } from '../../../shared/domain/sessionLog';
-import { eventSpans, fromCollections } from '../../../shared/domain/timeline';
 import { call, plainError } from '../api';
 import { useEntries, useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
 import { formatTime } from './format';
-import { useStoryTime } from './storyTime';
-import { WorldEventsStrip } from './timeline/WorldEventsStrip';
 import { useUndo } from './undo';
 
 type Listed = Response<'entry.list'>['entries'][number];
@@ -163,32 +160,6 @@ export function EntryList(props: {
         </ul>
       )}
     </section>
-  );
-}
-
-/**
- * A33: every world event on one strip of years, the story year marked, each
- * title opening its entry. The World events section shows it in the main
- * area while no event is open.
- */
-export function WorldEventsTimeline({ onSelect }: { onSelect: (id: string) => void }) {
-  const entries = useEntries('worldEvents');
-  const story = useStoryTime();
-  const events = useMemo(() => eventSpans(fromCollections({ worldEvents: entries })), [entries]);
-  if (!events.length) return null;
-  const from = Math.min(story.year, ...events.map((e) => e.startYear));
-  const to = Math.max(story.year, ...events.map((e) => e.endYear));
-  return (
-    <WorldEventsStrip
-      events={events}
-      from={from}
-      to={to}
-      year={story.year}
-      everyYear={false}
-      onOpen={onSelect}
-      label="World events timeline"
-      testid="we-timeline"
-    />
   );
 }
 

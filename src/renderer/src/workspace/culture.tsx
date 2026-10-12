@@ -76,8 +76,8 @@ export function CultureView(props: { onOpen: Open }) {
     <section className="ws-wide stack" aria-labelledby="culture-title" data-testid="culture-view">
       <h2 id="culture-title">Culture by year</h2>
       <p className="lede">
-        Pick a community and a year to see the traditions that apply. Add or change entries in the
-        Cultural entries section.
+        Pick a community and a year to see the traditions that apply. Edit one to change it, or make
+        a new cultural entry on the Entries tab.
       </p>
       <div className="tree-toolbar">
         <div className="field">
@@ -152,8 +152,8 @@ export function PlacesView(props: { onOpen: Open }) {
     <section className="ws-wide stack" aria-labelledby="places-title" data-testid="places-view">
       <h2 id="places-title">Place tree</h2>
       <p className="lede">
-        Places sit inside larger places. Each shows its description for the year you pick. Set a
-        place&apos;s parent and its descriptions by year in the Places section.
+        Places sit inside larger places. Each shows its description for the year you pick. Pick a
+        place to set its parent and its descriptions by year.
       </p>
       <YearField id={yearId} label="Year" value={year} onChange={setYear} />
       {nodes.length === 0 ? (

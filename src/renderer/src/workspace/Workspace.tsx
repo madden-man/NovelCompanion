@@ -25,7 +25,8 @@ import { TreeView } from './tree/TreeView';
 import { CultureView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import { OutlineView } from './plot';
 import { ZhNavProvider } from './Zh';
-import { EntryList, ListsView, NewEntryForm, TrashView, WorldEventsTimeline } from './views';
+import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
+import { EntriesView } from './entries/EntriesView';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
@@ -44,6 +45,7 @@ type View =
   | { kind: 'search' }
   | { kind: 'tree' }
   | { kind: 'timeline' }
+  | { kind: 'entries' }
   | { kind: 'outline' }
   | { kind: 'culture' }
   | { kind: 'places' }
@@ -168,6 +170,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                   )}
                 </>
               )}
+              {g === 'Knowledge' &&
+                railButton('Entries', view.kind === 'entries', () => setView({ kind: 'entries' }))}
               {g === 'World' && (
                 <>
                   {railButton('Timeline', view.kind === 'timeline', () =>
@@ -264,11 +268,6 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             ) : (
               <>
                 <div className="ws-editor empty-editor stack">
-                  {view.collection === 'worldEvents' && (
-                    <WorldEventsTimeline
-                      onSelect={(id) => setView({ ...view, selected: id, creating: false })}
-                    />
-                  )}
                   <p className="lede">
                     Pick an entry to edit it, or make a new{' '}
                     {collectionInfo[view.collection].singular.toLowerCase()}.
@@ -289,6 +288,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           <TreeView onOpen={open} />
         ) : view.kind === 'timeline' ? (
           <TimelineView />
+        ) : view.kind === 'entries' ? (
+          <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (
           <OutlineView />
         ) : (
