@@ -54,6 +54,7 @@
   font-size: 0.85rem;
 }
 .ol-menu > summary {
+  display: inline-block;
   cursor: pointer;
   font-weight: 400;
   font-size: 0.85rem;
@@ -73,10 +74,23 @@
 .ol-menu[open] > summary {
   background: var(--accent-soft);
 }
+.ol-menu {
+  position: relative;
+}
 .ol-menu-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 420px;
   flex-wrap: wrap;
-  padding: 6px 0;
+  padding: 8px;
   font-weight: 400;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
 }
 .ol-name-form {
   flex-wrap: wrap;
@@ -115,11 +129,19 @@
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 4px 8px;
 }
+.ol-present-list {
+  max-height: none;
+  overflow: visible;
+}
 .ol-present {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+}
+.ol-present > .row {
+  flex-wrap: nowrap;
 }
 .ol-arcs > summary {
   cursor: pointer;
@@ -137,4 +159,7 @@
 .ol-more > summary {
   cursor: pointer;
   color: var(--fg);
+}
+.ol-grid .ol-group:has(.ol-menu[open]) {
+  z-index: 4;
 }

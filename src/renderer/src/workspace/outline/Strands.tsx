@@ -177,7 +177,7 @@ function StrandCard(props: {
       </div>
       <div className="stack tight" data-field={path('characterIds')}>
         <span className="ed-label">Characters present</span>
-        <ul className="stack-list" aria-label={`Characters present, ${label}`}>
+        <ul className="stack-list ol-present-list" aria-label={`Characters present, ${label}`}>
           {present.length === 0 ? (
             <li className="empty">No characters listed.</li>
           ) : (

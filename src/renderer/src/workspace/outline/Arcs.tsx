@@ -165,7 +165,7 @@ export function ArcPanel(props: {
       <h3>
         <InlineName
           value={name}
-          label="Arc name"
+          label="Rename the arc"
           disabled={writes.ro.off}
           testId="arc-name"
           onSave={(next) => writes.edit('arcs', id, { name: next }, `Renamed the arc ${name}`)}

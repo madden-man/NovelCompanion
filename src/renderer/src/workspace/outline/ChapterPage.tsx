@@ -140,7 +140,9 @@ export function ChapterPanel(props: {
           {...writes.ro.tip}
           onChange={(e) => props.onToPart(e.target.value)}
         >
-          {!books.length && <option value={partId}>No parts yet</option>}
+          {!books.some((b) => partsOf(b.id).some((p) => p.id === partId)) && (
+            <option value={partId}>No part (pick one)</option>
+          )}
           {books.map((b) => (
             <optgroup key={b.id} label={b.kind === 'book' ? b.label : ''}>
               {partsOf(b.id).map((p) => (
