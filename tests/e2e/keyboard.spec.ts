@@ -229,16 +229,9 @@ test('NF-2 every section list opens an entry into its editor from the keyboard, 
   let opened = 0;
   for (const c of sections) {
     const info = collectionInfo[c];
-    if (await rail(page, info.plural).count()) await go(info.plural);
-    else {
-      // KB-5: a list with no rail item of its own opens from the Entries screen.
-      await go('Entries');
-      const kind = page
-        .getByTestId('entries-view')
-        .getByRole('button', { name: info.plural, exact: true });
-      if (!(await kind.count())) continue;
-      await press(kind);
-    }
+    // Custom entries are listed per custom section, each its own item under More.
+    if (!(await rail(page, info.plural).count())) continue;
+    await go(info.plural);
     const list = page.getByTestId('entry-list');
     const empty = page.getByText(`No ${info.plural.toLowerCase()} yet.`, { exact: true });
     await expect(page.getByRole('heading', { name: info.plural, level: 2 })).toBeVisible();

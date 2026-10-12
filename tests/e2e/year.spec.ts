@@ -92,7 +92,7 @@ const MORE = {
   ],
   People: ['Families', 'Unions', 'Parent links', 'Relationships'],
   Story: ['Books', 'Parts', 'Arcs', 'Chapters', 'Plot beats'],
-  World: ['World events', 'Era states'],
+  World: ['World events', 'Era states', 'Cultural entries', 'Places', 'Glossary'],
   Knowledge: ['Facts', 'Knowledge records', 'Themes and motifs', 'Open questions'],
   Custom: ['Custom sections', 'Family recipes'],
   Manage: [
@@ -168,6 +168,20 @@ test('KB-1 More remembers its state for the bible across a reload', async () => 
   await expect(page.getByTestId('dashboard')).toBeVisible();
 });
 
+test('KB-1 a second bible starts with More closed while the first keeps it open', async () => {
+  await expect(more()).toHaveAttribute('open', '');
+  await invoke('bible.create', { slug: 'year-second', name: 'Year second' });
+  await invoke('bible.open', { slug: 'year-second' });
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await expect(page.getByTestId('top-bar')).toBeVisible();
+  await expect(more()).not.toHaveAttribute('open', '');
+  await expect(nav().getByRole('button', { name: 'Dashboard' })).toBeHidden();
+  await invoke('bible.open', { slug: SLUG });
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await expect(rail(page, 'Characters')).toBeVisible();
+  await expect(more()).toHaveAttribute('open', '');
+});
+
 test('KB-2 the top bar year button opens the dialog: everyone first, then the era, the five-year strip, and the strands', async () => {
   await invoke('storyTime.set', { time: { year: 2045 } });
   const open = page.getByTestId('top-open-year');
@@ -214,6 +228,14 @@ test('KB-2 the top bar year button opens the dialog: everyone first, then the er
     'Grid batteries replace the last coal plant in Guangdong',
   );
   await expect(world.getByTestId('time-strands')).toContainText('Two Kitchens, present');
+  // KB-2: inside the world, the era, then the strip, then the strands.
+  expect(
+    await world
+      .locator(
+        '[data-testid="time-era"], [data-testid="time-events"], [data-testid="time-strands"]',
+      )
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid'))),
+  ).toEqual(['time-era', 'time-events', 'time-strands']);
 
   // TL-4: in the year of death a character is alive and flagged.
   await dialog().getByRole('button', { name: 'Back 1 year' }).click();

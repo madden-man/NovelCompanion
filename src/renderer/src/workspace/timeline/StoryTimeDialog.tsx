@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useWriteGuard } from '../../connection';
 import type { Response } from '../../../../shared/ipc';
 import type { StoryTimeValue } from '../../../../shared/storyTime';
@@ -348,7 +349,7 @@ export function StoryTimeDialog(props: {
                 </select>
               </div>
               <div className="field">
-                <label htmlFor={ids.age}>is this old</label>
+                <label htmlFor={ids.age}>Age</label>
                 <input
                   id={ids.age}
                   type="number"
@@ -549,6 +550,18 @@ export function StoryTimeDialog(props: {
                 <p>No era covers {time.year}.</p>
               )}
             </div>
+            <div className="year-strip">
+              <WorldEventsStrip
+                events={events}
+                from={time.year - 3}
+                to={time.year + 1}
+                year={time.year}
+                everyYear
+                onOpen={openEvent}
+                label={`World events from ${time.year - 3} to ${time.year + 1}`}
+                testid="time-events"
+              />
+            </div>
             <div className="panel stack tight" data-testid="time-strands">
               <span className="eyebrow">Chapter strands in {time.year}</span>
               {view && view.strands.length > 0 ? (
@@ -565,27 +578,36 @@ export function StoryTimeDialog(props: {
               )}
             </div>
           </div>
-          <WorldEventsStrip
-            events={events}
-            from={time.year - 3}
-            to={time.year + 1}
-            year={time.year}
-            everyYear
-            onOpen={openEvent}
-            label={`World events from ${time.year - 3} to ${time.year + 1}`}
-            testid="time-events"
-          />
         </section>
-        <details className="year-more" data-testid="time-compare">
-          <summary>Compare two characters</summary>
+        <Disclosure label="Compare two characters" testid="time-compare">
           <CompareView />
-        </details>
-        <details className="year-more" data-testid="time-lived">
-          <summary>Lived through</summary>
+        </Disclosure>
+        <Disclosure label="Lived through" testid="time-lived">
           <LivedThrough year={time.year} />
-        </details>
+        </Disclosure>
       </div>
     </div>
+  );
+}
+
+/**
+ * A disclosure whose body mounts only while it is open, so Compare and Lived
+ * through ask main for nothing until they are opened.
+ */
+function Disclosure(props: { label: string; testid: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="year-more" open={open} data-testid={props.testid}>
+      <summary
+        onClick={(e) => {
+          e.preventDefault();
+          setOpen(!open);
+        }}
+      >
+        {props.label}
+      </summary>
+      {open && props.children}
+    </details>
   );
 }
 

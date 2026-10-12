@@ -28,9 +28,10 @@
 .year-chapter .row {
   align-items: center;
 }
+/* Era, then the five-year strip, then the strands, top to bottom (KB-2). */
 .year-world {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 .year-more {
@@ -49,4 +50,7 @@
 }
 .year-more[open] > summary {
   margin-bottom: 8px;
+}
+.year-strip {
+  min-width: 0;
 }

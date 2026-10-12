@@ -65,13 +65,16 @@ const RAIL_ACTIONS = new Set([
   'waitFor',
 ]);
 
+/** The Entries screen's tabs (KB-5), which were rail items before M11. */
+const ENTRIES_TABS = new Set(['Culture by year', 'Place tree', 'Romanization', 'Glossary table']);
+
 /**
  * A button in the rail. KB-1 puts everything but the five screens under the
  * "More" disclosure; acting on a button there (click, focus, press, and the
  * like) opens More first when the button is not visible. The locator matches
  * hidden buttons too, so `count()` finds one inside a closed More. A name the
- * rail no longer has at all (Places, Glossary, Culture by year: KB-5) is
- * reached through the Entries screen: its tabs, or a button it has for the name.
+ * rail does not have (Culture by year, Place tree, Romanization, Glossary
+ * table: KB-5) is reached as a tab of the Entries screen.
  */
 export function rail(page: Page, name: string): Locator {
   const nav = page.getByRole('navigation', { name: 'Sections' });
@@ -85,8 +88,9 @@ export function rail(page: Page, name: string): Locator {
       await more.locator('summary').click();
     }
   };
-  /** The Entries screen's button for a name the rail lacks, or null. */
+  /** The Entries screen's tab for a name the rail lacks, or null. */
   const viaEntries = async (): Promise<Locator | null> => {
+    if (!ENTRIES_TABS.has(name)) return null;
     await nav.waitFor();
     if (await button.count()) return null;
     const entries = nav.getByRole('button', { name: 'Entries', exact: true });
@@ -94,11 +98,11 @@ export function rail(page: Page, name: string): Locator {
     await entries.click();
     const view = page.getByTestId('entries-view');
     await view.waitFor();
-    // KB-5: Culture by year, Place tree, Romanization and Glossary table are tabs of Entries.
-    const tab = view.getByRole('tab', { name, exact: true });
-    if (await tab.count()) return tab;
-    const there = view.getByRole('button', { name, exact: true });
-    return (await there.count()) ? there : null;
+    const tab = view.getByRole('tablist', { name: 'Entries screens' }).getByRole('tab', {
+      name,
+      exact: true,
+    });
+    return (await tab.count()) ? tab : null;
   };
   return new Proxy(button, {
     get(target, prop, receiver) {

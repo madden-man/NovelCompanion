@@ -35,6 +35,13 @@ export function CompareView() {
   const [b, setB] = useState('');
   const [from, setFrom] = useState(() => String(story.year));
   const [to, setTo] = useState(() => String(story.year + 40));
+  // The range follows the story year as it moves in the dialog; a typed range holds until then.
+  const [rangeYear, setRangeYear] = useState(story.year);
+  if (rangeYear !== story.year) {
+    setRangeYear(story.year);
+    setFrom(String(story.year));
+    setTo(String(story.year + 40));
+  }
   const [step, setStep] = useState<1 | 5>(5);
   const [rows, setRows] = useState<Rows>([]);
   const ids = { a: useId(), b: useId(), from: useId(), to: useId(), step: useId() };

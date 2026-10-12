@@ -69,25 +69,17 @@ type View =
   | { kind: 'manuscript'; chapterId?: string; openFlow?: boolean };
 
 /**
- * KB-1: the raw section lists under More, by group. Characters is one of the
- * five screens; places, cultural entries, glossary terms and custom entries
- * belong to the Entries screen (KB-5).
+ * KB-1: every raw section list under More, by group. Characters is one of the
+ * five screens; custom entries are listed per custom section under Custom.
+ * The Entries screen (KB-5) gathers the entry kinds too, but no list depends on it.
  */
 const MORE_SECTIONS = {
   Sessions: ['sessionLogs', 'briefs', 'findings'],
   People: ['families', 'unions', 'parentLinks', 'relationships'],
   Story: ['books', 'parts', 'arcs', 'chapters', 'plotBeats'],
-  World: ['worldEvents', 'eraStates'],
+  World: ['worldEvents', 'eraStates', 'culturalEntries', 'places', 'glossaryTerms'],
   Knowledge: ['facts', 'knowledgeRecords', 'themes', 'openQuestions'],
 } as const satisfies Record<string, readonly EntryCollection[]>;
-
-/** Lists reached only through the Entries screen (KB-5), so its rail item lights for them. */
-const ENTRY_ONLY: readonly EntryCollection[] = [
-  'culturalEntries',
-  'places',
-  'glossaryTerms',
-  'customEntries',
-];
 
 /** More's open state, kept per bible (KB-1). Storage can be missing; the rail works without it. */
 function moreKey(bibleId: string): string {
@@ -151,9 +143,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
       view.kind === 'section' && view.collection === c && !view.sectionId,
       () => setView({ kind: 'section', collection: c, selected: null, creating: false }),
     );
-  const entriesActive =
-    view.kind === 'entries' ||
-    (view.kind === 'section' && ENTRY_ONLY.includes(view.collection) && !view.sectionId);
+  const entriesActive = view.kind === 'entries';
 
   return (
     <ZhNavProvider value={open}>

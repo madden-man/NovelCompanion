@@ -139,7 +139,7 @@ test('TM-4 anchors: "Iris Hale-Zhou is 9" gives 2040, +10 steps to 2050, and a s
   await openDialog();
   await dialog().getByTestId('time-year').fill('2000');
   await dialog().getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
-  await dialog().getByLabel('is this old').fill('9');
+  await dialog().getByLabel('Age', { exact: true }).fill('9');
   await dialog().getByRole('button', { name: 'Set year from age' }).click();
   await expect(dialog().getByTestId('time-now')).toHaveText('2040');
   await expect(dialog().getByTestId('time-note')).toContainText('Iris Hale-Zhou is 9 in 2040');
