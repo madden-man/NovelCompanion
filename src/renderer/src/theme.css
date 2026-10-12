@@ -9,13 +9,13 @@
   --surface: #ffffff; /* paper */
   --surface-2: #e9edf1; /* sunken */
   --border: #cfd6dd;
-  --border-strong: #9aa6b2;
+  --border-strong: #74808c; /* NF-2: 3:1 on every surface, for control edges */
   /* ink */
   --fg: #16202b;
   --fg-2: #3f4d5b; /* secondary text, still legible */
   --fg-3: #5f6e7d; /* tertiary hints only, passes 4.5:1 on paper */
   /* accents */
-  --accent: #1f7a68; /* jade */
+  --accent: #1b705f; /* jade; NF-2: 4.5:1 as link text on the sunken surface */
   --accent-ink: #ffffff;
   --accent-soft: #d7efe8;
   --time: #c9641f; /* dawn orange, story-time cursor only */
@@ -26,6 +26,10 @@
   --serious: #ec835a;
   --critical: #d03b3b;
   --good-ink: #006300;
+  /* NF-2: the status colours as text, borders, and strokes at 4.5:1 and 3:1 */
+  --warning-ink: #8f6200;
+  --critical-ink: #c43636;
+  --serious-ink: #b84f25;
   /* categorical series, fixed order: 1 Sullivan, 2 joint, 3 Li, 4 other */
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -41,9 +45,9 @@
   --axis: #c3c2b7;
   --muted-axis: #5f6e7d;
   /* canon / planned / idea */
-  --canon: #1f7a68;
+  --canon: #1b705f;
   --planned: #4a3aa7;
-  --idea: #8a6d1f;
+  --idea: #7a611b;
   /* type */
   --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
   --font-body: 'Source Sans 3', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
@@ -59,7 +63,7 @@
     --surface: #171f28;
     --surface-2: #1f2933;
     --border: #2e3a46;
-    --border-strong: #4d5c6b;
+    --border-strong: #6b7c8d;
     --fg: #e8edf2;
     --fg-2: #b8c3ce;
     --fg-3: #93a1af;
@@ -69,6 +73,9 @@
     --time: #f0924f;
     --time-soft: #3d2715;
     --good-ink: #4fd04f;
+    --warning-ink: #fab219;
+    --critical-ink: #ec7373;
+    --serious-ink: #ec835a;
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -93,7 +100,7 @@
   --surface: #171f28;
   --surface-2: #1f2933;
   --border: #2e3a46;
-  --border-strong: #4d5c6b;
+  --border-strong: #6b7c8d;
   --fg: #e8edf2;
   --fg-2: #b8c3ce;
   --fg-3: #93a1af;
@@ -103,6 +110,9 @@
   --time: #f0924f;
   --time-soft: #3d2715;
   --good-ink: #4fd04f;
+  --warning-ink: #fab219;
+  --critical-ink: #ec7373;
+  --serious-ink: #ec835a;
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -312,8 +322,8 @@ code,
   filter: brightness(1.05);
 }
 .btn.danger {
-  border-color: var(--critical);
-  color: var(--critical);
+  border-color: var(--critical-ink);
+  color: var(--critical-ink);
 }
 .btn.small {
   padding: 3px 8px;
@@ -477,7 +487,7 @@ textarea {
   background: var(--time-soft);
 }
 .callout.warn {
-  border-color: var(--warning);
+  border-color: var(--warning-ink);
   background: color-mix(in oklab, var(--warning) 14%, var(--surface));
 }
 .callout.crit {

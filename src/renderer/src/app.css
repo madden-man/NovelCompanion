@@ -164,7 +164,7 @@ body:has(.launch-panel) .ws-frame {
   gap: 4px;
 }
 .warn-chip {
-  border-color: var(--warning);
+  border-color: var(--warning-ink);
   background: color-mix(in oklab, var(--warning) 18%, var(--surface));
 }
 .ws-editor {
@@ -241,7 +241,7 @@ legend.ed-label {
   font-size: 0.85rem;
   color: var(--fg);
   padding: 4px 8px;
-  border-left: 3px solid var(--warning);
+  border-left: 3px solid var(--warning-ink);
   background: color-mix(in oklab, var(--warning) 14%, var(--surface));
   border-radius: 0 4px 4px 0;
 }
@@ -252,7 +252,7 @@ legend.ed-label {
 .has-warning > input,
 .has-warning > select,
 .has-warning > textarea {
-  border-color: var(--warning);
+  border-color: var(--warning-ink);
 }
 .has-error > input,
 .has-error > select,
@@ -297,7 +297,11 @@ legend.ed-label {
 .chip-remove:hover,
 .chip-remove:focus-visible {
   background: var(--border);
-  outline: none;
+}
+/* NF-2: a background change alone is too faint to show focus. */
+.chip-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .link-kind {
   font-size: 0.72rem;
@@ -374,6 +378,12 @@ legend.ed-label {
 .picker button.active,
 .picker button:focus-visible {
   background: var(--accent-soft);
+}
+/* NF-2: the option the arrow keys reached shows an outline, not only a tint. */
+.picker button.active,
+.picker button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .picker-kind {
   font-size: 0.72rem;
@@ -802,7 +812,7 @@ legend.ed-label {
   stroke-dasharray: 2 3;
 }
 .tnode.dying .tnode-box {
-  stroke: var(--serious);
+  stroke: var(--serious-ink);
   stroke-width: 2.5;
 }
 .tnode-name {
@@ -1381,7 +1391,7 @@ tr.is-story-year td {
 .zh-tip .btn {
   background: var(--surface);
   color: var(--fg);
-  border-color: var(--border);
+  border-color: var(--border-strong);
 }
 .ol-scroll {
   overflow: auto;
@@ -1672,7 +1682,7 @@ tr.is-story-year td {
   max-width: 14rem;
 }
 .shape-toggle {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 6px 10px;
 }
