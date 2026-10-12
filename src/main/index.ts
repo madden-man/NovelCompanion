@@ -48,6 +48,9 @@ function lockDownSession(): void {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
     callback(permission === 'fullscreen'),
   );
+  session.defaultSession.setPermissionCheckHandler(
+    (_wc, permission) => permission === 'fullscreen',
+  );
 }
 
 /** Tests turn the prompt off so closing the app does not wait on a person. */

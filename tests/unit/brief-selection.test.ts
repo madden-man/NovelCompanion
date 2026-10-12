@@ -164,6 +164,34 @@ describe('SB-2 the selection matches the hand-written known answers (fixtures/ex
     expect(group(sel.shared, 'beats')).toEqual([]);
   });
 
+  test('SB-2 step 1 the point of view is listed first even when it is already in the strand cast', () => {
+    const sel = selectForSession(briefData(true), {
+      kind: 'pov',
+      year: 2045,
+      povCharacterId: 'H5',
+      characterIds: ['H3', 'H5'],
+    });
+    expect(group(sel.strands[0]!.groups, 'characters').map((it) => it.id)).toEqual(['H5', 'H3']);
+  });
+
+  test('SB-2 a strand with no start year is skipped with a note, not selected as year 0', () => {
+    const cols = briefCollections(true);
+    cols.chapters = cols.chapters!.map((c) =>
+      c._id === 'CH2'
+        ? {
+            ...c,
+            strands: (c.strands as Record<string, unknown>[]).map((s, i) =>
+              i === 0 ? { ...s, startYear: undefined } : s,
+            ),
+          }
+        : c,
+    );
+    const sel = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH2' });
+    expect(sel.strands.every((s) => s.year !== 0)).toBe(true);
+    expect(sel.skippedStrands).toHaveLength(1);
+    expect(structuredBrief(sel)).toContain('strand has no start year');
+  });
+
   test('SB-2 a trashed character, event, or beat is never selected', () => {
     const cols = briefCollections(true);
     cols.worldEvents = cols.worldEvents!.map((e) =>

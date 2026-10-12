@@ -116,6 +116,7 @@ test('NF-1 FT-8 the 200-person, six-generation tree redraws in under 500 ms', as
             const start = performance.now();
             setter.call(input, String(y));
             input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
             const check = () => {
               const svg = document.querySelector('[data-testid="tree-svg"]')!;
               if (svg.getAttribute('data-year') === String(y)) {
