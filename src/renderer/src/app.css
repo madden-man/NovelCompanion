@@ -57,8 +57,8 @@ body {
   white-space: nowrap;
 }
 .ws-frame {
-  /* The app header plus the top bar: panels below scroll within the rest of the window. */
-  --ws-chrome: 172px;
+  /* The app header, the top bar, and the status bar: panels between scroll within the rest of the window. */
+  --ws-chrome: 186px;
   display: grid;
   grid-template-columns: 190px 230px minmax(0, 1fr) 290px;
   grid-template-areas:
@@ -70,6 +70,26 @@ body {
   box-shadow: var(--shadow);
   min-height: 620px;
   overflow: hidden;
+}
+/*
+ * GD-3 launch notice: one compact row above the frame. While it shows, the
+ * panes give up its height, so the status bar (story time, Ask Claude) stays
+ * in the window at 1280x800.
+ */
+.launch-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+}
+.launch-panel p {
+  margin: 0;
+  flex: 1 1 320px;
+}
+body:has(.launch-panel) .ws-frame {
+  --ws-chrome: 249px;
 }
 .ws-rail {
   grid-area: rail;

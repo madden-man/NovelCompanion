@@ -65,7 +65,7 @@ type View =
   /** DB-2: start a session for a section of plot. */
   | { kind: 'start' }
   /** SB-8: one saved brief. */
-  | { kind: 'brief'; id: string }
+  | { kind: 'brief'; id: string; note?: string | null }
   /** MS-1 to MS-4. */
   | { kind: 'manuscript' };
 
@@ -332,10 +332,12 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'start' && (
                 <StartSessionView
                   onOpen={open}
-                  onStarted={(id) => setView({ kind: 'brief', id })}
+                  onStarted={(id, note) => setView({ kind: 'brief', id, note })}
                 />
               )}
-              {view.kind === 'brief' && <BriefView key={view.id} id={view.id} onOpen={open} />}
+              {view.kind === 'brief' && (
+                <BriefView key={view.id} id={view.id} note={view.note ?? null} onOpen={open} />
+              )}
               {view.kind === 'manuscript' && <ManuscriptView onOpen={open} />}
             </div>
             <SideInspector />
