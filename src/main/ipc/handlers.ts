@@ -14,7 +14,7 @@ import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
 import { keychainStore, memoryStore } from '../drive/secrets';
 import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
 import type { DriveChannel } from './driveHandlers';
-import { TEST_URI_ENV, mongoUri } from '../secrets';
+import { mongoUri, testDatabaseHonoured } from '../secrets';
 import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
@@ -159,14 +159,15 @@ const testPath = (name: string): string | null =>
   !app.isPackaged && process.env[name] ? (process.env[name] as string) : null;
 
 /**
- * GD-1: the one Drive service. An unpackaged build under test never reads
- * the keychain (as `mongoUri` skips it for a test database), and may point
- * Drive at a local fake Google.
+ * GD-1: the one Drive service. A build on a test database never reads the
+ * keychain (as `mongoUri` skips it), and an unpackaged one may point Drive at
+ * a local fake Google.
  */
 const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
 function makeDriveService(): DriveService {
   const base = testPath(TEST_GOOGLE_ENV);
-  const underTest = base !== null || testPath(TEST_URI_ENV) !== null;
+  const underTest =
+    base !== null || testDatabaseHonoured(process.env, { isPackaged: app.isPackaged });
   if (base && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(base)) {
     return new DriveService({
       secrets: memoryStore(),
@@ -284,6 +285,7 @@ export function registerHandlers(): void {
   // Claude (ARCH-4, AI-1 to AI-7, IM-5).
   const claudeSetup = claudeDeps({
     isPackaged: app.isPackaged,
+    testDatabase: testDatabaseHonoured(process.env, { isPackaged: app.isPackaged }),
     userData: app.getPath('userData'),
     appRoot: app.getAppPath(),
     env: process.env,

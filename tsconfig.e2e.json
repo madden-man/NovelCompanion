@@ -4,5 +4,13 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["tests/e2e/**/*", "tests/helpers/t5.ts", "src/preload/api.d.ts", "src/shared/**/*"]
+  "include": [
+    "tests/e2e/**/*",
+    "tests/journey/**/*",
+    "tests/package/**/*",
+    "playwright*.config.ts",
+    "tests/helpers/t5.ts",
+    "src/preload/api.d.ts",
+    "src/shared/**/*"
+  ]
 }
