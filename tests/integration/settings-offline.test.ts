@@ -381,6 +381,23 @@ describe('ST-1 every setting persists, and the per-bible ones travel in the JSON
     expect(text).not.toMatch(/mongodb(\+srv)?:\/\//);
   });
 
+  test('ST-1 two quick changes to the brief window and the size budget both land', async () => {
+    const slug = freshSlug('st1-race');
+    await createBible(store, slug, 'Race');
+    const session = await openBibleSession(store, slug);
+    const [a, b] = await Promise.all([
+      session.repo.setBriefSettings({ window: 7 }),
+      session.repo.setBriefSettings({ budget: 12_345 }),
+    ]);
+    expect(a.window).toBe(7);
+    expect(b).toEqual({ window: 7, budget: 12_345 });
+    const again = await openBibleSession(store, slug);
+    expect(again.repo.briefSettings()).toEqual({ window: 7, budget: 12_345 });
+    // A refused value does not block the next change.
+    await expect(session.repo.setBriefSettings({ window: 999 })).rejects.toThrow(/0 to 200/);
+    expect((await session.repo.setBriefSettings({ window: 8 })).window).toBe(8);
+  });
+
   test('ST-1 appearance and the model per feature are kept in the app data folder across a restart', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'nc-st1-app-'));
     const app1 = new FileAppSettingsStore(join(dir, 'app-settings.json'));

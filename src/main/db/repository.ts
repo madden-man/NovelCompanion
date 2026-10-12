@@ -1622,8 +1622,21 @@ export class Repository {
     };
   }
 
+  /** Brief settings writes run one after another, so each merges onto the one before it. */
+  private briefQueue: Promise<unknown> = Promise.resolve();
+
   /** A settings write, like the story time: the meta document only, no entry revision. */
-  async setBriefSettings(next: {
+  setBriefSettings(next: {
+    window?: number;
+    budget?: number;
+  }): Promise<{ window: number; budget: number }> {
+    // Two quick changes (the window, then the budget) must not each merge onto the old value.
+    const run = this.briefQueue.then(() => this.writeBriefSettings(next));
+    this.briefQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async writeBriefSettings(next: {
     window?: number;
     budget?: number;
   }): Promise<{ window: number; budget: number }> {
