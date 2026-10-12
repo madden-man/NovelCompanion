@@ -128,6 +128,7 @@ export const WRITE_CHANNELS = [
   'storyTime.set',
   'storyTime.promote',
   'plot.reorder',
+  'outline.newChapter',
   'romanization.set',
   'import.apply',
   'snapshot.take',

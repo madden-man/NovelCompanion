@@ -132,8 +132,24 @@ describe('PL-2 the chapter-by-year outline grid', () => {
     const g = outlineGrid(small, { order: 'reading', cursorYear: 2090 });
     const first = g.rows.find((r) => r.kind === 'chapter' && r.id === 'X1');
     expect(first?.kind === 'chapter' && first.strands).toEqual([
-      { id: 'b', label: 'b', primary: true, startYear: 2075, endYear: 2075 },
-      { id: 'c', label: 'c', primary: false, startYear: 2040, endYear: 2042 },
+      {
+        id: 'b',
+        label: 'b',
+        primary: true,
+        startYear: 2075,
+        endYear: 2075,
+        pov: null,
+        present: [],
+      },
+      {
+        id: 'c',
+        label: 'c',
+        primary: false,
+        startYear: 2040,
+        endYear: 2042,
+        pov: null,
+        present: [],
+      },
     ]);
     expect(g.years[0]).toBe(2030);
     expect(g.years.at(-1)).toBe(2090);
