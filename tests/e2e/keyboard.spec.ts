@@ -117,6 +117,13 @@ async function go(screen: string) {
  * closed disclosure are left out: they appear when it opens.
  */
 async function unreachable(scope?: string): Promise<string[]> {
+  // A screen can render more controls once its data loads (Google Drive's client
+  // fields wait on the connection status), so a miss gets one more full walk.
+  const left = await walk(scope);
+  return left.length ? walk(scope) : left;
+}
+
+async function walk(scope?: string): Promise<string[]> {
   await page.evaluate(() => {
     for (const el of document.querySelectorAll('[data-kb-seen]'))
       el.removeAttribute('data-kb-seen');
@@ -278,7 +285,9 @@ test('NF-2 DB-1 the dashboard: Start session and Check alignment open their scre
   await expect(rail(page, 'Start session')).toHaveAttribute('aria-current', 'page');
   await go('Dashboard');
   await press(page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }));
-  await expect(rail(page, 'Continuity findings')).toHaveAttribute('aria-current', 'page');
+  // CC-1: since M8 the button opens the alignment check screen, which has no rail button.
+  await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
+  await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
 });
 
 test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to window answers Enter', async () => {
@@ -292,20 +301,20 @@ test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to win
   await expect(page.getByTestId('tree-svg')).toBeVisible();
 });
 
-// Written but not yet run green: the run stopped at the coordinator's request
-// (machine load). Each is marked fixme until it is run and its selectors confirmed.
-test.fixme('NF-2 TL-6 the timeline: the family filter by typing, and an era mark opens in the inspector with Enter', async () => {
+test('NF-2 TL-6 the timeline: the family filter by typing, and an era mark opens in the inspector with Enter', async () => {
   await go('Timeline');
   const family = page.getByLabel('Timeline filters').getByRole('combobox').first();
   await tabTo(family);
   await page.keyboard.type('Zhou');
   await expect(family).not.toHaveValue('');
-  const era = page.getByRole('button', { name: /^Era / }).first();
+  // The marks are one Tab stop (arrow keys move between them); eras come first.
+  const era = page.locator('g.tl-mark[data-kind="era"]').first();
   await press(era);
+  await expect(era).toHaveClass(/selected/);
   await expect(page.getByTestId('timeline-inspector')).toContainText(/\d{4}/);
 });
 
-test.fixme('NF-2 TL-2 TL-5 the year view: the lived-through picker by typing, and the story time button opens the dialog', async () => {
+test('NF-2 TL-2 TL-5 the year view: the lived-through picker by typing, and the story time button opens the dialog', async () => {
   await go('Year view');
   const view = page.getByTestId('year-view');
   await tabTo(view.getByRole('combobox').first());
@@ -317,7 +326,7 @@ test.fixme('NF-2 TL-2 TL-5 the year view: the lived-through picker by typing, an
   await expect(page.getByTestId('story-time-dialog')).toBeHidden();
 });
 
-test.fixme('NF-2 TL-7 compare: two characters picked by typing fill the table', async () => {
+test('NF-2 TL-7 compare: two characters picked by typing fill the table', async () => {
   await go('Compare');
   const view = page.getByTestId('compare-view');
   const [a, b] = [view.getByRole('combobox').nth(0), view.getByRole('combobox').nth(1)];
@@ -329,7 +338,7 @@ test.fixme('NF-2 TL-7 compare: two characters picked by typing fill the table', 
   await expect(view.getByTestId('compare-table').locator('tbody tr').first()).toBeVisible();
 });
 
-test.fixme('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapter page, and its controls answer the keyboard', async () => {
+test('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapter page, and its controls answer the keyboard', async () => {
   await go('Outline');
   await press(page.getByTestId('outline-grid').getByRole('button', { name: 'Candles' }));
   const chapter = page.getByTestId('chapter-page');
@@ -340,10 +349,12 @@ test.fixme('NF-2 PL-1 PL-4 the plot outline: Enter on a chapter opens its chapte
   await expect(chapter).toBeHidden();
 });
 
-test.fixme('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table answer the keyboard', async () => {
+test('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary table answer the keyboard', async () => {
+  // This bible starts with no communities; the screen needs one to pick.
+  await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
   await go('Culture by year');
   const culture = page.getByTestId('culture-view');
-  await tabTo(culture.getByRole('textbox').first());
+  await tabTo(culture.getByRole('spinbutton', { name: 'Year' }));
   await page.keyboard.press('Meta+a');
   await page.keyboard.type('2045');
   await expect(
@@ -359,7 +370,7 @@ test.fixme('NF-2 CU-2 GL-1 culture by year, the place tree, and the glossary tab
   await expect(editor()).toContainText('团圆');
 });
 
-test.fixme('NF-2 KN-2 a fact page records who learned it from the keyboard', async () => {
+test('NF-2 KN-2 a fact page records who learned it from the keyboard', async () => {
   await go('Facts');
   await press(page.getByTestId('entry-list').getByRole('button', { name: /Peter's letter/ }));
   const form = page.getByTestId('fact-record-form');
@@ -371,7 +382,7 @@ test.fixme('NF-2 KN-2 a fact page records who learned it from the keyboard', asy
   await expect(page.getByTestId('fact-record-result')).toBeVisible();
 });
 
-test.fixme('NF-2 SR-1 search from the rail box: type, Tab to a result, Enter opens it', async () => {
+test('NF-2 SR-1 search from the rail box: type, Tab to a result, Enter opens it', async () => {
   await fromTop();
   await tabTo(page.getByRole('searchbox', { name: 'Search the bible' }));
   await page.keyboard.type('Meiling');
@@ -383,7 +394,7 @@ test.fixme('NF-2 SR-1 search from the rail box: type, Tab to a result, Enter ope
   await expect(editor()).toContainText('Zhou Meiling');
 });
 
-test.fixme('NF-2 IM-1 import: choosing a workbook and mapping it work from the keyboard', async () => {
+test('NF-2 IM-1 import: choosing a workbook and mapping it work from the keyboard', async () => {
   await go('Import');
   const view = page.getByTestId('import-view');
   await press(view.getByRole('button', { name: 'Choose an Excel workbook' }));
@@ -391,7 +402,7 @@ test.fixme('NF-2 IM-1 import: choosing a workbook and mapping it work from the k
   expect(await unreachable()).toEqual([]);
 });
 
-test.fixme('NF-2 BK-1 backups: Take a snapshot now adds a row', async () => {
+test('NF-2 BK-1 backups: Take a snapshot now adds a row', async () => {
   await go('Backups');
   const rows = page.getByTestId('snapshot-row');
   const before = await rows.count();
@@ -399,7 +410,7 @@ test.fixme('NF-2 BK-1 backups: Take a snapshot now adds a row', async () => {
   await expect(rows).toHaveCount(before + 1);
 });
 
-test.fixme('NF-2 ED-7 the review queue: a proposal is approved with the keyboard', async () => {
+test('NF-2 ED-7 the review queue: a proposal is approved with the keyboard', async () => {
   await invoke('test.propose', {
     source: 'import',
     op: 'update',
@@ -415,7 +426,7 @@ test.fixme('NF-2 ED-7 the review queue: a proposal is approved with the keyboard
   expect(h3.entry.birthplace).toBe('Salem, Oregon');
 });
 
-test.fixme('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, and linking a file, all by keyboard', async () => {
+test('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, and linking a file, all by keyboard', async () => {
   await go('Settings');
   const settings = page.getByTestId('settings-view');
   await tabTo(settings.getByTestId('claude-key-input'));
@@ -444,7 +455,7 @@ test.fixme('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connec
   expect(await unreachable()).toEqual([]);
 });
 
-test.fixme('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and Escape', async () => {
+test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and Escape', async () => {
   await go('Dashboard');
   await page.keyboard.press('Meta+j');
   const panel = page.getByTestId('claude-panel');
@@ -462,11 +473,13 @@ test.fixme('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask,
   await expect(turn).toHaveAttribute('data-status', 'done');
   await expect(turn.getByTestId('claude-answer')).toContainText('In 2040 Margaret Hale is 82.');
   expect(await unreachable('[data-testid="claude-panel"]')).toEqual([]);
+  // Escape closes the panel from inside it; the Tab walk above ended outside it.
+  await tabTo(panel.getByTestId('claude-input'));
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 });
 
-test.fixme('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step buttons, and Escape', async () => {
+test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step buttons, and Escape', async () => {
   await go('Dashboard');
   await page.keyboard.press('Meta+t');
   const dialog = page.getByTestId('story-time-dialog');
