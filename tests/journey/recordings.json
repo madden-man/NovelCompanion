@@ -1,0 +1,58 @@
+[
+  {
+    "name": "journey panel: who is alive in a year, answered from the tools",
+    "feature": "panel",
+    "match": "Who is alive in 2075",
+    "steps": [
+      { "tool": "timeline_for_year", "input": { "year": 2075 } },
+      { "tool": "get_entry", "input": { "section": "characters", "id": "H3" } },
+      { "tool": "get_entry", "input": { "section": "characters", "id": "Z5" } },
+      { "text": "In 2075 Daniel Hale is 90 and Noor Zhou is 17. " },
+      { "text": "Margaret and Peter Hale have died by then." },
+      {
+        "result": {
+          "text": "In 2075 Daniel Hale is 90 and Noor Zhou is 17. Margaret and Peter Hale have died by then."
+        }
+      }
+    ]
+  },
+  {
+    "name": "journey briefs: the new two-strand chapter Harbor Lights",
+    "feature": "briefs",
+    "match": "Harbor Lights. Story year",
+    "steps": [
+      { "text": "{\"characters\": [{\"text\": \"Iris Hale-Zhou is 14" },
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "characters": [
+              {
+                "text": "Iris Hale-Zhou is 14 and the point of view in the present.",
+                "status": "canon",
+                "strand": null,
+                "cites": ["H5"]
+              },
+              {
+                "text": "Zhou Lan is 57 and at the harbor with Iris.",
+                "status": "canon",
+                "strand": null,
+                "cites": ["Z3"]
+              },
+              {
+                "text": "Daniel Hale is 49 in the backstory, the year of the flood.",
+                "status": "canon",
+                "strand": null,
+                "cites": ["H3"]
+              }
+            ],
+            "worldEvents": [],
+            "culture": [],
+            "sections": [],
+            "plannedAhead": []
+          }
+        }
+      }
+    ]
+  }
+]

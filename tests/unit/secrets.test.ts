@@ -9,7 +9,7 @@ vi.mock('@napi-rs/keyring', () => ({
   },
 }));
 
-const { ALLOW_TEST_URI_ENV, TEST_URI_ENV, isLocalMongoUri, mongoUri } =
+const { ALLOW_TEST_URI_ENV, TEST_URI_ENV, isLocalMongoUri, mongoUri, testDatabaseHonoured } =
   await import('../../src/main/secrets');
 
 const LOCAL = 'mongodb://127.0.0.1:1/';
@@ -68,5 +68,26 @@ describe('ARCH-1 secrets stay in main', () => {
       ok: false,
       message: expect.stringMatching(/keychain.*novel-companion-mongodb/),
     });
+  });
+});
+
+describe('NF-4 the packaged smoke test runs on a test database without the keychain', () => {
+  test('NF-4 testDatabaseHonoured is true unpackaged with a test address, and packaged only with the allow flag', () => {
+    expect(testDatabaseHonoured({}, { isPackaged: false })).toBe(false);
+    expect(testDatabaseHonoured({ [TEST_URI_ENV]: LOCAL }, { isPackaged: false })).toBe(true);
+    expect(testDatabaseHonoured({ [TEST_URI_ENV]: LOCAL }, { isPackaged: true })).toBe(false);
+    expect(
+      testDatabaseHonoured(
+        { [TEST_URI_ENV]: LOCAL, [ALLOW_TEST_URI_ENV]: '1' },
+        { isPackaged: true },
+      ),
+    ).toBe(true);
+    expect(
+      testDatabaseHonoured(
+        { [TEST_URI_ENV]: LOCAL, [ALLOW_TEST_URI_ENV]: 'true' },
+        { isPackaged: true },
+      ),
+    ).toBe(false);
+    expect(testDatabaseHonoured({ [ALLOW_TEST_URI_ENV]: '1' }, { isPackaged: true })).toBe(false);
   });
 });

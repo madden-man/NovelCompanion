@@ -17,13 +17,26 @@ export function isLocalMongoUri(uri: string): boolean {
   return /^mongodb:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|\?|,|$)/.test(uri);
 }
 
+/**
+ * True when the app runs against a test database: an unpackaged build with
+ * the test address set, or a packaged build that also has the allow flag
+ * (the packaged smoke test, NF-4). Then nothing reads or writes the keychain,
+ * and a packaged build may also take its data folder from the environment, so
+ * a test run never touches the real data folder.
+ */
+export function testDatabaseHonoured(
+  env: NodeJS.ProcessEnv,
+  opts: { isPackaged: boolean },
+): boolean {
+  return env[TEST_URI_ENV] !== undefined && (!opts.isPackaged || env[ALLOW_TEST_URI_ENV] === '1');
+}
+
 export type UriLookup = { ok: true; uri: string } | { ok: false; message: string };
 
 /** Read the MongoDB connection string (ARCH-5). It is never logged or stored. */
 export function mongoUri(env: NodeJS.ProcessEnv, opts: { isPackaged: boolean }): UriLookup {
   const testUri = env[TEST_URI_ENV];
-  const honoured = !opts.isPackaged || env[ALLOW_TEST_URI_ENV] === '1';
-  if (testUri !== undefined && honoured) {
+  if (testUri !== undefined && testDatabaseHonoured(env, opts)) {
     return isLocalMongoUri(testUri)
       ? { ok: true, uri: testUri }
       : { ok: false, message: 'The test database address must be a local MongoDB.' };

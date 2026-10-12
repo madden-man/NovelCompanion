@@ -40,6 +40,8 @@ function packagedExecutable(): string | undefined {
 
 export function claudeDeps(opts: {
   isPackaged: boolean;
+  /** On a test database the key is held in memory, so the keychain is never read (NF-4 smoke test). */
+  testDatabase?: boolean;
   userData: string;
   appRoot: string;
   env: NodeJS.ProcessEnv;
@@ -57,7 +59,7 @@ export function claudeDeps(opts: {
       opts.env[TEST_RECORDINGS_ENV] || join(opts.appRoot, 'fixtures/claude/recordings.json');
     client = new FakeClaudeClient(loadRecordings(path), Number(opts.env[TEST_STEP_DELAY_ENV]) || 0);
   } else {
-    keys = new KeychainKeyStore();
+    keys = opts.testDatabase ? new MemoryKeyStore(null) : new KeychainKeyStore();
     catalog = new AnthropicModelCatalog();
     client = new SdkClaudeClient({
       configDir: join(opts.userData, 'claude'),

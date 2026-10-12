@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
+import { testDatabaseHonoured } from './secrets';
 import { resetOnNavigation } from './promptReset';
 import {
   applyStoredAppearance,
@@ -17,11 +18,14 @@ import { wireEvent } from '../shared/ipc';
 const APP_NAME = 'Novel Companion';
 
 // One fixed data folder, so snapshots are always under
-// ~/Library/Application Support/Novel Companion/snapshots/<bible>/. Tests give each run its own.
+// ~/Library/Application Support/Novel Companion/snapshots/<bible>/. Tests give each run its own;
+// a packaged build takes one only on a test database (the NF-4 packaged smoke test).
+const testUserData = process.env.NOVEL_COMPANION_USER_DATA;
 app.setPath(
   'userData',
-  !app.isPackaged && process.env.NOVEL_COMPANION_USER_DATA
-    ? process.env.NOVEL_COMPANION_USER_DATA
+  testUserData &&
+    (!app.isPackaged || testDatabaseHonoured(process.env, { isPackaged: app.isPackaged }))
+    ? testUserData
     : join(app.getPath('appData'), APP_NAME),
 );
 
