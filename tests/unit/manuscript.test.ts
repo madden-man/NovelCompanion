@@ -88,14 +88,14 @@ describe('MS-3 the planned entries a chapter establishes', () => {
 });
 
 describe('MS-5 the app never writes to a manuscript', () => {
-  test('MS-5 a manuscript source can only pick and read', () => {
+  test('MS-5 a manuscript source can only pick and read (and say where it is picked)', () => {
     const src = readFileSync(join(ROOT, 'src/main/session/sources.ts'), 'utf8');
     const iface = /export interface ManuscriptSource \{([\s\S]*?)\n\}/.exec(src)![1]!;
     const members = [...iface.matchAll(/^\s{2}(\w+)[(:?]/gm)].map((m) => m[1]);
-    expect(members).toEqual(['id', 'label', 'pick', 'read']);
+    expect(members).toEqual(['id', 'label', 'picker', 'pick', 'read']);
   });
 
-  test('MS-5 every file write in the main process is a backup, an export, or a temporary print page', () => {
+  test("MS-5 every file write in the main process is a backup, an export, a temporary print page, or the app's Claude settings file", () => {
     const writers = sourceFiles(join(ROOT, 'src'))
       .filter((f) =>
         /\b(writeFile|writeFileSync|createWriteStream|appendFile|copyFile)\b/.test(
@@ -106,6 +106,7 @@ describe('MS-5 the app never writes to a manuscript', () => {
       .sort();
     expect(writers).toEqual([
       'src/main/backup/snapshots.ts',
+      'src/main/claude/settings.ts',
       'src/main/ipc/exportTree.ts',
       'src/main/ipc/importHandlers.ts',
       'src/main/ipc/sessionHandlers.ts',
@@ -117,6 +118,10 @@ describe('MS-5 the app never writes to a manuscript', () => {
     expect(targets.length).toBeGreaterThan(0);
     expect(new Set(targets)).toEqual(new Set(['path']));
     expect(session).toMatch(/const path = deps\.pickExportPath \?/);
+    // The Claude settings store (M6) writes only its own JSON file, through a temporary beside it.
+    const settings = readFileSync(join(ROOT, 'src/main/claude/settings.ts'), 'utf8');
+    expect([...settings.matchAll(/writeFileSync\((\w+)/g)].map((m) => m[1])).toEqual(['tmp']);
+    expect(settings).toMatch(/const tmp = `\$\{this\.path\}\.tmp`;/);
   });
 
   test('MS-5 nothing calls a Google Docs or Drive write method', () => {

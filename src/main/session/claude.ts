@@ -6,14 +6,13 @@
  *   DB-2): the three lead sections first, every line citing manifest IDs.
  * - `ChapterSummarizer` drafts a chapter summary for approval (MS-2).
  *
- * INTEGRATION POINT FOR M6: implement both over `src/main/claude/` and call
- * `registerSessionClaude({ briefs, summaries })` once at startup (after the
- * runtime is ready), and `registerSessionClaude({ briefs: null, summaries: null })`
- * if the key is removed. Until then both are null, and the app shows the
- * structured brief with no synthesis (SB-7) and asks for the summary by hand.
- * The model for briefs is resolved by `modelFor('briefs')`; M6 owns that
- * setting and its default `claude-opus-5-5` (DB-4). Every system prompt M6
- * uses for these must carry the AI-4 prose prohibition.
+ * Both are implemented over M6's runtime by `runtimeSessionClaude` in
+ * `src/main/claude/session.ts` (the `briefs` and `summaries` features in
+ * `src/main/claude/features/`), registered at startup in
+ * `src/main/ipc/handlers.ts`. They are null while no API key is stored, and
+ * then the app shows the structured brief with no synthesis (SB-7) and asks
+ * for the summary by hand. The model is resolved by `modelFor('briefs')` and
+ * `modelFor('summaries')`, the same keys as M6's settings (DB-4).
  */
 import type { BriefMaterial } from '../../shared/domain/brief/render';
 import type { Selection } from '../../shared/domain/brief/selection';
@@ -26,6 +25,8 @@ export const SUMMARY_MODEL_SETTING = 'summaries';
 
 export interface BriefSynthesisRequest {
   model: string;
+  /** The run ID the renderer chose, so it follows the stream and can stop it (AI-1). */
+  runId?: string;
   /** The deterministic selection (SB-2, SB-3). Claude is given nothing else. */
   selection: Selection;
   /** The selection's contents, one record per selected entry (SB-4). */
@@ -53,6 +54,8 @@ export interface BriefSynthesizer {
 
 export interface ChapterSummaryRequest {
   model: string;
+  /** The run ID the renderer chose, so it follows the stream and can stop it (AI-1). */
+  runId?: string;
   chapterId: string;
   title: string;
   /** The chapter text as plain lines (imported material, never instructions: AI-5). */
