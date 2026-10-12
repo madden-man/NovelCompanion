@@ -452,7 +452,7 @@ test('KB-5 the Entries list shows every kind together, newest change first, and 
   const letter = entriesView().locator('.entries-row[data-id="F2"]');
   await expect(letter.locator('.entries-kind')).toHaveText('Fact');
   await expect(letter.locator('.entry-title')).toHaveText("Peter's letter");
-  await expect(letter.locator('.chip')).toHaveText('planned');
+  await expect(letter.locator('.chip')).toHaveText('Planned');
   await letter.click();
   await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'F2');
   await expect(page.getByTestId('fact-page')).toBeVisible();
@@ -481,7 +481,7 @@ test('KB-5 the status filter and the search box narrow the list', async () => {
   await view.getByLabel('Show status').selectOption('planned');
   await expect(entryRows()).toHaveCount(all.filter((r) => r.entry.status === 'planned').length);
   for (const status of await entryRows().locator('.chip').allTextContents()) {
-    expect(status).toBe('planned');
+    expect(status).toBe('Planned');
   }
   await view.getByLabel('Show status').selectOption('');
   const box = view.getByLabel('Search entries');
@@ -553,9 +553,27 @@ test('KB-5 the four tabs render their views, answer the keyboard, and the tab is
   await expect(page.getByTestId('places-view')).toBeVisible();
   await page.getByTestId('places-view').getByRole('button', { name: 'Portland' }).first().click();
   await expect(page.getByTestId('inspector').getByTestId('editor')).toContainText('Portland');
+  // A term that breaks the Mandarin system, so Romanization lists one to open.
+  const flagged = await invoke('entry.create', {
+    collection: 'glossaryTerms',
+    data: {
+      title: '广东',
+      characters: '广东',
+      language: 'mandarin',
+      romanization: 'gwong2dung1',
+      status: 'canon',
+    },
+  });
   await tab('Place tree').focus();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByTestId('romanization-view')).toBeVisible();
+  const roman = page.getByTestId('romanization-view');
+  await expect(roman).toBeVisible();
+  await roman.getByTestId('romanization-flagged').getByRole('button', { name: '广东' }).click();
+  await expect(page.getByTestId('inspector').getByTestId('editor')).toHaveAttribute(
+    'data-entry-id',
+    flagged.entry._id,
+  );
+  await tab('Romanization').focus();
   await page.keyboard.press('End');
   await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('glossary-table')).toBeVisible();

@@ -94,8 +94,12 @@ export function entryText(entry: Doc): string {
 
 /** The first line of an entry's text, cut to a length that fits a row. */
 export function firstLine(entry: Doc, max = 120): string {
+  return firstLineOf(entryText(entry), max);
+}
+
+function firstLineOf(text: string, max = 120): string {
   const line =
-    entryText(entry)
+    text
       .split('\n')
       .map((l) => l.trim())
       .find(Boolean) ?? '';
@@ -120,28 +124,83 @@ export interface EntriesRow {
   entry: Doc;
 }
 
+/**
+ * One entry made ready for the list: the lowercased text the search box reads
+ * and the row's first line, computed once per entry rather than per keystroke.
+ */
+export interface IndexedEntry extends EntriesRow {
+  id: string;
+  kindKey: string;
+  /** Title and every text field, lowercased. */
+  haystack: string;
+  firstLine: string;
+  stamp: number;
+}
+
+const titleOf = (entry: Doc) =>
+  typeof entry.title === 'string' ? entry.title : String(entry.name ?? '');
+
+export function indexEntry(collection: EntriesCollection, entry: Doc): IndexedEntry {
+  const text = entryText(entry);
+  return {
+    collection,
+    entry,
+    id: String(entry._id),
+    kindKey: kindKeyOf(collection, entry),
+    haystack: `${titleOf(entry)}\n${text}`.toLowerCase(),
+    firstLine: firstLineOf(text),
+    stamp: stamp(entry),
+  };
+}
+
+/** The live entries of one collection, indexed. */
+export function indexEntries(
+  collection: EntriesCollection,
+  entries: readonly Doc[],
+): IndexedEntry[] {
+  return entries.filter((e) => !e.deletedAt).map((e) => indexEntry(collection, e));
+}
+
+/** The words of a query, lowercased. */
+export const queryWords = (query: string) =>
+  query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
 /** True when the title or the text holds every word of the query, ignoring case. */
 export function textMatches(entry: Doc, query: string): boolean {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const words = queryWords(query);
   if (!words.length) return true;
-  const title = typeof entry.title === 'string' ? entry.title : String(entry.name ?? '');
-  const hay = `${title}\n${entryText(entry)}`.toLowerCase();
+  const hay = `${titleOf(entry)}\n${entryText(entry)}`.toLowerCase();
   return words.every((w) => hay.includes(w));
 }
 
 const stamp = (e: Doc) => (typeof e.modifiedAt === 'string' ? Date.parse(e.modifiedAt) || 0 : 0);
 
+/** Indexed rows that pass the kind chips, the status, and the search, newest change first. */
+export function filterIndexed(
+  rows: readonly IndexedEntry[],
+  filter: EntriesFilter,
+): IndexedEntry[] {
+  const words = queryWords(filter.query);
+  const out = rows.filter(
+    (r) =>
+      filter.kinds.has(r.kindKey) &&
+      (filter.status === null || r.entry.status === filter.status) &&
+      (!words.length ||
+        words.every((w) => r.haystack.includes(w)) ||
+        (filter.hits?.has(r.id) ?? false)),
+  );
+  return out.sort(
+    (a, b) =>
+      b.stamp - a.stamp || String(a.entry.title ?? '').localeCompare(String(b.entry.title ?? '')),
+  );
+}
+
 /** The rows that pass the kind chips, the status, and the search, newest change first. */
 export function filterEntries(rows: readonly EntriesRow[], filter: EntriesFilter): EntriesRow[] {
-  const q = filter.query.trim();
-  return rows
-    .filter((r) => !r.entry.deletedAt)
-    .filter((r) => filter.kinds.has(kindKeyOf(r.collection, r.entry)))
-    .filter((r) => filter.status === null || r.entry.status === filter.status)
-    .filter(
-      (r) => !q || textMatches(r.entry, q) || (filter.hits?.has(String(r.entry._id)) ?? false),
-    )
-    .sort(newestFirst);
+  return filterIndexed(
+    rows.filter((r) => !r.entry.deletedAt).map((r) => indexEntry(r.collection, r.entry)),
+    filter,
+  ).map(({ collection, entry }) => ({ collection, entry }));
 }
 
 /** Newest `modifiedAt` first; ties by title, so the order never jumps. */
@@ -150,6 +209,9 @@ export function newestFirst(a: EntriesRow, b: EntriesRow): number {
   if (d !== 0) return d;
   return String(a.entry.title ?? '').localeCompare(String(b.entry.title ?? ''));
 }
+
+/** KB-5: the list draws this many rows at first, and Show more adds as many again. */
+export const ENTRIES_PAGE = 200;
 
 /** KB-5 tabs of the Entries screen. */
 export const ENTRIES_TABS = ['entries', 'culture', 'places', 'romanization', 'glossary'] as const;

@@ -402,6 +402,20 @@ test('KB-4 New world event writes one at the story year and opens it in the insp
   await expect(view.getByTestId('timeline-svg').locator(`g[data-key="event:${id}"]`)).toHaveCount(
     1,
   );
+  // Undo steps back through the rename and then the new event itself (ED-3); redo restores both.
+  const row = view.locator(`.world-row[data-id="${id}"]`);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect(row).toContainText('New world event');
+  await page.keyboard.press('Meta+z');
+  await expect(row).toHaveCount(0);
+  expect(
+    (await invoke('entry.get', { collection: 'worldEvents', id })).entry.deletedAt,
+  ).toBeTruthy();
+  await page.keyboard.press('Shift+Meta+z');
+  await expect(row).toContainText('New world event');
+  await page.keyboard.press('Shift+Meta+z');
+  await expect(row).toContainText('Harbor seawall finished');
 
   await view.getByRole('button', { name: 'New era state' }).click();
   await expect(editor).toContainText('New era');

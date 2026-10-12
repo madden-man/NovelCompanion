@@ -2,8 +2,11 @@ import { describe, expect, test } from 'vitest';
 import {
   ENTRIES_COLLECTIONS,
   entryKinds,
+  ENTRIES_PAGE,
   filterEntries,
+  filterIndexed,
   firstLine,
+  indexEntries,
   isEntriesTab,
   kindKeyOf,
   orderWorldRows,
@@ -87,6 +90,37 @@ describe('KB-5 the Entries list', () => {
       hits: new Set([String(term._id)]),
     });
     expect(viaHits.map((r) => r.entry.title)).toEqual(['团圆']);
+  });
+
+  test('KB-5 NF-1 the indexed list matches the plain filter and filters 5,000 rows within the search budget', () => {
+    const plainRows = rows();
+    const indexed = ENTRIES_COLLECTIONS.flatMap((c) =>
+      indexEntries(
+        c,
+        plainRows.filter((r) => r.collection === c).map((r) => r.entry),
+      ),
+    );
+    for (const query of ['', 'letter', 'mooncakes', 'family reunion', 'zzz']) {
+      const f = { kinds: all, status: null, query };
+      expect(filterIndexed(indexed, f).map((r) => r.id)).toEqual(
+        filterEntries(plainRows, f).map((r) => String(r.entry._id)),
+      );
+    }
+    const many = Array.from({ length: 5000 }, (_, i) => ({
+      _id: `X${i}`,
+      title: `Fact ${i} harbor`,
+      status: 'canon',
+      body: `<p>The ferry ${i} crosses at dawn.</p><p>Second line.</p>`,
+      modifiedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+    }));
+    const big = indexEntries('facts', many);
+    expect(big[0]!.firstLine).toBe('The ferry 0 crosses at dawn.');
+    const start = performance.now();
+    for (const q of ['h', 'ha', 'har', 'harb', 'harbor', 'harbor ferry']) {
+      filterIndexed(big, { kinds: all, status: null, query: q });
+    }
+    expect((performance.now() - start) / 6).toBeLessThan(200);
+    expect(ENTRIES_PAGE).toBe(200);
   });
 
   test('KB-5 the first line is plain text from the body, or another text field', () => {
