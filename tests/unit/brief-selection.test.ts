@@ -235,9 +235,7 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
         `budget ${b}`,
       ).toEqual([]);
     }
-    // It walks every budget from the full size down, about 5 s on a busy machine; it checks
-    // correctness, not speed (NF-1 has its own timing tests), so it gets room to finish.
-  }, 30_000);
+  });
 
   test('SB-6 a budget one character short drops only the lowest priority item', () => {
     const full = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
