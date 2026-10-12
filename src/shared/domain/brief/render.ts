@@ -157,7 +157,7 @@ export function structuredBrief(sel: Selection): string {
   if (ahead.length) section(`Planned ahead (after ${sel.year})`, ahead.map(line));
   if (sel.overBudget) {
     section('Over budget', [
-      `The lead sections alone are ${sel.size} characters, over the budget of ${sel.budget}. They are always kept.`,
+      `The lead sections alone are ${sel.leadSize} characters, over the budget of ${sel.budget}. They are always kept.`,
     ]);
   }
   if (sel.omitted.length) {

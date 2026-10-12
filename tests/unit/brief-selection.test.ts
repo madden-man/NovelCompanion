@@ -415,3 +415,29 @@ describe('SB-5 SB-7 the structured brief', () => {
     );
   });
 });
+
+describe('SB-1 SB-6 A25 M7 review fixes', () => {
+  test('SB-1 a parent link counts from its start year: H6 in 2013 has no adoptive parent H4 yet', () => {
+    const at = (year: number) =>
+      group(
+        selectForSession(briefData(false), { kind: 'pov', year, povCharacterId: 'H6' }).strands[0]!
+          .groups,
+        'characters',
+      ).map((it) => it.id);
+    expect(at(2013)).not.toContain('H4');
+    expect(at(2016)).toContain('H4');
+  });
+
+  test('A25 SB-6 the lead size leaves out entries you added, so a budget the lead fits is not over budget', () => {
+    const input: BriefInput = { kind: 'chapter', chapterId: 'CH6' };
+    const probe = selectForSession(briefData(true), input, { window: 10, budget: 0 });
+    const budget = probe.leadSize + 5;
+    const sel = selectForSession(briefData(true), input, { window: 10, budget }, { add: ['Z4'] });
+    expect(sel.leadSize).toBe(probe.leadSize);
+    expect(sel.size).toBeGreaterThan(budget);
+    expect(sel.overBudget).toBe(false);
+    expect(structuredBrief(sel)).not.toContain('## Over budget');
+    const tight = selectForSession(briefData(true), input, { window: 10, budget: 0 });
+    expect(structuredBrief(tight)).toContain(`The lead sections alone are ${tight.leadSize} characters`);
+  });
+});
