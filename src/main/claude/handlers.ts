@@ -1,4 +1,5 @@
 import { ERROR_MESSAGES, KNOWN_MODELS, claudeContract } from '../../shared/claude';
+import type { ClaudeErrorKind } from '../../shared/claude';
 import type { OpenBible } from '../db/session';
 import type { Handler } from '../ipc/validate';
 import { ClaudeFailure } from './client';
@@ -11,6 +12,19 @@ import { FEATURES } from './features';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
+
+/** Settings only: what to do when the list of models could not be read (not "ask again"). */
+const LIST_MESSAGES: Partial<Record<ClaudeErrorKind, string>> = {
+  badKey:
+    'Anthropic rejected the stored API key, so the list of models could not be read. Replace the key below.',
+  rateLimit:
+    'Anthropic is limiting requests right now, so the list of models could not be read. Wait a minute, then open Settings again.',
+  network:
+    'The app could not reach Anthropic to read the list of models. Check your network connection, then open Settings again.',
+};
+const LIST_FALLBACK = 'The list of models could not be read. Open Settings again later.';
+/** The list read from Anthropic is reused for this long before the endpoint is called again. */
+const LIST_TTL_MS = 10 * 60_000;
 
 export interface ClaudeDeps {
   runtime: ClaudeRuntime;
@@ -29,6 +43,7 @@ export function claudeHandlers(
 ): { [C in ClaudeChannel]: Handler<C> } {
   const { runtime, keys, catalog } = deps;
   let cached: { id: string; displayName: string }[] | null = null;
+  let cachedFor: { key: string; at: number } | null = null;
   const session = (): OpenBible => {
     const s = current();
     if (!s) throw new Error(ERROR_MESSAGES.noBible);
@@ -44,6 +59,7 @@ export function claudeHandlers(
         return { ok: false, message: cleaned.message, status: runtime.status(bibleId()) };
       try {
         cached = await catalog.list(cleaned.key);
+        cachedFor = { key: cleaned.key, at: Date.now() };
         keys.set(cleaned.key);
         return {
           ok: true,
@@ -61,6 +77,8 @@ export function claudeHandlers(
           };
         }
         // Offline or busy: keep the key; the first run will say if it is wrong.
+        cached = null;
+        cachedFor = null;
         keys.set(cleaned.key);
         return {
           ok: true,
@@ -73,6 +91,7 @@ export function claudeHandlers(
     'claude.clearKey': () => {
       keys.clear();
       cached = null;
+      cachedFor = null;
       return runtime.status(bibleId());
     },
     'claude.models': async () => {
@@ -84,11 +103,15 @@ export function claudeHandlers(
           message: 'Add an API key to see the models it can use.',
         };
       }
+      if (cached && cachedFor && cachedFor.key === key && Date.now() - cachedFor.at < LIST_TTL_MS) {
+        return { models: cached, live: true, message: null };
+      }
       try {
         cached = await catalog.list(key);
+        cachedFor = { key, at: Date.now() };
         return { models: cached, live: true, message: null };
       } catch (e) {
-        const message = e instanceof ClaudeFailure ? e.message : ERROR_MESSAGES.other;
+        const message = (e instanceof ClaudeFailure && LIST_MESSAGES[e.kind]) || LIST_FALLBACK;
         return {
           models: cached ?? KNOWN_MODELS.map((m) => ({ ...m })),
           live: false,

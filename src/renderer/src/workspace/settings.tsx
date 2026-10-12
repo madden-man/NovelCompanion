@@ -42,7 +42,7 @@ function ClaudeSettings() {
     return () => {
       live = false;
     };
-  }, [keySet]);
+  }, [keySet, status?.key.masked]);
 
   const save = async () => {
     setBusy(true);

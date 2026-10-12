@@ -42,6 +42,30 @@ const EntryIdArg = z.string().min(1).max(64);
 
 class NotFound extends Error {}
 
+/** Keys that hold IDs or system values, never words the writer typed. */
+const SYSTEM_KEY = /^(_?id|kind|type|scope|state|status|collection|schemaVersion|.*Ids?|.*At)$/;
+
+/**
+ * AI-5: every free-text string in an entry goes to Claude inside a
+ * <material> wrapper, so text the writer pasted in cannot pass as an
+ * instruction. The shape of the entry is kept; only the words are wrapped.
+ */
+export function wrapFreeText(label: string, value: unknown, key = ''): unknown {
+  if (typeof value === 'string') {
+    return value.trim() && !SYSTEM_KEY.test(key) ? material(label, value) : value;
+  }
+  if (Array.isArray(value)) return value.map((v) => wrapFreeText(label, v, key));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        wrapFreeText(label, v, k),
+      ]),
+    );
+  }
+  return value;
+}
+
 export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
   const { model } = session;
   const live = (collection: string, id: string) => {
@@ -82,23 +106,26 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
       handler: safely((a) => {
         const section = a.section as EntryCollection | undefined;
         const limit = typeof a.limit === 'number' ? a.limit : 10;
-        const hits = session.search
+        const found = session.search
           .search(String(a.query), ({ collection, id }) => {
             if (!isEntryCollection(collection)) return false;
             if (section && collection !== section) return false;
             return live(collection, id) !== undefined;
           })
-          .slice(0, limit)
-          .map((h) => {
-            const doc = model.get(h.collection, h.id);
-            return {
-              section: h.collection,
-              id: h.id,
-              title: entryTitle(doc),
-              status: doc?.status ?? null,
-              snippet: doc ? entrySnippet(doc) : '',
-            };
-          });
+          .slice(0, limit);
+        // AI-2: what the search put in front of Claude counts as read.
+        sink.read(found.map((h) => ref(h.collection, h.id)));
+        const hits = found.map((h) => {
+          const doc = model.get(h.collection, h.id);
+          const snippet = doc ? entrySnippet(doc) : '';
+          return {
+            section: h.collection,
+            id: h.id,
+            title: entryTitle(doc),
+            status: doc?.status ?? null,
+            snippet: snippet ? material(`${h.collection} ${h.id}`, snippet) : '',
+          };
+        });
         return out({ hits });
       }),
     },
@@ -119,7 +146,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
           kind: b.kind,
           title: entryTitle(model.get(b.collection, b.id)),
         }));
-        return out({ section, entry: doc, linkedFrom });
+        return out({ section, entry: wrapFreeText(`${section} ${id}`, doc), linkedFrom });
       }),
     },
     {
@@ -133,9 +160,16 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
         const groups = everyoneIn(model, year);
         const era = eraFor(model, year);
         const events = eventsIn(model, year);
+        // AI-2: every person whose age or life state is sent counts as read.
         sink.read([
           ...(era ? [ref('eraStates', era.id)] : []),
           ...events.map((e) => ref('worldEvents', e.id)),
+          ...[
+            ...groups.alive.map((p) => p.id),
+            ...groups.dead.map((p) => p.id),
+            ...groups.unborn,
+            ...groups.unknown,
+          ].map((id) => ref('characters', id)),
         ]);
         return out({
           year,

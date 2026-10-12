@@ -116,6 +116,12 @@ test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the questi
   }
   await input().fill('How old is Margaret in 2040?');
   await expect(panel().getByTestId('claude-send')).toBeDisabled();
+  // The disclosure is a labelled group, names Google Drive, and Cmd+Enter cannot ask before it is confirmed.
+  await expect(panel().getByRole('group', { name: 'What Claude sends to Anthropic' })).toBeVisible();
+  await expect(disclosure).toContainText('export to Google Drive');
+  await input().press('Meta+Enter');
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
+  await expect(input()).toHaveValue('How old is Margaret in 2040?');
   await disclosure.getByRole('button', { name: 'Continue' }).click();
   await expect(disclosure).toBeHidden();
   await panel().getByTestId('claude-send').click();

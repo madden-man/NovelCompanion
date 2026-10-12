@@ -213,12 +213,18 @@ export function Disclosure(props: {
 }) {
   const headingId = useId();
   return (
-    <div className="panel stack tight" aria-labelledby={headingId} data-testid="claude-disclosure">
+    <div
+      className="panel stack tight"
+      role="group"
+      aria-labelledby={headingId}
+      data-testid="claude-disclosure"
+    >
       <h3 id={headingId}>What Claude sends to Anthropic</h3>
       <p>
         When you use a Claude feature, the app sends the content listed below to Anthropic, the
         company that runs Claude, over the internet. Nothing is sent until you start a Claude
-        feature. Nothing else in the app sends your bible anywhere.
+        feature. The only other time the app sends part of your bible off this computer is when you
+        start an export to Google Drive.
       </p>
       <ul>
         {CLAUDE_FEATURES.map((f) => (
@@ -464,7 +470,7 @@ function ClaudePanel() {
 
   const ask = async () => {
     const question = draft.trim();
-    if (!question || runId) return;
+    if (!question || runId || !status?.acknowledgedAt) return;
     setError(null);
     const id = newRunId();
     watchRun(id);
