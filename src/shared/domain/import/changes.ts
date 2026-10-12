@@ -187,6 +187,7 @@ export function planChanges(input: PlanInput): ChangeSet {
               ? ['title']
               : identityPaths(mapping),
             view,
+            row.collection,
           );
       identityMaps.set(key, map);
     }

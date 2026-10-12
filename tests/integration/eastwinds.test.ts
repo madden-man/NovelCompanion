@@ -10,6 +10,7 @@ import { createBibleWithDefaults, openBibleSession } from '../../src/main/db/ses
 import type { OpenBible } from '../../src/main/db/session';
 import type { Store } from '../../src/main/db';
 import { importEastWinds, partForManuscript } from '../../src/main/import/eastwinds';
+import { applyTitleCleanup } from '../../src/main/import/titleCleanup';
 import { freshSlug, localStore } from '../helpers/db';
 
 let store: Store;
@@ -30,6 +31,8 @@ interface SourceOptions {
   chapterOne?: string;
   /** The year of the first Sullivan beat. */
   firstBeatYear?: number;
+  /** Give the Plot v1 chapter rows a "Ch. N: " prefix, numbered within their part. */
+  numbered?: boolean;
 }
 
 /** A small invented stand-in with the same shapes as the real material: no real text. */
@@ -92,18 +95,19 @@ async function writeSources(where: string, opts: SourceOptions = {}) {
   plot.addRow(['Book One']);
   plot.addRow(['Part One: Roots', 'Deep dive on Ann']);
   plot.mergeCells('B3:F3');
-  plot.addRow(['Ann goes to school', 'Ann', 2010, 8, 'A school', 'Nervous']);
-  plot.addRow(['Ann meets Ben', 'Ben', 2011, 9, 'A park', 'Happy']);
+  const ch = (n: number, t: string) => (opts.numbered ? `Ch. ${n}: ${t}` : t);
+  plot.addRow([ch(1, 'Ann goes to school'), 'Ann', 2010, 8, 'A school', 'Nervous']);
+  plot.addRow([ch(2, 'Ann meets Ben'), 'Ben', 2011, 9, 'A park', 'Happy']);
   // A part whose merged banner is empty, then chapters.
   plot.addRow(['Part Two: Branches']);
   plot.mergeCells('B6:F6');
   if (opts.chapterOne) plot.addRow([opts.chapterOne, 'Ann', 2012, 10, 'A tree', 'Calm']);
-  plot.addRow(['Ann grows up', 'Ann', 2015, 13, 'A road', 'Proud']);
+  plot.addRow([ch(opts.chapterOne ? 2 : 1, 'Ann grows up'), 'Ann', 2015, 13, 'A road', 'Proud']);
   // A part that is only its label.
   plot.addRow(['Part Three: Leaves']);
-  plot.addRow(['Ann ages', 'Ann', 2018, 16, 'A letter', 'Wistful']);
+  plot.addRow([ch(1, 'Ann ages'), 'Ann', 2018, 16, 'A letter', 'Wistful']);
   plot.addRow(['Book Two']);
-  plot.addRow(['Ann leaves', 'Ann', 2020, 18, 'A train', 'Sad']);
+  plot.addRow([ch(1, 'Ann leaves'), 'Ann', 2020, 18, 'A train', 'Sad']);
   plot.addRow(['Ann misses year', 'Ann', 'later', 19, 'A bad row', 'Fails']);
   await wb.xlsx.writeFile(join(where, 'East_Winds_World.xlsx'));
   await docxIn(where, 'Dawns_Life.docx', [p('Dawn was born.'), p('Dawn grew.')]);
@@ -204,19 +208,20 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
     ]);
     const parts = open.repo.list('parts');
     // Part Two has an empty merged banner and Part Three only its label: both are parts, not books.
-    expect(parts.map((x) => x.title).sort()).toEqual([
-      'Chapters with no part named',
-      'Part One: Roots',
-      'Part Three: Leaves',
-      'Part Two: Branches',
+    // "Part One: Roots" is part 1 named "Roots": the number is in the number field (PL-3).
+    expect(parts.map((x) => [x.title, x.number]).sort()).toEqual([
+      ['Branches', 2],
+      ['Chapters with no part named', 1],
+      ['Leaves', 3],
+      ['Roots', 1],
     ]);
     const partOf = (title: string) => parts.find((x) => x.title === title)!;
-    expect(partOf('Part Two: Branches').bookId).toBe(books[0]!._id);
-    expect(partOf('Part Three: Leaves').bookId).toBe(books[0]!._id);
+    expect(partOf('Branches').bookId).toBe(books[0]!._id);
+    expect(partOf('Leaves').bookId).toBe(books[0]!._id);
     const byTitle = (t: string) => open.repo.list('chapters').find((c) => c.title === t)!;
-    expect(byTitle('Ann grows up').partId).toBe(partOf('Part Two: Branches')._id);
-    expect(byTitle('Ann ages').partId).toBe(partOf('Part Three: Leaves')._id);
-    const roots = parts.find((x) => x.title === 'Part One: Roots')!;
+    expect(byTitle('Ann grows up').partId).toBe(partOf('Branches')._id);
+    expect(byTitle('Ann ages').partId).toBe(partOf('Leaves')._id);
+    const roots = parts.find((x) => x.title === 'Roots')!;
     expect(roots).toMatchObject({ bookId: books[0]!._id, summary: 'Deep dive on Ann' });
     // Chapter 1 of the manuscript attaches to the first plot chapter, so that one now names the manuscript file too.
     const chapters = open.repo.list('chapters').filter((c) => c.title !== 'Introduction');
@@ -286,10 +291,14 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     expect(
       open.repo
         .list('parts')
-        .map((x) => x.title)
-        .filter((t) => t.startsWith('Part'))
+        .filter((x) => x.title !== 'Chapters with no part named')
+        .map((x) => [x.title, x.number])
         .sort(),
-    ).toEqual(['Part One: Roots', 'Part Three: Leaves', 'Part Two: Branches']);
+    ).toEqual([
+      ['Branches', 2],
+      ['Leaves', 3],
+      ['Roots', 1],
+    ]);
   });
 
   test('IM-2 High Level only imports the world events: chapter rows, parts, and the characters block are skipped and reported', async () => {
@@ -327,7 +336,7 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     const one = chapters.find((c) => c.title === '1 Something else')!;
     expect(one.manuscriptText).toBe('<h1>1: Laid the Foundation</h1><p>Chapter one text.</p>');
     const intro = chapters.find((c) => c.title === 'Introduction')!;
-    expect(open.repo.get('parts', one.partId)!.title).toBe('Part Two: Branches');
+    expect(open.repo.get('parts', one.partId)!.title).toBe('Branches');
     expect(intro.partId).toBe(one.partId);
     expect(intro.readingOrder).toBeLessThan(one.readingOrder);
     expect(
@@ -377,7 +386,7 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     expect(chapters.filter((c) => /Laid the Foundation/.test(c.title))).toEqual([]);
     const intro = chapters.find((c) => c.title === 'Introduction')!;
     expect(intro.partId).toBe(one.partId);
-    expect(open.repo.get('parts', one.partId)!.title).toBe('Part One: Roots');
+    expect(open.repo.get('parts', one.partId)!.title).toBe('Roots');
     expect(intro.readingOrder).toBeLessThan(one.readingOrder);
     expect(
       chapters.filter(
@@ -566,5 +575,63 @@ describe('IM-1 the import:eastwinds script', () => {
     await expect(run(['--nope'])).rejects.toMatchObject({
       stderr: expect.stringContaining('Unknown option --nope'),
     });
+  });
+});
+
+describe('IM-3 PL-3 a re-import after the title cleanup finds the same entries', () => {
+  test('IM-3 PL-3 numbered titles import as bare names, and a re-import after the cleanup reports no duplicates and no title change', async () => {
+    const where = await sources({ numbered: true });
+    const open = await bible();
+    await importEastWinds(open, where);
+    const titles = (c: 'books' | 'parts' | 'chapters') =>
+      open.repo
+        .list(c)
+        .map((d) => d.title)
+        .sort();
+    const chapters = titles('chapters');
+    expect(chapters).toEqual(
+      expect.arrayContaining(['Ann goes to school', 'Ann meets Ben', 'Ann grows up', 'Ann leaves']),
+    );
+    expect(chapters.filter((t) => /^Ch\./.test(t))).toEqual([]);
+    const counts = () =>
+      (['books', 'parts', 'chapters'] as const).map((c) => open.repo.list(c).length);
+    const before = counts();
+
+    // A bible imported before this change holds the numbered titles; its entries are still found.
+    const numbered: Record<string, string> = {
+      Roots: 'Part One: Roots',
+      Branches: 'Part Two: Branches',
+      'Ann goes to school': 'Ch. 1: Ann goes to school',
+      'Ann meets Ben': 'Ch. 2: Ann meets Ben',
+      'Ann ages': 'Ch. 1: Ann ages',
+    };
+    for (const c of ['parts', 'chapters'] as const) {
+      for (const d of open.repo.list(c)) {
+        const old = numbered[d.title];
+        if (old) await open.repo.update(c, d._id, { title: old });
+      }
+    }
+    const held = await importEastWinds(open, where, { yes: true });
+    expect(held.steps.reduce((n, st) => n + st.created, 0)).toBe(0);
+    expect(counts()).toEqual(before);
+
+    // The cleanup renames them back through the write path, with a revision note on each.
+    const result = await applyTitleCleanup(open, {
+      note: 'Title cleanup (test)',
+      questionTags: ['Audit 2026-10-11 PM', 'chapters'],
+    });
+    expect(result.renamed).toEqual({ books: 0, parts: 2, chapters: 3 });
+    expect(result.questions).toBe(0);
+    for (const t of Object.values(numbered))
+      expect(titles('chapters').concat(titles('parts'))).not.toContain(t);
+    const renamed = open.repo.list('chapters').find((c) => c.title === 'Ann ages')!;
+    expect((await open.repo.history('chapters', renamed._id))[0]).toMatchObject({
+      note: 'Title cleanup (test)',
+    });
+
+    const again = await importEastWinds(open, where, { yes: true });
+    expect(again.steps.reduce((n, st) => n + st.created + st.updated, 0)).toBe(0);
+    expect(counts()).toEqual(before);
+    expect(titles('chapters')).toEqual(chapters);
   });
 });

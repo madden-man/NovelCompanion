@@ -1,3 +1,4 @@
+import { bareTitle, numberedKindOf, splitNumberedTitle } from '../numbering';
 import type { Doc } from '../paths';
 import { buildEntry } from './build';
 import { importableFields, readField } from './fields';
@@ -34,8 +35,23 @@ export function normalizeIdentity(v: unknown): string {
   return String(v).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-export function identityKey(doc: Doc, paths: string[]): string {
-  return paths.map((p) => normalizeIdentity(readField(doc, p))).join(SEP);
+/**
+ * The identity of a chapter, part, or book title is its bare name: "Ch. 3:
+ * Mark Gets Drunk" and "Mark Gets Drunk" are the same chapter, so a title
+ * cleaned of its number is still found on re-import (IM-3, PL-3).
+ */
+export function identityTitle(collection: string | undefined, title: unknown): unknown {
+  const kind = collection ? numberedKindOf(collection) : null;
+  return kind && typeof title === 'string' ? bareTitle(kind, title) : title;
+}
+
+export function identityKey(doc: Doc, paths: string[], collection?: string): string {
+  return paths
+    .map((p) => {
+      const v = readField(doc, p);
+      return normalizeIdentity(p === 'title' ? identityTitle(collection, v) : v);
+    })
+    .join(SEP);
 }
 
 /** Resolve each assignment to a column: by header when it is unique, otherwise by position. */
@@ -120,6 +136,7 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
   const counts = new Map<string, number>();
   const headingCounts: Map<string, number>[] = [];
   const numbers = new Map<string, number>();
+  const groupCounts = new Map<string, number>();
   const current: { id: string }[] = [];
   let ordinal = 0;
   let where = '';
@@ -145,6 +162,18 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
     const counterKey = `${level}:${parent?.id ?? ''}`;
     const number = (numbers.get(counterKey) ?? 0) + 1;
     numbers.set(counterKey, number);
+    const kind = numberedKindOf(rule.collection);
+    const split = kind ? splitNumberedTitle(kind, title) : null;
+    if (split && kind) {
+      // "Part One: Roots" is part 1 named "Roots": the number field holds the number (PL-3).
+      if (split.number === number) {
+        if (split.name) title = split.name;
+      } else {
+        out.notes.push(
+          `${where}: "${title}" says ${kind} ${split.number} but is ${kind} ${number} here, so its title is kept whole.`,
+        );
+      }
+    }
     const hFields: Record<string, unknown> = { title };
     if (rule.numberField) hFields[rule.numberField] = number;
     if (rule.textField && text !== undefined) hFields[rule.textField] = text;
@@ -158,7 +187,7 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       ordinal: number,
     });
     const counts = headingCounts[level] ?? (headingCounts[level] = new Map());
-    const key = ordinalKey(counts, normalizeIdentity(title));
+    const key = ordinalKey(counts, normalizeIdentity(identityTitle(rule.collection, title)));
     current.length = level;
     const base = {
       ref,
@@ -214,6 +243,22 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       else if (result.ok === false) problems.push(`${spec.label}: ${result.reason}`);
     }
     ordinal += 1;
+    const group = current[current.length - 1]?.id ?? '';
+    const inGroup = (groupCounts.get(group) ?? 0) + 1;
+    groupCounts.set(group, inGroup);
+    if (mapping.target.collection === 'chapters' && typeof values.title === 'string') {
+      // "Ch. 3: Mark Gets Drunk" is the third chapter named "Mark Gets Drunk": the reading order holds
+      // the number (PL-3). A number that is neither the row's place in its part nor in the sheet is
+      // not guessed at: the title is kept whole and the report says so.
+      const split = splitNumberedTitle('chapter', values.title);
+      if (split && (split.number === inGroup || split.number === ordinal)) {
+        if (split.name) values.title = split.name;
+      } else if (split) {
+        out.notes.push(
+          `${where}: "${values.title}" says chapter ${split.number} but is chapter ${inGroup} of its part and chapter ${ordinal} of the sheet, so its title is kept whole.`,
+        );
+      }
+    }
     const id = ctx.newId();
     const failRow = (reason: string) => {
       resolver.rollback(mark);
@@ -257,7 +302,7 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       failRow(built.reason);
       continue;
     }
-    const key = identityKey(built.data, idPaths);
+    const key = identityKey(built.data, idPaths, mapping.target.collection);
     if (key.replaceAll(SEP, '') === '') {
       failRow('There is no value to tell this row from the others');
       continue;
@@ -290,11 +335,12 @@ export function existingIdentities(
   docs: Doc[],
   paths: string[],
   view: (doc: Doc) => Doc = (d) => d,
+  collection?: string,
 ): Map<string, Doc> {
   const counts = new Map<string, number>();
   const out = new Map<string, Doc>();
   for (const d of [...docs].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
-    const key = identityKey(view(d), paths);
+    const key = identityKey(view(d), paths, collection);
     if (key.replaceAll(SEP, '') === '') continue;
     out.set(ordinalKey(counts, key), d);
   }

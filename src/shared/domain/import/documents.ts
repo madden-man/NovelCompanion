@@ -1,5 +1,6 @@
 import { entryTitle } from '../../schema';
 import type { CustomSection, EntryCollection } from '../../schema';
+import { splitNumberedTitle } from '../numbering';
 import type { Doc } from '../paths';
 import { buildEntry } from './build';
 import { changedItem, planChanges } from './changes';
@@ -114,8 +115,18 @@ export function planDocument(input: DocumentPlanInput): ChangeSet {
       return withValues(set, fields);
     }
     const id = input.newId();
+    const ordinal = input.entries('chapters').length + 1;
+    // A heading such as "Chapter 3: The Storm" names the chapter "The Storm": the shown number comes
+    // from the reading order, which is where the chapter is placed (PL-3).
+    const split = splitNumberedTitle('chapter', target.title);
+    const title = split?.name ? split.name : target.title;
+    if (split && split.number !== ordinal) {
+      set.notes.push(
+        `"${target.title}" says chapter ${split.number}; the new chapter is named "${title}" and placed at reading order ${ordinal}. Move it to its place in Plot.`,
+      );
+    }
     const fields = {
-      title: target.title,
+      title,
       partId: target.partId,
       'strand.startYear': target.year,
       manuscriptText: body,
@@ -127,14 +138,14 @@ export function planDocument(input: DocumentPlanInput): ChangeSet {
       fixed: { status: 'planned', written: true },
       newId: id,
       ref,
-      ordinal: input.entries('chapters').length + 1,
+      ordinal,
     });
     if (!built.ok) return fail(built.reason);
     created(
       {
         collection: 'chapters',
         entryId: id,
-        title: target.title,
+        title,
         ref,
         data: built.data,
         records: [],

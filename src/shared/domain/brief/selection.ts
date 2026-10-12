@@ -26,6 +26,7 @@
  *   first. The DB-2 lead sections never drop (A25). Entries you add (SB-9) never drop.
  * - An entry is reported as left out only once it leaves the manifest.
  */
+import { groupLabel } from '../numbering';
 import type { LifeState } from '../ages';
 import { describeState } from '../ages';
 import { descriptionFor, entriesFor, placePath } from '../culture';
@@ -383,7 +384,7 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
       );
     const specs = list.flatMap((c) => strandsOf(c).map((s) => strandSpec(c, s)));
     return {
-      label: title(part, 'Untitled part'),
+      label: groupLabel('part', part.number, title(part, 'Untitled part')),
       year: specs[0]?.year ?? 0,
       chapters: list,
       strands: specs,

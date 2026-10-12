@@ -442,7 +442,13 @@ const OutlineWire = z.strictObject({
   cursorYear: z.number().nullable(),
   rows: z.array(
     z.union([
-      z.strictObject({ kind: z.enum(['book', 'part']), id: z.string(), title: z.string() }),
+      z.strictObject({
+        kind: z.enum(['book', 'part']),
+        id: z.string(),
+        title: z.string(),
+        number: z.number().nullable(),
+        label: z.string(),
+      }),
       z.strictObject({
         kind: z.literal('chapter'),
         id: z.string(),

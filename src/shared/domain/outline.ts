@@ -4,6 +4,7 @@
  * story year are separate fields (PL-3): the grid can show either order and
  * reordering changes only the reading order.
  */
+import { groupLabel } from './numbering';
 import type { LifeState } from './ages';
 import { placePath } from './culture';
 import { chapterYear } from './position';
@@ -55,8 +56,9 @@ export interface OutlineChapter {
 }
 
 export type OutlineRow =
-  | { kind: 'book'; id: string; title: string }
-  | { kind: 'part'; id: string; title: string }
+  /** `label` is what the row shows: the number from the number field and the name ("Part 2: Lost Spirits", PL-3). */
+  | { kind: 'book'; id: string; title: string; number: number | null; label: string }
+  | { kind: 'part'; id: string; title: string; number: number | null; label: string }
   | OutlineChapter;
 
 export interface Outline {
@@ -181,11 +183,28 @@ export function outlineGrid(
       if (bookId !== lastBook) {
         lastBook = bookId;
         lastPart = null;
-        rows.push({ kind: 'book', id: bookId, title: title(bookById.get(bookId), 'No book') });
+        const book = bookById.get(bookId);
+        const t = title(book, 'No book');
+        const n = book ? num(book.number) : null;
+        rows.push({
+          kind: 'book',
+          id: bookId,
+          title: t,
+          number: n,
+          label: groupLabel('book', n, t),
+        });
       }
       if (c.partId !== lastPart) {
         lastPart = c.partId;
-        rows.push({ kind: 'part', id: c.partId, title: title(part, 'No part') });
+        const t = title(part, 'No part');
+        const n = part ? num(part.number) : null;
+        rows.push({
+          kind: 'part',
+          id: c.partId,
+          title: t,
+          number: n,
+          label: groupLabel('part', n, t),
+        });
       }
       rows.push(c);
     }

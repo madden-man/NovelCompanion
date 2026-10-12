@@ -735,10 +735,11 @@ describe('review fixes: identity, headings, skipped rows, and sources', () => {
     expect(set.failed).toEqual([]);
     const of = (c: string) => rows.rows.filter((r) => r.ok && r.collection === c);
     expect(of('books').map((r) => r.data.title)).toEqual(['Book One', 'Book Two']);
+    // The number moves to the number field and the title keeps the name (PL-3).
     expect(of('parts').map((r) => [r.data.title, r.data.number])).toEqual([
-      ['Part One: Roots', 1],
-      ['Part Two: Branches', 2],
-      ['Part Three: Leaves', 3],
+      ['Roots', 1],
+      ['Branches', 2],
+      ['Leaves', 3],
       ['No part', 1],
     ]);
     const bookOne = of('books')[0]!;

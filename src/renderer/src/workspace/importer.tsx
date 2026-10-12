@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { ENTRY_COLLECTIONS, collectionInfo, entryTitle } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { Request, Response } from '../../../shared/ipc';
+import { groupLabel } from '../../../shared/domain/numbering';
 import { DOCUMENT_KIND_LABELS } from '../../../shared/domain/import/documents';
 import type { DocumentKind } from '../../../shared/domain/import/documents';
 import type { GridMapping, Mapping, TableMapping } from '../../../shared/domain/import/types';
@@ -868,7 +869,7 @@ function DocumentImporter(props: {
                 <option value="">Choose a part</option>
                 {parts.map((p) => (
                   <option key={p._id} value={p._id}>
-                    {entryTitle(p)}
+                    {groupLabel('part', p.number, entryTitle(p))}
                   </option>
                 ))}
               </select>

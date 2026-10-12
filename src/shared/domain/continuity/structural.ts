@@ -110,7 +110,8 @@ function primaryOf(strands: StrandOf[]): StrandOf | undefined {
   return strands.find((s) => s.primary) ?? strands[0];
 }
 
-const chapterLabel = (c: Doc) => `Chapter ${num(c.readingOrder) ?? str(c.title)}`;
+/** The shown chapter number is the reading order, never a number in the title (PL-3). */
+const chapterLabel = (c: Doc) => `Chapter ${num(c.readingOrder) ?? '?'}`;
 const yearText = (s: StrandOf) =>
   s.startYear === s.endYear ? String(s.startYear) : `${s.startYear} to ${s.endYear}`;
 

@@ -200,7 +200,7 @@ export function OutlineView() {
                     onDragLeave={row.kind === 'part' ? () => setOver(null) : undefined}
                     onDrop={row.kind === 'part' ? (e) => dropOnPart(e, row.id) : undefined}
                   >
-                    {row.kind === 'book' ? 'Book' : 'Part'}: {row.title}
+                    {row.label}
                   </div>
                 ) : (
                   <div
@@ -352,7 +352,7 @@ export function OutlineView() {
                     .filter((r) => r.kind === 'part' && r.id !== sel.partId)
                     .map((r) => (
                       <option key={r.id} value={r.id}>
-                        {r.title}
+                        {r.kind === 'chapter' ? r.title : r.label}
                       </option>
                     ))}
                 </select>

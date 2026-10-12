@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
 import { createCommand } from '../../../../shared/domain/undoRunner';
 import { characterName } from '../../../../shared/domain/timeline';
+import { groupLabel } from '../../../../shared/domain/numbering';
 import { entryTitle } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
 import { useEntries } from '../data';
@@ -190,7 +191,7 @@ export function StartSessionView(props: {
             >
               {parts.map((p) => (
                 <option key={p._id} value={p._id}>
-                  {entryTitle(p)}
+                  {groupLabel('part', p.number, entryTitle(p))}
                 </option>
               ))}
             </select>

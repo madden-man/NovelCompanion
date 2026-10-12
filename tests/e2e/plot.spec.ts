@@ -219,7 +219,7 @@ test('PL-3 the Move to the end of a part control moves the open chapter to anoth
   await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
   await inspector()
     .getByLabel('Move to the end of a part')
-    .selectOption({ label: 'Part Two: The Letter' });
+    .selectOption({ label: 'Part 2: The Letter' });
   await expect
     .poll(
       async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.partId,

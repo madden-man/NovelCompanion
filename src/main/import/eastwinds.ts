@@ -21,6 +21,7 @@ import type {
   SourceFile,
   TableMapping,
 } from '../../shared/domain/import';
+import { bareTitle } from '../../shared/domain/numbering';
 import { ENTRY_COLLECTIONS, entryTitle } from '../../shared/schema';
 import type { Chapter } from '../../shared/schema';
 import type { OpenBible } from '../db/session';
@@ -257,6 +258,16 @@ export function holdsImportedEntries(open: OpenBible): boolean {
   );
 }
 
+/**
+ * True when two chapter titles name the same chapter once a leading chapter
+ * number is set aside: the import names a new chapter "Laid the Foundation"
+ * for the heading "1: Laid the Foundation" (PL-3), and an older run may have
+ * kept the number.
+ */
+function sameChapterTitle(a: string, b: string): boolean {
+  return bareTitle('chapter', a).toLowerCase() === bareTitle('chapter', b).toLowerCase();
+}
+
 /** A chapter title as a number and the words after it: `1: Laid the Foundation`, `Ch. 1 Laid...`. */
 function numberedTitle(title: string): { number: number | null; words: string } {
   const m = /^\s*(?:chapter|ch\.?)?\s*(\d+)\s*(?:[:.)\u2013\u2014-]\s*|\s+)?(.*)$/i.exec(title);
@@ -482,7 +493,7 @@ export async function importEastWinds(
         (c) =>
           c.sourceFile === manuscript.fileName &&
           c.title !== 'Introduction' &&
-          c.title !== split.chapterTitle,
+          !sameChapterTitle(c.title, split.chapterTitle),
       );
     const match: ChapterOneMatch | undefined = attachedBefore
       ? { chapter: attachedBefore, why: 'title' }
@@ -514,10 +525,14 @@ export async function importEastWinds(
       const existing = t.isOne
         ? (open.repo
             .list('chapters')
-            .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName) ?? one)
+            .find(
+              (c) => sameChapterTitle(c.title, t.title) && c.sourceFile === manuscript.fileName,
+            ) ?? one)
         : open.repo
             .list('chapters')
-            .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName);
+            .find(
+              (c) => sameChapterTitle(c.title, t.title) && c.sourceFile === manuscript.fileName,
+            );
       const target: DocumentTarget = existing
         ? { kind: 'chapter', chapterId: existing._id }
         : { kind: 'chapter', chapterId: null, title: t.title, partId: part, year };
@@ -549,7 +564,7 @@ export async function importEastWinds(
       if (writes && !t.isOne && one && done.created > 0) {
         const intro = open.repo
           .list('chapters')
-          .find((c) => c.title === t.title && c.sourceFile === manuscript.fileName);
+          .find((c) => sameChapterTitle(c.title, t.title) && c.sourceFile === manuscript.fileName);
         if (intro) {
           const later = open.repo
             .list('chapters')
