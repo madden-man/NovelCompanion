@@ -485,6 +485,8 @@ export interface ChapterPage {
     /** KB-3: whether an earlier or later beat on the page is ordered by the same arc, so the beat can trade places with it. */
     canMoveUp: boolean;
     canMoveDown: boolean;
+    /** The arc whose order places this beat on the page (PL-3), or null when it is in none. */
+    orderArcId: string | null;
   }[];
   themes: { id: string; title: string; note: string }[];
   factsInPlay: {
@@ -610,6 +612,7 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
     arcs: idList(b.arcIds).map((a) => arcName(arcs.get(a), a)),
     canMoveUp: neighbourIndex(ordered, i, -1, chapterArcs) >= 0,
     canMoveDown: neighbourIndex(ordered, i, 1, chapterArcs) >= 0,
+    orderArcId: orderArcOf(b, chapterArcs),
   }));
 
   // A theme's appearances are the one record of which chapters it is in (TH-1).

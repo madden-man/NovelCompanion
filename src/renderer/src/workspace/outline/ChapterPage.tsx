@@ -9,6 +9,7 @@ import { SaveState, TrashControls, useAutosave } from '../editor';
 import { Field } from '../fields';
 import { Zh } from '../Zh';
 import { lastBeatOrder } from './Arcs';
+import { beatsOfArc } from '../../../../shared/domain/outline';
 import type { OutlineWrites } from './actions';
 import { InlineName, NameForm } from './InlineName';
 import { StrandsEditor } from './Strands';
@@ -21,7 +22,13 @@ const OWN = new Set(['title', 'partId', 'readingOrder', 'strands']);
 /** Fields shown open on the chapter page; every other one sits under More fields. */
 const MAIN = ['arcIds', 'themeIds', 'factsInPlay', 'written'];
 const chapterSpecs = editableFields(manifests.chapters);
-const mainSpecs = MAIN.map((n) => chapterSpecs.find((s) => s.name === n) as FieldSpec);
+/** A field of the chapter manifest by name; a renamed field fails here at once, not quietly. */
+function chapterSpec(name: string): FieldSpec {
+  const spec = chapterSpecs.find((s) => s.name === name);
+  if (!spec) throw new Error(`The chapter manifest has no field named ${name}.`);
+  return spec;
+}
+const mainSpecs = MAIN.map(chapterSpec);
 const moreSpecs = chapterSpecs.filter((s) => !OWN.has(s.name) && !MAIN.includes(s.name));
 
 /** The stored chapter page (PL-4), reloaded after every change in the bible. */
@@ -279,11 +286,28 @@ function ChapterBeats(props: {
   const { page, writes } = props;
   const [adding, setAdding] = useState(false);
   const beats = useEntries('plotBeats');
+  const [dragging, setDragging] = useState<string | null>(null);
   const move = (beatId: string, by: -1 | 1) =>
     void writes.reorder(
       { kind: 'chapterBeats', groupId: page.id, movedId: beatId, by },
       `Moved a beat in ${page.title}`,
     );
+  /** PL-3: drop a beat on another the same arc orders; it takes that beat's place in the arc. */
+  const dropOn = (targetId: string) => {
+    const moved = page.beats.find((b) => b.id === dragging);
+    const target = page.beats.find((b) => b.id === targetId);
+    setDragging(null);
+    if (!moved || !target || moved === target || !moved.orderArcId) return;
+    if (moved.orderArcId !== target.orderArcId) return;
+    const arcId = moved.orderArcId;
+    const toIndex = beatsOfArc(beats, arcId).findIndex((b) => b._id === target.id);
+    if (toIndex < 0) return;
+    void writes.reorder(
+      { kind: 'beats', groupId: arcId, movedId: moved.id, toIndex },
+      `Moved a beat in ${page.title}`,
+    );
+  };
+  const draggedArc = page.beats.find((b) => b.id === dragging)?.orderArcId ?? null;
   const create = async (name: string) => {
     const arcId = props.chapterArcs[0];
     const last = arcId ? lastBeatOrder(beats, arcId) : 0;
@@ -327,7 +351,29 @@ function ChapterBeats(props: {
       ) : (
         <ol className="beat-list">
           {page.beats.map((b, i) => (
-            <li key={b.id} data-beat={b.id}>
+            <li
+              key={b.id}
+              data-beat={b.id}
+              draggable={!writes.ro.off && b.orderArcId !== null}
+              title={
+                b.orderArcId === null ? 'Add this beat to an arc to order it here.' : undefined
+              }
+              onDragStart={(e) => {
+                setDragging(b.id);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', b.id);
+              }}
+              onDragEnd={() => setDragging(null)}
+              onDragOver={(e) => {
+                if (dragging && draggedArc !== null && b.orderArcId === draggedArc) {
+                  e.preventDefault();
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                dropOn(b.id);
+              }}
+            >
               <span className="stack tight">
                 <button
                   type="button"

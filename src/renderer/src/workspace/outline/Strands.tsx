@@ -16,7 +16,12 @@ import { Zh } from '../Zh';
 type PageStrand = Response<'chapter.page'>['page']['strands'][number];
 
 const strandSpecs: FieldSpec[] = manifests.chapters.find((s) => s.name === 'strands')?.fields ?? [];
-const spec = (name: string) => strandSpecs.find((s) => s.name === name) as FieldSpec;
+/** A strand field by name; a renamed field fails here at once, not quietly. */
+function spec(name: string): FieldSpec {
+  const found = strandSpecs.find((s) => s.name === name);
+  if (!found) throw new Error(`The chapter strands have no field named ${name}.`);
+  return found;
+}
 
 const ids = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 

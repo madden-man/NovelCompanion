@@ -564,6 +564,7 @@ const ChapterPageWire = z.strictObject({
       arcs: z.array(z.string()),
       canMoveUp: z.boolean(),
       canMoveDown: z.boolean(),
+      orderArcId: z.string().nullable(),
     }),
   ),
   themes: z.array(z.strictObject({ id: z.string(), title: z.string(), note: z.string() })),

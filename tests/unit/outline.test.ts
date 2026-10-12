@@ -231,5 +231,6 @@ describe('KB-3 beats move on the chapter page through the arc that orders them',
       ['b3', false, false],
       ['b2', true, false],
     ]);
+    expect(page?.beats.map((b) => b.orderArcId)).toEqual(['A1', 'A2', 'A1']);
   });
 });

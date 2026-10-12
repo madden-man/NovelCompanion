@@ -465,6 +465,344 @@ test('KB-3 an arc is added and renamed from the Arcs list, its spans light up, a
   await expect(grid().locator('.ol-arc.hl')).toHaveCount(0);
 });
 
+// ---------- KB-3 fix round: drag, undo, chapter page edits, deletes, reorders ----------
+
+const partOrder = async (partId: string) =>
+  (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .filter((c) => c.partId === partId)
+    .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
+    .map((c) => c._id);
+const gridOrder = async (partId: string) =>
+  (
+    await grid()
+      .locator('[data-chapter]')
+      .evaluateAll((rows) => rows.map((r) => r.getAttribute('data-chapter')))
+  ).filter((id) => partId === 'PT1' && ['CH1', 'CH2', 'CH3', 'CH4'].includes(String(id)));
+const label = (id: string) => grid().locator(`[data-chapter="${id}"]`).getByTestId('outline-label');
+const chapterOf = async (id: string) =>
+  (await invoke('entry.get', { collection: 'chapters', id })).entry;
+const undoButton = () => inspector().getByRole('button', { name: 'Undo', exact: true });
+const firstHistory = () => inspector().getByTestId('undo-history').locator('li').first();
+
+test('KB-3 PL-3 a chapter dragged down lands in the target place, one can reach the last place, and the order persists after reload', async () => {
+  expect(await partOrder('PT1')).toEqual(['CH1', 'CH2', 'CH3', 'CH4']);
+  // Down onto Wedding Weather: it takes that place, so it lands after Two Kitchens and Wedding Weather.
+  await label('CH1').dragTo(label('CH3'));
+  await expect.poll(() => partOrder('PT1')).toEqual(['CH2', 'CH3', 'CH1', 'CH4']);
+  expect(await readingOrder('CH1')).toBe(3);
+  // Down onto the last chapter: the last place.
+  await label('CH1').dragTo(label('CH4'));
+  await expect.poll(() => partOrder('PT1')).toEqual(['CH2', 'CH3', 'CH4', 'CH1']);
+  // A drop on its own part heading moves a chapter to the end of that part.
+  await label('CH2').dragTo(grid().locator('[data-part="PT1"]').getByTestId('part-count'));
+  await expect.poll(() => partOrder('PT1')).toEqual(['CH3', 'CH4', 'CH1', 'CH2']);
+  // Up onto the first chapter: before it.
+  await label('CH1').dragTo(label('CH3'));
+  await expect.poll(() => partOrder('PT1')).toEqual(['CH1', 'CH3', 'CH4', 'CH2']);
+  expect([1, 2, 3, 4]).toEqual(
+    await Promise.all(['CH1', 'CH3', 'CH4', 'CH2'].map((id) => readingOrder(id))),
+  );
+
+  await page.reload();
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await rail(page, 'Outline').click();
+  await expect.poll(() => gridOrder('PT1')).toEqual(['CH1', 'CH3', 'CH4', 'CH2']);
+
+  // Put Two Kitchens back in second place for the tests that follow.
+  await label('CH2').dragTo(label('CH3'));
+  await expect.poll(() => partOrder('PT1')).toEqual(['CH1', 'CH2', 'CH3', 'CH4']);
+});
+
+test('KB-3 a new book, a new part and a new chapter are each one undo step, and one Undo restores every reading number a new chapter shifted', async () => {
+  const books = async () =>
+    (await invoke('entry.list', { collection: 'books', trash: 'exclude' })).entries.map(
+      (e) => e.entry.title,
+    );
+  await page.getByRole('button', { name: 'New book', exact: true }).click();
+  await page.getByTestId('new-book').getByLabel('Book title').fill('Scratch Book');
+  await page.getByTestId('new-book').getByLabel('Book title').press('Enter');
+  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Scratch Book' })).toBeVisible();
+  await expect(firstHistory()).toHaveText('Created Scratch Book');
+  await undoButton().click();
+  await expect(firstHistory()).toHaveText('Undone: Created Scratch Book');
+  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Scratch Book' })).toHaveCount(0);
+  expect(await books()).not.toContain('Scratch Book');
+
+  await grid().locator('[data-book="BK1"]').getByRole('button', { name: 'New part' }).click();
+  await page.getByTestId('new-part').getByLabel('Part title').fill('Scratch Part');
+  await page.getByTestId('new-part').getByLabel('Part title').press('Enter');
+  await expect(grid().locator('[data-book="BK1"]').getByTestId('book-count')).toHaveText('3 parts');
+  await expect(firstHistory()).toHaveText('Created Scratch Part');
+  await undoButton().click();
+  await expect(firstHistory()).toHaveText('Undone: Created Scratch Part');
+  await expect(grid().locator('[data-book="BK1"]').getByTestId('book-count')).toHaveText('2 parts');
+
+  // A chapter added at the end of part one moves every later chapter up by one.
+  const ids = ['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8'];
+  const numbers = async () => Promise.all(ids.map((id) => readingOrder(id)));
+  const before = await numbers();
+  const salt = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((c) => c.title === 'Salt Marsh')!;
+  const saltBefore = salt.readingOrder;
+  await grid().locator('[data-part="PT1"]').getByRole('button', { name: 'New chapter' }).click();
+  await page.getByTestId('new-chapter').getByRole('textbox').fill('Interlude');
+  await page.getByTestId('new-chapter').getByRole('textbox').press('Enter');
+  await expect(inspector().getByTestId('chapter-page')).toContainText('Interlude');
+  const interlude = (
+    await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })
+  ).entries
+    .map((e) => e.entry)
+    .find((c) => c.title === 'Interlude')!;
+  expect(interlude).toMatchObject({ partId: 'PT1', readingOrder: 5 });
+  expect(await numbers()).toEqual([1, 2, 3, 4, 6, 7, 8, 9]);
+  expect(await readingOrder(salt._id)).toBe(Number(saltBefore) + 1);
+  await expect(grid().locator('[data-chapter="CH5"] .ol-no')).toHaveText('6');
+  await expect(firstHistory()).toHaveText('Created Interlude');
+
+  await undoButton().click();
+  await expect(firstHistory()).toHaveText('Undone: Created Interlude');
+  await expect.poll(numbers).toEqual(before);
+  expect(await readingOrder(salt._id)).toBe(saltBefore);
+  expect((await chapterOf(interlude._id)).deletedAt).toBeTruthy();
+  await expect(grid().locator(`[data-chapter="${interlude._id}"]`)).toHaveCount(0);
+});
+
+test('KB-3 the chapter page in the outline edits strand label, end year, places, a new strand and the primary choice, arcs, themes and facts in play', async () => {
+  const { entry: theme } = await invoke('entry.create', {
+    collection: 'themes',
+    data: { title: 'Paper', status: 'idea' },
+  });
+  const iris = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((a) => a.name === 'Iris: coming home')!;
+  await label('CH6').click();
+  const editor = inspector().getByTestId('editor');
+  const saved = () => expect(editor.getByTestId('autosave')).toHaveText('Saved');
+  type S = {
+    id: string;
+    label: string;
+    startYear: number;
+    endYear: number | null;
+    primary: boolean;
+    placeIds: string[];
+  };
+  const strands = async () => (await chapterOf('CH6')).strands as S[];
+
+  await field(editor, 'strands.0.label').locator('input').fill('now');
+  await field(editor, 'strands.0.endYear').locator('input').fill('2047');
+  await saved();
+  await expect
+    .poll(async () => (await strands())[0])
+    .toMatchObject({
+      label: 'now',
+      startYear: 2045,
+      endYear: 2047,
+    });
+  await expect(grid().locator('[data-chapter="CH6"] [data-strand="CH6-present"]')).toHaveAttribute(
+    'aria-label',
+    /strand now, 2045 to 2047/,
+  );
+
+  // Places: add one, see it on the page, remove it.
+  const first = inspector().locator('[data-strand="CH6-present"]');
+  await first.getByLabel('Add a place to now').selectOption({ label: 'Portland > The Hale house' });
+  await saved();
+  await expect.poll(async () => (await strands())[0]!.placeIds).toEqual(['PLC2']);
+  await expect(first.getByTestId('chapter-places')).toHaveText('Places: Portland > The Hale house');
+  await first.getByRole('button', { name: 'Remove Portland > The Hale house from now' }).click();
+  await saved();
+  await expect.poll(async () => (await strands())[0]!.placeIds).toEqual([]);
+  await expect(first.getByTestId('chapter-places')).toHaveCount(0);
+
+  // A new strand, made primary: the row's filled mark moves to it.
+  await editor.getByRole('button', { name: 'Add a strand' }).click();
+  await field(editor, 'strands.1.startYear').locator('input').fill('2030');
+  await editor.getByTestId('chapter-strand').nth(1).getByLabel('Primary strand').check();
+  await saved();
+  await expect
+    .poll(async () => (await strands()).map((s) => [s.label, s.startYear, s.primary]))
+    .toEqual([
+      ['now', 2045, false],
+      ['backstory', 2030, true],
+    ]);
+  const added = (await strands())[1]!.id;
+  await expect(grid().locator('[data-chapter="CH6"] .ol-mark.primary')).toHaveAttribute(
+    'data-strand',
+    added,
+  );
+  await expect(grid().locator('[data-chapter="CH6"] .ol-mark.backstory')).toHaveAttribute(
+    'data-strand',
+    'CH6-present',
+  );
+  // Removing it hands the primary choice back to the strand that is left.
+  await editor.getByRole('button', { name: 'Remove the strand backstory' }).click();
+  await saved();
+  await expect
+    .poll(async () => (await strands()).map((s) => [s.id, s.primary]))
+    .toEqual([['CH6-present', true]]);
+  await expect(grid().locator('[data-chapter="CH6"] .ol-mark')).toHaveCount(1);
+
+  // Arcs, themes and facts in play, through the manifest fields.
+  await field(editor, 'arcIds').locator('select').selectOption({ label: 'Iris' });
+  await saved();
+  await expect.poll(async () => (await chapterOf('CH6')).arcIds).toEqual([iris._id]);
+  await expect(inspector().getByTestId('chapter-arcs')).toContainText('Iris: coming home');
+  await expect(grid().locator(`[data-chapter="CH6"] [data-arc="${iris._id}"]`)).toHaveCount(1);
+
+  await field(editor, 'themeIds').locator('select').selectOption({ label: 'Paper' });
+  await saved();
+  await expect.poll(async () => (await chapterOf('CH6')).themeIds).toEqual([theme._id]);
+  await expect(inspector().getByTestId('chapter-themes')).toContainText('Paper');
+
+  const facts = async () => (await chapterOf('CH6')).factsInPlay;
+  const factsBefore = (await facts()) as unknown[];
+  await field(editor, 'factsInPlay').getByRole('button', { name: 'Add to Facts in play' }).click();
+  const at = factsBefore.length;
+  await field(editor, `factsInPlay.${at}.factId`).locator('select').selectOption('F1');
+  await field(editor, `factsInPlay.${at}.characterId`).locator('select').selectOption('Z3');
+  await field(editor, `factsInPlay.${at}.note`).locator('input').fill('Meiling keeps it quiet.');
+  await saved();
+  await expect
+    .poll(async () => ((await facts()) as unknown[]).at(-1))
+    .toEqual({ factId: 'F1', characterId: 'Z3', note: 'Meiling keeps it quiet.' });
+  await expect(inspector().getByTestId('chapter-facts')).toContainText(
+    'acts on Meiling was engaged before Wei',
+  );
+});
+
+test('KB-3 a beat, a chapter, a book and an arc move to the trash from the outline after listing what links to them, and Undo brings each back', async () => {
+  const salt = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((c) => c.title === 'Salt Marsh')!;
+  const confirm = () => inspector().getByRole('dialog', { name: 'Move to trash' });
+
+  // A beat, from its editor in the inspector.
+  await label(salt._id).click();
+  await inspector().getByTestId('chapter-beats').getByRole('button', { name: 'Low water' }).click();
+  await inspector().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(confirm()).toContainText('Nothing links here.');
+  await confirm().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(inspector().getByTestId('editor')).toContainText('This entry is in the trash');
+  await inspector().getByRole('button', { name: 'Back to the chapter' }).click();
+  await expect(inspector().getByTestId('chapter-beats')).not.toContainText('Low water');
+  await undoButton().click();
+  await expect(inspector().getByTestId('chapter-beats')).toContainText('Low water');
+
+  // The chapter, from its page: the beat in it links here.
+  await inspector().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(confirm().getByTestId('linked-count')).toHaveText(
+    '1 entry links here. Its link is kept and works again if you restore this entry.',
+  );
+  await expect(confirm()).toContainText('Low water');
+  await confirm().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(grid().locator(`[data-chapter="${salt._id}"]`)).toHaveCount(0);
+  expect((await chapterOf(salt._id)).deletedAt).toBeTruthy();
+  await undoButton().click();
+  await expect(grid().locator(`[data-chapter="${salt._id}"]`)).toHaveCount(1);
+
+  // A book, from its heading's Actions menu: its part links here.
+  const book = grid().locator('.ol-group.book').filter({ hasText: 'Riptide' });
+  await book.getByLabel('Actions for Book 2: Riptide').click();
+  await book.getByRole('button', { name: 'Move to trash' }).click();
+  const bookConfirm = book.getByRole('dialog', { name: 'Move to trash' });
+  await expect(bookConfirm.getByTestId('linked-count')).toContainText('1 entry links here');
+  await expect(bookConfirm).toContainText('Slack Water');
+  await bookConfirm.getByRole('button', { name: 'Move to trash' }).click();
+  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Riptide' })).toHaveCount(0);
+  await expect(grid().locator('.ol-group.book').filter({ hasText: 'No book' })).toBeVisible();
+  await undoButton().click();
+  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Riptide' })).toBeVisible();
+
+  // An arc, from its panel: its beat links here; in the trash it says so and offers Restore.
+  const arcs = page.getByTestId('outline-arcs');
+  if (!(await arcs.evaluate((d) => (d as HTMLDetailsElement).open))) {
+    await arcs.locator('summary').click();
+  }
+  await arcs.getByRole('button', { name: 'Flood decades' }).click();
+  await inspector().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(confirm().getByTestId('linked-count')).toContainText('1 entry links here');
+  await expect(confirm()).toContainText('The levee breaks');
+  await confirm().getByRole('button', { name: 'Move to trash' }).click();
+  await expect(arcs.getByRole('button', { name: 'Flood decades' })).toHaveCount(0);
+  await expect(inspector().getByTestId('arc-panel')).toContainText('This entry is in the trash');
+  await expect(inspector().getByRole('button', { name: 'Restore from trash' })).toBeVisible();
+  await undoButton().click();
+  await expect(arcs.getByRole('button', { name: 'Flood decades' })).toBeVisible();
+  await inspector().getByRole('button', { name: 'Close the arc' }).click();
+});
+
+test('KB-3 PL-3 beats reorder by dragging in the arc panel', async () => {
+  const arcs = page.getByTestId('outline-arcs');
+  if (!(await arcs.evaluate((d) => (d as HTMLDetailsElement).open))) {
+    await arcs.locator('summary').click();
+  }
+  await arcs.getByRole('button', { name: 'Iris: coming home' }).click();
+  const beats = inspector().getByTestId('arc-beats');
+  const titles = () => beats.locator('.beat-title').allTextContents();
+  const item = (t: string) => beats.locator('li').filter({ hasText: t });
+  expect(await titles()).toEqual(['The kitchen', 'The song']);
+  await item('The song').dragTo(item('The kitchen'));
+  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
+  await item('The song').dragTo(item('The kitchen'));
+  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
+  await inspector().getByRole('button', { name: 'Close the arc' }).click();
+});
+
+test('KB-3 PL-3 beats on the chapter page move with Up and Down and by dragging, in the arc that orders them', async () => {
+  const arcId = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((a) => a.name === 'Iris: coming home')!._id;
+  const stored = async () =>
+    (await invoke('entry.list', { collection: 'plotBeats', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .filter((b) => b.chapterId === 'CH2')
+      .map((b) => [
+        b.title,
+        (b.arcOrders as { arcId: string; order: number }[]).find((o) => o.arcId === arcId)?.order,
+      ])
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .map((x) => x[0]);
+  await label('CH2').click();
+  const beats = inspector().getByTestId('chapter-beats');
+  const titles = () => beats.locator('.beat-title').allTextContents();
+  expect(await titles()).toEqual(['The kitchen', 'The song']);
+  await expect(beats.getByRole('button', { name: 'Move The kitchen up' })).toBeDisabled();
+  await beats.getByRole('button', { name: 'Move The song up' }).click();
+  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
+  expect(await stored()).toEqual(['The song', 'The kitchen']);
+  await beats.getByRole('button', { name: 'Move The song down' }).click();
+  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
+  expect(await stored()).toEqual(['The kitchen', 'The song']);
+
+  const item = (t: string) => beats.locator('li').filter({ hasText: t });
+  await item('The song').dragTo(item('The kitchen'));
+  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
+  expect(await stored()).toEqual(['The song', 'The kitchen']);
+  await undoButton().click();
+  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
+});
+
+test('KB-3 Alt+Down and Alt+Up on a book heading move the book among the books', async () => {
+  const riptide = (await invoke('entry.list', { collection: 'books', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((b) => b.title === 'Riptide')!;
+  const number = async (id: string) =>
+    (await invoke('entry.get', { collection: 'books', id })).entry.number;
+  const name = grid().locator('[data-book="BK1"]').getByTestId('book-name');
+  await name.focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(() => number('BK1')).toBe(2);
+  expect(await number(riptide._id)).toBe(1);
+  await expect(grid().locator('.ol-group.book').first()).toHaveAttribute('data-book', riptide._id);
+  await expect(name).toBeFocused();
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect.poll(() => number('BK1')).toBe(1);
+  expect(await number(riptide._id)).toBe(2);
+  await expect(grid().locator('.ol-group.book').first()).toHaveAttribute('data-book', 'BK1');
+});
+
 test('CU-2 culture by year lists the entries that apply to a community and year', async () => {
   await rail(page, 'Culture by year').click();
   const view = page.getByTestId('culture-view');

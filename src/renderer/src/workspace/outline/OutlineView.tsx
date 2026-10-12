@@ -73,7 +73,10 @@ export function OutlineView() {
     if (!key) return;
     const slot = document.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(key)}"]`);
     const el = slot?.matches('button') ? slot : slot?.querySelector<HTMLElement>('button');
-    if (el && document.activeElement !== el) el.focus();
+    if (!el) return;
+    // Once only: a later reload must not pull focus back from wherever the person went.
+    refocus.current = null;
+    if (document.activeElement !== el) el.focus();
   }, [outline]);
 
   const first = outline?.years[0] ?? 0;
@@ -99,8 +102,10 @@ export function OutlineView() {
     );
   };
 
+  /** Move to part is a select in the inspector, which keeps focus, so no row is refocused. */
   const toPart = (c: ChapterRow, partId: string) => {
     if (!partId || partId === c.partId) return;
+    refocus.current = null;
     void writes.reorder(
       { kind: 'chapters', groupId: partId, movedId: c.id, toIndex: inPart(partId).length },
       `Moved ${c.title} to another part`,
@@ -127,25 +132,34 @@ export function OutlineView() {
     const moved = chapters.find((c) => c.id === dragging);
     setDragging(null);
     if (!moved || moved.id === target.id) return;
-    // Into another part the chapter takes the target's place and the target's part (PL-3).
-    const siblings = inPart(target.partId).filter((c) => c.id !== moved.id);
-    const toIndex = siblings.findIndex((c) => c.id === target.id);
+    // The chapter takes the target's place, in its own part or another (PL-3): moving
+    // down it lands after the target, moving up before it, as the arc beats do.
+    const toIndex = inPart(target.partId).findIndex((c) => c.id === target.id);
     void writes.reorder(
       { kind: 'chapters', groupId: target.partId, movedId: moved.id, toIndex },
       `Moved ${moved.title}`,
     );
   };
 
-  /** Drop on a part heading: the chapter goes to the start of that part. */
+  /**
+   * Drop on a part heading: into another part the chapter goes first in it;
+   * on its own part's heading it goes last.
+   */
   const dropOnPart = (e: DragEvent, partId: string) => {
     e.preventDefault();
     setOver(null);
     const moved = chapters.find((c) => c.id === dragging);
     setDragging(null);
-    if (!moved || moved.partId === partId) return;
+    if (!moved) return;
+    const same = moved.partId === partId;
     void writes.reorder(
-      { kind: 'chapters', groupId: partId, movedId: moved.id, toIndex: 0 },
-      `Moved ${moved.title}`,
+      {
+        kind: 'chapters',
+        groupId: partId,
+        movedId: moved.id,
+        toIndex: same ? inPart(partId).length - 1 : 0,
+      },
+      same ? `Moved ${moved.title} to the end of its part` : `Moved ${moved.title}`,
     );
   };
 
