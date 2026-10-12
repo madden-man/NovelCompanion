@@ -5,15 +5,17 @@ import { generatedTree } from './generatedTree';
 /**
  * NF-1 and T-6: the data volume the spec names, 5,000 entries and 100
  * chapters, with chapter text, strands, beats, facts, knowledge records,
- * world events, era states, and places. It includes the 200-person,
- * six-generation tree from `generatedTree`, so the tree redraw is measured
- * inside the same bible. Every document is parsed by its zod schema, so
+ * world events, era states, and places. Its 1,200 characters are the
+ * 200-person, six-generation tree from `generatedTree` plus 1,000 people with
+ * no known parents, all in the five families, so the tree redraw in
+ * tests/e2e/perf.spec.ts is measured inside this bible with every one of
+ * them drawn. Every document is parsed by its zod schema, so
  * what is loaded is exactly what the app would store. Deterministic: the
  * same call returns the same documents.
  */
 type Doc = { _id: string } & Record<string, unknown>;
 
-export const BIG = { entries: 5000, chapters: 100, treePeople: 200 } as const;
+export const BIG = { entries: 5000, chapters: 100, treePeople: 200, characters: 1200 } as const;
 
 const AT = '2026-01-15T09:00:00.000Z';
 const WORDS = (
