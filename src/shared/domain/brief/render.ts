@@ -188,15 +188,14 @@ export function structuredBrief(sel: Selection): string {
       `The lead sections alone are ${sel.leadSize} characters, over the budget of ${sel.budget}. They are always kept.`,
     ]);
   }
-  if (sel.omitted.length) {
-    section(
-      'Left out',
-      sel.omitted.map(
-        (o) =>
-          `- ${o.title} (${GROUP_TITLES[o.kind].toLowerCase()}): ${o.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel.budget} characters`}`,
-      ),
-    );
-  }
+  const left = [
+    ...(sel.skippedStrands ?? []).map((n) => `- ${n}: strand has no start year`),
+    ...(sel.omitted ?? []).map(
+      (o) =>
+        `- ${o.title} (${GROUP_TITLES[o.kind].toLowerCase()}): ${o.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel.budget} characters`}`,
+    ),
+  ];
+  if (left.length) section('Left out', left);
   return out.join('\n') + '\n';
 }
 

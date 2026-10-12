@@ -235,6 +235,8 @@ export interface Selection {
   shared: SelectionGroup[];
   /** What SB-6 or the person left out. The brief says so. */
   omitted: OmittedItem[];
+  /** Strands left out because they have no start year (the brief says so). */
+  skippedStrands: string[];
   added: string[];
   removed: string[];
   window: number;
@@ -325,6 +327,8 @@ interface Section {
   year: number;
   chapters: Doc[];
   strands: StrandSpec[];
+  /** Strands skipped because they have no start year. */
+  skipped: string[];
 }
 
 function strandsOf(chapter: Doc): Doc[] {
@@ -366,11 +370,16 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
       strands = strands.filter((s) => s.id === input.strandId);
       if (!strands.length) throw new Error('That strand is not in the chapter.');
     }
-    const specs = strands.map((s) => strandSpec(ch, s, false));
+    const skipped = strands
+      .filter((s) => num(s.startYear) === null)
+      .map((s) => str(s.label) || 'strand');
+    const specs = strands
+      .filter((s) => num(s.startYear) !== null)
+      .map((s) => strandSpec(ch, s, false));
     const first = specs[0];
     const label =
       input.kind === 'strand' && first ? `${chapterLabel(ch)}, ${first.label}` : chapterLabel(ch);
-    return { label, year: first?.year ?? 0, chapters: [ch], strands: specs };
+    return { label, year: first?.year ?? 0, chapters: [ch], strands: specs, skipped };
   }
   if (input.kind === 'part') {
     const part = data.all('parts').find((p) => p._id === input.partId);
@@ -381,8 +390,19 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
         (a, b) =>
           (num(a.readingOrder) ?? 0) - (num(b.readingOrder) ?? 0) || byText(str(a._id), str(b._id)),
       );
-    const specs = list.flatMap((c) => strandsOf(c).map((s) => strandSpec(c, s)));
+    const dated = (s: Doc) => num(s.startYear) !== null;
+    const skipped = list.flatMap((c) =>
+      strandsOf(c)
+        .filter((s) => !dated(s))
+        .map((s) => `${chapterLabel(c)}, ${str(s.label) || 'strand'}`),
+    );
+    const specs = list.flatMap((c) =>
+      strandsOf(c)
+        .filter(dated)
+        .map((s) => strandSpec(c, s)),
+    );
     return {
+      skipped,
       label: title(part, 'Untitled part'),
       year: specs[0]?.year ?? 0,
       chapters: list,
@@ -396,6 +416,7 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
     label: `${input.year}, point of view ${name}`,
     year: input.year,
     chapters: [],
+    skipped: [],
     strands: [
       {
         chapter: null,
@@ -549,9 +570,9 @@ export function selectForSession(
     const povLive = !!spec.pov && live(characters.get(spec.pov));
     if (!present.length && spec.pov && povLive) {
       present = family(data, spec.pov, Y);
-    } else if (spec.pov && povLive && !present.includes(spec.pov)) {
+    } else if (spec.pov && povLive) {
       // SB-1: the point of view character is always present, first.
-      present = [spec.pov, ...present];
+      present = [spec.pov, ...present.filter((id) => id !== spec.pov)];
     }
     for (const id of present) {
       const c = characters.get(id);
@@ -833,6 +854,7 @@ export function selectForSession(
     strands,
     shared,
     omitted,
+    skippedStrands: section.skipped,
     added,
     removed: removed.sort(byText),
     window: settings.window,

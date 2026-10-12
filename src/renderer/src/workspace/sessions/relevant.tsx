@@ -22,7 +22,10 @@ export function useSessionInput(
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
   const places = extras.placeIds;
-  const chars = extras.characterIds;
+  const chars = useMemo(
+    () => extras.characterIds?.filter((c) => c !== pov),
+    [extras.characterIds, pov],
+  );
   return useMemo(() => {
     // A picked strand is that strand, not the whole chapter (SB-1).
     if (time.chapterId && time.strandId) {

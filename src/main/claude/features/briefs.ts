@@ -40,6 +40,9 @@ export const BriefsInput = z.strictObject({
 });
 export type BriefsInput = z.infer<typeof BriefsInput>;
 
+/** One manifest ID, nothing else: "H5, H3" is not an ID (SB-4). */
+const CITE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 const Item = z.strictObject({
   /** One plain statement of fact from the material. Never prose for the novel. */
   text: z.string(),
@@ -47,7 +50,7 @@ const Item = z.strictObject({
   /** The strand label it belongs to, or null when it is not strand-specific. */
   strand: z.string().nullable(),
   /** Manifest IDs the statement comes from. */
-  cites: z.array(z.string()),
+  cites: z.array(z.string().regex(CITE_ID)),
 });
 export type BriefItem = z.infer<typeof Item>;
 
@@ -140,27 +143,40 @@ function guard(output: BriefsOutput, input: BriefsInput) {
     const g = groupsOf.get(id);
     return !!g && [...g].every((k) => k === 'plannedAhead');
   };
-  const fix = (it: BriefItem): BriefItem => ({
-    ...it,
-    status:
-      it.status === 'canon' && it.cites.every((id) => (statusOf.get(id) ?? 'canon') === 'canon')
-        ? 'canon'
-        : 'planned',
-  });
+  const isDecided = (id: string) => !!groupsOf.get(id)?.has('decidedQuestions');
+  const fix = (it: BriefItem): BriefItem => {
+    // SB-4: [[...]] typed into the text is not a citation, and any cite that is
+    // not one manifest ID leaves the item with no citation at all, so it is flagged.
+    const text = it.text.replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\[|\]\]/g, '');
+    const cites = it.cites.every((id) => CITE_ID.test(id)) ? it.cites : [];
+    return {
+      ...it,
+      text,
+      cites,
+      // An ID with no material (such as a chapter ID) is not canon.
+      status:
+        it.status === 'canon' && cites.every((id) => statusOf.get(id) === 'canon')
+          ? 'canon'
+          : 'planned',
+    };
+  };
   const ahead: BriefItem[] = output.plannedAhead.map(fix);
-  const keep = (items: BriefItem[]) =>
-    items.map(fix).filter((it) => {
-      if (it.cites.some(onlyAhead)) {
-        ahead.push(it);
-        return false;
-      }
-      return true;
-    });
+  /** A24: an item citing a decided question moves to a code-written Decided block. */
+  const keep = (items: BriefItem[]) => {
+    const kept: BriefItem[] = [];
+    const decided: BriefItem[] = [];
+    for (const it of items.map(fix)) {
+      if (it.cites.some(onlyAhead)) ahead.push(it);
+      else if (it.cites.some(isDecided)) decided.push(it);
+      else kept.push(it);
+    }
+    return { items: kept, decided };
+  };
   return {
     characters: keep(output.characters),
     worldEvents: keep(output.worldEvents),
     culture: keep(output.culture),
-    sections: output.sections.map((s) => ({ heading: s.heading, items: keep(s.items) })),
+    sections: output.sections.map((s) => ({ heading: s.heading, ...keep(s.items) })),
     plannedAhead: ahead,
   };
 }
@@ -179,8 +195,18 @@ function canonSplit(items: BriefItem[]): string[] {
   return out;
 }
 
-function byStrand(items: BriefItem[], strands: string[]): string[] {
-  if (!items.length) return ['Nothing selected.'];
+function byStrand(part: { items: BriefItem[]; decided: BriefItem[] }, strands: string[]): string[] {
+  const { items } = part;
+  const body = items.length
+    ? strandBody(items, strands)
+    : part.decided.length
+      ? []
+      : ['Nothing selected.'];
+  if (part.decided.length) body.push('### Decided', ...part.decided.map(itemLine));
+  return body;
+}
+
+function strandBody(items: BriefItem[], strands: string[]): string[] {
   if (strands.length < 2) return canonSplit(items);
   const out: string[] = [];
   const shared = items.filter((it) => !it.strand || !strands.includes(it.strand));
@@ -211,26 +237,25 @@ export function renderBrief(output: BriefsOutput, input: BriefsInput, sel?: Sele
   section(LEAD_SECTIONS[2].heading, byStrand(o.culture, input.strands));
   let n = 4;
   for (const s of o.sections) {
-    if (!s.items.length) continue;
+    if (!s.items.length && !s.decided.length) continue;
     const heading = oneLine(s.heading).replace(/^\d+\.\s*/, '') || 'More';
-    section(`${n++}. ${heading}`, byStrand(s.items, input.strands));
+    section(`${n++}. ${heading}`, byStrand(s, input.strands));
   }
   if (o.plannedAhead.length) {
     section(`Planned ahead (after ${input.year})`, o.plannedAhead.map(itemLine));
   }
   if (sel?.overBudget) {
     section('Over budget', [
-      `The lead sections alone are ${sel.size} characters, over the budget of ${sel.budget}. They are always kept.`,
+      `The lead sections alone are ${sel.leadSize} characters, over the budget of ${sel.budget}. They are always kept.`,
     ]);
   }
-  if (sel?.omitted.length) {
-    section(
-      'Left out',
-      sel.omitted.map(
-        (x) =>
-          `- ${x.title} (${GROUP_TITLES[x.kind].toLowerCase()}): ${x.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel.budget} characters`}`,
-      ),
-    );
-  }
+  const left = [
+    ...(sel?.skippedStrands ?? []).map((n) => `- ${n}: strand has no start year`),
+    ...(sel?.omitted ?? []).map(
+      (x) =>
+        `- ${x.title} (${GROUP_TITLES[x.kind].toLowerCase()}): ${x.reason === 'removed' ? 'removed by you' : `over the size budget of ${sel!.budget} characters`}`,
+    ),
+  ];
+  if (left.length) section('Left out', left);
   return out.join('\n') + '\n';
 }
