@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import type { EntryCollection } from '../../src/shared/schema';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { field, invokeVia, launch, rail, waitSaved } from './helpers';
@@ -396,6 +397,183 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   await expect(results).toContainText("The Archivist's Door");
   await view.getByLabel('Tag').selectOption('');
   await expect(count).toContainText('match');
+});
+
+const KB5: EntryCollection[] = [
+  'facts',
+  'culturalEntries',
+  'places',
+  'glossaryTerms',
+  'themes',
+  'openQuestions',
+  'customEntries',
+];
+
+const entriesView = () => page.getByTestId('entries-view');
+const entryRows = () => entriesView().getByTestId('entries-list').locator('.entries-row');
+const chip = (name: string) =>
+  entriesView().getByRole('group', { name: 'Kinds' }).getByRole('button', { name, exact: true });
+
+async function liveEntries() {
+  const out: { collection: EntryCollection; entry: Record<string, unknown> }[] = [];
+  for (const collection of KB5) {
+    const { entries } = await invoke('entry.list', { collection, trash: 'exclude' });
+    for (const e of entries) out.push({ collection, entry: e.entry });
+  }
+  return out;
+}
+
+test('KB-5 the Entries list shows every kind together, newest change first, and a row opens the editor beside it', async () => {
+  await rail(page, 'Entries').click();
+  await expect(entriesView().getByRole('tab', { name: 'Entries' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const all = await liveEntries();
+  await expect(entryRows()).toHaveCount(all.length);
+  const sections = (await invoke('entry.list', { collection: 'customSections', trash: 'exclude' }))
+    .entries;
+  for (const kind of [
+    'facts',
+    'culturalEntries',
+    'places',
+    'glossaryTerms',
+    'themes',
+    'openQuestions',
+    ...sections.map((s) => `custom:${s.entry._id}`),
+  ]) {
+    await expect(entriesView().locator(`.entries-row[data-kind="${kind}"]`).first()).toBeVisible();
+  }
+  const newest = [...all].sort((a, b) =>
+    String(b.entry.modifiedAt).localeCompare(String(a.entry.modifiedAt)),
+  )[0]!;
+  await expect(entryRows().first()).toHaveAttribute('data-id', String(newest.entry._id));
+  // Each row shows kind, title, status, and the first line.
+  const letter = entriesView().locator('.entries-row[data-id="F2"]');
+  await expect(letter.locator('.entries-kind')).toHaveText('Fact');
+  await expect(letter.locator('.entry-title')).toHaveText("Peter's letter");
+  await expect(letter.locator('.chip')).toHaveText('planned');
+  await letter.click();
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'F2');
+  await expect(page.getByTestId('fact-page')).toBeVisible();
+  await expect(letter).toHaveAttribute('aria-current', 'true');
+});
+
+test('KB-5 a kind chip hides its kind, and several chips can be off at once', async () => {
+  const all = await liveEntries();
+  const count = (c: EntryCollection) => all.filter((r) => r.collection === c).length;
+  await expect(chip('Facts')).toHaveAttribute('aria-pressed', 'true');
+  await chip('Facts').click();
+  await expect(chip('Facts')).toHaveAttribute('aria-pressed', 'false');
+  await expect(entriesView().locator('.entries-row[data-kind="facts"]')).toHaveCount(0);
+  await expect(entryRows()).toHaveCount(all.length - count('facts'));
+  await chip('Places').click();
+  await expect(entriesView().locator('.entries-row[data-kind="places"]')).toHaveCount(0);
+  await expect(entryRows()).toHaveCount(all.length - count('facts') - count('places'));
+  await chip('Facts').click();
+  await chip('Places').click();
+  await expect(entryRows()).toHaveCount(all.length);
+});
+
+test('KB-5 the status filter and the search box narrow the list', async () => {
+  const view = entriesView();
+  const all = await liveEntries();
+  await view.getByLabel('Show status').selectOption('planned');
+  await expect(entryRows()).toHaveCount(all.filter((r) => r.entry.status === 'planned').length);
+  for (const status of await entryRows().locator('.chip').allTextContents()) {
+    expect(status).toBe('planned');
+  }
+  await view.getByLabel('Show status').selectOption('');
+  const box = view.getByLabel('Search entries');
+  await box.fill('letter');
+  await expect(view.locator('.entries-row[data-id="F2"]')).toBeVisible();
+  await expect(view.locator('.entries-row[data-id="CU3"]')).toHaveCount(0);
+  // Body text counts, not only titles.
+  await box.fill('half-brother');
+  await expect(entryRows()).toHaveCount(1);
+  await expect(entryRows().first()).toHaveAttribute('data-id', 'F2');
+  // Chapter text is not an entry here.
+  await box.fill('casseroles');
+  await expect(entryRows()).toHaveCount(0);
+  await expect(view.getByTestId('entries-empty')).toBeVisible();
+  // The search channel finds a glossary term by tone-free romanization (SR-1, GL-2).
+  await box.fill('tuanyuan');
+  await expect(entryRows()).toHaveCount(1);
+  await expect(entryRows().first()).toContainText('团圆');
+  await box.fill('');
+  await expect(entryRows()).toHaveCount(all.length);
+});
+
+test('KB-5 New entry picks a kind on the same screen, and the created entry appears first, open beside the list', async () => {
+  const view = entriesView();
+  await view.getByRole('button', { name: 'New entry', exact: true }).click();
+  const picker = page.getByTestId('kind-picker');
+  for (const kind of [
+    'Fact',
+    'Cultural entry',
+    'Place',
+    'Glossary term',
+    'Theme',
+    'Open question',
+    'Family recipes',
+    'Songs',
+  ]) {
+    await expect(picker.getByRole('button', { name: kind, exact: true })).toBeVisible();
+  }
+  await picker.getByRole('button', { name: 'Fact', exact: true }).click();
+  const form = page.getByTestId('new-entry');
+  await field(form, 'title').locator(':scope > input').fill('The ferry stops at midnight');
+  await form.getByRole('button', { name: 'Create fact' }).click();
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { name: 'The ferry stops at midnight' })).toBeVisible();
+  await expect(entryRows().first()).toContainText('The ferry stops at midnight');
+  await expect(entryRows().first()).toHaveAttribute('aria-current', 'true');
+  await expect(entryRows().first()).toHaveAttribute('data-kind', 'facts');
+
+  // A custom section is a kind too: the new entry lands in it.
+  await view.getByRole('button', { name: 'New entry', exact: true }).click();
+  await page.getByTestId('kind-picker').getByRole('button', { name: 'Songs', exact: true }).click();
+  const songForm = page.getByTestId('new-entry');
+  await field(songForm, 'title').locator(':scope > input').fill('Ferry whistle');
+  await songForm.getByRole('button', { name: 'Create custom entry' }).click();
+  await expect(editor.getByRole('heading', { name: 'Ferry whistle' })).toBeVisible();
+  await expect(entryRows().first()).toContainText('Ferry whistle');
+  await expect(entryRows().first().locator('.entries-kind')).toHaveText('Songs');
+});
+
+test('KB-5 the four tabs render their views, answer the keyboard, and the tab is remembered for the bible', async () => {
+  const tabs = entriesView().getByRole('tablist', { name: 'Entries screens' });
+  const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
+  await tab('Entries').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab('Culture by year')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('Culture by year')).toBeFocused();
+  await expect(page.getByTestId('culture-view')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('places-view')).toBeVisible();
+  await page.getByTestId('places-view').getByRole('button', { name: 'Portland' }).first().click();
+  await expect(page.getByTestId('inspector').getByTestId('editor')).toContainText('Portland');
+  await tab('Place tree').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByTestId('romanization-view')).toBeVisible();
+  await page.keyboard.press('End');
+  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('glossary-table')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit 团圆' }).click();
+  await expect(page.getByTestId('inspector').getByTestId('editor')).toContainText('团圆');
+
+  // Remembered: another screen and back, and a reload, keep the Glossary table.
+  await rail(page, 'Characters').click();
+  await rail(page, 'Entries').click();
+  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await rail(page, 'Entries').click();
+  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
+  await tab('Glossary table').focus();
+  await page.keyboard.press('Home');
+  await expect(tab('Entries')).toHaveAttribute('aria-selected', 'true');
+  await expect(entriesView().getByTestId('entries-list')).toBeVisible();
 });
 
 test('SL-1 closing the app asks where you stopped, saves the note, and the next launch shows it first', async () => {

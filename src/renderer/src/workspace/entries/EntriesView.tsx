@@ -323,7 +323,7 @@ function EntriesList(props: { onOpen: Open }) {
           ))}
         </div>
         <div className="field">
-          <label htmlFor={ids.status}>Status</label>
+          <label htmlFor={ids.status}>Show status</label>
           <select
             id={ids.status}
             value={status ?? ''}
