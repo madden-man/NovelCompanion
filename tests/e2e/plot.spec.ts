@@ -680,7 +680,10 @@ test('KB-3 a beat, a chapter, a book and an arc move to the trash from the outli
 
   // A beat, from its editor in the inspector.
   await label(salt._id).click();
-  await inspector().getByTestId('chapter-beats').getByRole('button', { name: 'Low water' }).click();
+  await inspector()
+    .getByTestId('chapter-beats')
+    .getByRole('button', { name: 'Low water', exact: true })
+    .click();
   await inspector().getByRole('button', { name: 'Move to trash' }).click();
   await expect(confirm()).toContainText('Nothing links here.');
   await confirm().getByRole('button', { name: 'Move to trash' }).click();
