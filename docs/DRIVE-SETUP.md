@@ -4,7 +4,9 @@ Google Drive is optional. Everything in the app works without it. To import from
 
 Checked against Google's documentation on 2026-10-11: "Configure the OAuth consent screen", "Create access credentials", "OAuth 2.0 for iOS & Desktop Apps", and "Choose Google Drive API scopes". Google renames console menus from time to time; if a label below differs, the step is still the same.
 
-## 1. Create a project
+## 1. Create a project (or use the one that exists)
+
+If the project picker already lists **Novel Companion** (project ID `novel-companion-511219`), select it and go on to step 2. Otherwise create it:
 
 1. Go to https://console.cloud.google.com and sign in as **tommythemadden@gmail.com**.
 2. In the project picker at the top left, click it, then **New project**.
@@ -55,7 +57,7 @@ The keychain items are in Keychain Access under the name `novel-companion-google
 
 ## 6. Exporting: one more permission
 
-Export is a separate, explicit action. The first time, **Google Drive** > **Export to Drive** shows **Allow export**. Click it; the browser asks for **See, edit, create, and delete only the specific Google Drive files you use with this app**. Allow it.
+Export is a separate, explicit action. The first time, **Google Drive** > **Export to Drive** shows **Allow export**. Click it; the browser lists both permissions: **See and download all your Google Drive files** (the import permission, asked again together with the new one) and **See, edit, create, and delete only the specific Google Drive files you use with this app**. Keep both ticked and click **Continue**. If either is unticked, the app says so and export stays off.
 
 With that access the app can write only into folders it created itself. Click **Make the folder** to create an export folder (it appears at the top of My Drive). You may move that folder anywhere in Drive afterwards; exports keep going to it. Each export makes a new dated folder inside it, so nothing earlier is overwritten.
 
@@ -79,6 +81,6 @@ Record the date and result in `PROGRESS.md` under M9.
 7. [ ] Import the World workbook (a Google Sheet or .xlsx): the saved mapping from the local import is offered; Compare shows "unchanged" for rows imported before from the same file name.
 8. [ ] Import a Google Doc as a general note: italics and scene breaks survive.
 9. [ ] Edit that Google Doc in Drive, quit and relaunch: the launch notice says one linked file changed. Review changes shows the comparison; nothing changes until Apply.
-10. [ ] Export to Drive > Allow export: the browser asks only for "the specific Google Drive files you use with this app". Make the folder, Export the whole bible: Drive shows a dated folder with a JSON file and one folder per section of Markdown files.
+10. [ ] Export to Drive > Allow export: the browser lists both "See and download all your Google Drive files" and "the specific Google Drive files you use with this app", and both are ticked. Make the folder, Export the whole bible: Drive shows a dated folder with a JSON file and one folder per section of Markdown files.
 11. [ ] Load that JSON into an empty bible (Backups > Load an exported bible into a new bible): counts match.
 12. [ ] Disconnect: the panel says "Not connected."; Keychain Access no longer has `oauth-tokens`; myaccount.google.com/permissions no longer lists Novel Companion (revoked). The app still opens, edits, and imports local files.

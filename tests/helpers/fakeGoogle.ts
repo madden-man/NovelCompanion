@@ -42,6 +42,8 @@ export interface FakeGoogle {
   /** The last token exchange's form. */
   lastTokenForm: URLSearchParams | null;
   revoked: string[];
+  /** File IDs whose metadata request answers with this HTTP status (for example 500). */
+  failFiles: Map<string, number>;
   /** What the next consent does: allow (optionally granting fewer scopes) or deny. */
   consent: { deny?: boolean; grant?: string[] };
   /** Make every refresh token stop working, as Google does after 7 days in testing. */
@@ -64,7 +66,6 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
   >();
   const refresh = new Map<string, string[]>();
   const access = new Map<string, string[]>();
-  let granted: string[] = [];
   let counter = 0;
   const id = (p: string) => `${p}${(++counter).toString().padStart(4, '0')}`;
 
@@ -77,6 +78,7 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
     lastAuth: null,
     lastTokenForm: null,
     revoked: [],
+    failFiles: new Map(),
     consent: {},
     uploads: [],
     expireRefreshTokens() {
@@ -160,11 +162,9 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
           const scopes = fake.consent.grant ?? asked;
           const code = `code-${id('c')}`;
           codes.set(code, {
-            // A set `consent.grant` is exactly what comes back, as if earlier grants were gone.
-            scopes:
-              p.get('include_granted_scopes') === 'true' && !fake.consent.grant
-                ? [...new Set([...granted, ...scopes])]
-                : scopes,
+            // As for installed apps, Google grants exactly the scopes asked (or `consent.grant`):
+            // there is no incremental authorization, so earlier grants are not carried over.
+            scopes,
             challenge: p.get('code_challenge') ?? '',
             redirectUri: p.get('redirect_uri') ?? '',
             clientId: p.get('client_id') ?? '',
@@ -189,7 +189,6 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
           if (!c || c.challenge !== challenge || c.redirectUri !== form.get('redirect_uri')) {
             return json(res, 400, { error: 'invalid_grant' });
           }
-          granted = c.scopes;
           const at = `at-${randomBytes(6).toString('hex')}`;
           const rt = `rt-${randomBytes(6).toString('hex')}`;
           access.set(at, c.scopes);
@@ -244,6 +243,8 @@ export async function startFakeGoogle(opts: { email?: string } = {}): Promise<Fa
       }
       const one = /^\/drive\/v3\/files\/([^/]+)(\/export)?$/.exec(url.pathname);
       if (one && req.method === 'GET') {
+        const failing = fake.failFiles.get(decodeURIComponent(one[1] as string));
+        if (failing && !one[2]) return driveError(res, failing, 'backendError', 'Backend Error');
         const f = fake.files.get(decodeURIComponent(one[1] as string));
         if (!f || !canRead(f)) return driveError(res, 404, 'notFound', 'File not found');
         if (one[2]) {

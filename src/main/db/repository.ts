@@ -40,7 +40,7 @@ import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/romanization';
-import type { DriveLink, DriveSeen } from '../../shared/domain/drive';
+import type { DriveKnown, DriveLink, DriveSeen } from '../../shared/domain/drive';
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
@@ -1411,16 +1411,47 @@ export class Repository {
   // ---------- Google Drive links (GD-2, GD-3; stored in meta, never a token) ----------
 
   /** The Drive files and folders linked to this bible, and the version of each file last brought in. */
-  driveState(): { links: DriveLink[]; seen: DriveSeen[] } {
+  driveState(): { links: DriveLink[]; seen: DriveSeen[]; known: DriveKnown[] } {
     const doc = this.model.get('meta', DRIVE_ID);
+    // Read through shape checks: a hand-edited or older meta document cannot reach the screens as a cast.
+    const rows = <T>(value: unknown, ok: (r: Record<string, unknown>) => boolean): T[] =>
+      (Array.isArray(value) ? value : []).filter(
+        (r): r is T => !!r && typeof r === 'object' && ok(r as Record<string, unknown>),
+      );
+    const text = (v: unknown) => typeof v === 'string' && v.length > 0;
     return {
-      links: (Array.isArray(doc?.links) ? doc.links : []) as DriveLink[],
-      seen: (Array.isArray(doc?.seen) ? doc.seen : []) as DriveSeen[],
+      links: rows<DriveLink>(
+        doc?.links,
+        (r) =>
+          text(r.id) &&
+          text(r.name) &&
+          text(r.mimeType) &&
+          (r.kind === 'folder' || r.kind === 'workbook' || r.kind === 'document'),
+      ),
+      seen: rows<DriveSeen>(doc?.seen, (r) => text(r.fileId) && text(r.modifiedTime)),
+      known: rows<DriveKnown>(
+        doc?.known,
+        (r) =>
+          text(r.fileId) &&
+          text(r.linkId) &&
+          text(r.name) &&
+          text(r.mimeType) &&
+          (r.kind === 'workbook' || r.kind === 'document'),
+      ),
     };
   }
 
-  async setDriveState(state: { links: DriveLink[]; seen: DriveSeen[] }): Promise<void> {
-    await this.writeMeta({ _id: DRIVE_ID, links: state.links, seen: state.seen });
+  async setDriveState(state: {
+    links: DriveLink[];
+    seen: DriveSeen[];
+    known?: DriveKnown[];
+  }): Promise<void> {
+    await this.writeMeta({
+      _id: DRIVE_ID,
+      links: state.links,
+      seen: state.seen,
+      known: state.known ?? this.driveState().known,
+    });
   }
 
   /** Tell views that the whole bible was replaced, after a restore or a file import. */

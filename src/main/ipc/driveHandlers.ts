@@ -4,6 +4,7 @@ import {
   changeSummary,
   driveKind,
   exportFolderName,
+  knownFrom,
 } from '../../shared/domain/drive';
 import type { DriveLink, DriveSeen } from '../../shared/domain/drive';
 import type { EntryCollection } from '../../shared/schema';
@@ -40,14 +41,24 @@ export function driveHandlers(
     return s;
   };
 
-  const markSeen = async (s: OpenBible, fileId: string, modifiedTime: string) => {
-    const state = s.repo.driveState();
-    const seen: DriveSeen[] = [
-      ...state.seen.filter((x) => x.fileId !== fileId),
-      { fileId, modifiedTime, at: new Date().toISOString() },
-    ];
-    await s.repo.setDriveState({ links: state.links, seen });
+  // Every change to the stored Drive state reads and writes it as one step, so two
+  // overlapping requests (a check and a mark as reviewed) cannot overwrite each other.
+  let queue: Promise<unknown> = Promise.resolve();
+  const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = queue.then(fn, fn);
+    queue = run.catch(() => undefined);
+    return run;
   };
+
+  const markSeen = (s: OpenBible, fileId: string, modifiedTime: string) =>
+    exclusive(async () => {
+      const state = s.repo.driveState();
+      const seen: DriveSeen[] = [
+        ...state.seen.filter((x) => x.fileId !== fileId),
+        { fileId, modifiedTime, at: new Date().toISOString() },
+      ];
+      await s.repo.setDriveState({ links: state.links, seen });
+    });
 
   const onApplied = async (origin: string) => {
     const m = ORIGIN.exec(origin);
@@ -61,6 +72,7 @@ export function driveHandlers(
     'drive.setClient': ({ clientId, clientSecret }) => service().setClient(clientId, clientSecret),
     'drive.clearClient': () => service().clearClient(),
     'drive.connect': () => service().connect(),
+    'drive.cancelConnect': () => ({ cancelled: service().cancelConnect() }),
     'drive.allowExport': () => service().allowExport(),
     'drive.disconnect': () => service().disconnect(),
 
@@ -70,10 +82,11 @@ export function driveHandlers(
 
     'drive.link': async ({ ids }) => {
       const s = session();
-      const state = s.repo.driveState();
-      const links = [...state.links];
+      const added: DriveLink[] = [];
       for (const id of ids) {
-        if (links.some((l) => l.id === id)) continue;
+        if (s.repo.driveState().links.some((l) => l.id === id) || added.some((l) => l.id === id)) {
+          continue;
+        }
         const meta = await service().api.get(id);
         if (!meta || meta.trashed) throw new Error('That item is no longer in Google Drive.');
         const kind = driveKind(meta.mimeType, meta.name);
@@ -82,7 +95,7 @@ export function driveHandlers(
             `${meta.name} cannot be linked. The app links Word, Excel, Google Docs, and Google Sheets files, and folders.`,
           );
         }
-        links.push({
+        added.push({
           id: meta.id,
           name: meta.name,
           mimeType: meta.mimeType,
@@ -90,22 +103,35 @@ export function driveHandlers(
           linkedAt: new Date().toISOString(),
         } satisfies DriveLink);
       }
-      await s.repo.setDriveState({ links, seen: state.seen });
-      return { links };
+      return exclusive(async () => {
+        const state = s.repo.driveState();
+        const links = [
+          ...state.links,
+          ...added.filter((a) => !state.links.some((l) => l.id === a.id)),
+        ];
+        await s.repo.setDriveState({ links, seen: state.seen });
+        return { links };
+      });
     },
 
     'drive.unlink': async ({ id }) => {
       const s = session();
-      const state = s.repo.driveState();
-      const links = state.links.filter((l) => l.id !== id);
-      await s.repo.setDriveState({ links, seen: state.seen });
-      return { links };
+      return exclusive(async () => {
+        const state = s.repo.driveState();
+        const links = state.links.filter((l) => l.id !== id);
+        await s.repo.setDriveState({
+          links,
+          seen: state.seen,
+          known: state.known.filter((k) => k.linkId !== id),
+        });
+        return { links };
+      });
     },
 
     'drive.check': async () => {
       const s = session();
       const checkedAt = new Date().toISOString();
-      const { links, seen } = s.repo.driveState();
+      const { links, seen, known } = s.repo.driveState();
       if (!service().status().connected) {
         return {
           checkedAt,
@@ -118,16 +144,40 @@ export function driveHandlers(
         };
       }
       const found = await service().check(links);
-      const files = classifyFiles(links, found.remote, found.missing, seen);
+      const files = classifyFiles(
+        links,
+        found.remote,
+        found.missing,
+        seen,
+        known,
+        found.unreadable,
+      );
       const missingFolders = found.missingFolders.map(
         (id) => links.find((l) => l.id === id)?.name ?? id,
       );
+      // GD-3: remember what each folder holds, so a later check can say what vanished.
+      //
+      await exclusive(async () => {
+        const now = s.repo.driveState();
+        const fresh = knownFrom(found.remote);
+        // Remembered files stay while their link does, so a file that vanished keeps showing as
+        // gone on every check until the folder is unlinked or the file comes back.
+        const keep = now.known.filter((k) => now.links.some((l) => l.id === k.linkId));
+        const next = [...fresh, ...keep.filter((k) => !fresh.some((o) => o.fileId === k.fileId))];
+        if (JSON.stringify(next) !== JSON.stringify(now.known)) {
+          await s.repo.setDriveState({ links: now.links, seen: now.seen, known: next });
+        }
+      });
+      const unreadable = found.unreadable.map((id) => links.find((l) => l.id === id)?.name ?? id);
+      const summary = links.length ? changeSummary(files) : '';
       return {
         checkedAt,
         connected: true,
         files,
         missingFolders,
-        summary: links.length ? changeSummary(files) : '',
+        summary: unreadable.length
+          ? `${summary} Google Drive could not be read for ${unreadable.join(', ')}, so ${unreadable.length === 1 ? 'it was' : 'they were'} not fully checked. Check again later.`
+          : summary,
       };
     },
 
@@ -166,6 +216,12 @@ export function driveHandlers(
 
     'drive.export': async ({ folderId }) => {
       const s = session();
+      // GD-4: only a folder this app created takes an export; say so plainly before Drive does not.
+      if (!(await service().exportFolders()).some((f) => f.id === folderId)) {
+        throw new Error(
+          'That folder is not one this app created for exports. Choose an export folder from the list, or make a new one.',
+        );
+      }
       const at = new Date();
       // BK-3: the same JSON file the local export writes, lossless.
       const { text } = await exportBibleJson(s.handle, at);
@@ -178,12 +234,12 @@ export function driveHandlers(
         collections[c] = live as never;
         entries += live.length;
       }
+      const name = await bibleName(s);
       const markdown = bibleMarkdown({
-        bibleName: s.handle.id,
+        bibleName: name,
         collections,
         lists: s.model.all('lists') as never,
       });
-      const name = await bibleName(s);
       const result = await service().exportBible({
         parentId: folderId,
         folderName: exportFolderName(name, at),
