@@ -1,3 +1,4 @@
+import { plainErrorMessage } from '../errors';
 /**
  * Replaying undo and redo steps through the write path (ED-3, ARCHITECTURE
  * rule 5). Every step records what it expects to find, and a step whose
@@ -175,7 +176,7 @@ export class UndoManager {
       return {
         status: 'failed',
         label: cmd.label,
-        error: e instanceof Error ? e.message : String(e),
+        error: plainErrorMessage(e),
       };
     }
   }

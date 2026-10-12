@@ -1,3 +1,4 @@
+import { plainErrorMessage } from '../../shared/errors';
 import { z } from 'zod';
 import {
   ENTRY_COLLECTIONS,
@@ -131,7 +132,7 @@ export async function queueDraft(
     return {
       ok: false,
       summary: draftSummary(draft),
-      reason: e instanceof Error ? e.message : 'The proposal could not be saved.',
+      reason: plainErrorMessage(e),
     };
   }
 }

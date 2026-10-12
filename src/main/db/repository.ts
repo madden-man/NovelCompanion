@@ -110,6 +110,8 @@ export class ValidationError extends RepositoryError {
   constructor(
     message: string,
     readonly issues: z.core.$ZodIssue[],
+    /** The section, so a plain message can name the field by its label (NF-3). */
+    readonly collection?: string,
   ) {
     super(message);
   }
@@ -192,6 +194,7 @@ export class Repository {
       throw new ValidationError(
         `This ${c} entry is not valid: ${z.prettifyError(result.error)}`,
         result.error.issues,
+        c,
       );
     }
     const data = result.data as EntryOf<C>;

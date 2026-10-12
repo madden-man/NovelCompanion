@@ -232,7 +232,7 @@ function tokenErrorText(code: string): string {
     case 'unauthorized_client':
       return 'Google did not accept the OAuth client ID or secret. Check them in Settings against Google Cloud (docs/DRIVE-SETUP.md).';
     default:
-      return `Google refused the sign-in (${code}). Try connecting again.`;
+      return 'Google refused the sign-in. Try connecting again, and allow the access the app asks for.';
   }
 }
 

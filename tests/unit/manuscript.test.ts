@@ -106,6 +106,8 @@ describe('MS-5 the app never writes to a manuscript', () => {
       .sort();
     expect(writers).toEqual([
       'src/main/backup/snapshots.ts',
+      // The Claude settings file in the app's data folder (models, AI-6 confirmations).
+      'src/main/claude/settings.ts',
       'src/main/ipc/exportTree.ts',
       'src/main/ipc/importHandlers.ts',
       'src/main/ipc/sessionHandlers.ts',

@@ -43,7 +43,10 @@ function driveErrorText(status: number, reason: string): string {
   if (status === 429)
     return 'Google Drive is limiting requests right now. Wait a minute and try again.';
   if (status >= 500) return 'Google Drive is having trouble right now. Try again in a few minutes.';
-  return `Google Drive refused the request (${status}${reason ? `: ${reason}` : ''}).`;
+  if (status === 400) {
+    return 'Google Drive could not use that request. Check the file or folder link, then try again; if it keeps happening, connect Drive again in Settings.';
+  }
+  return 'Google Drive refused the request. Try again in a minute; if it keeps happening, connect Drive again in Settings.';
 }
 
 export interface DriveApiOptions {
