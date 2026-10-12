@@ -1,5 +1,7 @@
 import { mkdirSync } from 'node:fs';
-import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk';
+/** Loaded on the first run, so launch never waits for the SDK (NF-1). */
+const loadSdk = () => import('@anthropic-ai/claude-agent-sdk');
+type Sdk = Awaited<ReturnType<typeof loadSdk>>;
 import type { McpSdkServerConfigWithInstance, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeFailure, classifyFailure } from './client';
 import type { ClaudeClient, ClaudeEvent, ClaudeRequest, ClaudeTool } from './client';
@@ -37,7 +39,8 @@ export interface SdkClientOptions {
   clientApp: string;
 }
 
-function mcpServer(tools: ClaudeTool[]): McpSdkServerConfigWithInstance {
+function mcpServer(sdk: Sdk, tools: ClaudeTool[]): McpSdkServerConfigWithInstance {
+  const { createSdkMcpServer, tool } = sdk;
   return createSdkMcpServer({
     name: TOOL_SERVER,
     version: '1.0.0',
@@ -86,15 +89,17 @@ export class SdkClaudeClient implements ClaudeClient {
     const abortController = new AbortController();
     const onAbort = () => abortController.abort();
     if (signal.aborted) return;
+    const sdk = await loadSdk();
+    if (signal.aborted) return;
     mkdirSync(this.opts.configDir, { recursive: true });
     signal.addEventListener('abort', onAbort, { once: true });
-    const q = query({
+    const q = sdk.query({
       prompt: req.prompt,
       options: {
         model: req.model,
         systemPrompt: req.system,
         tools: [],
-        mcpServers: req.tools.length ? { [TOOL_SERVER]: mcpServer(req.tools) } : {},
+        mcpServers: req.tools.length ? { [TOOL_SERVER]: mcpServer(sdk, req.tools) } : {},
         strictMcpConfig: true,
         allowedTools: req.tools.map((t) => `mcp__${TOOL_SERVER}__${t.name}`),
         disallowedTools: DENIED_BUILTINS,

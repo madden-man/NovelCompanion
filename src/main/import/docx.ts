@@ -1,6 +1,5 @@
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import mammoth from 'mammoth';
 import { parseBlocks } from '../../shared/domain/import';
 import type { DocBlock } from '../../shared/domain/import';
 
@@ -17,6 +16,8 @@ export async function parseDocxBuffer(
   data: Buffer,
   source: { fileName: string; modifiedAt: string },
 ): Promise<ParsedDocument> {
+  // Loaded on first use, so launch never waits for it (NF-1).
+  const { default: mammoth } = await import('mammoth');
   const result = await mammoth.convertToHtml(
     { buffer: data },
     {

@@ -452,13 +452,13 @@ describe('BK-1 the first open of the day takes one snapshot', () => {
       const list = await new SnapshotService(handle, daily).list();
       return list.filter((s) => s.reason === 'daily').map((s) => s.takenAt.slice(0, 10));
     };
-    await openBibleForApp(store, handle.id, options);
+    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
     expect(await taken()).toEqual(['2026-03-10']);
     clock = new Date('2026-03-10T10:20:00.000Z');
-    await openBibleForApp(store, handle.id, options);
+    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
     expect(await taken()).toEqual(['2026-03-10']);
     clock = new Date('2026-03-11T10:00:00.000Z');
-    await openBibleForApp(store, handle.id, options);
+    await (await openBibleForApp(store, handle.id, options)).dailySnapshot;
     expect((await taken()).sort()).toEqual(['2026-03-10', '2026-03-11']);
   });
 
@@ -467,6 +467,7 @@ describe('BK-1 the first open of the day takes one snapshot', () => {
     const blocked = join(root, 'bk-daily-blocked');
     await writeFile(blocked, 'a file where the snapshot folder should be');
     const open = await openBibleForApp(store, handle.id, { snapshotRoot: blocked });
+    await open.dailySnapshot;
     expect(open.repo.get('characters', 'H1')).toBeDefined();
   });
 });

@@ -17,6 +17,11 @@ export interface OpenBible {
   repo: Repository;
   /** Local snapshots (BK-1); absent when the host gave no folder for them. */
   snapshots?: SnapshotService;
+  /**
+   * The first-open-of-the-day snapshot (BK-1), taken after the bible opens so
+   * it never holds up launch (NF-1). Always resolves; a failure is ignored.
+   */
+  dailySnapshot?: Promise<void>;
 }
 
 export interface SessionOptions {
@@ -88,8 +93,10 @@ export async function createBibleWithDefaults(
 
 /**
  * Open a bible as the app does (BK-1): bring it up to date, and take a
- * snapshot when none has been taken today. A failed snapshot never blocks
- * opening.
+ * snapshot when none has been taken today. The snapshot is written after the
+ * bible is open, in the background (`dailySnapshot`), because dumping 5,000
+ * entries to disk took longer than the rest of opening (NF-1). A failed
+ * snapshot never blocks opening.
  */
 export async function openBibleForApp(
   store: Store,
@@ -97,15 +104,17 @@ export async function openBibleForApp(
   options: SessionOptions,
 ): Promise<OpenBible> {
   const session = await openBibleSession(store, id, options);
-  try {
-    if (
-      session.snapshots &&
-      needsDailySnapshot(await session.snapshots.list(), (options.now ?? (() => new Date()))())
-    ) {
-      await session.snapshots.take('daily');
+  session.dailySnapshot = (async () => {
+    try {
+      if (
+        session.snapshots &&
+        needsDailySnapshot(await session.snapshots.list(), (options.now ?? (() => new Date()))())
+      ) {
+        await session.snapshots.take('daily');
+      }
+    } catch {
+      // The person can still take one on request.
     }
-  } catch {
-    // The person can still take one on request.
-  }
+  })();
   return session;
 }
