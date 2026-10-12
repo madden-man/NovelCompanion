@@ -20,24 +20,28 @@ A desktop story bible for writing a novel. Electron, TypeScript, React, and Mong
 
 ## Commands
 
-| Command                    | What it does                                                                                                                     |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `npm install`              | Install the pinned dependencies.                                                                                                 |
-| `npm run dev`              | Start the app with hot reload.                                                                                                   |
-| `npm run build`            | Build main, preload, and renderer into `out/`.                                                                                   |
-| `npm test`                 | Run lint, typecheck, unit, integration, and end-to-end tests in that order. Stops at the first failure.                          |
-| `npm run test:unit`        | Unit tests only. No database.                                                                                                    |
-| `npm run test:integration` | Integration tests against a local MongoDB that the tests start themselves.                                                       |
-| `npm run test:e2e`         | Build the app and drive it with Playwright.                                                                                      |
-| `npm run test:live`        | The on-demand Claude smoke test against the real API, with the key in the keychain. Skipped without one. Not part of `npm test`. |
-| `npm run package`          | Build an unsigned macOS `.dmg` into `release/`.                                                                                  |
-| `npm run fixtures:files`   | Rebuild the fixture workbook and Word document in `fixtures/files/`.                                                             |
+| Command                    | What it does                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm install`              | Install the pinned dependencies.                                                                                                       |
+| `npm run dev`              | Start the app with hot reload.                                                                                                         |
+| `npm run build`            | Build main, preload, and renderer into `out/`.                                                                                         |
+| `npm test`                 | Run lint, typecheck, unit, integration, and end-to-end tests in that order. Stops at the first failure.                                |
+| `npm run lint`             | ESLint and a Prettier check over the repository, Markdown included.                                                                    |
+| `npm run typecheck`        | Type-check the main, web, and end-to-end projects.                                                                                     |
+| `npm run format`           | Rewrite files with Prettier.                                                                                                           |
+| `npm run test:unit`        | Unit tests only. No database.                                                                                                          |
+| `npm run test:integration` | Integration tests against a local MongoDB that the tests start themselves.                                                             |
+| `npm run test:e2e`         | Build the app and drive it with Playwright.                                                                                            |
+| `npm run test:live`        | The on-demand Claude smoke test against the real API, with the key in the keychain. Skipped without one. Not part of `npm test`.       |
+| `npm run package`          | Build an unsigned macOS `.dmg` into `release/`.                                                                                        |
+| `npm run fixtures:files`   | Rebuild the fixture workbook and Word document in `fixtures/files/`.                                                                   |
+| `npm run import:eastwinds` | Import the East Winds material into the live `eastwinds` bible, with the keychain connection string. Add `-- --dry-run` to preview it. |
 
 Tests never touch Atlas. Integration and end-to-end tests start a local MongoDB with `mongodb-memory-server`, which downloads a MongoDB binary the first time it runs.
 
 ## Layout
 
-- `src/main/` main process: database, read model, search, IPC handlers.
+- `src/main/` main process: database, read model, search, IPC handlers, and `claude` (the Agent SDK runtime), `drive` (Google Drive), `import` (Excel and Word), `backup` (snapshots, restore, export), `session` (manuscript sources, brief PDF).
 - `src/preload/` exposes `window.api` and nothing else.
 - `src/renderer/` the React app.
 - `src/shared/` zod schemas and the IPC contract.
