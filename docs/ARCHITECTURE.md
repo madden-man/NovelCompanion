@@ -70,6 +70,17 @@ Verified SDK facts (same docs): package `@anthropic-ai/claude-agent-sdk`; `query
 - In the test suite the SDK is replaced by a recorded-response fake behind the same interface (`src/main/claude/client.ts` exports an interface; `fake.ts` and `sdk.ts` implement it).
 - If the key is unset or rejected, the app says so and opens the settings screen.
 
+### Capture (M11, KB-6, KB-7)
+
+`features/capture.ts` is the one feature that uses the panel's tools inside a structured run: `FeatureDefinition` gained an optional `tools?(input, session, sink)` so a feature can hand Claude the AI-2 read tools plus `propose_change`; features that declare none still get no tools. The renderer's `capture.tsx` (Cmd+K, the status bar Add button) starts `claude.capture` (a write channel: the run is saved to the bible) with the text as material (AI-5), the story time and the chapter being written. Proposals stream into the box as `ED-7` diffs (`ProposalDiff`, exported from `review.tsx`); "File it" approves the ticked ones through the existing approve path and rejects the rest, recorded as one undo step from the existing command types (ED-3). Code backstops the prompt: a created entry from a capture is `idea` and its source note names the capture date. Without a key, offline, or when the run fails before proposing anything, the text is written as an open question tagged `capture` (KB-7). Recordings for the fixture bible are appended to `fixtures/claude/recordings.json` (match on the capture text).
+
+## App shell, M11 (2026-10-12, A34)
+
+- **Rail (KB-1).** `Workspace.tsx`: five screens (Characters, Family tree, Outline, Timeline, Entries), then a `details.rail-more` disclosure, closed by default, open state per bible in `localStorage` (`nc.rail.more.<bibleId>`). Every older view kind still exists under More. The e2e `rail()` helper opens More when a button is hidden, and routes Culture by year, Place tree, Romanization and Glossary table to the Entries screen's tabs.
+- **Year dialog (KB-2).** `timeline/StoryTimeDialog.tsx` is the year view (character states first, then the era, the five-year strip, the strands, Compare and Lived through as disclosures); `YearView.tsx` is gone, Lived through is `timeline/LivedThrough.tsx`. The top bar's era name is a button that opens it.
+- **Outline (KB-3).** `plot.tsx` re-exports `outline/OutlineView.tsx`; create, rename, move and delete of books, parts, arcs, chapters and beats happen there. A new chapter goes through `outline.newChapter` (one transaction: the chapter and the reading-order shifts after it).
+- **Timeline (KB-4) and Entries (KB-5).** `timeline/TimelineView.tsx` holds the chart, the whole-span strip and the editable list of events and eras; `entries/EntriesView.tsx` lists facts, culture, places, glossary, themes, questions and custom entries with the kind chips, status filter and search (pure filtering in `src/shared/domain/entries.ts`) and the four older views as tabs.
+
 ## Google Drive
 
 Checked 2026-10-11 against Google's "OAuth 2.0 for iOS & Desktop Apps", "Choose Google Drive API scopes", "Configure the OAuth consent screen", and the Drive export-formats reference.
