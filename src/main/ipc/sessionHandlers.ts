@@ -1,4 +1,6 @@
+import { needsSettings } from '../../shared/claude';
 import { plainErrorMessage } from '../../shared/errors';
+import { RunEnded } from '../claude/session';
 /**
  * Handlers for sessions, briefs, the dashboard, and the manuscript (M7).
  * Independent of Electron: the host passes dialogs, the PDF printer, and the
@@ -72,7 +74,13 @@ const NO_BIBLE = 'Open a bible first.';
 const newId = monotonicFactory();
 
 const UNAVAILABLE =
-  'Claude is not available, so this is the structured brief: the selected entries with no synthesis.';
+  'No Anthropic API key is stored, so this is the structured brief: the selected entries with no synthesis. Add a key in Settings to have Claude write it.';
+const NO_KEY_SUMMARY =
+  'No Anthropic API key is stored, so write the summary yourself, or add a key in Settings. Nothing is saved until you approve it.';
+
+/** ARCH-4: a missing or rejected key (or model) is fixed in Settings, so the screen links there. */
+const needsSettingsFor = (e: unknown) =>
+  e instanceof RunEnded && e.kind !== undefined && needsSettings(e.kind);
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
@@ -121,7 +129,13 @@ export function sessionHandlers(
     const structured = structuredBrief(sel);
     const c = claude();
     if (!c.briefs) {
-      return { content: structured, synthesized: false, model: '', note: UNAVAILABLE };
+      return {
+        content: structured,
+        synthesized: false,
+        model: '',
+        note: UNAVAILABLE,
+        needsSettings: true,
+      };
     }
     try {
       const r = await c.briefs.synthesize({
@@ -131,7 +145,13 @@ export function sessionHandlers(
         material: briefMaterial(sel),
         structured,
       });
-      return { content: r.content, synthesized: true, model: r.model, note: null };
+      return {
+        content: r.content,
+        synthesized: true,
+        model: r.model,
+        note: null,
+        needsSettings: false,
+      };
     } catch (e) {
       const why = plainErrorMessage(e).replace(/\.$/, '');
       return {
@@ -139,6 +159,7 @@ export function sessionHandlers(
         synthesized: false,
         model: '',
         note: `Claude could not write the brief (${why}). This is the structured brief: the selected entries with no synthesis.`,
+        needsSettings: needsSettingsFor(e),
       };
     }
   };
@@ -244,6 +265,7 @@ export function sessionHandlers(
         log: log as Response<'session.start'>['log'],
         synthesized: text.synthesized,
         note: text.note,
+        needsSettings: text.needsSettings,
         problems: citationProblems(text.content, sel.ids),
         uncited: text.synthesized ? uncitedLines(text.content) : [],
         time,
@@ -260,6 +282,7 @@ export function sessionHandlers(
         brief: next as unknown as Response<'brief.regenerate'>['brief'],
         synthesized: text.synthesized,
         note: text.note,
+        needsSettings: text.needsSettings,
         problems: citationProblems(text.content, sel.ids),
         uncited: text.synthesized ? uncitedLines(text.content) : [],
       };
@@ -390,8 +413,8 @@ export function sessionHandlers(
           available: false,
           draft: '',
           model: null,
-          message:
-            'Claude is not available, so write the summary yourself. Nothing is saved until you approve it.',
+          message: NO_KEY_SUMMARY,
+          needsSettings: true,
         };
       }
       const text = manuscriptLines(str(chapter.manuscriptText)).join('\n');
@@ -402,6 +425,7 @@ export function sessionHandlers(
           model: null,
           message:
             'This chapter has no manuscript text to summarize. Import it first, or write the summary yourself.',
+          needsSettings: false,
         };
       }
       const modelName = c.modelFor?.(SUMMARY_MODEL_SETTING) ?? 'claude-sonnet-5-5';
@@ -413,13 +437,20 @@ export function sessionHandlers(
           title: entryTitle(chapter),
           text,
         });
-        return { available: true, draft: r.summary, model: r.model, message: null };
+        return {
+          available: true,
+          draft: r.summary,
+          model: r.model,
+          message: null,
+          needsSettings: false,
+        };
       } catch (e) {
         return {
           available: true,
           draft: '',
           model: null,
           message: `Claude could not write a summary (${plainErrorMessage(e).replace(/\.$/, '')}). Write it yourself, or try again.`,
+          needsSettings: needsSettingsFor(e),
         };
       }
     },

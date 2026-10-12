@@ -246,6 +246,11 @@ test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured
   const brief = page.getByTestId('brief-view');
   await expect(brief).toBeVisible();
   await expect(brief.getByTestId('brief-model')).toHaveText('Structured brief, no synthesis');
+  // ARCH-4: with no key stored the note says so and links to Settings.
+  await expect(brief.getByTestId('brief-note')).toContainText('No Anthropic API key is stored');
+  await expect(
+    brief.getByTestId('brief-note').getByRole('button', { name: 'Open settings' }),
+  ).toBeVisible();
   await expect(brief.getByTestId('brief-body').locator('h2')).toHaveText([
     '1. Characters and their ages',
     '2. World events ongoing',

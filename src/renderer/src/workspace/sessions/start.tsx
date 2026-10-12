@@ -33,7 +33,7 @@ const KINDS: { kind: Kind; label: string }[] = [
  */
 export function StartSessionView(props: {
   onOpen: OpenEntry;
-  onStarted: (briefId: string, note: string | null) => void;
+  onStarted: (briefId: string, note: string | null, noteSettings: boolean) => void;
 }) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
@@ -120,7 +120,7 @@ export function StartSessionView(props: {
         const r = await call('session.start', { input, add: [], remove: [], runId });
         undo.record(createCommand('briefs', r.brief._id, entryTitle(r.brief)));
         undo.record(createCommand('sessionLogs', r.log._id, entryTitle(r.log)));
-        props.onStarted(r.brief._id, r.note);
+        props.onStarted(r.brief._id, r.note, r.needsSettings);
       } catch (e) {
         setError(plainError(e));
         setBusy(false);

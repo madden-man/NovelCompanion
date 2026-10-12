@@ -232,11 +232,47 @@ describe('SB-4 DB-2 DB-4 AI-1 briefs through the Claude runtime', () => {
       expect((await invoke('brief.settings.get', {})).claudeAvailable).toBe(false);
       const r = await invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
       expect(r.synthesized).toBe(false);
-      expect((await invoke('chapter.summarize', { chapterId: 'CH6' })).available).toBe(false);
+      expect(r.needsSettings).toBe(true);
+      expect(r.note).toMatch(/No Anthropic API key is stored/);
+      const sum = await invoke('chapter.summarize', { chapterId: 'CH6' });
+      expect(sum.available).toBe(false);
+      expect(sum.needsSettings).toBe(true);
+      expect(sum.message).toMatch(/No Anthropic API key is stored/);
     } finally {
       keys.set(KEY);
     }
     expect((await invoke('brief.settings.get', {})).claudeAvailable).toBe(true);
+  });
+});
+
+describe('ARCH-4 a rejected key sends the writer to Settings', () => {
+  test('ARCH-4 AI-7 a key Anthropic rejects says so in the brief and summary notes, and both ask for the Settings link', async () => {
+    const badKeys = new MemoryKeyStore(KEY);
+    const rejecting = new ClaudeRuntime({
+      client: new FakeClaudeClient([
+        { name: 'rejected brief', feature: 'briefs', steps: [{ fail: 'badKey' }] },
+        { name: 'rejected summary', feature: 'summaries', steps: [{ fail: 'badKey' }] },
+      ]),
+      keys: badKeys,
+      settings: new MemorySettingsStore(),
+      emit: () => undefined,
+    });
+    rejecting.acknowledge(bible.handle.id);
+    const bad = ipcFor(() => bible, {
+      claude: () => runtimeSessionClaude(rejecting, () => bible, badKeys),
+    });
+    const r = await bad('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
+    expect(r.synthesized).toBe(false);
+    expect(r.note).toMatch(/rejected the stored API key/);
+    expect(r.needsSettings).toBe(true);
+    const sum = await bad('chapter.summarize', { chapterId: 'CH6' });
+    expect(sum.message).toMatch(/rejected the stored API key/);
+    expect(sum.needsSettings).toBe(true);
+  });
+
+  test('ARCH-4 a brief that Claude wrote needs no Settings link', async () => {
+    const r = await invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
+    expect(r.needsSettings).toBe(false);
   });
 });
 
@@ -316,5 +352,41 @@ describe('MS-2 a chapter summary through the Claude runtime', () => {
     expect(run.turns[0]!.entries).toEqual([
       { collection: 'chapters', id: 'CH6', title: 'The Letter' },
     ]);
+  });
+});
+
+describe('AI-1 a chapter summary streams and can be stopped', () => {
+  test('AI-1 MS-2 the summary streams its text under the run ID, and Stop ends it with nothing saved to the chapter', async () => {
+    const slowEvents: ClaudeStreamEvent[] = [];
+    const slowKeys = new MemoryKeyStore(KEY);
+    const slow = new ClaudeRuntime({
+      client: new FakeClaudeClient(
+        loadRecordings(join(ROOT, 'fixtures/claude/recordings.json')),
+        400,
+      ),
+      keys: slowKeys,
+      settings: new MemorySettingsStore(),
+      emit: (e) => slowEvents.push(e),
+    });
+    slow.acknowledge(bible.handle.id);
+    const slowInvoke = ipcFor(() => bible, {
+      claude: () => runtimeSessionClaude(slow, () => bible, slowKeys),
+    });
+    const before = bible.model.get('chapters', 'CH6')!.summary;
+    const id = runId();
+    const started = slowInvoke('chapter.summarize', { chapterId: 'CH6', runId: id });
+    for (let i = 0; i < 300 && !slowEvents.some((e) => e.runId === id && e.kind === 'text'); i++) {
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    expect(slowEvents.some((e) => e.runId === id && e.kind === 'text')).toBe(true);
+    expect(slow.stop(id)).toBe(true);
+    const r = await started;
+    expect(r.draft).toBe('');
+    expect(r.message).toMatch(/you stopped it/);
+    expect(r.needsSettings).toBe(false);
+    expect(slowEvents.find((e) => e.runId === id && e.kind === 'finished')).toMatchObject({
+      status: 'stopped',
+    });
+    expect(bible.model.get('chapters', 'CH6')!.summary).toBe(before);
   });
 });

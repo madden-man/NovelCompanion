@@ -125,7 +125,7 @@ describe('DB-2 DB-3 SB-7 Start session without Claude', () => {
     claude = { briefs: null, summaries: null };
     const r = await invoke('session.start', { input: { kind: 'chapter', chapterId: 'CH6' } });
     expect(r.synthesized).toBe(false);
-    expect(r.note).toMatch(/Claude is not available, so this is the structured brief/);
+    expect(r.note).toMatch(/No Anthropic API key is stored, so this is the structured brief/);
     expect(r.problems).toEqual([]);
     const brief = bible.model.get('briefs', r.brief._id)!;
     expect(brief.chapterId).toBe('CH6');

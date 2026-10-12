@@ -7,7 +7,7 @@ import { call, plainError } from '../../api';
 import { useEntries } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
-import { claudeNav } from '../claude';
+import { OpenSettingsButton, claudeNav } from '../claude';
 import { DriveDocumentPicker } from '../drive';
 import { useClaudeRun } from './claudeRun';
 import { updateWithUndo } from './common';
@@ -270,6 +270,7 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
   const undo = useUndo();
   const [draft, setDraft] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageSettings, setMessageSettings] = useState(false);
   const [model, setModel] = useState<string | null>(null);
   const [items, setItems] = useState<Establishment[] | null>(null);
   const [checked, setChecked] = useState<string[]>([]);
@@ -287,6 +288,7 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
       const r = await call('chapter.summarize', { chapterId: chapter._id, runId });
       setDraft(r.draft);
       setMessage(r.message);
+      setMessageSettings(r.needsSettings);
       setModel(r.model);
     });
 
@@ -346,7 +348,11 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
         </span>
         {claude.disclosure}
         {claude.progress}
-        {message && <p className="example-note">{message}</p>}
+        {message && (
+          <p className="example-note" data-testid="summary-message">
+            {message} {messageSettings && <OpenSettingsButton />}
+          </p>
+        )}
         {draft !== null ? (
           <>
             <div className="field">

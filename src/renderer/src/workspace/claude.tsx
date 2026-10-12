@@ -191,15 +191,27 @@ export function useRunStream(
 }
 
 /** AI-7, NF-3: what went wrong and what to do; a key problem links to settings. */
+/** ARCH-4: the way from a key problem to the place that fixes it. */
+export function OpenSettingsButton() {
+  return (
+    <button
+      type="button"
+      className="btn small"
+      onClick={claudeNav.openSettings}
+      data-testid="open-claude-settings"
+    >
+      Open settings
+    </button>
+  );
+}
+
 export function ClaudeErrorNote({ error }: { error: RunError }) {
   return (
     <div className="callout crit stack tight" role="alert" data-testid="claude-error">
       <span>{error.message}</span>
       {needsSettings(error.kind) && (
         <div>
-          <button type="button" className="btn small" onClick={claudeNav.openSettings}>
-            Open settings
-          </button>
+          <OpenSettingsButton />
         </div>
       )}
     </div>
