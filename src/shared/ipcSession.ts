@@ -116,6 +116,7 @@ export const SelectionWire = z.strictObject({
   window: z.number(),
   budget: z.number(),
   size: z.number(),
+  leadSize: z.number(),
   overBudget: z.boolean(),
   ids: z.array(z.string()),
 });

@@ -5,6 +5,7 @@ import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { SelectionBody } from './common';
+import { PovExtras } from './povPickers';
 import type { OpenEntry, SelectionView } from './common';
 
 export type BriefInput = Request<'session.relevant'>['input'];
@@ -13,14 +14,31 @@ export type BriefInput = Request<'session.relevant'>['input'];
  * The section a session is about, from the story time: the chapter picked in
  * Writing, else the story year and a point of view picked here (SB-1, TM-3).
  */
-export function useSessionInput(pov: string | null): BriefInput | null {
+export function useSessionInput(
+  pov: string | null,
+  extras: { placeIds?: string[]; characterIds?: string[] } = {},
+): BriefInput | null {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
+  const places = extras.placeIds;
+  const chars = extras.characterIds;
   return useMemo(() => {
+    // A picked strand is that strand, not the whole chapter (SB-1).
+    if (time.chapterId && time.strandId) {
+      return { kind: 'strand', chapterId: time.chapterId, strandId: time.strandId };
+    }
     if (time.chapterId) return { kind: 'chapter', chapterId: time.chapterId };
-    if (pov) return { kind: 'pov', year: time.year, povCharacterId: pov };
+    if (pov) {
+      return {
+        kind: 'pov',
+        year: time.year,
+        povCharacterId: pov,
+        ...(places?.length ? { placeIds: places } : {}),
+        ...(chars?.length ? { characterIds: chars } : {}),
+      };
+    }
     return null;
-  }, [time.chapterId, time.year, pov]);
+  }, [time.chapterId, time.strandId, time.year, pov, places, chars]);
 }
 
 /** The SB-2 selection for an input, kept live as the bible and the settings change. */
@@ -148,7 +166,9 @@ export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
   const characters = useEntries('characters');
   const [pov, setPov] = useState<string | null>(null);
   const [bump, setBump] = useState(0);
-  const input = useSessionInput(pov);
+  const [placeIds, setPlaceIds] = useState<string[]>([]);
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
+  const input = useSessionInput(pov, { placeIds, characterIds });
   const { result, error } = useSelection(input, {}, bump);
   const povId = useId();
   const sel: SelectionView | null = result?.selection ?? null;
@@ -180,6 +200,15 @@ export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
             Pick a chapter in Writing above, or a point of view here, to see what matters for the
             session.
           </p>
+          {pov && (
+            <PovExtras
+              pov={pov}
+              placeIds={placeIds}
+              characterIds={characterIds}
+              onPlaces={setPlaceIds}
+              onCharacters={setCharacterIds}
+            />
+          )}
         </div>
       )}
       <BriefSettings onChanged={() => setBump((n) => n + 1)} />

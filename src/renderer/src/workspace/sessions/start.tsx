@@ -10,6 +10,7 @@ import { useStrandOptions } from '../timeline/StoryTimeDialog';
 import { useUndo } from '../undo';
 import { SelectionBody } from './common';
 import type { OpenEntry } from './common';
+import { PovExtras } from './povPickers';
 import { useClaudeRun } from './claudeRun';
 import { useSelection } from './relevant';
 import type { BriefInput } from './relevant';
@@ -40,7 +41,9 @@ export function StartSessionView(props: {
   const parts = useEntries('parts');
   const characters = useEntries('characters');
   const strands = useStrandOptions();
-  const [kind, setKind] = useState<Kind>(time.chapterId ? 'chapter' : 'pov');
+  const [kind, setKind] = useState<Kind>(
+    time.chapterId ? (time.strandId ? 'strand' : 'chapter') : 'pov',
+  );
   const [chapterId, setChapterId] = useState(time.chapterId ?? '');
   const [strandKey, setStrandKey] = useState(
     time.chapterId && time.strandId ? `${time.chapterId}|${time.strandId}` : '',
@@ -48,6 +51,8 @@ export function StartSessionView(props: {
   const [partId, setPartId] = useState('');
   const [year, setYear] = useState(String(time.year));
   const [pov, setPov] = useState('');
+  const [placeIds, setPlaceIds] = useState<string[]>([]);
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Response<'brief.settings.get'> | null>(null);
@@ -79,8 +84,27 @@ export function StartSessionView(props: {
       return id ? { kind, partId: id } : null;
     }
     const y = /^-?\d{1,5}$/.test(year.trim()) ? Number(year) : null;
-    return y !== null && pov ? { kind, year: y, povCharacterId: pov } : null;
-  }, [kind, chapterId, firstChapter, strandKey, strands, partId, firstPart, year, pov]);
+    if (y === null || !pov) return null;
+    return {
+      kind,
+      year: y,
+      povCharacterId: pov,
+      ...(placeIds.length ? { placeIds } : {}),
+      ...(characterIds.length ? { characterIds: characterIds.filter((c) => c !== pov) } : {}),
+    };
+  }, [
+    kind,
+    chapterId,
+    firstChapter,
+    strandKey,
+    strands,
+    partId,
+    firstPart,
+    year,
+    pov,
+    placeIds,
+    characterIds,
+  ]);
 
   const { result, error: selError } = useSelection(input);
 
@@ -144,6 +168,7 @@ export function StartSessionView(props: {
               id={ids.strand}
               value={strandKey || strands[0]?.key || ''}
               onChange={(e) => setStrandKey(e.target.value)}
+              data-testid="start-strand"
             >
               {strands.map((s) => (
                 <option key={s.key} value={s.key}>
@@ -194,6 +219,15 @@ export function StartSessionView(props: {
                   ))}
               </select>
             </div>
+            {pov && (
+              <PovExtras
+                pov={pov}
+                placeIds={placeIds}
+                characterIds={characterIds}
+                onPlaces={setPlaceIds}
+                onCharacters={setCharacterIds}
+              />
+            )}
           </div>
         )}
         <div className="row">

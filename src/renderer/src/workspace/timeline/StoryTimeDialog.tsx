@@ -15,7 +15,8 @@ interface StrandOption {
   chapterId: string;
   strandId: string;
   label: string;
-  year: number;
+  /** Null when the strand has no start year yet. */
+  year: number | null;
 }
 
 /** Every strand of every chapter, in reading order, for the strand anchor (TM-4). */
@@ -28,15 +29,15 @@ export function useStrandOptions(): StrandOption[] {
     );
     for (const c of sorted) {
       const strands = Array.isArray(c.strands)
-        ? (c.strands as { id: string; label: string; startYear: number; primary: boolean }[])
+        ? (c.strands as { id: string; label: string; startYear: number | null; primary: boolean }[])
         : [];
       for (const s of strands) {
         out.push({
           key: `${c._id}|${s.id}`,
           chapterId: c._id,
           strandId: s.id,
-          label: `Chapter ${String(c.readingOrder)}: ${String(c.title)}, ${s.label} (${s.startYear})`,
-          year: s.startYear,
+          label: `Chapter ${String(c.readingOrder)}: ${String(c.title)}, ${s.label}${typeof s.startYear === 'number' ? ` (${s.startYear})` : ''}`,
+          year: typeof s.startYear === 'number' ? s.startYear : null,
         });
       }
     }
@@ -148,6 +149,9 @@ export function StoryTimeDialog() {
   const anchorByStrand = () => {
     const s = strands.find((o) => o.key === anchorStrand);
     if (!s) return setNote({ text: 'Pick a strand first.', bad: true });
+    if (s.year === null) {
+      return setNote({ text: 'That strand has no start year yet. Give it one first.', bad: true });
+    }
     setYearDraft(null);
     setTo({ year: s.year, chapterId: s.chapterId, strandId: s.strandId }, s.label);
   };

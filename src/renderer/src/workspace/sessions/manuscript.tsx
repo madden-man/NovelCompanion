@@ -23,9 +23,18 @@ type Establishment = Response<'chapter.establishes'>['items'][number];
  * entries it establishes to promote. The app only reads manuscripts; it
  * never writes to one.
  */
-export function ManuscriptView({ onOpen }: { onOpen: OpenEntry }) {
+export function ManuscriptView({
+  onOpen,
+  chapterId,
+  openFlow,
+}: {
+  onOpen: OpenEntry;
+  /** MS-2: the chapter just ticked Written in its editor, opened with the flow showing. */
+  chapterId?: string;
+  openFlow?: boolean;
+}) {
   const chapters = useEntries('chapters');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(chapterId ?? null);
   const sorted = useMemo(
     () => [...chapters].sort((a, b) => Number(a.readingOrder ?? 0) - Number(b.readingOrder ?? 0)),
     [chapters],
@@ -58,7 +67,12 @@ export function ManuscriptView({ onOpen }: { onOpen: OpenEntry }) {
           ))}
         </ul>
         {chapter ? (
-          <ChapterManuscript key={chapter._id} chapter={chapter} onOpen={onOpen} />
+          <ChapterManuscript
+            key={chapter._id}
+            chapter={chapter}
+            onOpen={onOpen}
+            openFlow={openFlow && chapter._id === chapterId}
+          />
         ) : (
           <p className="lede">Pick a chapter.</p>
         )}
@@ -67,14 +81,24 @@ export function ManuscriptView({ onOpen }: { onOpen: OpenEntry }) {
   );
 }
 
-function ChapterManuscript({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry }) {
+function ChapterManuscript({
+  chapter,
+  onOpen,
+  openFlow,
+}: {
+  chapter: Entry;
+  onOpen: OpenEntry;
+  openFlow?: boolean;
+}) {
   const undo = useUndo();
   const [sources, setSources] = useState<Response<'manuscript.sources'>['sources']>([]);
   const [picking, setPicking] = useState<string | null>(null);
   const [read, setRead] = useState<Read | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [flow, setFlow] = useState(false);
+  // MS-2: arriving from the chapter editor's Written offer shows the flow once the save lands.
+  const [flowSet, setFlow] = useState<boolean | null>(null);
+  const flow = flowSet ?? (openFlow === true && chapter.written === true);
   useEffect(() => {
     void call('manuscript.sources', {}).then((r) => setSources(r.sources));
   }, []);

@@ -67,7 +67,7 @@ type View =
   /** SB-8: one saved brief. */
   | { kind: 'brief'; id: string; note?: string | null }
   /** MS-1 to MS-4. */
-  | { kind: 'manuscript' };
+  | { kind: 'manuscript'; chapterId?: string; openFlow?: boolean };
 
 const GROUPS = ['People', 'Story', 'World', 'Knowledge', 'Sessions', 'Custom'];
 
@@ -254,6 +254,9 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 id={view.selected}
                 onOpen={open}
                 onClosed={() => setView({ ...view, selected: null })}
+                onWritten={(chapterId) =>
+                  setView({ kind: 'manuscript', chapterId, openFlow: true })
+                }
               />
             ) : (
               <>
@@ -338,7 +341,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'brief' && (
                 <BriefView key={view.id} id={view.id} note={view.note ?? null} onOpen={open} />
               )}
-              {view.kind === 'manuscript' && <ManuscriptView onOpen={open} />}
+              {view.kind === 'manuscript' && (
+                <ManuscriptView
+                  key={view.chapterId ?? ''}
+                  onOpen={open}
+                  chapterId={view.chapterId}
+                  openFlow={view.openFlow}
+                />
+              )}
             </div>
             <SideInspector />
           </>

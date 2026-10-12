@@ -241,6 +241,8 @@ export interface Selection {
   budget: number;
   /** Characters of selected text after any drops (SB-6). */
   size: number;
+  /** Characters of the lead sections alone (A25), without entries you added. */
+  leadSize: number;
   /** A25: true when the lead sections alone are over the budget, so the brief is too. */
   overBudget: boolean;
   /** The manifest (SB-3): every selected entry ID, sorted. */
@@ -430,7 +432,14 @@ function sortPeople(ids: string[], characters: Map<string, Doc>): string[] {
 /** Step 1 fallback: the point of view and their living parents, partners, children, and siblings. */
 function family(data: TimelineData, pov: string, year: number): string[] {
   const characters = index(data, 'characters');
-  const links = data.all('parentLinks').filter(live);
+  // A parent link counts from its start year; one with no start year always counts.
+  const links = data
+    .all('parentLinks')
+    .filter(live)
+    .filter((l) => {
+      const s = num(l.startYear);
+      return s === null || s <= year;
+    });
   const parents = links.filter((l) => l.childId === pov).map((l) => str(l.parentId));
   const children = links.filter((l) => l.parentId === pov).map((l) => str(l.childId));
   const siblings = links
@@ -797,6 +806,17 @@ export function selectForSession(
     }
   }
 
+  const leadSeen = new Set<string>();
+  let leadSize = 0;
+  for (const g of all()) {
+    if (!LEAD_KINDS.includes(g.kind)) continue;
+    for (const it of g.items) {
+      if (leadSeen.has(it.id)) continue;
+      leadSeen.add(it.id);
+      leadSize += itemSize(it);
+    }
+  }
+
   const ids = new Set<string>(section.chapters.map((c) => str(c._id)));
   for (const g of all()) {
     for (const it of g.items) {
@@ -818,7 +838,8 @@ export function selectForSession(
     window: settings.window,
     budget: settings.budget,
     size,
-    overBudget: size > settings.budget,
+    leadSize,
+    overBudget: leadSize > settings.budget,
     ids: [...ids].sort(byText),
   };
 }
