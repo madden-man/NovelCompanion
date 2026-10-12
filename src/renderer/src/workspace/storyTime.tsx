@@ -136,6 +136,10 @@ export function StoryTimeProvider({ children }: { children: ReactNode }) {
     [set],
   );
 
+  // Stable, so the dialog's open effect (focus and select the year box) runs once,
+  // not after every keystroke that changes the time (NF-2: typing 2041 gave 1).
+  const openDialog = useCallback(() => setDialogOpen(true), []);
+  const closeDialog = useCallback(() => setDialogOpen(false), []);
   const value = useMemo<StoryTime>(() => {
     const year = current?.year ?? stored?.position.year ?? new Date().getFullYear();
     return {
@@ -146,10 +150,10 @@ export function StoryTimeProvider({ children }: { children: ReactNode }) {
       set,
       flush,
       dialogOpen,
-      openDialog: () => setDialogOpen(true),
-      closeDialog: () => setDialogOpen(false),
+      openDialog,
+      closeDialog,
     };
-  }, [current, stored, setYear, set, flush, dialogOpen]);
+  }, [current, stored, setYear, set, flush, dialogOpen, openDialog, closeDialog]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
