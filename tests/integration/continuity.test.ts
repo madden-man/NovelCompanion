@@ -170,6 +170,17 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
     expect(req.model).toBe('claude-opus-5-5');
     expect(req.system).toContain(PROSE_PROHIBITION);
     expect(req.tools).toEqual([]);
+    // AI-5: the plot and the selected entries are material too, never loose in the prompt.
+    const blocks = [...req.prompt.matchAll(/<material source="([^"]*)">\n([\s\S]*?)\n<\/material>/g)];
+    expect(blocks.map((b) => b[1])).toEqual([
+      'Stored plot for Chapter 6: The Letter [CH6]',
+      'Selected entries for Chapter 6: The Letter [CH6]',
+      'Chapter 6: The Letter [CH6]',
+    ]);
+    expect(blocks[0]![2]).toContain('Beat [B4]');
+    expect(blocks[1]![2]).toMatch(/\[E3\] /);
+    const outside = req.prompt.replace(/<material[\s\S]*?<\/material>/g, '');
+    expect(outside).not.toMatch(/Beat \[B|\[E3\]|acts on fact/);
     expect(req.prompt).toContain(
       '<material source="Chapter 6: The Letter [CH6]">\n1: Iris asked her father',
     );
