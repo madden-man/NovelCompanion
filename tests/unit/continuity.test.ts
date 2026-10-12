@@ -1,8 +1,33 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { z } from 'zod';
 import { structuralFindings } from '../../src/shared/domain/continuity/structural';
 import { fromCollections } from '../../src/shared/domain/timeline';
+import {
+  locateQuote,
+  numberedLines,
+  numberedText,
+  textHash,
+} from '../../src/shared/domain/continuity/lines';
+import {
+  changeProblem,
+  changeSetPatches,
+  checkChangeSet,
+  describeChangeSet,
+} from '../../src/shared/domain/continuity/changeSet';
+import { AlignmentOutput, checkAlignment } from '../../src/shared/domain/continuity/alignment';
+import {
+  dismissalFor,
+  fromStructural,
+  reconcile,
+  resolutionCommand,
+  stillDismissed,
+} from '../../src/shared/domain/continuity/findings';
+import { alignmentMaterial } from '../../src/shared/domain/continuity/plot';
+import { ALIGNMENT_INSTRUCTIONS } from '../../src/main/claude/features/alignment';
+import { Finding } from '../../src/shared/schema';
+import type { Doc } from '../../src/shared/domain/paths';
 import { briefCollections, briefData } from '../helpers/briefFixture';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -132,5 +157,325 @@ describe('CC-2 CC-5 structural checks against the fixture novel', () => {
       ch4.strands = [{ ...(ch4.strands as Record<string, unknown>[])[0], startYear, endYear }];
       expect(structuralFindings(fromCollections(c), { chapterId: 'CH4' })).toEqual([]);
     }
+  });
+});
+
+const STAMP = '2026-01-15T09:00:00.000Z';
+
+describe('CC-3 line numbering', () => {
+  test('CC-3 one paragraph per line from 1, a scene break is its own line, and the same text always numbers the same', () => {
+    const ch2 = briefCollections(false).chapters!.find((c) => c._id === 'CH2')!;
+    const lines = numberedLines(ch2.manuscriptText);
+    expect(lines).toEqual([
+      { n: 1, text: 'Daniel burned the rice again while Iris did her homework at the counter.' },
+      { n: 2, text: '* * *' },
+      {
+        n: 3,
+        text: 'Thirteen years earlier, Meiling held the baby and sang the song her own mother had sung.',
+      },
+    ]);
+    expect(numberedLines(ch2.manuscriptText)).toEqual(lines);
+    // Markup that does not change the paragraphs does not move a line.
+    expect(
+      numberedLines(String(ch2.manuscriptText).replace('<p>Daniel', '<p> <em>Daniel</em>')),
+    ).toEqual(lines);
+    expect(numberedText(lines).split('\n')[2]).toBe(
+      '3: Thirteen years earlier, Meiling held the baby and sang the song her own mother had sung.',
+    );
+  });
+
+  test('CC-3 a quote is found on its lines ignoring case, spacing, and curly quotes, and across an ellipsis', () => {
+    const lines = numberedLines(
+      '<p>One line here.</p><p>Lan said “it rained” sideways.</p><p>Then it stopped.</p>',
+    );
+    expect(locateQuote(lines, 'lan said "it RAINED"')).toEqual({ start: 2, end: 2 });
+    expect(locateQuote(lines, 'it rained ... Then it')).toEqual({ start: 2, end: 3 });
+    expect(locateQuote(lines, 'not in the text')).toBeNull();
+  });
+});
+
+describe('CC-3 change set checks', () => {
+  const data = () => briefData(true);
+  test('CC-3 a change to a real field with a value that fits passes; each wrong one is refused with a plain reason', () => {
+    const d = data();
+    const ok = (collection: string, id: string, field: string, value: unknown) =>
+      changeProblem(d, { collection, id, field, value });
+    expect(ok('characters', 'H1', 'birth', { year: 1970 })).toBeNull();
+    expect(ok('characters', 'Z3', 'birthplace', 'Shanghai')).toBeNull();
+    expect(ok('plotBeats', 'B4', 'chapterId', 'CH7')).toBeNull();
+    expect(ok('chapters', 'CH4', 'strands.CH4-present.startYear', 2029)).toBeNull();
+    expect(ok('characters', 'H9', 'birth', { year: 1970 })).toBe('there is no characters entry H9');
+    expect(ok('characters', 'H1', 'hometown', 'x')).toBe('hometown is not a field of characters');
+    expect(ok('characters', 'H1', 'birth', 'seventy')).toMatch(/^the value does not fit the field/);
+    expect(ok('chapters', 'CH5', 'manuscriptText', 'x')).toBe(
+      'manuscriptText is not a field a change set may write',
+    );
+    expect(ok('chapters', 'CH4', 'strands.CH9-x.startYear', 2029)).toBe(
+      'the chapter has no strand CH9-x',
+    );
+    expect(ok('plotBeats', 'B4', 'chapterId', 'CH99')).toBe(
+      'it points to CH99, which is not in the bible',
+    );
+    expect(ok('findings', 'X', 'text', 'x')).toBe(
+      'findings is not a part of the bible a change set may write',
+    );
+    expect(ok('characters', 'H1', 'birth', { year: 1958 })).toBe(
+      'the bible already holds this value',
+    );
+  });
+
+  test('CC-3 values arrive as JSON text; changes to one entry compose into one patch; the diff shows before and after', () => {
+    const d = data();
+    const { valid, rejected } = checkChangeSet(d, [
+      {
+        collection: 'chapters',
+        id: 'CH2',
+        field: 'strands.CH2-backstory.startYear',
+        value: '2033',
+      },
+      { collection: 'chapters', id: 'CH2', field: 'strands.CH2-present.startYear', value: '2046' },
+      { collection: 'characters', id: 'Z3', field: 'birthplace', value: 'Shanghai' },
+      { collection: 'characters', id: 'Z3', field: 'nickname', value: '"Lan"' },
+    ]);
+    expect(valid.map((v) => v.value)).toEqual([2033, 2046, 'Shanghai']);
+    expect(rejected).toEqual([
+      { summary: 'characters Z3 nickname: "Lan"', reason: 'nickname is not a field of characters' },
+    ]);
+    const patches = changeSetPatches(d, valid);
+    expect(patches.map((p) => [p.collection, p.id, Object.keys(p.patch)])).toEqual([
+      ['chapters', 'CH2', ['strands']],
+      ['characters', 'Z3', ['birthplace']],
+    ]);
+    expect((patches[0]!.patch.strands as { startYear: number }[]).map((s) => s.startYear)).toEqual([
+      2046, 2033,
+    ]);
+    expect(describeChangeSet(d, valid).map((r) => [r.entry, r.label, r.before, r.after])).toEqual([
+      ['Two Kitchens', 'backstory strand: Story year', '2032', '2033'],
+      ['Two Kitchens', 'present strand: Story year', '2045', '2046'],
+      ['Zhou Lan', 'Birthplace', 'Guangzhou', 'Shanghai'],
+    ]);
+  });
+});
+
+describe('CC-3 checking what Claude returns', () => {
+  const lines = numberedLines(
+    '<p>Ruth counted the candles twice. Her mother was seventy and still refused to let anyone else light them.</p><p>Sam held the matches and waited.</p>',
+  );
+  const base = {
+    kind: 'age' as const,
+    lineStart: 1,
+    lineEnd: 1,
+    quote: 'Her mother was seventy',
+    citedIds: ['H1'],
+    explanation: 'Margaret is 82.',
+    mustChange: 'Her stated age must be 82.',
+    changeSet: [],
+  };
+  test('CC-3 every cited ID must exist, lines must be in the chapter, and a quote found elsewhere moves the line numbers', () => {
+    const out = AlignmentOutput.parse({
+      findings: [
+        base,
+        { ...base, citedIds: ['H1', 'NOPE'] },
+        { ...base, citedIds: [] },
+        { ...base, lineStart: 2, lineEnd: 2 },
+        { ...base, lineStart: 9, lineEnd: 9, quote: 'Sam held the matches' },
+        { ...base, lineStart: 9, lineEnd: 12, quote: 'nothing like this' },
+      ],
+    });
+    const r = checkAlignment(out, { chapterId: 'CH5', lines, data: briefData(false) });
+    expect(r.findings.map((f) => [f.lineStart, f.lineEnd, f.key])).toEqual([
+      [1, 1, 'alignment:CH5:age:H1'],
+      [1, 1, 'alignment:CH5:age:H1#2'],
+      [2, 2, 'alignment:CH5:age:H1#3'],
+    ]);
+    expect(r.findings[0]!.quote).toBe(lines[0]!.text);
+    expect(r.rejected.map((x) => x.reason)).toEqual([
+      'It cites NOPE, which is not in the bible.',
+      'It cites no entry or beat.',
+      'Its lines 9 to 12 are not in the chapter, which has 2 lines, and its quote is not in the text.',
+    ]);
+  });
+
+  test('CC-3 AI-4 the output and the stored finding have no field for suggested text, and the instructions forbid replacement text', () => {
+    const suggested = /suggest|replacement|rewritten|prose|draft|newText|revised/i;
+    const props = (schema: z.ZodType) => JSON.stringify(z.toJSONSchema(schema, { io: 'output' }));
+    const keys = (json: string) => [...json.matchAll(/"([A-Za-z]+)":\{/g)].map((m) => m[1]!);
+    expect(keys(props(AlignmentOutput)).filter((k) => suggested.test(k))).toEqual([]);
+    expect(Object.keys(Finding.shape).filter((k) => suggested.test(k))).toEqual([]);
+    expect(ALIGNMENT_INSTRUCTIONS).toMatch(
+      /describing the change without writing any replacement text/,
+    );
+    expect(ALIGNMENT_INSTRUCTIONS).toMatch(/material tags/);
+  });
+
+  test('CC-3 the material is deterministic: numbered lines, the plot as stored, and the selection', () => {
+    const a = alignmentMaterial(briefData(true), 'CH6');
+    expect(alignmentMaterial(briefData(true), 'CH6')).toEqual(a);
+    expect(a.heading).toBe('Chapter 6: The Letter [CH6]');
+    expect(a.storyYear).toBe(2045);
+    expect(a.plot).toContain('Beats planned for this chapter:\n- Beat [B4] (2045, chapter CH6)');
+    expect(a.plot).toContain(
+      'Beats in its arcs (The Hale secret [ARC-HALE], Lan comes home [ARC-ZHOU]) dated at or before 2045:',
+    );
+    expect(a.plot).toContain('8. Noor [CH8], 2085');
+    expect(a.given.map((g) => g.id)).toEqual(
+      expect.arrayContaining(['CH6', 'B4', 'F2', 'K2', 'H5', 'E3']),
+    );
+    expect(() => alignmentMaterial(briefData(true), 'CH99')).toThrow(
+      'That chapter is not in the bible.',
+    );
+  });
+});
+
+describe('CC-4 dismissals and re-runs', () => {
+  const finding = (over: Doc = {}): Doc => ({
+    _id: 'F-1',
+    title: 't',
+    status: 'planned',
+    kind: 'alignment',
+    chapterId: 'CH5',
+    entryIds: ['H1'],
+    key: 'alignment:CH5:age:H1',
+    state: 'dismissed',
+    createdAt: STAMP,
+    modifiedAt: STAMP,
+    ...over,
+  });
+
+  test('CC-4 a dismissal holds a hash of the chapter text and of each cited entry revision; either change lifts it', () => {
+    const c = briefCollections(false);
+    const data = fromCollections(c);
+    const d = dismissalFor(data, { kind: 'alignment', chapterId: 'CH5', entryIds: ['H1'] });
+    expect(d.textHash).toBe(
+      textHash(String(c.chapters!.find((x) => x._id === 'CH5')!.manuscriptText)),
+    );
+    expect(stillDismissed(finding({ dismissal: d }), data)).toBe(true);
+    // The chapter summary is not the text: editing it keeps the dismissal.
+    const ch5 = c.chapters!.find((x) => x._id === 'CH5')!;
+    ch5.summary = 'A new summary.';
+    expect(stillDismissed(finding({ dismissal: d }), fromCollections(c))).toBe(true);
+    ch5.manuscriptText = String(ch5.manuscriptText).replace('twice', 'three times');
+    expect(stillDismissed(finding({ dismissal: d }), fromCollections(c))).toBe(false);
+    const c2 = briefCollections(false);
+    c2.characters!.find((x) => x._id === 'H1')!.modifiedAt = '2026-02-01T00:00:00.000Z';
+    expect(stillDismissed(finding({ dismissal: d }), fromCollections(c2))).toBe(false);
+    expect(stillDismissed(finding({ dismissal: null }), data)).toBe(false);
+  });
+
+  test('CC-4 a structural dismissal is held against the chapter plot fields, not its text', () => {
+    const c = briefCollections(false);
+    const d = dismissalFor(fromCollections(c), {
+      kind: 'structural',
+      chapterId: 'CH4',
+      entryIds: ['H2'],
+    });
+    const ch4 = c.chapters!.find((x) => x._id === 'CH4')!;
+    ch4.manuscriptText = '<p>Changed.</p>';
+    const f = finding({ kind: 'structural', chapterId: 'CH4', entryIds: ['H2'], dismissal: d });
+    expect(stillDismissed(f, fromCollections(c))).toBe(true);
+    ch4.strands = [{ ...(ch4.strands as Doc[])[0], characterIds: ['H1', 'H2'] }];
+    expect(stillDismissed(f, fromCollections(c))).toBe(false);
+  });
+
+  test('CC-4 a re-run creates new keys, refreshes open ones, keeps rewrite tasks, hides unchanged dismissals, reopens changed ones and applied ones, and trashes open ones no longer found', () => {
+    const data = briefData(false);
+    const fresh = structuralFindings(data).map(fromStructural);
+    const [s1, s2, s3] = fresh;
+    const dis = dismissalFor(data, s2!);
+    const stored: Doc[] = [
+      finding({ _id: 'A', kind: 'structural', key: s1!.key, state: 'open', text: 'old words' }),
+      finding({
+        _id: 'B',
+        kind: 'structural',
+        key: s2!.key,
+        state: 'dismissed',
+        dismissal: dis,
+        ...{ chapterId: s2!.chapterId, entryIds: s2!.entryIds },
+      }),
+      finding({ _id: 'C', kind: 'structural', key: s3!.key, state: 'rewrite' }),
+      finding({
+        _id: 'D',
+        kind: 'structural',
+        key: 'structural:gone:CH1:-:H1',
+        chapterId: 'CH1',
+        state: 'open',
+      }),
+      finding({
+        _id: 'E',
+        kind: 'structural',
+        key: 'structural:gone:CH2:-:H1',
+        chapterId: 'CH2',
+        state: 'dismissed',
+      }),
+    ];
+    const plan = reconcile(stored, fresh, (f) => f.kind === 'structural', data);
+    expect(plan.creates).toEqual([]);
+    expect(plan.hidden).toBe(1);
+    expect(plan.updates.map((u) => u.id)).toEqual(['A']);
+    expect(plan.updates[0]!.patch.text).toBe(s1!.text);
+    expect(plan.trash).toEqual(['D']);
+
+    const changed = reconcile(
+      [
+        finding({
+          _id: 'B',
+          kind: 'structural',
+          key: s2!.key,
+          state: 'dismissed',
+          dismissal: { textHash: 'x', entryHash: 'y' },
+        }),
+        finding({ _id: 'W', kind: 'structural', key: s1!.key, state: 'manuscriptWins' }),
+      ],
+      fresh,
+      () => true,
+      data,
+    );
+    expect(changed.updates.map((u) => [u.id, u.patch.state])).toEqual([
+      ['W', 'open'],
+      ['B', 'open'],
+    ]);
+    expect(changed.creates.map((c) => c.key)).toEqual([s3!.key]);
+    expect(changed.creates[0]).toMatchObject({
+      state: 'open',
+      kind: 'structural',
+      chapterId: 'CH6',
+    });
+  });
+
+  test('CC-4 ED-3 a resolution undoes as one step: every changed entry and the finding state, editable fields only', () => {
+    const cmd = resolutionCommand('Manuscript wins', [
+      {
+        collection: 'characters',
+        id: 'H1',
+        before: { _id: 'H1', birth: { year: 1958 }, modifiedAt: 'a' },
+        after: { _id: 'H1', birth: { year: 1970 }, modifiedAt: 'b' },
+      },
+      {
+        collection: 'findings',
+        id: 'F',
+        before: { _id: 'F', state: 'open', dismissal: null },
+        after: { _id: 'F', state: 'dismissed', dismissal: { textHash: 'x', entryHash: 'y' } },
+      },
+    ]);
+    expect(cmd.undo).toEqual([
+      {
+        kind: 'update',
+        collection: 'findings',
+        id: 'F',
+        patch: { state: 'open' },
+        expect: { state: 'dismissed' },
+      },
+      {
+        kind: 'update',
+        collection: 'characters',
+        id: 'H1',
+        patch: { birth: { year: 1958 } },
+        expect: { birth: { year: 1970 } },
+      },
+    ]);
+    expect(cmd.redo.map((o) => (o.kind === 'update' ? o.patch : null))).toEqual([
+      { birth: { year: 1970 } },
+      { state: 'dismissed' },
+    ]);
   });
 });

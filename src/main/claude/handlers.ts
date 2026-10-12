@@ -8,6 +8,7 @@ import type { KeyStore } from './keys';
 import type { ClaudeRuntime } from './runtime';
 import { RunStore, summarize } from './store';
 import { FEATURES } from './features';
+import { recordAlignment } from '../continuity';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
@@ -121,6 +122,21 @@ export function claudeHandlers(
         runId,
       );
       return { runId: start.runId, conversationId: start.conversationId };
+    },
+    'claude.alignment': async ({ runId, chapterId }) => {
+      const s = session();
+      const start = await runtime.runFeature(s, FEATURES.alignment, { chapterId }, runId);
+      const run = await start.done;
+      const turn = run.turns.find((t) => t.id === runId) ?? run.turns[0];
+      // CC-3: the checked findings are stored before the call returns.
+      const recorded = await recordAlignment(s, chapterId, run, runId);
+      return {
+        runId: start.runId,
+        conversationId: start.conversationId,
+        status: turn?.status ?? 'failed',
+        error: turn?.error ?? null,
+        ...recorded,
+      };
     },
   };
 }

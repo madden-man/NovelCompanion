@@ -551,6 +551,46 @@ export class Repository {
     return change.next as EntryOf<C>;
   }
 
+  /**
+   * Several creates, updates, and moves to the trash in one transaction, each
+   * with a revision (M8: an alignment run's findings, and Manuscript wins
+   * applying a change set together with the finding's new state, CC-4). With
+   * `bulk`, a snapshot is taken first (BK-1). Either everything is written or nothing is.
+   */
+  async writeBatch(
+    ops: (
+      | { op: 'create'; collection: EntryCollection; data: Record<string, unknown> }
+      | { op: 'update'; collection: EntryCollection; id: string; patch: Record<string, unknown> }
+      | { op: 'softDelete'; collection: EntryCollection; id: string }
+    )[],
+    opts: { note?: string; bulk?: string } = {},
+  ): Promise<StoredDoc[]> {
+    if (!ops.length) return [];
+    if (opts.bulk) await this.bulkGuard(opts.bulk);
+    const changes: Change[] = [];
+    const seen = new Set<string>();
+    for (const o of ops) {
+      this.assertCollection(o.collection);
+      let change: Change;
+      if (o.op === 'create') change = this.buildCreate(o.collection, o.data);
+      else {
+        if (seen.has(`${o.collection}:${o.id}`)) {
+          throw new RepositoryError(`One batch changes ${o.id} twice.`);
+        }
+        const prior = await this.current(o.collection, o.id);
+        change =
+          o.op === 'update'
+            ? this.buildUpdate(o.collection, prior, o.patch)
+            : this.buildSoftDelete(o.collection, prior);
+      }
+      seen.add(`${o.collection}:${change.next._id}`);
+      if (opts.note) change.note = opts.note;
+      changes.push(change);
+    }
+    await this.commit(changes);
+    return changes.map((c) => c.next);
+  }
+
   /** Custom entries of a section, trash included, so a restore never meets a lost value. */
   private sectionEntries(sectionId: string): StoredDoc[] {
     return this.model.all('customEntries').filter((e) => e.sectionId === sectionId);

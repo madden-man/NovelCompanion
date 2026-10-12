@@ -8,6 +8,8 @@ import { importHandlers } from './importHandlers';
 import type { ImportChannel, ImportDeps } from './importHandlers';
 import { sessionHandlers } from './sessionHandlers';
 import type { SessionChannel, SessionDeps } from './sessionHandlers';
+import { continuityHandlers } from './continuityHandlers';
+import type { ContinuityChannel } from './continuityHandlers';
 import { ancestorsOf, buildGraph, descendantsOf, treeWarnings } from '../../shared/domain/tree';
 import { characterPage } from '../../shared/domain/character';
 import { positionYear } from '../../shared/domain/position';
@@ -98,7 +100,8 @@ export type BibleChannel =
   | 'romanization.set'
   | 'romanization.check'
   | ImportChannel
-  | SessionChannel;
+  | SessionChannel
+  | ContinuityChannel;
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -203,6 +206,7 @@ export function bibleHandlers(
   return {
     ...importHandlers(current, deps),
     ...sessionHandlers(current, deps),
+    ...continuityHandlers(current),
     'proposal.list': ({ state }) => ({
       proposals: session()
         .repo.listProposals(state)
