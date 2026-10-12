@@ -385,7 +385,11 @@ export function EntryPane(props: {
         {offerWritten && props.onWritten && (
           <p className="callout" role="status" data-testid="written-offer">
             This chapter is marked as written.{' '}
-            <button type="button" className="link-btn" onClick={() => props.onWritten?.(id)}>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => void ed.flush().then(() => props.onWritten?.(id))}
+            >
               Review its summary and promote planned entries
             </button>
           </p>

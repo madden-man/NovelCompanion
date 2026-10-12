@@ -8,7 +8,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { invokeVia, launch, rail } from './helpers';
+import { field, invokeVia, launch, rail } from './helpers';
 
 let server: MongoMemoryReplSet;
 let app: ElectronApplication;
@@ -324,6 +324,7 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
   await openBible();
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
+  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
   await view.getByTestId('start-chapter').selectOption('CH2');
   await expect(view.getByTestId('start-session-go')).toHaveText(
     'Start session with claude-opus-5-5',
@@ -437,6 +438,7 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
   // DB-2 SB-4 AI-6: the first brief asks for the disclosure, then Claude writes it.
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
+  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
   await view.getByTestId('start-chapter').selectOption('CH6');
   await expect(view.getByTestId('start-session-go')).toHaveText(
     'Start session with claude-opus-5-5',
@@ -458,6 +460,7 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
 
   // AI-1: Stop ends a brief run; the structured brief is saved and the note says why.
   await page.getByTestId('top-start-session').click();
+  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
   await view.getByTestId('start-chapter').selectOption('CH5');
   await view.getByTestId('start-session-go').click();
   await expect(view.getByTestId('claude-progress')).toContainText('Claude is writing the brief');
@@ -485,4 +488,69 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
   expect((await invoke('claude.runs', { feature: 'summaries' })).runs[0]).toMatchObject({
     status: 'done',
   });
+});
+
+test('A27 TM-3 the top bar year slider and typed year move the story time, the era label, and the status bar; typing commits on Enter, one control per name', async () => {
+  await rail(page, 'Characters').click();
+  const bar = page.getByTestId('top-bar');
+  await expect(bar.getByLabel('Story year', { exact: true })).toHaveCount(1);
+  await bar.getByTestId('top-year-slider').fill('2032');
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2032');
+  await expect(bar.getByTestId('top-year')).toHaveValue('2032');
+  // Typing 2045 must not set 2, 20, and 204 on the way.
+  const box = bar.getByTestId('top-year');
+  await box.click();
+  await box.press('ControlOrMeta+a');
+  await box.pressSequentially('2045');
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2032');
+  await box.press('Enter');
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2045');
+  await expect(bar).toContainText('The forties');
+  // Leaving the box commits too.
+  await box.fill('2041');
+  await page.getByTestId('top-writing').focus();
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2041');
+});
+
+test('SB-1 Relevant to Session takes places and other characters present for a story year and point of view', async () => {
+  await writing().selectOption({ label: 'No chapter picked' });
+  await page.getByTestId('top-year').fill('2045');
+  await page.getByTestId('top-year').press('Enter');
+  await rail(page, 'Relevant to Session').click();
+  await expect(relevant()).toBeVisible();
+  await relevant().getByLabel('Point of view in 2045').selectOption('H5');
+  const member = (id: string) => relevant().locator(`[data-testid="sel-item"][data-id="${id}"]`);
+  await expect(groupIds(relevant(), 'characters').first()).toBeVisible();
+  await expect(member('Z4')).toHaveCount(0);
+  await relevant().getByTestId('session-characters').selectOption(['Z4']);
+  await expect(member('Z4').first()).toBeVisible();
+  await relevant()
+    .getByTestId('session-places')
+    .selectOption([{ index: 0 }]);
+  await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
+  // Start session offers the same two pickers.
+  await page.getByTestId('top-start-session').click();
+  const view = page.getByTestId('start-session');
+  await view.getByRole('button', { name: 'A story year and point of view' }).click();
+  await view.getByLabel('Point of view').selectOption('H5');
+  await expect(view.getByTestId('session-places')).toBeVisible();
+  await view.getByTestId('session-characters').selectOption(['Z4']);
+  await expect(view.locator('[data-testid="sel-item"][data-id="Z4"]').first()).toBeVisible();
+});
+
+test('MS-2 ticking Written in the chapter editor offers the summary and promotion flow', async () => {
+  await invoke('entry.update', { collection: 'chapters', id: 'CH3', patch: { written: false } });
+  await rail(page, 'Chapters').click();
+  const title = String(
+    (await invoke('entry.get', { collection: 'chapters', id: 'CH3' })).entry.title,
+  );
+  await page
+    .getByRole('button', { name: new RegExp(title) })
+    .first()
+    .click();
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByTestId('written-offer')).toHaveCount(0);
+  await field(editor, 'written').locator('input[type="checkbox"]').check();
+  await editor.getByTestId('written-offer').getByRole('button').click();
+  await expect(page.getByTestId('written-flow')).toBeVisible();
 });

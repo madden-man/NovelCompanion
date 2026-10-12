@@ -97,6 +97,10 @@ function ChapterManuscript({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [flow, setFlow] = useState(openFlow === true && chapter.written === true);
+  // MS-2: arriving from the chapter editor's Written offer shows the flow once the save lands.
+  useEffect(() => {
+    if (openFlow && chapter.written === true) setFlow(true);
+  }, [openFlow, chapter.written]);
   useEffect(() => {
     void call('manuscript.sources', {}).then((r) => setSources(r.sources));
   }, []);
