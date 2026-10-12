@@ -1,27 +1,30 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { rail } from './helpers';
+import { fileDb, rail } from './helpers';
 
 const ROOT = join(import.meta.dirname, '../..');
 
-let server: MongoMemoryReplSet;
 let app: ElectronApplication;
 let page: Page;
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  // A local MongoDB replica set (the write path uses transactions), so the
-  // app never reads the keychain or reaches Atlas.
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
+  // This file's database on the run's local MongoDB replica set (the write path
+  // uses transactions), so the app never reads the keychain or reaches Atlas.
+  const db = fileDb();
   app = await electron.launch({
     args: [ROOT],
     env: {
       ...process.env,
-      NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri(),
+      NOVEL_COMPANION_TEST_MONGODB_URI: db.uri,
+      NOVEL_COMPANION_TEST_DB_NAME: db.name,
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
+      // Its own data folder, never the real one, so parallel files never share it.
+      NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-app-')),
     },
   });
   page = await app.firstWindow();
@@ -30,7 +33,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 test('ARCH-1 the app launches with the window title "Novel Companion"', async () => {

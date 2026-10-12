@@ -14,8 +14,17 @@ export interface Store {
   close(): Promise<void>;
 }
 
-/** Connect to a MongoDB deployment and select `novel_companion`. The caller closes it. */
-export async function connect(uri: string, options: MongoClientOptions = {}): Promise<Store> {
+/**
+ * Connect to a MongoDB deployment and select `novel_companion`. The caller
+ * closes it. `database` is only ever the test seam's name (`testDatabaseName()`
+ * in src/main/secrets.ts), which gives each end-to-end spec file its own
+ * database on one shared local test server.
+ */
+export async function connect(
+  uri: string,
+  options: MongoClientOptions = {},
+  database: string | null = null,
+): Promise<Store> {
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: 8000,
     appName: 'novel-companion',
@@ -28,5 +37,5 @@ export async function connect(uri: string, options: MongoClientOptions = {}): Pr
     await client.close().catch(() => undefined);
     throw e;
   }
-  return { client, db: client.db(DATABASE_NAME), close: () => client.close() };
+  return { client, db: client.db(database ?? DATABASE_NAME), close: () => client.close() };
 }

@@ -44,6 +44,27 @@ export function testSeamsHonoured(env: NodeJS.ProcessEnv, opts: { isPackaged: bo
   return env[ALLOW_TEST_URI_ENV] === '1' && uri !== undefined && isLocalMongoUri(uri);
 }
 
+/**
+ * Tests that share one local MongoDB give each spec file its own database
+ * through this variable, in place of `novel_companion`. It is honoured under
+ * exactly the conditions of the test address (`testDatabaseHonoured()` with a
+ * local test address), so a real connection always uses `novel_companion`
+ * (ARCH-8). A name MongoDB would refuse is ignored.
+ */
+export const TEST_DB_NAME_ENV = 'NOVEL_COMPANION_TEST_DB_NAME';
+
+/** The test database name to use in place of `novel_companion`, or null to use `novel_companion`. */
+export function testDatabaseName(
+  env: NodeJS.ProcessEnv,
+  opts: { isPackaged: boolean },
+): string | null {
+  const name = env[TEST_DB_NAME_ENV];
+  const uri = env[TEST_URI_ENV];
+  if (name === undefined || uri === undefined) return null;
+  if (!testDatabaseHonoured(env, opts) || !isLocalMongoUri(uri)) return null;
+  return /^[A-Za-z0-9_-]{1,63}$/.test(name) ? name : null;
+}
+
 export type UriLookup = { ok: true; uri: string } | { ok: false; message: string };
 
 /** Read the MongoDB connection string (ARCH-5). It is never logged or stored. */

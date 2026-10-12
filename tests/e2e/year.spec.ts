@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * KB-1 the five-screen rail with everything else under More; KB-2 the Story
@@ -11,7 +11,7 @@ import { invokeVia, launch, rail } from './helpers';
  * the new parts by keyboard. The TL-2, TL-5 and TL-7 rows that used to open
  * the Year view and Compare screens live here now, on the dialog.
  */
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -28,8 +28,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri()));
+  db = fileDb();
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   bibleId = (await invoke('bible.create', { slug: SLUG, name: 'Year fixture' })).bible.id;
   await invoke('bible.open', { slug: SLUG });
@@ -50,7 +50,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 const nav = () => page.getByRole('navigation', { name: 'Sections' });

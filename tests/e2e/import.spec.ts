@@ -4,16 +4,16 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/files');
 const dir = mkdtempSync(join(tmpdir(), 'nc-e2e-import-'));
 const WORKBOOK = join(dir, 'fixture-workbook.xlsx');
 const DOCUMENT = join(dir, 'chapter-03.docx');
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -23,8 +23,8 @@ test.describe.configure({ mode: 'serial' });
 test.beforeAll(async () => {
   copyFileSync(join(FIXTURES, 'fixture-workbook.xlsx'), WORKBOOK);
   copyFileSync(join(FIXTURES, 'chapter-03.docx'), DOCUMENT);
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_PICK_FILE: WORKBOOK,
     NOVEL_COMPANION_TEST_PICK_DOCUMENT: DOCUMENT,
     NOVEL_COMPANION_TEST_SAVE_PATH: join(dir, 'export.json'),
@@ -37,7 +37,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 const view = () => page.getByTestId('import-view');

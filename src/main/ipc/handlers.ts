@@ -23,6 +23,7 @@ import {
   KeychainMongoUriStore,
   MemoryMongoUriStore,
   TEST_URI_ENV,
+  testDatabaseName,
   mongoUri,
   testDatabaseHonoured,
   testSeamsHonoured,
@@ -71,6 +72,7 @@ function makeConnection(): ConnectionManager {
       ? new MemoryMongoUriStore(lookup?.ok ? lookup.uri : null)
       : new KeychainMongoUriStore(),
     localOnly: underTest,
+    database: testDatabaseName(process.env, { isPackaged: app.isPackaged }),
     missingMessage:
       lookup && !lookup.ok
         ? lookup.message

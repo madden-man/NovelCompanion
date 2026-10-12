@@ -1,12 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { connect, createBible } from '../../src/main/db';
+import { createBible } from '../../src/main/db';
 import { BIG, median } from '../helpers/bigBible';
 import { generatedTree } from '../helpers/generatedTree';
 import { loadBigBible } from '../helpers/loadBigBible';
-import { launch, rail } from './helpers';
+import { connectTo, fileDb, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * NF-1 and T-6 in the built app: launch to the dashboard with 5,000 entries
@@ -21,14 +21,14 @@ const BIG_SLUG = 'nf1-big';
 const BIG_NAME = 'Five thousand entries';
 const TREE_SLUG = 'nf1-tree';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   test.setTimeout(300_000);
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  const store = await connect(server.getUri());
+  db = fileDb();
+  const store = await connectTo(db);
   try {
     const { docs } = await loadBigBible(store, BIG_SLUG, BIG_NAME);
     expect(docs.characters).toHaveLength(BIG.characters);
@@ -47,9 +47,7 @@ test.beforeAll(async () => {
   }
 });
 
-test.afterAll(async () => {
-  await server?.stop();
-});
+test.afterAll(async () => {});
 
 /**
  * One launch: from starting Electron to the dashboard drawn with its tiles,
@@ -59,7 +57,7 @@ test.afterAll(async () => {
  */
 async function launchToDashboard(): Promise<{ app: ElectronApplication; page: Page; ms: number }> {
   const start = performance.now();
-  const { app, page } = await launch(server.getUri());
+  const { app, page } = await launch(db);
   const dashboard = page.getByTestId('dashboard');
   const openButton = page.getByRole('button', { name: `Open ${BIG_NAME}`, exact: true });
   await expect(dashboard.or(openButton)).toBeVisible({ timeout: 30_000 });
@@ -151,7 +149,7 @@ async function openTree(page: Page, slug: string): Promise<void> {
 
 test('NF-1 FT-8 the 200-person, six-generation tree redraws in under 500 ms', async () => {
   test.setTimeout(300_000);
-  const { app, page } = await launch(server.getUri());
+  const { app, page } = await launch(db);
   try {
     await openTree(page, TREE_SLUG);
     await expect(page.locator('g.tnode')).toHaveCount(BIG.treePeople);
@@ -169,7 +167,7 @@ test('NF-1 FT-8 the 200-person, six-generation tree redraws in under 500 ms', as
 
 test('NF-1 T-6 the tree redraws in under 500 ms inside the 5,000-entry bible, with all 1,200 characters', async () => {
   test.setTimeout(300_000);
-  const { app, page } = await launch(server.getUri());
+  const { app, page } = await launch(db);
   try {
     await openTree(page, BIG_SLUG);
     // Every character of the big bible is a person on the tree: the 200 in the generated

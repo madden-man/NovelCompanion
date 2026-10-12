@@ -6,11 +6,12 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 const SLUG = 'settings';
 const KEY = 'sk-ant-api03-e2e-test-key-0123456789abcdef';
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication | null = null;
 let page: Page;
 let invoke: Invoke;
@@ -18,7 +19,7 @@ let invoke: Invoke;
 const userData = mkdtempSync(join(tmpdir(), 'nc-e2e-settings-'));
 
 async function start(): Promise<void> {
-  ({ app, page } = await launch(server.getUri(), { NOVEL_COMPANION_USER_DATA: userData }));
+  ({ app, page } = await launch(db, { NOVEL_COMPANION_USER_DATA: userData }));
   invoke = invokeVia(page);
 }
 
@@ -43,14 +44,13 @@ async function closedUri(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
+  db = fileDb();
   await start();
   await invoke('bible.create', { slug: SLUG, name: 'Settings' });
 });
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 test('ST-1 every setting changed in Settings, by keyboard, is kept after the app restarts', async () => {
@@ -135,7 +135,7 @@ test('ST-1 the API key and the MongoDB connection string are shown masked, never
   const status = view.getByTestId('mongo-status');
   await expect(status).toContainText('A connection string is stored in memory');
   await expect(status).toContainText('mongodb://…');
-  const uri = server.getUri();
+  const uri = db.uri;
   const host = new URL(uri).host;
   await expect(page.locator('body')).not.toContainText(uri);
   await expect(page.locator('body')).not.toContainText(host);

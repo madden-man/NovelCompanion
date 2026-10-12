@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { EntryCollection } from '../../src/shared/schema';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import type { TestDb } from './helpers';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -27,8 +27,8 @@ async function openBible(): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri()));
+  db = fileDb();
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await invoke('bible.create', { slug: SLUG, name: 'Knowledge' });
   await openBible();
@@ -51,7 +51,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   // Exit directly: a failed SL-1 test may leave the stop prompt open, and close() would wait on it.
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
-  await server?.stop();
 });
 
 const pick = (name: RegExp | string) =>
@@ -597,7 +596,7 @@ test('KB-5 the four tabs render their views, answer the keyboard, and the tab is
 test('SL-1 closing the app asks where you stopped, saves the note, and the next launch shows it first', async () => {
   test.setTimeout(180_000);
   await app.close();
-  ({ app, page } = await launch(server.getUri(), { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
+  ({ app, page } = await launch(db, { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
   invoke = invokeVia(page);
   await openBible();
   // The newest note from the earlier session log test is already on the launch panel.
@@ -630,7 +629,7 @@ test('SL-1 closing the app asks where you stopped, saves the note, and the next 
   await prompt.getByRole('button', { name: 'Save note and quit' }).click();
   await closing;
 
-  ({ app, page } = await launch(server.getUri(), { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
+  ({ app, page } = await launch(db, { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
   invoke = invokeVia(page);
   await openBible();
   const panel = page.getByTestId('launch-panel');
@@ -653,7 +652,7 @@ test('SL-1 closing the app asks where you stopped, saves the note, and the next 
   await expect(emptyPrompt.getByRole('button', { name: 'Quit without a note' })).toBeVisible();
   await emptyPrompt.getByRole('button', { name: 'Quit without a note' }).click();
   await quitting;
-  ({ app, page } = await launch(server.getUri()));
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await openBible();
   expect(
@@ -665,7 +664,7 @@ test('SL-1 a page that never answers cannot trap the window: it closes after the
   test.setTimeout(120_000);
   await app.close();
   // A short wait for the test; a real app waits 10 seconds.
-  ({ app, page } = await launch(server.getUri(), {
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
     NOVEL_COMPANION_STOP_PROMPT_TIMEOUT_MS: '1500',
   }));
@@ -690,7 +689,7 @@ test('SL-1 a page that never answers cannot trap the window: it closes after the
   const waited = Date.now() - started;
   expect(waited).toBeGreaterThanOrEqual(1_400);
   expect(waited).toBeLessThan(7_500);
-  ({ app, page } = await launch(server.getUri()));
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await openBible();
   expect(await logs()).toBe(before);

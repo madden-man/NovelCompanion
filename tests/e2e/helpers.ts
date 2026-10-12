@@ -1,19 +1,50 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { _electron as electron, expect } from '@playwright/test';
+import { basename, join } from 'node:path';
+import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
 import type { Invoke } from '../helpers/t5';
 import { EXECUTABLE } from '../package/paths';
+import { connect } from '../../src/main/db';
+import type { Store } from '../../src/main/db';
+import { E2E_URI_ENV } from './globalSetup';
 
 const ROOT = join(import.meta.dirname, '../..');
 
+/** A test database: a local MongoDB address and the database the app uses on it. */
+export interface TestDb {
+  uri: string;
+  /** In place of `novel_companion`, through NOVEL_COMPANION_TEST_DB_NAME. */
+  name: string;
+}
+
 /**
- * Start the built app against a local MongoDB. The "Where did you stop?" prompt
- * (SL-1) is off unless a test turns it on, so closing the app never waits on a person.
+ * This spec file's own database on the run's one replica set, which
+ * tests/e2e/globalSetup.ts starts. The name comes from the file name
+ * (`tree.spec.ts` is `e2e_tree`), so files on parallel workers never meet.
+ * Call it inside a hook or a test.
+ */
+export function fileDb(): TestDb {
+  const uri = process.env[E2E_URI_ENV];
+  if (!uri) throw new Error(`${E2E_URI_ENV} is not set; run through playwright.config.ts.`);
+  const file = basename(test.info().file).replace(/\.spec\.ts$/, '');
+  return { uri, name: `e2e_${file.replace(/[^A-Za-z0-9]/g, '_')}` };
+}
+
+/** Connect to a test database as the app would, for seeding and raw reads. The caller closes it. */
+export function connectTo(db: TestDb): Promise<Store> {
+  return connect(db.uri, {}, db.name);
+}
+
+/**
+ * Start the built app against a local MongoDB: a spec file's own database
+ * (`fileDb()`), or a bare address, where the app uses `novel_companion`. The
+ * "Where did you stop?" prompt (SL-1) is off unless a test turns it on, so
+ * closing the app never waits on a person. Each launch has its own data folder
+ * unless the test names one.
  *
  * With `packaged`, the packaged app in release/ starts instead (T-4), under the
  * one documented exception, NOVEL_COMPANION_ALLOW_TEST_URI=1 with the local
@@ -22,16 +53,18 @@ const ROOT = join(import.meta.dirname, '../..');
  * flag for the stop prompt, so its tests exit the app rather than close it.
  */
 export async function launch(
-  uri: string,
+  db: TestDb | string,
   env: Record<string, string> = {},
   opts: { packaged?: boolean } = {},
 ): Promise<{ app: ElectronApplication; page: Page }> {
+  const target = typeof db === 'string' ? { uri: db } : db;
   const app = await electron.launch({
     ...(opts.packaged ? { executablePath: EXECUTABLE, args: [] } : { args: [ROOT] }),
     env: {
       ...process.env,
       ...(opts.packaged ? { NOVEL_COMPANION_ALLOW_TEST_URI: '1' } : {}),
-      NOVEL_COMPANION_TEST_MONGODB_URI: uri,
+      NOVEL_COMPANION_TEST_MONGODB_URI: target.uri,
+      ...('name' in target ? { NOVEL_COMPANION_TEST_DB_NAME: target.name } : {}),
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
       // T-3: Claude is the recorded fake and the key lives in memory, never the real keychain.

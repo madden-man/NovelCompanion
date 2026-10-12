@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { field, invokeVia, launch, rail } from './helpers';
+import { field, fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -52,7 +52,7 @@ async function writeDoc(last: string): Promise<void> {
 }
 
 async function start(env: Record<string, string> = {}): Promise<void> {
-  ({ app, page } = await launch(server.getUri(), {
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_PICK_DOCUMENT: docPath,
     NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR: exportDir,
     ...env,
@@ -66,7 +66,7 @@ async function openBible(): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
+  db = fileDb();
   await start();
   await invoke('bible.create', { slug: SLUG, name: 'Sessions' });
   await openBible();
@@ -117,7 +117,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
-  await server?.stop();
 });
 
 const writing = () => page.getByTestId('top-writing');

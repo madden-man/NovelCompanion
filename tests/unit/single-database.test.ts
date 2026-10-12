@@ -24,19 +24,25 @@ describe('ARCH-8 the app uses only the novel_companion database', () => {
     const files = sourceFiles(DB_DIR);
     expect(files.length).toBeGreaterThan(5);
     const problems: string[] = [];
+    let calls = 0;
     for (const f of files) {
       const text = readFileSync(f, 'utf8');
       const rel = relative(ROOT, f);
       if (/listDatabases/.test(text)) problems.push(`${rel}: listDatabases`);
       if (/\.admin\s*\(/.test(text)) problems.push(`${rel}: admin()`);
       for (const m of text.matchAll(/\.db\s*\(([^)]*)\)/g)) {
+        calls += 1;
         const arg = (m[1] ?? '').trim();
-        if (arg !== "'novel_companion'" && arg !== 'DATABASE_NAME') {
+        // `database` is the end-to-end test seam's name (testDatabaseName in secrets.ts), null otherwise.
+        const allowed = ["'novel_companion'", 'DATABASE_NAME', 'database ?? DATABASE_NAME'];
+        if (!allowed.includes(arg)) {
           problems.push(`${rel}: .db(${arg})`);
         }
       }
     }
     expect(problems).toEqual([]);
+    // One place selects the database: connect() in connection.ts.
+    expect(calls).toBe(1);
   });
 
   test('ARCH-8 the rest of the main process has no other database access', () => {

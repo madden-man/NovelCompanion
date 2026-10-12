@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * M6 through the interface: the question panel from every screen (AI-1,
@@ -15,7 +15,7 @@ import { invokeVia, launch, rail } from './helpers';
  * import proposals (IM-5). Claude is the recorded fake and the key lives in
  * memory (NOVEL_COMPANION_TEST_CLAUDE, set by `launch`).
  */
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -35,8 +35,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 
 test.beforeAll(async () => {
   copyFileSync(join(import.meta.dirname, '../../fixtures/files/chapter-03.docx'), DOCUMENT);
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_PICK_DOCUMENT: DOCUMENT,
     // Slow enough to watch the answer arrive and to press Stop part way.
     NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '120',
@@ -63,7 +63,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 const panel = () => page.getByTestId('claude-panel');

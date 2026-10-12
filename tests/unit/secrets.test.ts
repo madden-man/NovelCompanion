@@ -9,8 +9,15 @@ vi.mock('@napi-rs/keyring', () => ({
   },
 }));
 
-const { ALLOW_TEST_URI_ENV, TEST_URI_ENV, isLocalMongoUri, mongoUri, testDatabaseHonoured } =
-  await import('../../src/main/secrets');
+const {
+  ALLOW_TEST_URI_ENV,
+  TEST_DB_NAME_ENV,
+  TEST_URI_ENV,
+  isLocalMongoUri,
+  mongoUri,
+  testDatabaseHonoured,
+  testDatabaseName,
+} = await import('../../src/main/secrets');
 
 const LOCAL = 'mongodb://127.0.0.1:1/';
 
@@ -89,5 +96,49 @@ describe('NF-4 the packaged smoke test runs on a test database without the keych
       ),
     ).toBe(false);
     expect(testDatabaseHonoured({ [ALLOW_TEST_URI_ENV]: '1' }, { isPackaged: true })).toBe(false);
+  });
+});
+
+describe('ARCH-8 the per-file test database name is honoured only where the test address is', () => {
+  const name = { [TEST_DB_NAME_ENV]: 'e2e_tree' };
+  test('ARCH-8 an unpackaged build with a local test address uses the named database', () => {
+    expect(testDatabaseName({ ...name, [TEST_URI_ENV]: LOCAL }, { isPackaged: false })).toBe(
+      'e2e_tree',
+    );
+    expect(
+      testDatabaseName(
+        { ...name, [TEST_URI_ENV]: LOCAL, [ALLOW_TEST_URI_ENV]: '1' },
+        { isPackaged: true },
+      ),
+    ).toBe('e2e_tree');
+  });
+
+  test('ARCH-8 the name is ignored without a test address, for a non-local one, and packaged without the allow flag', () => {
+    const atlas = 'mongodb+srv://u:p@cluster0.example.net/';
+    expect(testDatabaseName(name, { isPackaged: false })).toBeNull();
+    expect(testDatabaseName({ ...name, [TEST_URI_ENV]: atlas }, { isPackaged: false })).toBeNull();
+    expect(
+      testDatabaseName(
+        { ...name, [TEST_URI_ENV]: atlas, [ALLOW_TEST_URI_ENV]: '1' },
+        { isPackaged: true },
+      ),
+    ).toBeNull();
+    expect(testDatabaseName({ ...name, [TEST_URI_ENV]: LOCAL }, { isPackaged: true })).toBeNull();
+    expect(
+      testDatabaseName(
+        { ...name, [TEST_URI_ENV]: LOCAL, [ALLOW_TEST_URI_ENV]: 'yes' },
+        { isPackaged: true },
+      ),
+    ).toBeNull();
+  });
+
+  test('ARCH-8 a name MongoDB would refuse, or none, leaves novel_companion in place', () => {
+    for (const bad of ['', 'a.b', 'a/b', 'x'.repeat(64), 'with space']) {
+      expect(
+        testDatabaseName({ [TEST_DB_NAME_ENV]: bad, [TEST_URI_ENV]: LOCAL }, { isPackaged: false }),
+        bad,
+      ).toBeNull();
+    }
+    expect(testDatabaseName({ [TEST_URI_ENV]: LOCAL }, { isPackaged: false })).toBeNull();
   });
 });

@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { collectionInfo, entryTitle } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
@@ -11,7 +10,8 @@ import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
 import type { Invoke } from '../helpers/t5';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * NF-2: every action is reachable by keyboard. Nothing here clicks: each
@@ -20,7 +20,7 @@ import { invokeVia, launch, rail } from './helpers';
  * primary controls are activated with Enter, Space, typing, or the app's
  * shortcuts, with the visible result asserted.
  */
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let fake: FakeGoogle;
 let app: ElectronApplication;
 let page: Page;
@@ -56,8 +56,8 @@ test.beforeAll(async () => {
     parents: ['folderNovel'],
     content: Buffer.from('not used'),
   });
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
     NOVEL_COMPANION_TEST_PICK_FILE: WORKBOOK,
   }));
@@ -76,7 +76,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
   await fake?.close();
 });
 
@@ -649,7 +648,7 @@ test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its di
   test.setTimeout(300_000);
   // A launch whose recorded Claude streams slowly, so Stop can be reached while a run is going.
   await app.close();
-  ({ app, page } = await launch(server.getUri(), {
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_ANTHROPIC_KEY: KEY,
     NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '400',
   }));

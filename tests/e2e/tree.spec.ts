@@ -5,16 +5,16 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { assembleGraph, buildGraph, generations, layoutTree } from '../../src/shared/domain/tree';
 import type { TreeGraph } from '../../src/shared/domain/tree';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
 import { decodePng, pdfFillColors } from '../helpers/png';
-import { field, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import type { TestDb } from './helpers';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -41,8 +41,8 @@ const tl2 = JSON.parse(
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri()));
+  db = fileDb();
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   for (const [slug, name] of [
     [HAND, 'Tree by hand'],
@@ -61,7 +61,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 function strip(d: Record<string, unknown>): Record<string, unknown> {
@@ -433,10 +432,10 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   await expect(dialog.getByTestId('linked-count')).toHaveText(/2 entries link here/);
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
   await expect(node('Noor Zhou')).toHaveCount(0);
-  const raw = await new MongoClient(server.getUri()).connect();
+  const raw = await new MongoClient(db.uri).connect();
   try {
     const stored = await raw
-      .db('novel_companion')
+      .db(db.name)
       .collection(`${HAND}.characters`)
       .findOne({ title: 'Noor Zhou' });
     expect(stored?.deletedAt).toBeTruthy();

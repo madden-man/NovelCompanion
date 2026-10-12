@@ -2,15 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { FILE, READONLY, startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/files');
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let fake: FakeGoogle;
 let app: ElectronApplication;
 let page: Page;
@@ -38,8 +38,8 @@ test.beforeAll(async () => {
     mimeType: 'application/pdf',
     parents: ['folderNovel'],
   });
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
     NOVEL_COMPANION_TEST_PICK_DOCUMENT: join(FIXTURES, 'chapter-03.docx'),
   }));
@@ -51,7 +51,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
   await fake?.close();
 });
 

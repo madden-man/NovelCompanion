@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, invokeVia, launch, rail } from './helpers';
+import { field, fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * KB-6 and KB-7 through the interface: Cmd+K (or Add in the status bar) opens
@@ -12,7 +12,7 @@ import { field, invokeVia, launch, rail } from './helpers';
  * ones as one undo step, Review later leaves them in the queue, and without a
  * key or with a failed run the text is saved as an open question.
  */
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -32,8 +32,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     // Slow enough to see the proposals arrive one at a time.
     NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '60',
   }));
@@ -62,7 +62,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 const box = () => page.getByTestId('capture-box');

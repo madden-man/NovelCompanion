@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   ENTRY_COLLECTIONS,
   collectionInfo,
@@ -12,10 +11,20 @@ import {
 import type { CustomSection, EntryCollection } from '../../src/shared/schema';
 import { ALL_KINDS_SECTION, build, t5Verify, t5Write } from '../helpers/t5';
 import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
-import { field, invokeVia, launch, rail, setField, waitSaved, withoutSystem } from './helpers';
+import {
+  field,
+  fileDb,
+  invokeVia,
+  launch,
+  rail,
+  setField,
+  waitSaved,
+  withoutSystem,
+} from './helpers';
+import type { TestDb } from './helpers';
 import type { UiContext } from './helpers';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -26,8 +35,8 @@ const BIBLE = 'editing';
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri()));
+  db = fileDb();
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await page.evaluate(
     (slug) => window.api.invoke('bible.create', { slug, name: 'Editing tests' }),
@@ -39,12 +48,11 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 async function relaunch() {
   await app.close();
-  ({ app, page } = await launch(server.getUri()));
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await page.evaluate((slug) => window.api.invoke('bible.open', { slug }), BIBLE);
   await expect(page.getByTestId('workspace')).toBeVisible();
@@ -511,11 +519,11 @@ test('ED-6 generated content and imported content are edited like any other fiel
 
 /** Read a stored document straight from MongoDB, not through the app. */
 async function fromMongo(collection: string, id: string) {
-  const client = new MongoClient(server.getUri());
+  const client = new MongoClient(db.uri);
   try {
     await client.connect();
     return await client
-      .db('novel_companion')
+      .db(db.name)
       .collection(`${BIBLE}.${collection}`)
       .findOne({ _id: id as never });
   } finally {

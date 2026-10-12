@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { connect } from '../../src/main/db';
 import { ENTRIES_COLLECTIONS, ENTRIES_PAGE } from '../../src/shared/domain/entries';
 import { BIG, countEntries, median } from '../helpers/bigBible';
 import { loadBigBible } from '../helpers/loadBigBible';
-import { invokeVia, launch, rail } from './helpers';
+import { connectTo, fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
 /**
  * NF-1 and KB-5 in the built app: the Entries screen over the 5,000-entry
@@ -23,7 +22,7 @@ const SEARCH_MS = 200;
 const PAUSE_MS = 150;
 const OPEN_MS = 500;
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let listed = 0;
@@ -32,8 +31,8 @@ test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   test.setTimeout(300_000);
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  const store = await connect(server.getUri());
+  db = fileDb();
+  const store = await connectTo(db);
   try {
     const { docs } = await loadBigBible(store, SLUG);
     expect(countEntries(docs)).toBeGreaterThanOrEqual(BIG.entries);
@@ -42,14 +41,13 @@ test.beforeAll(async () => {
   } finally {
     await store.close();
   }
-  ({ app, page } = await launch(server.getUri()));
+  ({ app, page } = await launch(db));
   await invokeVia(page)('bible.open', { slug: SLUG });
   await expect(page.getByTestId('workspace')).toBeVisible({ timeout: 30_000 });
 });
 
 test.afterAll(async () => {
   await app?.close();
-  await server?.stop();
 });
 
 /** Click Entries in the rail and time it until the first page of rows is painted. */

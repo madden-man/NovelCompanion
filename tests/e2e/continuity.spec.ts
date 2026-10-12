@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail } from './helpers';
+import type { TestDb } from './helpers';
 
-let server: MongoMemoryReplSet;
+let db: TestDb;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -23,8 +23,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 }
 
 test.beforeAll(async () => {
-  server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-  ({ app, page } = await launch(server.getUri(), {
+  db = fileDb();
+  ({ app, page } = await launch(db, {
     // T-3: the recorded Claude, with a key held in memory.
     NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-test-key-0123456789abcdef',
   }));
@@ -66,7 +66,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
-  await server?.stop();
 });
 
 const view = () => page.getByTestId('alignment-view');

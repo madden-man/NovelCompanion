@@ -27,6 +27,8 @@ export interface ConnectionDeps {
   /** `<userData>/snapshots`, where BK-1 snapshots are kept. */
   snapshotRoot: string;
   connect?: (uri: string) => Promise<Store>;
+  /** Under test, the spec file's own database in place of `novel_companion` (`testDatabaseName()`). */
+  database?: string | null;
   /** Told whenever the state changes, so the window can follow it. */
   onStatus?: (status: ConnectionStatus) => void;
 }
@@ -47,7 +49,7 @@ export class ConnectionManager {
   private readonly connectTo: (uri: string) => Promise<Store>;
 
   constructor(private readonly deps: ConnectionDeps) {
-    this.connectTo = deps.connect ?? ((uri) => connect(uri));
+    this.connectTo = deps.connect ?? ((uri) => connect(uri, {}, deps.database ?? null));
   }
 
   get current(): Store | null {
