@@ -8,7 +8,7 @@ root="$(git rev-parse --show-toplevel)"
 while read -r _local_ref local_sha remote_ref _remote_sha; do
   case "$local_sha" in 0000000000000000000000000000000000000000) continue ;; esac
   if [ "$remote_ref" = refs/heads/main ] && [ -f "$root/scripts/auto-install.sh" ]; then
-    (cd "$root" && nohup sh scripts/auto-install.sh "$local_sha" >/dev/null 2>&1 &)
+    (cd "$root" && nohup sh scripts/auto-install.sh "$local_sha" </dev/null >/dev/null 2>&1 &) </dev/null >/dev/null 2>&1
     echo "Novel Companion: rebuilding the app for ${local_sha%"${local_sha#???????}"} once this push lands (log: ~/Library/Logs/Novel Companion/auto-install.log)."
   fi
 done
