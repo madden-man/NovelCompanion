@@ -163,35 +163,44 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
     await page.getByTestId('top-relevant').click();
     await expect(relevant()).toBeVisible();
   }
-  // SB-1: a picked strand is that strand alone; a chapter with no strand picked is every strand.
-  await expect(page.getByTestId('relevant-label')).toHaveText(
-    'Chapter 2: Two Kitchens, present, 2045',
-  );
+  // SB-1: a picked strand is that strand alone. A35: the chapter heads the view.
+  await expect(page.getByTestId('relevant-label')).toHaveText('Two Kitchens');
   await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
   await expect(strand('CH2-backstory')).toHaveCount(0);
   await expect(strand('CH2-present')).toContainText('writing now');
+  await expect(strand('CH2-present')).toContainText('Ch. 2');
+  // A35: with no strand picked the primary strand is the scene, and the
+  // backstory strand's years are its Backstory section.
   await invoke('storyTime.set', { time: { year: 2045, chapterId: 'CH2' } });
-  await expect(page.getByTestId('relevant-label')).toHaveText('Chapter 2: Two Kitchens');
+  await expect(page.getByTestId('relevant-label')).toHaveText('Two Kitchens');
   const strands = relevant().getByTestId('relevant-strand');
-  await expect(strands).toHaveCount(2);
+  await expect(strands).toHaveCount(1);
   await expect(strands.nth(0)).toHaveAttribute('data-strand', 'CH2-present');
-  await expect(strands.nth(1)).toHaveAttribute('data-strand', 'CH2-backstory');
+  await expect(strand('CH2-present').getByTestId('sel-backstory')).toContainText(
+    'Backstory backstory · 2032',
+  );
+  // A35: characters are a name and an age.
   await expect(groupIds(strand('CH2-present'), 'characters')).toHaveText([
-    /Daniel Hale.*alive, age 60/,
-    /Zhou Lan.*alive, age 57/,
-    /Iris Hale-Zhou.*alive, age 14/,
+    /^Daniel Hale60(POV)?$/,
+    /^Zhou Lan57$/,
+    /^Iris Hale-Zhou14$/,
   ]);
-  await expect(groupIds(strand('CH2-backstory'), 'characters')).toHaveText([
-    /Zhou Lan.*alive, age 44/,
-    /Zhou Meiling.*alive, age 70/,
-    /Iris Hale-Zhou.*alive, age 1/,
-  ]);
+  // A35: world events lead, then backstory, characters, and culture; the rest is folded.
+  await expect
+    .poll(() =>
+      strand('CH2-present').evaluate((el) =>
+        Array.from(
+          el.querySelectorAll(':scope > [data-testid]'),
+          (e) => e.getAttribute('data-kind') ?? e.getAttribute('data-testid'),
+        ),
+      ),
+    )
+    .toEqual(['eventsWindow', 'sel-backstory', 'characters', 'culture', 'relevant-more']);
+  await expect(strand('CH2-present').getByTestId('relevant-more')).not.toHaveAttribute('open');
 
   // The view follows the Writing picker live.
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
-  await expect(page.getByTestId('relevant-label')).toHaveText(
-    'Chapter 6: The Letter, present, 2045',
-  );
+  await expect(page.getByTestId('relevant-label')).toHaveText('The Letter');
   const s = strand('CH6-present');
   await expect(groupIds(s, 'era')).toHaveAttribute('data-id', 'ERA-2040');
   await expect(groupIds(s, 'culture')).toHaveAttribute('data-id', 'CU4');
@@ -532,6 +541,70 @@ test('A27 TM-3 the top bar year slider and typed year move the story time, the e
   await box.fill('2041');
   await page.getByTestId('top-writing').focus();
   await expect(page.getByTestId('status-time')).toContainText('Story time 2041');
+});
+
+test('A35 Relevant to Session shows the backstory of the years before the scene; a year is corrected and a passage pinned', async () => {
+  const iris = (await invoke('entry.get', { collection: 'characters', id: 'H5' })).entry;
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H5',
+    patch: {
+      backstory:
+        '<p>Iris is born in Portland in 2031.</p>' +
+        '<p>When Iris is twelve, her grandmother teaches her to make dumplings.</p>' +
+        '<p>She learns the recipes by heart.</p>' +
+        '<p>Iris’s first year of high school is lonely.</p>',
+    },
+  });
+  await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  await rail(page, 'Relevant to Session').click();
+  const s = strand('CH6-present');
+  const section = s.getByTestId('sel-backstory');
+  // No backstory strand: the three years before the story year.
+  await expect(section.locator('h4')).toHaveText('Backstory The three years before · 2042 to 2044');
+  const person = section.locator('[data-testid="backstory-person"][data-id="H5"]');
+  await expect(person).toContainText('ages 11 to 13');
+  const rows = person.getByTestId('backstory-row');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText('2031Leading up');
+  await expect(rows.nth(1)).toContainText('2043Age 12');
+  await expect(rows.nth(2)).toContainText('2043She learns the recipes by heart.');
+
+  // A carried year is corrected by hand.
+  await rows.nth(2).getByRole('button', { name: '2043' }).click();
+  const year = rows.nth(2).getByLabel(/Year of this passage/);
+  await year.fill('2044');
+  await year.press('Enter');
+  await expect(rows.nth(2).getByRole('button', { name: '2044' })).toBeVisible();
+
+  // A pinned passage shows in a session about any year.
+  await rows.nth(1).getByRole('button', { name: 'Pin' }).click();
+  await expect(rows.nth(1).getByRole('button', { name: 'Pinned' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const marks = (await invoke('entry.get', { collection: 'characters', id: 'H5' })).entry
+    .backstoryMarks as { key: string; year?: number; pinned?: boolean }[];
+  expect(marks).toEqual([
+    { key: 'she learns the recipes by heart', year: 2044 },
+    { key: 'when iris is twelve her grandmother teaches her to make dump', pinned: true },
+  ]);
+  await writing().selectOption({ label: 'Chapter 2: Two Kitchens, present (2045)' });
+  const pinned = strand('CH2-present').locator(
+    '[data-testid="backstory-person"][data-id="H5"] [data-testid="backstory-row"]',
+  );
+  await expect(pinned).toHaveCount(1);
+  await expect(pinned).toContainText('2043Pinned');
+
+  // A35: the culture section names its setting.
+  await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  await expect(strand('CH6-present').getByTestId('relevant-setting')).toContainText('Setting');
+
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H5',
+    patch: { backstory: iris.backstory, backstoryMarks: [] },
+  });
 });
 
 test('SB-1 Relevant to Session takes places and other characters present for a story year and point of view', async () => {

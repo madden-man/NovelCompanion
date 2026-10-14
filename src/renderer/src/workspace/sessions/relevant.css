@@ -1,0 +1,187 @@
+/* A35: Relevant to Session, world events first, then backstory, characters, culture. */
+.rel-sec h4 {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.rel-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.rel-person {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.rel-person.pov {
+  border-color: var(--accent);
+}
+.rel-age {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+}
+.rel-age.unknown {
+  color: var(--warning-ink);
+  font-size: 0.85rem;
+}
+.rel-pov {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-2);
+}
+.rel-bs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rel-bs-person {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.rel-bs-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.rel-bs-who small {
+  color: var(--fg-2);
+}
+.rel-bs-person ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rel-bs-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.rel-year {
+  flex: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.rel-year.set {
+  border-style: dashed;
+}
+.rel-year-input {
+  width: 5.5em;
+  flex: none;
+}
+.rel-bs-tag {
+  flex: none;
+  width: 92px;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-2);
+}
+.rel-bs-row.pinned .rel-bs-tag,
+.rel-bs-row.lead .rel-bs-tag {
+  color: var(--planned);
+}
+.rel-bs-row.pinned .rel-bs-text,
+.rel-bs-row.lead .rel-bs-text {
+  color: var(--fg-2);
+}
+.rel-bs-text {
+  flex: 1;
+  min-width: 0;
+}
+.rel-pin {
+  flex: none;
+  opacity: 0.6;
+}
+.rel-bs-row:hover .rel-pin,
+.rel-pin:focus-visible,
+.rel-pin[aria-pressed='true'] {
+  opacity: 1;
+}
+.rel-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.rel-src {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+.rel-pick {
+  max-width: 520px;
+}
+.rel-cg {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.rel-comm {
+  font-weight: 700;
+}
+.rel-ce + .rel-ce {
+  margin-top: 8px;
+}
+.rel-ce p {
+  margin: 2px 0 0;
+  color: var(--fg-2);
+}
+.rel-yrs {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+.rel-gap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  border: 1px dashed var(--time);
+  background: var(--time-soft);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.rel-more {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+.rel-more summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.rel-more summary span {
+  font-weight: 400;
+  color: var(--fg-2);
+}
+.rel-more[open] summary {
+  margin-bottom: 10px;
+}
+@media (max-width: 760px) {
+  .rel-bs-person,
+  .rel-cg {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rel-bs-tag {
+    width: auto;
+  }
+}
+.rel-bs-more {
+  font-size: 0.85rem;
+}

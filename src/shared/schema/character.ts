@@ -28,6 +28,13 @@ export const PlaceLived = z.strictObject({
   endYear: Year.nullable(),
 });
 
+/** A35: a backstory passage's year set by hand, or a pin that keeps it in every session. */
+export const BackstoryMark = z.strictObject({
+  key: z.string().min(1).max(200),
+  year: Year.nullable().optional(),
+  pinned: z.boolean().optional(),
+});
+
 export const Character = entry({
   names: Names,
   birth: StoryDate,
@@ -38,6 +45,7 @@ export const Character = entry({
   backstory: z.string().default(''),
   voiceNotes: z.array(VoiceNote).default([]),
   placesLived: z.array(PlaceLived).default([]),
+  backstoryMarks: z.array(BackstoryMark).max(2000).default([]),
 });
 export type Character = z.infer<typeof Character>;
 
@@ -111,5 +119,18 @@ export const characterFields: FieldSpec[] = [
       })),
     ],
     { itemLabel: 'place' },
+  ),
+  f.objectList(
+    'backstoryMarks',
+    'Backstory dates and pins',
+    [
+      f.text('key', 'Passage (its first words)', { required: true }),
+      f.year('year', 'Year set by hand', { nullable: true }),
+      f.boolean('pinned', 'Pinned to every session'),
+    ],
+    {
+      itemLabel: 'key',
+      hint: 'Set from Relevant to Session: a year chip you corrected, or a passage you pinned.',
+    },
   ),
 ];

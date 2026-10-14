@@ -5,8 +5,8 @@ import { characterName } from '../../../../shared/domain/timeline';
 import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
-import { SelectionBody } from './common';
 import { PovExtras } from './povPickers';
+import { RelevantBody } from './relevantBody';
 import type { OpenEntry, SelectionView } from './common';
 
 export type BriefInput = Request<'session.relevant'>['input'];
@@ -158,11 +158,11 @@ export function BriefSettings({
 }
 
 /**
- * Relevant to Session: the most important entries for the chapter being
- * written (characters and ages, the era, world events, cultural expectations,
- * places, who knows what, earlier chapters, beats, linked glossary, themes,
- * and open questions, the last session note). It is the same selection the
- * brief is written from (SB-2, SB-3), shown live.
+ * Relevant to Session: what matters for the chapter being written (A35):
+ * world events first, then the backstory of the chapter's backstory years,
+ * the characters by name and age, and the culture of the setting in that
+ * year, with the rest of the selection folded below. It is the same
+ * selection the brief is written from (SB-2, SB-3), shown live.
  */
 export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
   const story = useStoryTime();
@@ -183,11 +183,7 @@ export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
         <h2>Relevant to Session</h2>
         {sel && <span className="chip time">{sel.year}</span>}
       </div>
-      {time.chapterId ? (
-        <p className="lede" data-testid="relevant-label">
-          {sel ? sel.label : 'Loading the selection.'}
-        </p>
-      ) : (
+      {!time.chapterId && (
         <div className="field narrow">
           <label htmlFor={povId}>Point of view in {time.year}</label>
           <select id={povId} value={pov ?? ''} onChange={(e) => setPov(e.target.value || null)}>
@@ -215,24 +211,20 @@ export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
           )}
         </div>
       )}
-      <BriefSettings onChanged={() => setBump((n) => n + 1)} />
       {error && (
         <p className="callout crit" role="alert">
           {error}
         </p>
       )}
+      {time.chapterId && !sel && !error && <p className="lede">Loading the selection.</p>}
       {sel && (
-        <>
-          <p className="example-note">
-            {sel.ids.length} entries, selected the same way the brief selects them.
-          </p>
-          <SelectionBody
-            selection={sel}
-            onOpen={onOpen}
-            writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
-          />
-        </>
+        <RelevantBody
+          selection={sel}
+          onOpen={onOpen}
+          writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
+        />
       )}
+      <BriefSettings onChanged={() => setBump((n) => n + 1)} />
     </div>
   );
 }

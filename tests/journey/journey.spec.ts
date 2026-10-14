@@ -216,9 +216,7 @@ test('A27 TM-3 TM-4 SB-10 the top bar: year slider and year box, the Writing pic
   await page.getByTestId('top-relevant').click();
   const relevant = page.getByTestId('relevant-view');
   await expect(relevant).toBeVisible();
-  await expect(page.getByTestId('relevant-label')).toHaveText(
-    'Chapter 2: Two Kitchens, present, 2045',
-  );
+  await expect(page.getByTestId('relevant-label')).toHaveText('Two Kitchens');
   // SB-1: a picked strand is that strand alone.
   await expect(relevant.getByTestId('relevant-strand')).toHaveCount(1);
   await expect(relevant.getByTestId('relevant-strand')).toHaveAttribute(

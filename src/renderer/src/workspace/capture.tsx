@@ -44,8 +44,14 @@ function setBoxOpen(open: boolean): void {
   for (const l of openListeners) l();
 }
 
+/** A35: who hears a prefill such as "Cultural context for Pacific States, 2055: ". */
+const prefillListeners = new Set<(text: string) => void>();
+
 export const captureNav = {
-  open: () => setBoxOpen(true),
+  open: (prefill?: string) => {
+    if (prefill) for (const l of prefillListeners) l(prefill);
+    setBoxOpen(true);
+  },
   close: () => setBoxOpen(false),
 };
 
@@ -70,7 +76,7 @@ export function CaptureButton() {
       className="btn small"
       aria-haspopup="dialog"
       aria-expanded={open}
-      onClick={captureNav.open}
+      onClick={() => captureNav.open()}
       data-testid="capture-add"
     >
       Add <kbd>Cmd K</kbd>
@@ -159,6 +165,15 @@ export function CaptureBox() {
     return () => {
       window.removeEventListener('keydown', onKey);
       setBoxOpen(false);
+    };
+  }, []);
+
+  // A35: a prefill from the opener lands in an empty box.
+  useEffect(() => {
+    const onPrefill = (t: string) => setText((cur) => cur || t);
+    prefillListeners.add(onPrefill);
+    return () => {
+      prefillListeners.delete(onPrefill);
     };
   }, []);
 

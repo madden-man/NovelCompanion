@@ -75,6 +75,7 @@ const ItemWire = z.strictObject({
   state: LifeState.optional(),
   year: z.number().nullable().optional(),
   endYear: z.number().optional(),
+  community: z.string().optional(),
 });
 
 const GroupWire = z.strictObject({
@@ -99,7 +100,38 @@ export const SelectionWire = z.strictObject({
       povCharacterId: z.string().nullable(),
       povName: z.string().nullable(),
       placeIds: z.array(z.string()),
+      endYear: z.number().nullable(),
+      setting: z.strictObject({
+        placeIds: z.array(z.string()),
+        source: z.enum(['strand', 'placesLived', 'none']),
+        characterId: z.string().nullable(),
+        note: z.string(),
+      }),
       communities: z.array(z.strictObject({ id: z.string(), label: z.string() })),
+      backstory: z.strictObject({
+        from: z.number(),
+        to: z.number(),
+        label: z.string(),
+        people: z.array(
+          z.strictObject({
+            characterId: z.string(),
+            name: z.string(),
+            ages: z.string(),
+            rows: z.array(
+              z.strictObject({
+                key: z.string(),
+                text: z.string(),
+                excerpt: z.string(),
+                year: z.number().nullable(),
+                source: z.enum(['cue', 'carried', 'set', 'none']),
+                tag: z.string(),
+                pinned: z.boolean(),
+                kind: z.enum(['window', 'lead', 'pinned']),
+              }),
+            ),
+          }),
+        ),
+      }),
       groups: z.array(GroupWire),
     }),
   ),

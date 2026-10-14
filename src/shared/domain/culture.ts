@@ -106,3 +106,27 @@ export function placeOutline(places: readonly Doc[]): PlaceNode[] {
   }
   return out;
 }
+
+/**
+ * A35: the place a free-text "place lived" names, such as "Los Angeles,
+ * California (USC)". The parenthesised part is tried first, then each comma
+ * part in order, so the most specific match wins. A place matches when its
+ * title is the part, or carries the part in parentheses. Null when none does.
+ */
+export function placeForText(places: readonly Doc[], text: string): string | null {
+  const inner = [...text.matchAll(/\(([^)]+)\)/g)].map((m) => (m[1] ?? '').trim());
+  const outer = text
+    .replace(/\([^)]*\)/g, '')
+    .split(',')
+    .map((s) => s.trim());
+  const live = places.filter((p) => !p.deletedAt);
+  for (const part of [...inner, ...outer]) {
+    if (!part) continue;
+    const want = part.toLowerCase();
+    const hit =
+      live.find((p) => titleOf(p).toLowerCase() === want) ??
+      live.find((p) => titleOf(p).toLowerCase().includes(`(${want})`));
+    if (hit) return String(hit._id);
+  }
+  return null;
+}

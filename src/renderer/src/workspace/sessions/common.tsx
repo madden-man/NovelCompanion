@@ -69,7 +69,7 @@ function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) =
   );
 }
 
-function GroupBlock(props: {
+export function GroupBlock(props: {
   group: Group;
   onOpen: OpenEntry;
   action?: (item: Item) => ReactNode;
@@ -115,7 +115,7 @@ function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
  * list. Planned-ahead events inside the window sit on the strip too, so the
  * list under "Planned ahead" keeps only what lies past it.
  */
-function EventsWindow(props: {
+export function EventsWindow(props: {
   strand: SelectionView['strands'][number];
   group: Group;
   window: number;

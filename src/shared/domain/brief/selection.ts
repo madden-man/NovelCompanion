@@ -11,8 +11,12 @@
  * here calls a model or reads the clock.
  *
  * Readings this module chose where SPEC left room (reported to the architect):
- * - A place's community is its own `communityId`, else the nearest enclosing
- *   place's (step 4).
+ * - A strand's setting is its places; with none, the place the point of view
+ *   (else the first character present) lived in that year, matched to a place
+ *   by name (A35). The setting feeds steps 4 and 5.
+ * - The setting's communities are every `communityId` from the place out to
+ *   the outermost place, nearest first, then each one's parent in the
+ *   communities list (A35, step 4).
  * - "Partners" in the step 1 fallback are partners in a union that has begun
  *   by the story year and not ended before it; everyone in the fallback is
  *   alive in the story year.
@@ -31,7 +35,9 @@
 import { groupLabel } from '../numbering';
 import type { LifeState } from '../ages';
 import { describeState } from '../ages';
-import { descriptionFor, entriesFor, placePath } from '../culture';
+import { datePassages, passagesFor } from '../backstory';
+import type { BackstoryMark, BackstoryRow } from '../backstory';
+import { descriptionFor, entriesFor, placeForText, placePath } from '../culture';
 import { yearOf } from '../dates';
 import { knownBy } from '../knowledge';
 import { isPlainObject } from '../paths';
@@ -205,6 +211,34 @@ export interface SelectedItem {
   year?: number | null;
   /** For events: the year it ends (the start year for a single date). */
   endYear?: number;
+  /** For cultural entries: the community it was selected for (A35). */
+  community?: string;
+}
+
+/** A35: where a strand is set, which step 4 and step 5 read. */
+export interface StrandSetting {
+  placeIds: string[];
+  /** strand: the strand's own places; placesLived: where a character lived that year; none. */
+  source: 'strand' | 'placesLived' | 'none';
+  /** For placesLived, whose row it came from. */
+  characterId: string | null;
+  /** "from Mark Sullivan's places lived, 2055 to 2060", or empty. */
+  note: string;
+}
+
+/** A35: the backstory of the chapter's backstory years, for Relevant to Session. Not in the manifest. */
+export interface StrandBackstory {
+  from: number;
+  to: number;
+  /** "High school", from the backstory strand's label, or "The three years before". */
+  label: string;
+  people: {
+    characterId: string;
+    name: string;
+    /** "ages 14 to 17", "age 14", or "age unknown". */
+    ages: string;
+    rows: BackstoryRow[];
+  }[];
 }
 
 export interface SelectionGroup {
@@ -223,8 +257,14 @@ export interface StrandSelection {
   povCharacterId: string | null;
   povName: string | null;
   placeIds: string[];
-  /** The communities of the strand's places (step 4). */
+  /** The last year of the strand, when it spans years (A35). */
+  endYear: number | null;
+  /** Where the strand is set (A35). */
+  setting: StrandSetting;
+  /** The communities of the setting, nearest first (step 4, A35). */
   communities: { id: string; label: string }[];
+  /** A35: the backstory passages for the chapter's backstory years. */
+  backstory: StrandBackstory;
   groups: SelectionGroup[];
 }
 
@@ -329,6 +369,9 @@ interface StrandSpec {
   label: string;
   primary: boolean;
   year: number;
+  endYear: number | null;
+  /** The strand's own label, such as "Backstory: High School". */
+  strandLabel: string;
   pov: string | null;
   characterIds: string[];
   placeIds: string[];
@@ -365,6 +408,8 @@ function strandSpec(chapter: Doc, s: Doc, prefix = true): StrandSpec {
     label: prefix ? `${chapterLabel(chapter)}, ${label}` : label,
     primary: s.primary === true,
     year,
+    endYear: num(s.endYear),
+    strandLabel: str(s.label),
     pov: str(s.povCharacterId) || null,
     characterIds: [...new Set(idList(s.characterIds))],
     placeIds: [...new Set(idList(s.placeIds))],
@@ -436,6 +481,8 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
         label: `${input.year}, point of view ${name}`,
         primary: true,
         year: input.year,
+        endYear: null,
+        strandLabel: '',
         pov: input.povCharacterId,
         characterIds: [...new Set(input.characterIds ?? [])],
         placeIds: [...new Set(input.placeIds ?? [])],
@@ -542,15 +589,113 @@ export function selectForSession(
     const items = (lists.get('communities')?.items ?? []) as { id: string; label: string }[];
     return items.find((i) => i.id === id)?.label ?? id;
   };
-  const communityOf = (placeId: string): string | null => {
+  /** Every community from a place out to the outermost place, nearest first (A35). */
+  const communitiesOf = (placeId: string): string[] => {
+    const out: string[] = [];
     const seen = new Set<string>();
     let cur = placeById.get(placeId);
     while (cur && !seen.has(str(cur._id))) {
       seen.add(str(cur._id));
-      if (str(cur.communityId)) return str(cur.communityId);
+      const c = str(cur.communityId);
+      if (c && !out.includes(c)) out.push(c);
       cur = placeById.get(str(cur.parentId));
     }
-    return null;
+    return out;
+  };
+  /** A community's parents in the communities list, nearest first. */
+  const communityParents = (id: string): string[] => {
+    const items = (lists.get('communities')?.items ?? []) as {
+      id: string;
+      parentId?: string | null;
+    }[];
+    const out: string[] = [];
+    let cur = items.find((i) => i.id === id)?.parentId ?? null;
+    while (cur && !out.includes(cur) && cur !== id) {
+      out.push(cur);
+      cur = items.find((i) => i.id === cur)?.parentId ?? null;
+    }
+    return out;
+  };
+  /** A35: the strand's places, else where the point of view (or the first one present) lived. */
+  const settingFor = (spec: StrandSpec, present: string[], Y: number): StrandSetting => {
+    if (spec.placeIds.length) {
+      return { placeIds: spec.placeIds, source: 'strand', characterId: null, note: '' };
+    }
+    const who = [...new Set([spec.pov, ...present].filter((x): x is string => !!x))];
+    for (const id of who) {
+      const c = characters.get(id);
+      if (!live(c)) continue;
+      const rows = (Array.isArray(c.placesLived) ? c.placesLived : [])
+        .filter(isPlainObject)
+        .filter((r) => (num(r.startYear) ?? -Infinity) <= Y && Y <= (num(r.endYear) ?? Infinity))
+        .sort((a, b) => (num(b.startYear) ?? -Infinity) - (num(a.startYear) ?? -Infinity));
+      for (const r of rows) {
+        const p = placeForText(places, str(r.place));
+        if (!p) continue;
+        return {
+          placeIds: [p],
+          source: 'placesLived',
+          characterId: id,
+          note: `from ${characterName(c, id)}'s places lived, ${rangeText(num(r.startYear), num(r.endYear))}`,
+        };
+      }
+    }
+    return { placeIds: [], source: 'none', characterId: spec.pov, note: '' };
+  };
+  /** A35: the backstory passages of the chapter's backstory years. */
+  const backstoryFor = (spec: StrandSpec, present: string[], Y: number): StrandBackstory => {
+    const clean = (l: string) => l.replace(/^backstory\s*:\s*/i, '').trim();
+    let from = Y - 3;
+    let to = Y - 1;
+    let label = 'The three years before';
+    const extra: string[] = [];
+    if (spec.chapter) {
+      const others = strandsOf(spec.chapter).filter(
+        (s) => num(s.startYear) !== null && s.primary !== true && str(s.id) !== spec.strandId,
+      );
+      if (!spec.primary) {
+        from = Y;
+        to = Math.max(Y, spec.endYear ?? Y);
+        label = clean(spec.strandLabel) || 'Backstory';
+      } else if (others.length) {
+        from = Math.min(...others.map((s) => num(s.startYear) as number));
+        to = Math.max(...others.map((s) => num(s.endYear) ?? (num(s.startYear) as number)));
+        label = others.map((s) => clean(str(s.label)) || 'Backstory').join(' · ');
+        for (const s of others) extra.push(...idList(s.characterIds));
+      }
+    }
+    const people: StrandBackstory['people'] = [];
+    for (const id of [...new Set([...present, ...extra])]) {
+      const c = characters.get(id);
+      if (!live(c)) continue;
+      const names = isPlainObject(c.names) ? c.names : {};
+      const words = str(names.full).split(/\s+/).filter(Boolean);
+      const given = (names.order === 'family-first' ? words[words.length - 1] : words[0]) ?? '';
+      const nick = Array.isArray(names.nicknames) ? names.nicknames.map(str) : [];
+      const marks = (Array.isArray(c.backstoryMarks) ? c.backstoryMarks : []).filter(
+        isPlainObject,
+      ) as unknown as BackstoryMark[];
+      const born = birthYear(c);
+      const rows = passagesFor(
+        datePassages(str(c.backstory), born, [given, ...nick], marks),
+        from,
+        to,
+      );
+      if (!rows.length) continue;
+      const ages =
+        born === null
+          ? 'age unknown'
+          : from === to
+            ? `age ${from - born}`
+            : `ages ${from - born} to ${to - born}`;
+      people.push({
+        characterId: id,
+        name: characterName(c, id),
+        ages,
+        rows,
+      });
+    }
+    return { from, to, label, people };
   };
   const events = eventSpans(data);
   const eventDocs = index(data, 'worldEvents');
@@ -651,14 +796,22 @@ export function selectForSession(
       else push('plannedAhead', eventItem(e, where));
     }
 
-    // 4. Cultural entries for the places' communities and the year.
+    // 4. Cultural entries for the setting's communities and the year (A35).
+    const setting = settingFor(spec, present, Y);
     const communities: string[] = [];
-    for (const p of spec.placeIds) {
-      const c = communityOf(p);
-      if (c && !communities.includes(c)) communities.push(c);
+    for (const p of setting.placeIds) {
+      for (const c of communitiesOf(p)) if (!communities.includes(c)) communities.push(c);
     }
+    for (const c of [...communities]) {
+      for (const parent of communityParents(c)) {
+        if (!communities.includes(parent)) communities.push(parent);
+      }
+    }
+    const seenCulture = new Set<string>();
     for (const community of communities) {
       for (const c of entriesFor(data.all('culturalEntries'), community, Y)) {
+        if (seenCulture.has(str(c._id))) continue;
+        seenCulture.add(str(c._id));
         push('culture', {
           id: str(c._id),
           collection: 'culturalEntries',
@@ -667,12 +820,13 @@ export function selectForSession(
           note: `${communityLabel(community)}, ${rangeText(num(c.startYear), num(c.endYear))}`,
           detail: joinText(plain(c.body), str(c.generationNotes)),
           refs: [],
+          community,
         });
       }
     }
 
     // 5. Place descriptions for the year.
-    for (const p of spec.placeIds) {
+    for (const p of setting.placeIds) {
       const place = placeById.get(p);
       if (!live(place)) continue;
       const d = descriptionFor(place as never, Y);
@@ -755,7 +909,10 @@ export function selectForSession(
       povCharacterId: spec.pov,
       povName: spec.pov ? characterName(characters.get(spec.pov), spec.pov) : null,
       placeIds: spec.placeIds,
+      endYear: spec.endYear,
+      setting,
       communities: communities.map((id) => ({ id, label: communityLabel(id) })),
+      backstory: backstoryFor(spec, present, Y),
       groups: STRAND_KINDS.map((k) => ({
         kind: k,
         step: GROUP_STEP[k],
