@@ -1,0 +1,15 @@
+#!/bin/sh
+# After a push of main lands, rebuild and install the app in the background
+# (scripts/auto-install.sh). Set NC_AUTO_INSTALL=0 to push without a rebuild.
+[ "${NC_AUTO_INSTALL:-1}" = 0 ] && exit 0
+[ -n "${CI:-}" ] && exit 0
+[ "$(uname)" = Darwin ] || exit 0
+root="$(git rev-parse --show-toplevel)"
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  case "$local_sha" in 0000000000000000000000000000000000000000) continue ;; esac
+  if [ "$remote_ref" = refs/heads/main ] && [ -f "$root/scripts/auto-install.sh" ]; then
+    (cd "$root" && nohup sh scripts/auto-install.sh "$local_sha" >/dev/null 2>&1 &)
+    echo "Novel Companion: rebuilding the app for ${local_sha%"${local_sha#???????}"} once this push lands (log: ~/Library/Logs/Novel Companion/auto-install.log)."
+  fi
+done
+exit 0

@@ -7,6 +7,7 @@ A desktop story bible for writing a novel. Electron, TypeScript, React, and Mong
 - **MongoDB connection string.** Paste it on the first screen (it shows a MongoDB connection box whenever nothing is stored) or later under Settings. The app keeps it in the macOS keychain under the service `novel-companion-mongodb` and the account `novel-companion`, never in a file. `docs/RUN-ON-ANOTHER-MAC.md` covers a second Mac.
 
 - **Installing the app.** `npm run install:app` builds, signs with the local "Novel Companion Local" certificate (make it once with `sh scripts/make-signing-identity.sh`) and installs into /Applications. With that certificate the keychain asks to allow access once, not after every rebuild.
+- **Rebuilt on every push.** Pushing `main` from this Mac rebuilds and installs the app in the background (`.githooks/pre-push` runs `scripts/auto-install.sh`; `npm install` turns the hook on). It builds the pushed commit in its own checkout under `~/Library/Caches/novel-companion-build`, so unpushed edits never reach the app. If the app is open it is not closed: a notification asks you to quit, and it reopens with the new build. Log: `~/Library/Logs/Novel Companion/auto-install.log`. Push with `NC_AUTO_INSTALL=0` to skip.
 
 - **Running against a local database.** See "Local development" in `docs/ARCHITECTURE.md`: a local one-node replica set and `NOVEL_COMPANION_TEST_MONGODB_URI`. If `npm run dev` says "Electron uninstall", run `node node_modules/electron/install.js`.
 

@@ -6,11 +6,14 @@
 # again. A certificate named "Novel Companion Local" in the login keychain gives
 # every build the same designated requirement, so the keychain asks once.
 # Make one with `sh scripts/make-signing-identity.sh`.
+#
+#   sh scripts/install-app.sh                 build here, close a running copy, install, open
+#   sh scripts/install-app.sh --wait <sha>    used by scripts/auto-install.sh: never closes a
+#                                             running copy, waits for you to quit it instead
 set -eu
 cd "$(dirname "$0")/.."
 IDENTITY="Novel Companion Local"
 APP="release/mac-arm64/Novel Companion.app"
-DEST="/Applications/Novel Companion.app"
 
 npm run package
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
@@ -20,10 +23,4 @@ else
   codesign --force --deep -s - "$APP"
   echo "No \"$IDENTITY\" identity in the keychain: signed ad hoc, so the keychain will ask again after this build."
 fi
-pkill -f "$DEST/Contents/MacOS" 2>/dev/null || true
-sleep 1
-rm -rf "$DEST"
-cp -R "$APP" "$DEST"
-codesign -d -r- "$DEST" 2>&1 | grep designated
-open "$DEST"
-echo "Installed and opened $DEST"
+sh scripts/swap-app.sh "$APP" "$@"
