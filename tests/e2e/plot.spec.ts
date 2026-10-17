@@ -96,11 +96,20 @@ test('PL-5 the Outline opens on the scene outline: typing scenes saves one text,
   await text.pressSequentially('She finds the shrine');
   await text.press('Meta+]');
   await expect(text).toHaveValue('- Dawn lands in Jinan\n  - She finds the shrine');
-  await expect(page.getByTestId('scene-count')).toHaveText('2 scenes');
+  // An indented bullet belongs to the scene above it.
+  await expect(page.getByTestId('scene-count')).toHaveText('1 scene');
+  await text.press('Meta+[');
+  await text.press('End');
+  await text.press('Enter');
+  await text.pressSequentially('Mark waits in the fog');
+  await expect(page.getByTestId('scene-count')).toHaveText('3 scenes');
   await expect(page.getByTestId('scene-autosave')).toHaveText('Saved');
-  expect((await invoke('sceneOutline.get', {})).text).toBe(
-    '- Dawn lands in Jinan\n  - She finds the shrine',
-  );
+  const typed = '- Dawn lands in Jinan\n- She finds the shrine\n- Mark waits in the fog';
+  expect((await invoke('sceneOutline.get', {})).text).toBe(typed);
+  // The gutter numbers the scenes.
+  const gutter = page.getByTestId('scene-gutter');
+  await expect(gutter.locator('[data-scene]')).toHaveCount(3);
+  await expect(gutter.locator('[data-scene="3"] .sl-no')).toHaveText('3');
   // Chapter titles in reading order on the right, renamed in place.
   const titles = inspector().getByTestId('chapter-title');
   await expect(titles).toHaveCount(fixture.chapters!.length);
@@ -124,12 +133,70 @@ test('PL-5 the Outline opens on the scene outline: typing scenes saves one text,
     )
     .toBe('Two Kitchens');
   await expect(second).toHaveValue('Two Kitchens');
+
+  // Scene ranges: chapter 1 covers scenes 1 to 2, and the gutter says so.
+  const one = inspector().locator('[data-chapter="CH1"]');
+  await one.getByTestId('scene-range-from').fill('1');
+  await one.getByTestId('scene-range-from').press('Enter');
+  await one.getByTestId('scene-range-to').fill('2');
+  await one.getByTestId('scene-range-to').press('Enter');
+  await expect(gutter.locator('[data-scene="1"]')).toHaveAttribute('data-chapter', 'CH1');
+  await expect(gutter.locator('[data-scene="2"]')).toHaveAttribute('data-chapter', 'CH1');
+  await expect(gutter.locator('[data-scene="1"] .sl-ch')).toHaveText('Ch 1');
+  await expect(gutter.locator('[data-scene="3"]')).not.toHaveAttribute('data-chapter');
+  await expect(page.getByTestId('scene-autosave')).toHaveText('Saved');
+  await expect
+    .poll(async () => (await invoke('sceneOutline.get', {})).ranges)
+    .toEqual({ CH1: { from: 1, to: 2 } });
+  // An overlap is named on both chapters.
+  const two = inspector().locator('[data-chapter="CH2"]');
+  await two.getByTestId('scene-range-from').fill('2');
+  await two.getByTestId('scene-range-from').press('Enter');
+  await expect(two.getByTestId('scene-range-issue')).toHaveText('overlaps chapter 1');
+  await expect(one.getByTestId('scene-range-issue')).toHaveText('overlaps chapter 2');
+  await two.getByTestId('scene-range-from').fill('');
+  await two.getByTestId('scene-range-from').press('Enter');
+  await expect(two.getByTestId('scene-range-issue')).toHaveCount(0);
+
+  // The story year field moves the primary strand, and undo puts it back.
+  const yearBefore = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
+  await two.getByTestId('chapter-year').fill('2046');
+  await two.getByTestId('chapter-year').press('Enter');
+  await expect
+    .poll(async () => {
+      const ch = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
+      return (ch.strands as { primary: boolean; startYear: number }[]).find((s) => s.primary)
+        ?.startYear;
+    })
+    .toBe(2046);
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.strands,
+    )
+    .toEqual(yearBefore.strands);
+
+  // Up and Down move the chapter within its part; undo restores the order.
+  await one.getByTestId('chapter-move-down').click();
+  await expect.poll(() => readingOrder('CH1')).toBe(2);
+  expect(await readingOrder('CH2')).toBe(1);
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => readingOrder('CH1')).toBe(1);
+  expect(await readingOrder('CH2')).toBe(2);
+
+  // Versions: every change is kept; the edits so far share one version, shown as current.
+  const versions = page.getByTestId('scene-versions');
+  await versions.locator('summary').click();
+  await expect(versions.getByTestId('scene-version')).toHaveCount(1);
+  await expect(versions.getByTestId('scene-version').first()).toContainText('3 scenes');
+  await versions.getByTestId('scene-version').first().getByRole('button').click();
+  await expect(versions.locator('textarea')).toHaveValue(typed);
+  await versions.locator('summary').click();
+
   // The text is still there after leaving and coming back.
   await rail(page, 'Characters').click();
   await rail(page, 'Outline').click();
-  await expect(page.getByTestId('scene-text')).toHaveValue(
-    '- Dawn lands in Jinan\n  - She finds the shrine',
-  );
+  await expect(page.getByTestId('scene-text')).toHaveValue(typed);
 });
 
 test('PL-2 the outline is a chapter-by-year grid with strand marks, an arc span, and the story-time cursor', async () => {

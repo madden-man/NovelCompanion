@@ -31,8 +31,10 @@ type Focus =
 type Adding =
   { kind: 'book' } | { kind: 'part'; bookId: string } | { kind: 'chapter'; partId: string };
 
-/** Width of one year column, in pixels. */
-const COL = 26;
+/** The narrowest a year column gets, in pixels; wider when the screen has room (PL-5). */
+const MIN_COL = 26;
+/** The label column of the grid, in pixels. */
+const LABEL_COL = 220;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -87,6 +89,17 @@ function storedMode(): OutlineMode {
  */
 function GridOutline({ toggle }: { toggle: ReactNode }) {
   const { version } = useStore();
+  // The year columns stretch to fill the grid's width, so the graph is as big as the screen.
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setGridWidth(el.clientWidth));
+    ro.observe(el);
+    setGridWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
   const story = useStoryTime();
   const writes = useOutlineWrites();
   const [order, setOrder] = useState<'reading' | 'story'>('reading');
@@ -121,6 +134,11 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
   }, [outline]);
 
   const first = outline?.years[0] ?? 0;
+  const yearCount = outline?.years.length ?? 0;
+  const COL =
+    yearCount > 0
+      ? Math.max(MIN_COL, Math.floor((gridWidth - LABEL_COL - 2) / yearCount))
+      : MIN_COL;
   const x = (year: number) => (year - first) * COL;
   const rows = useMemo(() => outline?.rows ?? [], [outline]);
   const chapters = useMemo(() => rows.filter((r): r is ChapterRow => r.kind === 'chapter'), [rows]);
@@ -235,7 +253,10 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
   const selIndex = sel ? selSiblings.findIndex((c) => c.id === sel.id) : -1;
 
   return (
-    <div className="ws-tree-area" data-testid="outline-view">
+    <div
+      className={`ws-tree-area${focus === null && adding === null ? ' grid-only' : ''}`}
+      data-testid="outline-view"
+    >
       <section className="tree-main stack" aria-labelledby="outline-title">
         <div className="list-head">
           <h2 id="outline-title">Outline</h2>
@@ -292,7 +313,13 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
         ) : rows.length === 0 ? (
           <p className="example-note">No books yet. Start with New book.</p>
         ) : (
-          <div className="ol-scroll" role="region" aria-label="Outline grid" tabIndex={0}>
+          <div
+            ref={scroller}
+            className="ol-scroll"
+            role="region"
+            aria-label="Outline grid"
+            tabIndex={0}
+          >
             <div className="ol-grid" data-testid="outline-grid" data-order={outline.order}>
               <div className="ol-row ol-head">
                 <div className="ol-label">Chapter</div>

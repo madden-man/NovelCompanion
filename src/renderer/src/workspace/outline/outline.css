@@ -164,9 +164,21 @@
   z-index: 4;
 }
 
-/* PL-5: the scene outline and the chapter titles beside it. Colors come only from theme tokens. */
+/* PL-5: the scene outline and the chapters beside it. Colors come only from theme tokens. */
 .ws-tree-area.scenes {
-  grid-template-columns: minmax(0, 1fr) 420px;
+  grid-template-columns: minmax(0, 1fr) 460px;
+}
+/* The year grid alone: the inspector drops below it until a row, arc or beat is picked. */
+.ws-tree-area.grid-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ws-tree-area.grid-only .tree-inspector {
+  border-left: 0;
+  border-top: 1px solid var(--border);
+  max-height: none;
+}
+.ws-tree-area.grid-only .ol-scroll {
+  max-height: calc(100vh - 250px);
 }
 .outline-mode {
   display: inline-flex;
@@ -194,24 +206,106 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.scene-outline textarea {
-  width: 100%;
+/* The text and its backdrop share every metric that affects wrapping. */
+.scene-edit {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.scene-edit textarea,
+.scene-backdrop {
   box-sizing: border-box;
-  min-height: calc(100vh - 290px);
-  resize: vertical;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px 12px 84px;
   font: inherit;
   font-size: 1rem;
   line-height: 1.55;
-  padding: 12px 14px;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
   tab-size: 2;
+  border: 0;
+  border-radius: var(--radius);
 }
-.scene-outline textarea:focus-visible {
+.scene-edit textarea {
+  display: block;
+  position: relative;
+  min-height: calc(100vh - 360px);
+  resize: none;
+  overflow: hidden;
+  color: var(--fg);
+  background: transparent;
+  caret-color: var(--fg);
+}
+.scene-edit textarea:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: -2px;
+}
+.scene-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: transparent;
+  overflow: hidden;
+}
+.scene-backdrop .sl {
+  position: relative;
+  min-height: 1.55em;
+}
+.scene-backdrop .sl.tint {
+  background: var(--tint);
+  box-shadow: inset 3px 0 0 var(--tint-ink);
+}
+.scene-backdrop .sl.tint.series-1 {
+  --tint: var(--series-1-soft);
+  --tint-ink: var(--series-1);
+}
+.scene-backdrop .sl.tint.series-2 {
+  --tint: var(--series-2-soft);
+  --tint-ink: var(--series-2);
+}
+.scene-backdrop .sl.tint.series-3 {
+  --tint: var(--series-3-soft);
+  --tint-ink: var(--series-3);
+}
+.scene-backdrop .sl.tint.series-4 {
+  --tint: var(--series-4-soft);
+  --tint-ink: var(--series-4);
+}
+.scene-backdrop .sl.tint.hot {
+  box-shadow: inset 6px 0 0 var(--tint-ink);
+}
+.scene-backdrop .sl.shared {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--surface-2) 6px 8px);
+}
+.scene-backdrop .sl-gutter {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 76px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 6px;
+  padding-right: 8px;
+  box-sizing: border-box;
+  color: var(--fg-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.55rem;
+}
+.scene-backdrop .sl-ch {
+  color: var(--tint-ink, var(--fg));
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.scene-backdrop .sl-no {
+  min-width: 1.6em;
+  text-align: right;
 }
 .scene-foot {
   display: flex;
@@ -220,13 +314,30 @@
   color: var(--fg-2);
   font-size: 0.85rem;
 }
+.scene-versions summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--fg);
+}
+.scene-version-view textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
 .ch-titles {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 .ch-titles .group {
   color: var(--fg-2);
@@ -241,30 +352,82 @@
 }
 .ch-titles .ch {
   display: grid;
-  grid-template-columns: 2.2em minmax(0, 1fr) 3em;
-  gap: 6px;
+  grid-template-columns: 4px 2em minmax(0, 1fr) auto;
+  grid-template-areas:
+    'swatch num title moves'
+    'swatch . details details';
+  gap: 4px 6px;
   align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ch-titles .ch .ch-swatch {
+  grid-area: swatch;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--border);
+}
+.ch-titles .ch.series-1 .ch-swatch {
+  background: var(--series-1);
+}
+.ch-titles .ch.series-2 .ch-swatch {
+  background: var(--series-2);
+}
+.ch-titles .ch.series-3 .ch-swatch {
+  background: var(--series-3);
+}
+.ch-titles .ch.series-4 .ch-swatch {
+  background: var(--series-4);
 }
 .ch-titles .ch .num {
+  grid-area: num;
   color: var(--fg-2);
   text-align: right;
 }
-.ch-titles .ch input {
+.ch-titles .ch .ch-title {
+  grid-area: title;
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
   font: inherit;
   font-size: 0.95rem;
 }
-.ch-titles .ch .year {
+.ch-titles .ch .ch-moves {
+  grid-area: moves;
+}
+.ch-titles .ch .ch-details {
+  grid-area: details;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
   color: var(--fg-2);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+}
+.ch-titles .ch .ch-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ch-titles .ch .ch-range-label {
+  color: var(--fg-2);
+}
+.ch-titles .ch .ch-number {
+  font: inherit;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+.ch-titles .ch .ch-issue {
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: underline wavy var(--serious);
+  text-underline-offset: 3px;
 }
 @media (max-width: 900px) {
   .ws-tree-area.scenes {
     grid-template-columns: minmax(0, 1fr);
   }
-  .scene-outline textarea {
+  .scene-edit textarea {
     min-height: 50vh;
   }
 }

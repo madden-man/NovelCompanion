@@ -1,28 +1,133 @@
 /**
- * The scene outline (PL-5, A24): one long bulleted text, free of the chapter
- * structure, kept per bible in `meta`. These helpers turn a plain textarea
- * into a bulleted list: Enter continues a bullet, Enter on an empty bullet
- * ends the list, Tab and Shift+Tab indent and outdent the current lines.
+ * The scene outline (PL-5, A36): one long bulleted text, free of the chapter
+ * structure, kept per bible in `meta` with the chapters' scene ranges, and
+ * versioned in `sceneOutlineVersions`. These helpers turn a plain textarea
+ * into a bulleted list (Enter continues a bullet, Enter on an empty bullet
+ * ends the list, Cmd+] and Cmd+[ indent and outdent), number the scenes, and
+ * check the ranges.
  */
 
 export const SCENE_OUTLINE_ID = 'sceneOutline';
+export const SCENE_VERSIONS_COLLECTION = 'sceneOutlineVersions';
 
-/** Lines starting with a bullet are scenes; headings and blank lines are not. */
+/** Edits closer together than this land in the same version. */
+export const VERSION_GAP_MS = 10 * 60 * 1000;
+
+/** Lines starting with a bullet; group 1 is the indent, 3 the text. */
 export const BULLET = /^(\s*)([-*•])\s?(.*)$/;
 
-/** Fix a stored meta document into the text it holds. */
+export interface SceneRange {
+  from: number;
+  to: number;
+}
+/** Chapter ID to the scenes it covers, 1-based and inclusive. */
+export type SceneRanges = Record<string, SceneRange>;
+
+export interface SceneOutlineState {
+  text: string;
+  ranges: SceneRanges;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const whole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+
+/** Fix a stored meta or version document into the text it holds. */
 export function sceneOutlineText(doc: Record<string, unknown> | null | undefined): string {
   return doc && typeof doc.text === 'string' ? doc.text : '';
 }
 
-/** The number of bullet lines with any text after the bullet. */
+/** Fix a stored document's ranges: only whole, ordered, 1-based pairs survive. */
+export function sceneRanges(doc: Record<string, unknown> | null | undefined): SceneRanges {
+  const raw = doc?.ranges;
+  if (!isRecord(raw)) return {};
+  const out: SceneRanges = {};
+  for (const [id, r] of Object.entries(raw)) {
+    if (!isRecord(r) || !whole(r.from) || !whole(r.to) || r.to < r.from) continue;
+    out[id] = { from: r.from, to: r.to };
+  }
+  return out;
+}
+
+export function sameRanges(a: SceneRanges, b: SceneRanges): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => {
+    const x = a[k];
+    const y = b[k];
+    return x !== undefined && y !== undefined && x.from === y.from && x.to === y.to;
+  });
+}
+
+/**
+ * The scene number of every line: top-level bullets with text are scenes,
+ * numbered from 1 in order; indented bullets, headings and blank lines are
+ * null (an indented bullet belongs to the scene above it).
+ */
+export function sceneLines(text: string): (number | null)[] {
+  let n = 0;
+  return text.split('\n').map((line) => {
+    const m = BULLET.exec(line);
+    if (!m || m[1] !== '' || !(m[3] ?? '').trim()) return null;
+    n += 1;
+    return n;
+  });
+}
+
+/** The number of scenes. */
 export function sceneCount(text: string): number {
   let n = 0;
-  for (const line of text.split('\n')) {
-    const m = BULLET.exec(line);
-    if (m && (m[3] ?? '').trim()) n++;
-  }
+  for (const s of sceneLines(text)) if (s !== null) n = s;
   return n;
+}
+
+export interface RangeIssue {
+  chapterId: string;
+  /** Plain words, such as "overlaps chapter 4" or "past the last scene". */
+  message: string;
+}
+
+/**
+ * Ranges that run past the last scene, or that share a scene with another
+ * chapter. Overlaps are reported on both chapters. `number` gives a chapter's
+ * reading-order number for the message.
+ */
+export function rangeIssues(
+  ranges: SceneRanges,
+  scenes: number,
+  number: (chapterId: string) => number | string,
+): RangeIssue[] {
+  const out: RangeIssue[] = [];
+  const pairs = Object.entries(ranges);
+  for (const [id, r] of pairs) {
+    const notes: string[] = [];
+    if (r.to > scenes) notes.push(scenes === 0 ? 'no scenes yet' : 'past the last scene');
+    const overlaps = pairs
+      .filter(([o, q]) => o !== id && q.from <= r.to && q.to >= r.from)
+      .map(([o]) => `chapter ${number(o)}`);
+    if (overlaps.length) notes.push(`overlaps ${overlaps.join(', ')}`);
+    if (notes.length) out.push({ chapterId: id, message: notes.join('; ') });
+  }
+  return out;
+}
+
+/** The chapters whose range covers a scene, in the order given. */
+export function chaptersAtScene(ranges: SceneRanges, order: readonly string[], scene: number) {
+  return order.filter((id) => {
+    const r = ranges[id];
+    return r !== undefined && r.from <= scene && scene <= r.to;
+  });
+}
+
+/**
+ * Whether a save opens a new version or lands in the latest one: a new one
+ * when there is none, when asked, or when the latest was last touched more
+ * than `VERSION_GAP_MS` ago.
+ */
+export function startsNewVersion(lastUntil: string | null, now: Date, force = false): boolean {
+  if (force || lastUntil === null) return true;
+  const then = Date.parse(lastUntil);
+  return !Number.isFinite(then) || now.getTime() - then > VERSION_GAP_MS;
 }
 
 export interface TextEdit {
@@ -66,7 +171,7 @@ export function continueBullet(edit: TextEdit): TextEdit | null {
   return { text: next, selectionStart: caret, selectionEnd: caret };
 }
 
-/** Tab indents every line the selection touches by two spaces; Shift+Tab outdents. */
+/** Indent every line the selection touches by two spaces, or outdent them. */
 export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
   const { text, selectionStart, selectionEnd } = edit;
   const start = lineStartAt(text, selectionStart);

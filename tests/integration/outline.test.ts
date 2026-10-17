@@ -190,20 +190,103 @@ describe('KB-3 beats move on the chapter page', () => {
 });
 
 describe('PL-5 the scene outline over IPC', () => {
-  test('PL-5 empty until set, round-trips, survives a reopen, and writes no entry or revision', async () => {
+  test('PL-5 empty until set, round-trips text and ranges, survives a reopen, and writes no entry or revision', async () => {
     const before = await revs();
-    expect(await invoke('sceneOutline.get', {})).toEqual({ text: '', modifiedAt: null });
+    expect(await invoke('sceneOutline.get', {})).toEqual({
+      text: '',
+      ranges: {},
+      modifiedAt: null,
+    });
     const text = 'Part one\n- Dawn lands in Jinan\n  - She finds the shrine\n- Mark waits';
-    const saved = await invoke('sceneOutline.set', { text });
+    const ranges = { CH1: { from: 1, to: 1 }, CH2: { from: 2, to: 2 } };
+    const saved = await invoke('sceneOutline.set', { text, ranges });
     expect(saved.text).toBe(text);
+    expect(saved.ranges).toEqual(ranges);
     expect(saved.modifiedAt).toEqual(expect.any(String));
     expect(await invoke('sceneOutline.get', {})).toEqual(saved);
     const reopened = await openBibleSession(store, bible.handle.id);
     expect(reopened.repo.sceneOutline()).toEqual(saved);
     expect(await revs()).toBe(before);
-    expect(await chaptersNow()).toHaveLength((await chaptersNow()).length);
-    const cleared = await invoke('sceneOutline.set', { text: '' });
-    expect(cleared.text).toBe('');
-    expect((await invoke('sceneOutline.get', {})).text).toBe('');
+    // A malformed range is dropped on the way in.
+    const cleaned = await invoke('sceneOutline.set', {
+      text,
+      ranges: { CH1: { from: 3, to: 1 }, CH2: { from: 2, to: 2 } },
+    });
+    expect(cleaned.ranges).toEqual({ CH2: { from: 2, to: 2 } });
+  });
+
+  test('PL-5 versions: saves within ten minutes share one, later saves open another, a restore is a new version with the old text', async () => {
+    // Its own bible and a clock of its own, later than any real save, so the gap rule is what is tested.
+    let clock = new Date('2030-01-01T09:00:00Z');
+    const own = (await loadFixture(store, freshSlug('outline-versions'))).id;
+    const timed = await openBibleSession(store, own, { now: () => clock });
+    const run = ipcFor(() => timed);
+    const versionsBefore = (await run('sceneOutline.versions', {})).versions;
+    expect(versionsBefore).toEqual([]);
+
+    await run('sceneOutline.set', { text: '- One', ranges: {} });
+    clock = new Date('2030-01-01T09:04:00Z');
+    await run('sceneOutline.set', { text: '- One\n- Two', ranges: { CH1: { from: 1, to: 2 } } });
+    let versions = (await run('sceneOutline.versions', {})).versions;
+    expect(versions.length).toBe(versionsBefore.length + 1);
+    expect(versions[0]).toMatchObject({
+      at: '2030-01-01T09:00:00.000Z',
+      until: '2030-01-01T09:04:00.000Z',
+      scenes: 2,
+    });
+
+    clock = new Date('2030-01-01T09:20:00Z');
+    await run('sceneOutline.set', {
+      text: '- One\n- Two\n- Three',
+      ranges: { CH1: { from: 1, to: 3 } },
+    });
+    versions = (await run('sceneOutline.versions', {})).versions;
+    expect(versions.length).toBe(versionsBefore.length + 2);
+    expect(versions[0]).toMatchObject({ at: '2030-01-01T09:20:00.000Z', scenes: 3 });
+    expect(versions[1]).toMatchObject({ scenes: 2 });
+
+    // Saving the same state again makes no version.
+    await run('sceneOutline.set', {
+      text: '- One\n- Two\n- Three',
+      ranges: { CH1: { from: 1, to: 3 } },
+    });
+    expect((await run('sceneOutline.versions', {})).versions.length).toBe(
+      versionsBefore.length + 2,
+    );
+
+    const old = await run('sceneOutline.version', { id: versions[1]!.id });
+    expect(old.text).toBe('- One\n- Two');
+    expect(old.ranges).toEqual({ CH1: { from: 1, to: 2 } });
+
+    clock = new Date('2030-01-01T09:21:00Z');
+    const restored = await run('sceneOutline.restore', { id: versions[1]!.id });
+    expect(restored.text).toBe('- One\n- Two');
+    expect(restored.ranges).toEqual({ CH1: { from: 1, to: 2 } });
+    versions = (await run('sceneOutline.versions', {})).versions;
+    expect(versions.length).toBe(versionsBefore.length + 3);
+    expect(versions[0]).toMatchObject({ at: '2030-01-01T09:21:00.000Z', scenes: 2 });
+    await expect(run('sceneOutline.version', { id: 'missing' })).rejects.toThrow(/gone/);
+  });
+
+  test('PL-5 an outline written before versioning keeps its old state as the first version', async () => {
+    const fresh = await openBibleSession(
+      store,
+      (await loadFixture(store, freshSlug('outline-v0'))).id,
+    );
+    // The state before any version existed, written straight to meta as the first build did.
+    await fresh.handle
+      .collection<{ _id: string; text?: string; modifiedAt?: string }>('meta')
+      .updateOne(
+        { _id: 'sceneOutline' },
+        { $set: { text: '- Old scene', modifiedAt: '2026-10-16T10:00:00.000Z' } },
+        { upsert: true },
+      );
+    const again = await openBibleSession(store, fresh.handle.id);
+    const run = ipcFor(() => again);
+    expect((await run('sceneOutline.get', {})).text).toBe('- Old scene');
+    await run('sceneOutline.set', { text: '- New scene', ranges: {} });
+    const versions = (await run('sceneOutline.versions', {})).versions;
+    expect(versions.map((v) => v.at)).toEqual([expect.any(String), '2026-10-16T10:00:00.000Z']);
+    expect((await run('sceneOutline.version', { id: versions[1]!.id })).text).toBe('- Old scene');
   });
 });

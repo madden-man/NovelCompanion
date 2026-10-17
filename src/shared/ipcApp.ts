@@ -127,6 +127,7 @@ export const WRITE_CHANNELS = [
   'tree.savePositions',
   'storyTime.set',
   'sceneOutline.set',
+  'sceneOutline.restore',
   'storyTime.promote',
   'plot.reorder',
   'outline.newChapter',

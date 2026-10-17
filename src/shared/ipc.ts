@@ -438,10 +438,22 @@ const OutlineStrandWire = z.strictObject({
   present: z.array(z.string()),
 });
 
-/** PL-5: the scene outline text and when it was last saved. */
+/** PL-5: a chapter's scenes, 1-based and inclusive. */
+const SceneRangeWire = z.strictObject({ from: z.int().min(1), to: z.int().min(1) });
+/** PL-5: the scene outline text, the chapters' scene ranges, and when it was last saved. */
 const SceneOutlineWire = z.strictObject({
   text: z.string(),
+  ranges: z.record(EntryId, SceneRangeWire),
   modifiedAt: z.string().nullable(),
+});
+/** PL-5: one saved version of the scene outline. */
+const SceneVersionSummary = z.strictObject({
+  id: z.string().min(1),
+  /** First and last save in this version. */
+  at: z.string(),
+  until: z.string(),
+  scenes: z.int().min(0),
+  chars: z.int().min(0),
 });
 
 const OutlineWire = z.strictObject({
@@ -1136,13 +1148,35 @@ export const contract = {
     }),
     response: WithWarnings,
   },
-  /** PL-5 (A36): the scene outline, one bulleted text per bible, kept in meta and never an entry. */
+  /** PL-5 (A36): the scene outline, one bulleted text per bible with the chapters' scene ranges, kept in meta and never an entry. */
   'sceneOutline.get': {
     request: z.strictObject({}),
     response: SceneOutlineWire,
   },
+  /** Replace the text and ranges. Saves closer than ten minutes share one version. */
   'sceneOutline.set': {
-    request: z.strictObject({ text: z.string().max(2_000_000) }),
+    request: z.strictObject({
+      text: z.string().max(2_000_000),
+      ranges: z.record(EntryId, SceneRangeWire).default({}),
+    }),
+    response: SceneOutlineWire,
+  },
+  /** The saved versions, newest first, without their text. */
+  'sceneOutline.versions': {
+    request: z.strictObject({}),
+    response: z.strictObject({ versions: z.array(SceneVersionSummary) }),
+  },
+  /** One version with its text and ranges. */
+  'sceneOutline.version': {
+    request: z.strictObject({ id: z.string().min(1) }),
+    response: SceneVersionSummary.extend({
+      text: z.string(),
+      ranges: z.record(EntryId, SceneRangeWire),
+    }),
+  },
+  /** Make a version the current outline again; the restore is a new version of its own. */
+  'sceneOutline.restore': {
+    request: z.strictObject({ id: z.string().min(1) }),
     response: SceneOutlineWire,
   },
   /** PL-2: the outline grid, in reading order or story-year order, with the story-time cursor. */

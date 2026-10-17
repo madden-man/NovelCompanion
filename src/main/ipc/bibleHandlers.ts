@@ -99,6 +99,9 @@ export type BibleChannel =
   | 'outline.get'
   | 'sceneOutline.get'
   | 'sceneOutline.set'
+  | 'sceneOutline.versions'
+  | 'sceneOutline.version'
+  | 'sceneOutline.restore'
   | 'chapter.page'
   | 'plot.reorder'
   | 'outline.newChapter'
@@ -291,7 +294,12 @@ export function bibleHandlers(
       return { time: saved, position: position() };
     },
     'sceneOutline.get': () => session().repo.sceneOutline(),
-    'sceneOutline.set': async ({ text }) => session().repo.setSceneOutline(text),
+    'sceneOutline.set': ({ text, ranges }) => session().repo.setSceneOutline(text, ranges),
+    'sceneOutline.versions': async () => ({
+      versions: await session().repo.sceneOutlineVersions(),
+    }),
+    'sceneOutline.version': ({ id }) => session().repo.sceneOutlineVersion(id),
+    'sceneOutline.restore': ({ id }) => session().repo.restoreSceneOutline(id),
     'storyTime.anchorAge': ({ characterId, age }) => {
       const c = session().model.get('characters', characterId);
       if (!c || c.deletedAt) throw new Error(`No character has the ID ${characterId}.`);

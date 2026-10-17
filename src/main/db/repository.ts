@@ -50,7 +50,16 @@ import type { ChangeItem, Conflict, ListAdd, SourceRecord } from '../../shared/d
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
-import { SCENE_OUTLINE_ID, sceneOutlineText } from '../../shared/domain/sceneOutline';
+import {
+  SCENE_OUTLINE_ID,
+  SCENE_VERSIONS_COLLECTION,
+  sameRanges,
+  sceneCount,
+  sceneOutlineText,
+  sceneRanges,
+  startsNewVersion,
+} from '../../shared/domain/sceneOutline';
+import type { SceneRanges } from '../../shared/domain/sceneOutline';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
@@ -1667,21 +1676,108 @@ export class Repository {
     await this.writeMeta({ _id: TREE_LAYOUT_ID, positions });
   }
 
-  // ---------- scene outline (PL-5, A36, stored in meta, never an entry) ----------
+  // ---------- scene outline (PL-5, A36: meta for the current state, its own collection for versions) ----------
 
-  /** The scene outline: one bulleted text per bible, and when it was last saved. */
-  sceneOutline(): { text: string; modifiedAt: string | null } {
+  /** The scene outline: one bulleted text per bible, the chapters' scene ranges, and when it was last saved. */
+  sceneOutline(): { text: string; ranges: SceneRanges; modifiedAt: string | null } {
     const doc = this.model.get('meta', SCENE_OUTLINE_ID);
     return {
       text: sceneOutlineText(doc),
+      ranges: sceneRanges(doc),
       modifiedAt: doc && typeof doc.modifiedAt === 'string' ? doc.modifiedAt : null,
     };
   }
 
-  /** Replace the scene outline. It writes only the meta document, never an entry. */
-  async setSceneOutline(text: string): Promise<{ text: string; modifiedAt: string | null }> {
-    await this.writeMeta({ _id: SCENE_OUTLINE_ID, text, modifiedAt: this.now().toISOString() });
+  private sceneVersions() {
+    return this.bible.collection<SceneVersionDoc>(SCENE_VERSIONS_COLLECTION);
+  }
+
+  /**
+   * Replace the scene outline. The current state is the meta document; every
+   * change also lands in a version: the latest one when it was touched in the
+   * last ten minutes, else a new one (`newVersion` forces a new one). An
+   * outline written before versioning gets its old state as the first version
+   * the first time it changes, so nothing is lost. Never an entry: no revision,
+   * no undo step.
+   */
+  async setSceneOutline(
+    text: string,
+    ranges: SceneRanges = {},
+    opts: { newVersion?: boolean } = {},
+  ): Promise<{ text: string; ranges: SceneRanges; modifiedAt: string | null }> {
+    const prev = this.sceneOutline();
+    const clean = sceneRanges({ ranges });
+    const changed = prev.text !== text || !sameRanges(prev.ranges, clean);
+    const now = this.now();
+    const iso = now.toISOString();
+    if (changed) {
+      const versions = this.sceneVersions();
+      let last = await versions.find().sort({ at: -1 }).limit(1).next();
+      if (
+        !last &&
+        prev.modifiedAt !== null &&
+        (prev.text !== '' || Object.keys(prev.ranges).length)
+      ) {
+        last = {
+          _id: newId(),
+          at: prev.modifiedAt,
+          until: prev.modifiedAt,
+          text: prev.text,
+          ranges: prev.ranges,
+        };
+        await versions.insertOne(last);
+      }
+      if (last && !startsNewVersion(last.until, now, opts.newVersion)) {
+        await versions.updateOne({ _id: last._id }, { $set: { text, ranges: clean, until: iso } });
+      } else {
+        await versions.insertOne({ _id: newId(), at: iso, until: iso, text, ranges: clean });
+      }
+    }
+    await this.writeMeta({ _id: SCENE_OUTLINE_ID, text, ranges: clean, modifiedAt: iso });
     return this.sceneOutline();
+  }
+
+  /** The versions, newest first, without their text. */
+  async sceneOutlineVersions(): Promise<
+    { id: string; at: string; until: string; scenes: number; chars: number }[]
+  > {
+    const docs = await this.sceneVersions().find().sort({ at: -1 }).toArray();
+    return docs.map((d) => ({
+      id: d._id,
+      at: d.at,
+      until: d.until,
+      scenes: sceneCount(sceneOutlineText(d)),
+      chars: sceneOutlineText(d).length,
+    }));
+  }
+
+  async sceneOutlineVersion(id: string): Promise<{
+    id: string;
+    at: string;
+    until: string;
+    scenes: number;
+    chars: number;
+    text: string;
+    ranges: SceneRanges;
+  }> {
+    const d = await this.sceneVersions().findOne({ _id: id });
+    if (!d) throw new Error('That version of the scene outline is gone.');
+    const text = sceneOutlineText(d);
+    return {
+      id: d._id,
+      at: d.at,
+      until: d.until,
+      scenes: sceneCount(text),
+      chars: text.length,
+      text,
+      ranges: sceneRanges(d),
+    };
+  }
+
+  /** Make a version current again, as a new version, so the step back is itself restorable. */
+  async restoreSceneOutline(id: string) {
+    const v = await this.sceneOutlineVersion(id);
+    return this.setSceneOutline(v.text, v.ranges, { newVersion: true });
   }
 
   /**
@@ -1753,6 +1849,15 @@ export class Repository {
 }
 
 const STORY_TIME_ID = 'storyTime';
+
+/** One saved version of the scene outline (PL-5). */
+interface SceneVersionDoc {
+  _id: string;
+  at: string;
+  until: string;
+  text: string;
+  ranges: SceneRanges;
+}
 const BRIEF_SETTINGS_ID = 'briefSettings';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const IMPORT_MAPPINGS_ID = 'importMappings';
