@@ -1,7 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { nextNumber } from '../../../../shared/domain/outline';
+import { eraAt, eventLanes, eventsIn } from '../../../../shared/domain/outlineWorld';
 import type { Response } from '../../../../shared/ipc';
+import type { EntryCollection } from '../../../../shared/schema';
 import { call } from '../../api';
 import { useStore } from '../data';
 import { EmbeddedEditor, TrashControls, UndoPanel } from '../editor';
@@ -13,7 +15,11 @@ import { ArcPanel, ArcsList } from './Arcs';
 import { ChapterPanel } from './ChapterPage';
 import { InlineName, NameForm } from './InlineName';
 import { SceneOutline } from './Scenes';
+import { useWorld } from './world';
+import type { World } from './world';
 import './outline.css';
+
+type Open = (collection: EntryCollection, id: string) => void;
 
 type Outline = Response<'outline.get'>;
 type Row = Outline['rows'][number];
@@ -26,6 +32,7 @@ type Focus =
   | { kind: 'chapter'; id: string }
   | { kind: 'arc'; id: string }
   | { kind: 'book' | 'part'; id: string }
+  | { kind: 'year'; year: number }
   | { kind: 'beat'; id: string; back: Focus | null };
 
 type Adding =
@@ -35,6 +42,10 @@ type Adding =
 const MIN_COL = 26;
 /** The label column of the grid, in pixels. */
 const LABEL_COL = 220;
+/** Year labels lie flat once a column is this wide. */
+const FLAT_COL = 40;
+/** Rows of world events drawn in the band above the chapters. */
+const EVENT_LANES = 4;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -49,7 +60,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * Strands are marks (primary filled, backstory hollow), arcs are spans in the
  * owner's family color, and a line marks the story time.
  */
-export function OutlineView() {
+export function OutlineView({ onOpen }: { onOpen: Open }) {
   const [mode, setMode] = useState<OutlineMode>(() => storedMode());
   const pick = (next: OutlineMode) => {
     setMode(next);
@@ -69,7 +80,11 @@ export function OutlineView() {
       </button>
     </span>
   );
-  return mode === 'grid' ? <GridOutline toggle={toggle} /> : <SceneOutline toggle={toggle} />;
+  return mode === 'grid' ? (
+    <GridOutline toggle={toggle} onOpen={onOpen} />
+  ) : (
+    <SceneOutline toggle={toggle} onOpen={onOpen} />
+  );
 }
 
 /** PL-5: which face of the Outline screen opens, remembered on this computer. */
@@ -87,8 +102,9 @@ function storedMode(): OutlineMode {
  * The year grid (PL-2, PL-3, KB-3), reached from the Scenes toggle. Everything
  * documented above happens here.
  */
-function GridOutline({ toggle }: { toggle: ReactNode }) {
+function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
   const { version } = useStore();
+  const world = useWorld();
   // The year columns stretch to fill the grid's width, so the graph is as big as the screen.
   const scroller = useRef<HTMLDivElement | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
@@ -140,6 +156,21 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
       ? Math.max(MIN_COL, Math.floor((gridWidth - LABEL_COL - 2) / yearCount))
       : MIN_COL;
   const x = (year: number) => (year - first) * COL;
+  const flat = COL >= FLAT_COL;
+  const picked = focus?.kind === 'year' ? focus.year : null;
+  /** Faint lines every ten years and a band on the picked year, behind every row (A37). */
+  const firstDecade = Math.ceil(first / 10) * 10;
+  const trackStyle = (width: number) => ({
+    width,
+    backgroundImage: `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${COL * 10}px)`,
+    backgroundPosition: `${x(firstDecade)}px 0`,
+  });
+  const pickBand =
+    picked !== null ? (
+      <span className="ol-pick" style={{ left: x(picked), width: COL }} aria-hidden="true" />
+    ) : null;
+  const pickYear = (year: number) =>
+    setFocus((f) => (f?.kind === 'year' && f.year === year ? null : { kind: 'year', year }));
   const rows = useMemo(() => outline?.rows ?? [], [outline]);
   const chapters = useMemo(() => rows.filter((r): r is ChapterRow => r.kind === 'chapter'), [rows]);
   const books = rows.filter((r): r is BookRow => r.kind === 'book' && !r.missing);
@@ -323,18 +354,50 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
             <div className="ol-grid" data-testid="outline-grid" data-order={outline.order}>
               <div className="ol-row ol-head">
                 <div className="ol-label">Chapter</div>
-                <div className="ol-track" style={{ width: outline.years.length * COL }}>
+                <div
+                  className={`ol-track${flat ? ' flat' : ''}`}
+                  style={{ width: outline.years.length * COL }}
+                  role="group"
+                  aria-label="Years: pick one to see its era, events and chapters"
+                >
                   {outline.years.map((y) => (
-                    <span
+                    <button
                       key={y}
-                      className={`ol-year${y === outline.cursorYear ? ' now' : ''}`}
+                      type="button"
+                      className={`ol-year${y === outline.cursorYear ? ' now' : ''}${y % 10 === 0 ? ' decade' : ''}${y === picked ? ' picked' : ''}`}
                       style={{ left: x(y), width: COL }}
+                      aria-pressed={y === picked}
+                      data-year={y}
+                      title={`${y}: see its era, world events and chapters`}
+                      onClick={() => pickYear(y)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                        e.preventDefault();
+                        const next = y + (e.key === 'ArrowLeft' ? -1 : 1);
+                        if (!outline.years.includes(next)) return;
+                        setFocus({ kind: 'year', year: next });
+                        document
+                          .querySelector<HTMLElement>(`.ol-year[data-year="${next}"]`)
+                          ?.focus();
+                      }}
                     >
-                      {y}
-                    </span>
+                      {flat || y % 5 === 0 || y === picked || y === outline.cursorYear
+                        ? y
+                        : String(y).slice(-2)}
+                    </button>
                   ))}
                 </div>
               </div>
+              <WorldBand
+                world={world}
+                years={outline.years}
+                x={x}
+                col={COL}
+                style={trackStyle(outline.years.length * COL)}
+                pickBand={pickBand}
+                cursor={outline.cursorYear}
+                onPick={pickYear}
+              />
               {rows.map((row) =>
                 row.kind !== 'chapter' ? (
                   <div
@@ -439,8 +502,17 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
                           <Zh text={row.title} actions={false} />
                         </span>
                       </button>
+                      {row.storyYear !== null && (
+                        <span
+                          className="ol-row-year num"
+                          aria-label={`Story year ${row.storyYear}`}
+                        >
+                          {row.storyYear}
+                        </span>
+                      )}
                     </div>
-                    <div className="ol-track" style={{ width: outline.years.length * COL }}>
+                    <div className="ol-track" style={trackStyle(outline.years.length * COL)}>
+                      {pickBand}
                       {outline.cursorYear !== null && (
                         <span
                           className="ol-cursor"
@@ -500,6 +572,13 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
           <span>
             <span className="ol-cursor swatch" aria-hidden="true" /> Story time
           </span>
+          <span>
+            <span className="ol-era swatch" aria-hidden="true" /> Era
+          </span>
+          <span>
+            <span className="ol-event swatch" aria-hidden="true" /> World event
+          </span>
+          <span>Pick a year in the header to see what happens in it.</span>
         </div>
         <ArcsList
           selected={arcFocus}
@@ -549,6 +628,17 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
             </div>
             <EmbeddedEditor key={`b:${focus.id}`} collection="plotBeats" id={focus.id} />
           </div>
+        ) : focus?.kind === 'year' && outline ? (
+          <YearPanel
+            year={focus.year}
+            world={world}
+            chapters={chapters}
+            storyYear={story.year}
+            onSetStoryYear={() => story.setYear(focus.year)}
+            onChapter={(id) => setFocus({ kind: 'chapter', id })}
+            onOpen={onOpen}
+            onClose={() => setFocus(null)}
+          />
         ) : focus?.kind === 'book' || focus?.kind === 'part' ? (
           <div className="stack">
             <div className="row tight">
@@ -564,7 +654,8 @@ function GridOutline({ toggle }: { toggle: ReactNode }) {
           </div>
         ) : (
           <p className="example-note">
-            Pick a chapter row to see its beats and who is present, and to edit its strands. Pick an
+            Pick a chapter row to see its beats and who is present, and to edit its strands. Pick a
+            year in the header to see its era, its world events and the chapters set in it. Pick an
             arc under Arcs to see its beats.
           </p>
         )}
@@ -675,6 +766,186 @@ function Heading(props: {
           />
         </div>
       </details>
+    </div>
+  );
+}
+
+/**
+ * A37: the world above the chapters. One band of eras, each named across its
+ * years, and below it the world events, a dot for a single year and a bar for
+ * a span, stacked so none hides another. A click picks the year.
+ */
+function WorldBand(props: {
+  world: World | null;
+  years: number[];
+  x: (year: number) => number;
+  col: number;
+  style: { width: number; backgroundImage: string; backgroundPosition: string };
+  pickBand: ReactNode;
+  cursor: number | null;
+  onPick: (year: number) => void;
+}) {
+  const { world, years, x, col } = props;
+  const first = years[0] ?? 0;
+  const last = years[years.length - 1] ?? 0;
+  const inView = <T extends { startYear: number; endYear: number }>(list: readonly T[]) =>
+    list.filter((e) => e.endYear >= first && e.startYear <= last);
+  const eras = world ? inView(world.eras) : [];
+  const lanes = world ? eventLanes(inView(world.events), EVENT_LANES) : [];
+  const clip = (y: number) => Math.min(Math.max(y, first), last);
+  return (
+    <div className="ol-row ol-world" data-testid="outline-world">
+      <div className="ol-label">
+        <span className="ol-world-label">
+          World
+          <span className="ol-world-sub">eras and events</span>
+        </span>
+      </div>
+      <div className="ol-track ol-world-track" style={props.style}>
+        {props.pickBand}
+        {props.cursor !== null && (
+          <span
+            className="ol-cursor"
+            style={{ left: x(props.cursor) + col / 2 }}
+            aria-hidden="true"
+          />
+        )}
+        {eras.map((e, i) => {
+          const from = clip(e.startYear);
+          const to = clip(e.endYear);
+          return (
+            <span
+              key={e.id}
+              className={`ol-era ${i % 2 ? 'b' : 'a'}`}
+              style={{ left: x(from), width: (to - from + 1) * col }}
+              title={`${e.name}, ${e.startYear} to ${e.endYear}`}
+              data-era={e.id}
+              onClick={() => props.onPick(from)}
+            >
+              {e.name}
+            </span>
+          );
+        })}
+        {lanes.map(({ event: e, lane }) => {
+          const from = clip(e.startYear);
+          const to = clip(e.endYear);
+          const span =
+            e.startYear === e.endYear ? `${e.startYear}` : `${e.startYear} to ${e.endYear}`;
+          return (
+            <span
+              key={e.id}
+              className={`ol-event${from === to ? ' dot' : ''}`}
+              style={{
+                left: x(from) + (from === to ? col / 2 - 4 : 2),
+                width: from === to ? 8 : (to - from + 1) * col - 4,
+                top: 26 + lane * 9,
+              }}
+              title={`${e.title}, ${span}`}
+              data-event={e.id}
+              onClick={() => props.onPick(from)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A37: one year, picked in the grid's header: its era, the world events going
+ * on (those that begin that year marked), and the chapters set in it, each a
+ * link; and a button that makes it the story time.
+ */
+function YearPanel(props: {
+  year: number;
+  world: World | null;
+  chapters: ChapterRow[];
+  storyYear: number;
+  onSetStoryYear: () => void;
+  onChapter: (id: string) => void;
+  onOpen: Open;
+  onClose: () => void;
+}) {
+  const { year, world } = props;
+  const era = world ? eraAt(world.eras, year) : null;
+  const events = world ? eventsIn(world.events, year) : [];
+  const set = props.chapters
+    .map((c) => ({ c, strands: c.strands.filter((s) => s.startYear <= year && year <= s.endYear) }))
+    .filter((x) => x.strands.length > 0);
+  return (
+    <div className="stack year-panel" data-testid="year-panel">
+      <div className="row tight">
+        <h3 className="num">{year}</h3>
+        <button type="button" className="btn small" onClick={props.onClose}>
+          Close the year
+        </button>
+        <button
+          type="button"
+          className="btn small primary"
+          disabled={props.storyYear === year}
+          onClick={props.onSetStoryYear}
+        >
+          {props.storyYear === year ? 'This is the story time' : `Make ${year} the story time`}
+        </button>
+      </div>
+      <section className="stack tight">
+        <span className="eyebrow">Era</span>
+        {era ? (
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => props.onOpen('eraStates', era.id)}
+          >
+            {era.name}, {era.startYear} to {era.endYear}
+          </button>
+        ) : (
+          <p className="example-note">No era covers {year}.</p>
+        )}
+      </section>
+      <section className="stack tight">
+        <span className="eyebrow">World events in {year}</span>
+        {events.length === 0 ? (
+          <p className="example-note">Nothing on record for {year}.</p>
+        ) : (
+          <ul className="stack-list" data-testid="year-events">
+            {events.map((e) => (
+              <li key={e.id}>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => props.onOpen('worldEvents', e.id)}
+                >
+                  <Zh text={e.title} actions={false} />
+                </button>{' '}
+                <span className="num">
+                  {e.startYear === year
+                    ? e.endYear > year
+                      ? `begins, runs to ${e.endYear}`
+                      : 'this year'
+                    : `since ${e.startYear}${e.endYear > year ? `, to ${e.endYear}` : ', ends'}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="stack tight">
+        <span className="eyebrow">Chapters set in {year}</span>
+        {set.length === 0 ? (
+          <p className="example-note">No chapter is set in {year}.</p>
+        ) : (
+          <ul className="stack-list" data-testid="year-chapters">
+            {set.map(({ c, strands }) => (
+              <li key={c.id}>
+                <button type="button" className="link-btn" onClick={() => props.onChapter(c.id)}>
+                  {c.readingOrder}. <Zh text={c.title} actions={false} />
+                </button>{' '}
+                <span>{strands.some((s) => s.primary) ? 'main strand' : 'backstory'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

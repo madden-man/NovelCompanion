@@ -306,3 +306,12 @@ Built 2026-10-12 as four Opus sub agents on branches `m11-shell`, `m11-outline`,
 The scene outline's current state is a `meta` document (`sceneOutline`: text, ranges, modifiedAt); its versions are documents in `sceneOutlineVersions`, which snapshots and the JSON export pick up like any collection. Chapter renames, year changes and moves beside it go through the outline's `edit` and `reorder` actions (`entry.update` and `plot.reorder` with undo steps) and are disabled while read-only (ARCH-6). The IPC channels are `sceneOutline.get`, `set`, `versions`, `version` and `restore`; `set` and `restore` are write channels.
 
 End-to-end runs are hidden from now on: `NOVEL_COMPANION_HIDDEN=1` (set by `tests/e2e/helpers.ts`) hides the dock icon, sets the accessory activation policy, and renders the window offscreen, so a test run never takes the focus. `NOVEL_COMPANION_E2E_SHOW=1` shows the windows again.
+
+## PL-6 (A37): the outline as one flow, the world beside it, 2026-10-17
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| PL-6 | pass | `tests/unit/scene-outline.test.ts` "A37 ..." (breaks split and join the text, the text follows a new reading order, ranges-only outlines migrate, a trashed chapter's lines join the section above, blank sections are not stored, ↑ and ↓ Scene carry indented lines, the world helpers); `tests/unit/outline.test.ts` "A37 made from the scene outline it goes right after the named chapter of the part"; `tests/integration/outline.test.ts` breaks round-trip, version and restore; `tests/e2e/plot.spec.ts` "PL-5 A37 the Outline opens on one flow ..." and "A37 the year grid shows the world above the chapters ..." |
+
+The scene outline's `meta` document and its versions gain `breaks` (chapter ID to the line its section starts on). The side list of chapters and the chapter track of A36 are gone; the year grid is unchanged apart from the world band, decade lines, year buttons and the year panel.
+

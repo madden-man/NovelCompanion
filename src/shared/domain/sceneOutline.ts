@@ -1,10 +1,12 @@
 /**
- * The scene outline (PL-5, A36): one long bulleted text, free of the chapter
- * structure, kept per bible in `meta` with the chapters' scene ranges, and
- * versioned in `sceneOutlineVersions`. These helpers turn a plain textarea
- * into a bulleted list (Enter continues a bullet, Enter on an empty bullet
- * ends the list, Cmd+] and Cmd+[ indent and outdent), number the scenes, and
- * check the ranges.
+ * The scene outline (PL-5, A36, A37): one long bulleted text kept per bible
+ * in `meta` and versioned in `sceneOutlineVersions`. Each chapter starts at a
+ * line of it (`breaks`) and owns the lines up to the next chapter, so the
+ * text reads as one flow with the chapters as headings in it. These helpers
+ * turn a plain textarea into a bulleted list (Enter continues a bullet, Enter
+ * on an empty bullet ends the list, Cmd+] and Cmd+[ indent and outdent),
+ * number the scenes, split the text into the chapters' sections and join it
+ * back, and move a scene across a chapter's start.
  */
 
 export const SCENE_OUTLINE_ID = 'sceneOutline';
@@ -23,9 +25,13 @@ export interface SceneRange {
 /** Chapter ID to the scenes it covers, 1-based and inclusive. */
 export type SceneRanges = Record<string, SceneRange>;
 
+/** Chapter ID to the line its section starts on, 0-based (A37). */
+export type SceneBreaks = Record<string, number>;
+
 export interface SceneOutlineState {
   text: string;
   ranges: SceneRanges;
+  breaks: SceneBreaks;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -47,6 +53,22 @@ export function sceneRanges(doc: Record<string, unknown> | null | undefined): Sc
     out[id] = { from: r.from, to: r.to };
   }
   return out;
+}
+
+/** Fix a stored document's breaks: only whole, non-negative line numbers survive. */
+export function sceneBreaks(doc: Record<string, unknown> | null | undefined): SceneBreaks {
+  const raw = doc?.breaks;
+  if (!isRecord(raw)) return {};
+  const out: SceneBreaks = {};
+  for (const [id, line] of Object.entries(raw)) {
+    if (typeof line === 'number' && Number.isInteger(line) && line >= 0) out[id] = line;
+  }
+  return out;
+}
+
+export function sameBreaks(a: SceneBreaks, b: SceneBreaks): boolean {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k]);
 }
 
 export function sameRanges(a: SceneRanges, b: SceneRanges): boolean {
@@ -79,44 +101,6 @@ export function sceneCount(text: string): number {
   let n = 0;
   for (const s of sceneLines(text)) if (s !== null) n = s;
   return n;
-}
-
-export interface RangeIssue {
-  chapterId: string;
-  /** Plain words, such as "overlaps chapter 4" or "past the last scene". */
-  message: string;
-}
-
-/**
- * Ranges that run past the last scene, or that share a scene with another
- * chapter. Overlaps are reported on both chapters. `number` gives a chapter's
- * reading-order number for the message.
- */
-export function rangeIssues(
-  ranges: SceneRanges,
-  scenes: number,
-  number: (chapterId: string) => number | string,
-): RangeIssue[] {
-  const out: RangeIssue[] = [];
-  const pairs = Object.entries(ranges);
-  for (const [id, r] of pairs) {
-    const notes: string[] = [];
-    if (r.to > scenes) notes.push(scenes === 0 ? 'no scenes yet' : 'past the last scene');
-    const overlaps = pairs
-      .filter(([o, q]) => o !== id && q.from <= r.to && q.to >= r.from)
-      .map(([o]) => `chapter ${number(o)}`);
-    if (overlaps.length) notes.push(`overlaps ${overlaps.join(', ')}`);
-    if (notes.length) out.push({ chapterId: id, message: notes.join('; ') });
-  }
-  return out;
-}
-
-/** The chapters whose range covers a scene, in the order given. */
-export function chaptersAtScene(ranges: SceneRanges, order: readonly string[], scene: number) {
-  return order.filter((id) => {
-    const r = ranges[id];
-    return r !== undefined && r.from <= scene && scene <= r.to;
-  });
 }
 
 /**
@@ -206,83 +190,152 @@ export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
 /** Text a fresh outline starts with, so the first keystroke lands in a bullet. */
 export const EMPTY_OUTLINE = '- ';
 
-/** Keep a range inside the scenes there are; a range on no scenes stays as it is. */
-export function clampRange(range: SceneRange, scenes: number): SceneRange {
-  if (scenes < 1) return range;
-  const from = Math.min(Math.max(1, range.from), scenes);
-  const to = Math.min(Math.max(from, range.to), scenes);
-  return { from, to };
+// ---------- the flow: the text split into the chapters' sections (A37) ----------
+
+/** The text as the flow shows it: the lines before the first chapter, and each chapter's own lines. */
+export interface Flow {
+  lead: string[];
+  bodies: Record<string, string[]>;
 }
 
-/** Shift a whole range by `by` scenes, keeping its length, inside the scenes there are. */
-export function moveRange(range: SceneRange, by: number, scenes: number): SceneRange {
-  const len = range.to - range.from;
-  const from = Math.min(Math.max(1, range.from + by), Math.max(1, scenes - len));
-  return clampRange({ from, to: from + len }, scenes);
-}
+const toLines = (text: string): string[] => (text === '' ? [] : text.split('\n'));
 
-/** Change one end of a range by `by` scenes; the ends never cross. */
-export function resizeRange(
-  range: SceneRange,
-  end: 'from' | 'to',
-  by: number,
-  scenes: number,
-): SceneRange {
-  if (end === 'from') {
-    const from = Math.min(Math.max(1, range.from + by), range.to);
-    return clampRange({ from, to: range.to }, scenes);
+/** A section with nothing but blank lines and empty bullets holds nothing. */
+const blankLine = (line: string) => /^\s*([-*•]\s*)?$/.test(line);
+const kept = (lines: readonly string[]): string[] => (lines.every(blankLine) ? [] : [...lines]);
+
+/**
+ * Split stored text into the flow. Each chapter's section runs from its break
+ * to the next break; equal breaks leave the earlier chapters empty, in
+ * reading order. An outline saved before breaks existed starts each chapter
+ * at the first scene of its range. A section whose chapter is gone (in the
+ * trash) joins the section above it, so no line is lost, and a chapter with
+ * no break starts empty.
+ */
+export function splitFlow(
+  doc: { text: string; ranges: SceneRanges; breaks: SceneBreaks },
+  order: readonly string[],
+): Flow {
+  const lines = toLines(doc.text);
+  let breaks = doc.breaks;
+  if (Object.keys(breaks).length === 0 && Object.keys(doc.ranges).length > 0) {
+    const firstLine = new Map<number, number>();
+    sceneLines(doc.text).forEach((n, i) => {
+      if (n !== null && !firstLine.has(n)) firstLine.set(n, i);
+    });
+    breaks = {};
+    for (const [id, r] of Object.entries(doc.ranges)) {
+      breaks[id] = firstLine.get(r.from) ?? lines.length;
+    }
   }
-  const to = Math.max(Math.min(range.to + by, Math.max(scenes, 1)), range.from);
-  return clampRange({ from: range.from, to }, scenes);
-}
-
-/** The first scene after every placed chapter, for placing a new one; null when none is free. */
-export function nextFreeScene(ranges: SceneRanges, scenes: number): number | null {
-  if (scenes < 1) return null;
-  const last = Math.max(0, ...Object.values(ranges).map((r) => r.to));
-  return last < scenes ? last + 1 : null;
-}
-
-export interface Lane {
-  lane: number;
-  lanes: number;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const starts = Object.entries(breaks)
+    .map(([id, line]) => ({ id, line: Math.min(Math.max(0, line), lines.length) }))
+    .sort(
+      (a, b) =>
+        a.line - b.line ||
+        (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const lead = lines.slice(0, starts[0]?.line ?? lines.length);
+  const bodies: Record<string, string[]> = {};
+  let above: string[] = lead;
+  starts.forEach((s, i) => {
+    const own = lines.slice(s.line, starts[i + 1]?.line ?? lines.length);
+    if (rank.has(s.id)) {
+      bodies[s.id] = own;
+      above = own;
+    } else above.push(...own);
+  });
+  for (const id of order) bodies[id] ??= [];
+  return { lead, bodies };
 }
 
 /**
- * Side-by-side lanes for ranges that overlap, so every block stays visible:
- * in the order given, a range takes the first lane whose last range ends
- * before it starts. `lanes` is the total so widths can be shared out.
+ * Join the flow back into one text in the order given (reading order), with
+ * each chapter's break and the scene range it covers. Sections holding only
+ * blank lines and empty bullets are left out of the text.
  */
-export function laneLayout(order: readonly string[], ranges: SceneRanges): Map<string, Lane> {
-  const ends: number[] = [];
-  const picked = new Map<string, number>();
-  const placed = order
-    .flatMap((id) => {
-      const r = ranges[id];
-      return r ? [{ id, r }] : [];
-    })
-    .sort((a, b) => a.r.from - b.r.from || a.r.to - b.r.to);
-  for (const { id, r } of placed) {
-    let lane = ends.findIndex((end) => end < r.from);
-    if (lane === -1) {
-      lane = ends.length;
-      ends.push(r.to);
-    } else ends[lane] = r.to;
-    picked.set(id, lane);
+export function composeFlow(flow: Flow, order: readonly string[]): SceneOutlineState {
+  const lines = kept(flow.lead);
+  const breaks: SceneBreaks = {};
+  const owner: (string | null)[] = lines.map(() => null);
+  for (const id of order) {
+    breaks[id] = lines.length;
+    for (const line of kept(flow.bodies[id] ?? [])) {
+      lines.push(line);
+      owner.push(id);
+    }
   }
-  const lanes = Math.max(1, ends.length);
-  return new Map([...picked].map(([id, lane]) => [id, { lane, lanes }]));
+  const text = lines.join('\n');
+  const ranges: SceneRanges = {};
+  sceneLines(text).forEach((n, i) => {
+    const id = owner[i];
+    if (n === null || !id) return;
+    const r = ranges[id];
+    ranges[id] = r ? { from: r.from, to: n } : { from: n, to: n };
+  });
+  return { text, ranges, breaks };
 }
 
-export interface LineBox {
-  scene: number;
-  top: number;
-  bottom: number;
+/**
+ * Chapters that left the order (moved to the trash, or a new chapter undone)
+ * hand their lines to the section that was above them, so the text stays where
+ * it was; chapters new to the order start empty.
+ */
+export function refitFlow(flow: Flow, before: readonly string[], after: readonly string[]): Flow {
+  const still = new Set(after);
+  const lead = [...flow.lead];
+  const bodies: Record<string, string[]> = {};
+  let above = lead;
+  for (const id of before) {
+    const own = flow.bodies[id] ?? [];
+    if (still.has(id)) {
+      bodies[id] = [...own];
+      above = bodies[id];
+    } else above.push(...own);
+  }
+  for (const id of after) bodies[id] ??= [...(flow.bodies[id] ?? [])];
+  return { lead, bodies };
 }
 
-/** The scene whose line box holds `y`; above the first is the first, below the last is the last. */
-export function sceneAtY(boxes: readonly LineBox[], y: number): number | null {
-  if (boxes.length === 0) return null;
-  for (const b of boxes) if (y < b.bottom) return b.scene;
-  return boxes[boxes.length - 1]?.scene ?? null;
+/** Where each scene of a section starts: the indexes of its top-level bullets with text. */
+export function sceneStarts(lines: readonly string[]): number[] {
+  const out: number[] = [];
+  lines.forEach((line, i) => {
+    const m = BULLET.exec(line);
+    if (m && m[1] === '' && (m[3] ?? '').trim()) out.push(i);
+  });
+  return out;
 }
+
+/**
+ * A chapter starts one scene earlier: the last scene of the section above,
+ * with its indented lines, moves to the top of this one. Null when the
+ * section above has no scene.
+ */
+export function takeSceneAbove(
+  above: readonly string[],
+  own: readonly string[],
+): { above: string[]; own: string[] } | null {
+  const at = sceneStarts(above).at(-1);
+  if (at === undefined) return null;
+  return { above: above.slice(0, at), own: [...above.slice(at), ...kept(own)] };
+}
+
+/**
+ * A chapter starts one scene later: its first scene, with what sits before it
+ * and its indented lines, moves to the end of the section above. Null when
+ * the chapter has no scene.
+ */
+export function giveFirstScene(
+  above: readonly string[],
+  own: readonly string[],
+): { above: string[]; own: string[] } | null {
+  const starts = sceneStarts(own);
+  if (starts.length === 0) return null;
+  const cut = starts[1] ?? own.length;
+  return { above: [...kept(above), ...own.slice(0, cut)], own: own.slice(cut) };
+}
+
+/** The number of scenes in a section. */
+export const sectionScenes = (lines: readonly string[]) => sceneStarts(lines).length;

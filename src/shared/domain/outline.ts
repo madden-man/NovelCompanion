@@ -695,7 +695,8 @@ export function nextNumber(siblings: readonly Doc[]): number {
 
 /**
  * KB-3: where a new chapter goes when it is made from a part heading: last in
- * that part. Reading order runs across the whole outline, so it takes the
+ * that part; or, made from the scene outline (A37), right after the chapter
+ * named by `afterId` when that chapter is in the part. Reading order runs across the whole outline, so it takes the
  * number after the chapter before it, and the chapters after it move up only
  * as far as they must to stay after it. Returns the new reading order and the
  * chapters whose reading order changes.
@@ -705,6 +706,7 @@ export function newChapterPlace(
   parts: readonly Doc[],
   books: readonly Doc[],
   partId: string,
+  afterId?: string,
 ): { readingOrder: number; shifts: ChapterPatch[] } {
   const partById = new Map(parts.map((p) => [str(p._id), p]));
   const bookNo = new Map(books.map((b) => [str(b._id), num(b.number) ?? 0]));
@@ -721,10 +723,14 @@ export function newChapterPlace(
       return ab - bb || ap - bp || a.order - b.order;
     });
   const [tb, tp] = rank(partId);
-  const at = sorted.filter((c) => {
-    const [b, p] = rank(c.partId);
-    return b < tb || (b === tb && p <= tp);
-  }).length;
+  const following = sorted.findIndex((c) => c.id === afterId && c.partId === partId);
+  const at =
+    following >= 0
+      ? following + 1
+      : sorted.filter((c) => {
+          const [b, p] = rank(c.partId);
+          return b < tb || (b === tb && p <= tp);
+        }).length;
   const before = sorted[at - 1];
   const after = sorted[at];
   const readingOrder = before ? before.order + 1 : Math.max(1, after ? after.order : 1);

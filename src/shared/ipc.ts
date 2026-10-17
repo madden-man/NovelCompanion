@@ -441,9 +441,12 @@ const OutlineStrandWire = z.strictObject({
 /** PL-5: a chapter's scenes, 1-based and inclusive. */
 const SceneRangeWire = z.strictObject({ from: z.int().min(1), to: z.int().min(1) });
 /** PL-5: the scene outline text, the chapters' scene ranges, and when it was last saved. */
+/** A37: the line each chapter's section starts on, 0-based. */
+const SceneBreaksWire = z.record(EntryId, z.int().min(0));
 const SceneOutlineWire = z.strictObject({
   text: z.string(),
   ranges: z.record(EntryId, SceneRangeWire),
+  breaks: SceneBreaksWire,
   modifiedAt: z.string().nullable(),
 });
 /** PL-5: one saved version of the scene outline. */
@@ -1153,11 +1156,12 @@ export const contract = {
     request: z.strictObject({}),
     response: SceneOutlineWire,
   },
-  /** Replace the text and ranges. Saves closer than ten minutes share one version. */
+  /** Replace the text, ranges and breaks. Saves closer than ten minutes share one version. */
   'sceneOutline.set': {
     request: z.strictObject({
       text: z.string().max(2_000_000),
       ranges: z.record(EntryId, SceneRangeWire).default({}),
+      breaks: SceneBreaksWire.default({}),
     }),
     response: SceneOutlineWire,
   },
@@ -1172,6 +1176,7 @@ export const contract = {
     response: SceneVersionSummary.extend({
       text: z.string(),
       ranges: z.record(EntryId, SceneRangeWire),
+      breaks: SceneBreaksWire,
     }),
   },
   /** Make a version the current outline again; the restore is a new version of its own. */
@@ -1257,6 +1262,8 @@ export const contract = {
       partId: EntryId,
       title: z.string().trim().min(1).max(500),
       year: z.int().min(-10000).max(10000),
+      /** A37: place it right after this chapter of the part, else last in the part. */
+      afterId: EntryId.optional(),
     }),
     response: z.strictObject({
       entry: WireEntry,

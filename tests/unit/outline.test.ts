@@ -183,6 +183,19 @@ describe('KB-3 a new chapter goes last in its part', () => {
     });
   });
 
+  test('A37 made from the scene outline it goes right after the named chapter of the part', () => {
+    expect(newChapterPlace(chapters, parts, books, 'P1', 'C1')).toEqual({
+      readingOrder: 2,
+      shifts: [
+        { id: 'C2', readingOrder: 3, partId: 'P1' },
+        { id: 'C3', readingOrder: 4, partId: 'P2' },
+        { id: 'C4', readingOrder: 5, partId: 'P4' },
+      ],
+    });
+    // A chapter of another part is ignored: it goes last in the part asked for.
+    expect(newChapterPlace(chapters, parts, books, 'P1', 'C3').readingOrder).toBe(3);
+  });
+
   test('KB-3 a gap in the reading order absorbs the shift', () => {
     const gappy = chapters.map((c) => (c._id === 'C4' ? { ...c, readingOrder: 10 } : c));
     expect(newChapterPlace(gappy, parts, books, 'P1')).toEqual({

@@ -53,11 +53,14 @@ export function useOutlineWrites() {
     [guard, undo],
   );
 
-  /** KB-3: a new chapter last in a part, and the reading-order shifts after it, as one undo step. */
+  /**
+   * KB-3: a new chapter last in a part, or right after `afterId` (A37), and the
+   * reading-order shifts after it, as one undo step.
+   */
   const newChapter = useCallback(
-    (partId: string, title: string, year: number) =>
+    (partId: string, title: string, year: number, afterId?: string) =>
       guard(async () => {
-        const r = await call('outline.newChapter', { partId, title, year });
+        const r = await call('outline.newChapter', { partId, title, year, afterId });
         const made = createCommand('chapters', r.entry._id, entryTitle(r.entry));
         const shifts = reorderCommand(made.label, 'chapters', r.changes);
         undo.record({

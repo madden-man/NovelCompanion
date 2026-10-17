@@ -294,7 +294,8 @@ export function bibleHandlers(
       return { time: saved, position: position() };
     },
     'sceneOutline.get': () => session().repo.sceneOutline(),
-    'sceneOutline.set': ({ text, ranges }) => session().repo.setSceneOutline(text, ranges),
+    'sceneOutline.set': ({ text, ranges, breaks }) =>
+      session().repo.setSceneOutline(text, ranges, { breaks }),
     'sceneOutline.versions': async () => ({
       versions: await session().repo.sceneOutlineVersions(),
     }),
@@ -513,7 +514,7 @@ export function bibleHandlers(
         })),
       };
     },
-    'outline.newChapter': async ({ partId, title, year }) => {
+    'outline.newChapter': async ({ partId, title, year, afterId }) => {
       const { model, repo } = session();
       const part = model.get('parts', partId);
       if (!part || part.deletedAt) throw new Error('That part does not exist.');
@@ -522,6 +523,7 @@ export function bibleHandlers(
         model.all('parts'),
         model.all('books'),
         partId,
+        afterId,
       );
       const before = new Map(model.all('chapters').map((c) => [c._id, c]));
       const written = await repo.writeBatch([

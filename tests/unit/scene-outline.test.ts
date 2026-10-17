@@ -2,23 +2,30 @@ import { describe, expect, test } from 'vitest';
 import {
   EMPTY_OUTLINE,
   VERSION_GAP_MS,
-  chaptersAtScene,
-  clampRange,
+  composeFlow,
   continueBullet,
+  giveFirstScene,
   indentLines,
-  laneLayout,
-  moveRange,
-  nextFreeScene,
-  rangeIssues,
-  resizeRange,
-  sceneAtY,
+  refitFlow,
+  sameBreaks,
   sameRanges,
+  sceneBreaks,
   sceneCount,
   sceneLines,
   sceneOutlineText,
   sceneRanges,
+  sceneStarts,
+  splitFlow,
   startsNewVersion,
+  takeSceneAbove,
 } from '../../src/shared/domain/sceneOutline';
+import {
+  eraAt,
+  eventLanes,
+  eventsBetween,
+  eventsIn,
+  yearGap,
+} from '../../src/shared/domain/outlineWorld';
 
 const at = (text: string, pos: number, end = pos) => ({
   text,
@@ -96,22 +103,6 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(sameRanges({}, { A: { from: 1, to: 2 } })).toBe(false);
   });
 
-  test('PL-5 range issues name overlaps on both chapters and ranges past the last scene', () => {
-    const ranges = { A: { from: 1, to: 3 }, B: { from: 3, to: 5 }, C: { from: 9, to: 9 } };
-    const number = (id: string) => ({ A: 1, B: 2, C: 3 })[id] ?? '?';
-    expect(rangeIssues(ranges, 6, number)).toEqual([
-      { chapterId: 'A', message: 'overlaps chapter 2' },
-      { chapterId: 'B', message: 'overlaps chapter 1' },
-      { chapterId: 'C', message: 'past the last scene' },
-    ]);
-    expect(rangeIssues({ A: { from: 1, to: 1 } }, 0, number)).toEqual([
-      { chapterId: 'A', message: 'no scenes yet' },
-    ]);
-    expect(rangeIssues({ A: { from: 1, to: 2 }, B: { from: 3, to: 4 } }, 4, number)).toEqual([]);
-    expect(chaptersAtScene(ranges, ['A', 'B', 'C'], 3)).toEqual(['A', 'B']);
-    expect(chaptersAtScene(ranges, ['A', 'B', 'C'], 7)).toEqual([]);
-  });
-
   test('PL-5 a save starts a new version when there is none, when forced, or after the gap', () => {
     const now = new Date('2026-10-17T12:00:00Z');
     expect(startsNewVersion(null, now)).toBe(true);
@@ -129,48 +120,131 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(sceneOutlineText({ _id: 'sceneOutline', text: '- A' })).toBe('- A');
   });
 
-  test('PL-5 a range moves and resizes inside the scenes there are, and the ends never cross', () => {
-    expect(moveRange({ from: 2, to: 4 }, 1, 6)).toEqual({ from: 3, to: 5 });
-    expect(moveRange({ from: 2, to: 4 }, 5, 6)).toEqual({ from: 4, to: 6 });
-    expect(moveRange({ from: 2, to: 4 }, -5, 6)).toEqual({ from: 1, to: 3 });
-    expect(resizeRange({ from: 2, to: 4 }, 'to', 1, 6)).toEqual({ from: 2, to: 5 });
-    expect(resizeRange({ from: 2, to: 4 }, 'to', -9, 6)).toEqual({ from: 2, to: 2 });
-    expect(resizeRange({ from: 2, to: 4 }, 'from', -1, 6)).toEqual({ from: 1, to: 4 });
-    expect(resizeRange({ from: 2, to: 4 }, 'from', 9, 6)).toEqual({ from: 4, to: 4 });
-    expect(clampRange({ from: 5, to: 9 }, 6)).toEqual({ from: 5, to: 6 });
-    expect(clampRange({ from: 5, to: 9 }, 0)).toEqual({ from: 5, to: 9 });
+  test('A37 stored breaks are cleaned: whole, non-negative line numbers only', () => {
+    expect(sceneBreaks({ breaks: { A: 0, B: 3, C: -1, D: 1.5, E: 'x' } })).toEqual({ A: 0, B: 3 });
+    expect(sceneBreaks(null)).toEqual({});
+    expect(sameBreaks({ A: 1 }, { A: 1 })).toBe(true);
+    expect(sameBreaks({ A: 1 }, { A: 2 })).toBe(false);
   });
+});
 
-  test('PL-5 the next free scene follows the last placed chapter', () => {
-    expect(nextFreeScene({}, 4)).toBe(1);
-    expect(nextFreeScene({ A: { from: 1, to: 2 }, B: { from: 1, to: 1 } }, 4)).toBe(3);
-    expect(nextFreeScene({ A: { from: 1, to: 4 } }, 4)).toBeNull();
-    expect(nextFreeScene({}, 0)).toBeNull();
-  });
+describe('A37 the scene outline reads as one flow with the chapters in it', () => {
+  const text = 'Opening note\n- A\n  - a detail\n- B\n- C\n- D';
 
-  test('PL-5 overlapping chapters take lanes side by side; others share lane one', () => {
-    const lanes = laneLayout(['A', 'B', 'C', 'D'], {
-      A: { from: 1, to: 3 },
-      B: { from: 2, to: 4 },
-      C: { from: 5, to: 6 },
+  test("A37 breaks split the text into the lead and each chapter's lines, and join back the same", () => {
+    const doc = { text, ranges: {}, breaks: { X: 1, Y: 4 } };
+    const flow = splitFlow(doc, ['X', 'Y', 'Z']);
+    expect(flow).toEqual({
+      lead: ['Opening note'],
+      bodies: { X: ['- A', '  - a detail', '- B'], Y: ['- C', '- D'], Z: [] },
     });
-    expect(lanes.get('A')).toEqual({ lane: 0, lanes: 2 });
-    expect(lanes.get('B')).toEqual({ lane: 1, lanes: 2 });
-    expect(lanes.get('C')).toEqual({ lane: 0, lanes: 2 });
-    expect(lanes.has('D')).toBe(false);
-    expect(laneLayout(['A'], {}).size).toBe(0);
+    const back = composeFlow(flow, ['X', 'Y', 'Z']);
+    expect(back.text).toBe(text);
+    expect(back.breaks).toEqual({ X: 1, Y: 4, Z: 6 });
+    expect(back.ranges).toEqual({ X: { from: 1, to: 2 }, Y: { from: 3, to: 4 } });
   });
 
-  test('PL-5 the scene under a point is the line box that holds it, clamped to the first and last', () => {
-    const boxes = [
-      { scene: 1, top: 0, bottom: 20 },
-      { scene: 2, top: 20, bottom: 60 },
-      { scene: 3, top: 60, bottom: 80 },
+  test('A37 the text follows its chapters into a new reading order', () => {
+    const flow = splitFlow({ text, ranges: {}, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
+    const moved = composeFlow(flow, ['Y', 'X']);
+    expect(moved.text).toBe('Opening note\n- C\n- D\n- A\n  - a detail\n- B');
+    expect(moved.breaks).toEqual({ Y: 1, X: 3 });
+    // Read back in the new order, nothing moves again.
+    expect(splitFlow(moved, ['Y', 'X'])).toEqual(flow);
+  });
+
+  test('A37 an outline saved with ranges only starts each chapter at the first scene of its range', () => {
+    const flow = splitFlow(
+      { text, ranges: { X: { from: 1, to: 2 }, Y: { from: 3, to: 4 } }, breaks: {} },
+      ['X', 'Y'],
+    );
+    expect(flow.lead).toEqual(['Opening note']);
+    expect(flow.bodies.X).toEqual(['- A', '  - a detail', '- B']);
+    expect(flow.bodies.Y).toEqual(['- C', '- D']);
+  });
+
+  test('A37 a section whose chapter is gone joins the section above, so no line is lost', () => {
+    const flow = splitFlow({ text, ranges: {}, breaks: { X: 1, Gone: 4 } }, ['X']);
+    expect(flow.bodies.X).toEqual(['- A', '  - a detail', '- B', '- C', '- D']);
+    const start = splitFlow({ text, ranges: {}, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
+    const refit = refitFlow(start, ['X', 'Y'], ['Y']);
+    expect(refit.lead).toEqual(['Opening note', '- A', '  - a detail', '- B']);
+    expect(refit.bodies).toEqual({ Y: ['- C', '- D'] });
+    expect(refitFlow(start, ['X', 'Y'], ['X', 'Y', 'New']).bodies.New).toEqual([]);
+  });
+
+  test('A37 sections of blank lines and empty bullets are left out of the stored text', () => {
+    const out = composeFlow({ lead: [], bodies: { X: ['- '], Y: ['- One'] } }, ['X', 'Y']);
+    expect(out.text).toBe('- One');
+    expect(out.breaks).toEqual({ X: 0, Y: 0 });
+    expect(out.ranges).toEqual({ Y: { from: 1, to: 1 } });
+  });
+
+  test("A37 a chapter starts a scene earlier or later, carrying the scene's indented lines", () => {
+    const above = ['- A', '- B', '  - b detail'];
+    const own = ['- C', '  - c detail', '- D'];
+    expect(sceneStarts(own)).toEqual([0, 2]);
+    expect(takeSceneAbove(above, own)).toEqual({
+      above: ['- A'],
+      own: ['- B', '  - b detail', '- C', '  - c detail', '- D'],
+    });
+    expect(giveFirstScene(above, own)).toEqual({
+      above: ['- A', '- B', '  - b detail', '- C', '  - c detail'],
+      own: ['- D'],
+    });
+    expect(giveFirstScene(above, ['- Only'])).toEqual({ above: [...above, '- Only'], own: [] });
+    // An empty bullet left in a section does not stay behind the scene that arrives.
+    expect(takeSceneAbove(['- A'], ['- '])).toEqual({ above: [], own: ['- A'] });
+    expect(giveFirstScene(['- '], ['- B'])).toEqual({ above: ['- B'], own: [] });
+    expect(takeSceneAbove(['A heading'], own)).toBeNull();
+    expect(giveFirstScene(above, [])).toBeNull();
+  });
+});
+
+describe('A37 the world around the outline', () => {
+  const events = [
+    { id: 'e1', title: 'Drought', startYear: 2030, endYear: 2034 },
+    { id: 'e2', title: 'Election', startYear: 2032, endYear: 2032 },
+    { id: 'e3', title: 'Treaty', startYear: 2036, endYear: 2036 },
+    { id: 'e4', title: 'Flood', startYear: 2040, endYear: 2041 },
+  ];
+
+  test('A37 a year shows what begins in it first, then what is ongoing', () => {
+    expect(eventsIn(events, 2032).map((e) => e.id)).toEqual(['e2', 'e1']);
+    expect(eventsIn(events, 2035)).toEqual([]);
+  });
+
+  test('A37 between two chapters come the events that begin strictly between their years', () => {
+    expect(eventsBetween(events, 2032, 2040).map((e) => e.id)).toEqual(['e3']);
+    expect(eventsBetween(events, 2029, 2041).map((e) => e.id)).toEqual(['e1', 'e2', 'e3', 'e4']);
+    expect(eventsBetween(events, 2040, 2030)).toEqual([]);
+    expect(eventsBetween(events, 2035, 2036)).toEqual([]);
+  });
+
+  test('A37 the gap between chapters is said in plain words', () => {
+    expect(yearGap(2030, 2030)).toBe('Same year, 2030');
+    expect(yearGap(2030, 2031)).toBe('1 year later, 2031');
+    expect(yearGap(2030, 2042)).toBe('12 years later, 2042');
+    expect(yearGap(2042, 2025)).toBe('Back 17 years, to 2025');
+  });
+
+  test('A37 the era of a year is the latest one that covers it', () => {
+    const eras = [
+      { id: 'a', name: 'Early', startYear: 2025, endYear: 2040 },
+      { id: 'b', name: 'Late', startYear: 2038, endYear: 2060 },
     ];
-    expect(sceneAtY(boxes, -5)).toBe(1);
-    expect(sceneAtY(boxes, 30)).toBe(2);
-    expect(sceneAtY(boxes, 79)).toBe(3);
-    expect(sceneAtY(boxes, 500)).toBe(3);
-    expect(sceneAtY([], 10)).toBeNull();
+    expect(eraAt(eras, 2030)?.id).toBe('a');
+    expect(eraAt(eras, 2039)?.id).toBe('b');
+    expect(eraAt(eras, 2070)).toBeNull();
+  });
+
+  test('A37 events stack in rows so none hides another, up to the row limit', () => {
+    const lanes = eventLanes(events, 4);
+    const lane = (id: string) => lanes.find((l) => l.event.id === id)?.lane;
+    expect(lane('e1')).toBe(0);
+    expect(lane('e2')).toBe(1);
+    expect(lane('e3')).toBe(0);
+    expect(lane('e4')).toBe(0);
+    expect(new Set(eventLanes(events, 1).map((l) => l.lane))).toEqual(new Set([0]));
   });
 });

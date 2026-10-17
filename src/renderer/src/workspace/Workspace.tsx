@@ -307,7 +307,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
         ) : view.kind === 'entries' ? (
           <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (
-          <OutlineView />
+          <OutlineView onOpen={open} />
         ) : (
           <>
             <div className="ws-wide-area">

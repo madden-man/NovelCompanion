@@ -195,13 +195,16 @@ describe('PL-5 the scene outline over IPC', () => {
     expect(await invoke('sceneOutline.get', {})).toEqual({
       text: '',
       ranges: {},
+      breaks: {},
       modifiedAt: null,
     });
     const text = 'Part one\n- Dawn lands in Jinan\n  - She finds the shrine\n- Mark waits';
     const ranges = { CH1: { from: 1, to: 1 }, CH2: { from: 2, to: 2 } };
-    const saved = await invoke('sceneOutline.set', { text, ranges });
+    const breaks = { CH1: 1, CH2: 3 };
+    const saved = await invoke('sceneOutline.set', { text, ranges, breaks });
     expect(saved.text).toBe(text);
     expect(saved.ranges).toEqual(ranges);
+    expect(saved.breaks).toEqual(breaks);
     expect(saved.modifiedAt).toEqual(expect.any(String));
     expect(await invoke('sceneOutline.get', {})).toEqual(saved);
     const reopened = await openBibleSession(store, bible.handle.id);
@@ -213,6 +216,11 @@ describe('PL-5 the scene outline over IPC', () => {
       ranges: { CH1: { from: 3, to: 1 }, CH2: { from: 2, to: 2 } },
     });
     expect(cleaned.ranges).toEqual({ CH2: { from: 2, to: 2 } });
+    // A37: a negative break is refused at the door; a save without breaks clears them.
+    await expect(
+      invoke('sceneOutline.set', { text, ranges: {}, breaks: { CH1: -1 } }),
+    ).rejects.toThrow(/not valid/);
+    expect((await invoke('sceneOutline.set', { text, ranges: {} })).breaks).toEqual({});
   });
 
   test('PL-5 versions: saves within ten minutes share one, later saves open another, a restore is a new version with the old text', async () => {
@@ -226,7 +234,11 @@ describe('PL-5 the scene outline over IPC', () => {
 
     await run('sceneOutline.set', { text: '- One', ranges: {} });
     clock = new Date('2030-01-01T09:04:00Z');
-    await run('sceneOutline.set', { text: '- One\n- Two', ranges: { CH1: { from: 1, to: 2 } } });
+    await run('sceneOutline.set', {
+      text: '- One\n- Two',
+      ranges: { CH1: { from: 1, to: 2 } },
+      breaks: { CH1: 0 },
+    });
     let versions = (await run('sceneOutline.versions', {})).versions;
     expect(versions.length).toBe(versionsBefore.length + 1);
     expect(versions[0]).toMatchObject({
@@ -257,11 +269,13 @@ describe('PL-5 the scene outline over IPC', () => {
     const old = await run('sceneOutline.version', { id: versions[1]!.id });
     expect(old.text).toBe('- One\n- Two');
     expect(old.ranges).toEqual({ CH1: { from: 1, to: 2 } });
+    expect(old.breaks).toEqual({ CH1: 0 });
 
     clock = new Date('2030-01-01T09:21:00Z');
     const restored = await run('sceneOutline.restore', { id: versions[1]!.id });
     expect(restored.text).toBe('- One\n- Two');
     expect(restored.ranges).toEqual({ CH1: { from: 1, to: 2 } });
+    expect(restored.breaks).toEqual({ CH1: 0 });
     versions = (await run('sceneOutline.versions', {})).versions;
     expect(versions.length).toBe(versionsBefore.length + 3);
     expect(versions[0]).toMatchObject({ at: '2030-01-01T09:21:00.000Z', scenes: 2 });
