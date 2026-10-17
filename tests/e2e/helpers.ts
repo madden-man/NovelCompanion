@@ -53,6 +53,14 @@ export function connectTo(db: TestDb): Promise<Store> {
  * fake Google, and the pickers named here. A packaged app ignores the skip
  * flag for the stop prompt, so its tests exit the app rather than close it.
  */
+/**
+ * The app runs hidden under test (no dock icon, no window on screen, offscreen
+ * rendering) so a run never steals the focus; NOVEL_COMPANION_E2E_SHOW=1 shows it.
+ */
+export const HIDDEN_ENV = {
+  NOVEL_COMPANION_HIDDEN: process.env.NOVEL_COMPANION_E2E_SHOW === '1' ? '0' : '1',
+};
+
 export async function launch(
   db: TestDb | string,
   env: Record<string, string> = {},
@@ -70,6 +78,7 @@ export async function launch(
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
       // T-3: Claude is the recorded fake and the key lives in memory, never the real keychain.
       NOVEL_COMPANION_TEST_CLAUDE: '1',
+      ...HIDDEN_ENV,
       ...env,
     },
   });

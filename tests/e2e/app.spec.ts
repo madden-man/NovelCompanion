@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { fileDb, rail } from './helpers';
+import { HIDDEN_ENV, fileDb, rail } from './helpers';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -25,6 +25,7 @@ test.beforeAll(async () => {
       NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       // Its own data folder, never the real one, so parallel files never share it.
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-app-')),
+      ...HIDDEN_ENV,
     },
   });
   page = await app.firstWindow();

@@ -55,6 +55,20 @@ function lockDownSession(): void {
 
 /** Tests turn the prompt off so closing the app does not wait on a person. */
 const skipStopPrompt = !app.isPackaged && process.env.NOVEL_COMPANION_SKIP_STOP_PROMPT === '1';
+/**
+ * Tests run the app hidden: no dock icon, no window on screen, the page
+ * rendered offscreen and driven only through the automation protocol, so a
+ * test run never takes the focus from whatever the person is doing. This is
+ * the rule for every run that drives the app, the packaged one included
+ * (under the same exception that lets it take the test database).
+ */
+const hidden =
+  process.env.NOVEL_COMPANION_HIDDEN === '1' &&
+  (!app.isPackaged || process.env.NOVEL_COMPANION_ALLOW_TEST_URI === '1');
+if (hidden && process.platform === 'darwin') {
+  app.dock?.hide();
+  app.setActivationPolicy('accessory');
+}
 let closeApproved = false;
 let quitPending = false;
 let stopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -86,9 +100,13 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       webSecurity: true,
       spellcheck: false,
+      offscreen: hidden,
+      backgroundThrottling: !hidden,
     },
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (!hidden) win.show();
+  });
   // SL-1: closing the window or quitting asks "Where did you stop?" first. The
   // page answers through `app.confirmClose`; an empty answer still closes.
   win.on('close', (event) => {

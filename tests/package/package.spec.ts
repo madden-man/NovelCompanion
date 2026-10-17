@@ -91,6 +91,8 @@ test('T-4 without a local test database the packaged app refuses the test seams,
     args: [],
     env: {
       ...process.env,
+      // The rule for every run that drives the app: hidden, so it never takes the focus.
+      NOVEL_COMPANION_HIDDEN: process.env.NOVEL_COMPANION_E2E_SHOW === '1' ? '0' : '1',
       // The allow flag with an address that is not local: the exception does not apply.
       NOVEL_COMPANION_ALLOW_TEST_URI: '1',
       NOVEL_COMPANION_TEST_MONGODB_URI: 'mongodb+srv://cluster0.example.mongodb.net/',
@@ -138,6 +140,8 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
     args: [],
     env: {
       ...process.env,
+      // The rule for every run that drives the app: hidden, so it never takes the focus.
+      NOVEL_COMPANION_HIDDEN: process.env.NOVEL_COMPANION_E2E_SHOW === '1' ? '0' : '1',
       NOVEL_COMPANION_ALLOW_TEST_URI: '1',
       NOVEL_COMPANION_TEST_MONGODB_URI: server.getUri(),
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-package-')),
