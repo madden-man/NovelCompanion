@@ -3,9 +3,15 @@ import {
   EMPTY_OUTLINE,
   VERSION_GAP_MS,
   chaptersAtScene,
+  clampRange,
   continueBullet,
   indentLines,
+  laneLayout,
+  moveRange,
+  nextFreeScene,
   rangeIssues,
+  resizeRange,
+  sceneAtY,
   sameRanges,
   sceneCount,
   sceneLines,
@@ -121,5 +127,50 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(sceneOutlineText(null)).toBe('');
     expect(sceneOutlineText({ _id: 'sceneOutline' })).toBe('');
     expect(sceneOutlineText({ _id: 'sceneOutline', text: '- A' })).toBe('- A');
+  });
+
+  test('PL-5 a range moves and resizes inside the scenes there are, and the ends never cross', () => {
+    expect(moveRange({ from: 2, to: 4 }, 1, 6)).toEqual({ from: 3, to: 5 });
+    expect(moveRange({ from: 2, to: 4 }, 5, 6)).toEqual({ from: 4, to: 6 });
+    expect(moveRange({ from: 2, to: 4 }, -5, 6)).toEqual({ from: 1, to: 3 });
+    expect(resizeRange({ from: 2, to: 4 }, 'to', 1, 6)).toEqual({ from: 2, to: 5 });
+    expect(resizeRange({ from: 2, to: 4 }, 'to', -9, 6)).toEqual({ from: 2, to: 2 });
+    expect(resizeRange({ from: 2, to: 4 }, 'from', -1, 6)).toEqual({ from: 1, to: 4 });
+    expect(resizeRange({ from: 2, to: 4 }, 'from', 9, 6)).toEqual({ from: 4, to: 4 });
+    expect(clampRange({ from: 5, to: 9 }, 6)).toEqual({ from: 5, to: 6 });
+    expect(clampRange({ from: 5, to: 9 }, 0)).toEqual({ from: 5, to: 9 });
+  });
+
+  test('PL-5 the next free scene follows the last placed chapter', () => {
+    expect(nextFreeScene({}, 4)).toBe(1);
+    expect(nextFreeScene({ A: { from: 1, to: 2 }, B: { from: 1, to: 1 } }, 4)).toBe(3);
+    expect(nextFreeScene({ A: { from: 1, to: 4 } }, 4)).toBeNull();
+    expect(nextFreeScene({}, 0)).toBeNull();
+  });
+
+  test('PL-5 overlapping chapters take lanes side by side; others share lane one', () => {
+    const lanes = laneLayout(['A', 'B', 'C', 'D'], {
+      A: { from: 1, to: 3 },
+      B: { from: 2, to: 4 },
+      C: { from: 5, to: 6 },
+    });
+    expect(lanes.get('A')).toEqual({ lane: 0, lanes: 2 });
+    expect(lanes.get('B')).toEqual({ lane: 1, lanes: 2 });
+    expect(lanes.get('C')).toEqual({ lane: 0, lanes: 2 });
+    expect(lanes.has('D')).toBe(false);
+    expect(laneLayout(['A'], {}).size).toBe(0);
+  });
+
+  test('PL-5 the scene under a point is the line box that holds it, clamped to the first and last', () => {
+    const boxes = [
+      { scene: 1, top: 0, bottom: 20 },
+      { scene: 2, top: 20, bottom: 60 },
+      { scene: 3, top: 60, bottom: 80 },
+    ];
+    expect(sceneAtY(boxes, -5)).toBe(1);
+    expect(sceneAtY(boxes, 30)).toBe(2);
+    expect(sceneAtY(boxes, 79)).toBe(3);
+    expect(sceneAtY(boxes, 500)).toBe(3);
+    expect(sceneAtY([], 10)).toBeNull();
   });
 });

@@ -206,7 +206,7 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-/* The text and its backdrop share every metric that affects wrapping. */
+/* The text, its backdrop and the chapter track share every metric that affects wrapping. */
 .scene-edit {
   position: relative;
   border: 1px solid var(--border-strong);
@@ -218,7 +218,7 @@
   box-sizing: border-box;
   width: 100%;
   margin: 0;
-  padding: 12px 14px 12px 84px;
+  padding: 12px 14px 12px 196px;
   font: inherit;
   font-size: 1rem;
   line-height: 1.55;
@@ -257,55 +257,135 @@
 }
 .scene-backdrop .sl.tint {
   background: var(--tint);
-  box-shadow: inset 3px 0 0 var(--tint-ink);
 }
 .scene-backdrop .sl.tint.series-1 {
   --tint: var(--series-1-soft);
-  --tint-ink: var(--series-1);
 }
 .scene-backdrop .sl.tint.series-2 {
   --tint: var(--series-2-soft);
-  --tint-ink: var(--series-2);
 }
 .scene-backdrop .sl.tint.series-3 {
   --tint: var(--series-3-soft);
-  --tint-ink: var(--series-3);
 }
 .scene-backdrop .sl.tint.series-4 {
   --tint: var(--series-4-soft);
-  --tint-ink: var(--series-4);
-}
-.scene-backdrop .sl.tint.hot {
-  box-shadow: inset 6px 0 0 var(--tint-ink);
 }
 .scene-backdrop .sl.shared {
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--surface-2) 6px 8px);
 }
-.scene-backdrop .sl-gutter {
+.scene-backdrop .sl.drop {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+.scene-edit.placing .scene-backdrop .sl[data-scene] {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: -1px;
+}
+.scene-backdrop .sl-no {
   position: absolute;
-  left: 0;
+  left: 148px;
   top: 0;
-  width: 76px;
-  display: flex;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 6px;
-  padding-right: 8px;
-  box-sizing: border-box;
+  width: 36px;
+  text-align: right;
   color: var(--fg-2);
   font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.55rem;
 }
-.scene-backdrop .sl-ch {
-  color: var(--tint-ink, var(--fg));
-  font-size: 0.72rem;
+/* The chapter track: one block per placed chapter, over the lines of its scenes. */
+.scene-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 140px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.cb {
+  all: unset;
+  position: absolute;
+  box-sizing: border-box;
+  margin-left: 2px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  border-left-width: 4px;
+  color: var(--fg);
+  cursor: grab;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.cb.series-1 {
+  border-color: var(--series-1);
+  background: var(--series-1-soft);
+}
+.cb.series-2 {
+  border-color: var(--series-2);
+  background: var(--series-2-soft);
+}
+.cb.series-3 {
+  border-color: var(--series-3);
+  background: var(--series-3-soft);
+}
+.cb.series-4 {
+  border-color: var(--series-4);
+  background: var(--series-4-soft);
+}
+.cb.hot {
+  border-left-width: 8px;
+}
+.cb.off {
+  cursor: default;
+}
+.cb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cb:active {
+  cursor: grabbing;
+}
+.cb-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 6px;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+.cb-no {
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  font-size: 0.72rem;
 }
-.scene-backdrop .sl-no {
-  min-width: 1.6em;
-  text-align: right;
+.cb-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+.cb-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+}
+.cb-handle.top {
+  top: 0;
+}
+.cb-handle.bottom {
+  bottom: 0;
+}
+.cb:hover .cb-handle,
+.cb:focus-visible .cb-handle {
+  background: var(--fg);
+  opacity: 0.25;
 }
 .scene-foot {
   display: flex;
@@ -352,17 +432,45 @@
 }
 .ch-titles .ch {
   display: grid;
-  grid-template-columns: 4px 2em minmax(0, 1fr) auto;
+  grid-template-columns: 18px 2em minmax(0, 1fr);
   grid-template-areas:
-    'swatch num title moves'
-    'swatch . details details';
+    'grip num title'
+    'grip . details';
   gap: 4px 6px;
   align-items: center;
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 6px 4px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.ch-titles .ch.hot {
+  background: var(--surface-2);
+}
+.ch-titles .ch.dragging {
+  opacity: 0.5;
+}
+.ch-titles .ch.over {
+  border-color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.ch-titles .ch .ch-grip {
+  grid-area: grip;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  border-radius: 4px;
+  background: repeating-linear-gradient(to bottom, var(--border-strong) 0 2px, transparent 2px 5px);
+  background-size: 8px 100%;
+  background-repeat: no-repeat;
+  background-position: 1px center;
+  padding-left: 10px;
+}
+.ch-titles .ch .ch-grip:active {
+  cursor: grabbing;
 }
 .ch-titles .ch .ch-swatch {
-  grid-area: swatch;
+  width: 4px;
   align-self: stretch;
   border-radius: 2px;
   background: var(--border);
@@ -392,24 +500,22 @@
   font: inherit;
   font-size: 0.95rem;
 }
-.ch-titles .ch .ch-moves {
-  grid-area: moves;
-}
 .ch-titles .ch .ch-details {
   grid-area: details;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 4px 12px;
   color: var(--fg-2);
   font-size: 0.85rem;
 }
+.ch-titles .ch .ch-year,
 .ch-titles .ch .ch-range {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
-.ch-titles .ch .ch-range-label {
+.ch-titles .ch .ch-label {
   color: var(--fg-2);
 }
 .ch-titles .ch .ch-number {

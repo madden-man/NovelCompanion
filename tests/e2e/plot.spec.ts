@@ -134,29 +134,49 @@ test('PL-5 the Outline opens on the scene outline: typing scenes saves one text,
     .toBe('Two Kitchens');
   await expect(second).toHaveValue('Two Kitchens');
 
-  // Scene ranges: chapter 1 covers scenes 1 to 2, and the gutter says so.
+  // Place chapter 1 by dragging its grip onto scene 1; the block and the gutter show it.
   const one = inspector().locator('[data-chapter="CH1"]');
-  await one.getByTestId('scene-range-from').fill('1');
-  await one.getByTestId('scene-range-from').press('Enter');
-  await one.getByTestId('scene-range-to').fill('2');
-  await one.getByTestId('scene-range-to').press('Enter');
+  const track = page.getByTestId('scene-track');
+  const line1 = await gutter.locator('[data-scene="1"]').boundingBox();
+  const trackBox = await track.boundingBox();
+  await one.getByTestId('chapter-grip').dragTo(track, {
+    targetPosition: { x: 20, y: line1!.y - trackBox!.y + line1!.height / 2 },
+  });
+  const block1 = track.locator('[data-block="CH1"]');
+  await expect(block1).toHaveAttribute('data-from', '1');
+  await expect(block1).toHaveAttribute('data-to', '1');
+  await expect(block1).toContainText('Ch 1');
   await expect(gutter.locator('[data-scene="1"]')).toHaveAttribute('data-chapter', 'CH1');
+  await expect(one.getByTestId('chapter-range')).toContainText('Scene 1');
+  // Its end is pulled down a scene from the keyboard (Shift+Down), as the bottom edge does by mouse.
+  await block1.focus();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(block1).toHaveAttribute('data-to', '2');
   await expect(gutter.locator('[data-scene="2"]')).toHaveAttribute('data-chapter', 'CH1');
-  await expect(gutter.locator('[data-scene="1"] .sl-ch')).toHaveText('Ch 1');
   await expect(gutter.locator('[data-scene="3"]')).not.toHaveAttribute('data-chapter');
   await expect(page.getByTestId('scene-autosave')).toHaveText('Saved');
   await expect
     .poll(async () => (await invoke('sceneOutline.get', {})).ranges)
     .toEqual({ CH1: { from: 1, to: 2 } });
-  // An overlap is named on both chapters.
+  // Place next puts chapter 2 on the first free scene; moving it up onto chapter 1 names the overlap on both.
   const two = inspector().locator('[data-chapter="CH2"]');
-  await two.getByTestId('scene-range-from').fill('2');
-  await two.getByTestId('scene-range-from').press('Enter');
+  await two.getByTestId('chapter-place').click();
+  const block2 = track.locator('[data-block="CH2"]');
+  await expect(block2).toHaveAttribute('data-from', '3');
+  await expect(two.getByTestId('chapter-range')).toContainText('Scene 3');
+  await block2.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(block2).toHaveAttribute('data-from', '2');
   await expect(two.getByTestId('scene-range-issue')).toHaveText('overlaps chapter 1');
   await expect(one.getByTestId('scene-range-issue')).toHaveText('overlaps chapter 2');
-  await two.getByTestId('scene-range-from').fill('');
-  await two.getByTestId('scene-range-from').press('Enter');
+  // Delete takes it off the scenes, as the Take off button does.
+  await page.keyboard.press('Delete');
+  await expect(block2).toHaveCount(0);
   await expect(two.getByTestId('scene-range-issue')).toHaveCount(0);
+  await two.getByTestId('chapter-place').click();
+  await expect(block2).toHaveAttribute('data-from', '3');
+  await two.getByTestId('chapter-unplace').click();
+  await expect(block2).toHaveCount(0);
 
   // The story year field moves the primary strand, and undo puts it back.
   const yearBefore = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
@@ -176,13 +196,19 @@ test('PL-5 the Outline opens on the scene outline: typing scenes saves one text,
     )
     .toEqual(yearBefore.strands);
 
-  // Up and Down move the chapter within its part; undo restores the order.
-  await one.getByTestId('chapter-move-down').click();
+  // Dragging a row onto another reorders the chapters; undo restores the order.
+  await one.getByTestId('chapter-grip').dragTo(two.getByTestId('chapter-title'));
   await expect.poll(() => readingOrder('CH1')).toBe(2);
   expect(await readingOrder('CH2')).toBe(1);
   await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
   await expect.poll(() => readingOrder('CH1')).toBe(1);
   expect(await readingOrder('CH2')).toBe(2);
+  // Alt+Down on the title does the same from the keyboard.
+  await one.getByTestId('chapter-title').focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(() => readingOrder('CH1')).toBe(2);
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => readingOrder('CH1')).toBe(1);
 
   // Versions: every change is kept; the edits so far share one version, shown as current.
   const versions = page.getByTestId('scene-versions');

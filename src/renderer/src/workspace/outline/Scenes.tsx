@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { DragEvent, KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import {
   EMPTY_OUTLINE,
   chaptersAtScene,
+  clampRange,
   continueBullet,
   indentLines,
+  laneLayout,
+  moveRange,
+  nextFreeScene,
   rangeIssues,
+  resizeRange,
   sameRanges,
+  sceneAtY,
   sceneCount,
   sceneLines,
 } from '../../../../shared/domain/sceneOutline';
-import type { SceneRange, SceneRanges } from '../../../../shared/domain/sceneOutline';
+import type { LineBox, SceneRange, SceneRanges } from '../../../../shared/domain/sceneOutline';
 import { shiftStrand } from '../../../../shared/domain/strands';
 import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
@@ -18,6 +24,7 @@ import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { UndoPanel } from '../editor';
+import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
 
 type Outline = Response<'outline.get'>;
@@ -35,6 +42,9 @@ interface SceneDoc {
   text: string;
   ranges: SceneRanges;
 }
+
+/** The drag type a chapter row puts on the data transfer. */
+const CHAPTER_MIME = 'application/x-novel-companion-chapter';
 
 /**
  * The scene outline document (text and ranges) with its autosave: every change
@@ -171,19 +181,22 @@ function useSceneDoc() {
   return { doc, status, error, saves, update, save, replace };
 }
 
-/** Series tokens the chapter ranges cycle through, in reading order. */
+/** Series tokens the chapters cycle through, in reading order. */
 const TINTS = ['series-1', 'series-2', 'series-3', 'series-4'];
 
 /**
- * PL-5 (A36): the scene outline. One long bulleted text on the left with a
- * numbered gutter that tints each chapter's scenes; the chapters in reading
- * order on the right, each with its title, story year and scene range editable
- * in place and buttons to move it; and the saved versions below the text.
+ * PL-5 (A36): the scene outline. One long bulleted text with a numbered gutter;
+ * beside it a track where each chapter is a block over the scenes it covers,
+ * dragged to move, pulled at its ends to cover more or fewer scenes; the
+ * chapters in reading order on the right, dragged onto a scene to place them
+ * and dragged among themselves to reorder; and the saved versions below.
  */
 export function SceneOutline({ toggle }: { toggle: ReactNode }) {
   const { version } = useStore();
   const [outline, setOutline] = useState<Outline | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  /** The chapter being dragged from the list, if any. */
+  const [dragging, setDragging] = useState<string | null>(null);
   const scene = useSceneDoc();
 
   useEffect(() => {
@@ -205,7 +218,8 @@ export function SceneOutline({ toggle }: { toggle: ReactNode }) {
     () => new Map(order.map((id, i) => [id, TINTS[i % TINTS.length] ?? 'series-1'])),
     [order],
   );
-  const numberOf = (id: string) => chapterRows.find((c) => c.id === id)?.readingOrder ?? '?';
+  const rowOf = (id: string) => chapterRows.find((c) => c.id === id);
+  const numberOf = (id: string) => rowOf(id)?.readingOrder ?? '?';
   const text = scene.doc?.text ?? '';
   const scenes = sceneCount(text);
   const issues = useMemo(
@@ -213,6 +227,19 @@ export function SceneOutline({ toggle }: { toggle: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scene.doc?.ranges, scenes, chapterRows],
   );
+
+  const setRange = (id: string, range: SceneRange | null) =>
+    scene.update((d) => {
+      const rest = Object.fromEntries(Object.entries(d.ranges).filter(([k]) => k !== id));
+      return { ...d, ranges: range ? { ...rest, [id]: range } : rest };
+    });
+
+  /** Drop from the list: the chapter starts at that scene, as long as it was before, or one scene. */
+  const place = (id: string, at: number) => {
+    const prev = scene.doc?.ranges[id];
+    const len = prev ? prev.to - prev.from : 0;
+    setRange(id, clampRange({ from: at, to: at + len }, scenes));
+  };
 
   return (
     <div className="ws-tree-area scenes" data-testid="outline-view">
@@ -223,16 +250,21 @@ export function SceneOutline({ toggle }: { toggle: ReactNode }) {
         </div>
         <p className="example-note">
           One long list of scenes in page order, free of the chapter titles. Enter adds the next
-          scene, Cmd+] indents, Cmd+[ outdents, and Enter on an empty bullet ends the list. A line
-          without a bullet is a heading. On the right, give each chapter its title, its story year,
-          and the scenes it covers; the gutter shows which chapter each scene belongs to.
+          scene, Cmd+] indents, Cmd+[ outdents, and Enter on an empty bullet ends the list. Drag a
+          chapter from the right onto a scene to place it; drag its block to move it and pull the
+          ends to cover more or fewer scenes. Drag the chapters among themselves to reorder them.
         </p>
         <SceneEditor
           scene={scene}
           order={order}
           tintOf={tintOf}
           numberOf={numberOf}
+          titleOf={(id) => rowOf(id)?.title ?? ''}
           hover={hover}
+          dragging={dragging}
+          onHover={setHover}
+          onRange={setRange}
+          onPlace={place}
         />
         <Versions saves={scene.saves} onRestore={scene.replace} />
       </section>
@@ -252,13 +284,10 @@ export function SceneOutline({ toggle }: { toggle: ReactNode }) {
             scenes={scenes}
             issues={issues}
             tintOf={tintOf}
-            onRange={(id, range) =>
-              scene.update((d) => {
-                const rest = Object.fromEntries(Object.entries(d.ranges).filter(([k]) => k !== id));
-                return { ...d, ranges: range ? { ...rest, [id]: range } : rest };
-              })
-            }
+            hover={hover}
+            onRange={setRange}
             onHover={setHover}
+            onDragging={setDragging}
           />
         )}
         <UndoPanel />
@@ -267,28 +296,55 @@ export function SceneOutline({ toggle }: { toggle: ReactNode }) {
   );
 }
 
-/**
- * The text with a gutter. A backdrop behind the textarea repeats the text,
- * invisibly, in the same font and width, so each line's number and tint sit
- * exactly beside the line even when it wraps; the textarea grows with its
- * content so the two never scroll apart.
- */
-function SceneEditor(props: {
+interface EditorProps {
   scene: ReturnType<typeof useSceneDoc>;
   order: readonly string[];
   tintOf: Map<string, string>;
   numberOf: (id: string) => number | string;
+  titleOf: (id: string) => string;
   hover: string | null;
-}) {
+  dragging: string | null;
+  onHover: (id: string | null) => void;
+  onRange: (id: string, range: SceneRange | null) => void;
+  onPlace: (id: string, at: number) => void;
+}
+
+/**
+ * The text with a gutter and a chapter track. A backdrop behind the textarea
+ * repeats the text, invisibly, in the same font and width, so each line's
+ * number and tint sit exactly beside the line even when it wraps, and the
+ * measured line boxes place the chapter blocks on the track; the textarea
+ * grows with its content so nothing scrolls apart.
+ */
+function SceneEditor(props: EditorProps) {
   const { scene } = props;
   const ro = useWriteGuard();
+  const wrap = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const caret = useRef<{ start: number; end: number } | null>(null);
+  const [boxes, setBoxes] = useState<LineBox[]>([]);
+  /** A block being dragged or resized on the track, at its provisional range. */
+  const [live, setLive] = useState<{ id: string; range: SceneRange } | null>(null);
+  /** The scene a chapter from the list would land on. */
+  const [dropAt, setDropAt] = useState<number | null>(null);
   const id = useId();
   const text = scene.doc?.text ?? null;
   const ranges = scene.doc?.ranges ?? {};
   const lines = useMemo(() => (text ?? '').split('\n'), [text]);
   const numbers = useMemo(() => sceneLines(text ?? ''), [text]);
+  const scenes = sceneCount(text ?? '');
+
+  const measure = useCallback(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const base = el.getBoundingClientRect().top;
+    const next: LineBox[] = [];
+    for (const line of el.querySelectorAll<HTMLElement>('.sl[data-scene]')) {
+      const r = line.getBoundingClientRect();
+      next.push({ scene: Number(line.dataset.scene), top: r.top - base, bottom: r.bottom - base });
+    }
+    setBoxes((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+  }, []);
 
   useLayoutEffect(() => {
     const el = area.current;
@@ -299,7 +355,16 @@ function SceneEditor(props: {
       el.setSelectionRange(caret.current.start, caret.current.end);
       caret.current = null;
     }
-  }, [text]);
+    measure();
+  }, [text, measure]);
+
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const obs = new ResizeObserver(() => measure());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [measure]);
 
   const apply = (value: string, start: number, end: number) => {
     caret.current = { start, end };
@@ -335,43 +400,59 @@ function SceneEditor(props: {
     error: 'Not saved',
   }[scene.status];
 
-  // The first scene of each chapter carries its label in the gutter.
-  const starts = new Map<number, string[]>();
-  for (const cid of props.order) {
-    const r = ranges[cid];
-    if (r) starts.set(r.from, [...(starts.get(r.from) ?? []), cid]);
-  }
+  /** Scene under a pointer, from the measured line boxes. */
+  const sceneAt = (clientY: number): number | null => {
+    const el = wrap.current;
+    if (!el) return null;
+    return sceneAtY(boxes, clientY - el.getBoundingClientRect().top);
+  };
+
+  const shown: SceneRanges = live ? { ...ranges, [live.id]: live.range } : ranges;
+  const lanes = laneLayout(props.order, shown);
+  const placed = props.order.filter((cid) => shown[cid] !== undefined);
+  const boxFor = (scene: number) => boxes.find((b) => b.scene === scene);
+
+  const onDropOver = (e: DragEvent) => {
+    if (!props.dragging) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropAt(sceneAt(e.clientY));
+  };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    const cid = e.dataTransfer.getData(CHAPTER_MIME) || props.dragging;
+    const at = sceneAt(e.clientY);
+    setDropAt(null);
+    if (cid && at !== null) props.onPlace(cid, at);
+  };
 
   return (
     <div className="scene-outline stack tight" data-testid="scene-outline">
       <label htmlFor={`${id}-text`} className="sr-only">
         Scene outline
       </label>
-      <div className="scene-edit">
+      <div
+        ref={wrap}
+        className={`scene-edit${props.dragging ? ' placing' : ''}`}
+        onDragOver={onDropOver}
+        onDragLeave={() => setDropAt(null)}
+        onDrop={onDrop}
+      >
         <div className="scene-backdrop" aria-hidden="true" data-testid="scene-gutter">
           {lines.map((line, i) => {
             const n = numbers[i] ?? null;
-            const owners = n === null ? [] : chaptersAtScene(ranges, props.order, n);
+            const owners = n === null ? [] : chaptersAtScene(shown, props.order, n);
             const owner = owners[owners.length - 1] ?? null;
             const tint = owner ? props.tintOf.get(owner) : null;
-            const hot = owner !== null && owner === props.hover;
+            const hot = owner !== null && (owner === props.hover || owner === live?.id);
             return (
               <div
                 key={i}
-                className={`sl${tint ? ` tint ${tint}` : ''}${hot ? ' hot' : ''}${owners.length > 1 ? ' shared' : ''}`}
+                className={`sl${tint ? ` tint ${tint}` : ''}${hot ? ' hot' : ''}${owners.length > 1 ? ' shared' : ''}${n !== null && n === dropAt ? ' drop' : ''}`}
                 data-scene={n ?? undefined}
                 data-chapter={owner ?? undefined}
               >
-                {n !== null && (
-                  <span className="sl-gutter">
-                    {(starts.get(n) ?? []).map((cid) => (
-                      <span key={cid} className="sl-ch">
-                        Ch {props.numberOf(cid)}
-                      </span>
-                    ))}
-                    <span className="sl-no">{n}</span>
-                  </span>
-                )}
+                {n !== null && <span className="sl-no">{n}</span>}
                 <span className="sl-text">{line === '' ? '​' : line}</span>
               </div>
             );
@@ -393,12 +474,41 @@ function SceneEditor(props: {
           onKeyDown={onKeyDown}
           onBlur={() => void scene.save()}
         />
+        <div className="scene-track" data-testid="scene-track" aria-label="Chapters on the scenes">
+          {placed.map((cid) => {
+            const own = shown[cid];
+            if (!own) return null;
+            const r = clampRange(own, scenes);
+            const top = boxFor(r.from);
+            const bottom = boxFor(r.to);
+            if (!top || !bottom) return null;
+            const lane = lanes.get(cid) ?? { lane: 0, lanes: 1 };
+            return (
+              <ChapterBlock
+                key={cid}
+                id={cid}
+                number={props.numberOf(cid)}
+                title={props.titleOf(cid)}
+                range={own}
+                scenes={scenes}
+                tint={props.tintOf.get(cid) ?? 'series-1'}
+                lane={lane}
+                top={top.top}
+                height={bottom.bottom - top.top}
+                hot={cid === props.hover || cid === live?.id}
+                disabled={ro.off}
+                sceneAt={sceneAt}
+                onLive={(range) => setLive(range ? { id: cid, range } : null)}
+                onCommit={(range) => props.onRange(cid, range)}
+                onHover={props.onHover}
+              />
+            );
+          })}
+        </div>
       </div>
       <div className="scene-foot">
         <span data-testid="scene-count">
-          {text === null
-            ? ''
-            : `${sceneCount(text)} ${sceneCount(text) === 1 ? 'scene' : 'scenes'}`}
+          {text === null ? '' : `${scenes} ${scenes === 1 ? 'scene' : 'scenes'}`}
         </span>
         <span data-testid="scene-autosave" aria-live="polite" data-status={scene.status}>
           {label}
@@ -410,6 +520,148 @@ function SceneEditor(props: {
         </p>
       )}
     </div>
+  );
+}
+
+interface BlockProps {
+  id: string;
+  number: number | string;
+  title: string;
+  range: SceneRange;
+  scenes: number;
+  tint: string;
+  lane: { lane: number; lanes: number };
+  top: number;
+  height: number;
+  hot: boolean;
+  disabled: boolean;
+  sceneAt: (clientY: number) => number | null;
+  onLive: (range: SceneRange | null) => void;
+  onCommit: (range: SceneRange | null) => void;
+  onHover: (id: string | null) => void;
+}
+
+type Grab = { mode: 'move' | 'from' | 'to'; startScene: number; start: SceneRange };
+
+/**
+ * One chapter on the track. Drag the body to move it, the top or bottom edge
+ * to change where it starts or ends. From the keyboard: Up and Down move it,
+ * Shift+Up and Shift+Down move its end, Alt+Up and Alt+Down its start, and
+ * Delete takes it off the scenes.
+ */
+function ChapterBlock(p: BlockProps) {
+  const grab = useRef<Grab | null>(null);
+  const moved = useRef(false);
+
+  const begin = (e: PointerEvent, mode: Grab['mode']) => {
+    if (p.disabled || e.button !== 0) return;
+    const startScene = p.sceneAt(e.clientY);
+    if (startScene === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    grab.current = { mode, startScene, start: p.range };
+    moved.current = false;
+  };
+  const during = (e: PointerEvent) => {
+    const g = grab.current;
+    if (!g) return;
+    const at = p.sceneAt(e.clientY);
+    if (at === null) return;
+    const by = at - g.startScene;
+    const next =
+      g.mode === 'move'
+        ? moveRange(g.start, by, p.scenes)
+        : resizeRange(g.start, g.mode, by, p.scenes);
+    if (next.from !== p.range.from || next.to !== p.range.to) moved.current = true;
+    p.onLive(next);
+  };
+  const finish = (e: PointerEvent) => {
+    const g = grab.current;
+    if (!g) return;
+    grab.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    const at = p.sceneAt(e.clientY);
+    const by = at === null ? 0 : at - g.startScene;
+    const next =
+      g.mode === 'move'
+        ? moveRange(g.start, by, p.scenes)
+        : resizeRange(g.start, g.mode, by, p.scenes);
+    p.onLive(null);
+    if (next.from !== g.start.from || next.to !== g.start.to) p.onCommit(next);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (p.disabled) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      p.onCommit(null);
+      return;
+    }
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const by = e.key === 'ArrowUp' ? -1 : 1;
+    const next = e.shiftKey
+      ? resizeRange(p.range, 'to', by, p.scenes)
+      : e.altKey
+        ? resizeRange(p.range, 'from', by, p.scenes)
+        : moveRange(p.range, by, p.scenes);
+    if (next.from !== p.range.from || next.to !== p.range.to) p.onCommit(next);
+  };
+
+  const width = 100 / p.lane.lanes;
+  const span =
+    p.range.from === p.range.to
+      ? `scene ${p.range.from}`
+      : `scenes ${p.range.from} to ${p.range.to}`;
+  return (
+    <button
+      type="button"
+      className={`cb ${p.tint}${p.hot ? ' hot' : ''}${p.disabled ? ' off' : ''}`}
+      style={{
+        top: p.top,
+        height: Math.max(p.height, 22),
+        left: `${p.lane.lane * width}%`,
+        width: `calc(${width}% - 4px)`,
+      }}
+      data-block={p.id}
+      data-from={p.range.from}
+      data-to={p.range.to}
+      aria-label={`Chapter ${p.number}, ${span}. Arrow keys move it, Shift and Alt with the arrows change its end and start, Delete takes it off.`}
+      disabled={p.disabled}
+      onPointerDown={(e) => begin(e, 'move')}
+      onPointerMove={during}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+      onKeyDown={onKeyDown}
+      onMouseEnter={() => p.onHover(p.id)}
+      onMouseLeave={() => p.onHover(null)}
+      onFocus={() => p.onHover(p.id)}
+      onBlur={() => p.onHover(null)}
+    >
+      <span
+        className="cb-handle top"
+        aria-hidden="true"
+        onPointerDown={(e) => begin(e, 'from')}
+        onPointerMove={during}
+        onPointerUp={finish}
+        onPointerCancel={finish}
+      />
+      <span className="cb-label">
+        <span className="cb-no">Ch {p.number}</span>
+        <span className="cb-title">
+          <Zh text={p.title} actions={false} />
+        </span>
+      </span>
+      <span
+        className="cb-handle bottom"
+        aria-hidden="true"
+        onPointerDown={(e) => begin(e, 'to')}
+        onPointerMove={during}
+        onPointerUp={finish}
+        onPointerCancel={finish}
+      />
+    </button>
   );
 }
 
@@ -538,20 +790,30 @@ function Versions(props: {
   );
 }
 
-/** The chapters in reading order, grouped by book and part, each editable in place. */
-function ChapterList(props: {
+interface ListProps {
   rows: Outline['rows'];
   chapters: ChapterRow[];
   ranges: SceneRanges;
   scenes: number;
   issues: { chapterId: string; message: string }[];
   tintOf: Map<string, string>;
+  hover: string | null;
   onRange: (chapterId: string, range: SceneRange | null) => void;
   onHover: (chapterId: string | null) => void;
-}) {
+  onDragging: (chapterId: string | null) => void;
+}
+
+/**
+ * The chapters in reading order, grouped by book and part. A row is dragged by
+ * its grip: onto another row to reorder (into another part too), or onto the
+ * scenes to place it. The title and story year edit in place.
+ */
+function ChapterList(props: ListProps) {
   const stored = useEntries('chapters');
   const writes = useOutlineWrites();
   const titleInputs = useRef<(HTMLInputElement | null)[]>([]);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const byId = useMemo(() => new Map(stored.map((c) => [c._id, c])), [stored]);
   const position = new Map(props.chapters.map((c, i) => [c.id, i]));
   const inPart = (partId: string) => props.chapters.filter((c) => c.partId === partId);
@@ -597,6 +859,34 @@ function ChapterList(props: {
     );
   };
 
+  /**
+   * Dropped on another row: it takes that row's place, in its own part or
+   * another (PL-3); moving down it lands after the target, moving up before it,
+   * as the year grid does.
+   */
+  const dropOnRow = (target: ChapterRow) => {
+    const moved = props.chapters.find((c) => c.id === dragging);
+    if (!moved || moved.id === target.id) return;
+    const toIndex = inPart(target.partId).findIndex((c) => c.id === target.id);
+    void writes.reorder(
+      { kind: 'chapters', groupId: target.partId, movedId: moved.id, toIndex },
+      `Moved ${moved.title}`,
+    );
+  };
+
+  const startDrag = (e: DragEvent, row: ChapterRow) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(CHAPTER_MIME, row.id);
+    e.dataTransfer.setData('text/plain', row.title);
+    setDragging(row.id);
+    props.onDragging(row.id);
+  };
+  const endDrag = () => {
+    setDragging(null);
+    setOver(null);
+    props.onDragging(null);
+  };
+
   if (props.chapters.length === 0) {
     return <p className="example-note">No chapters yet. Add one in the year grid.</p>;
   }
@@ -622,18 +912,40 @@ function ChapterList(props: {
           }
           const at = position.get(row.id) ?? 0;
           const doc = byId.get(row.id);
-          const siblings = inPart(row.partId);
-          const index = siblings.findIndex((s) => s.id === row.id);
+          const range = props.ranges[row.id];
           const issue = props.issues.find((i) => i.chapterId === row.id)?.message ?? null;
+          const free = nextFreeScene(props.ranges, props.scenes);
           return (
             <li
               key={row.id}
-              className={`ch ${props.tintOf.get(row.id) ?? ''}`}
+              className={`ch ${props.tintOf.get(row.id) ?? ''}${props.hover === row.id ? ' hot' : ''}${dragging === row.id ? ' dragging' : ''}${over === row.id ? ' over' : ''}`}
               data-chapter={row.id}
               onMouseEnter={() => props.onHover(row.id)}
-              onFocus={() => props.onHover(row.id)}
+              onDragOver={(e) => {
+                if (!dragging || dragging === row.id) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setOver(row.id);
+              }}
+              onDragLeave={() => setOver((o) => (o === row.id ? null : o))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOver(null);
+                dropOnRow(row);
+              }}
             >
-              <span className="ch-swatch" aria-hidden="true" />
+              <span
+                className="ch-grip"
+                role="img"
+                aria-label={`Drag chapter ${row.readingOrder}`}
+                title="Drag to reorder, or onto a scene to place"
+                draggable={!writes.ro.off}
+                data-testid="chapter-grip"
+                onDragStart={(e) => startDrag(e, row)}
+                onDragEnd={endDrag}
+              >
+                <span className="ch-swatch" aria-hidden="true" />
+              </span>
               <span className="num">{row.readingOrder}</span>
               <TitleInput
                 ref={(el) => {
@@ -647,80 +959,56 @@ function ChapterList(props: {
                 onNext={() => titleInputs.current[at + 1]?.focus()}
                 onMove={(by) => move(row, by)}
               />
-              <span className="ch-moves row tight">
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={writes.ro.off || index <= 0}
-                  aria-label={`Move chapter ${row.readingOrder} up`}
-                  data-testid="chapter-move-up"
-                  onClick={() => move(row, -1)}
-                >
-                  Up
-                </button>
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={writes.ro.off || index < 0 || index >= siblings.length - 1}
-                  aria-label={`Move chapter ${row.readingOrder} down`}
-                  data-testid="chapter-move-down"
-                  onClick={() => move(row, 1)}
-                >
-                  Down
-                </button>
-              </span>
               <span className="ch-details">
-                <NumberField
-                  label={`Story year of chapter ${row.readingOrder}`}
-                  testId="chapter-year"
-                  value={row.storyYear}
-                  min={-10000}
-                  max={10000}
-                  width="5.5em"
-                  disabled={writes.ro.off}
-                  tip={writes.ro.tip}
-                  onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(row, y))}
-                />
-                <span className="ch-range">
-                  <span className="ch-range-label">Scenes</span>
+                <span className="ch-year">
+                  <span className="ch-label">Year</span>
                   <NumberField
-                    label={`First scene of chapter ${row.readingOrder}`}
-                    testId="scene-range-from"
-                    value={props.ranges[row.id]?.from ?? null}
-                    min={1}
-                    max={100000}
-                    width="3.6em"
+                    label={`Story year of chapter ${row.readingOrder}`}
+                    testId="chapter-year"
+                    value={row.storyYear}
+                    min={-10000}
+                    max={10000}
+                    width="5.5em"
                     disabled={writes.ro.off}
                     tip={writes.ro.tip}
-                    onCommit={(from) => {
-                      const to = props.ranges[row.id]?.to ?? from;
-                      props.onRange(
-                        row.id,
-                        from === null ? null : { from, to: Math.max(from, to ?? from) },
-                      );
-                      return Promise.resolve(true);
-                    }}
-                  />
-                  <span className="ch-range-label">to</span>
-                  <NumberField
-                    label={`Last scene of chapter ${row.readingOrder}`}
-                    testId="scene-range-to"
-                    value={props.ranges[row.id]?.to ?? null}
-                    min={1}
-                    max={100000}
-                    width="3.6em"
-                    disabled={writes.ro.off}
-                    tip={writes.ro.tip}
-                    onCommit={(to) => {
-                      const from = props.ranges[row.id]?.from ?? to;
-                      props.onRange(
-                        row.id,
-                        to === null ? null : { from: Math.min(from ?? to, to), to },
-                      );
-                      return Promise.resolve(true);
-                    }}
+                    onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(row, y))}
                   />
                 </span>
+                {range ? (
+                  <span className="ch-range" data-testid="chapter-range">
+                    {range.from === range.to
+                      ? `Scene ${range.from}`
+                      : `Scenes ${range.from} to ${range.to}`}
+                    <button
+                      type="button"
+                      className="btn small"
+                      disabled={writes.ro.off}
+                      {...writes.ro.tip}
+                      aria-label={`Take chapter ${row.readingOrder} off the scenes`}
+                      data-testid="chapter-unplace"
+                      onClick={() => props.onRange(row.id, null)}
+                    >
+                      Take off
+                    </button>
+                  </span>
+                ) : (
+                  <span className="ch-range">
+                    <span className="ch-label">Not on a scene</span>
+                    <button
+                      type="button"
+                      className="btn small"
+                      disabled={writes.ro.off || free === null}
+                      {...writes.ro.tip}
+                      title={free === null ? 'Every scene has a chapter already' : undefined}
+                      data-testid="chapter-place"
+                      onClick={() =>
+                        free !== null && props.onRange(row.id, { from: free, to: free })
+                      }
+                    >
+                      Place next
+                    </button>
+                  </span>
+                )}
                 {issue && (
                   <span className="ch-issue" role="status" data-testid="scene-range-issue">
                     {issue}

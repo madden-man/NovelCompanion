@@ -205,3 +205,84 @@ export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
 
 /** Text a fresh outline starts with, so the first keystroke lands in a bullet. */
 export const EMPTY_OUTLINE = '- ';
+
+/** Keep a range inside the scenes there are; a range on no scenes stays as it is. */
+export function clampRange(range: SceneRange, scenes: number): SceneRange {
+  if (scenes < 1) return range;
+  const from = Math.min(Math.max(1, range.from), scenes);
+  const to = Math.min(Math.max(from, range.to), scenes);
+  return { from, to };
+}
+
+/** Shift a whole range by `by` scenes, keeping its length, inside the scenes there are. */
+export function moveRange(range: SceneRange, by: number, scenes: number): SceneRange {
+  const len = range.to - range.from;
+  const from = Math.min(Math.max(1, range.from + by), Math.max(1, scenes - len));
+  return clampRange({ from, to: from + len }, scenes);
+}
+
+/** Change one end of a range by `by` scenes; the ends never cross. */
+export function resizeRange(
+  range: SceneRange,
+  end: 'from' | 'to',
+  by: number,
+  scenes: number,
+): SceneRange {
+  if (end === 'from') {
+    const from = Math.min(Math.max(1, range.from + by), range.to);
+    return clampRange({ from, to: range.to }, scenes);
+  }
+  const to = Math.max(Math.min(range.to + by, Math.max(scenes, 1)), range.from);
+  return clampRange({ from: range.from, to }, scenes);
+}
+
+/** The first scene after every placed chapter, for placing a new one; null when none is free. */
+export function nextFreeScene(ranges: SceneRanges, scenes: number): number | null {
+  if (scenes < 1) return null;
+  const last = Math.max(0, ...Object.values(ranges).map((r) => r.to));
+  return last < scenes ? last + 1 : null;
+}
+
+export interface Lane {
+  lane: number;
+  lanes: number;
+}
+
+/**
+ * Side-by-side lanes for ranges that overlap, so every block stays visible:
+ * in the order given, a range takes the first lane whose last range ends
+ * before it starts. `lanes` is the total so widths can be shared out.
+ */
+export function laneLayout(order: readonly string[], ranges: SceneRanges): Map<string, Lane> {
+  const ends: number[] = [];
+  const picked = new Map<string, number>();
+  const placed = order
+    .flatMap((id) => {
+      const r = ranges[id];
+      return r ? [{ id, r }] : [];
+    })
+    .sort((a, b) => a.r.from - b.r.from || a.r.to - b.r.to);
+  for (const { id, r } of placed) {
+    let lane = ends.findIndex((end) => end < r.from);
+    if (lane === -1) {
+      lane = ends.length;
+      ends.push(r.to);
+    } else ends[lane] = r.to;
+    picked.set(id, lane);
+  }
+  const lanes = Math.max(1, ends.length);
+  return new Map([...picked].map(([id, lane]) => [id, { lane, lanes }]));
+}
+
+export interface LineBox {
+  scene: number;
+  top: number;
+  bottom: number;
+}
+
+/** The scene whose line box holds `y`; above the first is the first, below the last is the last. */
+export function sceneAtY(boxes: readonly LineBox[], y: number): number | null {
+  if (boxes.length === 0) return null;
+  for (const b of boxes) if (y < b.bottom) return b.scene;
+  return boxes[boxes.length - 1]?.scene ?? null;
+}
