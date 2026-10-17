@@ -84,8 +84,57 @@ const inspector = () => page.getByTestId('outline-inspector');
 const readingOrder = async (id: string) =>
   (await invoke('entry.get', { collection: 'chapters', id })).entry.readingOrder;
 
+test('PL-5 the Outline opens on the scene outline: typing scenes saves one text, Enter continues the bullet, and a chapter title is renamed beside it with undo', async () => {
+  await rail(page, 'Outline').click();
+  const text = page.getByTestId('scene-text');
+  await expect(text).toBeVisible();
+  await expect(text).toHaveValue('- ');
+  await text.click();
+  await text.press('End');
+  await text.pressSequentially('Dawn lands in Jinan');
+  await text.press('Enter');
+  await text.pressSequentially('She finds the shrine');
+  await text.press('Meta+]');
+  await expect(text).toHaveValue('- Dawn lands in Jinan\n  - She finds the shrine');
+  await expect(page.getByTestId('scene-count')).toHaveText('2 scenes');
+  await expect(page.getByTestId('scene-autosave')).toHaveText('Saved');
+  expect((await invoke('sceneOutline.get', {})).text).toBe(
+    '- Dawn lands in Jinan\n  - She finds the shrine',
+  );
+  // Chapter titles in reading order on the right, renamed in place.
+  const titles = inspector().getByTestId('chapter-title');
+  await expect(titles).toHaveCount(fixture.chapters!.length);
+  const second = inspector().locator('[data-chapter="CH2"]').getByTestId('chapter-title');
+  await expect(second).toHaveValue('Two Kitchens');
+  await second.fill('The shrine by the stream');
+  await second.press('Enter');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.title,
+    )
+    .toBe('The shrine by the stream');
+  // Enter moved the focus on to the next chapter.
+  await expect(
+    inspector().locator('[data-chapter="CH3"]').getByTestId('chapter-title'),
+  ).toBeFocused();
+  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.title,
+    )
+    .toBe('Two Kitchens');
+  await expect(second).toHaveValue('Two Kitchens');
+  // The text is still there after leaving and coming back.
+  await rail(page, 'Characters').click();
+  await rail(page, 'Outline').click();
+  await expect(page.getByTestId('scene-text')).toHaveValue(
+    '- Dawn lands in Jinan\n  - She finds the shrine',
+  );
+});
+
 test('PL-2 the outline is a chapter-by-year grid with strand marks, an arc span, and the story-time cursor', async () => {
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await expect(grid()).toBeVisible();
   await expect(grid().getByTestId('outline-label')).toHaveCount(fixture.chapters!.length);
   await expect(grid().locator('.ol-group.book')).toContainText('Tide Lines');
@@ -380,6 +429,7 @@ test('KB-3 Alt+Down moves a chapter within its part and the reading order persis
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await expect(grid().locator('[data-chapter]').first()).toHaveAttribute('data-chapter', 'CH2');
   await expect(grid().locator('[data-chapter]').nth(1)).toHaveAttribute('data-chapter', 'CH1');
 
@@ -507,6 +557,7 @@ test('KB-3 PL-3 a chapter dragged down lands in the target place, one can reach 
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await expect.poll(() => gridOrder('PT1')).toEqual(['CH1', 'CH3', 'CH4', 'CH2']);
 
   // Put Two Kitchens back in second place for the tests that follow.
@@ -1015,6 +1066,7 @@ test('GL-3 the glossary table, the culture view, and the chapter page show the m
   }));
   await invoke('entry.update', { collection: 'chapters', id: 'CH7', patch: { strands } });
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await grid().locator('[data-chapter="CH7"]').getByTestId('outline-label').click();
   const places = inspector().getByTestId('chapter-places');
   await expect(places).toContainText('Guangzhou');

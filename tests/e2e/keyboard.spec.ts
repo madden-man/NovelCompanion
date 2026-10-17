@@ -378,6 +378,7 @@ test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and 
 
 test('NF-2 PL-1 PL-4 KB-3 the plot outline: Enter on a chapter opens its chapter page, Alt+Down and Alt+Up move it, and its controls answer the keyboard', async () => {
   await go('Outline');
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   const candles = page.getByTestId('outline-grid').getByRole('button', { name: 'Candles' });
   await press(candles);
   const chapter = page.getByTestId('chapter-page');

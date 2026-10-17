@@ -296,3 +296,13 @@ Built 2026-10-12 as four Opus sub agents on branches `m11-shell`, `m11-outline`,
 | A32 (M8 and M10 built now) | n/a | Process. M8 and M10 are being built on 2026-10-11 as Opus sub agents under the section 9 protocol (M10 in three parts: settings and offline, performance and accessibility and errors, packaging and journey); the final audit runs after M8 merges. |
 | A33 (five year events window, titles-only strip) | pass | `tests/unit/brief-selection.test.ts` "SB-2 A33 the window is a setting" and "SB-2 A33 SB-5 the window looks one year ahead"; `tests/unit/timeline.test.ts` "A33 eventsAhead"; known answers in `fixtures/expected/sb2-selection.json` updated for the default window of 3; `tests/e2e/session.spec.ts` SB-9 removes E5 from the strip. Strip: `src/renderer/src/workspace/timeline/WorldEventsStrip.tsx`, on every strand in Relevant to Session and above the World events list. Built 2026-10-12. |
 | A34 (knowledge base shell) | pass | M11, see above. Built and reviewed 2026-10-12. |
+
+## PL-5 (A36): scene outline, 2026-10-17
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| PL-5 | pass | `tests/unit/scene-outline.test.ts` Enter continues a bullet with its indent, splits a bullet, ends the list on an empty bullet, leaves plain lines alone; Cmd+] and Cmd+[ indent and outdent the touched lines (Tab leaves the field, NF-2); scene count; malformed meta reads as empty. `tests/integration/outline.test.ts` "PL-5 empty until set, round-trips, survives a reopen, and writes no entry or revision". `tests/e2e/plot.spec.ts` "PL-5 the Outline opens on the scene outline: typing scenes saves one text, Enter continues the bullet, and a chapter title is renamed beside it with undo" (autosave to Saved, stored text checked over IPC, Enter moves to the next chapter title, undo restores the title, text survives leaving the screen). The year grid (PL-2, KB-3) is behind the Scenes / Year grid toggle, remembered in browser storage; the grid tests click "Year grid" first. |
+
+The scene outline is a `meta` document (`sceneOutline`), like the story time: no entry, no revision, no undo step; chapter renames beside it go through the outline's `edit` action (`entry.update` with an `editCommand` undo step) and are disabled while read-only (ARCH-6). The IPC channels are `sceneOutline.get` and `sceneOutline.set`.
+
+End-to-end runs are hidden from now on: `NOVEL_COMPANION_HIDDEN=1` (set by `tests/e2e/helpers.ts`) hides the dock icon, sets the accessory activation policy, and renders the window offscreen, so a test run never takes the focus. `NOVEL_COMPANION_E2E_SHOW=1` shows the windows again.

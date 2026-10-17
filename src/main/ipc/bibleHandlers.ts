@@ -97,6 +97,8 @@ export type BibleChannel =
   | 'timeline.chart'
   | 'timeline.eraCoverage'
   | 'outline.get'
+  | 'sceneOutline.get'
+  | 'sceneOutline.set'
   | 'chapter.page'
   | 'plot.reorder'
   | 'outline.newChapter'
@@ -288,6 +290,8 @@ export function bibleHandlers(
       const saved = await session().repo.setStoryTime(time);
       return { time: saved, position: position() };
     },
+    'sceneOutline.get': () => session().repo.sceneOutline(),
+    'sceneOutline.set': async ({ text }) => session().repo.setSceneOutline(text),
     'storyTime.anchorAge': ({ characterId, age }) => {
       const c = session().model.get('characters', characterId);
       if (!c || c.deletedAt) throw new Error(`No character has the ID ${characterId}.`);

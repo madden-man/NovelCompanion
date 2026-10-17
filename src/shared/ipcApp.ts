@@ -126,6 +126,7 @@ export const WRITE_CHANNELS = [
   'test.propose',
   'tree.savePositions',
   'storyTime.set',
+  'sceneOutline.set',
   'storyTime.promote',
   'plot.reorder',
   'outline.newChapter',

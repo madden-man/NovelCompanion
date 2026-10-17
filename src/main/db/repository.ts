@@ -50,6 +50,7 @@ import type { ChangeItem, Conflict, ListAdd, SourceRecord } from '../../shared/d
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
+import { SCENE_OUTLINE_ID, sceneOutlineText } from '../../shared/domain/sceneOutline';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
@@ -1664,6 +1665,23 @@ export class Repository {
     positions: Record<string, { x: number; y: number; loose?: boolean }>,
   ): Promise<void> {
     await this.writeMeta({ _id: TREE_LAYOUT_ID, positions });
+  }
+
+  // ---------- scene outline (PL-5, A36, stored in meta, never an entry) ----------
+
+  /** The scene outline: one bulleted text per bible, and when it was last saved. */
+  sceneOutline(): { text: string; modifiedAt: string | null } {
+    const doc = this.model.get('meta', SCENE_OUTLINE_ID);
+    return {
+      text: sceneOutlineText(doc),
+      modifiedAt: doc && typeof doc.modifiedAt === 'string' ? doc.modifiedAt : null,
+    };
+  }
+
+  /** Replace the scene outline. It writes only the meta document, never an entry. */
+  async setSceneOutline(text: string): Promise<{ text: string; modifiedAt: string | null }> {
+    await this.writeMeta({ _id: SCENE_OUTLINE_ID, text, modifiedAt: this.now().toISOString() });
+    return this.sceneOutline();
   }
 
   /**

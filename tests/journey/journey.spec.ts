@@ -594,6 +594,7 @@ const readingOrder = async (id: string) =>
 
 test('PL-2 PL-3 the plot outline: drag Chapter 2 above Chapter 1, see the order change, and undo it', async () => {
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await expect(grid()).toBeVisible();
   await expect(grid().getByTestId('outline-label')).toHaveCount(8);
   await grid()
@@ -1076,6 +1077,7 @@ test('PL-1 a new chapter is created with two strands, present and backstory', as
   const stored = (await invoke('entry.get', { collection: 'chapters', id })).entry;
   expect((stored.strands as { startYear: number }[]).map((s) => s.startYear)).toEqual([2045, 2034]);
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await expect(grid().getByTestId('outline-label').filter({ hasText: CHAPTER })).toHaveCount(1);
 });
 

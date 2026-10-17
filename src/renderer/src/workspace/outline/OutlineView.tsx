@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { DragEvent, KeyboardEvent } from 'react';
+import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
 import { nextNumber } from '../../../../shared/domain/outline';
 import type { Response } from '../../../../shared/ipc';
 import { call } from '../../api';
@@ -12,6 +12,7 @@ import type { OutlineWrites } from './actions';
 import { ArcPanel, ArcsList } from './Arcs';
 import { ChapterPanel } from './ChapterPage';
 import { InlineName, NameForm } from './InlineName';
+import { SceneOutline } from './Scenes';
 import './outline.css';
 
 type Outline = Response<'outline.get'>;
@@ -36,7 +37,9 @@ const COL = 26;
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * The one outline (PL-2, PL-3, KB-3): one row per chapter, one column per
+ * The Outline screen (PL-2, PL-5, KB-3). It opens on the scene outline, one
+ * long bulleted text with the chapter titles beside it; the toggle in its head
+ * switches to the year grid. The grid: one row per chapter, one column per
  * story year, grouped under book and part headings. Books, parts, chapters,
  * arcs and beats are made, renamed, moved and deleted here: a heading renames
  * in place, New part and New chapter sit on the headings, rows move by drag or
@@ -45,6 +48,44 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * owner's family color, and a line marks the story time.
  */
 export function OutlineView() {
+  const [mode, setMode] = useState<OutlineMode>(() => storedMode());
+  const pick = (next: OutlineMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      // Browser storage is a convenience only.
+    }
+  };
+  const toggle = (
+    <span className="outline-mode" role="group" aria-label="Outline view">
+      <button type="button" aria-pressed={mode === 'scenes'} onClick={() => pick('scenes')}>
+        Scenes
+      </button>
+      <button type="button" aria-pressed={mode === 'grid'} onClick={() => pick('grid')}>
+        Year grid
+      </button>
+    </span>
+  );
+  return mode === 'grid' ? <GridOutline toggle={toggle} /> : <SceneOutline toggle={toggle} />;
+}
+
+/** PL-5: which face of the Outline screen opens, remembered on this computer. */
+type OutlineMode = 'scenes' | 'grid';
+const MODE_KEY = 'novel-companion.outline-mode';
+function storedMode(): OutlineMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'grid' ? 'grid' : 'scenes';
+  } catch {
+    return 'scenes';
+  }
+}
+
+/**
+ * The year grid (PL-2, PL-3, KB-3), reached from the Scenes toggle. Everything
+ * documented above happens here.
+ */
+function GridOutline({ toggle }: { toggle: ReactNode }) {
   const { version } = useStore();
   const story = useStoryTime();
   const writes = useOutlineWrites();
@@ -199,6 +240,7 @@ export function OutlineView() {
         <div className="list-head">
           <h2 id="outline-title">Outline</h2>
           <span className="row tight">
+            {toggle}
             <span className="chip time" data-testid="outline-time">
               Story time {story.year}
             </span>

@@ -438,6 +438,12 @@ const OutlineStrandWire = z.strictObject({
   present: z.array(z.string()),
 });
 
+/** PL-5: the scene outline text and when it was last saved. */
+const SceneOutlineWire = z.strictObject({
+  text: z.string(),
+  modifiedAt: z.string().nullable(),
+});
+
 const OutlineWire = z.strictObject({
   order: z.enum(['reading', 'story']),
   years: z.array(z.number()),
@@ -1129,6 +1135,15 @@ export const contract = {
       baseModifiedAt: z.string().min(1),
     }),
     response: WithWarnings,
+  },
+  /** PL-5 (A36): the scene outline, one bulleted text per bible, kept in meta and never an entry. */
+  'sceneOutline.get': {
+    request: z.strictObject({}),
+    response: SceneOutlineWire,
+  },
+  'sceneOutline.set': {
+    request: z.strictObject({ text: z.string().max(2_000_000) }),
+    response: SceneOutlineWire,
   },
   /** PL-2: the outline grid, in reading order or story-year order, with the story-time cursor. */
   'outline.get': {

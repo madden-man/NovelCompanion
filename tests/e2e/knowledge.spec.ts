@@ -128,6 +128,7 @@ test('KN-3 a chapter lists which characters act on which facts, and the outline 
     { factId: 'F2', characterId: 'H4', note: 'Ruth keeps the letter hidden.' },
   ]);
   await rail(page, 'Outline').click();
+  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
   await page
     .getByTestId('outline-grid')
     .locator('[data-chapter="CH5"]')

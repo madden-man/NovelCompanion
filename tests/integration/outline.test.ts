@@ -188,3 +188,22 @@ describe('KB-3 beats move on the chapter page', () => {
     ).rejects.toThrow(/not in this group/);
   });
 });
+
+describe('PL-5 the scene outline over IPC', () => {
+  test('PL-5 empty until set, round-trips, survives a reopen, and writes no entry or revision', async () => {
+    const before = await revs();
+    expect(await invoke('sceneOutline.get', {})).toEqual({ text: '', modifiedAt: null });
+    const text = 'Part one\n- Dawn lands in Jinan\n  - She finds the shrine\n- Mark waits';
+    const saved = await invoke('sceneOutline.set', { text });
+    expect(saved.text).toBe(text);
+    expect(saved.modifiedAt).toEqual(expect.any(String));
+    expect(await invoke('sceneOutline.get', {})).toEqual(saved);
+    const reopened = await openBibleSession(store, bible.handle.id);
+    expect(reopened.repo.sceneOutline()).toEqual(saved);
+    expect(await revs()).toBe(before);
+    expect(await chaptersNow()).toHaveLength((await chaptersNow()).length);
+    const cleared = await invoke('sceneOutline.set', { text: '' });
+    expect(cleared.text).toBe('');
+    expect((await invoke('sceneOutline.get', {})).text).toBe('');
+  });
+});
