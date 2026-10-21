@@ -228,6 +228,13 @@ button { cursor: pointer; }
 .tip { position: absolute; z-index: 6; background: var(--fg); color: var(--bg); padding: 5px 8px; border-radius: 6px; font-size: 0.8rem; pointer-events: none; max-width: 260px; }
 .addform { position: absolute; z-index: 6; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; box-shadow: var(--shadow); width: 260px; display: flex; flex-direction: column; gap: 6px; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.now-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.now-list li { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 2px 0; }
+.now-list li .yr { color: var(--fg-2); font-size: 0.82rem; }
+.now-list li.now .yr { color: var(--fg); font-weight: 700; }
+.now-list li.ahead { opacity: 0.7; }
+.now-list li .note { margin-left: 8px; font-size: 0.8rem; }
+@media (max-width: 500px) { .now-list li { grid-template-columns: minmax(0, 1fr); } }
 .tools select { padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
 table.moments { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 table.moments th { text-align: left; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border-strong); color: var(--fg); font-size: 0.8rem; }
@@ -739,10 +746,12 @@ function renderWorld(root) {
   const regions = ['United States', 'China', 'Europe', 'Pacific States'];
   root.innerHTML = `
     <div class="screen-head"><h2>World events</h2><p class="note">Years left to right, one row per category from the world tracker sheet. Click an empty spot in a row to add an event there. Drag a marker to change its year. Larger markers are formative events.</p></div>
+    <div class="panel stack" style="gap:6px" id="wnow"><div class="row" style="justify-content:space-between"><h3>The world around ${S.year}</h3><span class="note num">${S.year - 3} to ${S.year + 2}</span></div>${(() => { const ys = [S.year - 3, S.year - 2, S.year - 1, S.year, S.year + 1, S.year + 2]; const rows = ys.map((yy) => ({ yy, evs: EVENTS.filter((ev) => (ev.e !== null ? ev.y <= yy && ev.e >= yy && ev.y === yy : ev.y === yy) && (!S.region || ev.region === S.region)).sort((a, b) => Number(b.formative) - Number(a.formative)) })).filter((r) => r.evs.length); return rows.length ? '<ul class="now-list">' + rows.map((r) => r.evs.map((ev) => `<li class="${r.yy === S.year ? 'now' : r.yy > S.year ? 'ahead' : ''}"><span class="num yr">${r.yy}${r.yy === S.year ? ' now' : r.yy > S.year ? ' ahead' : ''}</span><button class="link" data-now="${ev.id}">${esc(ev.title)}</button><span class="note">${esc(ev.row)}${ev.formative ? ', formative' : ''}${ev.e !== null ? ', to ' + ev.e : ''}</span></li>`).join('')).join('') + '</ul>' : '<p class="note">Nothing recorded in these years.</p>'; })()}</div>
     <div class="tools">${zoomTools()}<span class="row" role="group" aria-label="Region">${['', ...regions].map((r) => `<button class="btn small" data-region="${r}" aria-pressed="${S.region === r}">${r || 'All regions'}</button>`).join('')}</span><span class="note">Rows trimmed to a sample in this mockup; the app shows all 111.</span></div>
     <div class="grid" id="wgrid"><div class="labels" id="wlabels"><div class="glabel head" style="font-weight:600">Category</div></div><div class="plot" id="wplot"><div class="canvas" id="wcanvas">${axisHtml()}</div></div></div>
     <div class="panel" id="winspector"><p class="note">Click a marker to edit the event here.</p></div>`;
   $('#ppy').addEventListener('change', (e) => { S.ppy = Number(e.target.value); renderWorld(root); });
+  root.querySelectorAll('[data-now]').forEach((b) => b.addEventListener('click', () => { S.sel = b.dataset.now; renderWorld(root); const m = root.querySelector(`.mark[data-id="${S.sel}"]`); if (m) { m.scrollIntoView({ block: 'nearest', inline: 'center' }); m.focus(); } }));
   root.querySelectorAll('[data-region]').forEach((b) => b.addEventListener('click', () => { S.region = b.dataset.region; renderWorld(root); }));
   const labels = $('#wlabels'), canvas = $('#wcanvas'), plot = $('#wplot');
   const W = X(Y1 + 1);
