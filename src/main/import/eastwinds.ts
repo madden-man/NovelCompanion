@@ -388,13 +388,7 @@ export async function importEastWinds(
     open.repo.beforeBulk = null;
   }
 
-  const record = async (
-    step: string,
-    set: ChangeSet,
-    file: SourceFile,
-    _createSection: null = null,
-    notes: string[] = [],
-  ) => {
+  const record = async (step: string, set: ChangeSet, file: SourceFile, notes: string[] = []) => {
     const base = {
       step,
       unchanged: set.unchanged,
@@ -460,7 +454,6 @@ export async function importEastWinds(
       `${file}, backstory of ${entryTitle(open.model.get('characters', id) ?? { title: name })}`,
       plan.set,
       plan.file,
-      null,
       found ? [] : [`Made a character called ${name}; it had no entry.`],
     );
   }
@@ -552,13 +545,7 @@ export async function importEastWinds(
           : [
               `New chapter placed in the first part with story year ${year}. Edit the year and the part in the app.`,
             ];
-      const done = await record(
-        `${manuscript.fileName}, ${t.title}`,
-        plan.set,
-        plan.file,
-        null,
-        notes,
-      );
+      const done = await record(`${manuscript.fileName}, ${t.title}`, plan.set, plan.file, notes);
       // The introduction reads just before chapter 1: take its number and move the later chapters down one.
       if (writes && !t.isOne && one && done.created > 0) {
         const intro = open.repo
@@ -642,13 +629,7 @@ export async function partForManuscript(open: OpenBible, dryRun: boolean): Promi
 async function importEras(
   open: OpenBible,
   doc: ParsedDocument,
-  record: (
-    step: string,
-    set: ChangeSet,
-    file: SourceFile,
-    createSection?: null,
-    notes?: string[],
-  ) => Promise<unknown>,
+  record: (step: string, set: ChangeSet, file: SourceFile, notes?: string[]) => Promise<unknown>,
 ): Promise<void> {
   const file = { fileName: doc.fileName, modifiedAt: doc.modifiedAt };
   const { eras, skipped } = erasFromBlocks(doc.blocks);
@@ -660,7 +641,7 @@ async function importEras(
     sources: (id) => open.repo.sourceRecords(id),
     newId: ctx.newId,
   });
-  await record(`${doc.fileName}, era states by heading`, set, file, null, [
+  await record(`${doc.fileName}, era states by heading`, set, file, [
     `${eras.length} eras found by their headings.`,
   ]);
   const rest = skipped.flatMap((s) => (s.heading ? [s.heading, ...s.blocks] : s.blocks));

@@ -64,7 +64,14 @@ export function needsDailySnapshot(
   return !existing.some((s) => s.reason === 'daily' && localDay(new Date(s.takenAt)) === today);
 }
 
-/** The snapshots to delete so that only the newest `keep` remain (BK-1). */
-export function snapshotsToPrune<T extends { id: string }>(newestFirst: T[], keep: number): T[] {
-  return newestFirst.slice(Math.max(1, keep));
+/**
+ * The snapshots to delete so that only the newest `keep` remain (BK-1). A
+ * snapshot taken before a schema migration (SM-2) is never counted and never
+ * pruned: only a delete in Backups removes it.
+ */
+export function snapshotsToPrune<T extends { id: string; reason?: string }>(
+  newestFirst: T[],
+  keep: number,
+): T[] {
+  return newestFirst.filter((s) => s.reason !== 'migration').slice(Math.max(1, keep));
 }

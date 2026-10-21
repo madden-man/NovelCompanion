@@ -119,11 +119,6 @@ export function CultureView(props: { onOpen: Open }) {
                 )}
               </div>
               {typeof e.body === 'string' && e.body && <ZhHtml html={e.body} />}
-              {typeof e.generationNotes === 'string' && e.generationNotes && (
-                <p>
-                  <span className="eyebrow">Generations</span> <Zh text={e.generationNotes} />
-                </p>
-              )}
               <button
                 type="button"
                 className="btn small"

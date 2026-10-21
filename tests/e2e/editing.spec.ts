@@ -14,6 +14,7 @@ import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
 import {
   field,
   fileDb,
+  fillDateBox,
   invokeVia,
   launch,
   openListFor,
@@ -184,8 +185,7 @@ async function newCharacter(name: string, birthYear = 1958) {
   const editor = page.getByTestId('editor');
   await expect(editor.getByTestId('char-heading').getByRole('heading', { name })).toBeVisible();
   await waitSaved(page);
-  await field(editor, 'birth').getByLabel('Kind of date').selectOption('year');
-  await field(editor, 'birth').getByLabel('Year', { exact: true }).fill(String(birthYear));
+  await fillDateBox(field(editor, 'birth'), String(birthYear));
   await waitSaved(page);
 }
 
@@ -444,7 +444,10 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
   await expect(linked).toContainText('Character: Linker Zhou');
   await linked.getByRole('button', { name: 'Character: Linker Zhou' }).click();
   await expect(
-    page.getByTestId('editor').getByRole('heading', { name: 'Linker Zhou', level: 2 }),
+    page
+      .getByTestId('editor')
+      .getByTestId('char-heading')
+      .getByRole('heading', { name: 'Linker Zhou' }),
   ).toBeVisible();
 });
 
@@ -452,8 +455,7 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
   await newCharacter('Warned Hale', 2000);
   const editor = page.getByTestId('editor');
   const death = field(editor, 'death');
-  await death.getByLabel('Kind of date').selectOption('year');
-  await death.getByLabel('Year', { exact: true }).fill('1990');
+  await fillDateBox(death, '1990');
   await waitSaved(page);
   await expect(death.getByRole('note')).toHaveText(
     'The death date 1990 is before the birth date 2000. It still saves.',
@@ -463,7 +465,7 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
     '1 field has a warning. It still saved.',
   );
   // Fixing it clears the warning.
-  await death.getByLabel('Year', { exact: true }).fill('2070');
+  await fillDateBox(death, '2070');
   await waitSaved(page);
   await expect(death.getByRole('note')).toHaveCount(0);
 });

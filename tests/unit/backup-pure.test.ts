@@ -35,6 +35,19 @@ describe('BK-1 daily snapshots and how many are kept', () => {
     expect(snapshotsToPrune(list, 0).map((s) => s.id)).toEqual(['d', 'c', 'b', 'a']);
   });
 
+  test('BK-1 SM-2 a snapshot taken before a migration is never counted and never pruned', () => {
+    const list = [
+      { id: 'e', reason: 'manual' },
+      { id: 'd', reason: 'daily' },
+      { id: 'c', reason: 'migration' },
+      { id: 'b', reason: 'bulk' },
+      { id: 'a', reason: 'migration' },
+    ];
+    expect(snapshotsToPrune(list, 2).map((s) => s.id)).toEqual(['b']);
+    expect(snapshotsToPrune(list, 1).map((s) => s.id)).toEqual(['d', 'b']);
+    expect(snapshotsToPrune(list, 3)).toEqual([]);
+  });
+
   test('BK-1 a manifest states the bible, time, reason, schema version, and counts', () => {
     const good = {
       format: 'novel-companion-snapshot',

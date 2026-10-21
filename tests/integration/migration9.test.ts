@@ -452,6 +452,27 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     expect(after.collections).toEqual(before.collections);
   });
 
+  test('SM-2 BK-1 the snapshot before migration 9 survives thirty later snapshots, which the keep setting prunes', async () => {
+    const migration = (await open.snapshots!.list()).find((x) => x.reason === 'migration')!;
+    expect(migration.label).toBe(MIGRATION9_SNAPSHOT_LABEL);
+    await open.repo.setSnapshotKeep(5);
+    try {
+      for (let i = 0; i < 30; i++) await open.snapshots!.take('manual', `later ${i}`);
+      const list = await open.snapshots!.list();
+      // The migration snapshot is kept and not counted: five others remain, the newest five.
+      expect(list.filter((x) => x.reason === 'migration').map((x) => x.id)).toEqual([migration.id]);
+      expect(list.filter((x) => x.reason !== 'migration').map((x) => x.label)).toEqual([
+        'later 29',
+        'later 28',
+        'later 27',
+        'later 26',
+        'later 25',
+      ]);
+    } finally {
+      await open.repo.setSnapshotKeep(30);
+    }
+  });
+
   test('BK-2 SM-2 restoring the snapshot taken before migration 9 runs it again and ends in the same bible', async () => {
     const migrated = await dumpBible(open.handle);
     await open.repo.create('moments', {

@@ -304,7 +304,7 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
       op: 'update',
       collection: 'characters',
       targetId: 'H2',
-      data: { birthplace: 'Salem' },
+      data: { role: 'Lives in Salem.' },
     });
     // Another writer decides it in MongoDB; the read model still thinks it is pending.
     await bible.handle
@@ -314,5 +314,29 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
       'This proposal was already decided.',
     );
     expect(bible.model.get('proposals', p._id)!.state).toBe('pending');
+  });
+
+  test('ED-7 SM-1 a proposal naming a field its kind does not have is refused when it is made', async () => {
+    const before = bible.repo.listProposals().length;
+    await expect(
+      bible.repo.propose({
+        source: 'import',
+        op: 'update',
+        collection: 'characters',
+        targetId: 'H2',
+        data: { birthplace: 'Salem', role: 'Lives in Salem.' },
+      }),
+    ).rejects.toThrow(
+      'Characters have no field named birthplace, so this change cannot be proposed.',
+    );
+    await expect(
+      bible.repo.propose({
+        source: 'claude',
+        op: 'create',
+        collection: 'worldEvents',
+        data: { title: 'Flood', status: 'idea', placeIds: [], reality: 'real' },
+      }),
+    ).rejects.toThrow('World events have no fields named placeIds, reality');
+    expect(bible.repo.listProposals()).toHaveLength(before);
   });
 });

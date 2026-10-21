@@ -7,6 +7,7 @@ import { collectionInfo } from '../../src/shared/schema';
 import type { EntryCollection, FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
+import { dateText } from '../../src/shared/domain/dates';
 import type { Invoke } from '../helpers/t5';
 import { EXECUTABLE } from '../package/paths';
 import { connect } from '../../src/main/db';
@@ -255,6 +256,12 @@ export async function reveal(target: Locator): Promise<void> {
   });
 }
 
+/** SM-1: type a date into a character page date box ("2045", "2034-05-01", or blank) and leave it. */
+export async function fillDateBox(f: Locator, text: string): Promise<void> {
+  await f.locator('input').fill(text);
+  await f.locator('input').blur();
+}
+
 export async function setField(
   ctx: UiContext,
   scope: Locator,
@@ -285,6 +292,9 @@ export async function setField(
       return;
     case 'storyDate': {
       const d = value as Record<string, number> | null;
+      // SM-1: the character page has one box per date.
+      if ((await f.getAttribute('data-kind')) === 'dateText')
+        return fillDateBox(f, dateText(d as never));
       const kind = f.getByLabel('Kind of date');
       if (d === null) return void (await kind.selectOption('none'));
       if ('unknown' in d) return void (await kind.selectOption('unknown'));
@@ -314,6 +324,14 @@ export async function setField(
       return;
     case 'refs':
       await clearChips(f);
+      // SM-1: the character page's families are added through Add family.
+      if ((await f.getAttribute('data-kind')) === 'familyChips') {
+        for (const id of value as string[]) {
+          await f.getByRole('button', { name: 'Add family' }).click();
+          await f.getByLabel('Family to add').selectOption(id);
+        }
+        return;
+      }
       for (const id of value as string[]) {
         if (anywhere(spec)) await pickBySearch(ctx, f, id, /^Add to/);
         else await f.locator(':scope > select').selectOption(id);

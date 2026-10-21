@@ -8,6 +8,7 @@ import {
   LIST_IDS,
   ListDoc,
   Proposal,
+  collectionInfo,
   entrySchemas,
   entryTitle,
   isEntryCollection,
@@ -853,6 +854,20 @@ export class Repository {
     const target = input.targetId ? this.model.get(input.collection, input.targetId) : undefined;
     if (input.op !== 'create' && !target) {
       throw new RepositoryError(`No ${input.collection} entry has the ID ${input.targetId}.`);
+    }
+    // A proposal names only fields its kind has, so a dropped field (SM-1, SM-4) is refused now,
+    // not when it is approved.
+    if (input.op !== 'delete' && input.data) {
+      const shape = (
+        entrySchemas[input.collection] as unknown as { shape: Record<string, unknown> }
+      ).shape;
+      const unknown = Object.keys(this.stripSystem(input.data)).filter((k) => !(k in shape));
+      if (unknown.length) {
+        const plural = collectionInfo[input.collection].plural;
+        throw new RepositoryError(
+          `${plural} have no ${unknown.length === 1 ? 'field' : 'fields'} named ${unknown.join(', ')}, so this change cannot be proposed.`,
+        );
+      }
     }
     const proposal = Proposal.parse({
       _id: newId(),
