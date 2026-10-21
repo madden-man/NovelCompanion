@@ -83,7 +83,15 @@ describe('SM-9 FT-1 rows: families in tree order, people in each', () => {
     });
     expect(families.map((f) => f.id)).toEqual(['FAM-HALE', NO_FAMILY]);
     expect(families[0]!.people.map((p) => p.id)).not.toContain('H6');
-    expect(families[1]!.people.map((p) => p.id)).toEqual(['U1', 'Z1', 'Z2', 'Z3', 'Z4', 'X1', 'Z5']);
+    expect(families[1]!.people.map((p) => p.id)).toEqual([
+      'U1',
+      'Z1',
+      'Z2',
+      'Z3',
+      'Z4',
+      'X1',
+      'Z5',
+    ]);
   });
 });
 
@@ -124,7 +132,9 @@ describe('SM-9 TL-2 lifespans from the StoryDates', () => {
     expect(life.kind).toBe('unknown');
     expect(lifespanBar(life, s, 2040)).toBeNull();
     // A death on record without a birth still draws nothing.
-    expect(lifespanBar(lifespanOf({ birth: { unknown: true }, death: { year: 2050 } }), s, 2040)).toBeNull();
+    expect(
+      lifespanBar(lifespanOf({ birth: { unknown: true }, death: { year: 2050 } }), s, 2040),
+    ).toBeNull();
   });
 });
 
@@ -253,7 +263,10 @@ describe('SM-9 A33 the Relevant world events picker', () => {
       'The floods.\nPacific Rim trade accord signed',
     );
     expect(
-      insertEventTitle('The floods.\nPacific Rim trade accord signed', 'Pacific Rim trade accord signed'),
+      insertEventTitle(
+        'The floods.\nPacific Rim trade accord signed',
+        'Pacific Rim trade accord signed',
+      ),
     ).toBe('The floods.\nPacific Rim trade accord signed');
   });
 });

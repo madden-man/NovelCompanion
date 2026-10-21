@@ -281,8 +281,9 @@ export function momentsOf(
   characterId: string,
 ): BackstoryMoment[] {
   const mine = moments.filter((m) => m.characterId === characterId);
-  const items = new Map(momentItems(mine).map((i) => [i.id, i]));
-  return mine.sort((a, b) => byYear(items.get(a.id)!, items.get(b.id)!));
+  const items = momentItems(mine).sort(byYear);
+  const byId = new Map(mine.map((m) => [m.id, m]));
+  return items.flatMap((i) => byId.get(i.id) ?? []);
 }
 
 /** TL-3: the age a moment's year gives, in words for the table. */
@@ -345,7 +346,13 @@ export function layoutBackstory(
   closed: ReadonlySet<string> = new Set(),
   opts: MarkerOptions = MARKER_DEFAULTS,
 ): GridLayout {
-  return layoutGrid(gridGroups(g.families, closed), momentItems(g.moments), s, opts, BACKSTORY_METRICS);
+  return layoutGrid(
+    gridGroups(g.families, closed),
+    momentItems(g.moments),
+    s,
+    opts,
+    BACKSTORY_METRICS,
+  );
 }
 
 export type BackstoryHit =

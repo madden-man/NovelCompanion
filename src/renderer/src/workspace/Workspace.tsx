@@ -18,6 +18,7 @@ import { UndoProvider } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
+import { BackstoryView } from './backstory/BackstoryView';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { OutlineView } from './plot';
@@ -42,6 +43,7 @@ type View =
   | { kind: 'search' }
   | { kind: 'tree'; focus?: string }
   | { kind: 'timeline' }
+  | { kind: 'backstory'; characterId?: string }
   | { kind: 'outline' }
   /** KB-5: the Entries screen. */
   | { kind: 'entries' }
@@ -174,6 +176,12 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
             {railButton('Timeline', view.kind === 'timeline', () => setView({ kind: 'timeline' }))}
             {railButton('Entries', entriesActive, () => setView({ kind: 'entries' }))}
           </div>
+          {/* a39-backstory: until the SM-6 rail lands; the architect re-wires it at integration. */}
+          <div className="rail-group">
+            {railButton('Backstory', view.kind === 'backstory', () =>
+              setView({ kind: 'backstory' }),
+            )}
+          </div>
           <details className="rail-more" open={moreOpen} data-testid="rail-more">
             {/* The state is set here, not from the toggle event, so it is saved at once. */}
             <summary
@@ -277,6 +285,8 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
           <TreeView onOpen={open} focus={view.focus} />
         ) : view.kind === 'timeline' ? (
           <TimelineView />
+        ) : view.kind === 'backstory' ? (
+          <BackstoryView characterId={view.characterId} />
         ) : view.kind === 'entries' ? (
           <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (

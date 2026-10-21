@@ -212,6 +212,7 @@ test('NF-2 KB-8 every screen in the rail, the five and everything under More, op
     'Outline',
     'Timeline',
     'Entries',
+    'Backstory',
   ]);
   const screens = await nav.getByRole('button', { includeHidden: true }).allTextContents();
   // A39 took the dropped sections (facts, knowledge, themes, arcs, beats, relationships, custom) off the rail.
