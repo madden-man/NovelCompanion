@@ -67,7 +67,7 @@ export function needsDailySnapshot(
 /**
  * The snapshots to delete so that only the newest `keep` remain (BK-1). A
  * snapshot taken before a schema migration (SM-2) is never counted and never
- * pruned: only a delete in Backups removes it.
+ * pruned. It is kept until someone removes its folder from the snapshots folder by hand.
  */
 export function snapshotsToPrune<T extends { id: string; reason?: string }>(
   newestFirst: T[],

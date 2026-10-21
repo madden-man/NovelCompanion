@@ -2030,12 +2030,12 @@ fieldset.write-group[disabled] {
 }
 
 /* SM-1: birth, death, status, families and the age share one line, wrapping only when narrow.
-   Colors are theme tokens, so the line reads the same in light and dark. */
+   Colors are theme tokens (light and dark are set in theme.css). */
 .char-line > fieldset.write-group {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 10px 16px;
+  gap: 10px 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
@@ -2050,51 +2050,33 @@ fieldset.write-group[disabled] {
   margin-left: auto;
   color: var(--fg);
 }
+/* A hint wraps to its field's controls instead of widening the field. */
+.char-line .ed-hint {
+  contain: inline-size;
+}
+/* Birth and Death are one box each, wide enough for 1990-03-14. */
+.char-line .date-box-input {
+  width: 6.5em;
+  padding-inline: 4px;
+}
+.char-line .date-box-input::placeholder {
+  color: var(--fg-2);
+  opacity: 1;
+}
+.fam-field .chips {
+  align-items: center;
+  gap: 4px;
+}
 .char-texts > fieldset.write-group {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.char-line .year-input {
-  width: 4.5em;
-}
-.char-line .small-input {
-  width: 3.2em;
-}
-.char-line .date-row {
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-/* A hint wraps to its field's controls instead of widening the field. */
-.char-line .ed-hint {
-  contain: inline-size;
-}
-/* SM-1: Birth and Death are one box each, wide enough for 1990-03-14. */
-.char-line .date-box-input {
-  width: 7.5em;
-}
-/* SM-1: on the Characters screen the page takes the inspector's column too. */
+/* On the Characters screen the page takes the inspector's column too. */
 .ws-editor.ws-editor-wide {
   grid-column: editor-start / inspector-end;
 }
 .char-tools {
   border-top: 1px solid var(--border);
   padding-top: 12px;
-}
-.fam-field .chips {
-  align-items: center;
-}
-/* SM-1: the five fit one row at the default window. */
-.char-line > fieldset.write-group {
-  gap: 10px 12px;
-}
-.char-line .date-box-input {
-  width: 6.4em;
-}
-.fam-field .chips {
-  gap: 4px;
-}
-.char-line .date-box-input {
-  width: 6.5em;
-  padding-inline: 4px;
 }

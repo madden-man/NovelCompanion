@@ -153,7 +153,7 @@ function ageWords(s: NonNullable<Page['current']['state']>): string {
     case 'dead':
       return `Dead since ${s.deathYear}`;
     case 'unborn':
-      return `Born ${s.birthYear}`;
+      return `Not yet born (${s.birthYear})`;
     case 'unknown':
       return 'Unknown age';
   }
