@@ -157,6 +157,17 @@ export function WorldEventsGrid(props: {
   );
   const layout = useMemo(() => layoutGrid(rows.groups, items, scale), [rows, items, scale]);
   const metrics = layout.metrics;
+  /** Every marker in reading order: row by row, year by year. */
+  const order = useMemo(
+    () =>
+      layout.lines.flatMap((l) =>
+        (l.kind === 'row' ? l.layout.markers : (l.merged?.markers ?? [])).map((m) => m.id),
+      ),
+    [layout],
+  );
+  const [current, setCurrent] = useState<string | null>(null);
+  /** The marker that holds the grid's one Tab stop: the last focused, else the first. */
+  const active = current !== null && order.includes(current) ? current : order[0];
 
   // A vertical scrollbar that comes or goes with the rows narrows the panel without resizing it.
   useLayoutEffect(() => {
@@ -218,6 +229,8 @@ export function WorldEventsGrid(props: {
       .join(', ');
 
   const onPointerDown = (ev: ReactPointerEvent<HTMLButtonElement>, id: string) => {
+    // A new press starts fresh: a drag that ended with no click never swallows this one.
+    suppressClick.current = false;
     if (ev.button !== 0 || props.readOnly) return;
     ev.currentTarget.setPointerCapture(ev.pointerId);
     setDrag({ id, pointerId: ev.pointerId, startX: ev.clientX, moved: false, delta: 0 });
@@ -236,13 +249,41 @@ export function WorldEventsGrid(props: {
     const d = drag;
     setDrag(null);
     if (!d.moved) return;
+    // The click that follows this release (if any) is part of the drag; nothing after it is.
     suppressClick.current = true;
+    setTimeout(() => {
+      suppressClick.current = false;
+    }, 0);
     if (d.delta !== 0) void props.onMove(d.id, d.delta, 'span');
+  };
+
+  const focusMarker = (id: string) => {
+    setCurrent(id);
+    scroller.current
+      ?.querySelector<HTMLElement>(`.wg-marker[data-id="${CSS.escape(id)}"]`)
+      ?.focus();
   };
 
   const onMarkerKey = (ev: ReactKeyboardEvent<HTMLButtonElement>, id: string) => {
     if (ev.key === 'Escape') {
       setTip(null);
+      return;
+    }
+    // One Tab stop for every marker: Up and Down walk them in reading order, Home and End jump.
+    const i = order.indexOf(id);
+    const to =
+      ev.key === 'ArrowDown'
+        ? order[Math.min(order.length - 1, i + 1)]
+        : ev.key === 'ArrowUp'
+          ? order[Math.max(0, i - 1)]
+          : ev.key === 'Home'
+            ? order[0]
+            : ev.key === 'End'
+              ? order[order.length - 1]
+              : undefined;
+    if (to !== undefined) {
+      ev.preventDefault();
+      focusMarker(to);
       return;
     }
     if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
@@ -270,6 +311,7 @@ export function WorldEventsGrid(props: {
         data-end-year={m.endYear}
         aria-label={describe(e)}
         aria-current={props.selectedId === m.id ? 'true' : undefined}
+        tabIndex={m.id === active ? 0 : -1}
         onClick={() => {
           if (suppressClick.current) {
             suppressClick.current = false;
@@ -284,7 +326,10 @@ export function WorldEventsGrid(props: {
         onKeyDown={(ev) => onMarkerKey(ev, m.id)}
         onMouseEnter={() => setTip({ id: m.id, left: m.x, top })}
         onMouseLeave={() => setTip((t) => (t?.id === m.id ? null : t))}
-        onFocus={() => setTip({ id: m.id, left: m.x, top })}
+        onFocus={() => {
+          setCurrent(m.id);
+          setTip({ id: m.id, left: m.x, top });
+        }}
         onBlur={() => setTip((t) => (t?.id === m.id ? null : t))}
       >
         {m.showLabel && !dragging && (

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { entryTitle, manifests } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
@@ -11,6 +11,7 @@ import {
   strandSpans,
 } from '../../../../shared/domain/timeline';
 import {
+  categoryScope,
   gridSpan,
   inWindow,
   shiftEnd,
@@ -58,6 +59,9 @@ export function TimelineView() {
   const [zoom, setZoom] = useState<Zoom>('fit');
   const [regions, setRegions] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [subId, setSubId] = useState<string | null>(null);
+  const ids = { group: useId(), sub: useId() };
 
   const spans = useMemo(() => eventSpans(fromCollections({ worldEvents: entries })), [entries]);
   const eras = useMemo(() => eraSpans(fromCollections({ eraStates: eraEntries })), [eraEntries]);
@@ -70,10 +74,22 @@ export function TimelineView() {
     () => [...new Set(spans.flatMap((e) => e.regions))].sort((a, b) => a.localeCompare(b)),
     [spans],
   );
+  // WE-1: the category filter narrows the rows, and the events with them.
+  const categoryItems = useMemo(() => categories?.items ?? [], [categories]);
+  const groups = useMemo(() => categoryItems.filter((i) => !i.parentId), [categoryItems]);
+  const subs = useMemo(
+    () => (groupId ? categoryItems.filter((i) => i.parentId === groupId) : []),
+    [categoryItems, groupId],
+  );
+  const scope = useMemo(
+    () => categoryScope(categoryItems, groupId, subId),
+    [categoryItems, groupId, subId],
+  );
   const gridEvents = useMemo<GridEvent[]>(
     () =>
       spans
         .filter((e) => regions.size === 0 || e.regions.some((r) => regions.has(r)))
+        .filter((e) => !scope || scope.keep.has(e.categoryId))
         .map((e) => ({
           id: e.id,
           title: e.title,
@@ -83,24 +99,28 @@ export function TimelineView() {
           formative: e.formative,
           regions: e.regions,
         })),
-    [spans, regions],
+    [spans, regions, scope],
   );
 
-  // The chapter being written: its primary strand's years (A27's Writing picker).
+  // The chapter being written: the strand the Writing picker holds (A27), else its primary strand.
   const writing = useMemo(() => {
     const chapterId = story.time?.chapterId;
+    const strandId = story.time?.strandId;
     if (!chapterId) return null;
     const strands = strandSpans(fromCollections({ chapters })).filter(
       (s) => s.chapterId === chapterId,
     );
-    const s = strands.find((x) => x.primary) ?? strands[0];
+    const s =
+      strands.find((x) => strandId !== undefined && x.strandId === strandId) ??
+      strands.find((x) => x.primary) ??
+      strands[0];
     if (!s) return null;
     return {
       from: s.startYear,
       to: s.endYear,
-      label: `Chapter ${s.readingOrder ?? '?'}: ${s.chapterTitle}, being written (${s.startYear === s.endYear ? s.startYear : `${s.startYear} to ${s.endYear}`})`,
+      label: `Chapter ${s.readingOrder ?? '?'}: ${s.chapterTitle}, ${s.label}, being written (${s.startYear === s.endYear ? s.startYear : `${s.startYear} to ${s.endYear}`})`,
     };
-  }, [story.time?.chapterId, chapters]);
+  }, [story.time?.chapterId, story.time?.strandId, chapters]);
 
   const win = useMemo(() => yearWindow(year), [year]);
   const around = useMemo(
@@ -227,6 +247,43 @@ export function TimelineView() {
               </button>
             ))}
           </div>
+          <div className="row tight wg-categories" role="group" aria-label="Categories">
+            <div className="field">
+              <label htmlFor={ids.group}>Category</label>
+              <select
+                id={ids.group}
+                value={groupId ?? ''}
+                onChange={(e) => {
+                  setGroupId(e.target.value || null);
+                  setSubId(null);
+                }}
+              >
+                <option value="">All categories</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {subs.length > 0 && (
+              <div className="field">
+                <label htmlFor={ids.sub}>Subcategory</label>
+                <select
+                  id={ids.sub}
+                  value={subId ?? ''}
+                  onChange={(e) => setSubId(e.target.value || null)}
+                >
+                  <option value="">All subcategories</option>
+                  {subs.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <div className="row tight wg-regions" role="group" aria-label="Regions">
             <span className="wg-toolbar-label">Regions</span>
             <button
@@ -257,13 +314,15 @@ export function TimelineView() {
           </p>
         )}
         <p className="example-note">
-          Click an empty spot in a row to add an event there. Drag a marker, or focus it and press
-          the Left and Right arrows, to change its year; Shift with an arrow changes the end year.
+          Click an empty spot in a row, or a row name, to add an event there. Drag a marker to
+          change its year. From the keyboard, Tab to the markers, Up and Down move between them,
+          Enter opens one, Left and Right change its year, and Shift with Left or Right changes the
+          end year.
         </p>
         {categories ? (
           <WorldEventsGrid
             events={gridEvents}
-            categories={categories.items}
+            categories={scope ? scope.items : categoryItems}
             eras={eras}
             span={span}
             zoom={zoom}

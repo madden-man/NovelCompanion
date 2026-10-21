@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { readFixture } from '../helpers/loadFixture';
 import {
   buildGroups,
+  categoryScope,
   dragYears,
   GRID_METRICS,
   gridSpan,
@@ -327,5 +328,29 @@ describe('NF-1 the grid with a 5,000-event bible', () => {
       expect(drawn).toBe(5000);
     }
     expect(Math.min(...runs)).toBeLessThan(100);
+  });
+});
+
+describe('WE-1 the category filter', () => {
+  test('WE-1 SM-8 a group keeps its own rows; a subcategory keeps only its row under the heading', () => {
+    const used = ['technology', 'robotics', 'energy', 'climate'];
+    expect(categoryScope(categories, null)).toBeNull();
+    const tech = categoryScope(categories, 'technology')!;
+    expect([...tech.keep].sort()).toEqual(['energy', 'robotics', 'technology']);
+    expect(
+      buildGroups(
+        tech.items,
+        used.filter((c) => tech.keep.has(c)),
+      ).groups.flatMap((g) => g.rows.map((r) => r.key)),
+    ).toEqual(['technology', 'robotics', 'energy']);
+    const robotics = categoryScope(categories, 'technology', 'robotics')!;
+    expect([...robotics.keep]).toEqual(['robotics']);
+    const { groups } = buildGroups(
+      robotics.items,
+      used.filter((c) => robotics.keep.has(c)),
+    );
+    expect(groups.map((g) => [g.id, g.rows.map((r) => r.key)])).toEqual([
+      ['technology', ['robotics']],
+    ]);
   });
 });

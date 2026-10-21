@@ -194,6 +194,35 @@ export function buildGroups(
   return { groups, rowOf };
 }
 
+/**
+ * WE-1: the categories a filter keeps. No group keeps everything (null); a
+ * group keeps itself and everything under it; a subcategory keeps itself
+ * and everything under it, plus its group heading (but not the group's own
+ * items, which sit outside the subcategory).
+ */
+export function categoryScope(
+  items: readonly CategoryItem[],
+  groupId: string | null,
+  subId: string | null = null,
+): { keep: Set<string>; items: CategoryItem[] } | null {
+  if (!groupId) return null;
+  const top = subId ?? groupId;
+  const under = new Set<string>([top]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const i of items) {
+      if (i.parentId && under.has(i.parentId) && !under.has(i.id)) {
+        under.add(i.id);
+        grew = true;
+      }
+    }
+  }
+  const shown = new Set(under);
+  if (subId) shown.add(groupId);
+  return { keep: under, items: items.filter((i) => shown.has(i.id)) };
+}
+
 // ---------- markers ----------
 
 /** Anything dated that sits in a row. */
