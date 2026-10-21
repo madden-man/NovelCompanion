@@ -13,7 +13,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 IDENTITY="Novel Companion Local"
-APP="release/mac-arm64/Novel Companion.app"
+APP="release/build.noindex/mac-arm64/Novel Companion.app"
 
 npm run package
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then

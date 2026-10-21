@@ -15,7 +15,7 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
 describe('NF-4 packaging configuration', () => {
   test('NF-4 npm run package builds an unsigned macOS dmg for arm64 into release/', () => {
     expect(pkg.scripts.package).toBe('electron-vite build && electron-builder --mac dmg');
-    expect(builder).toMatch(/^ {2}output: release$/m);
+    expect(builder).toMatch(/^ {2}output: release\/build\.noindex$/m);
     expect(builder).toMatch(/- target: dmg\s+arch: \[arm64\]/);
     expect(builder).toMatch(/^ {2}identity: null$/m);
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf8')).toMatch(/^release\/$/m);

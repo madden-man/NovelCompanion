@@ -8,7 +8,10 @@ import { join } from 'node:path';
  * or when anything it is built from is newer than its app.asar.
  */
 const ROOT = join(import.meta.dirname, '..');
-const ASAR = join(ROOT, 'release/mac-arm64/Novel Companion.app/Contents/Resources/app.asar');
+const ASAR = join(
+  ROOT,
+  'release/build.noindex/mac-arm64/Novel Companion.app/Contents/Resources/app.asar',
+);
 const SOURCES = [
   'src',
   'package.json',

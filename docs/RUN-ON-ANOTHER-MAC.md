@@ -4,7 +4,7 @@ The bible lives in MongoDB Atlas, so any Mac with the app and the connection str
 
 ## Install
 
-1. Build on this Mac with `npm run install:app` (or `npm run package`); the installer is `release/Novel Companion-0.1.0-arm64.dmg`. It is built for Apple silicon.
+1. Build on this Mac with `npm run install:app` (or `npm run package`); the installer is `release/build.noindex/Novel Companion-0.1.0-arm64.dmg`. It is built for Apple silicon.
 2. Copy the DMG to the other Mac (AirDrop, a drive, iCloud) and drag the app to Applications.
 3. The app is not notarized by Apple, so the first open is refused as "from an unidentified developer". Open it anyway: right-click the app and choose Open, or go to System Settings, Privacy and Security, and press Open Anyway next to the message. Once per Mac per build.
 4. On the first screen the app says no MongoDB connection string is stored and shows a box to paste it. Paste the Atlas connection string and press Test, then Save. It goes into that Mac's keychain.

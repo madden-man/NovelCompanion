@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const ROOT = join(import.meta.dirname, '../..');
-export const RELEASE = join(ROOT, 'release');
+export const RELEASE = join(ROOT, 'release', 'build.noindex');
 export const APP = join(RELEASE, 'mac-arm64', 'Novel Companion.app');
 
 /** Where the parts the tests check sit inside an app bundle (in release/, or on the mounted dmg). */

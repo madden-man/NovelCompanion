@@ -65,10 +65,17 @@ while :; do
     cp -Rc "$REPO/node_modules" "$TREE/node_modules"
     echo "$lock" >"$STATE/node_modules.lock"
   fi
-  if ! cmp -s "$REPO/package-lock.json" "$TREE/package-lock.json"; then
-    say "package-lock.json at $want differs from the main checkout's: run npm install there, then push again."
-    notify "Build of ${want%"${want#???????}"} skipped: dependencies changed, run npm install."
-    break
+  # Dependencies changed at this commit: install them in the build checkout itself.
+  if ! cmp -s "$TREE/node_modules/.package-lock.json.built" "$TREE/package-lock.json" &&
+    ! cmp -s "$REPO/package-lock.json" "$TREE/package-lock.json"; then
+    say "package-lock.json changed at $want: npm ci in the build checkout."
+    if ! (cd "$TREE" && npm ci --no-audit --no-fund); then
+      say "npm ci at $want failed."
+      notify "The build of ${want%"${want#???????}"} failed: npm ci. See ~/Library/Logs/Novel Companion/auto-install.log"
+      echo "$want" >"$STATE/failed"
+      break
+    fi
+    cp "$TREE/package-lock.json" "$TREE/node_modules/.package-lock.json.built"
   fi
   # 3. Build, sign, install (waiting for you to quit a running copy).
   set +e
@@ -83,6 +90,7 @@ while :; do
     2) say "Gave way to a newer push." ;;
     *)
       say "Build of $want failed (exit $status)."
+      echo "$want" >"$STATE/failed"
       notify "The build of ${want%"${want#???????}"} failed. See ~/Library/Logs/Novel Companion/auto-install.log"
       break
       ;;

@@ -45,6 +45,9 @@ cp -R "$APP" "$NEW"
 mv "$NEW" "$DEST"
 rm -rf "$OLD"
 codesign -d -r- "$DEST" 2>&1 | grep designated || true
+# The renames above can leave Spotlight without an entry for the new copy; index it so
+# Spotlight and Launchpad open this one.
+mdimport "$DEST" 2>/dev/null || true
 if [ "$MODE" != "--wait" ] || [ "$reopen" = 1 ]; then
   open "$DEST"
 fi
