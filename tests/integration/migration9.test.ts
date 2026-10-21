@@ -273,7 +273,10 @@ function v8Data(): Record<string, Document[]> {
 }
 
 /** Register a bible at schema version 8 and fill it with the data the app held before A39. */
-async function v8Bible(label: string): Promise<BibleHandle> {
+async function v8Bible(
+  label: string,
+  extra: Record<string, Document[]> = {},
+): Promise<BibleHandle> {
   const slug = freshSlug(label);
   await store.db.collection(REGISTRY).insertOne({
     _id: slug as never,
@@ -283,7 +286,9 @@ async function v8Bible(label: string): Promise<BibleHandle> {
   });
   const bible = await openBible(store, slug);
   await migrate(bible, migrations.slice(0, 8));
-  for (const [c, docs] of Object.entries(v8Data())) {
+  const data = v8Data();
+  for (const [c, docs] of Object.entries(extra)) data[c] = [...(data[c] ?? []), ...docs];
+  for (const [c, docs] of Object.entries(data)) {
     await bible.collection(c).insertMany(docs);
   }
   return bible;
@@ -438,6 +443,8 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
       linksRemoved: 1,
       proposalsRejected: 1,
       mappingsRemoved: 1,
+      glossaryMade: 0,
+      glossaryFilled: 0,
     });
     expect(summary.takenAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -539,5 +546,115 @@ describe('SM-2 BK-3 an export written before A39 still imports', () => {
     for (const c of DROPPED_COLLECTIONS) {
       expect(await open.handle.collectionNames(), c).not.toContain(c);
     }
+  });
+});
+
+describe('SM-1 SM-3 migration 9: the birthplace row and name romanizations', () => {
+  let open: OpenBible;
+  const zhou = (id: string, full: string, chinese: string, romanization: string) => ({
+    ...base,
+    _id: id,
+    title: full,
+    provenance: 'researched',
+    sourceRef: `w.xlsx#Characters!${id}`,
+    names: { full, chinese, romanization, order: 'family-first', nicknames: [], calledBy: [] },
+    birth: { year: 1988 },
+    death: null,
+    familyIds: [],
+    voiceNotes: [],
+    placesLived: [],
+    links: [],
+  });
+  beforeAll(async () => {
+    const bible = await v8Bible('mig9names', {
+      characters: [
+        {
+          ...zhou('Z3', 'Zhou Lan', '周岚', 'Zhōu Lán'),
+          placesLived: [
+            { place: 'Guangzhou', startYear: null, endYear: 2027 },
+            { place: 'Portland, Oregon', startYear: 2027, endYear: null },
+          ],
+        },
+        zhou('Z1', 'Zhou Meiling', '周美玲', 'Zhōu Měilíng'),
+        zhou('Z2', 'Zhou Wei', '周伟', 'Zhōu Wěi'),
+      ],
+      glossaryTerms: [
+        {
+          ...base,
+          _id: 'GLZ1',
+          title: '周美玲',
+          characters: '周美玲',
+          romanization: '',
+          language: 'mandarin',
+        },
+        {
+          ...base,
+          _id: 'GLZ2',
+          title: '周伟',
+          characters: '周伟',
+          romanization: 'Zhou Wei',
+          language: 'mandarin',
+        },
+      ],
+    });
+    open = await openBibleSession(store, bible.id, { snapshotRoot: root });
+  });
+
+  test('SM-3 the first place lived with no start year starts at the birth year and is counted as made', async () => {
+    expect(await doc(open, 'moments', 'Z3-lives-0')).toMatchObject({
+      title: 'Lives in Guangzhou',
+      characterId: 'Z3',
+      year: 1988,
+      endYear: 2027,
+    });
+    expect(await doc(open, 'moments', 'Z3-lives-1')).toMatchObject({
+      title: 'Lives in Portland, Oregon',
+      year: 2027,
+      endYear: null,
+    });
+    const summary = (await doc(open, 'meta', MIGRATION9_META_ID)) as unknown as Migration9Summary;
+    // H1's Portland, and Lan's two; H1's second place, with no start year, is still skipped.
+    expect(summary.made.fromPlacesLived).toBe(3);
+    expect(summary.skipped.map((s) => s.id)).toEqual(['B3', 'H1-lives-1', 'U1-voice-0']);
+  });
+
+  test('SM-1 a name romanization makes a glossary term, fills an empty one, and leaves one that has its own', async () => {
+    expect(await doc(open, 'glossaryTerms', 'Z3-name')).toMatchObject({
+      title: '周岚',
+      characters: '周岚',
+      romanization: 'Zhōu Lán',
+      language: 'mandarin',
+      meaning: 'Zhou Lan',
+      usageNote: 'The name of Zhou Lan',
+      status: 'canon',
+      provenance: 'researched',
+      sourceNote: "Made by migration 9 from the character's romanization",
+    });
+    expect(await doc(open, 'glossaryTerms', 'GLZ1')).toMatchObject({
+      romanization: 'Zhōu Měilíng',
+    });
+    expect(await doc(open, 'glossaryTerms', 'GLZ2')).toMatchObject({ romanization: 'Zhou Wei' });
+    expect(await doc(open, 'glossaryTerms', 'Z1-name')).toBeNull();
+    expect(await doc(open, 'glossaryTerms', 'Z2-name')).toBeNull();
+    // The romanization is gone from the characters, and the new term is in the read model and search.
+    for (const id of ['Z1', 'Z2', 'Z3']) {
+      const c = await doc(open, 'characters', id);
+      expect(c!.names).toEqual({ full: expect.any(String), chinese: expect.any(String) });
+    }
+    expect(open.model.get('glossaryTerms', 'Z3-name')).toBeTruthy();
+    expect(
+      entrySchemas.glossaryTerms.safeParse(await doc(open, 'glossaryTerms', 'Z3-name')).success,
+    ).toBe(true);
+    const summary = (await doc(open, 'meta', MIGRATION9_META_ID)) as unknown as Migration9Summary;
+    expect(summary).toMatchObject({ glossaryMade: 1, glossaryFilled: 1 });
+  });
+
+  test('SM-1 running migration 9 again makes no second term', async () => {
+    await store.db
+      .collection(REGISTRY)
+      .updateOne({ _id: open.handle.id as never }, { $set: { schemaVersion: 8 } });
+    await migrate(open.handle);
+    const terms = await open.handle.collection('glossaryTerms').find({}).toArray();
+    expect(terms.filter((t) => t.characters === '周岚')).toHaveLength(1);
   });
 });

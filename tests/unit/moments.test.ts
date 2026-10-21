@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { Moment, entrySchemas, manifests } from '../../src/shared/schema';
+import { GlossaryTerm, Moment, entrySchemas, manifests } from '../../src/shared/schema';
 import {
   beatToMoment,
   characterMoments,
   foldedBody,
+  nameGlossaryTerms,
+  nameLanguage,
   placeToMoment,
   voiceNoteToMoment,
 } from '../../src/shared/domain/moments';
@@ -204,6 +206,36 @@ describe('SM-3 migration 9 as pure functions', () => {
     });
   });
 
+  test('SM-3 the first place lived with no start year is the birthplace: it starts at the birth year', () => {
+    const first = { place: 'Oakland, California', startYear: null, endYear: 2037 };
+    const r = placeToMoment(mark, first, 0);
+    expect(r).toMatchObject({
+      moment: {
+        _id: 'MARK-lives-0',
+        title: 'Lives in Oakland, California',
+        year: 2037,
+        endYear: 2037,
+      },
+    });
+    if ('moment' in r) expect(Moment.safeParse(r.moment).success).toBe(true);
+    // With the birth unknown it has no year, so it is skipped.
+    expect(placeToMoment({ ...mark, birth: { unknown: true } }, first, 0)).toEqual({
+      skip: {
+        source: 'placeLived',
+        id: 'MARK-lives-0',
+        reason: 'Oakland, California has no start year',
+      },
+    });
+    // Only the first place is the birthplace; a later one with no start year is skipped.
+    expect(placeToMoment(mark, first, 1)).toEqual({
+      skip: {
+        source: 'placeLived',
+        id: 'MARK-lives-1',
+        reason: 'Oakland, California has no start year',
+      },
+    });
+  });
+
   test('SM-3 a character makes every moment of its lists in order, and a trashed character makes trashed moments', () => {
     const r = characterMoments({ ...mark, deletedAt: later });
     expect(r.moments.map((m) => [m._id, m.year, m.deletedAt])).toEqual([
@@ -231,5 +263,86 @@ describe('SM-3 migration 9 as pure functions', () => {
       ]),
     ).toBe('Technology: Robots.\n\nDaily life: Long commutes.');
     expect(foldedBody('Kept.', [['Climate', '  ']])).toBeNull();
+  });
+});
+
+describe('SM-1 migration 9: a name romanization moves to the glossary term for the name', () => {
+  const lan = {
+    _id: 'Z3',
+    title: 'Zhou Lan',
+    status: 'canon',
+    provenance: 'invented',
+    sourceRef: 'East_Winds_World.xlsx#Characters!A9',
+    createdAt: at,
+    modifiedAt: later,
+    names: { full: 'Zhou Lan', chinese: '周岚', romanization: 'Zhōu Lán' },
+  };
+
+  test('SM-1 a name with no glossary term makes one: characters, romanization, language, meaning, usage note, status and provenance', () => {
+    const r = nameGlossaryTerms([lan], [], 'mandarin');
+    expect(r.filled).toEqual([]);
+    expect(r.made).toEqual([
+      {
+        _id: 'Z3-name',
+        title: '周岚',
+        body: '',
+        status: 'canon',
+        provenance: 'invented',
+        sourceNote: "Made by migration 9 from the character's romanization",
+        sourceRef: 'East_Winds_World.xlsx#Characters!A9',
+        tags: [],
+        links: [],
+        createdAt: at,
+        modifiedAt: later,
+        characters: '周岚',
+        romanization: 'Zhōu Lán',
+        language: 'mandarin',
+        meaning: 'Zhou Lan',
+        usageNote: 'The name of Zhou Lan',
+      },
+    ]);
+    expect(GlossaryTerm.safeParse(r.made[0]).success).toBe(true);
+  });
+
+  test('SM-1 a term with the same characters is filled when its romanization is empty and left when it has one', () => {
+    const empty = { _id: 'GL9', characters: '周岚', romanization: '' };
+    expect(nameGlossaryTerms([lan], [empty], 'mandarin')).toEqual({
+      made: [],
+      filled: [{ _id: 'GL9', romanization: 'Zhōu Lán' }],
+    });
+    const kept = { _id: 'GL9', characters: '周岚', romanization: 'Zhou Lan' };
+    expect(nameGlossaryTerms([lan], [kept], 'mandarin')).toEqual({ made: [], filled: [] });
+    // A term in the trash does not count: a new one is made.
+    const trashed = { ...kept, deletedAt: later };
+    expect(nameGlossaryTerms([lan], [trashed], 'mandarin').made.map((t) => t._id)).toEqual([
+      'Z3-name',
+    ]);
+  });
+
+  test('SM-1 no Chinese name or no romanization makes nothing; two characters with one name make one term', () => {
+    const noChinese = { ...lan, _id: 'A', names: { full: 'A', romanization: 'a' } };
+    const noRoman = { ...lan, _id: 'B', names: { full: 'B', chinese: '乙', romanization: ' ' } };
+    expect(nameGlossaryTerms([noChinese, noRoman], [], 'mandarin')).toEqual({
+      made: [],
+      filled: [],
+    });
+    const twin = { ...lan, _id: 'Z9', names: { ...lan.names, full: 'Another Zhou Lan' } };
+    expect(nameGlossaryTerms([lan, twin], [], 'mandarin').made.map((t) => t._id)).toEqual([
+      'Z3-name',
+    ]);
+  });
+
+  test('SM-1 the language is Mandarin unless the bible languages list names it otherwise', () => {
+    expect(nameLanguage(null)).toBe('mandarin');
+    expect(nameLanguage({ items: [{ id: 'mandarin', label: 'Mandarin' }] })).toBe('mandarin');
+    expect(
+      nameLanguage({
+        items: [
+          { id: 'cantonese', label: 'Cantonese' },
+          { id: 'zh', label: 'Mandarin Chinese' },
+        ],
+      }),
+    ).toBe('zh');
+    expect(nameLanguage({ items: [{ id: 'putonghua', label: 'Putonghua' }] })).toBe('putonghua');
   });
 });
