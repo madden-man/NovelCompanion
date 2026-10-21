@@ -14,6 +14,7 @@ import {
   moveOnto,
   neighbourOf,
   retext,
+  rollbackFlow,
   sameBreaks,
   sameYears,
   sceneBreaks,
@@ -86,7 +87,7 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(indentLines(at(t, 6, 12), false).text).toBe('- One\n  - Two\n- Three');
   });
 
-  test('PL-5 Shift+Tab on an unindented line changes nothing', () => {
+  test('PL-5 Cmd+[ on an unindented line changes nothing', () => {
     const r = indentLines(at('- One', 3), true);
     expect(r).toEqual(at('- One', 3));
   });
@@ -220,22 +221,31 @@ describe('SM-5 every scene has a year, its own or inherited, kept in step with t
       text,
       ranges: { X: { from: 1, to: 2 }, Y: { from: 3, to: 4 }, Z: { from: 9, to: 9 }, W: 'x' },
     };
-    expect(sceneBreaks(old)).toEqual({ X: 1, Y: 4, Z: 6 });
+    // Z's first scene is gone, so Z gets no break and starts empty.
+    expect(sceneBreaks(old)).toEqual({ X: 1, Y: 4 });
     expect(sceneYears(old)).toEqual({});
     const flow = splitFlow({ text, breaks: sceneBreaks(old) }, ['X', 'Y']);
     expect(sectionOf(flow, LEAD).lines).toEqual(['Opening note']);
     expect(sectionOf(flow, 'X').lines).toEqual(['- A', '  - a detail', '- B']);
     expect(sectionOf(flow, 'Y').lines).toEqual(['- C', '- D']);
-    // Overlapping ranges (A36 allowed two chapters on one scene) still give each chapter its own start.
+    // Overlapping ranges (A36 allowed two chapters on one scene) still give each chapter its own
+    // start, always on a scene line: Y's forced start (line 2) is A's indented detail, so Y starts
+    // at the next scene, B, and A keeps its detail.
+    const overlapping = {
+      text,
+      ranges: { X: { from: 1, to: 3 }, Y: { from: 1, to: 2 }, Z: { from: 2, to: 4 } },
+    };
+    expect(sceneBreaks(overlapping)).toEqual({ X: 1, Y: 3, Z: 4 });
+    const parts = splitFlow({ text, breaks: sceneBreaks(overlapping) }, ['X', 'Y', 'Z']);
+    expect(sectionOf(parts, 'X').lines).toEqual(['- A', '  - a detail']);
+    expect(sectionOf(parts, 'Y').lines).toEqual(['- B']);
+    expect(sectionOf(parts, 'Z').lines).toEqual(['- C', '- D']);
+    // With no scene line left, the later chapter gets no break and its section is empty.
+    const one = { text: '- A\n  - a', ranges: { X: { from: 1, to: 1 }, Y: { from: 1, to: 1 } } };
+    expect(sceneBreaks(one)).toEqual({ X: 0 });
     expect(
-      sceneBreaks({
-        text,
-        ranges: { X: { from: 1, to: 3 }, Y: { from: 1, to: 2 }, Z: { from: 2, to: 4 } },
-      }),
-    ).toEqual({ X: 1, Y: 2, Z: 3 });
-    expect(
-      sceneBreaks({ text: '- A', ranges: { X: { from: 1, to: 1 }, Y: { from: 1, to: 1 } } }),
-    ).toEqual({ X: 0, Y: 1 });
+      sectionOf(splitFlow({ ...one, breaks: sceneBreaks(one) }, ['X', 'Y']), 'Y').lines,
+    ).toEqual([]);
     // Once breaks are stored, the ranges are ignored.
     expect(sceneBreaks({ ...old, breaks: { X: 0 } })).toEqual({ X: 0 });
     expect(sceneBreaks({ text, ranges: 'x' })).toEqual({});
@@ -313,6 +323,24 @@ describe('SM-5 every scene has a year, its own or inherited, kept in step with t
     expect(yearOf(doc, ['X', 'Y'], years, 2)).toEqual({ year: 2032, own: false });
     expect(yearOf(doc, ['X', 'Y'], years, 3)).toEqual({ year: 2032, own: false });
     expect(yearOf(doc, ['X', 'Y'], years, 9)).toBeNull();
+  });
+});
+
+describe('SM-7 a failed undo write leaves the screen as stored', () => {
+  test('SM-7 the flow goes back to how it was before the step, in the reading order now', () => {
+    const prior = splitFlow(
+      { text: '- A\n- B\n- C', breaks: { X: 0, Y: 2 }, years: { '1': 2040 } },
+      ['X', 'Y'],
+    );
+    // Same order: exactly the flow before the step.
+    expect(rollbackFlow(prior, ['X', 'Y'], ['X', 'Y'])).toEqual(prior);
+    // The step restored chapter W before its write failed: W is back but starts empty, as stored.
+    const back = rollbackFlow(prior, ['X', 'Y'], ['X', 'W', 'Y']);
+    expect(composeFlow(back, ['X', 'W', 'Y'])).toEqual({
+      text: '- A\n- B\n- C',
+      breaks: { X: 0, W: 2, Y: 2 },
+      years: { '1': 2040 },
+    });
   });
 });
 

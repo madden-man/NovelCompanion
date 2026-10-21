@@ -14,6 +14,7 @@ import {
   neighbourOf,
   refitFlow,
   retext,
+  rollbackFlow,
   sameBreaks,
   sameYears,
   sceneLines,
@@ -270,6 +271,21 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     live.current = {
       state: stored,
       adopt: async (s) => {
+        // On a failed write the screen goes back to what is stored, so it never runs ahead of the stack.
+        const prior = current.current;
+        const priorOrder = orderRef.current;
+        const rollback = () => {
+          if (!prior) return;
+          current.current = rollbackFlow(prior, priorOrder, orderRef.current);
+          setFlow(current.current);
+          const target = stored();
+          if (target && sameState(saved.current, target)) {
+            if (timer.current) clearTimeout(timer.current);
+            timer.current = null;
+            firstPending.current = null;
+            setStatus('saved');
+          }
+        };
         current.current = splitFlow(s, orderRef.current);
         setFlow(current.current);
         if (Object.keys(s.breaks).some((id) => !orderRef.current.includes(id))) {
@@ -278,6 +294,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
             const timeout = setTimeout(() => {
               if (pending.current?.state !== s) return;
               pending.current = null;
+              rollback();
               reject(new Error('The chapter did not come back in time to take its scenes.'));
             }, ADOPT_WAIT_MS);
             pending.current = {
@@ -285,13 +302,19 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
               done: (ok) => {
                 clearTimeout(timeout);
                 if (ok) resolve();
-                else reject(failed());
+                else {
+                  rollback();
+                  reject(failed());
+                }
               },
             };
           });
           return;
         }
-        if (!(await save())) throw failed();
+        if (!(await save())) {
+          rollback();
+          throw failed();
+        }
       },
     };
     return () => {
@@ -1013,7 +1036,7 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
   );
 }
 
-/** Undo and Redo for the renames, year changes, moves and edges made here (ED-3). */
+/** Undo and Redo for the renames, year changes, moves and edges made here, with what the last step did (ED-3). */
 function UndoButtons() {
   const undo = useUndo();
   return (
@@ -1036,6 +1059,11 @@ function UndoButtons() {
       >
         Redo
       </button>
+      {undo.notice && (
+        <span className="scene-status" role="status" data-testid="undo-notice">
+          {undo.notice}
+        </span>
+      )}
     </span>
   );
 }

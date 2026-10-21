@@ -686,6 +686,29 @@ test('KB-3 the chapter page in the outline edits strand label, end year, places,
   await expect(inspector).toHaveCount(0);
 });
 
+test('KB-3 the chapter page edits a strand point of view and characters present', async () => {
+  await bar('CH4').getByLabel('Actions for chapter 4').click();
+  await bar('CH4').getByTestId('chapter-open').click();
+  const inspector = page.getByTestId('outline-inspector');
+  const strand = inspector.locator('[data-strand="CH4-present"]');
+  await strand.getByLabel('Point of view').selectOption({ label: 'Iris Hale-Zhou' });
+  await strand.getByLabel('Add a character to present').selectOption({ label: 'Iris Hale-Zhou' });
+  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
+  await strand.getByRole('button', { name: 'Move Iris Hale-Zhou up in present' }).click();
+  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
+  await expect
+    .poll(async () => {
+      const ch = await chapterOf('CH4');
+      const s = (ch.strands as { povCharacterId: string; characterIds: string[] }[])[0]!;
+      return [s.povCharacterId, s.characterIds];
+    })
+    .toEqual(['H5', ['H1', 'H2', 'H3', 'H5', 'H4']]);
+  // The chapter page shows her age in that strand year.
+  await expect(strand.locator('[data-character="H5"]')).toContainText('alive, age 1');
+  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
+  await expect(inspector).toHaveCount(0);
+});
+
 test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year and the Actions, part and More menus are reached and used from the keyboard', async () => {
   // Shift+Tab from a chapter's text reaches the year field of its last scene.
   await section('CH1').focus();

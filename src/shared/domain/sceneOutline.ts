@@ -43,9 +43,10 @@ export function sceneOutlineText(doc: Record<string, unknown> | null | undefined
  * Fix a stored document's breaks: only whole, non-negative line numbers
  * survive. An outline (or a version) saved before A37 holds scene ranges and
  * no breaks; its breaks are derived from them once, each chapter starting at
- * the first line of its range's first scene (past the end when the scene is
- * gone), each one after the break before it so overlapping ranges leave no
- * chapter empty. The next save writes the breaks and drops the ranges.
+ * the first line of its range's first scene, each one on a scene line after
+ * the break before it so overlapping ranges leave no chapter empty; a chapter
+ * whose scene is gone, or with no scene line left, gets no break and starts
+ * empty. The next save writes the breaks and drops the ranges.
  */
 export function sceneBreaks(doc: Record<string, unknown> | null | undefined): SceneBreaks {
   const raw = doc?.breaks;
@@ -58,10 +59,12 @@ export function sceneBreaks(doc: Record<string, unknown> | null | undefined): Sc
   if (Object.keys(out).length > 0 || !isRecord(doc?.ranges)) return out;
   const text = sceneOutlineText(doc);
   const firstLine = new Map<number, number>();
+  const sceneAt: number[] = [];
   sceneLines(text).forEach((n, i) => {
-    if (n !== null && !firstLine.has(n)) firstLine.set(n, i);
+    if (n === null) return;
+    sceneAt.push(i);
+    if (!firstLine.has(n)) firstLine.set(n, i);
   });
-  const count = text === '' ? 0 : text.split('\n').length;
   const starts: { id: string; from: number }[] = [];
   for (const [id, r] of Object.entries(doc.ranges)) {
     if (!isRecord(r) || typeof r.from !== 'number' || !Number.isInteger(r.from) || r.from < 1) {
@@ -69,11 +72,15 @@ export function sceneBreaks(doc: Record<string, unknown> | null | undefined): Sc
     }
     starts.push({ id, from: r.from });
   }
-  // In chapter order (by first scene, ties in stored order), each break after the one before,
-  // so overlapping ranges never leave an earlier chapter empty.
+  // In chapter order (by first scene, ties in stored order), each break on a scene line after
+  // the one before, so overlapping ranges never leave an earlier chapter empty nor cut a scene
+  // from its indented lines. A chapter with no scene line left gets no break (it starts empty).
   let prev = -1;
   for (const { id, from } of starts.sort((a, b) => a.from - b.from)) {
-    const line = Math.min(count, Math.max(firstLine.get(from) ?? count, prev + 1));
+    const first = firstLine.get(from);
+    if (first === undefined) continue;
+    const line = sceneAt.find((i) => i >= Math.max(first, prev + 1));
+    if (line === undefined) continue;
     out[id] = line;
     prev = line;
   }
@@ -355,6 +362,20 @@ export const sectionOf = (flow: Flow, key: string): Section =>
   key === LEAD ? flow.lead : (flow.bodies[key] ?? section());
 export const withSection = (flow: Flow, key: string, sec: Section): Flow =>
   key === LEAD ? { ...flow, lead: sec } : { ...flow, bodies: { ...flow.bodies, [key]: sec } };
+
+/**
+ * SM-7: the flow after an undo step's outline write failed: the flow as it
+ * was before the step, refitted to the reading order now (a chapter the step
+ * restored starts empty, as the stored outline has it), so the screen shows
+ * what is stored and the next autosave writes nothing the step meant to undo.
+ */
+export function rollbackFlow(
+  prior: Flow,
+  priorOrder: readonly string[],
+  order: readonly string[],
+): Flow {
+  return refitFlow(prior, priorOrder, order);
+}
 
 /** Where each scene of a section starts: the indexes of its top-level bullets with text. */
 export function sceneStarts(lines: readonly string[]): number[] {
