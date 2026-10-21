@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +11,8 @@ import { createBibleWithDefaults, openBibleSession } from '../../src/main/db/ses
 import type { OpenBible } from '../../src/main/db/session';
 import type { Store } from '../../src/main/db';
 import { importEastWinds, partForManuscript } from '../../src/main/import/eastwinds';
+import { parseWorkbookFile } from '../../src/main/import/xlsx';
+import { bareTitle } from '../../src/shared/domain/numbering';
 import { applyTitleCleanup } from '../../src/main/import/titleCleanup';
 import { freshSlug, localStore } from '../helpers/db';
 
@@ -248,10 +251,10 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
       ['Ann: Arc', 2011, 2012, true],
       ['Backstory: School', 2010, null, false],
     ]);
-    // Neither strand says backstory: the earlier one jumps back in story time, so it is labelled backstory.
+    // The arc span is primary; a later Forestory strand keeps its label (A29).
     expect(strands('Branching')).toEqual([
-      ['Forestory: Ben', 2012, null, true],
-      ['Backstory: Old days', 2009, null, false],
+      ['Old days', 2009, null, true],
+      ['Forestory: Ben', 2012, null, false],
     ]);
     expect(byTitle('Branching').partId).toBe(partOf('Branches')._id);
     expect(byTitle('A second chapter').sourceRef).toBe('East_Winds_World.xlsx#High Level!A4');
@@ -611,25 +614,47 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
         },
       ],
     } as never);
+    // A chapter renamed by hand: the second chapter row of Roots finds it by its place.
+    const renamed = await open.repo.create('chapters', {
+      title: 'A renamed chapter',
+      partId: roots._id,
+      readingOrder: 4,
+      status: 'canon',
+      strands: [{ id: 'S5', label: 'Ann: Arc', startYear: 2011, endYear: 2012, primary: true }],
+    } as never);
     const report = await importEastWinds(open, dir, { yes: true });
     const step = report.steps.find((st) => st.step.endsWith('sheet High Level, chapters'))!;
     expect(step.failed).toEqual([]);
+    expect(step.notes.join(' ')).toContain(
+      '"A second chapter" matched chapter 2 of its part, "A renamed chapter", by its place',
+    );
     expect(open.repo.list('chapters').filter((c) => c.title === 'A first chapter')).toHaveLength(1);
     expect(open.repo.list('books').filter((b) => b.title === 'Book One')).toHaveLength(1);
     expect(open.repo.list('parts').filter((x) => x.title === 'Roots')).toHaveLength(1);
     const after = open.repo.get('chapters', made._id)!;
-    // The backstory strand's start moved to the sheet's year; its point of view and characters stayed.
+    // IM-7: the chapter was edited after the workbook was saved, so its 2008 stays, and an open question
+    // names both values. Point of view and characters are untouched.
     expect(after.strands.map((x) => [x.id, x.startYear, x.povCharacterId, x.characterIds])).toEqual(
       [
         ['S1', 2011, ann._id, [ann._id]],
-        ['S2', 2009, null, []],
+        ['S2', 2008, null, []],
       ],
     );
     expect(after.status).toBe('canon');
-    // The second Roots chapter was missing, so it is new and sits in the same part.
-    expect(open.repo.list('chapters').find((c) => c.title === 'A second chapter')!.partId).toBe(
-      roots._id,
+    const questions = open.repo.list('openQuestions').map((q) => q.question);
+    expect(questions.find((q) => q.includes('A first chapter'))).toMatch(
+      /the bible \(edited by hand\).*says 2008 \[kept\].*says 2009/s,
     );
+    // The renamed chapter keeps its hand title, is not duplicated, and the title is filed as a disagreement.
+    expect(open.repo.get('chapters', renamed._id)!.title).toBe('A renamed chapter');
+    expect(open.repo.list('chapters').filter((c) => c.title === 'A second chapter')).toEqual([]);
+    expect(questions.find((q) => q.includes('A renamed chapter'))).toContain(
+      'says A second chapter',
+    );
+    // A second run has nothing new to say.
+    const again = await importEastWinds(open, dir, { yes: true });
+    const second = again.steps.find((st) => st.step.endsWith('sheet High Level, chapters'))!;
+    expect([second.created, second.updated, second.questions]).toEqual([0, 0, 0]);
   });
 
   test('IM-3 ED-7 a run on a bible that already holds imported entries reports the change set and writes nothing without --yes', async () => {
@@ -731,6 +756,27 @@ describe('IM-1 the import:eastwinds script', () => {
     expect((await registry.findOne({ _id: bibleId }))!.schemaVersion).toBeGreaterThan(0);
   });
 
+  test('IM-1 --dry-run always wins: with --yes as well, nothing is written and no snapshot is taken', async () => {
+    const bibleId = freshSlug('ew-both');
+    const both = await run([
+      '--dir',
+      dir,
+      '--bible',
+      bibleId,
+      '--snapshots',
+      root,
+      '--yes',
+      '--dry-run',
+    ]);
+    expect(both.stdout).toContain('Dry run (nothing is written)');
+    expect(both.stdout).not.toContain('Snapshot taken');
+    expect(both.stdout).toContain('a name that is new in several sheets is counted once per sheet');
+    const open = await openBibleSession(store, bibleId);
+    expect(open.repo.list('worldEvents')).toEqual([]);
+    expect(open.repo.list('chapters')).toEqual([]);
+    expect(existsSync(join(root, bibleId))).toBe(false);
+  });
+
   test('IM-1 the script refuses an unknown option before it touches the database', async () => {
     await expect(run(['--nope'])).rejects.toMatchObject({
       stderr: expect.stringContaining('Unknown option --nope'),
@@ -794,4 +840,63 @@ describe('IM-3 PL-3 a re-import after the title cleanup finds the same entries',
     expect(counts()).toEqual(before);
     expect(titles('chapters')).toEqual(chapters);
   });
+});
+
+describe('A29 the real High Level sheet plans Book One', () => {
+  test('A29 IM-1 the real workbook makes one Book One with 4 parts of 12 chapters in sheet order, each with a primary strand and a second one, the Introduction in 2078, and Siyuan primary in Part Four', async () => {
+    const real = join(import.meta.dirname, '../../source-material');
+    const open = await bible();
+    await importEastWinds(open, real, { yes: true });
+    const books = open.repo.list('books').filter((b) => b.title === 'Book One');
+    expect(books).toHaveLength(1);
+    const parts = open.repo
+      .list('parts')
+      .filter((x) => x.bookId === books[0]!._id)
+      .sort((a, b) => a.number - b.number);
+    expect(parts.map((x) => [x.number, x.title])).toEqual([
+      [1, 'Sins of the Father'],
+      [2, 'Lost Spirits'],
+      [3, 'Inheritance'],
+      [4, 'Circulation'],
+    ]);
+    // The sheet's own chapter rows, part by part, with the number taken off (PL-3).
+    const wb = await parseWorkbookFile(join(real, 'East_Winds_World.xlsx'));
+    const sheet = wb.sheets.find((x) => x.name === 'High Level')!;
+    const planned: string[][] = [];
+    for (const row of sheet.cells) {
+      const label = typeof row[0] === 'string' ? row[0].trim() : '';
+      if (/^characters$/i.test(label)) break;
+      if (/^part\b/i.test(label)) planned.push([]);
+      else if (/^ch\.?\s*\d+/i.test(label)) planned.at(-1)!.push(bareTitle('chapter', label));
+    }
+    expect(planned.map((p) => p.length)).toEqual([12, 12, 12, 12]);
+    const chapters = open.repo.list('chapters');
+    const inPart = (partId: string) =>
+      chapters
+        .filter((c) => c.partId === partId && c.title !== 'Introduction')
+        .sort((a, b) => a.readingOrder - b.readingOrder);
+    expect(parts.map((x) => inPart(x._id).map((c) => c.title))).toEqual(planned);
+    for (const c of parts.flatMap((x) => inPart(x._id))) {
+      expect(c.strands, c.title).toHaveLength(2);
+      expect(
+        c.strands.filter((st) => st.primary),
+        c.title,
+      ).toHaveLength(1);
+    }
+    const intro = chapters.find((c) => c.title === 'Introduction')!;
+    expect(intro.partId).toBe(parts[0]!._id);
+    expect(intro.strands.find((st) => st.primary)!.startYear).toBe(2078);
+    // Part Four: Siyuan's arc is the primary strand and Forestory keeps its label (A29).
+    for (const c of inPart(parts[3]!._id)) {
+      const primary = c.strands.find((st) => st.primary)!;
+      const other = c.strands.find((st) => !st.primary)!;
+      expect([c.title, primary.label.startsWith('Siyuan:')]).toEqual([c.title, true]);
+      expect([c.title, other.label.startsWith('Forestory:')]).toEqual([c.title, true]);
+    }
+    const death = inPart(parts[3]!._id).find((c) => c.title === 'O Death')!;
+    expect(death.strands.map((st) => [st.label, st.startYear, st.primary])).toEqual([
+      ['Siyuan: Lost Years', 2074, true],
+      ['Forestory: John', 2096, false],
+    ]);
+  }, 120_000);
 });

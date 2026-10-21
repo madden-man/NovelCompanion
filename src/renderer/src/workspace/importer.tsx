@@ -732,6 +732,28 @@ function CommonOptions(props: {
           </label>
         </>
       )}
+      {(mapping.target.collection === 'moments' || mapping.target.collection === 'chapters') && (
+        <label className="field">
+          Families a short name may match within
+          <input
+            data-testid="import-name-hints"
+            value={(mapping.nameHints ?? []).join(', ')}
+            placeholder="For example Sullivan, 李"
+            onChange={(e) =>
+              onChange({
+                nameHints: e.target.value
+                  .split(',')
+                  .map((w) => w.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+          <span className="ed-hint">
+            A name such as Qin matches Li Qin only when one person in these families has it. Each
+            match is listed in the preview notes.
+          </span>
+        </label>
+      )}
       <label className="check">
         <input
           type="checkbox"

@@ -105,9 +105,9 @@ const PLACEHOLDER_TIME = '2000-01-01T00:00:00.000Z';
 /** The source named for a value that was on an entry before any import set it: written in the app by hand. */
 export const HAND_EDIT_REF = 'the bible (edited by hand)';
 
-/** True for a value that says nothing: missing, blank text, an empty list, or an unknown date. */
+/** True for a value that says nothing: missing, blank text, false, an empty list, or an unknown date. */
 function isEmptyValue(v: unknown): boolean {
-  if (v === null || v === undefined || v === '') return true;
+  if (v === null || v === undefined || v === '' || v === false) return true;
   if (Array.isArray(v)) return v.length === 0;
   return isPlainObject(v) && v.unknown === true && Object.keys(v).length === 1;
 }

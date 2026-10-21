@@ -128,9 +128,9 @@ const SURNAME_CHARACTERS: Record<string, string> = {
 /** The family words a heading row gives: "Li Family" hints Li and 李, "Sullivan Family" Sullivan. */
 export function familyHints(heading: string): string[] {
   const words = heading
-    .split(/\s+/)
+    .split(/[\s,]+/)
     .map((w) => w.trim())
-    .filter((w) => w && !/^(family|families|the)$/i.test(w));
+    .filter((w) => w && !/^(family|families|the|and|&)$/i.test(w));
   return words.flatMap((w) => {
     const han = SURNAME_CHARACTERS[w.toLowerCase()];
     return han ? [w, han] : [w];

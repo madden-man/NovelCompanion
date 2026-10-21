@@ -1,6 +1,7 @@
 import { importableFields } from './fields';
 import type { ImportField } from './fields';
 import { findYearHeader } from './grid';
+import { familyHints } from './names';
 import type { GridMapping, Mapping, ParsedSheet, TableMapping, Target } from './types';
 import { cellText, isBlank } from './values';
 
@@ -91,6 +92,8 @@ export function guessMapping(
   target: Target,
   status: 'canon' | 'planned' | 'idea' = 'planned',
 ): Mapping {
+  // A sheet named for families ("Hale and Zhou families") lets a short name match within them.
+  const hints = /\bfamil(y|ies)\b/i.test(sheet.name) ? familyHints(sheet.name) : [];
   const base = {
     sheet: sheet.name,
     target,
@@ -98,6 +101,7 @@ export function guessMapping(
     addMissingListItems: false,
     createMissing: false,
     matchIn: 'sheet' as const,
+    ...(hints.length ? { nameHints: hints } : {}),
   };
   if (shape === 'grid') {
     // A grid fills world events (row labels are categories), moments (row labels are people), or chapters.

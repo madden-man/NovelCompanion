@@ -74,7 +74,7 @@ describe('IM-1 the mapping engine reads table and grid sheets', () => {
     expect(wb.sheets.map((s) => s.name)).toEqual([
       'People',
       'High Level',
-      'Hale family',
+      'Hale and Zhou families',
       'Lives by year',
     ]);
     expect(wb.sheets[1]!.cells[0]!.slice(0, 3)).toEqual(['', 2030, 2035]);

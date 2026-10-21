@@ -310,7 +310,7 @@ describe('Section 7 fixture novel', () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual([
       'People',
       'High Level',
-      'Hale family',
+      'Hale and Zhou families',
       'Lives by year',
     ]);
     const table = wb.getWorksheet('People')!;

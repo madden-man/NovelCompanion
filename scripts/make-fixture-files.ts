@@ -50,9 +50,9 @@ async function workbook(): Promise<void> {
 
   // A moments sheet shaped like the East Winds Sullivan and 李 sheets (SM-3, A39): one row per moment, the
   // character by a short name or a Chinese name, and one row that names no one.
-  const moments = wb.addWorksheet('Hale family');
+  const moments = wb.addWorksheet('Hale and Zhou families');
   moments.addRow([
-    'Chronological: Hale Family',
+    'Chronological: Hale and Zhou Families',
     'POV',
     'Year',
     'POV Age',

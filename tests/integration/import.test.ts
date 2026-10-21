@@ -136,7 +136,7 @@ describe('IM-1 IM-2 IM-6 a workbook imports into a real database through the wri
 describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bible', () => {
   /** Plan and apply every sheet in order, as the import screen would one after another. */
   const runAll = async (open: OpenBible, wb: ParsedWorkbook) => {
-    const hale = wb.sheets.find((x) => x.name === 'Hale family')!;
+    const hale = wb.sheets.find((x) => x.name === 'Hale and Zhou families')!;
     // The guessed mapping reads the long headers of a moment sheet (IM-1).
     const moments = guessMapping(hale, 'table', { collection: 'moments' }) as TableMapping;
     const mappings = [
@@ -160,7 +160,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     const wb = await parseWorkbookFile(FIXTURE_WORKBOOK);
     const first = await runAll(open, wb);
     expect((first[2]!.mapping as TableMapping).columns.map((c) => [c.header, c.field])).toEqual([
-      ['Chronological: Hale Family', 'title'],
+      ['Chronological: Hale and Zhou Families', 'title'],
       ['POV', 'characterId'],
       ['Year', 'year'],
       ['Relevant World Events', 'worldContext'],
@@ -169,7 +169,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     // IM-2: the nameless person and the moment of someone the bible does not have are reported, the rest import.
     expect(first.flatMap((r) => r.result.failed.map((f) => [f.where, f.reason]))).toEqual([
       ['People row 9', expect.stringMatching(/not a year|no value for the title/)],
-      ['Hale family row 6', 'Character: No entry is called "Ghost"'],
+      ['Hale and Zhou families row 6', 'Character: No entry is called "Ghost"'],
     ]);
     expect(open.repo.list('worldEvents')).toHaveLength(7);
     const people$ = new Map(open.repo.list('characters').map((c) => [c.title, c._id]));
@@ -189,7 +189,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     expect(marry).toMatchObject({
       body: 'Nervous all day',
       worldContext: 'Rain all spring',
-      sourceRef: 'fixture-workbook.xlsx#Hale family!A3',
+      sourceRef: 'fixture-workbook.xlsx#Hale and Zhou families!A3',
     });
 
     // IM-3: the same file again changes nothing.
@@ -198,7 +198,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     expect(open.repo.list('moments')).toHaveLength(6);
 
     // A newer version of the file moves the wedding a year: the same moment changes, nothing is added.
-    const sheet = wb.sheets.find((x) => x.name === 'Hale family')!;
+    const sheet = wb.sheets.find((x) => x.name === 'Hale and Zhou families')!;
     const moved: ParsedWorkbook = {
       ...wb,
       modifiedAt: new Date(Date.parse(wb.modifiedAt) + 86_400_000).toISOString(),
@@ -456,7 +456,7 @@ describe('IM-1 the IPC channels preview, compare, and apply through the contract
     expect(info.sheets.map((s) => [s.name, s.shape, s.headerRow])).toEqual([
       ['People', 'table', 1],
       ['High Level', 'grid', 1],
-      ['Hale family', 'table', 1],
+      ['Hale and Zhou families', 'table', 1],
       ['Lives by year', 'grid', 1],
     ]);
     expect(info.saved).toEqual([]);
