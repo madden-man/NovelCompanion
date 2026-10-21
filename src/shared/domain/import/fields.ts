@@ -77,6 +77,22 @@ const STRAND_FIELDS: ImportField[] = [
       nullable: true,
     }),
   },
+  // A29: the chapter's other strand, labelled "Backstory: ..." when it jumps back in story time.
+  {
+    path: 'backstory.label',
+    label: 'Strand label (backstory strand)',
+    spec: f.text('backstory.label', 'Strand label (backstory strand)'),
+  },
+  {
+    path: 'backstory.startYear',
+    label: 'Story year (backstory strand)',
+    spec: f.year('backstory.startYear', 'Story year (backstory strand)'),
+  },
+  {
+    path: 'backstory.endYear',
+    label: 'Ends in year (backstory strand)',
+    spec: f.year('backstory.endYear', 'Ends in year (backstory strand)', { nullable: true }),
+  },
 ];
 
 /** Every field a mapping may assign for a target (IM-1). */
@@ -88,7 +104,7 @@ export function importableFields(target: Target): ImportField[] {
 }
 
 export function isVirtual(path: string): boolean {
-  return path.startsWith('strand.');
+  return path.startsWith('strand.') || path.startsWith('backstory.');
 }
 
 /** Set a dotted path on a plain object, making the groups on the way. */
@@ -114,8 +130,16 @@ function primaryStrand(doc: Doc): StrandLike | undefined {
   return strands.find((s) => s.primary) ?? strands[0];
 }
 
-/** A field's value on a document, reading a chapter's main strand for `strand.*` paths. */
+/** The first strand that is not the main one: the backstory strand of a two-strand chapter (A29). */
+function otherStrand(doc: Doc): StrandLike | undefined {
+  const strands = Array.isArray(doc.strands) ? (doc.strands as StrandLike[]) : [];
+  const main = primaryStrand(doc);
+  return strands.find((s) => s !== main);
+}
+
+/** A field's value on a document, reading a chapter's main strand for `strand.*` paths and its other strand for `backstory.*`. */
 export function readField(doc: Doc, path: string): unknown {
+  if (path.startsWith('backstory.')) return otherStrand(doc)?.[path.slice('backstory.'.length)];
   if (isVirtual(path)) return primaryStrand(doc)?.[path.slice('strand.'.length)];
   return getPath(doc, path);
 }
@@ -123,7 +147,8 @@ export function readField(doc: Doc, path: string): unknown {
 /** Write one imported value into a document (a copy is the caller's job). */
 export function writeField(doc: Doc, path: string, value: unknown): void {
   if (!isVirtual(path)) return setPath(doc, path, value);
-  const key = path.slice('strand.'.length);
+  const backstory = path.startsWith('backstory.');
+  const key = path.slice((backstory ? 'backstory.' : 'strand.').length);
   let strands = Array.isArray(doc.strands) ? (doc.strands as StrandLike[]) : null;
   if (!strands || strands.length === 0) {
     strands = [
@@ -139,6 +164,27 @@ export function writeField(doc: Doc, path: string, value: unknown): void {
       },
     ];
     doc.strands = strands;
+  }
+  if (backstory) {
+    let other = otherStrand(doc);
+    if (!other) {
+      const ids = new Set(strands.map((s) => String(s.id)));
+      let n = strands.length + 1;
+      while (ids.has(`s${n}`)) n += 1;
+      other = {
+        id: `s${n}`,
+        label: 'backstory',
+        startYear: null,
+        endYear: null,
+        primary: false,
+        povCharacterId: null,
+        characterIds: [],
+        placeIds: [],
+      };
+      strands.push(other);
+    }
+    other[key] = value;
+    return;
   }
   const strand = primaryStrand(doc);
   if (strand) strand[key] = value;

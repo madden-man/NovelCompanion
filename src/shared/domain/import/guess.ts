@@ -27,6 +27,9 @@ const SYNONYMS: Record<string, string[]> = {
   tags: ['tags', 'tag'],
 };
 
+/** The sections a grid sheet can fill (A12, SM-12). */
+export const GRID_TARGETS = ['worldEvents', 'moments', 'chapters'] as const;
+
 /** Does this sheet read as a grid (years across the top) or a table? */
 export function guessShape(sheet: ParsedSheet): 'table' | 'grid' {
   const probe: GridMapping = {
@@ -82,10 +85,14 @@ export function guessMapping(
     matchIn: 'sheet' as const,
   };
   if (shape === 'grid') {
+    // A grid fills world events (row labels are categories), moments (row labels are people), or chapters.
+    const collection = (GRID_TARGETS as readonly string[]).includes(target.collection)
+      ? target.collection
+      : 'worldEvents';
     return {
       shape: 'grid',
       ...base,
-      target: { collection: 'worldEvents' },
+      target: { collection },
       headerRow: null,
       labelColumn: 0,
       yearOffset: 0,

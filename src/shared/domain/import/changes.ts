@@ -4,8 +4,9 @@ import { deepEqual, isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { importableFields, isVirtual, readField, writeField } from './fields';
 import { existingGridIdentities } from './grid';
+import { chapterIdentity } from './gridEntries';
 import { sheetPrefix } from './source';
-import { existingIdentities, identityPaths } from './table';
+import { existingIdentities, identityPaths, ordinalKey } from './table';
 import type { ListAdd, MapOutput, MappedRow, Mapping, SourceFile } from './types';
 
 /** Who supplied a field's value and when that source was last modified (IM-7). */
@@ -122,6 +123,35 @@ function recordedView(doc: Doc, records: SourceRecord[]): Doc {
   return view;
 }
 
+/**
+ * Source records written before A39 under a plot beat's field names. A beat
+ * became a moment with the same ID (SM-3), so its point of view and experience
+ * note records now speak for the moment's character and body (IM-3, IM-7).
+ */
+const LEGACY_PATHS: Partial<Record<EntryCollection, Record<string, string>>> = {
+  moments: { povCharacterId: 'characterId', experienceNote: 'body' },
+};
+
+/** The records of an entry with any pre-A39 field names read as today's. */
+export function currentRecords(
+  collection: EntryCollection,
+  records: SourceRecord[],
+): SourceRecord[] {
+  const legacy = LEGACY_PATHS[collection];
+  if (!legacy) return records;
+  const out = records.filter((r) => !legacy[r.path]);
+  for (const r of records) {
+    const path = legacy[r.path];
+    if (path && !out.some((o) => o.path === path)) out.push({ ...r, path });
+  }
+  return out;
+}
+
+/** A chapter read with its part's title in place of the part's ID, for matching by part and title. */
+function chapterKeyOf(doc: Doc, partTitle: (id: unknown) => string | undefined): string {
+  return chapterIdentity(partTitle(doc.partId), doc.title);
+}
+
 /** Which existing entries a row may match: those from this sheet or file, or any of the section. */
 function candidates(
   mapping: Mapping,
@@ -165,6 +195,16 @@ export function planChanges(input: PlanInput): ChangeSet {
     });
   }
 
+  const sourcesOf = (collection: EntryCollection, id: string) =>
+    currentRecords(collection, input.sources(id));
+  const partTitles = new Map<string, string>();
+  const partTitle = (id: unknown): string | undefined => {
+    if (typeof id !== 'string') return undefined;
+    if (partTitles.size === 0) {
+      for (const p of input.existing('parts')) partTitles.set(String(p._id), String(p.title));
+    }
+    return partTitles.get(id);
+  };
   const identityMaps = new Map<string, Map<string, Doc>>();
   const identityFor = (row: MappedRow, recorded: boolean): Map<string, Doc> => {
     const key = `${recorded ? 'r' : 'c'}:${row.collection}:${row.kind}`;
@@ -173,19 +213,24 @@ export function planChanges(input: PlanInput): ChangeSet {
       const docs = candidates(mapping, row.collection, input, prefix);
       // The recorded view reads each entry as the import last left it, so a hand edit to an identity field does not hide it.
       const view = recorded
-        ? (d: Doc) => recordedView(d, input.sources(String(d._id)))
+        ? (d: Doc) => recordedView(d, sourcesOf(row.collection, String(d._id)))
         : (d: Doc) => d;
       const isGrid = mapping.shape === 'grid' && row.kind === 'entry';
-      map = isGrid
-        ? existingGridIdentities(docs, input.list(mapping.categoryList), view)
-        : existingIdentities(
-            docs,
-            row.kind === 'heading' || mapping.shape !== 'table'
-              ? ['title']
-              : identityPaths(mapping),
-            view,
-            row.collection,
-          );
+      map =
+        isGrid && row.collection === 'chapters'
+          ? keyed(docs, (d) => chapterKeyOf(view(d), partTitle))
+          : isGrid && row.collection === 'moments'
+            ? existingIdentities(docs, ['characterId', 'title'], view, 'moments')
+            : isGrid
+              ? existingGridIdentities(docs, input.list(mapping.categoryList), view)
+              : existingIdentities(
+                  docs,
+                  row.kind === 'heading' || mapping.shape !== 'table'
+                    ? ['title']
+                    : identityPaths(mapping),
+                  view,
+                  row.collection,
+                );
       identityMaps.set(key, map);
     }
     return map;
@@ -266,14 +311,27 @@ export function planChanges(input: PlanInput): ChangeSet {
       ref: row.ref,
       where: row.where,
       file,
-      records: input.sources(String(existing._id)),
+      records: sourcesOf(row.collection, String(existing._id)),
       catalog: catalogFor(row),
+      addOnly: mapping.addOnly ?? [],
     });
     if (result.kind === 'unchanged') unchanged += 1;
     else if (result.kind === 'failed') failed.push(result.failure);
     else items.push(result.item);
   }
   return { items, unchanged, failed, listAdds: output.listAdds, notes: output.notes };
+}
+
+/** Existing entries by a key, counted the way a sheet's rows are. */
+function keyed(docs: Doc[], key: (d: Doc) => string): Map<string, Doc> {
+  const counts = new Map<string, number>();
+  const out = new Map<string, Doc>();
+  for (const d of [...docs].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
+    const k = key(d);
+    if (k.replace(/\u241f/g, '') === '') continue;
+    out.set(ordinalKey(counts, k), d);
+  }
+  return out;
 }
 
 export interface ChangedArgs {
@@ -287,6 +345,8 @@ export interface ChangedArgs {
   file: SourceFile;
   records: SourceRecord[];
   catalog: ReturnType<typeof importableFields>;
+  /** List fields the import only adds to: what the entry has stays (see `Mapping.addOnly`). */
+  addOnly?: string[];
 }
 
 /**
@@ -303,8 +363,13 @@ export function changedItem(
   const { existing, fields, file, records } = a;
   const catalog = a.catalog;
   const deltas: FieldDelta[] = [];
-  for (const [path, incoming] of Object.entries(fields)) {
+  for (const [path, value] of Object.entries(fields)) {
     const prior = readField(existing, path);
+    // An add-only list keeps its values and gains the sheet's missing ones after them.
+    const incoming =
+      a.addOnly?.includes(path) && Array.isArray(prior) && Array.isArray(value)
+        ? [...prior, ...value.filter((v) => !prior.some((p) => deepEqual(p, v)))]
+        : value;
     if (deepEqual(prior, incoming)) continue;
     const rec = records.find((r) => r.path === path);
     // The file still says what it said last time, so a different value on the entry is the person's own edit. It stands (ED-7).

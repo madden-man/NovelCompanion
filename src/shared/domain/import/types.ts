@@ -106,6 +106,18 @@ const Common = {
    * imported from this sheet, or any entry of the target section.
    */
   matchIn: z.enum(['sheet', 'section']).default('sheet'),
+  /**
+   * List fields the import only adds to, such as regions: the values already on
+   * an entry stay and the sheet's are added after them.
+   */
+  addOnly: z.array(z.string().min(1)).optional(),
+  /**
+   * Words that pick among several people a name in a cell could mean, such as
+   * the family a sheet is about ("Sullivan", "李").
+   */
+  nameHints: z.array(z.string().min(1)).optional(),
+  /** The reading order of the first new chapter; 1 when not set. */
+  orderFrom: z.int().min(1).optional(),
 };
 
 export const TableMapping = z.strictObject({
@@ -118,6 +130,12 @@ export const TableMapping = z.strictObject({
   identity: z.array(z.string().min(1)).default([]),
   /** Heading rules from the top level down, such as books then parts. */
   headings: z.array(HeadingRule).default([]),
+  /**
+   * Heading labels (case blind expressions) whose rows are left out and
+   * reported, with every heading below them: `^Book One$` when another sheet
+   * plans that book.
+   */
+  skipSections: z.array(z.string().min(1)).optional(),
 });
 export type TableMapping = z.infer<typeof TableMapping>;
 
@@ -147,6 +165,14 @@ export const GridMapping = z.strictObject({
   startLabel: z.string().min(1).optional(),
   /** Rows whose label matches any of these expressions (case blind) are skipped and reported. */
   skipLabels: z.array(z.string().min(1)).optional(),
+  /** The first row whose label matches this expression (case blind), and every row below it, are skipped and reported. */
+  endLabel: z.string().min(1).optional(),
+  /** World events: read regions from the row label ("US: Oil" is the United States). */
+  regionsFromLabels: z.boolean().optional(),
+  /** Chapters: label rows that start a part; `^Part\\b` when not set. */
+  partLabel: z.string().min(1).optional(),
+  /** Chapters: the book the parts belong to, found by its title or made; "Book One" when not set. */
+  bookTitle: z.string().min(1).optional(),
 });
 export type GridMapping = z.infer<typeof GridMapping>;
 

@@ -35,6 +35,41 @@ function namesOf(doc: Doc): string[] {
   return out.map((n) => n.trim().toLowerCase()).filter(Boolean);
 }
 
+/** The words of a person's title and full name, lower case: "Frank Sullivan" answers to "frank" and "sullivan". */
+function wordsOf(doc: Doc): string[] {
+  const out = entryTitle(doc).split(/\s+/);
+  const names = doc.names;
+  if (isPlainObject(names) && typeof names.full === 'string') out.push(...names.full.split(/\s+/));
+  return out.map((w) => w.trim().toLowerCase()).filter(Boolean);
+}
+
+/** The Chinese name without its one-character surname: 李勤 answers to 勤. */
+function chineseGiven(doc: Doc): string {
+  const names = doc.names;
+  const chinese =
+    isPlainObject(names) && typeof names.chinese === 'string' ? names.chinese.trim() : '';
+  return [...chinese].length > 1 ? [...chinese].slice(1).join('') : '';
+}
+
+/** Every name and word an entry answers to, lower case, for checking a hint. */
+function hintText(doc: Doc): string {
+  return [...namesOf(doc), ...wordsOf(doc)].join(' ');
+}
+
+/**
+ * A person a short name means when no entry carries it whole: one word of the
+ * title or full name ("Frank" for Frank Sullivan, "Qin" for Li Qin), or the
+ * Chinese name without its surname (勤 for 李勤). Several such people are
+ * narrowed by the hints (the sheet's family); more than one left is ambiguous.
+ */
+function personByPart(people: Doc[], want: string, hints: string[]): string | null | 'ambiguous' {
+  const hits = people.filter((d) => wordsOf(d).includes(want) || chineseGiven(d) === want);
+  if (hits.length === 0) return null;
+  if (hits.length === 1) return String(hits[0]?._id);
+  const hinted = hits.filter((d) => hints.some((h) => hintText(d).includes(h.toLowerCase())));
+  return hinted.length === 1 ? String(hinted[0]?._id) : 'ambiguous';
+}
+
 export interface NameResolver {
   resolve(spec: FieldSpec, name: string): string | null | 'ambiguous';
   /** Stub entries made so far for names that matched nothing. */
@@ -51,7 +86,13 @@ export interface NameResolver {
  */
 export function nameResolver(
   ctx: MapContext,
-  opts: { createMissing: boolean; ref: () => string; where: () => string },
+  opts: {
+    createMissing: boolean;
+    ref: () => string;
+    where: () => string;
+    /** Words that pick among several people a short name could mean. */
+    hints?: string[];
+  },
 ): NameResolver {
   const stubs: MappedRow[] = [];
   const made = new Map<string, string>();
@@ -77,6 +118,10 @@ export function nameResolver(
       if (hits.size > 1) return 'ambiguous';
       const [only] = [...hits];
       if (hits.size === 1 && only !== undefined) return only;
+      if (collections.includes('characters') && want) {
+        const part = personByPart(ctx.entries('characters'), want, opts.hints ?? []);
+        if (part !== null) return part;
+      }
       const key = `${collections.join(',')}:${want}`;
       const prior = made.get(key);
       if (prior) return prior;

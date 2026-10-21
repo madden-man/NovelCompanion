@@ -15,7 +15,8 @@ export {
   resolveColumns,
   sheetHeaders,
 } from './table';
-export { findYearHeader, titleFromText, mapGrid, categoryPath } from './grid';
+export { findYearHeader, titleFromText, mapGrid, categoryPath, regionsOfLabel } from './grid';
+export { chapterStrands, mapChapterGrid, mapMomentGrid } from './gridEntries';
 export { mapTable } from './table';
 export * from './changes';
 export * from './document';
