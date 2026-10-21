@@ -220,7 +220,7 @@ const blankLine = (line: string) => /^\s*([-*•]\s*)?$/.test(line);
 const isBlank = (sec: Section) => sec.lines.every(blankLine);
 
 /** Lines `from` to `to` of a section, with the years on them. */
-function slice(sec: Section, from: number, to = sec.lines.length): Section {
+export function sliceSection(sec: Section, from: number, to = sec.lines.length): Section {
   const years: Record<number, number> = {};
   for (const [k, y] of Object.entries(sec.years)) {
     const i = Number(k);
@@ -261,11 +261,11 @@ export function splitFlow(
         a.line - b.line ||
         (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
     );
-  let lead = slice(whole, 0, starts[0]?.line ?? count);
+  let lead = sliceSection(whole, 0, starts[0]?.line ?? count);
   const bodies: Record<string, Section> = {};
   let above: string | null = null;
   starts.forEach((s, i) => {
-    const own = slice(whole, s.line, starts[i + 1]?.line ?? count);
+    const own = sliceSection(whole, s.line, starts[i + 1]?.line ?? count);
     if (rank.has(s.id)) {
       bodies[s.id] = own;
       above = s.id;
@@ -383,9 +383,9 @@ export function retext(sec: Section, next: readonly string[]): Section {
 
 /** A scene's own year set, or cleared with null so it inherits again. */
 export function setSceneYear(sec: Section, line: number, year: number | null): Section {
-  const years = { ...sec.years };
-  if (year === null || !isSceneLine(sec.lines[line] ?? '')) delete years[line];
-  else years[line] = year;
+  const years: Record<number, number> = {};
+  for (const [k, y] of Object.entries(sec.years)) if (Number(k) !== line) years[Number(k)] = y;
+  if (year !== null && isSceneLine(sec.lines[line] ?? '')) years[line] = year;
   return { lines: sec.lines, years };
 }
 
@@ -522,7 +522,10 @@ export function takeSceneAbove(
 ): { above: Section; own: Section } | null {
   const at = sceneStarts(above.lines).at(-1);
   if (at === undefined) return null;
-  return { above: slice(above, 0, at), own: joinSections(slice(above, at), kept(own)) };
+  return {
+    above: sliceSection(above, 0, at),
+    own: joinSections(sliceSection(above, at), kept(own)),
+  };
 }
 
 /**
@@ -536,7 +539,10 @@ export function giveFirstScene(
   const starts = sceneStarts(own.lines);
   if (starts.length === 0) return null;
   const cut = starts[1] ?? own.lines.length;
-  return { above: joinSections(kept(above), slice(own, 0, cut)), own: slice(own, cut) };
+  return {
+    above: joinSections(kept(above), sliceSection(own, 0, cut)),
+    own: sliceSection(own, cut),
+  };
 }
 
 /**

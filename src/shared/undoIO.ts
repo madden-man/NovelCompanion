@@ -28,6 +28,9 @@ export function undoIO(invoke: Invoke): UndoIO {
         case 'restore':
           await invoke('entry.restore', { collection: op.collection, id: op.id });
           return;
+        case 'run':
+          await op.apply();
+          return;
         case 'rename':
           await invoke('lists.rename', { listId: op.listId, itemId: op.itemId, label: op.label });
       }

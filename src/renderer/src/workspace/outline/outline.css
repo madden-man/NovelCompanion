@@ -164,52 +164,14 @@
   z-index: 4;
 }
 
-/* PL-5, A37: the scene outline as one flow, chapters as headings in it. Colors come only from theme tokens. */
+/* SM-7 (a39-outline): the Outline, scenes with their years beside the chapter bars, two panels that scroll as one. Colors come only from theme tokens. */
 .ws-tree-area.scenes {
   grid-template-columns: minmax(0, 1fr);
-}
-/* The year grid alone: the inspector drops below it until a row, arc, beat or year is picked. */
-.ws-tree-area.grid-only {
-  grid-template-columns: minmax(0, 1fr);
-}
-.ws-tree-area.grid-only .tree-inspector {
-  border-left: 0;
-  border-top: 1px solid var(--border);
-  max-height: none;
-}
-.ws-tree-area.grid-only .ol-scroll {
-  max-height: calc(100vh - 250px);
-}
-.outline-mode {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.outline-mode button {
-  all: unset;
-  padding: 4px 10px;
-  cursor: pointer;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.outline-mode button + button {
-  border-left: 1px solid var(--border-strong);
-}
-.outline-mode button[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.outline-mode button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 .scene-head {
   position: sticky;
   top: -14px;
-  z-index: 4;
+  z-index: 6;
   padding: 6px 0;
   background: var(--bg);
   flex-wrap: wrap;
@@ -227,234 +189,61 @@
 .scene-status[data-status] {
   min-width: 8.5em;
 }
-.scene-flow {
-  display: flex;
-  flex-direction: column;
-  max-width: 980px;
-}
-.scene-group {
-  margin: 18px 0 6px;
-  padding: 4px 0;
-  color: var(--fg);
-  font-weight: 700;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: 2px;
-}
-.scene-group.part {
-  font-weight: 600;
-  color: var(--fg-2);
-  border-bottom-style: dashed;
-}
-.scene-group.over {
-  outline: 2px dashed var(--accent);
-  outline-offset: 2px;
-}
-.scene-lead-head {
-  color: var(--fg-2);
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 4px 0;
-}
-/* A section: the chapter's heading and its scenes, marked by a bar in the chapter's colour. */
-.scene-sec {
-  display: flex;
-  flex-direction: column;
-}
-.scene-sec.series-1 .scene-ch {
-  border-left-color: var(--series-1);
-  background: var(--series-1-soft);
-}
-.scene-sec.series-2 .scene-ch {
-  border-left-color: var(--series-2);
-  background: var(--series-2-soft);
-}
-.scene-sec.series-3 .scene-ch {
-  border-left-color: var(--series-3);
-  background: var(--series-3-soft);
-}
-.scene-sec.series-4 .scene-ch {
-  border-left-color: var(--series-4);
-  background: var(--series-4-soft);
-}
-.scene-sec.series-1 .scene-edit {
-  border-left-color: var(--series-1);
-}
-.scene-sec.series-2 .scene-edit {
-  border-left-color: var(--series-2);
-}
-.scene-sec.series-3 .scene-edit {
-  border-left-color: var(--series-3);
-}
-.scene-sec.series-4 .scene-edit {
-  border-left-color: var(--series-4);
-}
-.scene-sec.dragging {
-  opacity: 0.5;
-}
-.scene-gap {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  margin: 10px 0 4px 18px;
-  padding-left: 12px;
-  border-left: 2px dotted var(--border-strong);
-  color: var(--fg);
-  font-size: 0.85rem;
-}
-.scene-gap-years {
-  font-weight: 600;
-}
-.scene-gap.back .scene-gap-years::before {
-  content: '↺ ';
-}
-.scene-gap-events {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  color: var(--fg-2);
-}
-.scene-ch {
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-radius: var(--radius) var(--radius) 0 0;
-  border-left: 6px solid var(--border-strong);
-  background: var(--surface-2);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.scene-ch.over {
-  box-shadow: inset 0 3px 0 var(--accent);
-  outline: 2px dashed var(--accent);
-  outline-offset: -2px;
-}
-.scene-ch-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-.scene-ch .ch-grip {
-  width: 10px;
-  height: 22px;
-  cursor: grab;
-  background: repeating-linear-gradient(to bottom, var(--fg-2) 0 2px, transparent 2px 5px);
-  background-size: 8px 100%;
-  background-repeat: no-repeat;
-  background-position: 1px center;
-  opacity: 0.7;
-}
-.scene-ch .ch-grip:active {
-  cursor: grabbing;
-}
-.scene-ch-no {
-  font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg);
-}
-.scene-ch .ch-title {
-  flex: 1 1 16em;
-  min-width: 10em;
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--fg);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-.scene-ch .ch-title:hover,
-.scene-ch .ch-title:focus {
-  background: var(--surface);
-  border-color: var(--border-strong);
-}
-.scene-ch-year {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.scene-ch .ch-label,
-.scene-ch-count {
-  color: var(--fg);
-  font-size: 0.85rem;
-}
-.scene-ch .ch-number {
-  font: inherit;
-  font-size: 0.9rem;
-  box-sizing: border-box;
-}
-.scene-world {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  padding-left: 20px;
-  font-size: 0.85rem;
-  color: var(--fg);
-}
-.scene-world-label {
-  color: var(--fg-2);
-}
-.we-chips {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-.we-chip,
-.era-chip {
-  all: unset;
-  cursor: pointer;
-  font-size: 0.8rem;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--fg);
-  max-width: 28em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.era-chip {
-  font-weight: 600;
-  border-style: dashed;
-}
-.we-chip:hover,
-.era-chip:hover {
-  border-color: var(--accent);
-}
-.we-chip:focus-visible,
-.era-chip:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-/* The text, its backdrop share every metric that affects wrapping. */
-.scene-edit {
+.scene-board {
   position: relative;
-  border-left: 6px solid var(--border-strong);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-.scene-sec.lead .scene-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 250px);
+  max-width: 1180px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
+  background: var(--surface);
+}
+.scene-board.grabbing {
+  user-select: none;
+}
+.sb-row {
+  display: contents;
+}
+.sb-colhead {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+.sb-colhead.track,
+.sb-track {
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg);
+}
+.sb-track {
+  position: relative;
+  min-height: 7rem;
+  border-bottom: 1px solid var(--border);
+}
+.sb-none {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+/* The text and its backdrop share every metric that affects wrapping. */
+.scene-edit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-left: 6px solid var(--border-strong);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 .scene-edit textarea,
 .scene-backdrop {
   box-sizing: border-box;
   width: 100%;
   margin: 0;
-  padding: 8px 14px 10px 56px;
+  padding: 6px 14px 8px 104px;
   font: inherit;
   font-size: 1rem;
   line-height: 1.55;
@@ -468,6 +257,7 @@
 .scene-edit textarea {
   display: block;
   position: relative;
+  flex: 1 0 auto;
   resize: none;
   overflow: hidden;
   color: var(--fg);
@@ -489,23 +279,224 @@
   inset: 0;
   pointer-events: none;
   color: transparent;
-  overflow: hidden;
 }
 .scene-backdrop .sl {
   position: relative;
   min-height: 1.55em;
 }
-.scene-backdrop .sl-no {
+/* The gutter of a scene: its number and its year field, above the textarea so the field takes clicks. */
+.scene-backdrop .sl-gutter {
   position: absolute;
-  left: -48px;
+  z-index: 1;
+  left: -98px;
   top: 0;
-  width: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 1.55em;
+  pointer-events: auto;
+}
+.scene-backdrop .sl-no {
+  width: 26px;
   text-align: right;
   color: var(--fg-2);
   font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1.55rem;
   font-variant-numeric: tabular-nums;
+}
+.sl-year {
+  box-sizing: border-box;
+  width: 4.6em;
+  height: 1.4em;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.sl-year::placeholder {
+  color: var(--fg-2);
+  opacity: 1;
+}
+.sl-year:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Each chapter's colour on its gutter stripe, its year fields and its bar. */
+.sb-row.series-1 .scene-edit,
+.sb-row.series-1 .cbar {
+  border-color: var(--series-1);
+}
+.sb-row.series-1 .sl-year,
+.sb-row.series-1 .cbar {
+  background: var(--series-1-soft);
+}
+.sb-row.series-1 .sl-year {
+  border-color: var(--series-1);
+}
+.sb-row.series-1 .cbar-edge::after {
+  background: var(--series-1);
+}
+.sb-row.series-2 .scene-edit,
+.sb-row.series-2 .cbar {
+  border-color: var(--series-2);
+}
+.sb-row.series-2 .sl-year,
+.sb-row.series-2 .cbar {
+  background: var(--series-2-soft);
+}
+.sb-row.series-2 .sl-year {
+  border-color: var(--series-2);
+}
+.sb-row.series-2 .cbar-edge::after {
+  background: var(--series-2);
+}
+.sb-row.series-3 .scene-edit,
+.sb-row.series-3 .cbar {
+  border-color: var(--series-3);
+}
+.sb-row.series-3 .sl-year,
+.sb-row.series-3 .cbar {
+  background: var(--series-3-soft);
+}
+.sb-row.series-3 .sl-year {
+  border-color: var(--series-3);
+}
+.sb-row.series-3 .cbar-edge::after {
+  background: var(--series-3);
+}
+.sb-row.series-4 .scene-edit,
+.sb-row.series-4 .cbar {
+  border-color: var(--series-4);
+}
+.sb-row.series-4 .sl-year,
+.sb-row.series-4 .cbar {
+  background: var(--series-4-soft);
+}
+.sb-row.series-4 .sl-year {
+  border-color: var(--series-4);
+}
+.sb-row.series-4 .cbar-edge::after {
+  background: var(--series-4);
+}
+/* An inherited year: faded and dashed. */
+.sb-row .sl-year.inherited {
+  background: var(--surface);
+  border-style: dashed;
+}
+/* A chapter's bar: as tall as its section, in its colour; the edges pull, the body drags. */
+.cbar {
+  position: absolute;
+  inset: 3px 6px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-left-width: 6px;
+  border-radius: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+.cbar:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+.cbar.off {
+  cursor: default;
+}
+.cbar.moving {
+  z-index: 5;
+  cursor: grabbing;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+}
+.cbar.target {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+.cbar-main {
+  position: sticky;
+  top: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  padding: 2px 8px;
+  overflow: hidden;
+}
+.cbar-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.cbar-no {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cbar .cbar-title {
+  font-weight: 600;
+  text-align: left;
+}
+.cbar-sub {
+  font-size: 0.8rem;
+}
+.cbar-year {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cbar .ch-number {
+  font: inherit;
+  font-size: 0.8rem;
+  box-sizing: border-box;
+  height: 1.8em;
+  padding: 1px 4px;
+}
+.cbar-edge {
+  flex: 0 0 10px;
+  cursor: ns-resize;
+  position: relative;
+}
+.cbar-edge.bottom {
+  margin-top: auto;
+}
+.cbar-edge::after {
+  content: '';
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+.sb-row .cbar-edge:hover::after,
+.sb-row .cbar.pulling-start .cbar-edge.top::after,
+.sb-row .cbar.pulling-end .cbar-edge.bottom::after {
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  background: var(--accent);
+}
+.cbar.off .cbar-edge {
+  cursor: default;
+}
+.sb-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  border-top: 3px solid var(--accent);
+  pointer-events: none;
 }
 .scene-versions {
   margin-top: 16px;
@@ -528,158 +519,25 @@
   padding: 8px 10px;
 }
 @media (max-width: 600px) {
+  .scene-board {
+    grid-template-columns: minmax(0, 1fr) 124px;
+  }
   .scene-edit textarea,
   .scene-backdrop {
-    padding-left: 44px;
+    padding-left: 84px;
+    padding-right: 8px;
+  }
+  .scene-backdrop .sl-gutter {
+    left: -80px;
+    gap: 4px;
   }
   .scene-backdrop .sl-no {
-    left: -40px;
-    width: 30px;
+    width: 20px;
   }
-  .scene-world,
-  .scene-gap {
-    padding-left: 4px;
-    margin-left: 4px;
+  .sl-year {
+    width: 4em;
   }
-}
-
-/* A37: the year grid reads as a timeline: years to pick, decades marked, the world above the chapters. */
-.ol-year {
-  all: unset;
-  box-sizing: border-box;
-  cursor: pointer;
-}
-.ol-head .ol-year {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 0.72rem;
-  color: var(--fg-2);
-  font-variant-numeric: tabular-nums;
-}
-.ol-head .ol-track.flat .ol-year {
-  writing-mode: horizontal-tb;
-  transform: none;
-}
-.ol-head .ol-year.decade {
-  color: var(--fg);
-  font-weight: 700;
-}
-.ol-head .ol-year.now {
-  color: var(--fg);
-  font-weight: 700;
-  box-shadow: inset 0 -3px 0 var(--accent);
-}
-.ol-head .ol-year:hover {
-  background: var(--accent-soft);
-  color: var(--fg);
-}
-.ol-head .ol-year.picked {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.ol-year:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.ol-pick {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: var(--accent-soft);
-  pointer-events: none;
-}
-.ol-row-year {
-  margin-left: auto;
-  font-weight: 400;
-  font-size: 0.8rem;
-  color: var(--fg-2);
-  font-variant-numeric: tabular-nums;
-}
-.ol-world {
-  position: sticky;
-  top: 48px;
-  z-index: 3;
-  background: var(--surface);
-  border-bottom: 2px solid var(--border-strong);
-}
-.ol-world .ol-label {
-  align-items: flex-start;
-}
-.ol-world-label {
-  display: flex;
-  flex-direction: column;
-  font-weight: 700;
-}
-.ol-world-sub {
-  font-weight: 400;
-  font-size: 0.8rem;
-  color: var(--fg-2);
-}
-.ol-world-track {
-  height: calc(30px + 4 * 9px);
-}
-.ol-era {
-  position: absolute;
-  top: 3px;
-  height: 18px;
-  box-sizing: border-box;
-  padding: 0 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  line-height: 16px;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  cursor: pointer;
-}
-.ol-era.a {
-  background: var(--surface-2);
-}
-.ol-era.b {
-  background: var(--bg);
-}
-.ol-era.swatch {
-  position: static;
-  display: inline-block;
-  width: 24px;
-  height: 12px;
-  vertical-align: middle;
-  background: var(--surface-2);
-}
-.ol-event {
-  position: absolute;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--fg-2);
-  cursor: pointer;
-}
-.ol-event.dot {
-  height: 8px;
-  margin-top: -1px;
-  border-radius: 50%;
-  background: var(--fg);
-}
-.ol-event:hover {
-  background: var(--accent);
-}
-.ol-event.swatch {
-  position: static;
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  vertical-align: middle;
-  background: var(--fg);
-}
-.year-panel h3 {
-  font-size: 1.4rem;
+  .cbar {
+    inset: 3px 3px;
+  }
 }

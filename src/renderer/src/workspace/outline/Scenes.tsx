@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent, KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import {
   EMPTY_OUTLINE,
+  LEAD,
+  MAX_YEAR,
+  MIN_YEAR,
   composeFlow,
   continueBullet,
-  giveFirstScene,
+  edgeLimits,
   indentLines,
+  moveEdge,
+  moveOnto,
+  neighbourOf,
   refitFlow,
+  retext,
   sameBreaks,
-  sameRanges,
+  sameYears,
   sceneLines,
+  sectionOf,
   sectionScenes,
+  setSceneYear,
+  shownYears,
+  sliceSection,
   splitFlow,
-  takeSceneAbove,
+  withSection,
 } from '../../../../shared/domain/sceneOutline';
-import type { Flow, SceneOutlineState } from '../../../../shared/domain/sceneOutline';
-import { eraAt, eventsBetween, eventsIn, yearGap } from '../../../../shared/domain/outlineWorld';
+import type { Flow, SceneOutlineState, ShownYear } from '../../../../shared/domain/sceneOutline';
 import { shiftStrand } from '../../../../shared/domain/strands';
 import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
@@ -25,10 +35,10 @@ import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
+import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { useWorld } from './world';
-import type { World } from './world';
+import { InlineName } from './InlineName';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
@@ -42,27 +52,48 @@ const SCENE_MAX_WAIT_MS = 700;
 
 type SceneStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error';
 
-/** The key of the section before the first chapter. */
-const LEAD = 'lead';
-
-/** The drag type a chapter heading puts on the data transfer. */
-const CHAPTER_MIME = 'application/x-novel-companion-chapter';
-
 const sameState = (a: SceneOutlineState | null, b: SceneOutlineState) =>
-  a !== null &&
-  a.text === b.text &&
-  sameRanges(a.ranges, b.ranges) &&
-  sameBreaks(a.breaks, b.breaks);
+  a !== null && a.text === b.text && sameBreaks(a.breaks, b.breaks) && sameYears(a.years, b.years);
+
+const stateOf = (r: SceneOutlineState): SceneOutlineState => ({
+  text: r.text,
+  breaks: r.breaks,
+  years: r.years,
+});
 
 /**
- * The scene outline as a flow (A37) with its autosave. The stored text is
- * split into the chapters' sections once the reading order is known; every
- * change updates the flow at once and is written, joined back in reading
- * order, 500 ms after the last one and never more than 700 ms after the first
- * unsaved one. A new reading order (a chapter moved, made, or put in the
- * trash) is written too, since the text follows its chapters.
+ * The outline on screen, for undo steps that outlive it: an edge move undone
+ * after leaving the screen writes the stored outline directly.
+ */
+const live: {
+  current: { state(): SceneOutlineState | null; adopt(s: SceneOutlineState): Promise<void> } | null;
+} = { current: null };
+
+/** SM-7: an undo or redo step that puts the scene outline back to `to`, when it still holds `expect`. */
+function outlineOp(expect: SceneOutlineState, to: SceneOutlineState): Op {
+  return {
+    kind: 'run',
+    check: async () => {
+      const now = live.current?.state() ?? stateOf(await call('sceneOutline.get', {}));
+      return now && sameState(now, expect) ? null : 'the scene outline changed since';
+    },
+    apply: async () => {
+      if (live.current) await live.current.adopt(to);
+      else await call('sceneOutline.set', to);
+    },
+  };
+}
+
+/**
+ * The scene outline as a flow with its autosave. The stored text is split
+ * into the chapters' sections once the reading order is known; every change
+ * updates the flow at once and is written, joined back in reading order, 500
+ * ms after the last one and never more than 700 ms after the first unsaved
+ * one. A new reading order (a chapter moved, made, or put in the trash) is
+ * written too, since the text and its years follow their chapters.
  */
 function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
+  const undo = useUndo();
   const [loaded, setLoaded] = useState<SceneOutlineState | null>(null);
   const [flow, setFlow] = useState<Flow | null>(null);
   const [status, setStatus] = useState<SceneStatus>('loading');
@@ -86,7 +117,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     void call('sceneOutline.get', {})
       .then((r) => {
         if (!live) return;
-        saved.current = { text: r.text, ranges: r.ranges, breaks: r.breaks };
+        saved.current = stateOf(r);
         current.current = null;
         setFlow(null);
         setLoaded(saved.current);
@@ -120,7 +151,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       setStatus('saving');
       const run = call('sceneOutline.set', target).then(
         (r) => {
-          saved.current = { text: r.text, ranges: r.ranges, breaks: r.breaks };
+          saved.current = stateOf(r);
           setError(null);
           setSaves((n) => n + 1);
           return true;
@@ -197,6 +228,24 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     [],
   );
 
+  // An undo or redo writes what is pending first, and outline steps reach this flow.
+  useEffect(() => {
+    const off = undo.registerFlush(save);
+    live.current = {
+      state: stored,
+      adopt: async (s) => {
+        current.current = splitFlow(s, orderRef.current);
+        setFlow(current.current);
+        await save();
+      },
+    };
+    return () => {
+      off();
+      live.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save]);
+
   const edit = useCallback(
     (change: (f: Flow) => Flow) => {
       const base = current.current;
@@ -218,9 +267,26 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     [schedule],
   );
 
+  /**
+   * SM-7: a change of the chapters' sections (an edge pulled) as one undo
+   * step. Undo puts the outline back when nothing changed it since.
+   */
+  const step = (label: string, change: (f: Flow) => Flow | null): boolean => {
+    const base = current.current;
+    if (!base || readOnly) return false;
+    const next = change(base);
+    if (!next) return false;
+    const before = composeFlow(base, orderRef.current);
+    const after = composeFlow(next, orderRef.current);
+    if (sameState(before, after)) return false;
+    edit(() => next);
+    undo.record({ label, undo: [outlineOp(after, before)], redo: [outlineOp(before, after)] });
+    return true;
+  };
+
   /** After a restore the stored state is the new truth. */
   const replace = useCallback((r: SceneOutlineState) => {
-    saved.current = { text: r.text, ranges: r.ranges, breaks: r.breaks };
+    saved.current = stateOf(r);
     current.current = splitFlow(saved.current, orderRef.current);
     setFlow(current.current);
     setStatus('saved');
@@ -243,7 +309,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     };
   };
 
-  return { flow, status, error, saves, edit, save, replace, splitInto };
+  return { flow, status, error, saves, edit, step, save, replace, splitInto };
 }
 
 /** Series tokens the chapters cycle through, in reading order. */
@@ -253,25 +319,33 @@ const TINTS = ['series-1', 'series-2', 'series-3', 'series-4'];
 const asText = (lines: readonly string[]) => lines.join('\n');
 const asLines = (text: string) => (text === '' ? [] : text.split('\n'));
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** A bar or an edge being pulled with the pointer. */
+type Grab =
+  | { mode: 'move'; id: string; startY: number; dy: number; target: string | null }
+  | { mode: 'start' | 'end'; id: string; by: number; guide: number | null };
+
 /**
- * PL-5 (A36, A37): the scene outline as one flow. The chapters are headings in
- * the text, in reading order, each with its title and story year editable in
- * place, the era and the world events of that year, and its own scenes below
- * it; between two chapters a line says how much time passes and what happens
- * in the world meanwhile. Everything scrolls together.
+ * SM-7: the Outline. Two connected panels that scroll as one: on the left the
+ * scene text (PL-5 editing rules) with a year field beside every scene
+ * (SM-5); on the right one bar per chapter in reading order, beside the lines
+ * of its section. Pulling a bar's top or bottom edge moves where the chapter
+ * starts or ends; dragging a bar past a neighbour swaps the two chapters and
+ * their scenes; from a focused bar the arrows swap it, Shift with the arrows
+ * moves its end and Alt its start.
  */
-export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
+export function SceneOutline({ onOpen }: { onOpen: Open }) {
   const { version } = useStore();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
   const story = useStoryTime();
-  const world = useWorld();
   const [outline, setOutline] = useState<Outline | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<string | null>(null);
-  const [titleFocus, setTitleFocus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [grab, setGrab] = useState<Grab | null>(null);
+  const [refocus, setRefocus] = useState<string | null>(null);
   const areas = useRef(new Map<string, HTMLTextAreaElement>());
+  const board = useRef<HTMLDivElement | null>(null);
   const jumpId = useId();
 
   useEffect(() => {
@@ -288,20 +362,20 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
     () => (outline?.rows ?? []).filter((r): r is ChapterRow => r.kind === 'chapter'),
     [outline],
   );
+  const partLabel = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of outline?.rows ?? []) if (r.kind === 'part') m.set(r.id, r.label);
+    return m;
+  }, [outline]);
   const order = useMemo(() => (outline ? chapters.map((c) => c.id) : null), [outline, chapters]);
   const scene = useSceneDoc(order, ro.off);
   const flow = scene.flow;
   const tintOf = (id: string) => TINTS[(order?.indexOf(id) ?? 0) % TINTS.length] ?? 'series-1';
 
-  const linesOf = (key: string): string[] =>
-    !flow ? [] : key === LEAD ? flow.lead : (flow.bodies[key] ?? []);
-  const setSection = (key: string, lines: string[]) =>
-    scene.edit((f) =>
-      key === LEAD ? { ...f, lead: lines } : { ...f, bodies: { ...f.bodies, [key]: lines } },
-    );
+  const linesOf = (key: string): string[] => (flow ? sectionOf(flow, key).lines : []);
 
   // The scene numbers run on across the sections, in the order they are shown.
-  const showLead = flow !== null && (flow.lead.length > 0 || chapters.length === 0);
+  const showLead = flow !== null && (flow.lead.lines.length > 0 || chapters.length === 0);
   const keys = [...(showLead ? [LEAD] : []), ...(order ?? [])];
   const firstScene = new Map<string, number>();
   let total = 0;
@@ -309,6 +383,15 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
     firstScene.set(k, total + 1);
     total += sectionScenes(linesOf(k));
   }
+
+  // A bar moved from the keyboard keeps the focus once the chapters come back in their new order.
+  useEffect(() => {
+    if (!refocus) return;
+    const el = board.current?.querySelector<HTMLElement>(
+      `[data-testid="chapter-bar"][data-chapter="${CSS.escape(refocus)}"]`,
+    );
+    if (el && document.activeElement !== el) el.focus();
+  }, [refocus, outline, flow]);
 
   const focusSection = (key: string, at: 'start' | 'end') => {
     const el = areas.current.get(key);
@@ -318,25 +401,6 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
     el.setSelectionRange(pos, pos);
   };
   const neighbour = (key: string, by: -1 | 1) => keys[keys.indexOf(key) + by] ?? null;
-
-  /** The section above a chapter: the chapter before it, or the lead. */
-  const aboveKey = (id: string) => {
-    const i = order?.indexOf(id) ?? -1;
-    return i > 0 ? (order?.[i - 1] ?? LEAD) : LEAD;
-  };
-  const shiftStart = (id: string, by: -1 | 1) => {
-    const above = aboveKey(id);
-    const r =
-      by < 0
-        ? takeSceneAbove(linesOf(above), linesOf(id))
-        : giveFirstScene(linesOf(above), linesOf(id));
-    if (!r) return;
-    scene.edit((f) => {
-      const bodies = { ...f.bodies, [id]: r.own };
-      if (above === LEAD) return { lead: r.above, bodies };
-      return { ...f, bodies: { ...bodies, [above]: r.above } };
-    });
-  };
 
   /**
    * Cmd+Enter in the text: a new chapter starts at the line with the caret,
@@ -350,75 +414,141 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
       outline?.rows.find((r) => r.kind === 'part' && !r.missing)?.id ??
       chapters[0]?.partId;
     if (!partId) {
-      setNotice('Add a book and a part in the year grid first; then chapters can start here.');
+      setNotice('This bible has no part yet, so a chapter cannot start here.');
       return;
     }
     const year = row?.storyYear ?? story.year;
     const arrived = scene.splitInto((f, id) => {
-      const from = key === LEAD ? f.lead : (f.bodies[key] ?? []);
-      const keep = from.slice(0, line);
-      const moved = from.slice(line);
-      const bodies = { ...f.bodies, [id]: moved };
-      return key === LEAD ? { lead: keep, bodies } : { ...f, bodies: { ...bodies, [key]: keep } };
+      const from = sectionOf(f, key);
+      const keep = sliceSection(from, 0, line);
+      const moved = sliceSection(from, line);
+      return withSection(withSection(f, key, keep), id, moved);
     });
     const madeId = await writes.newChapter(partId, 'New chapter', year, row?.id);
     arrived(madeId ?? null);
-    if (madeId) setTitleFocus(madeId);
+    if (madeId) setRefocus(madeId);
   };
 
-  const inPart = (partId: string) => chapters.filter((c) => c.partId === partId);
-  /** Dropped on a heading: the chapter, with its scenes, takes that chapter's place (PL-3). */
-  const dropOn = (target: ChapterRow) => {
-    const moved = chapters.find((c) => c.id === dragging);
-    if (!moved || moved.id === target.id) return;
-    const toIndex = inPart(target.partId).findIndex((c) => c.id === target.id);
-    void writes.reorder(
-      { kind: 'chapters', groupId: target.partId, movedId: moved.id, toIndex },
-      `Moved ${moved.title}`,
+  const placed = chapters.map((c) => ({ id: c.id, partId: c.partId }));
+  /** SM-7: the chapter goes just past `targetId`, its scenes with it; one undo step. */
+  const moveChapter = (id: string, targetId: string) => {
+    const req = moveOnto(placed, id, targetId);
+    const row = chapters.find((c) => c.id === id);
+    const target = chapters.find((c) => c.id === targetId);
+    if (!req || !row || !target) return;
+    setRefocus(id);
+    void writes.reorder(req, `Swapped ${row.title} with ${target.title}`);
+  };
+  const swap = (id: string, by: -1 | 1) => {
+    const other = neighbourOf(placed, id, by);
+    if (other) moveChapter(id, other);
+  };
+  const pullEdge = (id: string, edge: 'start' | 'end', by: number) => {
+    const row = chapters.find((c) => c.id === id);
+    if (!row || by === 0) return;
+    scene.step(
+      `Moved where ${row.title} ${edge === 'start' ? 'starts' : 'ends'}`,
+      (f) => order && moveEdge(f, order, id, edge, by),
     );
   };
-  /** Dropped on a part: first in another part, last in its own. */
-  const dropOnPart = (partId: string) => {
-    const moved = chapters.find((c) => c.id === dragging);
-    if (!moved) return;
-    const same = moved.partId === partId;
-    void writes.reorder(
-      {
-        kind: 'chapters',
-        groupId: partId,
-        movedId: moved.id,
-        toIndex: same ? inPart(partId).length - 1 : 0,
-      },
-      `Moved ${moved.title}`,
+
+  // ---------- pointer drags on the track ----------
+
+  /** The scene lines of the board, top to bottom, with their middles. */
+  const sceneBoxes = () => {
+    const el = board.current;
+    if (!el) return [];
+    const base = el.getBoundingClientRect().top;
+    return [...el.querySelectorAll<HTMLElement>('.sl[data-scene]')].map((n) => {
+      const r = n.getBoundingClientRect();
+      return { scene: Number(n.dataset.scene), top: r.top - base, bottom: r.bottom - base };
+    });
+  };
+  /** How many scenes sit above a point on the board, by their middles, and where that boundary is drawn. */
+  const boundaryAt = (clientY: number) => {
+    const el = board.current;
+    const boxes = sceneBoxes();
+    if (!el || boxes.length === 0) return null;
+    const y = clientY - el.getBoundingClientRect().top;
+    const above = boxes.filter((b) => (b.top + b.bottom) / 2 < y);
+    const guide = above.at(-1)?.bottom ?? boxes[0]?.top ?? 0;
+    return { count: above.length, guide };
+  };
+  const edgeBy = (id: string, edge: 'start' | 'end', clientY: number) => {
+    const at = boundaryAt(clientY);
+    if (!at) return { by: 0, guide: null };
+    const first = firstScene.get(id) ?? 1;
+    const scenes = sectionScenes(linesOf(id));
+    const by = edge === 'start' ? at.count + 1 - first : at.count - (first + scenes - 1);
+    return { by, guide: at.guide };
+  };
+  /** The chapter whose bar is under a point, leaving out the bar being dragged. */
+  const barAt = (clientY: number, skip: string): string | null => {
+    const el = board.current;
+    if (!el) return null;
+    for (const bar of el.querySelectorAll<HTMLElement>('[data-testid="chapter-bar"]')) {
+      if (bar.dataset.chapter === skip) continue;
+      const r = bar.getBoundingClientRect();
+      if (clientY >= r.top && clientY <= r.bottom) return bar.dataset.chapter ?? null;
+    }
+    return null;
+  };
+
+  const grabRef = useRef<Grab | null>(null);
+  const changeGrab = (g: Grab | null) => {
+    grabRef.current = g;
+    setGrab(g);
+  };
+  /** What a drag does when it ends, as of the latest render. */
+  const act = useRef({ edgeBy, barAt, moveChapter, pullEdge });
+  useLayoutEffect(() => {
+    act.current = { edgeBy, barAt, moveChapter, pullEdge };
+  });
+  const beginGrab = (e: ReactPointerEvent, id: string, mode: Grab['mode']) => {
+    if (ro.off || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).closest<HTMLElement>('.cbar')?.focus({ preventScroll: true });
+    setRefocus(null);
+    changeGrab(
+      mode === 'move'
+        ? { mode, id, startY: e.clientY, dy: 0, target: null }
+        : { mode, id, by: 0, guide: null },
     );
   };
-  const move = (row: ChapterRow, by: -1 | 1) => {
-    const siblings = inPart(row.partId);
-    const to = siblings.findIndex((s) => s.id === row.id) + by;
-    if (to < 0 || to >= siblings.length) return;
-    void writes.reorder(
-      { kind: 'chapters', groupId: row.partId, movedId: row.id, toIndex: to },
-      `Moved ${row.title} ${by < 0 ? 'earlier' : 'later'}`,
-    );
-  };
-  const drag = {
-    start: (e: DragEvent, row: ChapterRow) => {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData(CHAPTER_MIME, row.id);
-      e.dataTransfer.setData('text/plain', row.title);
-      setDragging(row.id);
-    },
-    end: () => {
-      setDragging(null);
-      setOver(null);
-    },
-    over: (e: DragEvent, key: string) => {
-      if (!dragging || key === dragging) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setOver(key);
-    },
-  };
+  useEffect(() => {
+    if (!grab) return;
+    const move = (e: PointerEvent) => {
+      const g = grabRef.current;
+      if (!g) return;
+      const a = act.current;
+      if (g.mode === 'move') {
+        const target = a.barAt(e.clientY, g.id);
+        changeGrab({ ...g, dy: e.clientY - g.startY, target });
+      } else changeGrab({ ...g, ...a.edgeBy(g.id, g.mode, e.clientY) });
+    };
+    const up = (e: PointerEvent) => {
+      const g = grabRef.current;
+      changeGrab(null);
+      if (!g) return;
+      const a = act.current;
+      if (g.mode === 'move') {
+        const target = a.barAt(e.clientY, g.id);
+        if (target) a.moveChapter(g.id, target);
+      } else a.pullEdge(g.id, g.mode, a.edgeBy(g.id, g.mode, e.clientY).by);
+    };
+    const cancel = () => changeGrab(null);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+    // The listeners read the drag and the handlers through refs; they only need to exist while it lasts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grab !== null]);
 
   const label = {
     loading: 'Loading',
@@ -433,7 +563,10 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
       if (el) areas.current.set(key, el);
       else areas.current.delete(key);
     },
-    onLines: setSection,
+    onLines: (key, lines) =>
+      scene.edit((f) => withSection(f, key, retext(sectionOf(f, key), lines))),
+    onYear: (key, line, year) =>
+      scene.edit((f) => withSection(f, key, setSceneYear(sectionOf(f, key), line, year))),
     onBlur: () => void scene.save(),
     onLeave: (key, by) => {
       const next = neighbour(key, by);
@@ -441,20 +574,18 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
     },
     onNewChapter: (key, line) => void newChapterAt(key, line),
   };
-  // The year of the chapter before each one, for the time between them.
-  const yearBefore = new Map<string, number | null>();
-  let lastYear: number | null = null;
-  for (const c of chapters) {
-    yearBefore.set(c.id, lastYear);
-    if (c.storyYear !== null) lastYear = c.storyYear;
-  }
+
+  const guide = grab && grab.mode !== 'move' ? grab.guide : null;
   return (
     <div className="ws-tree-area scenes" data-testid="outline-view">
-      <section className="tree-main stack" aria-labelledby="outline-title">
+      <section
+        className="tree-main stack"
+        aria-labelledby="outline-title"
+        data-testid="outline-scroll"
+      >
         <div className="list-head scene-head">
           <h2 id="outline-title">Outline</h2>
           <span className="row tight">
-            {toggle}
             {chapters.length > 1 && (
               <>
                 <label htmlFor={jumpId} className="sr-only">
@@ -465,8 +596,8 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
                   value=""
                   data-testid="scene-jump"
                   onChange={(e) => {
-                    document
-                      .querySelector(`[data-head="${CSS.escape(e.target.value)}"]`)
+                    board.current
+                      ?.querySelector(`[data-row="${CSS.escape(e.target.value)}"]`)
                       ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
                   }}
                 >
@@ -481,7 +612,7 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
             )}
             <UndoButtons />
             <span className="scene-status" data-testid="scene-count">
-              {flow === null ? '' : `${total} ${total === 1 ? 'scene' : 'scenes'}`}
+              {flow === null ? '' : plural(total, 'scene', 'scenes')}
             </span>
             <span
               className="scene-status"
@@ -494,10 +625,13 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
           </span>
         </div>
         <p className="example-note">
-          Scenes in page order, with each chapter as a heading above its own scenes. Enter adds the
-          next scene, Cmd+] indents, Cmd+[ outdents, and Cmd+Enter starts a new chapter at the line
-          you are on. Drag a chapter&apos;s grip onto another chapter to move it with its scenes.
-          The arrows on a heading move where the chapter starts by one scene.
+          Scenes in page order on the left, each with its year; the chapters on the right, each bar
+          beside its scenes. Enter adds the next scene, Cmd+] indents, Cmd+[ outdents, and Cmd+Enter
+          starts a new chapter at the line you are on. Type a year beside a scene to set it; a faded
+          year comes from the scene above or the chapter. Pull a bar&apos;s top or bottom edge to
+          move where the chapter starts or ends, or drag the bar past another to swap them. On a
+          focused bar, Up and Down swap it, Shift with the arrows moves its end, and Alt with the
+          arrows moves its start.
         </p>
         {(scene.error ?? writes.error ?? notice) && (
           <p className="callout crit" role="alert">
@@ -507,91 +641,68 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
         {!outline || !flow ? (
           <p aria-live="polite">Loading the outline.</p>
         ) : (
-          <div className="scene-flow" data-testid="scene-outline">
-            {showLead && (
-              <div className="scene-sec lead" data-section={LEAD}>
-                {chapters.length > 0 && (
-                  <div className="scene-lead-head">Before the first chapter</div>
-                )}
-                <SectionText
-                  sectionKey={LEAD}
-                  lines={linesOf(LEAD)}
-                  firstScene={firstScene.get(LEAD) ?? 1}
-                  disabled={ro.off}
-                  tip={ro.tip}
-                  handlers={handlers}
-                  tall={chapters.length === 0}
-                />
-              </div>
-            )}
-            {outline.rows.map((row) => {
-              if (row.kind !== 'chapter') {
-                const partDrop = row.kind === 'part' && !row.missing;
-                return (
-                  <div
-                    key={`${row.kind}:${row.id}`}
-                    className={`scene-group ${row.kind}${over === `part:${row.id}` ? ' over' : ''}`}
-                    onDragOver={partDrop ? (e) => drag.over(e, `part:${row.id}`) : undefined}
-                    onDragLeave={() => setOver(null)}
-                    onDrop={
-                      partDrop
-                        ? (e) => {
-                            e.preventDefault();
-                            setOver(null);
-                            dropOnPart(row.id);
-                          }
-                        : undefined
-                    }
-                  >
-                    {row.label}
-                  </div>
-                );
-              }
-              const gapFrom = yearBefore.get(row.id) ?? null;
+          <div
+            ref={board}
+            className={`scene-board${grab ? ' grabbing' : ''}`}
+            data-testid="scene-outline"
+          >
+            <div className="sb-colhead">Scenes</div>
+            <div className="sb-colhead track">Chapters</div>
+            {keys.map((key) => {
+              const row = key === LEAD ? null : (chapters.find((c) => c.id === key) ?? null);
+              const sec = sectionOf(flow, key);
+              const years = shownYears(sec, row?.storyYear ?? null);
+              const tint = row ? tintOf(row.id) : 'lead';
+              const moving = grab?.mode === 'move' && grab.id === key ? grab : null;
+              const scenes = sectionScenes(sec.lines);
+              const limits = row && order ? edgeLimits(flow, order, row.id) : null;
               return (
-                <div
-                  key={row.id}
-                  className={`scene-sec ${tintOf(row.id)}${dragging === row.id ? ' dragging' : ''}`}
-                  data-section={row.id}
-                >
-                  {gapFrom !== null && row.storyYear !== null && (
-                    <TimeGap from={gapFrom} to={row.storyYear} world={world} onOpen={onOpen} />
-                  )}
-                  <ChapterHead
-                    row={row}
-                    scenes={sectionScenes(linesOf(row.id))}
-                    world={world}
-                    over={over === row.id}
-                    focusTitle={titleFocus === row.id}
-                    canEarlier={sectionScenes(linesOf(aboveKey(row.id))) > 0}
-                    canLater={sectionScenes(linesOf(row.id)) > 0}
-                    onFocused={() => setTitleFocus(null)}
-                    onShift={(by) => shiftStart(row.id, by)}
-                    onMove={(by) => move(row, by)}
-                    onEnterText={() => focusSection(row.id, 'start')}
-                    onOpen={onOpen}
-                    onDragStart={(e) => drag.start(e, row)}
-                    onDragEnd={drag.end}
-                    onDragOver={(e) => drag.over(e, row.id)}
-                    onDragLeave={() => setOver((o) => (o === row.id ? null : o))}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setOver(null);
-                      dropOn(row);
-                    }}
-                  />
+                <div key={key} className={`sb-row ${tint}`} data-row={key}>
                   <SectionText
-                    sectionKey={row.id}
-                    lines={linesOf(row.id)}
-                    firstScene={firstScene.get(row.id) ?? 1}
+                    sectionKey={key}
+                    lines={sec.lines}
+                    years={years}
+                    firstScene={firstScene.get(key) ?? 1}
                     disabled={ro.off}
                     tip={ro.tip}
                     handlers={handlers}
-                    chapter={row.readingOrder}
+                    chapter={row?.readingOrder}
+                    tall={chapters.length === 0}
                   />
+                  <div className="sb-track">
+                    {row ? (
+                      <ChapterBar
+                        row={row}
+                        part={partLabel.get(row.partId) ?? ''}
+                        scenes={scenes}
+                        firstScene={firstScene.get(key) ?? 1}
+                        canSwap={{
+                          up: neighbourOf(placed, row.id, -1) !== null,
+                          down: neighbourOf(placed, row.id, 1) !== null,
+                        }}
+                        limits={limits}
+                        dy={moving?.dy ?? 0}
+                        moving={moving !== null}
+                        target={grab?.mode === 'move' && grab.target === row.id}
+                        pulling={
+                          grab && grab.mode !== 'move' && grab.id === row.id ? grab.mode : null
+                        }
+                        onGrab={(e, mode) => beginGrab(e, row.id, mode)}
+                        onSwap={(by) => swap(row.id, by)}
+                        onEdge={(edge, by) => pullEdge(row.id, edge, by)}
+                        onFocusBar={() => setRefocus(null)}
+                        onOpen={onOpen}
+                      />
+                    ) : (
+                      <div className="sb-none">Not in a chapter</div>
+                    )}
+                  </div>
                 </div>
               );
             })}
+            {guide !== null && (
+              <div className="sb-guide" style={{ top: guide }} aria-hidden="true" />
+            )}
           </div>
         )}
         <Versions saves={scene.saves} onRestore={scene.replace} />
@@ -600,7 +711,7 @@ export function SceneOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Op
   );
 }
 
-/** Undo and Redo for the renames, year changes and moves made here (ED-3). */
+/** Undo and Redo for the renames, year changes, moves and edges made here (ED-3). */
 function UndoButtons() {
   const undo = useUndo();
   return (
@@ -627,105 +738,46 @@ function UndoButtons() {
   );
 }
 
-/**
- * A37: between two chapters, the time that passes and the world events that
- * begin in it, each opening its event.
- */
-function TimeGap(props: { from: number; to: number; world: World | null; onOpen: Open }) {
-  const between = props.world ? eventsBetween(props.world.events, props.from, props.to) : [];
-  const back = props.to < props.from;
-  return (
-    <div className={`scene-gap${back ? ' back' : ''}`} data-testid="scene-gap">
-      <span className="scene-gap-years">{yearGap(props.from, props.to)}</span>
-      {between.length > 0 && (
-        <span className="scene-gap-events">
-          <span>Meanwhile:</span>
-          <EventChips events={between} withYear onOpen={props.onOpen} limit={4} />
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** World events as chips that open the event; past `limit` the rest wait behind a More button. */
-function EventChips(props: {
-  events: World['events'];
-  withYear?: boolean;
-  limit: number;
-  onOpen: Open;
-}) {
-  const [all, setAll] = useState(false);
-  const shown = all ? props.events : props.events.slice(0, props.limit);
-  const rest = props.events.length - shown.length;
-  return (
-    <span className="we-chips">
-      {shown.map((e) => (
-        <button
-          key={e.id}
-          type="button"
-          className="we-chip"
-          data-testid="scene-event"
-          title={`${e.title}, ${e.startYear === e.endYear ? e.startYear : `${e.startYear} to ${e.endYear}`}`}
-          onClick={() => props.onOpen('worldEvents', e.id)}
-        >
-          {props.withYear && <span className="num">{e.startYear} </span>}
-          <Zh text={e.title} actions={false} />
-        </button>
-      ))}
-      {rest > 0 && (
-        <button type="button" className="link-btn" onClick={() => setAll(true)}>
-          {rest} more
-        </button>
-      )}
-    </span>
-  );
-}
-
-interface HeadProps {
+interface BarProps {
   row: ChapterRow;
+  part: string;
   scenes: number;
-  world: World | null;
-  over: boolean;
-  focusTitle: boolean;
-  canEarlier: boolean;
-  canLater: boolean;
-  onFocused: () => void;
-  onShift: (by: -1 | 1) => void;
-  onMove: (by: -1 | 1) => void;
-  onEnterText: () => void;
+  firstScene: number;
+  canSwap: { up: boolean; down: boolean };
+  limits: ReturnType<typeof edgeLimits> | null;
+  dy: number;
+  moving: boolean;
+  target: boolean;
+  pulling: 'start' | 'end' | null;
+  onGrab: (e: ReactPointerEvent, mode: Grab['mode']) => void;
+  onSwap: (by: -1 | 1) => void;
+  onEdge: (edge: 'start' | 'end', by: -1 | 1) => void;
+  onFocusBar: () => void;
   onOpen: Open;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-  onDragOver: (e: DragEvent) => void;
-  onDragLeave: () => void;
-  onDrop: (e: DragEvent) => void;
 }
 
 /**
- * A chapter heading in the flow: grip, number, title and story year in place,
- * scene count, the moves of its start, and the world of its year (era and
- * the events going on). Alt+Up and Alt+Down on the title move the chapter with
- * its scenes; Enter on the title goes down into its first scene.
+ * SM-7: one chapter's bar, as tall as its section, in its colour, with its
+ * name (renamed in place), part, scene count and story year. Drag the bar to
+ * swap it with another; pull its top or bottom edge to move where it starts
+ * or ends. Focused: Up and Down swap it with its neighbour, Shift with the
+ * arrows moves its end a scene, Alt with the arrows its start.
  */
-function ChapterHead(p: HeadProps) {
+function ChapterBar(p: BarProps) {
   const { row } = p;
   const stored = useEntries('chapters');
   const writes = useOutlineWrites();
   const doc = stored.find((c) => c._id === row.id);
-  const year = row.storyYear;
-  const era = p.world && year !== null ? eraAt(p.world.eras, year) : null;
-  const events = p.world && year !== null ? eventsIn(p.world.events, year) : [];
+  const title = doc ? entryTitle(doc) : row.title;
+  const off = writes.ro.off;
 
-  const rename = async (title: string): Promise<boolean> => {
-    const next = title.trim();
-    if (!next) return false;
-    const ok = await writes.edit(
+  const rename = async (next: string) => {
+    await writes.edit(
       'chapters',
       row.id,
       { title: next },
       `Renamed chapter ${row.readingOrder} to ${next}`,
     );
-    return ok === true;
   };
 
   /** The story year is the primary strand's start year; moving it moves that strand (TM-5). */
@@ -746,111 +798,104 @@ function ChapterHead(p: HeadProps) {
     return ok === true;
   };
 
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || off) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    const by = e.key === 'ArrowUp' ? -1 : 1;
+    if (e.shiftKey && !e.altKey) p.onEdge('end', by);
+    else if (e.altKey && !e.shiftKey) p.onEdge('start', by);
+    else if (!e.shiftKey && !e.altKey) p.onSwap(by);
+  };
+
+  const span =
+    p.scenes === 0
+      ? 'no scenes'
+      : p.scenes === 1
+        ? `scene ${p.firstScene}`
+        : `scenes ${p.firstScene} to ${p.firstScene + p.scenes - 1}`;
+  const grabBody = (e: ReactPointerEvent) => {
+    if ((e.target as HTMLElement).closest('input, button, select, a')) return;
+    p.onGrab(e, 'move');
+  };
   return (
     <div
-      className={`scene-ch${p.over ? ' over' : ''}`}
-      data-head={row.id}
+      className={`cbar${p.moving ? ' moving' : ''}${p.target ? ' target' : ''}${p.pulling ? ` pulling-${p.pulling}` : ''}${off ? ' off' : ''}`}
+      style={p.dy ? { transform: `translateY(${p.dy}px)` } : undefined}
+      role="group"
+      tabIndex={0}
+      aria-roledescription="chapter bar"
+      aria-label={`Chapter ${row.readingOrder}, ${title}, ${span}`}
+      aria-keyshortcuts="ArrowUp ArrowDown Shift+ArrowUp Shift+ArrowDown Alt+ArrowUp Alt+ArrowDown"
+      title="Up and Down swap it with its neighbour. Shift with the arrows moves its end, Alt its start."
+      data-testid="chapter-bar"
       data-chapter={row.id}
-      data-testid="scene-chapter"
-      onDragOver={p.onDragOver}
-      onDragLeave={p.onDragLeave}
-      onDrop={p.onDrop}
+      onKeyDown={onKeyDown}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) p.onFocusBar();
+      }}
+      onPointerDown={grabBody}
     >
-      <div className="scene-ch-main">
-        <span
-          className="ch-grip"
-          role="img"
-          aria-label={`Drag chapter ${row.readingOrder}`}
-          title="Drag onto another chapter to move this one there, with its scenes"
-          draggable={!writes.ro.off}
-          data-testid="chapter-grip"
-          onDragStart={p.onDragStart}
-          onDragEnd={p.onDragEnd}
-        />
-        <span className="scene-ch-no">Ch {row.readingOrder}</span>
-        <TitleInput
-          row={row}
-          title={doc ? entryTitle(doc) : row.title}
-          disabled={writes.ro.off}
-          tip={writes.ro.tip}
-          autoFocus={p.focusTitle}
-          onFocused={p.onFocused}
-          onRename={rename}
-          onNext={p.onEnterText}
-          onMove={p.onMove}
-        />
-        <span className="scene-ch-year">
-          <span className="ch-label">Year</span>
-          <NumberField
-            label={`Story year of chapter ${row.readingOrder}`}
-            testId="chapter-year"
-            value={year}
-            min={-10000}
-            max={10000}
-            width="5.5em"
-            disabled={writes.ro.off}
-            tip={writes.ro.tip}
-            onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(y))}
-          />
+      <span
+        className="cbar-edge top"
+        aria-hidden="true"
+        title="Pull to move where this chapter starts"
+        data-testid="bar-start"
+        onPointerDown={(e) => p.onGrab(e, 'start')}
+      />
+      <span className="cbar-main">
+        <span className="cbar-line">
+          <span className="cbar-no">Ch {row.readingOrder}</span>
+          <InlineName
+            value={title}
+            label={`Title of chapter ${row.readingOrder}`}
+            onSave={rename}
+            disabled={off}
+            className="cbar-title"
+            testId="chapter-title"
+          >
+            <Zh text={title} actions={false} />
+          </InlineName>
         </span>
-        <span className="scene-ch-count" data-testid="chapter-scenes">
-          {p.scenes} {p.scenes === 1 ? 'scene' : 'scenes'}
-        </span>
-        <span className="row tight scene-ch-shift" role="group" aria-label="Where it starts">
+        {p.part && (
+          <span className="cbar-line cbar-sub" data-testid="chapter-part">
+            {p.part}
+          </span>
+        )}
+        <span className="cbar-line cbar-sub">
+          <span data-testid="chapter-scenes">{plural(p.scenes, 'scene', 'scenes')}</span>
+          <span className="cbar-year">
+            <span>Year</span>
+            <NumberField
+              label={`Story year of chapter ${row.readingOrder}`}
+              testId="chapter-year"
+              value={row.storyYear}
+              min={MIN_YEAR}
+              max={MAX_YEAR}
+              width="5.2em"
+              disabled={off}
+              tip={writes.ro.tip}
+              onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(y))}
+            />
+          </span>
           <button
             type="button"
-            className="btn small"
-            disabled={writes.ro.off || !p.canEarlier}
-            {...writes.ro.tip}
-            title="Start one scene earlier: take the last scene of the section above"
-            aria-label={`Start chapter ${row.readingOrder} one scene earlier`}
-            data-testid="chapter-earlier"
-            onClick={() => p.onShift(-1)}
+            className="link-btn"
+            onClick={() => p.onOpen('chapters', row.id)}
+            data-testid="chapter-open"
           >
-            ↑ Scene
-          </button>
-          <button
-            type="button"
-            className="btn small"
-            disabled={writes.ro.off || !p.canLater}
-            {...writes.ro.tip}
-            title="Start one scene later: hand the first scene to the section above"
-            aria-label={`Start chapter ${row.readingOrder} one scene later`}
-            data-testid="chapter-later"
-            onClick={() => p.onShift(1)}
-          >
-            ↓ Scene
+            Open
           </button>
         </span>
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => p.onOpen('chapters', row.id)}
-          data-testid="chapter-open"
-        >
-          Open
-        </button>
-      </div>
-      {year !== null && (era || events.length > 0) && (
-        <div className="scene-world" data-testid="scene-world">
-          {era && (
-            <button
-              type="button"
-              className="era-chip"
-              title={`${era.name}, ${era.startYear} to ${era.endYear}`}
-              onClick={() => p.onOpen('eraStates', era.id)}
-            >
-              {era.name}
-            </button>
-          )}
-          {events.length > 0 && (
-            <>
-              <span className="scene-world-label">In the world in {year}:</span>
-              <EventChips events={events} limit={3} onOpen={p.onOpen} />
-            </>
-          )}
-        </div>
-      )}
+      </span>
+      <span
+        className="cbar-edge bottom"
+        aria-hidden="true"
+        title="Pull to move where this chapter ends"
+        data-testid="bar-end"
+        onPointerDown={(e) => p.onGrab(e, 'end')}
+      />
     </div>
   );
 }
@@ -859,6 +904,7 @@ function ChapterHead(p: HeadProps) {
 interface SectionHandlers {
   register: (key: string, el: HTMLTextAreaElement | null) => void;
   onLines: (key: string, lines: string[]) => void;
+  onYear: (key: string, line: number, year: number | null) => void;
   onBlur: () => void;
   onLeave: (key: string, by: -1 | 1) => void;
   onNewChapter: (key: string, line: number) => void;
@@ -867,6 +913,7 @@ interface SectionHandlers {
 interface SectionProps {
   sectionKey: string;
   lines: string[];
+  years: (ShownYear | null)[];
   firstScene: number;
   chapter?: number;
   tall?: boolean;
@@ -876,11 +923,11 @@ interface SectionProps {
 }
 
 /**
- * One section of the flow: a textarea that grows with its text, over a
+ * One section of the text: a textarea that grows with its text, over a
  * backdrop that repeats the text invisibly in the same font and width so each
- * scene number sits beside its line even when the line wraps. Up on the first
- * line and Down on the last carry on into the next section, so the flow reads
- * and moves as one text.
+ * scene's number and year field sit beside its line even when the line
+ * wraps. Up on the first line and Down on the last carry on into the next
+ * section, so the text reads and moves as one.
  */
 function SectionText(p: SectionProps) {
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -946,15 +993,34 @@ function SectionText(p: SectionProps) {
   return (
     <div className={`scene-edit${p.tall ? ' tall' : ''}`}>
       <label htmlFor={id} className="sr-only">
-        {p.chapter !== undefined ? `Scenes of chapter ${p.chapter}` : 'Scene outline'}
+        {p.chapter !== undefined
+          ? `Scenes of chapter ${p.chapter}`
+          : 'Scenes before the first chapter'}
       </label>
-      <div className="scene-backdrop" aria-hidden="true" data-testid="scene-gutter">
+      <div className="scene-backdrop" data-testid="scene-gutter">
         {shown.map((line, i) => {
           const n = numbers[i] ?? null;
+          const scene = n === null ? null : p.firstScene + n - 1;
+          const year = p.years[i] ?? null;
           return (
-            <div key={i} className="sl" data-scene={n === null ? undefined : p.firstScene + n - 1}>
-              {n !== null && <span className="sl-no">{p.firstScene + n - 1}</span>}
-              <span className="sl-text">{line === '' ? '​' : line}</span>
+            <div key={i} className="sl" data-scene={scene ?? undefined}>
+              {scene !== null && (
+                <span className="sl-gutter">
+                  <span className="sl-no" aria-hidden="true">
+                    {scene}
+                  </span>
+                  <SceneYear
+                    scene={scene}
+                    shown={year}
+                    disabled={p.disabled}
+                    tip={p.tip}
+                    onCommit={(y) => h.onYear(key, i, y)}
+                  />
+                </span>
+              )}
+              <span className="sl-text" aria-hidden="true">
+                {line === '' ? '​' : line}
+              </span>
             </div>
           );
         })}
@@ -982,6 +1048,66 @@ function SectionText(p: SectionProps) {
         onBlur={h.onBlur}
       />
     </div>
+  );
+}
+
+/**
+ * SM-5: the year field beside a scene. Its own year shows plainly; an
+ * inherited one shows faded and dashed, as the field's placeholder, so typing
+ * sets the scene's own year and clearing the field returns it to inheritance.
+ */
+function SceneYear(props: {
+  scene: number;
+  shown: ShownYear | null;
+  disabled: boolean;
+  tip: { title?: string; 'aria-describedby'?: string };
+  onCommit: (year: number | null) => void;
+}) {
+  const own = props.shown?.own ? props.shown.year : null;
+  const inherited = props.shown && !props.shown.own ? props.shown.year : null;
+  const value = own === null ? '' : String(own);
+  const [draft, setDraft] = useState(value);
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    setDraft(value);
+  }
+  const commit = () => {
+    const t = draft.trim();
+    if (t === value) return;
+    if (t === '') return props.onCommit(null);
+    const n = Number(t);
+    if (Number.isInteger(n) && n >= MIN_YEAR && n <= MAX_YEAR) props.onCommit(n);
+    else setDraft(value);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      className={`sl-year${own === null ? ' inherited' : ''}`}
+      value={draft}
+      placeholder={inherited === null ? '' : String(inherited)}
+      disabled={props.disabled}
+      {...props.tip}
+      aria-label={
+        own === null
+          ? `Year of scene ${props.scene}${inherited === null ? '' : `, ${inherited} from above`}`
+          : `Year of scene ${props.scene}`
+      }
+      data-testid="scene-year"
+      data-own={own === null ? 'false' : 'true'}
+      data-year={own ?? inherited ?? ''}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          setDraft(value);
+        }
+      }}
+    />
   );
 }
 
@@ -1047,8 +1173,9 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
     >
       <summary>Versions{list ? ` (${list.length})` : ''}</summary>
       <p className="example-note">
-        Every change is kept. Edits within ten minutes of each other make one version. Restoring an
-        older version is itself a new version, so nothing is ever lost.
+        Every change is kept, with the years of the scenes. Edits within ten minutes of each other
+        make one version. Restoring an older version is itself a new version, so nothing is ever
+        lost.
       </p>
       {error && (
         <p className="callout crit" role="alert">
@@ -1073,7 +1200,7 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
                 {v.until !== v.at ? ` to ${when(v.until)}` : ''}
               </button>{' '}
               <span className="example-note">
-                {v.scenes} {v.scenes === 1 ? 'scene' : 'scenes'}, {v.chars} characters
+                {plural(v.scenes, 'scene', 'scenes')}, {v.chars} characters
                 {i === 0 ? ', current' : ''}
               </span>
               {picked?.id === v.id && (
@@ -1104,79 +1231,6 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
         </ul>
       )}
     </details>
-  );
-}
-
-interface TitleInputProps {
-  row: ChapterRow;
-  title: string;
-  disabled: boolean;
-  tip: { title?: string; 'aria-describedby'?: string };
-  autoFocus: boolean;
-  onFocused: () => void;
-  onRename: (title: string) => Promise<boolean>;
-  onNext: () => void;
-  onMove: (by: -1 | 1) => void;
-}
-
-/**
- * One chapter title: edits are written on Enter or when the field loses focus;
- * Enter then goes down into the chapter's scenes; Alt+Up and Alt+Down move the
- * chapter, with its scenes.
- */
-function TitleInput(p: TitleInputProps) {
-  const { row, title } = p;
-  const [draft, setDraft] = useState(title);
-  const [editing, setEditing] = useState(false);
-  const [seen, setSeen] = useState(title);
-  const el = useRef<HTMLInputElement | null>(null);
-  // A rename from elsewhere (undo, the editor) replaces a draft nobody is typing in.
-  if (seen !== title) {
-    setSeen(title);
-    if (!editing) setDraft(title);
-  }
-  useEffect(() => {
-    if (!p.autoFocus || !el.current) return;
-    el.current.focus();
-    el.current.select();
-    el.current.scrollIntoView({ block: 'center' });
-    p.onFocused();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.autoFocus]);
-
-  const commit = async () => {
-    setEditing(false);
-    if (draft.trim() === title) return;
-    const ok = await p.onRename(draft);
-    if (!ok) setDraft(title);
-  };
-
-  return (
-    <input
-      ref={el}
-      type="text"
-      className="ch-title"
-      value={draft}
-      disabled={p.disabled}
-      {...p.tip}
-      aria-label={`Title of chapter ${row.readingOrder}`}
-      data-testid="chapter-title"
-      onFocus={() => setEditing(true)}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(e) => {
-        if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-          e.preventDefault();
-          p.onMove(e.key === 'ArrowUp' ? -1 : 1);
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          void commit().then(p.onNext);
-        } else if (e.key === 'Escape') {
-          setDraft(title);
-          setEditing(false);
-        }
-      }}
-    />
   );
 }
 
