@@ -879,20 +879,14 @@ export const contract = {
     request: z.strictObject({ id: EntryId }),
     response: z.strictObject({ ancestors: z.array(z.string()), descendants: z.array(z.string()) }),
   },
-  /** Save the tree as an image or a PDF through a save dialog (FT-9). */
+  /** Save the tree as a PNG image through a save dialog (FT-9, A45). */
   'tree.export': {
     request: z.strictObject({
-      format: z.enum(['png', 'pdf']),
-      /** The tree as standalone SVG markup with its styles inlined. */
-      svg: z.string().min(1).max(30_000_000),
-      /** For PNG: the rasterized image as a base64 data URL. */
+      /** FT-9 (A45): the tree rasterized in the renderer, as a base64 PNG data URL. */
       png: z
         .string()
         .regex(/^data:image\/png;base64,/)
-        .max(60_000_000)
-        .optional(),
-      width: z.number().positive().max(100_000),
-      height: z.number().positive().max(100_000),
+        .max(60_000_000),
       fileName: z
         .string()
         .min(1)

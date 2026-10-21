@@ -28,6 +28,7 @@ import {
   screenTab,
   sectionList,
   setField,
+  setStoryYear,
   waitSaved,
   withoutSystem,
 } from '../e2e/helpers';
@@ -250,24 +251,20 @@ test('TM-1 TM-2 TM-4 the Story Time dialog: an age anchor gives the year, and th
 // ---------------------------------------------------------------------------
 // Family tree and time
 
-test('FT-5 FT-1 the tree shows ages for 2045, filters to one family, and the year control redraws it', async () => {
+test('FT-5 FT-1 the tree shows everyone with ages for 2045, and follows the story year', async () => {
   await rail(page, 'Family tree').click();
   await expect(page.getByTestId('tree-view')).toBeVisible();
-  await expect(page.getByTestId('tree-year')).toHaveValue('2045');
+  await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2045');
   const node = (id: string) => page.locator(`g.tnode[data-person="${id}"]`);
   await expect(node('H5')).toHaveAttribute('data-age', '14');
   await expect(node('H3')).toHaveAttribute('data-age', '60');
   await expect(node('H1')).toHaveAttribute('data-state', 'dead');
-  await page.getByLabel('Show').selectOption({ label: 'Zhou only' });
-  await expect(page.locator('g.tnode')).toHaveCount(6);
-  await page.getByLabel('Show').selectOption({ label: 'All families' });
+  // A45: one tree of every family, no filter, and the year comes from the story time.
   await expect(page.locator('g.tnode')).toHaveCount(13);
-  await page.getByTestId('tree-year').fill('2075');
-  await page.getByTestId('tree-year').press('Enter');
+  await setStoryYear(page, 2075);
   await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2075');
   await expect(node('Z5')).toHaveAttribute('data-age', '17');
-  await page.getByTestId('tree-year').fill('2045');
-  await page.getByTestId('tree-year').press('Enter');
+  await setStoryYear(page, 2045);
   await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2045');
 });
 
@@ -293,7 +290,7 @@ test('FT-9 the tree exports as a PNG image', async () => {
     (dialog as unknown as { showSaveDialog: () => Promise<unknown> }).showSaveDialog =
       async () => ({ canceled: false, filePath: f });
   }, png);
-  await page.getByRole('button', { name: 'Export PNG' }).click();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
   await expect(page.getByTestId('export-note')).toHaveText(`Saved ${png}.`);
   expect([...readFileSync(png).subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
 });
@@ -539,7 +536,7 @@ test('ARCH-8 Tide Lines is opened again from the Bibles screen, with its own tre
   await rail(page, 'Family tree').click();
   await expect(page.getByTestId('tree-view')).toBeVisible();
   await expect(page.locator('g.tnode')).toHaveCount(14);
-  await expect(page.getByTestId('tree-year')).toHaveValue('2045');
+  await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2045');
 });
 
 test('SM-8 WE-1 the world events grid shows the rows and a new event, and the category filter narrows the rows', async () => {

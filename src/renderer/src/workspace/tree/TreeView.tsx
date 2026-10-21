@@ -6,6 +6,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import { ulid } from 'ulid';
+import { entryTitle, fieldByName, manifests } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import type { Response } from '../../../../shared/ipc';
 import { lifeState, lifeYears } from '../../../../shared/domain/ages';
@@ -18,7 +19,6 @@ import {
   TreeActionError,
   assembleGraph,
   childrenOf,
-  filterPeople,
   hasBranch,
   hideCollapsed,
   layoutFromPositions,
@@ -27,13 +27,13 @@ import {
   planAddRelative,
   planLinkExisting,
   placeLayout,
+  relativesOf,
   treeEdges,
   treeNodeKey,
 } from '../../../../shared/domain/tree';
 import type {
   PlannedEntry,
   RelativeKind,
-  TreeFilter,
   TreeGraph,
   TreePerson,
 } from '../../../../shared/domain/tree';
@@ -44,7 +44,9 @@ import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { useGlossary } from '../Zh';
 import { zhHint } from '../../../../shared/domain/zh';
-import { EmbeddedEditor, TrashControls, UndoPanel } from '../editor';
+import { EmbeddedEditor, SaveState, TrashControls, UndoPanel, useAutosave } from '../editor';
+import { Field } from '../fields';
+import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
@@ -233,22 +235,20 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
 });
 
 /**
- * The family tree (FT-1 to FT-10): one SVG for every family, a year control
- * bound to the story time, filters, pan and zoom, collapse, export, in-tree
- * editing, and the FT-6 warnings. The layout and every age are pure code.
+ * The family tree (FT-1 to FT-11): one SVG of every family at the story year
+ * (A45: the status bar and the Story time dialog set the year), pan and zoom,
+ * collapse, PNG export, in-tree editing, and the FT-6 warnings in the
+ * inspector. The layout and every age are pure code.
  */
 export function TreeView(props: {
   onOpen: (collection: EntryCollection, id: string) => void;
   focus?: string;
 }) {
   const { version } = useStore();
-  const story = useStoryTime();
-  const year = story.year;
+  const { year } = useStoryTime();
   const families = useEntries('families');
   const glossary = useGlossary();
   const [data, setData] = useState<TreeData | null>(null);
-  const [filterKey, setFilterKey] = useState('all');
-  const [lineage, setLineage] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(props.focus ?? null);
   const [view, setView] = useState<View | null>(null);
@@ -266,8 +266,8 @@ export function TreeView(props: {
     error: string | null;
   } | null>(null);
   const [adding, setAdding] = useState<RelativeKind | null>(null);
-  /** What is typed in the year box while it is not a whole year yet, such as a blank. */
-  const [yearDraft, setYearDraft] = useState<string | null>(null);
+  /** A45: the legend overlay in the tree's bottom left corner, closed until asked for. */
+  const [legendOpen, setLegendOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   /** The tree and its inspector fill the screen; Escape (or the button) leaves. */
@@ -310,12 +310,6 @@ export function TreeView(props: {
     [data],
   );
 
-  const filter = useMemo<TreeFilter>(() => {
-    if (filterKey.startsWith('family:')) return { kind: 'family', familyId: filterKey.slice(7) };
-    if (filterKey === 'lineage' && lineage) return { kind: 'lineage', personId: lineage };
-    return { kind: 'all' };
-  }, [filterKey, lineage]);
-
   const saveSeq = useRef(0);
   const ro = useWriteGuard();
   const undo = useUndo();
@@ -337,11 +331,13 @@ export function TreeView(props: {
 
   const layout = useMemo(() => {
     if (!graph || !placed) return null;
-    const shown = hideCollapsed(graph, filterPeople(graph, filter), collapsed);
+    // FT-1 (A45): the tree always shows everyone; only collapsed branches are hidden.
+    const everyone = new Set(graph.people.map((p) => p.id));
+    const shown = hideCollapsed(graph, everyone, collapsed);
     const kept = new Map<string, { x: number; y: number }>();
     for (const [id, p] of placed.layout.nodes) if (shown.has(id)) kept.set(id, p);
     return layoutFromPositions(kept);
-  }, [graph, placed, filter, collapsed]);
+  }, [graph, placed, collapsed]);
 
   /** The layout with the dragged person where the pointer has them (FT-11). */
   const liveLayout = useMemo(() => {
@@ -468,11 +464,6 @@ export function TreeView(props: {
       fit();
     }
   }, [layout, fit]);
-
-  // A new filter shows a different set of people: fit them.
-  useEffect(() => {
-    fitted.current = false;
-  }, [filter]);
 
   const zoom = useCallback((factor: number, cx?: number, cy?: number) => {
     setView((v) => {
@@ -643,7 +634,14 @@ export function TreeView(props: {
     [graph],
   );
 
-  const exportAs = async (format: 'png' | 'pdf') => {
+  /** FT-6 (A45): the warnings show in the inspector while nobody is selected. */
+  const showWarnings = useCallback(() => {
+    setSelected(null);
+    setAdding(null);
+  }, []);
+
+  /** FT-9 (A45): one Export, always a PNG. */
+  const exportPng = async () => {
     setExportNote(null);
     const el = svg.current;
     if (!el) return;
@@ -662,16 +660,8 @@ export function TreeView(props: {
       }
       const fileName = `family-tree-${year}`;
       const scale = Math.min(2, 16_000 / Math.max(bbox.width, bbox.height));
-      const png =
-        format === 'png' ? await rasterize(markup, bbox.width, bbox.height, scale) : undefined;
-      const r = await call('tree.export', {
-        format,
-        svg: markup,
-        ...(png ? { png } : {}),
-        width: bbox.width,
-        height: bbox.height,
-        fileName,
-      });
+      const png = await rasterize(markup, bbox.width, bbox.height, scale);
+      const r = await call('tree.export', { png, fileName });
       setExportNote(
         r.saved
           ? { text: `Saved ${r.path ?? fileName}.`, bad: false }
@@ -682,317 +672,216 @@ export function TreeView(props: {
     }
   };
 
-  // The typed year commits on Enter or blur, never per keystroke (2045 must not set 2, 20, 204).
-  const commitYear = () => {
-    const t = yearDraft;
-    setYearDraft(null);
-    if (t !== null && /^-?\d{1,5}$/.test(t.trim())) story.setYear(Number(t));
-  };
-
-  const years = useMemo(() => {
-    const ys: number[] = [year];
-    for (const p of data?.people ?? []) {
-      for (const d of [p.birth, p.death]) if (d && 'year' in d) ys.push(d.year);
-    }
-    return { min: Math.min(...ys) - 5, max: Math.max(...ys) + 40 };
-  }, [data, year]);
-
-  const filterId = useId();
-  const personId = useId();
-  const rangeId = useId();
-  const yearId = useId();
-
   if (!data || !graph || !layout || !liveLayout || !edges) {
     return (
-      <div className="ws-tree-area">
+      <div className="ws-tree-area tree-screen">
         <p aria-live="polite">Loading the family tree.</p>
       </div>
     );
   }
   const linkClass = (t: string) => (LINK_STYLES.has(t) ? t : 'other');
   const unionClass = (t: string) => (UNION_STYLES.has(t) ? t : 'other');
-  const name = (id: string) => graph.byId.get(id)?.name ?? id;
 
   return (
-    <div className="ws-tree-area" data-testid="tree-view" ref={area}>
-      <section className="tree-main fill stack" aria-labelledby="tree-title">
-        <div className="tree-stage stack">
-          <div className="list-head">
-            <h2 id="tree-title">Family tree</h2>
-            <span className="example-note">
-              {layout.nodes.size} of {graph.people.length} people shown
-            </span>
-          </div>
-          <div className="tree-toolbar">
-            <div className="field">
-              <label htmlFor={filterId}>Show</label>
-              <select
-                id={filterId}
-                value={filterKey}
-                onChange={(e) => setFilterKey(e.target.value)}
-              >
-                <option value="all">All families</option>
-                {families.map((f) => (
-                  <option key={f._id} value={`family:${f._id}`}>
-                    {String(f.name)} only
-                  </option>
-                ))}
-                <option value="lineage">Ancestors and descendants of a person</option>
-              </select>
-            </div>
-            {filterKey === 'lineage' && (
-              <div className="field">
-                <label htmlFor={personId}>Person</label>
-                <select id={personId} value={lineage} onChange={(e) => setLineage(e.target.value)}>
-                  <option value="">Pick a person</option>
-                  {graph.people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className="field year-slider">
-              <label htmlFor={rangeId}>Year slider</label>
-              <input
-                id={rangeId}
-                type="range"
-                min={years.min}
-                max={years.max}
-                step={1}
-                value={year}
-                onChange={(e) => story.setYear(Number(e.target.value))}
-              />
-            </div>
-            <div className="field year-field">
-              <label htmlFor={yearId}>Year</label>
-              <input
-                id={yearId}
-                type="number"
-                className="num"
-                value={yearDraft ?? String(year)}
-                onBlur={commitYear}
-                onChange={(e) => setYearDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitYear();
-                  else if (e.key === 'Escape') setYearDraft(null);
-                }}
-                data-testid="tree-year"
-              />
-            </div>
-            <div className="row tight tree-buttons">
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => setAdding('person')}
-                disabled={ro.off}
-                {...ro.tip}
-              >
-                Add person
-              </button>
-              <button type="button" className="btn" onClick={fit}>
-                Fit to window
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setConfirmTidy(true)}
-                disabled={ro.off}
-                {...ro.tip}
-              >
+    <div className="ws-tree-area tree-screen" data-testid="tree-view" ref={area}>
+      {/* A45: no heading or count; the toolbar and the tree fill the middle column. */}
+      <section className="tree-main fill" aria-label="Family tree">
+        <div className="tree-bar" role="toolbar" aria-label="Family tree tools">
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={() => setAdding('person')}
+            disabled={ro.off}
+            {...ro.tip}
+          >
+            Add person
+          </button>
+          <button type="button" className="btn small" onClick={fit}>
+            Fit to window
+          </button>
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => setConfirmTidy(true)}
+            disabled={ro.off}
+            {...ro.tip}
+          >
+            Tidy layout
+          </button>
+          <button type="button" className="btn small" onClick={() => void exportPng()}>
+            Export
+          </button>
+          <button type="button" className="btn small" aria-pressed={full} onClick={toggleFull}>
+            {full ? 'Exit full screen' : 'Full screen'}
+          </button>
+          {/* FT-6: the count clears the selection, so the inspector shows the warnings. */}
+          <button
+            type="button"
+            className={`btn small tree-warn-count${data.warnings.length ? ' warn-chip' : ''}`}
+            onClick={showWarnings}
+            title="Show the warnings in the inspector"
+            data-testid="tree-warn-count"
+          >
+            {data.warnings.length === 0
+              ? 'No warnings'
+              : `${data.warnings.length} ${data.warnings.length === 1 ? 'warning' : 'warnings'}`}
+          </button>
+        </div>
+        {confirmTidy && (
+          <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
+            <strong>Tidy the whole layout?</strong>
+            <p>
+              This lays out the tree again from scratch, so every person may move. People you add
+              later are placed without moving anyone.
+            </p>
+            <div className="row">
+              <button type="button" className="btn primary" onClick={() => void tidy()}>
                 Tidy layout
               </button>
-              <button type="button" className="btn" onClick={() => void exportAs('png')}>
-                Export PNG
-              </button>
-              <button type="button" className="btn" onClick={() => void exportAs('pdf')}>
-                Export PDF
-              </button>
-              <button type="button" className="btn" aria-pressed={full} onClick={toggleFull}>
-                {full ? 'Exit full screen' : 'Full screen'}
+              <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
+                Keep the layout
               </button>
             </div>
           </div>
-          {confirmTidy && (
-            <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
-              <strong>Tidy the whole layout?</strong>
-              <p>
-                This lays out the tree again from scratch, so every person may move. People you add
-                later are placed without moving anyone.
-              </p>
-              <div className="row">
-                <button type="button" className="btn primary" onClick={() => void tidy()}>
-                  Tidy layout
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
-                  Keep the layout
-                </button>
-              </div>
-            </div>
-          )}
-          {exportNote && (
-            <p
-              className={exportNote.bad ? 'callout crit' : 'callout'}
-              role="status"
-              data-testid="export-note"
-            >
-              {exportNote.text}
-            </p>
-          )}
-          <div className="tree-wrap" ref={wrap}>
-            <svg
-              ref={svg}
-              className="tree-svg"
-              viewBox={
-                view
-                  ? `${view.x} ${view.y} ${view.w} ${view.h}`
-                  : `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`
-              }
-              role="group"
-              aria-label={`Family tree in ${year}`}
-              data-testid="tree-svg"
-              data-year={year}
-              tabIndex={0}
-              onKeyDown={onTreeKey}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-            >
-              <g className="tree-edges">
-                {edges.unions.map((u) => (
-                  <g key={u.id} data-union={u.id} data-state={u.state}>
-                    <path
-                      className={`tunion ${unionClass(u.type)} ${u.state}`}
-                      d={u.path}
-                      data-type={u.type}
-                    />
-                    {u.label && u.endYear !== null && (
-                      <text
-                        className="tunion-end"
-                        x={u.label.x}
-                        y={u.label.y - 6}
-                        textAnchor="middle"
-                      >
-                        ended {u.endYear}
-                      </text>
-                    )}
-                  </g>
-                ))}
-                {edges.links.map((l) => (
-                  <path
-                    key={l.ids.join('+')}
-                    className={`tlink ${linkClass(l.type)}`}
-                    d={l.path}
-                    data-links={l.ids.join(' ')}
-                    data-type={l.type}
-                  />
-                ))}
-              </g>
-              <g className="tree-nodes">
-                {[...graph.people]
-                  // The person being dragged is drawn last, over everyone.
-                  .sort((a, b) => (a.id === moving?.id ? 1 : b.id === moving?.id ? -1 : 0))
-                  .map((p) => {
-                    const at = liveLayout.nodes.get(p.id);
-                    if (!at) return null;
-                    return (
-                      <TreeNode
-                        key={p.id}
-                        person={p}
-                        hint={zhHint(p.chinese, glossary)}
-                        x={at.x}
-                        y={at.y}
-                        year={year}
-                        selected={selected === p.id}
-                        collapsed={collapsed.has(p.id)}
-                        branch={hasBranch(graph, p.id)}
-                        colors={colorOf(p.familyIds)}
-                        onSelect={setSelected}
-                        onToggle={toggle}
-                        onMove={nudge}
-                        onCard={showCard}
-                      />
-                    );
-                  })}
-              </g>
-            </svg>
-            {drop && (
-              <DropMenu
-                graph={graph}
-                drop={drop}
-                onMove={() => {
-                  const d = drop;
-                  setDrop(null);
-                  void moveTo(d.id, d.x, d.y);
-                }}
-                onError={(error) => setDrop((d) => (d ? { ...d, error } : d))}
-                onDone={() => setDrop(null)}
-              />
-            )}
-            {card && (
-              <div
-                className="tree-card"
-                role="tooltip"
-                data-testid="tree-card"
-                style={{ left: card.x, top: card.y }}
-              >
-                {card.text}
-              </div>
-            )}
-            <div className="tree-ctl">
-              <button
-                type="button"
-                className="btn small"
-                aria-label="Zoom in"
-                onClick={() => zoom(0.8)}
-              >
-                +
-              </button>
-              <button
-                type="button"
-                className="btn small"
-                aria-label="Zoom out"
-                onClick={() => zoom(1.25)}
-              >
-                −
-              </button>
-            </div>
-          </div>
-        </div>
-        <Legend
-          families={families.map((f) => ({
-            id: f._id,
-            name: String(f.name),
-            color: String(f.color),
-          }))}
-        />
-        <section className="panel stack" aria-labelledby="warn-title">
-          <h3 id="warn-title">Warnings</h3>
-          <p className="example-note">
-            Warnings never block saving. The one thing the tree refuses is a person becoming their
-            own ancestor.
+        )}
+        {exportNote && (
+          <p
+            className={exportNote.bad ? 'callout crit' : 'callout'}
+            role="status"
+            data-testid="export-note"
+          >
+            {exportNote.text}
           </p>
-          {data.warnings.length === 0 ? (
-            <p data-testid="no-tree-warnings">No warnings in the tree.</p>
-          ) : (
-            <ul className="warn-list" data-testid="tree-warnings">
-              {data.warnings.map((w, i) => (
-                <li key={i} className="status warning">
-                  <span>{w.message}</span>{' '}
-                  <button
-                    type="button"
-                    className="btn small"
-                    onClick={() => setSelected(w.personIds[0] ?? null)}
-                  >
-                    Show {name(w.personIds[0] ?? '')}
-                  </button>
-                </li>
+        )}
+        <div className="tree-wrap" ref={wrap}>
+          <svg
+            ref={svg}
+            className="tree-svg"
+            viewBox={
+              view
+                ? `${view.x} ${view.y} ${view.w} ${view.h}`
+                : `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`
+            }
+            role="group"
+            aria-label={`Family tree in ${year}`}
+            data-testid="tree-svg"
+            data-year={year}
+            tabIndex={0}
+            onKeyDown={onTreeKey}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
+            <g className="tree-edges">
+              {edges.unions.map((u) => (
+                <g key={u.id} data-union={u.id} data-state={u.state}>
+                  <path
+                    className={`tunion ${unionClass(u.type)} ${u.state}`}
+                    d={u.path}
+                    data-type={u.type}
+                  />
+                  {u.label && u.endYear !== null && (
+                    <text
+                      className="tunion-end"
+                      x={u.label.x}
+                      y={u.label.y - 6}
+                      textAnchor="middle"
+                    >
+                      ended {u.endYear}
+                    </text>
+                  )}
+                </g>
               ))}
-            </ul>
+              {edges.links.map((l) => (
+                <path
+                  key={l.ids.join('+')}
+                  className={`tlink ${linkClass(l.type)}`}
+                  d={l.path}
+                  data-links={l.ids.join(' ')}
+                  data-type={l.type}
+                />
+              ))}
+            </g>
+            <g className="tree-nodes">
+              {[...graph.people]
+                // The person being dragged is drawn last, over everyone.
+                .sort((a, b) => (a.id === moving?.id ? 1 : b.id === moving?.id ? -1 : 0))
+                .map((p) => {
+                  const at = liveLayout.nodes.get(p.id);
+                  if (!at) return null;
+                  return (
+                    <TreeNode
+                      key={p.id}
+                      person={p}
+                      hint={zhHint(p.chinese, glossary)}
+                      x={at.x}
+                      y={at.y}
+                      year={year}
+                      selected={selected === p.id}
+                      collapsed={collapsed.has(p.id)}
+                      branch={hasBranch(graph, p.id)}
+                      colors={colorOf(p.familyIds)}
+                      onSelect={setSelected}
+                      onToggle={toggle}
+                      onMove={nudge}
+                      onCard={showCard}
+                    />
+                  );
+                })}
+            </g>
+          </svg>
+          {drop && (
+            <DropMenu
+              graph={graph}
+              drop={drop}
+              onMove={() => {
+                const d = drop;
+                setDrop(null);
+                void moveTo(d.id, d.x, d.y);
+              }}
+              onError={(error) => setDrop((d) => (d ? { ...d, error } : d))}
+              onDone={() => setDrop(null)}
+            />
           )}
-        </section>
+          {card && (
+            <div
+              className="tree-card"
+              role="tooltip"
+              data-testid="tree-card"
+              style={{ left: card.x, top: card.y }}
+            >
+              {card.text}
+            </div>
+          )}
+          <div className="tree-ctl">
+            <button
+              type="button"
+              className="btn small"
+              aria-label="Zoom in"
+              onClick={() => zoom(0.8)}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              aria-label="Zoom out"
+              onClick={() => zoom(1.25)}
+            >
+              −
+            </button>
+          </div>
+          <Legend
+            open={legendOpen}
+            onToggle={() => setLegendOpen((o) => !o)}
+            families={families.map((f) => ({
+              id: f._id,
+              name: String(f.name),
+              color: String(f.color),
+            }))}
+          />
+        </div>
       </section>
       <TreeInspector
         key={selected ?? 'none'}
@@ -1005,58 +894,85 @@ export function TreeView(props: {
         onSelect={setSelected}
         onToggle={toggle}
         onOpen={props.onOpen}
+        warnings={data.warnings}
       />
     </div>
   );
 }
 
-function Legend({ families }: { families: { id: string; name: string; color: string }[] }) {
+/** The key to the tree's marks, a small overlay in its bottom left corner that opens on request (A45). */
+function Legend(props: {
+  open: boolean;
+  onToggle: () => void;
+  families: { id: string; name: string; color: string }[];
+}) {
+  const id = useId();
   return (
-    <div className="legend" aria-label="Tree legend">
-      {families.map((f) => (
-        <span key={f.id}>
-          <span className={`sw fam-${f.color}`} />
-          {f.name}
-        </span>
-      ))}
-      <span>
-        <span className="sw fam-none" />
-        No family
-      </span>
-      <span>
-        <svg className="ln" width="26" height="8" aria-hidden="true">
-          <line x1="0" y1="4" x2="26" y2="4" className="tunion married" />
-        </svg>
-        Married
-      </span>
-      <span>
-        <svg className="ln" width="26" height="8" aria-hidden="true">
-          <line x1="0" y1="4" x2="26" y2="4" className="tunion partnered" />
-        </svg>
-        Partnered
-      </span>
-      {['biological', 'adoptive', 'step', 'guardian'].map((t) => (
-        <span key={t}>
-          <svg className="ln" width="26" height="8" aria-hidden="true">
-            <line x1="0" y1="4" x2="26" y2="4" className={`tlink ${t}`} />
-          </svg>
-          {t[0]?.toUpperCase()}
-          {t.slice(1)} parent
-        </span>
-      ))}
-      <span className="example-note">
-        Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.
-      </span>
-      <span className="example-note" data-testid="tree-keys">
-        Drag a person to move them. Drop them on someone to make them that person&apos;s parent,
-        child or partner. Keys on a person: Enter or Space collapses or expands their branch when
-        they have one, and opens the inspector when they do not. I opens the inspector for anyone.
-        Alt with an arrow moves them one slot.
-      </span>
+    <div className="tree-legend">
+      {props.open && (
+        <div className="legend panel" id={id} role="region" aria-label="Tree legend">
+          {props.families.map((f) => (
+            <span key={f.id}>
+              <span className={`sw fam-${f.color}`} />
+              {f.name}
+            </span>
+          ))}
+          <span>
+            <span className="sw fam-none" />
+            No family
+          </span>
+          <span>
+            <svg className="ln" width="26" height="8" aria-hidden="true">
+              <line x1="0" y1="4" x2="26" y2="4" className="tunion married" />
+            </svg>
+            Married
+          </span>
+          <span>
+            <svg className="ln" width="26" height="8" aria-hidden="true">
+              <line x1="0" y1="4" x2="26" y2="4" className="tunion partnered" />
+            </svg>
+            Partnered
+          </span>
+          {['biological', 'adoptive', 'step', 'guardian'].map((t) => (
+            <span key={t}>
+              <svg className="ln" width="26" height="8" aria-hidden="true">
+                <line x1="0" y1="4" x2="26" y2="4" className={`tlink ${t}`} />
+              </svg>
+              {t[0]?.toUpperCase()}
+              {t.slice(1)} parent
+            </span>
+          ))}
+          <span className="legend-note">
+            Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.
+          </span>
+          <span className="legend-note" data-testid="tree-keys">
+            Drag a person to move them. Drop them on someone to make them that person&apos;s parent,
+            child or partner. Keys on a person: Enter or Space collapses or expands their branch
+            when they have one, and opens the inspector when they do not. I opens the inspector for
+            anyone. Alt with an arrow moves them one slot.
+          </span>
+        </div>
+      )}
+      <button
+        type="button"
+        className="btn small"
+        aria-expanded={props.open}
+        aria-controls={props.open ? id : undefined}
+        onClick={props.onToggle}
+      >
+        {props.open ? 'Hide legend' : 'Legend'}
+      </button>
     </div>
   );
 }
 
+/**
+ * The tree's inspector, the one inspector this screen keeps (A45). With nobody
+ * selected it shows the FT-6 warnings. With a person selected it shows their
+ * name and state in the year, the character fields that matter here (FT-7),
+ * then their family from the top down (FT-2), then the branch, page and
+ * Remove controls.
+ */
 function TreeInspector(props: {
   graph: TreeGraph;
   selected: string | null;
@@ -1067,8 +983,10 @@ function TreeInspector(props: {
   onSelect: (id: string | null) => void;
   onToggle: (id: string) => void;
   onOpen: (collection: EntryCollection, id: string) => void;
+  warnings: TreeData['warnings'];
 }) {
   const { graph, selected, adding, setAdding } = props;
+  const name = (id: string) => graph.byId.get(id)?.name ?? id;
   const undo = useUndo();
   const person = selected ? graph.byId.get(selected) : undefined;
   const [editing, setEditing] = useState<{ collection: EntryCollection; id: string } | null>(null);
@@ -1098,64 +1016,39 @@ function TreeInspector(props: {
           }}
         />
       )}
-      {selected && person && (
-        <div className="stack">
-          <div className="stack tight">
-            <h3 data-testid="inspector-name">{person.name}</h3>
-            <p data-testid="inspector-state">
-              {stateWords(lifeState(person, props.year), props.year)}
-            </p>
-          </div>
-          <WriteFieldset>
-            <div className="row tight" role="group" aria-label={`Add a relative of ${person.name}`}>
-              {(['parent', 'child', 'sibling', 'partner'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  className="btn small"
-                  aria-pressed={adding === k}
-                  onClick={() => setAdding(k)}
-                >
-                  Add {k}
-                </button>
+      {!selected && (
+        <section className="stack tight" aria-labelledby="warn-title">
+          <h3 id="warn-title">Warnings</h3>
+          <p className="example-note">
+            Warnings never block saving. The one thing the tree refuses is a person becoming their
+            own ancestor.
+          </p>
+          {props.warnings.length === 0 ? (
+            <p data-testid="no-tree-warnings">No warnings in the tree.</p>
+          ) : (
+            <ul className="warn-list" data-testid="tree-warnings">
+              {props.warnings.map((w, i) => (
+                <li key={i} className="status warning">
+                  <span>{w.message}</span>{' '}
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => props.onSelect(w.personIds[0] ?? null)}
+                  >
+                    Show {name(w.personIds[0] ?? '')}
+                  </button>
+                </li>
               ))}
-            </div>
-          </WriteFieldset>
-          {adding && adding !== 'person' && (
-            <AddRelativeForm
-              graph={graph}
-              kind={adding}
-              anchor={person}
-              onDone={(id) => {
-                setAdding(null);
-                if (id) props.onSelect(id);
-              }}
-            />
+            </ul>
           )}
-          <div className="row tight">
-            {hasBranch(graph, person.id) && (
-              <button type="button" className="btn small" onClick={() => props.onToggle(person.id)}>
-                {props.collapsed ? 'Expand branch' : 'Collapse branch'}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn small"
-              onClick={() => props.onOpen('characters', person.id)}
-            >
-              Open the character page
-            </button>
-          </div>
-          <LinkList graph={graph} person={person} onEdit={setEditing} onSelect={props.onSelect} />
-          <TrashControls
-            collection="characters"
-            id={person.id}
-            title={person.name}
-            inTrash={false}
-            label={`Remove ${person.name}`}
-            beforeDelete={undo.flush}
-            onChanged={() => undefined}
-          />
+        </section>
+      )}
+      {selected && person && (
+        <div className="stack tight">
+          <h3 data-testid="inspector-name">{person.name}</h3>
+          <p data-testid="inspector-state">
+            {stateWords(lifeState(person, props.year), props.year)}
+          </p>
         </div>
       )}
       {selected &&
@@ -1171,17 +1064,167 @@ function TreeInspector(props: {
             />
           </div>
         ) : (
-          <EmbeddedEditor
-            key={`characters:${selected}`}
-            collection="characters"
-            id={selected}
-            trash={person === undefined}
-          />
+          <TreePersonForm key={`characters:${selected}`} id={selected} />
         ))}
+      {selected && person && (
+        <>
+          <FamilyList
+            graph={graph}
+            person={person}
+            adding={adding}
+            setAdding={setAdding}
+            onEdit={setEditing}
+            onSelect={props.onSelect}
+          />
+          <div className="row tight">
+            {hasBranch(graph, person.id) && (
+              <button type="button" className="btn small" onClick={() => props.onToggle(person.id)}>
+                {props.collapsed ? 'Expand branch' : 'Collapse branch'}
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => props.onOpen('characters', person.id)}
+            >
+              Open the character page
+            </button>
+          </div>
+          <TrashControls
+            collection="characters"
+            id={person.id}
+            title={person.name}
+            inTrash={false}
+            label={`Remove ${person.name}`}
+            beforeDelete={undo.flush}
+            onChanged={() => undefined}
+          />
+        </>
+      )}
       <UndoPanel />
     </aside>
   );
 }
+
+/**
+ * FT-7 (A45): the selected person's own fields in the tree inspector: Name,
+ * the name in Chinese characters, In the story, Description, Birth, Death and
+ * Families, with the same autosave, warnings and undo as every editor (ED-2,
+ * ED-3). Backstory is a link to the Backstory screen. Status, provenance,
+ * source, tags and links are left to the character's own page; they stay stored.
+ */
+function TreePersonForm({ id }: { id: string }) {
+  const ed = useAutosave('characters', id);
+  const draft = ed.draft;
+  if (ed.status === 'missing') return <p className="callout warn">This person no longer exists.</p>;
+  if (!draft) return <p aria-live="polite">Loading the person.</p>;
+  const inTrash = Boolean(draft.deletedAt);
+  const messages = { warnings: ed.warnings, issues: ed.issues };
+  const onMention = (targetId: string) => {
+    const links = Array.isArray(draft.links)
+      ? (draft.links as { targetId: string; kind: string }[])
+      : [];
+    if (!links.some((l) => l.targetId === targetId)) {
+      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
+    }
+  };
+  const field = (name: string, opts: { label?: string; grow?: boolean } = {}) => {
+    const base = fieldByName(PERSON_FIELDS, name);
+    if (!base) return null;
+    return (
+      <Field
+        key={name}
+        spec={opts.label ? { ...base, label: opts.label } : base}
+        value={draft[name]}
+        path={name}
+        messages={messages}
+        root={draft}
+        grow={opts.grow}
+        onMention={onMention}
+        onChange={(v) => ed.setField(name, v)}
+      />
+    );
+  };
+  const names = (draft.names ?? {}) as Record<string, unknown>;
+  const nameSpec = (part: 'full' | 'chinese', label: string) => {
+    const base = NAME_PARTS.find((s) => s.name === part);
+    if (!base) return null;
+    return (
+      <Field
+        key={part}
+        spec={{ ...base, label }}
+        value={names[part] ?? ''}
+        path={`names.${part}`}
+        messages={messages}
+        root={draft}
+        onMention={onMention}
+        onChange={(v) => {
+          const text = typeof v === 'string' ? v : '';
+          ed.setField('names', { ...names, [part]: text });
+          // The title is the name the app shows everywhere; it follows the full name.
+          if (part === 'full') ed.setField('title', text);
+        }}
+      />
+    );
+  };
+
+  return (
+    <section
+      className="stack embedded-editor tree-person"
+      aria-label={`Edit ${entryTitle(draft)}`}
+      data-testid="editor"
+      data-entry-id={id}
+    >
+      <div className="row tight tree-person-head">
+        <span className="eyebrow">Character</span>
+        <SaveState status={ed.status} error={ed.error} />
+      </div>
+      {inTrash && (
+        <>
+          <p className="callout warn" role="status">
+            This person is in the trash. Restore them to bring them back with their links.
+          </p>
+          <TrashControls
+            collection="characters"
+            id={id}
+            title={entryTitle(draft)}
+            inTrash
+            beforeDelete={ed.flush}
+            onChanged={ed.reload}
+          />
+        </>
+      )}
+      {ed.warnings.length > 0 && (
+        <p className="callout warn" data-testid="warning-count">
+          {ed.warnings.length === 1
+            ? '1 field has a warning. It still saved.'
+            : `${ed.warnings.length} fields have warnings. They still saved.`}
+        </p>
+      )}
+      <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
+        <WriteFieldset>
+          {nameSpec('full', 'Name')}
+          {nameSpec('chinese', 'Name in Chinese characters')}
+          {field('role', { grow: true })}
+          {field('body', { label: 'Description', grow: true })}
+          {field('birth')}
+          {field('death')}
+          {field('familyIds')}
+        </WriteFieldset>
+      </form>
+      <p className="tree-backstory">
+        <span className="ed-label">Backstory</span>{' '}
+        <button type="button" className="link-btn" onClick={() => openBackstory(id)}>
+          Open in Backstory
+        </button>
+      </p>
+    </section>
+  );
+}
+
+/** The character fields the tree inspector edits (A45), from the one manifest. */
+const PERSON_FIELDS = manifests.characters;
+const NAME_PARTS = fieldByName(PERSON_FIELDS, 'names')?.fields ?? [];
 
 function useListItems(listId: string) {
   return useList(listId)?.items ?? [];
@@ -1354,20 +1397,41 @@ function AddRelativeForm(props: {
   );
 }
 
-/** Every union and parent link of the selected person, each with its type, an editor, and remove (FT-2). */
-function LinkList(props: {
+type FamilyRow = {
+  /** The union or parent link, or for a sibling the sibling's own id. */
+  id: string;
+  other: string;
+  detail: string;
+  link: {
+    collection: 'unions' | 'parentLinks';
+    type: string;
+    title: string;
+  } | null;
+};
+
+/**
+ * FT-2 (A45): the selected person's family at the foot of the inspector, from
+ * the top down: Parents, then Partners and Siblings, then Children. Each union
+ * and parent link has its type, an editor for its years, and Remove; siblings
+ * follow from shared parents and only select. Each group adds its own kind of
+ * relative, and the form opens under that group.
+ */
+function FamilyList(props: {
   graph: TreeGraph;
   person: TreePerson;
+  adding: RelativeKind | null;
+  setAdding: (kind: RelativeKind | null) => void;
   onEdit: (e: { collection: EntryCollection; id: string }) => void;
   onSelect: (id: string) => void;
 }) {
-  const { graph, person } = props;
+  const { graph, person, adding, setAdding } = props;
   const undo = useUndo();
   const ro = useWriteGuard();
   const linkTypes = useListItems('parentLinkTypes');
   const unionTypes = useListItems('unionTypes');
   const [error, setError] = useState<string | null>(null);
   const name = (id: string) => graph.byId.get(id)?.name ?? id;
+  const rel = relativesOf(graph, person.id);
 
   const setType = async (collection: 'unions' | 'parentLinks', id: string, type: string) => {
     setError(null);
@@ -1397,101 +1461,191 @@ function LinkList(props: {
     }
   };
 
-  const rows = [
-    ...(graph.parentLinks.get(person.id) ?? []).map((l) => ({
-      collection: 'parentLinks' as const,
-      id: l.id,
-      role: 'Parent',
-      other: l.parentId,
-      type: l.type,
-      detail: l.startYear !== null && l.type !== 'biological' ? `from ${l.startYear}` : '',
-      title: `${name(l.parentId)} parent of ${person.name}`,
-    })),
-    ...(graph.childLinks.get(person.id) ?? []).map((l) => ({
-      collection: 'parentLinks' as const,
-      id: l.id,
-      role: 'Child',
-      other: l.childId,
-      type: l.type,
-      detail: l.startYear !== null && l.type !== 'biological' ? `from ${l.startYear}` : '',
-      title: `${person.name} parent of ${name(l.childId)}`,
-    })),
-    ...(graph.unionsOf.get(person.id) ?? []).map((u) => ({
-      collection: 'unions' as const,
-      id: u.id,
-      role: 'Partner',
-      other: u.a === person.id ? u.b : u.a,
-      type: u.type,
-      detail:
-        u.startYear === null && u.endYear === null
-          ? 'years unknown'
-          : `${u.startYear ?? '?'} to ${u.endYear ?? 'now'}`,
-      title: `${name(u.a)} and ${name(u.b)}`,
-    })),
+  const since = (type: string, start: number | null) =>
+    start !== null && type !== 'biological' ? `from ${start}` : '';
+  const groups: {
+    kind: 'parent' | 'partner' | 'sibling' | 'child';
+    title: string;
+    rows: FamilyRow[];
+  }[] = [
+    {
+      kind: 'parent',
+      title: 'Parents',
+      rows: rel.parents.map((p) => ({
+        id: p.linkId,
+        other: p.id,
+        detail: since(p.type, p.startYear),
+        link: {
+          collection: 'parentLinks',
+          type: p.type,
+          title: `${name(p.id)} parent of ${person.name}`,
+        },
+      })),
+    },
+    {
+      kind: 'partner',
+      title: 'Partners',
+      rows: rel.partners.map((p) => ({
+        id: p.unionId,
+        other: p.id,
+        detail:
+          p.startYear === null && p.endYear === null
+            ? 'years unknown'
+            : `${p.startYear ?? '?'} to ${p.endYear ?? 'now'}`,
+        link: {
+          collection: 'unions',
+          type: p.type,
+          title: `${name(person.id)} and ${name(p.id)}`,
+        },
+      })),
+    },
+    {
+      kind: 'sibling',
+      title: 'Siblings',
+      rows: rel.siblings.map((s) => ({
+        id: s.id,
+        other: s.id,
+        detail: s.kind === 'half' ? 'half sibling' : '',
+        link: null,
+      })),
+    },
+    {
+      kind: 'child',
+      title: 'Children',
+      rows: rel.children.map((c) => ({
+        id: c.linkId,
+        other: c.id,
+        detail: since(c.type, c.startYear),
+        link: {
+          collection: 'parentLinks',
+          type: c.type,
+          title: `${person.name} parent of ${name(c.id)}`,
+        },
+      })),
+    },
   ];
 
   return (
-    <div className="stack tight">
-      <span className="eyebrow">Links</span>
-      {rows.length === 0 ? (
-        <p className="example-note">No unions or parent links yet.</p>
-      ) : (
-        <ul className="link-rows" data-testid="link-list">
-          {rows.map((r) => (
-            <li key={r.id} data-entry={r.id}>
-              <span>
-                {r.role}:{' '}
-                <button type="button" className="link-btn" onClick={() => props.onSelect(r.other)}>
-                  {name(r.other)}
-                </button>
-                {r.detail && <span className="example-note"> {r.detail}</span>}
-              </span>
-              <span className="row tight">
-                <label className="sr-only" htmlFor={`type-${r.id}`}>
-                  Type of the link with {name(r.other)}
-                </label>
-                <select
-                  id={`type-${r.id}`}
-                  value={r.type}
-                  disabled={ro.off}
-                  {...ro.tip}
-                  onChange={(e) => void setType(r.collection, r.id, e.target.value)}
-                >
-                  {(r.collection === 'unions' ? unionTypes : linkTypes).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn small"
-                  aria-label={`Edit the link with ${name(r.other)}`}
-                  onClick={() => props.onEdit({ collection: r.collection, id: r.id })}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="btn small danger"
-                  aria-label={`Remove the link with ${name(r.other)}`}
-                  onClick={() => void remove(r.collection, r.id, r.title)}
-                  disabled={ro.off}
-                  {...ro.tip}
-                >
-                  Remove
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <section className="stack tree-family" aria-labelledby="tree-family-title">
+      <h3 id="tree-family-title">Family</h3>
+      {groups.map((g) => (
+        <div key={g.kind} className="stack tight" data-group={g.kind}>
+          <div className="row tight tree-family-head">
+            <span className="eyebrow">{g.title}</span>
+            <WriteFieldset>
+              <button
+                type="button"
+                className="btn small"
+                aria-pressed={adding === g.kind}
+                onClick={() => setAdding(g.kind)}
+              >
+                Add {g.kind}
+              </button>
+            </WriteFieldset>
+          </div>
+          {g.rows.length === 0 ? (
+            <p className="example-note">None yet.</p>
+          ) : (
+            <ul className="link-rows" data-testid="link-list">
+              {g.rows.map((r) => (
+                <li key={r.id} data-entry={r.link ? r.id : undefined}>
+                  <span>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => props.onSelect(r.other)}
+                    >
+                      {name(r.other)}
+                    </button>
+                    {r.detail && <span className="example-note"> {r.detail}</span>}
+                  </span>
+                  {r.link && (
+                    <FamilyRowControls
+                      row={{ ...r, link: r.link }}
+                      name={name(r.other)}
+                      types={r.link.collection === 'unions' ? unionTypes : linkTypes}
+                      ro={ro}
+                      onType={(type) => r.link && void setType(r.link.collection, r.id, type)}
+                      onEdit={() =>
+                        r.link && props.onEdit({ collection: r.link.collection, id: r.id })
+                      }
+                      onRemove={() => r.link && void remove(r.link.collection, r.id, r.link.title)}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {adding === g.kind && (
+            <AddRelativeForm
+              graph={graph}
+              kind={g.kind}
+              anchor={person}
+              onDone={(id) => {
+                setAdding(null);
+                if (id) props.onSelect(id);
+              }}
+            />
+          )}
+        </div>
+      ))}
       {error && (
         <p className="callout crit" role="alert">
           {error}
         </p>
       )}
-    </div>
+    </section>
+  );
+}
+
+/** A link row's type, Edit (for its years) and Remove (FT-2). */
+function FamilyRowControls(props: {
+  row: FamilyRow & { link: NonNullable<FamilyRow['link']> };
+  name: string;
+  types: { id: string; label: string }[];
+  ro: ReturnType<typeof useWriteGuard>;
+  onType: (type: string) => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const { row, name, ro } = props;
+  return (
+    <span className="row tight">
+      <label className="sr-only" htmlFor={`type-${row.id}`}>
+        Type of the link with {name}
+      </label>
+      <select
+        id={`type-${row.id}`}
+        value={row.link.type}
+        disabled={ro.off}
+        {...ro.tip}
+        onChange={(e) => props.onType(e.target.value)}
+      >
+        {props.types.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="btn small"
+        aria-label={`Edit the link with ${name}`}
+        onClick={props.onEdit}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="btn small danger"
+        aria-label={`Remove the link with ${name}`}
+        onClick={props.onRemove}
+        disabled={ro.off}
+        {...ro.tip}
+      >
+        Remove
+      </button>
+    </span>
   );
 }
 

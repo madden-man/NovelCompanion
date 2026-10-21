@@ -123,7 +123,7 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('story-time-dialog')).toHaveCount(0);
   await rail(page, 'Family tree').click();
-  await expect(page.locator('.tree-stage svg').first()).toBeVisible();
+  await expect(page.getByTestId('tree-svg')).toBeVisible();
 
   // Write controls elsewhere are off too, and main refuses a write that gets through anyway.
   await rail(page, 'Backups').click();

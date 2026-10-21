@@ -6,7 +6,6 @@ import {
   ancestorsOf,
   buildGraph,
   descendantsOf,
-  filterPeople,
   generations,
   hideCollapsed,
   layoutTree,
@@ -126,30 +125,6 @@ describe('FT-1 FT-4 the graph from the fixture', () => {
     expect([...ancestorsOf(g, 'H5')].sort()).toEqual(['H1', 'H2', 'H3', 'Z1', 'Z2', 'Z3']);
     expect([...descendantsOf(g, 'H5')]).toEqual(['Z5']);
     expect([...descendantsOf(g, 'H1')].sort()).toEqual(['H3', 'H4', 'H5', 'H6', 'Z5']);
-  });
-
-  test('FT-1 filters: all, one family (with the people in both), and a lineage with partners', () => {
-    const g = fixtureGraph();
-    expect(filterPeople(g, { kind: 'all' }).size).toBe(13);
-    expect([...filterPeople(g, { kind: 'family', familyId: 'FAM-ZHOU' })].sort()).toEqual([
-      'H5',
-      'Z1',
-      'Z2',
-      'Z3',
-      'Z4',
-      'Z5',
-    ]);
-    expect([...filterPeople(g, { kind: 'lineage', personId: 'H5' })].sort()).toEqual([
-      'H1',
-      'H2',
-      'H3',
-      'H5',
-      'X1',
-      'Z1',
-      'Z2',
-      'Z3',
-      'Z5',
-    ]);
   });
 
   test('FT-1 the trash is left out of the tree, with the links that name it', () => {
