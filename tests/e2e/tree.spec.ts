@@ -11,7 +11,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
 import { decodePng, pdfFillColors } from '../helpers/png';
-import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, fillDateBox, invokeVia, launch, rail, waitSaved } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -142,6 +142,7 @@ async function dropOn(from: string, onto: string) {
 }
 
 async function setYearDate(path: 'birth' | 'death', year: number) {
+  // The tree inspector is the generic editor, which keeps the composite date control.
   const f = field(editor(), path);
   await f.getByLabel('Kind of date').selectOption('year');
   await f.getByLabel('Year', { exact: true }).fill(String(year));
@@ -404,10 +405,10 @@ test('FT-7 FT-3 a click opens the character in the inspector without leaving the
     .getByRole('button', { name: /Zhou Jun/ })
     .click();
   const line = page.getByTestId('character-page').getByTestId('char-line');
-  await expect(field(line, 'birth').getByLabel('Year', { exact: true })).toHaveValue('1995');
-  await expect(field(line, 'death').getByLabel('Year', { exact: true })).toHaveValue('2070');
+  await expect(line.getByLabel('Birth', { exact: true })).toHaveValue('1995');
+  await expect(line.getByLabel('Death', { exact: true })).toHaveValue('2070');
   // An edit on the character page shows in the tree.
-  await field(page.getByTestId('editor'), 'birth').getByLabel('Year', { exact: true }).fill('1993');
+  await fillDateBox(field(page.getByTestId('editor'), 'birth'), '1993');
   await waitSaved(page);
   await openTree();
   await expect(node('Zhou Jun').locator('text.tnode-years')).toHaveText('1993 to 2070');
@@ -970,42 +971,30 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
   await expect(p.getByTestId('char-age')).toHaveText('Age 9 in 2040 (current position)');
-  // SM-1 "on one line": the five sit side by side, the age last, wherever the pane is wide enough.
-  const lineBoxes = () =>
-    Promise.all(
-      [
-        field(line, 'birth'),
-        field(line, 'death'),
-        field(line, 'status'),
-        field(line, 'familyIds'),
-        p.getByTestId('char-age'),
-      ].map(async (l) => (await l.boundingBox())!),
-    );
-  const size = await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0]!.getSize(),
+  // SM-1 "on one line": at the default window Birth and Death share a row and the five read in
+  // order, the age last. The pane is 343px wide here, too narrow for all five on one row.
+  expect(
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()),
+  ).toEqual([1200, 800]);
+  const lineBoxes = await Promise.all(
+    [
+      field(line, 'birth'),
+      field(line, 'death'),
+      field(line, 'status'),
+      field(line, 'familyIds'),
+      p.getByTestId('char-age'),
+    ].map(async (l) => (await l.boundingBox())!),
   );
-  const atDefault = await lineBoxes();
-  process.stdout.write(
-    `SM-1 line at ${size.join('x')}: ${atDefault.map((b) => `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}w`).join(' | ')}\n`,
-  );
-  try {
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]!.setSize(1920, 1080),
-    );
-    await expect
-      .poll(async () => {
-        const tops = (await lineBoxes()).map((b) => b.y);
-        return Math.max(...tops) - Math.min(...tops);
-      })
-      .toBeLessThanOrEqual(4);
-    const lefts = (await lineBoxes()).map((b) => b.x);
-    expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
-  } finally {
-    await app.evaluate(
-      ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0]!.setSize(w!, h!),
-      size,
-    );
+  expect(Math.abs(lineBoxes[0]!.y - lineBoxes[1]!.y)).toBeLessThanOrEqual(4);
+  expect(lineBoxes[1]!.x).toBeGreaterThan(lineBoxes[0]!.x);
+  for (let i = 1; i < lineBoxes.length; i++) {
+    const [a, b] = [lineBoxes[i - 1]!, lineBoxes[i]!];
+    expect(b.y > a.y + 4 || (Math.abs(b.y - a.y) <= 4 && b.x > a.x), `item ${i}`).toBe(true);
   }
+  // Birth and Death are one box each; Iris's birth is a full date.
+  await expect(line.getByLabel('Birth', { exact: true })).toHaveValue('2031-03-14');
+  await expect(line.getByLabel('Death', { exact: true })).toHaveValue('');
+  await expect(line.locator('select')).toHaveCount(2);
   // The relatives, read only: parents, partners with the union years, children.
   const rel = p.getByTestId('char-relatives');
   await expect(rel).toContainText('Parents: ');
@@ -1062,6 +1051,40 @@ test('SM-1 ED-2 each text box saves on its own and grows with its text', async (
   });
 });
 
+test('SM-1 TL-3 Birth is one box: a month and a full date save on Enter as one undo step, and a bad value writes nothing', async () => {
+  const p = await openCharacter('Ruth Hale');
+  const birth = p.getByLabel('Birth', { exact: true });
+  const ruth = async () =>
+    (await invoke('entry.get', { collection: 'characters', id: 'H4' })).entry;
+  await expect(birth).toHaveValue('1990');
+  await birth.fill('1990-3');
+  await birth.press('Enter');
+  await waitSaved(page);
+  await expect(birth).toHaveValue('1990-03');
+  expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
+  const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
+  await expect(history.first()).toHaveText('Changed Birth on Ruth Hale');
+  // A value it cannot read is refused at the box, and nothing is written.
+  await birth.fill('March 1990');
+  await birth.press('Enter');
+  await expect(field(p, 'birth').getByRole('alert')).toHaveText(
+    'Not saved: March 1990 is not a date. Write a year (1990), a year and month (1990-03), or a full date (1990-03-14).',
+  );
+  expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
+  await birth.fill('1990-03-14');
+  await birth.blur();
+  await waitSaved(page);
+  await expect(field(p, 'birth').getByRole('alert')).toHaveCount(0);
+  expect((await ruth()).birth).toEqual({ year: 1990, month: 3, day: 14 });
+  // One commit is one undo step.
+  await page.locator('body').click();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await ruth()).birth).toEqual({ year: 1990, month: 3 });
+  await expect(birth).toHaveValue('1990-03');
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await ruth()).birth).toEqual({ year: 1990 });
+});
+
 test('SM-1 the name and the Chinese name are edited from the heading, and the title follows the name', async () => {
   const p = await openCharacter('Sam Hale');
   await p.getByRole('button', { name: 'Edit name', exact: true }).click();
@@ -1113,7 +1136,9 @@ test('SM-1 GL-3 a Chinese name shows as characters, with romanization and meanin
 
 test('CH-4 a character with an unknown birth year is reported as age unknown on the page and in the tree', async () => {
   const p = await openCharacter('The Archivist');
-  await expect(field(p, 'birth').getByLabel('Kind of date')).toHaveValue('unknown');
+  // A blank Birth box is an unknown birth.
+  await expect(p.getByLabel('Birth', { exact: true })).toHaveValue('');
+  await expect(p.getByLabel('Birth', { exact: true })).toHaveAttribute('placeholder', 'Unknown');
   await expect(p.getByTestId('char-age')).toHaveText('Age unknown (current position)');
   await openTree();
   for (const y of ['1900', '2040', '2100']) {
@@ -1164,8 +1189,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await field(ed, 'familyIds').locator(':scope > select').selectOption('FAM-HALE');
   await waitSaved(page);
   expect((await ada()).familyIds).toEqual(['FAM-ZHOU', 'FAM-HALE']);
-  await field(ed, 'birth').getByLabel('Kind of date').selectOption('year');
-  await field(ed, 'birth').getByLabel('Year', { exact: true }).fill('2040');
+  await fillDateBox(field(ed, 'birth'), '2040');
   await field(ed, 'status').locator(':scope > select').selectOption('planned');
   await waitSaved(page);
   expect(await ada()).toMatchObject({ birth: { year: 2040 }, status: 'planned' });

@@ -2069,3 +2069,7 @@ fieldset.write-group[disabled] {
 .char-line .ed-hint {
   contain: inline-size;
 }
+/* SM-1: Birth and Death are one box each, wide enough for 1990-03-14. */
+.char-line .date-box-input {
+  width: 7.5em;
+}

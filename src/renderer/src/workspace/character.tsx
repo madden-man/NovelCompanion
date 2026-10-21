@@ -1,10 +1,14 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { WriteFieldset } from '../connection';
 import { manifests } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { fieldByName } from '../../../shared/schema/manifest';
 import type { Response } from '../../../shared/ipc';
 import type { Doc } from '../../../shared/domain/paths';
+import { dateText, parseDateText } from '../../../shared/domain/dates';
+import type { DateBox } from '../../../shared/domain/dates';
+import type { StoryDate } from '../../../shared/schema';
+import { deepEqual } from '../../../shared/domain/paths';
 import { call } from '../api';
 import { useList, useStore } from './data';
 import { Field } from './fields';
@@ -54,6 +58,91 @@ export function relativesLine(rel: Relatives, unionLabel: (id: string) => string
     parts.push(`${rel.children.length === 1 ? 'Child' : 'Children'}: ${names(rel.children)}.`);
   }
   return parts.join(' ') || 'No parents, partners or children in the family tree yet.';
+}
+
+/**
+ * SM-1: Birth or Death as one text box: a year, a year and month, or a full
+ * date. It commits on blur or Enter, as one change; a value it cannot read
+ * shows why under the box and writes nothing. The date warnings show here too.
+ */
+function DateBoxField(props: {
+  name: DateBox;
+  label: string;
+  value: unknown;
+  messages: Messages;
+  onChange: (value: StoryDate | null) => void;
+}) {
+  const id = useId();
+  const errorId = useId();
+  const stored = (props.value ?? null) as StoryDate | null;
+  const [text, setText] = useState(() => dateText(stored));
+  const [error, setError] = useState<string | null>(null);
+  const editing = useRef(false);
+  const shown = dateText(stored);
+  useEffect(() => {
+    if (!editing.current) setText(shown);
+  }, [shown]);
+  const commit = () => {
+    editing.current = false;
+    const parsed = parseDateText(text, props.name);
+    if (!parsed.ok) {
+      setError(parsed.message);
+      return;
+    }
+    setError(null);
+    setText(dateText(parsed.value));
+    const before = props.name === 'death' ? stored : (stored ?? { unknown: true });
+    if (!deepEqual(parsed.value, before)) props.onChange(parsed.value);
+  };
+  const warnings = props.messages.warnings.filter((w) => w.path === props.name);
+  const issues = props.messages.issues.filter((i) => i.path === props.name);
+  return (
+    <div
+      className={`ed-field date-box${warnings.length ? ' has-warning' : ''}${error || issues.length ? ' has-error' : ''}`}
+      data-field={props.name}
+      data-kind="dateText"
+    >
+      <label className="ed-label" htmlFor={id}>
+        {props.label}
+      </label>
+      <input
+        id={id}
+        className="num date-box-input"
+        value={text}
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder={props.name === 'birth' ? 'Unknown' : 'Not recorded'}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        onChange={(e) => {
+          editing.current = true;
+          setText(e.target.value);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
+        }}
+      />
+      {error && (
+        <p id={errorId} className="ed-error" role="alert">
+          Not saved: {error}
+        </p>
+      )}
+      {issues.map((issue, i) => (
+        <p key={`e${i}`} className="ed-error" role="alert">
+          Not saved: {issue.message}
+        </p>
+      ))}
+      {warnings.map((w, i) => (
+        <p key={`w${i}`} className="ed-warning" role="note" data-code={w.code}>
+          {w.message}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 /** An age for the page line: the number, or the state in plain words. */
@@ -231,8 +320,20 @@ export function CharacterPage(props: {
         onSubmit={(e) => e.preventDefault()}
       >
         <WriteFieldset>
-          {field('birth')}
-          {field('death')}
+          <DateBoxField
+            name="birth"
+            label="Birth"
+            value={draft.birth}
+            messages={props.messages}
+            onChange={(v) => props.onChange('birth', v)}
+          />
+          <DateBoxField
+            name="death"
+            label="Death"
+            value={draft.death}
+            messages={props.messages}
+            onChange={(v) => props.onChange('death', v)}
+          />
           {field('status')}
           {field('familyIds')}
           <p className="char-age" data-testid="char-age">
