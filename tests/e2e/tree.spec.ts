@@ -956,6 +956,12 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   const heading = p.getByTestId('char-heading');
   await expect(heading.locator('.char-name')).toContainText('Iris Hale-Zhou');
   await expect(heading.getByTestId('char-chinese').locator('.zh-chars')).toHaveText('晓曦');
+  // The page heading is the only name: the editor pane shows no title or kind above it.
+  const editorPane = page.getByTestId('editor');
+  await expect(editorPane.locator('#editor-title')).toHaveCount(0);
+  await expect(editorPane.locator('.editor-head .eyebrow')).toHaveCount(0);
+  await expect(editorPane.getByRole('heading', { name: /Iris Hale-Zhou/ })).toHaveCount(1);
+  await expect(editorPane.getByTestId('autosave')).toBeVisible();
   // One line: birth, death, status, families, and the age (no story time yet: the current position).
   const line = p.getByTestId('char-line');
   for (const name of ['birth', 'death', 'status', 'familyIds']) {
@@ -964,6 +970,42 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
   await expect(p.getByTestId('char-age')).toHaveText('Age 9 in 2040 (current position)');
+  // SM-1 "on one line": the five sit side by side, the age last, wherever the pane is wide enough.
+  const lineBoxes = () =>
+    Promise.all(
+      [
+        field(line, 'birth'),
+        field(line, 'death'),
+        field(line, 'status'),
+        field(line, 'familyIds'),
+        p.getByTestId('char-age'),
+      ].map(async (l) => (await l.boundingBox())!),
+    );
+  const size = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]!.getSize(),
+  );
+  const atDefault = await lineBoxes();
+  process.stdout.write(
+    `SM-1 line at ${size.join('x')}: ${atDefault.map((b) => `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}w`).join(' | ')}\n`,
+  );
+  try {
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.setSize(1920, 1080),
+    );
+    await expect
+      .poll(async () => {
+        const tops = (await lineBoxes()).map((b) => b.y);
+        return Math.max(...tops) - Math.min(...tops);
+      })
+      .toBeLessThanOrEqual(4);
+    const lefts = (await lineBoxes()).map((b) => b.x);
+    expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
+  } finally {
+    await app.evaluate(
+      ({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0]!.setSize(w!, h!),
+      size,
+    );
+  }
   // The relatives, read only: parents, partners with the union years, children.
   const rel = p.getByTestId('char-relatives');
   await expect(rel).toContainText('Parents: ');

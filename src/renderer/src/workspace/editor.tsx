@@ -408,17 +408,22 @@ export function EntryPane(props: {
     <>
       <section
         className="ws-editor"
-        aria-labelledby="editor-title"
+        // SM-1: a character page's own heading is the only name on it.
+        {...(collection === 'characters'
+          ? { 'aria-label': entryTitle(draft) }
+          : { 'aria-labelledby': 'editor-title' })}
         data-testid="editor"
         data-entry-id={id}
       >
         <header className="editor-head">
-          <div className="stack tight">
-            <span className="eyebrow">{info.singular}</span>
-            <h2 id="editor-title">
-              <Zh text={entryTitle(draft)} />
-            </h2>
-          </div>
+          {collection !== 'characters' && (
+            <div className="stack tight">
+              <span className="eyebrow">{info.singular}</span>
+              <h2 id="editor-title">
+                <Zh text={entryTitle(draft)} />
+              </h2>
+            </div>
+          )}
           <SaveState status={ed.status} error={ed.error} />
         </header>
         {inTrash && (

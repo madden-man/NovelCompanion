@@ -444,7 +444,10 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
   await expect(linked).toContainText('Character: Linker Zhou');
   await linked.getByRole('button', { name: 'Character: Linker Zhou' }).click();
   await expect(
-    page.getByTestId('editor').getByRole('heading', { name: 'Linker Zhou', level: 2 }),
+    page
+      .getByTestId('editor')
+      .getByTestId('char-heading')
+      .getByRole('heading', { name: 'Linker Zhou' }),
   ).toBeVisible();
 });
 

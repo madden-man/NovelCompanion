@@ -2028,3 +2028,44 @@ fieldset.write-group[disabled] {
 .we-event.formative {
   font-weight: 700;
 }
+
+/* SM-1: birth, death, status, families and the age share one line, wrapping only when narrow.
+   Colors are theme tokens, so the line reads the same in light and dark. */
+.char-line > fieldset.write-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.char-line > fieldset.write-group > .ed-field {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.char-line > fieldset.write-group > .ed-field .ed-label {
+  padding-top: 0;
+}
+.char-line .char-age {
+  margin-left: auto;
+  color: var(--fg);
+}
+.char-texts > fieldset.write-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.char-line .year-input {
+  width: 4.5em;
+}
+.char-line .small-input {
+  width: 3.2em;
+}
+.char-line .date-row {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+/* A hint wraps to its field's controls instead of widening the field. */
+.char-line .ed-hint {
+  contain: inline-size;
+}
