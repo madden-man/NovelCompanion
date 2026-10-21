@@ -30,3 +30,12 @@
   width: 100%;
   resize: vertical;
 }
+/*
+ * GL-3: the table scrolls sideways on a narrow window, so it clips what
+ * leaves it. Room under the last row keeps its meaning card inside, and the
+ * reserved gutter keeps a scroll bar from narrowing the columns under the pointer.
+ */
+.glossary-wrap {
+  padding-bottom: 5rem;
+  scrollbar-gutter: stable;
+}

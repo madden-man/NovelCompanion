@@ -656,7 +656,7 @@ export function GlossaryTable(props: { onOpen: Open }) {
       {rows.length === 0 ? (
         <p className="example-note">No glossary terms yet.</p>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap glossary-wrap">
           <table className="compact">
             <thead>
               <tr>
