@@ -1,0 +1,270 @@
+/* a39-world, SM-8: the year grid. Sticky year header and row labels; colors only from theme tokens. */
+.wg-scroll {
+  position: relative;
+  flex-shrink: 0;
+  overflow: auto;
+  max-height: max(320px, calc(100vh - var(--ws-chrome, 120px) - 260px));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--chart-surface);
+}
+.wg-canvas {
+  position: relative;
+}
+.wg-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-strong);
+}
+.wg-corner {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  flex: none;
+  width: var(--wg-label);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--surface);
+  border-right: 1px solid var(--border-strong);
+}
+.wg-corner-sub {
+  font-weight: 600;
+  color: var(--fg-2);
+}
+.wg-years {
+  position: absolute;
+  left: var(--wg-label);
+  top: 0;
+  height: 26px;
+}
+.wg-tick {
+  position: absolute;
+  top: 5px;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.wg-tick.end,
+.wg-story-tag.end {
+  /* The last label ends at the right edge so the header never scrolls the grid sideways. */
+  transform: translateX(-100%);
+}
+.wg-story-tag {
+  position: absolute;
+  top: 3px;
+  transform: translateX(-50%);
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--time-soft);
+  border: 1px solid var(--time);
+  white-space: nowrap;
+}
+.wg-eras {
+  position: absolute;
+  left: var(--wg-label);
+  top: 28px;
+  height: 24px;
+}
+.wg-era {
+  all: unset;
+  position: absolute;
+  top: 0;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.wg-era:hover {
+  background: var(--accent-soft);
+}
+.wg-era:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 1;
+}
+.wg-line {
+  display: flex;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+}
+.wg-label {
+  all: unset;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: none;
+  width: var(--wg-label);
+  box-sizing: border-box;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: var(--surface);
+  border-right: 1px solid var(--border-strong);
+  cursor: pointer;
+}
+.wg-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.wg-label:hover {
+  background: var(--surface-2);
+}
+.wg-label:disabled {
+  cursor: default;
+}
+.wg-group-label {
+  font-weight: 700;
+  background: var(--surface-2);
+}
+.wg-row-label {
+  padding-left: 26px;
+}
+.wg-caret {
+  width: 10px;
+  color: var(--fg);
+}
+.wg-group {
+  background: var(--surface-2);
+}
+.wg-track {
+  position: relative;
+  flex: none;
+  height: 100%;
+}
+.wg-track.addable {
+  cursor: copy;
+}
+.wg-marker {
+  all: unset;
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  background: var(--fg-2);
+  border: 1px solid var(--chart-surface);
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  scroll-margin-left: calc(var(--wg-label) + 16px);
+}
+.wg-marker.bar {
+  border-radius: 6px;
+}
+.wg-marker.big {
+  background: var(--accent);
+  border: 2px solid var(--fg);
+}
+.wg-marker:hover {
+  border-color: var(--fg);
+}
+.wg-marker:focus-visible,
+.wg-marker.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+.wg-marker.dragging {
+  cursor: grabbing;
+  z-index: 6;
+}
+.wg-mlabel {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: var(--fg);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.wg-drag-year {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--fg);
+  white-space: nowrap;
+}
+.wg-overlay {
+  position: absolute;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.wg-writing {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in oklab, var(--time-soft) 70%, transparent);
+  border-left: 1px solid var(--time);
+  border-right: 1px solid var(--time);
+}
+.wg-story {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--time);
+}
+.wg-tip {
+  z-index: 7;
+}
+.wg-add {
+  position: absolute;
+  z-index: 8;
+  width: 260px;
+  padding: 10px 12px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.wg-add-years {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.wg-add-years input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.wg-add-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}

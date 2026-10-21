@@ -526,23 +526,25 @@ test('ARCH-8 Tide Lines is opened again from the Bibles screen, with its own tre
   await expect(page.getByTestId('tree-year')).toHaveValue('2045');
 });
 
-test('TL-6 WE-1 the timeline draws every lane and filters by family and category', async () => {
+test('SM-8 WE-1 the world events grid shows the rows and a new event, and the category filter narrows the rows', async () => {
   await rail(page, 'Timeline').click();
-  const view = page.getByTestId('timeline-view');
-  const svg = view.getByTestId('timeline-svg');
-  const marks = (kind: string) => svg.locator(`g.tl-mark[data-kind="${kind}"]`);
-  const filters = view.getByRole('group', { name: 'Timeline filters' });
-  await expect(view.getByTestId('timeline-cursor')).toHaveAttribute('data-year', '2045');
-  await expect(marks('event')).toHaveCount(11);
-  await filters.getByLabel('Family', { exact: true }).selectOption({ label: 'Zhou' });
-  await expect(marks('life')).toHaveCount(6);
-  await filters.getByLabel('Family', { exact: true }).selectOption({ label: 'All families' });
-  await filters.getByLabel('Category', { exact: true }).selectOption({ label: 'Technology' });
-  const tech = await marks('event').count();
-  expect(tech).toBeGreaterThan(0);
-  expect(tech).toBeLessThan(11);
-  await filters.getByRole('button', { name: 'Clear filters' }).click();
-  await expect(marks('event')).toHaveCount(11);
+  const grid = page.getByTestId('world-grid');
+  const rows = () =>
+    grid.locator('.wg-row').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.row));
+  await expect(grid.locator('.wg-marker')).toHaveCount(11);
+  await grid.locator('.wg-row[data-row="robotics"] .wg-row-label').click();
+  const form = grid.getByTestId('grid-add');
+  await form.getByLabel('Title').fill('Harbor robots unload the night ships');
+  await form.getByRole('button', { name: 'Save' }).click();
+  const made = grid.locator(
+    '.wg-row[data-row="robotics"] .wg-marker[aria-label^="Harbor robots unload the night ships"]',
+  );
+  await expect(made).toHaveAttribute('data-year', '2045');
+  expect((await rows()).length).toBeGreaterThan(3);
+  const filter = page.getByRole('group', { name: 'Categories' });
+  await filter.getByLabel('Category', { exact: true }).selectOption({ label: 'Technology' });
+  expect(await rows()).toEqual(['technology', 'robotics', 'energy']);
+  await filter.getByLabel('Category', { exact: true }).selectOption({ label: 'All categories' });
 });
 
 test('TL-7 compare shows Margaret and Iris side by side by year', async () => {

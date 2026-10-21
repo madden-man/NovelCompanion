@@ -327,17 +327,31 @@ test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to win
   await expect(page.getByTestId('tree-svg')).toBeVisible();
 });
 
-test('NF-2 TL-6 the timeline: the family filter by typing, and an era mark opens in the inspector with Enter', async () => {
+test('NF-2 SM-8 the world events grid by keyboard', async () => {
   await go('Timeline');
-  const family = page.getByLabel('Timeline filters').getByRole('combobox').first();
-  await tabTo(family);
-  await page.keyboard.type('Zhou');
-  await expect(family).not.toHaveValue('');
-  // The marks are one Tab stop (arrow keys move between them); eras come first.
-  const era = page.locator('g.tl-mark[data-kind="era"]').first();
-  await press(era);
-  await expect(era).toHaveClass(/selected/);
-  await expect(page.getByTestId('timeline-inspector')).toContainText(/\d{4}/);
+  const grid = page.getByTestId('world-grid');
+  const category = page.getByRole('group', { name: 'Categories' }).getByLabel('Category');
+  await tabTo(category);
+  await page.keyboard.type('Technology');
+  await expect(category).toHaveValue('technology');
+  await expect(grid.locator('.wg-group')).toHaveCount(1);
+  // Type-ahead on a select forgets what was typed after a second.
+  await page.waitForTimeout(1200);
+  await page.keyboard.type('All');
+  await expect(category).toHaveValue('');
+  // The markers are one Tab stop; ArrowDown moves to the next, Enter opens it.
+  const stop = grid.locator('.wg-marker[tabindex="0"]');
+  await tabTo(stop.first());
+  const first = await stop.getAttribute('data-id');
+  await page.keyboard.press('ArrowDown');
+  const next = page.locator('.wg-marker:focus');
+  await expect(next).not.toHaveAttribute('data-id', first ?? '');
+  const id = await next.getAttribute('data-id');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('timeline-inspector').getByTestId('editor')).toHaveAttribute(
+    'data-entry-id',
+    id ?? '',
+  );
 });
 
 test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens it, and Lived through opens and picks by typing', async () => {
