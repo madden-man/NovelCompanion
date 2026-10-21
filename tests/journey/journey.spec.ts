@@ -910,7 +910,7 @@ test('ED-4 the history drawer compares a revision with the current entry and res
     .getByRole('button');
   await expect(revisions.nth(0)).toContainText('Changed (current)');
   await revisions.nth(1).click();
-  const row = drawer.getByTestId('revision-diff').getByRole('row', { name: /Birthplace/ });
+  const row = drawer.getByTestId('revision-diff').getByRole('row', { name: /In the story/ });
   await expect(row.getByRole('cell').nth(0)).toHaveText('Astoria');
   await expect(row.getByRole('cell').nth(1)).toHaveText('Seaside');
   await drawer.getByRole('button', { name: 'Restore this version' }).click();

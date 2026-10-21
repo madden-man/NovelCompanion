@@ -18,7 +18,6 @@ import {
   launch,
   openListFor,
   rail,
-  reveal,
   setField,
   waitSaved,
   withoutSystem,
@@ -183,7 +182,7 @@ async function newCharacter(name: string, birthYear = 1958) {
   await field(form, 'names.full').locator('input').fill(name);
   await form.getByRole('button', { name: 'Create character' }).click();
   const editor = page.getByTestId('editor');
-  await expect(editor.getByRole('heading', { name })).toBeVisible();
+  await expect(editor.getByTestId('char-heading').getByRole('heading', { name })).toBeVisible();
   await waitSaved(page);
   await field(editor, 'birth').getByLabel('Kind of date').selectOption('year');
   await field(editor, 'birth').getByLabel('Year', { exact: true }).fill(String(birthYear));
@@ -213,8 +212,6 @@ test('ED-2 a change saves on its own within one second, with no save button, and
 
 test('ED-2 continuous typing still saves within one second of the first change', async () => {
   const editor = page.getByTestId('editor');
-  // A38: the backstory sits behind a caret low on the page.
-  await reveal(field(editor, 'backstory'));
   const input = field(editor, 'backstory').locator('textarea');
   await input.click();
   const start = Date.now();
@@ -302,31 +299,38 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
   await expect
     .poll(async () => Boolean((await currentEntry('characters', 'Temp Person')).deletedAt))
     .toBe(false);
-  // Edit links, then undo the link edit.
+  // Edit links, then undo the link edit. SM-1: the character page has no links box, so an open question carries them.
+  await openSection('openQuestions');
+  await page.getByRole('button', { name: /^New / }).first().click();
+  const form = page.getByTestId('new-entry');
+  await field(form, 'title').locator('input').fill('Temp question');
+  await form.getByRole('button', { name: /^Create / }).click();
   const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { name: 'Temp question' })).toBeVisible();
+  await waitSaved(page);
   const links = field(editor, 'links');
   await links.getByPlaceholder('Find an entry to link').fill('Ada Sullivan');
   await links.getByRole('option').filter({ hasText: 'Ada Sullivan' }).first().click();
   await waitSaved(page);
   await expect
-    .poll(async () => (await currentEntry('characters', 'Temp Person')).links)
+    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).links)
     .toHaveLength(1);
   await page.keyboard.press('Meta+z');
   await expect
-    .poll(async () => (await currentEntry('characters', 'Temp Person')).links)
+    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).links)
     .toHaveLength(0);
   // The step before the link edit is the create itself: undoing it sends the entry to the trash.
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    'Undid: Changed Links on Temp Person',
+    'Undid: Changed Links on Temp question',
   );
   await page.keyboard.press('Meta+z');
-  await expect(page.getByTestId('undo-notice').first()).toHaveText('Undid: Created Temp Person');
+  await expect(page.getByTestId('undo-notice').first()).toHaveText('Undid: Created Temp question');
   await expect
-    .poll(async () => Boolean((await currentEntry('characters', 'Temp Person')).deletedAt))
+    .poll(async () => Boolean((await currentEntry('openQuestions', 'Temp question')).deletedAt))
     .toBe(true);
   await page.keyboard.press('Shift+Meta+z');
   await expect
-    .poll(async () => Boolean((await currentEntry('characters', 'Temp Person')).deletedAt))
+    .poll(async () => Boolean((await currentEntry('openQuestions', 'Temp question')).deletedAt))
     .toBe(false);
 });
 
@@ -343,16 +347,17 @@ test('ED-4 the history drawer compares any revision with the current entry and r
   const revisions = drawer
     .getByRole('list', { name: 'Revisions, newest first' })
     .getByRole('button');
-  await expect(revisions).toHaveCount(3);
+  // SM-1: a character is created from the name, then the birth year is a change of its own.
+  await expect(revisions).toHaveCount(4);
   await expect(revisions.nth(0)).toContainText('Changed (current)');
-  await expect(revisions.nth(2)).toContainText('Created');
+  await expect(revisions.nth(3)).toContainText('Created');
   await revisions.nth(1).click();
   const diff = drawer.getByTestId('revision-diff');
-  const row = diff.getByRole('row', { name: /Birthplace/ });
+  const row = diff.getByRole('row', { name: /In the story/ });
   await expect(row.getByRole('cell').nth(0)).toHaveText('Cork');
   await expect(row.getByRole('cell').nth(1)).toHaveText('Boston');
   await drawer.getByRole('button', { name: 'Restore this version' }).click();
-  await expect(revisions).toHaveCount(4);
+  await expect(revisions).toHaveCount(5);
   await expect(revisions.nth(0)).toContainText('Restored the version from');
   await drawer.getByRole('button', { name: 'Close' }).click();
   await expect(input).toHaveValue('Cork');
@@ -365,13 +370,20 @@ test('ED-4 the history drawer compares any revision with the current entry and r
 });
 
 test('ED-5 deleting lists what links here, moves it to the trash, and restores it with its links', async () => {
-  // Link Ada from a new character, so Ada has something linking to her.
+  // Link Ada from a new character, so Ada has something linking to her. SM-1: the character
+  // page has no links box, so the link is a mention typed in the description.
   await newCharacter('Linker Zhou', 1992);
   const editor = page.getByTestId('editor');
-  const links = field(editor, 'links');
-  await links.getByLabel('Link kind').fill('cousin');
-  await links.getByPlaceholder('Find an entry to link').fill('Ada Sullivan');
-  await links.getByRole('option').filter({ hasText: 'Ada Sullivan' }).first().click();
+  const desc = field(editor, 'body').locator('textarea');
+  await desc.click();
+  await desc.pressSequentially('Cousin of @Ada');
+  await expect(
+    field(editor, 'body')
+      .getByRole('listbox', { name: 'Matching entries' })
+      .getByRole('option')
+      .first(),
+  ).toContainText('Ada Sullivan');
+  await page.keyboard.press('Enter');
   await waitSaved(page);
 
   await openSection('characters');
@@ -400,7 +412,7 @@ test('ED-5 deleting lists what links here, moves it to the trash, and restores i
   expect(ada.deletedAt).toBeUndefined();
   const { backlinks } = await invoke('entry.backlinks', { id: ada._id });
   expect(backlinks).toContainEqual(
-    expect.objectContaining({ title: 'Linker Zhou', kind: 'cousin' }),
+    expect.objectContaining({ title: 'Linker Zhou', kind: 'mention' }),
   );
 });
 
@@ -413,16 +425,16 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
   const editor = page.getByTestId('editor');
   const body = field(editor, 'body').locator('textarea');
   await body.click();
+  await body.press('End');
   await body.pressSequentially('Compare with @Revi');
   const picker = field(editor, 'body').getByRole('listbox', { name: 'Matching entries' });
   await expect(picker.getByRole('option').first()).toContainText('Revision Doyle');
   await page.keyboard.press('Enter');
-  await expect(body).toHaveValue('Compare with @Revision Doyle ');
+  await expect(body).toHaveValue(/Compare with @Revision Doyle $/);
   await waitSaved(page);
   const linker = await currentEntry('characters', 'Linker Zhou');
   const doyle = await currentEntry('characters', 'Revision Doyle');
   expect(linker.links).toContainEqual({ targetId: doyle._id, kind: 'mention' });
-  await expect(field(editor, 'links')).toContainText('Character: Revision Doyle');
 
   await page
     .getByTestId('entry-list')
@@ -432,7 +444,7 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
   await expect(linked).toContainText('Character: Linker Zhou');
   await linked.getByRole('button', { name: 'Character: Linker Zhou' }).click();
   await expect(
-    page.getByTestId('editor').getByRole('heading', { name: 'Linker Zhou' }),
+    page.getByTestId('editor').getByRole('heading', { name: 'Linker Zhou', level: 2 }),
   ).toBeVisible();
 });
 
@@ -472,8 +484,15 @@ test('ED-10 a value the schema cannot store is marked at the field and not sent'
 });
 
 test('ED-8 renaming a tag on the Lists screen updates every entry that uses it', async () => {
-  for (const name of ['Ada Sullivan', 'Linker Zhou']) {
-    await openSection('characters');
+  // SM-1: the character page has no tags box, so two open questions carry the tag.
+  await openSection('openQuestions');
+  await page.getByRole('button', { name: /^New / }).first().click();
+  const form = page.getByTestId('new-entry');
+  await field(form, 'title').locator('input').fill('Second question');
+  await form.getByRole('button', { name: /^Create / }).click();
+  await waitSaved(page);
+  for (const name of ['Temp question', 'Second question']) {
+    await openSection('openQuestions');
     await page
       .getByTestId('entry-list')
       .getByRole('button', { name: new RegExp(name) })
@@ -491,14 +510,14 @@ test('ED-8 renaming a tag on the Lists screen updates every entry that uses it',
   await panel.getByLabel('New name for harbor').fill('the harbor');
   await panel.getByRole('button', { name: 'Save name' }).click();
   await expect(panel.getByRole('status')).toHaveText('Renamed. 2 entries were updated.');
-  for (const name of ['Ada Sullivan', 'Linker Zhou']) {
-    expect((await currentEntry('characters', name)).tags).toContain('the harbor');
-    expect((await currentEntry('characters', name)).tags).not.toContain('harbor');
+  for (const name of ['Temp question', 'Second question']) {
+    expect((await currentEntry('openQuestions', name)).tags).toContain('the harbor');
+    expect((await currentEntry('openQuestions', name)).tags).not.toContain('harbor');
   }
   // The rename is undoable.
   await page.keyboard.press('Meta+z');
   await expect
-    .poll(async () => (await currentEntry('characters', 'Ada Sullivan')).tags)
+    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).tags)
     .toContain('harbor');
 });
 
@@ -703,7 +722,7 @@ test('ED-7 a proposal waits in the review queue with its diff; approve writes it
   const cells = (c: typeof card) =>
     c
       .getByTestId('proposal-diff')
-      .getByRole('row', { name: /Birthplace/ })
+      .getByRole('row', { name: /In the story/ })
       .getByRole('cell');
   await expect(cells(card).nth(0)).toHaveText(String(before!.role || 'Blank'));
   await expect(cells(card).nth(1)).toHaveText('Sacramento');
@@ -759,7 +778,7 @@ test('ED-7 a proposal whose entry changed since is refused until compared again'
   await expect(
     card
       .getByTestId('proposal-diff')
-      .getByRole('row', { name: /Birthplace/ })
+      .getByRole('row', { name: /In the story/ })
       .getByRole('cell')
       .nth(0),
   ).toHaveText('Stockton');
