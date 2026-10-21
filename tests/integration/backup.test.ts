@@ -258,8 +258,8 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     await a.repo.setSnapshotKeep(12);
     await a.repo.saveMapping('book.xlsx#Sheet 1', { shape: 'table' });
     // PL-5: the scene outline and its versions travel too.
-    await a.repo.setSceneOutline('- One', { H1: { from: 1, to: 1 } });
-    await a.repo.setSceneOutline('- One\n- Two', {}, { newVersion: true });
+    await a.repo.setSceneOutline('- One', { breaks: { H1: 0 } });
+    await a.repo.setSceneOutline('- One\n- Two', { newVersion: true });
     const exported = await exportBibleJson(a.handle, new Date('2026-10-10T12:00:00Z'));
     expect(exported.counts.revisions).toBeGreaterThan(0);
     expect(exported.counts.meta).toBeGreaterThanOrEqual(5);

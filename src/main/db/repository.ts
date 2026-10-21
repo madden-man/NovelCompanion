@@ -49,15 +49,15 @@ import type { BibleHandle } from './bibles';
 import {
   SCENE_OUTLINE_ID,
   SCENE_VERSIONS_COLLECTION,
-  sameRanges,
+  sameYears,
   sceneCount,
   sameBreaks,
   sceneBreaks,
   sceneOutlineText,
-  sceneRanges,
+  sceneYears,
   startsNewVersion,
 } from '../../shared/domain/sceneOutline';
-import type { SceneBreaks, SceneRanges } from '../../shared/domain/sceneOutline';
+import type { SceneBreaks, SceneYears } from '../../shared/domain/sceneOutline';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
@@ -1400,13 +1400,13 @@ export class Repository {
 
   // ---------- scene outline (PL-5, A36: meta for the current state, its own collection for versions) ----------
 
-  /** The scene outline: one bulleted text per bible, the chapters' scene ranges and breaks, and when it was last saved. */
+  /** The scene outline: one bulleted text per bible, the chapters' breaks, the scenes' years, and when it was last saved. */
   sceneOutline(): SceneOutlineDoc {
     const doc = this.model.get('meta', SCENE_OUTLINE_ID);
     return {
       text: sceneOutlineText(doc),
-      ranges: sceneRanges(doc),
       breaks: sceneBreaks(doc),
+      years: sceneYears(doc),
       modifiedAt: doc && typeof doc.modifiedAt === 'string' ? doc.modifiedAt : null,
     };
   }
@@ -1425,16 +1425,13 @@ export class Repository {
    */
   async setSceneOutline(
     text: string,
-    ranges: SceneRanges = {},
-    opts: { newVersion?: boolean; breaks?: SceneBreaks } = {},
+    opts: { newVersion?: boolean; breaks?: SceneBreaks; years?: SceneYears } = {},
   ): Promise<SceneOutlineDoc> {
     const prev = this.sceneOutline();
-    const clean = sceneRanges({ ranges });
+    const clean = sceneYears({ years: opts.years ?? {} });
     const cleanBreaks = sceneBreaks({ breaks: opts.breaks ?? {} });
     const changed =
-      prev.text !== text ||
-      !sameRanges(prev.ranges, clean) ||
-      !sameBreaks(prev.breaks, cleanBreaks);
+      prev.text !== text || !sameYears(prev.years, clean) || !sameBreaks(prev.breaks, cleanBreaks);
     const now = this.now();
     const iso = now.toISOString();
     if (changed) {
@@ -1443,22 +1440,22 @@ export class Repository {
       if (
         !last &&
         prev.modifiedAt !== null &&
-        (prev.text !== '' || Object.keys(prev.ranges).length)
+        (prev.text !== '' || Object.keys(prev.breaks).length)
       ) {
         last = {
           _id: newId(),
           at: prev.modifiedAt,
           until: prev.modifiedAt,
           text: prev.text,
-          ranges: prev.ranges,
           breaks: prev.breaks,
+          years: prev.years,
         };
         await versions.insertOne(last);
       }
       if (last && !startsNewVersion(last.until, now, opts.newVersion)) {
         await versions.updateOne(
           { _id: last._id },
-          { $set: { text, ranges: clean, breaks: cleanBreaks, until: iso } },
+          { $set: { text, breaks: cleanBreaks, years: clean, until: iso } },
         );
       } else {
         await versions.insertOne({
@@ -1466,16 +1463,16 @@ export class Repository {
           at: iso,
           until: iso,
           text,
-          ranges: clean,
           breaks: cleanBreaks,
+          years: clean,
         });
       }
     }
     await this.writeMeta({
       _id: SCENE_OUTLINE_ID,
       text,
-      ranges: clean,
       breaks: cleanBreaks,
+      years: clean,
       modifiedAt: iso,
     });
     return this.sceneOutline();
@@ -1502,8 +1499,8 @@ export class Repository {
     scenes: number;
     chars: number;
     text: string;
-    ranges: SceneRanges;
     breaks: SceneBreaks;
+    years: SceneYears;
   }> {
     const d = await this.sceneVersions().findOne({ _id: id });
     if (!d) throw new Error('That version of the scene outline is gone.');
@@ -1515,15 +1512,15 @@ export class Repository {
       scenes: sceneCount(text),
       chars: text.length,
       text,
-      ranges: sceneRanges(d),
       breaks: sceneBreaks(d),
+      years: sceneYears(d),
     };
   }
 
   /** Make a version current again, as a new version, so the step back is itself restorable. */
   async restoreSceneOutline(id: string) {
     const v = await this.sceneOutlineVersion(id);
-    return this.setSceneOutline(v.text, v.ranges, { newVersion: true, breaks: v.breaks });
+    return this.setSceneOutline(v.text, { newVersion: true, breaks: v.breaks, years: v.years });
   }
 
   /**
@@ -1596,21 +1593,21 @@ export class Repository {
 
 const STORY_TIME_ID = 'storyTime';
 
-/** One saved version of the scene outline (PL-5); `breaks` since A37. */
+/** One saved version of the scene outline (PL-5); `breaks` since A37, `years` since A39 (an older `ranges` is ignored). */
 interface SceneVersionDoc {
   _id: string;
   at: string;
   until: string;
   text: string;
-  ranges: SceneRanges;
   breaks?: SceneBreaks;
+  years?: SceneYears;
 }
 
 /** The scene outline as the repository returns it. */
 interface SceneOutlineDoc {
   text: string;
-  ranges: SceneRanges;
   breaks: SceneBreaks;
+  years: SceneYears;
   modifiedAt: string | null;
 }
 const BRIEF_SETTINGS_ID = 'briefSettings';

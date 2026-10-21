@@ -26,7 +26,9 @@ export type Op =
     }
   | { kind: 'delete'; collection: EntryCollection; id: string }
   | { kind: 'restore'; collection: EntryCollection; id: string }
-  | { kind: 'rename'; listId: string; itemId: string; label: string; expect: string };
+  | { kind: 'rename'; listId: string; itemId: string; label: string; expect: string }
+  /** SM-7: a write outside the entries (the scene outline); `check` names why it cannot apply. */
+  | { kind: 'run'; apply: () => Promise<void>; check: () => Promise<string | null> };
 
 export type UndoCommand = Command<Op>;
 
@@ -119,6 +121,7 @@ export function renameCommand(
 
 /** Why a step cannot apply, in plain words, or null when it can. */
 async function blocked(op: Op, io: UndoIO): Promise<string | null> {
+  if (op.kind === 'run') return op.check();
   if (op.kind === 'rename') {
     const label = await io.listLabel(op.listId, op.itemId);
     return label === op.expect

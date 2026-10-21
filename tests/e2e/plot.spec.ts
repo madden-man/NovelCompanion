@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
+import { MongoClient } from 'mongodb';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { field, fileDb, invokeVia, launch, rail } from './helpers';
@@ -41,470 +42,516 @@ test.beforeAll(async () => {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
-  // One arc and two beats so the outline and the beat list have something to show.
-  await invoke('entry.create', {
-    collection: 'arcs',
-    data: {
-      title: 'Iris',
-      name: 'Iris: coming home',
-      scope: 'character',
-      ownerCharacterId: 'H5',
-      startYear: 2045,
-      endYear: 2075,
-      status: 'planned',
-    },
-  });
-  const arc = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries[0]!;
-  await invoke('entry.update', {
-    collection: 'chapters',
-    id: 'CH2',
-    patch: { arcIds: [arc.entry._id] },
-  });
-  for (const [i, t] of ['The kitchen', 'The song'].entries()) {
-    await invoke('entry.create', {
-      collection: 'plotBeats',
-      data: {
-        title: t,
-        arcIds: [arc.entry._id],
-        chapterId: 'CH2',
-        year: 2045,
-        arcOrders: [{ arcId: arc.entry._id, order: i + 1 }],
-        status: 'planned',
-      },
-    });
-  }
+  // An outline over the fixture's eight chapters: two scenes in chapter 1, two (and a note) in 2, one each after.
+  await invoke('sceneOutline.set', { text: OUTLINE.join('\n'), breaks: BREAKS });
 });
 
 test.afterAll(async () => {
   await app?.close();
 });
 
-const grid = () => page.getByTestId('outline-grid');
-const inspector = () => page.getByTestId('outline-inspector');
+/** The fixture outline, one line per entry; chapter 2 holds lines 2 to 4. */
+const OUTLINE = [
+  '- Mara reads the archive door',
+  '- She finds the key',
+  '- Two kitchens at dawn',
+  '  - the smell of rice',
+  '- The kettle',
+  '- Wedding in the rain',
+  '- The funeral',
+  '- Candles lit',
+  '- The letter arrives',
+  '- Rain in Guangzhou',
+  '- Noor',
+];
+const BREAKS = { CH1: 0, CH2: 2, CH3: 5, CH4: 6, CH5: 7, CH6: 8, CH7: 9, CH8: 10 };
+
+const view = () => page.getByTestId('outline-view');
+const section = (id: string) => view().locator(`[data-testid="scene-text"][data-section="${id}"]`);
+const bar = (id: string) => view().locator(`[data-testid="chapter-bar"][data-chapter="${id}"]`);
+const yearOf = (scene: number) =>
+  view().locator(`.sl[data-scene="${scene}"]`).getByTestId('scene-year');
+const stored = () => invoke('sceneOutline.get', {});
+const undo = () => view().getByRole('button', { name: 'Undo', exact: true }).click();
+const redo = () => view().getByRole('button', { name: 'Redo', exact: true }).click();
 const readingOrder = async (id: string) =>
   (await invoke('entry.get', { collection: 'chapters', id })).entry.readingOrder;
+const chapterIds = () =>
+  view()
+    .getByTestId('chapter-bar')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-chapter')));
+async function box(l: Locator) {
+  const b = await l.boundingBox();
+  if (!b) throw new Error('Not on screen.');
+  return b;
+}
+/** The row of a chapter: its text cell, which its bar sits beside. */
+const row = (id: string) => view().locator(`[data-row="${id}"] .scene-edit`);
+const near = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThan(6);
 
-test('PL-5 A37 the Outline opens on one flow: each chapter heads its own scenes, titles and years edit in place, and the text follows its chapter', async () => {
+test('SM-7 the Outline opens on two panels: one bar per chapter in reading order, titled with chapter and part, beside its own scenes, and no headings in the text or year grid', async () => {
   await rail(page, 'Outline').click();
-  const view = page.getByTestId('outline-view');
-  const undo = () => view.getByRole('button', { name: 'Undo', exact: true }).click();
-  const section = (id: string) => view.locator(`[data-testid="scene-text"][data-section="${id}"]`);
-  const head = (id: string) => view.locator(`[data-testid="scene-chapter"][data-chapter="${id}"]`);
-  const stored = () => invoke('sceneOutline.get', {});
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(fixture.chapters!.length);
+  expect(await chapterIds()).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await expect(bar('CH2').getByTestId('chapter-title')).toHaveText('Two Kitchens');
+  await expect(bar('CH2')).toContainText('Ch 2');
+  await expect(bar('CH2').getByTestId('chapter-part')).toContainText('High Water');
+  await expect(bar('CH5').getByTestId('chapter-part')).toContainText('The Letter');
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('2 scenes');
+  await expect(bar('CH4').getByTestId('chapter-scenes')).toHaveText('1 scene');
+  // Each section holds only its own scene lines; the chapter names are on the bars.
+  await expect(section('CH2')).toHaveValue(
+    '- Two kitchens at dawn\n  - the smell of rice\n- The kettle',
+  );
+  await expect(view().getByTestId('scene-count')).toHaveText('10 scenes');
+  // The scene numbers run on across the chapters in the gutter.
+  await expect(view().locator('.sl[data-scene="3"] .sl-no')).toHaveText('3');
+  // Every bar spans exactly the lines of its section, side by side with them.
+  for (const id of ['CH1', 'CH2', 'CH8']) {
+    const b = await box(bar(id));
+    const r = await box(row(id));
+    near(b.y, r.y + 3);
+    near(b.y + b.height, r.y + r.height - 3);
+    expect(b.x).toBeGreaterThan(r.x + r.width - 2);
+  }
+  // SM-12: the year grid and its toggle are gone.
+  await expect(page.getByRole('button', { name: 'Year grid', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('outline-grid')).toHaveCount(0);
+});
 
-  // Every chapter is a heading in the flow, in reading order, each over its own text.
-  await expect(view.getByTestId('scene-chapter')).toHaveCount(fixture.chapters!.length);
-  await expect(view.getByTestId('chapter-title').nth(1)).toHaveValue('Two Kitchens');
-  const one = section('CH1');
-  await one.click();
-  await expect(one).toHaveValue('- ');
-  await one.press('End');
-  await one.pressSequentially('Dawn lands in Jinan');
-  await one.press('Enter');
-  await one.pressSequentially('She finds the shrine');
-  await one.press('Meta+]');
-  await expect(one).toHaveValue('- Dawn lands in Jinan\n  - She finds the shrine');
+test('PL-5 the scene text keeps its rules: Enter continues a bullet, Cmd+] and Cmd+[ indent, autosave to Saved, Up carries on into the section above, and the text survives leaving the screen', async () => {
+  const eight = section('CH8');
+  await eight.click();
+  await eight.press('Meta+ArrowDown');
+  await eight.press('Enter');
+  await eight.pressSequentially('Noor at the window');
+  await eight.press('Meta+]');
+  await expect(eight).toHaveValue('- Noor\n  - Noor at the window');
   // An indented bullet belongs to the scene above it.
-  await expect(view.getByTestId('scene-count')).toHaveText('1 scene');
-  await one.press('Meta+[');
-  await one.press('End');
-  await one.press('Enter');
-  await one.pressSequentially('Mark waits in the fog');
-  await expect(view.getByTestId('scene-count')).toHaveText('3 scenes');
-  await expect(head('CH1').getByTestId('chapter-scenes')).toHaveText('3 scenes');
-  await expect(view.getByTestId('scene-autosave')).toHaveText('Saved');
-  const typed = '- Dawn lands in Jinan\n- She finds the shrine\n- Mark waits in the fog';
-  await expect.poll(async () => (await stored()).text).toBe(typed);
-  expect((await stored()).ranges).toEqual({ CH1: { from: 1, to: 3 } });
-  expect((await stored()).breaks).toMatchObject({ CH1: 0, CH2: 3 });
-  // The gutter numbers the scenes.
-  await expect(view.locator('[data-scene="3"] .sl-no')).toHaveText('3');
-
-  // Down on the last line carries on into the next chapter's text.
-  await one.press('ArrowDown');
-  await expect(section('CH2')).toBeFocused();
-
-  // ↑ Scene: chapter 2 starts a scene earlier, taking chapter 1's last scene; the numbers run on.
-  await head('CH2').getByTestId('chapter-earlier').click();
-  await expect(section('CH2')).toHaveValue('- Mark waits in the fog');
-  await expect(section('CH1')).toHaveValue('- Dawn lands in Jinan\n- She finds the shrine');
-  await expect(view.locator('[data-scene="3"]')).toHaveCount(1);
-  await expect
-    .poll(async () => (await stored()).ranges)
-    .toEqual({ CH1: { from: 1, to: 2 }, CH2: { from: 3, to: 3 } });
-
-  // A chapter dragged onto another moves there with its scenes; undo puts both back.
-  await head('CH1').getByTestId('chapter-grip').dragTo(head('CH2'));
-  await expect.poll(() => readingOrder('CH1')).toBe(2);
-  expect(await readingOrder('CH2')).toBe(1);
+  await expect(view().getByTestId('scene-count')).toHaveText('10 scenes');
+  await eight.press('Meta+[');
+  await expect(view().getByTestId('scene-count')).toHaveText('11 scenes');
+  await expect(bar('CH8').getByTestId('chapter-scenes')).toHaveText('2 scenes');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
   await expect
     .poll(async () => (await stored()).text)
-    .toBe('- Mark waits in the fog\n- Dawn lands in Jinan\n- She finds the shrine');
-  await expect(view.getByTestId('scene-chapter').first()).toHaveAttribute('data-chapter', 'CH2');
-  await undo();
-  await expect.poll(() => readingOrder('CH1')).toBe(1);
-  await expect.poll(async () => (await stored()).text).toBe(typed);
-  // Alt+Down on the title does the same from the keyboard.
-  await head('CH1').getByTestId('chapter-title').focus();
-  await page.keyboard.press('Alt+ArrowDown');
-  await expect.poll(() => readingOrder('CH1')).toBe(2);
-  await undo();
-  await expect.poll(() => readingOrder('CH1')).toBe(1);
-
-  // ↓ Scene hands it back.
-  await head('CH2').getByTestId('chapter-later').click();
-  await expect(section('CH1')).toHaveValue(typed);
-  await expect(head('CH2').getByTestId('chapter-later')).toBeDisabled();
-
-  // A title renames in place; Enter goes down into that chapter's scenes; undo restores it.
-  const title2 = head('CH2').getByTestId('chapter-title');
-  await title2.fill('The shrine by the stream');
-  await title2.press('Enter');
-  await expect
-    .poll(
-      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.title,
-    )
-    .toBe('The shrine by the stream');
-  await expect(section('CH2')).toBeFocused();
-  await undo();
-  await expect(title2).toHaveValue('Two Kitchens');
-
-  // The story year field moves the primary strand, and undo puts it back.
-  const yearBefore = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
-  await head('CH2').getByTestId('chapter-year').fill('2046');
-  await head('CH2').getByTestId('chapter-year').press('Enter');
-  await expect
-    .poll(async () => {
-      const ch = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
-      return (ch.strands as { primary: boolean; startYear: number }[]).find((s) => s.primary)
-        ?.startYear;
-    })
-    .toBe(2046);
-  await undo();
-  await expect
-    .poll(
-      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.strands,
-    )
-    .toEqual(yearBefore.strands);
-
-  // The world around each chapter: its era, and between chapters the time and the events in it.
-  await expect(head('CH2').getByTestId('scene-world')).toContainText('The forties');
-  const gaps = view.getByTestId('scene-gap');
-  await expect(gaps.first()).toContainText('Back 30 years, to 2045');
-  const toFive = view.locator('[data-section="CH5"] [data-testid="scene-gap"]');
-  await expect(toFive).toContainText('8 years later, 2040');
-  await expect(toFive.getByTestId('scene-event')).toHaveText([
-    /Columbia River king tide floods downtown Portland/,
-    /Pacific Rim trade accord signed/,
-  ]);
-
-  // Cmd+Enter starts a new chapter at the caret's line, after this one, holding the lines from there.
-  await one.click();
-  await one.press('Meta+ArrowUp');
-  await one.press('ArrowDown');
-  await one.press('Meta+Enter');
-  await expect(view.getByTestId('scene-chapter')).toHaveCount(fixture.chapters!.length + 1);
-  const made = view.getByTestId('scene-chapter').nth(1);
-  await expect(made.getByTestId('chapter-title')).toBeFocused();
-  await expect(made.getByTestId('chapter-title')).toHaveValue('New chapter');
-  const madeId = (await made.getAttribute('data-chapter'))!;
-  await expect(section('CH1')).toHaveValue('- Dawn lands in Jinan');
-  await expect(section(madeId)).toHaveValue('- She finds the shrine\n- Mark waits in the fog');
-  await expect.poll(async () => (await stored()).breaks[madeId]).toBe(1);
-  expect(await readingOrder(madeId)).toBe(2);
-  // One undo takes the new chapter away and gives its lines back to chapter 1.
-  await made.getByTestId('chapter-title').press('Escape');
-  await undo();
-  await expect(view.getByTestId('scene-chapter')).toHaveCount(fixture.chapters!.length);
-  await expect(section('CH1')).toHaveValue(typed);
-  await expect.poll(async () => (await stored()).text).toBe(typed);
-
-  // Versions: every change is kept; the edits so far share one version, shown as current.
-  const versions = view.getByTestId('scene-versions');
-  await versions.locator('summary').click();
-  await expect(versions.getByTestId('scene-version')).toHaveCount(1);
-  await expect(versions.getByTestId('scene-version').first()).toContainText('3 scenes');
-  await versions.getByTestId('scene-version').first().getByRole('button').click();
-  await expect(versions.locator('textarea')).toHaveValue(typed);
-  await versions.locator('summary').click();
-
+    .toBe([...OUTLINE, '- Noor at the window'].join('\n'));
+  expect((await stored()).breaks).toEqual(BREAKS);
+  expect(await stored()).not.toHaveProperty('ranges');
+  // Up on the first line carries on into the section above.
+  await eight.press('Meta+ArrowUp');
+  await eight.press('ArrowUp');
+  await expect(section('CH7')).toBeFocused();
   // The text is still there after leaving and coming back.
   await rail(page, 'Characters').click();
   await rail(page, 'Outline').click();
-  await expect(section('CH1')).toHaveValue(typed);
+  await expect(section('CH8')).toHaveValue('- Noor\n- Noor at the window');
 });
 
-test('A37 the year grid shows the world above the chapters, and a picked year lists its era, events and chapters', async () => {
-  await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  const band = page.getByTestId('outline-world');
-  await expect(band).toBeVisible();
-  await expect(band.locator('[data-era="ERA-2030"]')).toHaveText('The thirties');
-  await expect(band.locator('[data-event="E4"]')).toHaveCount(1);
-  await grid().locator('.ol-year[data-year="2032"]').click();
-  const panel = page.getByTestId('year-panel');
-  await expect(panel).toContainText('The thirties, 2030 to 2039');
-  await expect(panel.getByTestId('year-chapters')).toContainText('Two Kitchens');
-  await expect(panel.getByTestId('year-chapters')).toContainText('After the Funeral');
-  await expect(panel.getByRole('button', { name: 'Make 2032 the story time' })).toBeVisible();
-  // The arrows walk the years.
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
-  await expect(panel.locator('h3')).toHaveText('2036');
-  await expect(panel.getByTestId('year-events')).toContainText('Pacific Rim trade accord signed');
-  await panel.getByRole('button', { name: 'Close the year' }).click();
-  await expect(panel).toHaveCount(0);
+test('SM-5 a year typed in the gutter is stored in years and shown beside the scene; the scene below inherits it faded until it has its own; the first scene shows the chapter year', async () => {
+  // Chapter 2 (2045) holds scenes 3 and 4; both show 2045 faded, from the chapter.
+  for (const n of [3, 4]) {
+    await expect(yearOf(n)).toHaveValue('');
+    await expect(yearOf(n)).toHaveAttribute('placeholder', '2045');
+    await expect(yearOf(n)).toHaveAttribute('data-own', 'false');
+    await expect(yearOf(n)).toHaveClass(/inherited/);
+  }
+  await yearOf(4).fill('2046');
+  await yearOf(4).press('Enter');
+  await expect.poll(async () => (await stored()).years).toEqual({ '4': 2046 });
+  await expect(yearOf(4)).toHaveValue('2046');
+  await expect(yearOf(4)).toHaveAttribute('data-own', 'true');
+  await expect(yearOf(4)).not.toHaveClass(/inherited/);
+  // A committed year is one undo step.
+  await undo();
+  await expect.poll(async () => (await stored()).years).toEqual({});
+  await expect(yearOf(4)).toHaveValue('');
+  await expect(yearOf(4)).toHaveAttribute('placeholder', '2045');
+  await redo();
+  await expect.poll(async () => (await stored()).years).toEqual({ '4': 2046 });
+  await expect(yearOf(4)).toHaveValue('2046');
+  // A new scene below inherits 2046, faded.
+  const two = section('CH2');
+  await two.click();
+  await two.press('Meta+ArrowDown');
+  await two.press('Enter');
+  await two.pressSequentially('The kettle sings');
+  await expect(yearOf(5)).toHaveAttribute('placeholder', '2046');
+  await expect(yearOf(5)).toHaveAttribute('data-own', 'false');
+  // Given its own year it stops inheriting; cleared, it inherits again.
+  await yearOf(5).fill('2050');
+  await yearOf(5).press('Enter');
+  await expect.poll(async () => (await stored()).years).toEqual({ '4': 2046, '5': 2050 });
+  await expect(yearOf(5)).toHaveAttribute('data-own', 'true');
+  await yearOf(5).fill('');
+  await yearOf(5).press('Enter');
+  await expect.poll(async () => (await stored()).years).toEqual({ '4': 2046 });
+  await expect(yearOf(5)).toHaveAttribute('placeholder', '2046');
+  // Inheritance stops at the next chapter: chapter 3's first scene shows 2029, its own chapter's year.
+  await expect(yearOf(6)).toHaveAttribute('placeholder', '2029');
+  // The first scene follows its chapter's year at once.
+  await bar('CH2').getByTestId('chapter-year').fill('2044');
+  await bar('CH2').getByTestId('chapter-year').press('Enter');
+  await expect(yearOf(3)).toHaveAttribute('placeholder', '2044');
+  await undo();
+  await expect(yearOf(3)).toHaveAttribute('placeholder', '2045');
 });
 
-test('PL-2 the outline is a chapter-by-year grid with strand marks, an arc span, and the story-time cursor', async () => {
-  await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await expect(grid()).toBeVisible();
-  await expect(grid().getByTestId('outline-label')).toHaveCount(fixture.chapters!.length);
-  await expect(grid().locator('.ol-group.book')).toContainText('Tide Lines');
-  const two = grid().locator('[data-chapter="CH2"]');
-  await expect(two.locator('.ol-mark.primary')).toHaveCount(1);
-  await expect(two.locator('.ol-mark.backstory')).toHaveCount(1);
-  await expect(two.locator('.ol-arc')).toHaveCount(1);
-  await expect(grid().locator('.ol-cursor').first()).toBeVisible();
-  await expect(page.getByTestId('outline-time')).toContainText('Story time');
-});
+/** Pull a bar's edge to the lower part of a scene's line. */
+async function pullTo(id: string, edge: 'bar-start' | 'bar-end', scene: number, at = 0.85) {
+  await bar(id)
+    .getByTestId(edge)
+    .evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const handle = await box(bar(id).getByTestId(edge));
+  const line = await box(view().locator(`.sl[data-scene="${scene}"]`));
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, line.y + line.height * at, { steps: 6 });
+  await page.mouse.up();
+}
 
-test('PL-2 the grid flips to story-year order', async () => {
-  await page.getByLabel('Row order').selectOption('story');
-  await expect(grid()).toHaveAttribute('data-order', 'story');
-  const years = await grid()
-    .locator('[data-chapter]')
-    .evaluateAll((rows) => rows.map((r) => r.getAttribute('data-chapter')));
-  const expected = (await invoke('outline.get', { order: 'story', cursorYear: null })).rows
-    .filter((r) => r.kind === 'chapter')
-    .map((r) => r.id);
-  expect(years).toEqual(expected);
-  await page.getByLabel('Row order').selectOption('reading');
-});
-
-test('PL-2 PL-4 clicking a row opens the chapter page, and its strand years are editable in the inspector', async () => {
-  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
-  const pageView = inspector().getByTestId('chapter-page');
-  await expect(pageView).toContainText('Two Kitchens');
-  await expect(pageView.getByTestId('chapter-beats')).toContainText('The kitchen');
-  await expect(pageView.getByTestId('chapter-beats')).toContainText('The song');
-  await expect(pageView.locator('[data-strand="CH2-present"] [data-character="H5"]')).toContainText(
-    'alive, age 14',
+test("SM-7 pulling a bar's bottom edge down a scene moves the break and the next chapter shrinks; Undo restores it", async () => {
+  // Chapter 1 holds scenes 1 and 2, chapter 2 scenes 3 to 5.
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('3 scenes');
+  await pullTo('CH1', 'bar-end', 3);
+  await expect.poll(async () => (await stored()).breaks.CH2).toBe(4);
+  await expect(bar('CH1').getByTestId('chapter-scenes')).toHaveText('3 scenes');
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('2 scenes');
+  await expect(section('CH1')).toHaveValue(
+    '- Mara reads the archive door\n- She finds the key\n- Two kitchens at dawn\n  - the smell of rice',
   );
-  await expect(pageView.getByTestId('chapter-arcs')).toContainText('Iris: coming home');
-  // PL-4: places per strand, with the place they sit in.
-  await expect(
-    pageView.locator('[data-strand="CH2-present"]').getByTestId('chapter-places'),
-  ).toContainText('Places: Portland > The Hale house');
-  await expect(
-    pageView.locator('[data-strand="CH2-backstory"]').getByTestId('chapter-places'),
-  ).toContainText('Places: Guangzhou');
-  const editor = inspector().getByTestId('editor');
-  await field(editor, 'strands.1.startYear').locator(':scope > input').fill('2033');
-  await expect(editor.getByTestId('autosave')).toHaveText('Saved');
-  const ch = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
-  expect(
-    (ch.strands as { id: string; startYear: number }[]).find((s) => s.id === 'CH2-backstory')
-      ?.startYear,
-  ).toBe(2033);
-  await expect(
-    pageView.locator('[data-strand="CH2-backstory"] [data-character="H5"]'),
-  ).toContainText('age 2');
+  // Scene 3 now opens chapter 1, so it shows chapter 1's year; scene 4 keeps its own.
+  await expect(yearOf(3)).toHaveAttribute('placeholder', '2075');
+  expect((await stored()).years).toEqual({ '4': 2046 });
+  // The bars still sit beside their sections.
+  near((await box(bar('CH2'))).y, (await box(row('CH2'))).y + 3);
+  const pulled = await stored();
+  await undo();
+  await expect.poll(async () => (await stored()).breaks.CH2).toBe(2);
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('3 scenes');
+  // Redo pulls it again, and Undo takes it back once more.
+  await redo();
+  await expect.poll(async () => (await stored()).breaks).toEqual(pulled.breaks);
+  expect((await stored()).text).toBe(pulled.text);
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('2 scenes');
+  await undo();
+  await expect.poll(async () => (await stored()).breaks.CH2).toBe(2);
+  // The top edge works the same way: chapter 3 starts a scene earlier.
+  await pullTo('CH3', 'bar-start', 5, 0.15);
+  await expect.poll(async () => (await stored()).breaks.CH3).toBe(5);
+  await expect(bar('CH3').getByTestId('chapter-scenes')).toHaveText('2 scenes');
+  await undo();
+  await expect.poll(async () => (await stored()).breaks.CH3).toBe(6);
 });
 
-test('PL-3 dragging a chapter within its part changes the reading order and no story year; undo restores it', async () => {
-  const before = [await readingOrder('CH1'), await readingOrder('CH2')];
-  expect(before).toEqual([1, 2]);
-  const yearsBefore = JSON.stringify(
-    (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.strands,
-  );
-  await grid()
-    .locator('[data-chapter="CH2"]')
-    .getByTestId('outline-label')
-    .dragTo(grid().locator('[data-chapter="CH1"]').getByTestId('outline-label'));
-  await expect.poll(() => readingOrder('CH2')).toBe(1);
-  // The two chapters are written one after the other; wait for the second too.
+test('SM-7 dragging a bar past the next bar swaps the chapters: their scenes and years move with them and the reading numbers change; one Undo restores both', async () => {
+  const before = await stored();
+  await bar('CH1').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const grip = await box(bar('CH1').locator('.cbar-no'));
+  const target = await box(bar('CH2'));
+  await page.mouse.move(grip.x + 4, grip.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 4, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.up();
   await expect.poll(() => readingOrder('CH1')).toBe(2);
-  expect(
-    JSON.stringify(
-      (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.strands,
-    ),
-  ).toBe(yearsBefore);
-  const labels = grid().getByTestId('outline-label');
-  await expect(labels.first()).toContainText('Two Kitchens');
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(() => readingOrder('CH2')).toBe(2);
+  expect(await readingOrder('CH2')).toBe(1);
+  await expect.poll(chapterIds).toEqual(['CH2', 'CH1', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await expect(bar('CH1')).toContainText('Ch 2');
+  await expect
+    .poll(async () => (await stored()).text)
+    .toBe(
+      [
+        '- Two kitchens at dawn',
+        '  - the smell of rice',
+        '- The kettle',
+        '- The kettle sings',
+        '- Mara reads the archive door',
+        '- She finds the key',
+        ...OUTLINE.slice(5),
+        '- Noor at the window',
+      ].join('\n'),
+    );
+  expect((await stored()).years).toEqual({ '2': 2046 });
+  expect((await stored()).breaks).toMatchObject({ CH2: 0, CH1: 4, CH3: 6 });
+  await undo();
   await expect.poll(() => readingOrder('CH1')).toBe(1);
-});
-
-test('PL-4 a chapter in one strand shows its place, and a chapter with none shows no places line', async () => {
-  await grid().locator('[data-chapter="CH7"]').getByTestId('outline-label').click();
-  await expect(
-    inspector().getByTestId('chapter-page').locator('[data-strand="CH7-present"]'),
-  ).toContainText('Places: Guangzhou');
-  await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
-  await expect(inspector().getByTestId('chapter-page')).toContainText('Chapter 4');
-  await expect(inspector().getByTestId('chapter-places')).toHaveCount(0);
-  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
-});
-
-test('PL-3 dragging a chapter into another part gives it the target part and renumbers both parts; undo restores both', async () => {
-  const part = async (id: string) =>
-    (await invoke('entry.get', { collection: 'chapters', id })).entry.partId;
-  expect(await part('CH1')).toBe('PT1');
-  const yearsBefore = JSON.stringify(
-    (await invoke('entry.get', { collection: 'chapters', id: 'CH1' })).entry.strands,
-  );
-  await grid()
-    .locator('[data-chapter="CH1"]')
-    .getByTestId('outline-label')
-    .dragTo(grid().locator('[data-chapter="CH6"]').getByTestId('outline-label'));
-  await expect.poll(() => part('CH1')).toBe('PT2');
-  // It takes the place of the chapter it was dropped on (CH6 was second in part two).
-  const order = async () =>
-    (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
-      .map((e) => e.entry)
-      .filter((c) => c.partId === 'PT2')
-      .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
-      .map((c) => c._id);
-  expect(await order()).toEqual(['CH5', 'CH1', 'CH6', 'CH7', 'CH8']);
-  const first = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .filter((c) => c.partId === 'PT1')
-    .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
-    .map((c) => c._id);
-  expect(first).toEqual(['CH2', 'CH3', 'CH4']);
-  expect(
-    JSON.stringify(
-      (await invoke('entry.get', { collection: 'chapters', id: 'CH1' })).entry.strands,
-    ),
-  ).toBe(yearsBefore);
-  await expect(grid().locator('[data-chapter]').first()).toHaveAttribute('data-chapter', 'CH2');
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(() => part('CH1')).toBe('PT1');
-  expect(await readingOrder('CH1')).toBe(1);
   expect(await readingOrder('CH2')).toBe(2);
-  expect(await readingOrder('CH6')).toBe(6);
+  await expect.poll(async () => (await stored()).text).toBe(before.text);
+  expect((await stored()).years).toEqual(before.years);
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
 });
 
-test('KB-3 PL-3 Move to part on the chapter page moves the open chapter to the end of another part; undo moves it back', async () => {
-  await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
-  await inspector().getByLabel('Move to part').selectOption({ label: 'Part 2: The Letter' });
+test('SM-7 NF-2 from a focused bar: Up and Down swap it with its neighbour, Shift with the arrows moves its end, Alt its start, each one Undo step', async () => {
+  // Tab goes from a chapter's text to its bar.
+  await section('CH3').focus();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH3')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(() => readingOrder('CH3')).toBe(2);
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH3', 'CH2', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await expect(bar('CH3')).toBeFocused();
+  await expect(section('CH3')).toHaveValue('- Wedding in the rain');
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => readingOrder('CH3')).toBe(3);
+  await expect(bar('CH3')).toBeFocused();
+
+  // Shift+Up on chapter 2 hands its last scene to chapter 3; Alt+Down starts it a scene later.
+  await bar('CH2').focus();
+  await page.keyboard.press('Shift+ArrowUp');
+  await expect.poll(async () => (await stored()).breaks.CH3).toBe(5);
+  await expect(section('CH3')).toHaveValue('- The kettle sings\n- Wedding in the rain');
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(async () => (await stored()).breaks.CH2).toBe(4);
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('1 scene');
+  // Chapter 2 keeps its last scene: neither edge moves further in.
+  await page.keyboard.press('Alt+ArrowDown');
+  await page.keyboard.press('Shift+ArrowUp');
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('1 scene');
+  expect((await stored()).breaks).toMatchObject({ CH2: 4, CH3: 5 });
+  await undo();
+  await expect.poll(async () => (await stored()).breaks.CH2).toBe(2);
+  await undo();
+  await expect.poll(async () => (await stored()).breaks.CH3).toBe(6);
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('3 scenes');
+});
+
+test('SM-7 the two panels scroll as one: a bar stays beside its first scene as the outline scrolls', async () => {
+  const many = Array.from({ length: 40 }, (_, i) => `- Noor, day ${i + 1}`).join('\n');
+  await section('CH8').fill(many);
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  const scroller = page.getByTestId('outline-scroll');
+  await scroller.evaluate((el) => el.scrollTo(0, 0));
+  const first = view().locator('[data-row="CH7"] .sl[data-scene]').first();
+  const before = { bar: (await box(bar('CH7'))).y, scene: (await box(first)).y };
+  near(before.bar, before.scene - 6 + 3);
+  await scroller.evaluate((el) => el.scrollTo(0, 400));
+  await expect.poll(async () => (await box(first)).y).toBeLessThan(before.scene - 300);
+  const after = { bar: (await box(bar('CH7'))).y, scene: (await box(first)).y };
+  near(after.bar - after.scene, before.bar - before.scene);
+  await scroller.evaluate((el) => el.scrollTo(0, 0));
+  await section('CH8').fill('- Noor\n- Noor at the window');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+});
+
+test('SM-5 PL-5 versions keep the years: restoring an older version brings its years back', async () => {
+  // The edits so far share one version; age it so the next edit opens a new one.
+  const raw = await new MongoClient(db.uri).connect();
+  try {
+    await raw
+      .db(db.name)
+      .collection(`${SLUG}.sceneOutlineVersions`)
+      .updateMany(
+        {},
+        { $set: { at: '2026-01-01T09:00:00.000Z', until: '2026-01-01T09:00:00.000Z' } },
+      );
+  } finally {
+    await raw.close();
+  }
+  expect((await stored()).years).toEqual({ '4': 2046 });
+  await yearOf(4).fill('2047');
+  await yearOf(4).press('Enter');
+  await expect.poll(async () => (await stored()).years).toEqual({ '4': 2047 });
+  const versions = view().getByTestId('scene-versions');
+  await versions.locator('summary').click();
+  await expect(versions.getByTestId('scene-version')).toHaveCount(2);
+  const old = versions.getByTestId('scene-version').nth(1);
+  await old.getByRole('button').first().click();
+  await expect(versions.locator('textarea')).toHaveValue(/Two kitchens at dawn/);
+  await old.getByRole('button', { name: 'Restore this version' }).click();
+  await expect(yearOf(4)).toHaveValue('2046');
+  expect((await stored()).years).toEqual({ '4': 2046 });
+  await expect(versions.getByTestId('scene-version')).toHaveCount(3);
+  await versions.locator('summary').click();
+});
+
+test('KB-3 SM-7 a new chapter, a new part and a new book are each one undo step', async () => {
+  const foot = view().getByTestId('track-foot');
+  const ids = await chapterIds();
+  await foot.getByRole('button', { name: 'New chapter', exact: true }).click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length + 1);
+  const made = view().getByTestId('chapter-bar').last();
+  const id = (await made.getAttribute('data-chapter'))!;
+  await expect(made.getByTestId('chapter-title')).toHaveText('New chapter');
+  expect((await invoke('entry.get', { collection: 'chapters', id })).entry).toMatchObject({
+    partId: 'PT2',
+    readingOrder: ids.length + 1,
+  });
+  // Its text takes the focus with one empty scene line, and its break is stored at the end.
+  await expect(section(id)).toBeFocused();
+  await expect(section(id)).toHaveValue('- ');
+  const lines = (await stored()).text.split('\n').length;
+  await expect.poll(async () => (await stored()).breaks[id]).toBe(lines);
+  await undo();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length);
+  expect((await invoke('entry.get', { collection: 'chapters', id })).entry.deletedAt).toBeTruthy();
+  expect(await chapterIds()).toEqual(ids);
+
+  // More, New part: a part last in the last book.
+  await foot.getByLabel('More to add').click();
+  await foot.getByRole('button', { name: 'New part', exact: true }).click();
+  await foot.getByLabel('Part title').fill('Slack Water');
+  await foot.getByLabel('Part title').press('Enter');
+  const part = view().getByTestId('track-part').filter({ hasText: 'Slack Water' });
+  await expect(part).toHaveCount(1);
+  const parts = (await invoke('entry.list', { collection: 'parts', trash: 'exclude' })).entries;
+  expect(parts.find((e) => e.entry.title === 'Slack Water')?.entry).toMatchObject({
+    bookId: 'BK1',
+    number: 3,
+  });
+  await undo();
+  await expect(part).toHaveCount(0);
+
+  // More, New book: a book after the last.
+  await foot.getByLabel('More to add').click();
+  await foot.getByRole('button', { name: 'New book', exact: true }).click();
+  await foot.getByLabel('Book title').fill('Undertow');
+  await foot.getByLabel('Book title').press('Enter');
+  const book = view().getByTestId('track-book').filter({ hasText: 'Undertow' });
+  await expect(book).toHaveCount(1);
+  await expect(book).toContainText('2');
+  await undo();
+  await expect(book).toHaveCount(0);
+});
+
+test('KB-3 SM-7 a chapter moves to the trash from its bar after listing what links to it, its scenes join the section above, and Undo brings both back', async () => {
+  await invoke('entry.update', {
+    collection: 'worldEvents',
+    id: 'E4',
+    patch: { links: [{ targetId: 'CH4', kind: 'related' }] },
+  });
+  const links = await invoke('entry.linkedFrom', { id: 'CH4' });
+  expect(links.count).toBeGreaterThan(0);
+  const before = await stored();
+  await bar('CH4').getByLabel('Actions for chapter 4').click();
+  await bar('CH4').getByRole('button', { name: 'Move to trash' }).click();
+  const confirm = bar('CH4').getByRole('dialog', { name: 'Move to trash' });
+  await expect(confirm).toContainText('Move After the Funeral to the trash?');
+  await expect(confirm.getByTestId('linked-count')).toContainText(
+    links.count === 1 ? '1 entry links here' : `${links.count} entries link here`,
+  );
+  for (const e of links.entries) await expect(confirm).toContainText(e.title);
+  await confirm.getByRole('button', { name: 'Move to trash' }).click();
+  await expect(bar('CH4')).toHaveCount(0);
+  await expect(section('CH3')).toHaveValue('- Wedding in the rain\n- The funeral');
+  await expect.poll(async () => Object.keys((await stored()).breaks)).not.toContain('CH4');
+  expect((await stored()).text).toBe(before.text);
+  expect(
+    (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.deletedAt,
+  ).toBeTruthy();
+  await undo();
+  await expect(bar('CH4')).toHaveCount(1);
+  await expect(section('CH4')).toHaveValue('- The funeral');
+  await expect(section('CH3')).toHaveValue('- Wedding in the rain');
+  await expect.poll(async () => (await stored()).breaks).toEqual(before.breaks);
+  expect((await stored()).years).toEqual(before.years);
+  // Redo trashes it again with its lines handed up, and Undo brings both back once more.
+  await redo();
+  await expect(bar('CH4')).toHaveCount(0);
+  await expect.poll(async () => Object.keys((await stored()).breaks)).not.toContain('CH4');
+  expect((await stored()).text).toBe(before.text);
+  await expect(section('CH3')).toHaveValue('- Wedding in the rain\n- The funeral');
+  await undo();
+  await expect(bar('CH4')).toHaveCount(1);
+  await expect.poll(async () => (await stored()).breaks).toEqual(before.breaks);
+  expect((await stored()).text).toBe(before.text);
+});
+
+test('KB-3 SM-7 Move to part moves a bar under the other part', async () => {
+  const sequence = () =>
+    view()
+      .locator('[data-head-row], [data-row]')
+      .evaluateAll((els) =>
+        els.map((e) => e.getAttribute('data-head-row') ?? e.getAttribute('data-row')),
+      );
+  const start = ['BK1', 'PT1', 'CH1', 'CH2', 'CH3', 'CH4', 'PT2', 'CH5', 'CH6', 'CH7', 'CH8'];
+  expect(await sequence()).toEqual(start);
+  await bar('CH4').getByLabel('Actions for chapter 4').click();
+  await bar('CH4').getByTestId('move-to-part').locator('summary').click();
+  await bar('CH4')
+    .getByRole('button', { name: /The Letter/ })
+    .click();
   await expect
     .poll(
       async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.partId,
     )
     .toBe('PT2');
-  await expect(inspector().getByLabel('Move to part')).toHaveValue('PT2');
-  await expect(grid().locator('[data-part="PT2"]').getByTestId('part-count')).toHaveText(
-    '5 chapters',
-  );
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
   await expect
-    .poll(
-      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry.partId,
-    )
-    .toBe('PT1');
-  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
+    .poll(sequence)
+    .toEqual(['BK1', 'PT1', 'CH1', 'CH2', 'CH3', 'PT2', 'CH5', 'CH6', 'CH7', 'CH8', 'CH4']);
+  await expect(bar('CH4').getByTestId('chapter-part')).toContainText('The Letter');
+  await expect(section('CH4')).toHaveValue('- The funeral');
+  await expect.poll(async () => (await stored()).text.endsWith('- The funeral')).toBe(true);
+  await undo();
+  await expect.poll(sequence).toEqual(start);
+  await expect(bar('CH4').getByTestId('chapter-part')).toContainText('High Water');
 });
 
-test('PL-3 the move buttons reorder a chapter and the beat list reorders beats', async () => {
-  await inspector().getByRole('button', { name: 'Move earlier in its part' }).click();
-  await expect.poll(() => readingOrder('CH2')).toBe(1);
-  await inspector().getByRole('button', { name: 'Move later in its part' }).click();
-  await expect.poll(() => readingOrder('CH2')).toBe(2);
-  const arcs = page.getByTestId('outline-arcs');
-  await arcs.locator('summary').click();
-  await arcs.getByRole('button', { name: 'Iris: coming home' }).click();
-  const beats = inspector().getByTestId('arc-beats');
-  const titles = () => beats.locator('.beat-title').allTextContents();
-  expect(await titles()).toEqual(['The kitchen', 'The song']);
-  await beats.getByRole('button', { name: 'Move The song up' }).click();
-  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
-  await beats.getByRole('button', { name: 'Move The song down' }).click();
-  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
-  await inspector().getByRole('button', { name: 'Close the arc' }).click();
-});
-
-test('KB-3 a new book, part, chapter and beat are made from the outline, each one undo step', async () => {
-  const year = Number(
-    ((await page.getByTestId('outline-time').textContent()) ?? '').replace(/\D/g, ''),
-  );
-  await page.getByRole('button', { name: 'New book', exact: true }).click();
-  await page.getByTestId('new-book').getByLabel('Book title').fill('Undertow');
-  await page.getByTestId('new-book').getByLabel('Book title').press('Enter');
-  const book = grid().locator('.ol-group.book').filter({ hasText: 'Undertow' });
-  await expect(book).toContainText('Book 2: Undertow');
-  await expect(book.getByTestId('book-count')).toHaveText('0 parts');
-
-  await book.getByRole('button', { name: 'New part' }).click();
-  await page.getByTestId('new-part').getByLabel('Part title').fill('Slack Water');
-  await page.getByRole('button', { name: 'Create part' }).click();
-  const part = grid().locator('.ol-group.part').filter({ hasText: 'Slack Water' });
-  await expect(part).toContainText('Part 1: Slack Water');
-  await expect(part.getByTestId('part-count')).toHaveText('0 chapters');
-  await expect(book.getByTestId('book-count')).toHaveText('1 part');
-
-  await part.getByRole('button', { name: 'New chapter' }).click();
-  const form = page.getByTestId('new-chapter');
-  await form.getByRole('textbox').fill('Salt Marsh');
-  await form.getByRole('textbox').press('Enter');
-  await expect(part.getByTestId('part-count')).toHaveText('1 chapter');
-  const pageView = inspector().getByTestId('chapter-page');
-  await expect(pageView).toContainText('Salt Marsh');
-  const chapter = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
+const idOf = async (collection: 'books' | 'parts', title: string) =>
+  (await invoke('entry.list', { collection, trash: 'exclude' })).entries
     .map((e) => e.entry)
-    .find((c) => c.title === 'Salt Marsh')!;
-  expect(chapter.readingOrder).toBe(9);
-  expect(chapter.strands).toEqual([
-    expect.objectContaining({ primary: true, startYear: year, endYear: null }),
-  ]);
-  await expect(grid().locator(`[data-chapter="${chapter._id}"] .ol-mark.primary`)).toHaveCount(1);
+    .find((d) => d.title === title)!._id;
+const trackBook = (id: string) => view().locator(`[data-testid="track-book"][data-book="${id}"]`);
+const trackPart = (id: string) => view().locator(`[data-testid="track-part"][data-part="${id}"]`);
+const chapterOf = async (id: string) =>
+  (await invoke('entry.get', { collection: 'chapters', id })).entry;
 
-  await pageView.getByRole('button', { name: 'New beat' }).click();
-  await inspector().getByTestId('new-beat').getByLabel('Beat title').fill('Low water');
-  await inspector().getByTestId('new-beat').getByLabel('Beat title').press('Enter');
-  await expect(pageView.getByTestId('chapter-beats')).toContainText('Low water');
-  const beat = (await invoke('entry.list', { collection: 'plotBeats', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((b) => b.title === 'Low water')!;
-  expect(beat).toMatchObject({ chapterId: chapter._id, year });
+test("KB-3 SM-7 a book heading's menu adds a part last in that book, and a part heading's menu adds a chapter last in that part", async () => {
+  const foot = view().getByTestId('track-foot');
+  await foot.getByLabel('More to add').click();
+  await foot.getByRole('button', { name: 'New book', exact: true }).click();
+  await foot.getByLabel('Book title').fill('Undertow');
+  await foot.getByLabel('Book title').press('Enter');
+  const bookId = await (async () => {
+    await expect(view().getByTestId('track-book').filter({ hasText: 'Undertow' })).toHaveCount(1);
+    return idOf('books', 'Undertow');
+  })();
+  const book = trackBook(bookId);
+  await book.getByLabel(/^Actions for /).click();
+  await book.getByRole('button', { name: 'New part', exact: true }).click();
+  await book.getByLabel('Part title').fill('Slack Water');
+  await book.getByLabel('Part title').press('Enter');
+  await expect(view().getByTestId('track-part').filter({ hasText: 'Slack Water' })).toHaveCount(1);
+  const partId = await idOf('parts', 'Slack Water');
+  expect((await invoke('entry.get', { collection: 'parts', id: partId })).entry).toMatchObject({
+    bookId,
+    number: 1,
+  });
 
-  // Each creation is one undo step: undo takes the beat away and leaves the chapter.
-  const history = inspector().getByTestId('undo-history');
-  await expect(history.locator('li').first()).toHaveText('Created Low water');
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(pageView.getByTestId('chapter-beats')).not.toContainText('Low water');
-  await expect(pageView).toContainText('Salt Marsh');
-  await inspector().getByRole('button', { name: 'Redo', exact: true }).click();
-  await expect(pageView.getByTestId('chapter-beats')).toContainText('Low water');
+  // New chapter in Part 1 goes last in it; the chapters after it move up one; Undo puts them back.
+  const ids = ['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8'];
+  const numbers = async () => Promise.all(ids.map((id) => readingOrder(id)));
+  const before = await numbers();
+  await trackPart('PT1')
+    .getByLabel(/^Actions for /)
+    .click();
+  await trackPart('PT1').getByRole('button', { name: 'New chapter', exact: true }).click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(9);
+  await expect.poll(numbers).toEqual([1, 2, 3, 4, 6, 7, 8, 9]);
+  const made = view().locator('[data-row="CH4"] + [data-row]');
+  const madeId = (await made.getAttribute('data-row'))!;
+  expect(await chapterOf(madeId)).toMatchObject({ partId: 'PT1', readingOrder: 5 });
+  await expect(section(madeId)).toBeFocused();
+  await undo();
+  await expect.poll(numbers).toEqual(before);
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(8);
+
+  // A chapter in the new part, kept for the trash rows below.
+  await trackPart(partId)
+    .getByLabel(/^Actions for /)
+    .click();
+  await trackPart(partId).getByRole('button', { name: 'New chapter', exact: true }).click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(9);
+  const salt = (await view().getByTestId('chapter-bar').last().getAttribute('data-chapter'))!;
+  expect(await chapterOf(salt)).toMatchObject({ partId, readingOrder: 9 });
 });
 
-test('KB-3 a part heading moves to the trash from its Actions menu after listing what links to it', async () => {
-  const part = grid().locator('.ol-group.part').filter({ hasText: 'Slack Water' });
-  await part.getByLabel('Actions for Part 1: Slack Water').click();
-  await part.getByRole('button', { name: 'Move to trash' }).click();
-  const confirm = part.getByRole('dialog', { name: 'Move to trash' });
-  await expect(confirm).toContainText('Move Slack Water to the trash?');
-  await expect(confirm.getByTestId('linked-count')).toContainText('1 entry links here');
-  await confirm.getByRole('button', { name: 'Move to trash' }).click();
-  await expect(grid().locator('.ol-group.part').filter({ hasText: 'Slack Water' })).toHaveCount(0);
-  await expect(grid().locator('.ol-group.part').filter({ hasText: 'No part' })).toBeVisible();
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(grid().locator('.ol-group.part').filter({ hasText: 'Slack Water' })).toBeVisible();
-});
-
-test('KB-3 a book and a part rename inline: Enter saves, Escape cancels', async () => {
-  const idOf = async (collection: 'books' | 'parts', title: string) =>
-    (await invoke('entry.list', { collection, trash: 'exclude' })).entries
-      .map((e) => e.entry)
-      .find((d) => d.title === title)!._id;
-  const book = grid().locator(`[data-book="${await idOf('books', 'Undertow')}"]`);
+test('KB-3 SM-7 a book and a part rename inline: Enter saves, Escape cancels', async () => {
+  const book = trackBook(await idOf('books', 'Undertow'));
   await book.getByTestId('book-name').click();
   await book.getByLabel('Book title').fill('Riptide');
   await book.getByLabel('Book title').press('Enter');
   await expect(book.getByTestId('book-name')).toHaveText('Book 2: Riptide');
-  const part = grid().locator(`[data-part="${await idOf('parts', 'Slack Water')}"]`);
+  const part = trackPart(await idOf('parts', 'Slack Water'));
   await part.getByTestId('part-name').click();
   await part.getByLabel('Part title').fill('Never saved');
   await part.getByLabel('Part title').press('Escape');
@@ -512,247 +559,81 @@ test('KB-3 a book and a part rename inline: Enter saves, Escape cancels', async 
   await expect(part.getByTestId('part-name')).toBeFocused();
 });
 
-test('KB-3 a chapter renames inline in its heading, and undo puts the old title back', async () => {
-  await grid().locator('[data-chapter="CH3"]').getByTestId('outline-label').click();
-  await inspector().getByTestId('chapter-title').click();
-  const input = inspector().getByLabel('Chapter title');
-  await input.fill('Wedding Storm');
-  await input.press('Enter');
-  await expect(grid().locator('[data-chapter="CH3"]')).toContainText('Wedding Storm');
-  await expect
-    .poll(
-      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH3' })).entry.title,
-    )
-    .toBe('Wedding Storm');
-  await expect(inspector().getByTestId('undo-history').locator('li').first()).toContainText(
-    'Wedding Storm',
-  );
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(grid().locator('[data-chapter="CH3"]')).toContainText('Wedding Weather');
-  await expect
-    .poll(
-      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH3' })).entry.title,
-    )
-    .toBe('Wedding Weather');
-});
-
-test('KB-3 Alt+Down moves a chapter within its part and the reading order persists after reload', async () => {
-  const row = grid().locator('[data-chapter="CH1"]').getByTestId('outline-label');
-  await row.focus();
+test('KB-3 SM-7 Alt+Down and Alt+Up on a book heading move the book among the books', async () => {
+  const riptide = await idOf('books', 'Riptide');
+  const number = async (id: string) =>
+    (await invoke('entry.get', { collection: 'books', id })).entry.number;
+  const name = trackBook('BK1').getByTestId('book-name');
+  await name.focus();
   await page.keyboard.press('Alt+ArrowDown');
-  await expect.poll(() => readingOrder('CH1')).toBe(2);
-  expect(await readingOrder('CH2')).toBe(1);
-  await expect(row).toBeFocused();
-  // Alt+Down at the end of a part does nothing.
-  const last = grid().locator('[data-chapter="CH4"]').getByTestId('outline-label');
-  await last.focus();
-  await page.keyboard.press('Alt+ArrowDown');
-  expect(await readingOrder('CH4')).toBe(4);
-
-  await page.reload();
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await expect(grid().locator('[data-chapter]').first()).toHaveAttribute('data-chapter', 'CH2');
-  await expect(grid().locator('[data-chapter]').nth(1)).toHaveAttribute('data-chapter', 'CH1');
-
-  await grid().locator('[data-chapter="CH1"]').getByTestId('outline-label').focus();
+  await expect.poll(() => number('BK1')).toBe(2);
+  expect(await number(riptide)).toBe(1);
+  await expect(view().getByTestId('track-book').first()).toHaveAttribute('data-book', riptide);
+  await expect(name).toBeFocused();
   await page.keyboard.press('Alt+ArrowUp');
-  await expect.poll(() => readingOrder('CH1')).toBe(1);
-  expect(await readingOrder('CH2')).toBe(2);
+  await expect.poll(() => number('BK1')).toBe(1);
+  expect(await number(riptide)).toBe(2);
+  await expect(view().getByTestId('track-book').first()).toHaveAttribute('data-book', 'BK1');
+  await undo();
+  await expect.poll(() => number('BK1')).toBe(2);
+  await undo();
+  await expect.poll(() => number('BK1')).toBe(1);
 });
 
-test('KB-3 Alt+Up on a part heading moves the part within its book; undo moves it back', async () => {
-  const name = grid().locator('[data-part="PT2"]').getByTestId('part-name');
+test('KB-3 SM-7 Alt+Up on a part heading moves the part within its book', async () => {
+  const name = trackPart('PT2').getByTestId('part-name');
   await name.focus();
   await page.keyboard.press('Alt+ArrowUp');
   await expect
     .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.number)
     .toBe(1);
-  await expect(grid().locator('.ol-group.part').first()).toHaveAttribute('data-part', 'PT2');
+  await expect(view().getByTestId('track-part').first()).toHaveAttribute('data-part', 'PT2');
   await expect(name).toBeFocused();
   // Reading order is the chapters' own number and does not change.
   expect(await readingOrder('CH5')).toBe(5);
-  await inspector().getByRole('button', { name: 'Undo', exact: true }).click();
+  await undo();
   await expect
     .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.number)
     .toBe(2);
+  await expect(view().getByTestId('track-part').first()).toHaveAttribute('data-part', 'PT1');
 });
 
-test('KB-3 the chapter page edits a strand point of view and characters present, and the row shows it', async () => {
-  await grid().locator('[data-chapter="CH4"]').getByTestId('outline-label').click();
-  const strand = inspector().locator('[data-strand="CH4-present"]');
-  await strand.getByLabel('Point of view').selectOption({ label: 'Iris Hale-Zhou' });
-  await strand.getByLabel('Add a character to present').selectOption({ label: 'Iris Hale-Zhou' });
-  await expect(inspector().getByTestId('autosave')).toHaveText('Saved');
-  await strand.getByRole('button', { name: 'Move Iris Hale-Zhou up in present' }).click();
-  await expect(inspector().getByTestId('autosave')).toHaveText('Saved');
-  await expect
-    .poll(async () => {
-      const ch = (await invoke('entry.get', { collection: 'chapters', id: 'CH4' })).entry;
-      const s = (ch.strands as { povCharacterId: string; characterIds: string[] }[])[0]!;
-      return [s.povCharacterId, s.characterIds];
-    })
-    .toEqual(['H5', ['H1', 'H2', 'H3', 'H5', 'H4']]);
-  // The grid row shows the new point of view and who is present.
-  const mark = grid().locator('[data-chapter="CH4"] [data-strand="CH4-present"]');
-  await expect(mark).toHaveAttribute('aria-label', /point of view Iris Hale-Zhou/);
-  await expect(mark).toHaveAttribute('title', /present: .*Iris Hale-Zhou/);
-  // The chapter page shows her age in that strand year.
-  await expect(strand.locator('[data-character="H5"]')).toContainText('alive, age 1');
+test('KB-3 SM-7 a part heading moves to the trash from its Actions menu after listing what links to it', async () => {
+  const partId = await idOf('parts', 'Slack Water');
+  const part = trackPart(partId);
+  await part.getByLabel('Actions for Part 1: Slack Water').click();
+  await part.getByRole('button', { name: 'Move to trash' }).click();
+  const confirm = part.getByRole('dialog', { name: 'Move to trash' });
+  await expect(confirm).toContainText('Move Slack Water to the trash?');
+  await expect(confirm.getByTestId('linked-count')).toContainText('1 entry links here');
+  await expect(confirm).toContainText('New chapter');
+  await confirm.getByRole('button', { name: 'Move to trash' }).click();
+  // Its chapter stays on the track under No part.
+  await expect(trackPart(partId)).toHaveText('No part');
+  await expect(trackPart(partId).getByTestId('part-name')).toHaveCount(0);
+  await undo();
+  await expect(trackPart(partId).getByTestId('part-name')).toHaveText('Part 1: Slack Water');
+
+  // A book the same way: its part links here.
+  const bookId = await idOf('books', 'Riptide');
+  const book = trackBook(bookId);
+  await book.getByLabel('Actions for Book 2: Riptide').click();
+  await book.getByRole('button', { name: 'Move to trash' }).click();
+  const bookConfirm = book.getByRole('dialog', { name: 'Move to trash' });
+  await expect(bookConfirm.getByTestId('linked-count')).toContainText('1 entry links here');
+  await expect(bookConfirm).toContainText('Slack Water');
+  await bookConfirm.getByRole('button', { name: 'Move to trash' }).click();
+  await expect(view().getByTestId('track-book').filter({ hasText: 'Riptide' })).toHaveCount(0);
+  await expect(view().getByTestId('track-book').filter({ hasText: 'No book' })).toBeVisible();
+  await undo();
+  await expect(trackBook(bookId).getByTestId('book-name')).toHaveText('Book 2: Riptide');
 });
 
-test('KB-3 an arc is added and renamed from the Arcs list, its spans light up, and New beat adds a beat to it', async () => {
-  const arcs = page.getByTestId('outline-arcs');
-  if (!(await arcs.evaluate((d) => (d as HTMLDetailsElement).open))) {
-    await arcs.locator('summary').click();
-  }
-  await arcs.getByRole('button', { name: 'New arc' }).click();
-  await arcs.getByLabel('Arc name').fill('Flood years');
-  await arcs.getByLabel('Arc name').press('Enter');
-  const panel = inspector().getByTestId('arc-panel');
-  await expect(panel.getByTestId('arc-name')).toHaveText('Flood years');
-  await panel.getByTestId('arc-name').click();
-  await panel.getByLabel('Rename the arc').fill('Flood decades');
-  await panel.getByLabel('Rename the arc').press('Enter');
-  await expect(arcs.getByRole('button', { name: 'Flood decades' })).toBeVisible();
-  await panel.getByRole('button', { name: 'New beat' }).click();
-  await panel.getByLabel('Beat title').fill('The levee breaks');
-  await panel.getByLabel('Beat title').press('Enter');
-  await expect(panel.getByTestId('arc-beats')).toContainText('The levee breaks');
-  await expect(arcs.locator('li').filter({ hasText: 'Flood decades' })).toContainText('1 beat');
-
-  // Picking the Iris arc lights up its span on Two Kitchens and dims the rest.
-  await arcs.getByRole('button', { name: 'Iris: coming home' }).click();
-  const iris = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((a) => a.name === 'Iris: coming home')!;
-  await expect(grid().locator(`[data-chapter="CH2"] [data-arc="${iris._id}"]`)).toHaveClass(
-    /\bhl\b/,
-  );
-  await expect(arcs.getByRole('button', { name: 'Iris: coming home' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await inspector().getByRole('button', { name: 'Close the arc' }).click();
-  await expect(grid().locator('.ol-arc.hl')).toHaveCount(0);
-});
-
-// ---------- KB-3 fix round: drag, undo, chapter page edits, deletes, reorders ----------
-
-const partOrder = async (partId: string) =>
-  (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .filter((c) => c.partId === partId)
-    .sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder))
-    .map((c) => c._id);
-const gridOrder = async (partId: string) =>
-  (
-    await grid()
-      .locator('[data-chapter]')
-      .evaluateAll((rows) => rows.map((r) => r.getAttribute('data-chapter')))
-  ).filter((id) => partId === 'PT1' && ['CH1', 'CH2', 'CH3', 'CH4'].includes(String(id)));
-const label = (id: string) => grid().locator(`[data-chapter="${id}"]`).getByTestId('outline-label');
-const chapterOf = async (id: string) =>
-  (await invoke('entry.get', { collection: 'chapters', id })).entry;
-const undoButton = () => inspector().getByRole('button', { name: 'Undo', exact: true });
-const firstHistory = () => inspector().getByTestId('undo-history').locator('li').first();
-
-test('KB-3 PL-3 a chapter dragged down lands in the target place, one can reach the last place, and the order persists after reload', async () => {
-  expect(await partOrder('PT1')).toEqual(['CH1', 'CH2', 'CH3', 'CH4']);
-  // Down onto Wedding Weather: it takes that place, so it lands after Two Kitchens and Wedding Weather.
-  await label('CH1').dragTo(label('CH3'));
-  await expect.poll(() => partOrder('PT1')).toEqual(['CH2', 'CH3', 'CH1', 'CH4']);
-  expect(await readingOrder('CH1')).toBe(3);
-  // Down onto the last chapter: the last place.
-  await label('CH1').dragTo(label('CH4'));
-  await expect.poll(() => partOrder('PT1')).toEqual(['CH2', 'CH3', 'CH4', 'CH1']);
-  // A drop on its own part heading moves a chapter to the end of that part.
-  await label('CH2').dragTo(grid().locator('[data-part="PT1"]').getByTestId('part-count'));
-  await expect.poll(() => partOrder('PT1')).toEqual(['CH3', 'CH4', 'CH1', 'CH2']);
-  // Up onto the first chapter: before it.
-  await label('CH1').dragTo(label('CH3'));
-  await expect.poll(() => partOrder('PT1')).toEqual(['CH1', 'CH3', 'CH4', 'CH2']);
-  expect([1, 2, 3, 4]).toEqual(
-    await Promise.all(['CH1', 'CH3', 'CH4', 'CH2'].map((id) => readingOrder(id))),
-  );
-
-  await page.reload();
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await expect.poll(() => gridOrder('PT1')).toEqual(['CH1', 'CH3', 'CH4', 'CH2']);
-
-  // Put Two Kitchens back in second place for the tests that follow.
-  await label('CH2').dragTo(label('CH3'));
-  await expect.poll(() => partOrder('PT1')).toEqual(['CH1', 'CH2', 'CH3', 'CH4']);
-});
-
-test('KB-3 a new book, a new part and a new chapter are each one undo step, and one Undo restores every reading number a new chapter shifted', async () => {
-  const books = async () =>
-    (await invoke('entry.list', { collection: 'books', trash: 'exclude' })).entries.map(
-      (e) => e.entry.title,
-    );
-  await page.getByRole('button', { name: 'New book', exact: true }).click();
-  await page.getByTestId('new-book').getByLabel('Book title').fill('Scratch Book');
-  await page.getByTestId('new-book').getByLabel('Book title').press('Enter');
-  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Scratch Book' })).toBeVisible();
-  await expect(firstHistory()).toHaveText('Created Scratch Book');
-  await undoButton().click();
-  await expect(firstHistory()).toHaveText('Undone: Created Scratch Book');
-  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Scratch Book' })).toHaveCount(0);
-  expect(await books()).not.toContain('Scratch Book');
-
-  await grid().locator('[data-book="BK1"]').getByRole('button', { name: 'New part' }).click();
-  await page.getByTestId('new-part').getByLabel('Part title').fill('Scratch Part');
-  await page.getByTestId('new-part').getByLabel('Part title').press('Enter');
-  await expect(grid().locator('[data-book="BK1"]').getByTestId('book-count')).toHaveText('3 parts');
-  await expect(firstHistory()).toHaveText('Created Scratch Part');
-  await undoButton().click();
-  await expect(firstHistory()).toHaveText('Undone: Created Scratch Part');
-  await expect(grid().locator('[data-book="BK1"]').getByTestId('book-count')).toHaveText('2 parts');
-
-  // A chapter added at the end of part one moves every later chapter up by one.
-  const ids = ['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8'];
-  const numbers = async () => Promise.all(ids.map((id) => readingOrder(id)));
-  const before = await numbers();
-  const salt = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((c) => c.title === 'Salt Marsh')!;
-  const saltBefore = salt.readingOrder;
-  await grid().locator('[data-part="PT1"]').getByRole('button', { name: 'New chapter' }).click();
-  await page.getByTestId('new-chapter').getByRole('textbox').fill('Interlude');
-  await page.getByTestId('new-chapter').getByRole('textbox').press('Enter');
-  await expect(inspector().getByTestId('chapter-page')).toContainText('Interlude');
-  const interlude = (
-    await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })
-  ).entries
-    .map((e) => e.entry)
-    .find((c) => c.title === 'Interlude')!;
-  expect(interlude).toMatchObject({ partId: 'PT1', readingOrder: 5 });
-  expect(await numbers()).toEqual([1, 2, 3, 4, 6, 7, 8, 9]);
-  expect(await readingOrder(salt._id)).toBe(Number(saltBefore) + 1);
-  await expect(grid().locator('[data-chapter="CH5"] .ol-no')).toHaveText('6');
-  await expect(firstHistory()).toHaveText('Created Interlude');
-
-  await undoButton().click();
-  await expect(firstHistory()).toHaveText('Undone: Created Interlude');
-  await expect.poll(numbers).toEqual(before);
-  expect(await readingOrder(salt._id)).toBe(saltBefore);
-  expect((await chapterOf(interlude._id)).deletedAt).toBeTruthy();
-  await expect(grid().locator(`[data-chapter="${interlude._id}"]`)).toHaveCount(0);
-});
-
-test('KB-3 the chapter page in the outline edits strand label, end year, places, a new strand and the primary choice, arcs, themes and facts in play', async () => {
-  const { entry: theme } = await invoke('entry.create', {
-    collection: 'themes',
-    data: { title: 'Paper', status: 'idea' },
-  });
-  const iris = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((a) => a.name === 'Iris: coming home')!;
-  await label('CH6').click();
-  const editor = inspector().getByTestId('editor');
+test('KB-3 the chapter page in the outline edits strand label, end year, places, a new strand and the primary choice', async () => {
+  await bar('CH6').getByLabel('Actions for chapter 6').click();
+  await bar('CH6').getByTestId('chapter-open').click();
+  const inspector = page.getByTestId('outline-inspector');
+  const editor = inspector.getByTestId('editor');
   const saved = () => expect(editor.getByTestId('autosave')).toHaveText('Saved');
   type S = {
     id: string;
@@ -769,18 +650,10 @@ test('KB-3 the chapter page in the outline edits strand label, end year, places,
   await saved();
   await expect
     .poll(async () => (await strands())[0])
-    .toMatchObject({
-      label: 'now',
-      startYear: 2045,
-      endYear: 2047,
-    });
-  await expect(grid().locator('[data-chapter="CH6"] [data-strand="CH6-present"]')).toHaveAttribute(
-    'aria-label',
-    /strand now, 2045 to 2047/,
-  );
+    .toMatchObject({ label: 'now', startYear: 2045, endYear: 2047 });
 
   // Places: add one, see it on the page, remove it.
-  const first = inspector().locator('[data-strand="CH6-present"]');
+  const first = inspector.locator('[data-strand="CH6-present"]');
   await first.getByLabel('Add a place to now').selectOption({ label: 'Portland > The Hale house' });
   await saved();
   await expect.poll(async () => (await strands())[0]!.placeIds).toEqual(['PLC2']);
@@ -790,7 +663,7 @@ test('KB-3 the chapter page in the outline edits strand label, end year, places,
   await expect.poll(async () => (await strands())[0]!.placeIds).toEqual([]);
   await expect(first.getByTestId('chapter-places')).toHaveCount(0);
 
-  // A new strand, made primary: the row's filled mark moves to it.
+  // A new strand, made primary: the bar's story year follows it.
   await editor.getByRole('button', { name: 'Add a strand' }).click();
   await field(editor, 'strands.1.startYear').locator('input').fill('2030');
   await editor.getByTestId('chapter-strand').nth(1).getByLabel('Primary strand').check();
@@ -801,183 +674,114 @@ test('KB-3 the chapter page in the outline edits strand label, end year, places,
       ['now', 2045, false],
       ['backstory', 2030, true],
     ]);
-  const added = (await strands())[1]!.id;
-  await expect(grid().locator('[data-chapter="CH6"] .ol-mark.primary')).toHaveAttribute(
-    'data-strand',
-    added,
-  );
-  await expect(grid().locator('[data-chapter="CH6"] .ol-mark.backstory')).toHaveAttribute(
-    'data-strand',
-    'CH6-present',
-  );
+  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2030');
   // Removing it hands the primary choice back to the strand that is left.
   await editor.getByRole('button', { name: 'Remove the strand backstory' }).click();
   await saved();
   await expect
     .poll(async () => (await strands()).map((s) => [s.id, s.primary]))
     .toEqual([['CH6-present', true]]);
-  await expect(grid().locator('[data-chapter="CH6"] .ol-mark')).toHaveCount(1);
+  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2045');
+  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
+  await expect(inspector).toHaveCount(0);
+});
 
-  // Arcs, themes and facts in play, through the manifest fields.
-  await field(editor, 'arcIds').locator('select').selectOption({ label: 'Iris' });
-  await saved();
-  await expect.poll(async () => (await chapterOf('CH6')).arcIds).toEqual([iris._id]);
-  await expect(inspector().getByTestId('chapter-arcs')).toContainText('Iris: coming home');
-  await expect(grid().locator(`[data-chapter="CH6"] [data-arc="${iris._id}"]`)).toHaveCount(1);
-
-  await field(editor, 'themeIds').locator('select').selectOption({ label: 'Paper' });
-  await saved();
-  await expect.poll(async () => (await chapterOf('CH6')).themeIds).toEqual([theme._id]);
-  await expect(inspector().getByTestId('chapter-themes')).toContainText('Paper');
-
-  const facts = async () => (await chapterOf('CH6')).factsInPlay;
-  const factsBefore = (await facts()) as unknown[];
-  await field(editor, 'factsInPlay').getByRole('button', { name: 'Add to Facts in play' }).click();
-  const at = factsBefore.length;
-  await field(editor, `factsInPlay.${at}.factId`).locator('select').selectOption('F1');
-  await field(editor, `factsInPlay.${at}.characterId`).locator('select').selectOption('Z3');
-  await field(editor, `factsInPlay.${at}.note`).locator('input').fill('Meiling keeps it quiet.');
-  await saved();
+test('KB-3 the chapter page edits a strand point of view and characters present', async () => {
+  await bar('CH4').getByLabel('Actions for chapter 4').click();
+  await bar('CH4').getByTestId('chapter-open').click();
+  const inspector = page.getByTestId('outline-inspector');
+  const strand = inspector.locator('[data-strand="CH4-present"]');
+  await strand.getByLabel('Point of view').selectOption({ label: 'Iris Hale-Zhou' });
+  await strand.getByLabel('Add a character to present').selectOption({ label: 'Iris Hale-Zhou' });
+  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
+  await strand.getByRole('button', { name: 'Move Iris Hale-Zhou up in present' }).click();
+  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
   await expect
-    .poll(async () => ((await facts()) as unknown[]).at(-1))
-    .toEqual({ factId: 'F1', characterId: 'Z3', note: 'Meiling keeps it quiet.' });
-  await expect(inspector().getByTestId('chapter-facts')).toContainText(
-    'acts on Meiling was engaged before Wei',
-  );
+    .poll(async () => {
+      const ch = await chapterOf('CH4');
+      const s = (ch.strands as { povCharacterId: string; characterIds: string[] }[])[0]!;
+      return [s.povCharacterId, s.characterIds];
+    })
+    .toEqual(['H5', ['H1', 'H2', 'H3', 'H5', 'H4']]);
+  // The chapter page shows her age in that strand year.
+  await expect(strand.locator('[data-character="H5"]')).toContainText('alive, age 1');
+  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
+  await expect(inspector).toHaveCount(0);
 });
 
-test('KB-3 a beat, a chapter, a book and an arc move to the trash from the outline after listing what links to them, and Undo brings each back', async () => {
-  const salt = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((c) => c.title === 'Salt Marsh')!;
-  const confirm = () => inspector().getByRole('dialog', { name: 'Move to trash' });
+test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year and the Actions, part and More menus are reached and used from the keyboard', async () => {
+  // Shift+Tab from a chapter's text reaches the year field of its last scene.
+  await section('CH1').focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(yearOf(2)).toBeFocused();
+  await page.keyboard.type('2076');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await stored()).years).toEqual({ '1': 2076, '4': 2046 });
+  // Tab: the text, then the bar, then the chapter name, renamed in place with Enter.
+  await page.keyboard.press('Tab');
+  await expect(section('CH1')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('chapter-title')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('The Archive Door');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'chapters', id: 'CH1' })).entry.title,
+    )
+    .toBe('The Archive Door');
+  await expect(bar('CH1').getByTestId('chapter-title')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('chapter-year')).toBeFocused();
+  await undo();
+  await expect(bar('CH1').getByTestId('chapter-title')).toHaveText("The Archivist's Door");
+  // The bar's Actions menu by keyboard: Tab reaches it, Enter opens it, Escape closes it.
+  await bar('CH1').getByTestId('chapter-year').focus();
+  await page.keyboard.press('Tab');
+  const actions = bar('CH1').getByLabel('Actions for chapter 1');
+  await expect(actions).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('chapter-open')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('move-to-part').locator('summary')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByRole('button', { name: /The Letter/ })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(actions).toBeFocused();
+  await expect(bar('CH1').getByTestId('chapter-open')).toBeHidden();
 
-  // A beat, from its editor in the inspector.
-  await label(salt._id).click();
-  await inspector()
-    .getByTestId('chapter-beats')
-    .getByRole('button', { name: 'Low water', exact: true })
-    .click();
-  await inspector().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(confirm()).toContainText('Nothing links here.');
-  await confirm().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(inspector().getByTestId('editor')).toContainText('This entry is in the trash');
-  await inspector().getByRole('button', { name: 'Back to the chapter' }).click();
-  await expect(inspector().getByTestId('chapter-beats')).not.toContainText('Low water');
-  await undoButton().click();
-  await expect(inspector().getByTestId('chapter-beats')).toContainText('Low water');
+  // A part heading's Actions: Rename by keyboard.
+  const partOne = view().locator('[data-testid="track-part"][data-part="PT1"]');
+  await partOne.getByLabel(/^Actions for /).focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(partOne.getByRole('button', { name: 'Rename' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(partOne.getByLabel('Part title')).toBeFocused();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Part One: Low Water');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT1' })).entry.title)
+    .toBe('Part One: Low Water');
+  await undo();
+  await expect(partOne).toContainText('High Water');
 
-  // The chapter, from its page: the beat in it links here.
-  await inspector().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(confirm().getByTestId('linked-count')).toHaveText(
-    '1 entry links here. Its link is kept and works again if you restore this entry.',
-  );
-  await expect(confirm()).toContainText('Low water');
-  await confirm().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(grid().locator(`[data-chapter="${salt._id}"]`)).toHaveCount(0);
-  expect((await chapterOf(salt._id)).deletedAt).toBeTruthy();
-  await undoButton().click();
-  await expect(grid().locator(`[data-chapter="${salt._id}"]`)).toHaveCount(1);
-
-  // A book, from its heading's Actions menu: its part links here.
-  const book = grid().locator('.ol-group.book').filter({ hasText: 'Riptide' });
-  await book.getByLabel('Actions for Book 2: Riptide').click();
-  await book.getByRole('button', { name: 'Move to trash' }).click();
-  const bookConfirm = book.getByRole('dialog', { name: 'Move to trash' });
-  await expect(bookConfirm.getByTestId('linked-count')).toContainText('1 entry links here');
-  await expect(bookConfirm).toContainText('Slack Water');
-  await bookConfirm.getByRole('button', { name: 'Move to trash' }).click();
-  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Riptide' })).toHaveCount(0);
-  await expect(grid().locator('.ol-group.book').filter({ hasText: 'No book' })).toBeVisible();
-  await undoButton().click();
-  await expect(grid().locator('.ol-group.book').filter({ hasText: 'Riptide' })).toBeVisible();
-
-  // An arc, from its panel: its beat links here; in the trash it says so and offers Restore.
-  const arcs = page.getByTestId('outline-arcs');
-  if (!(await arcs.evaluate((d) => (d as HTMLDetailsElement).open))) {
-    await arcs.locator('summary').click();
-  }
-  await arcs.getByRole('button', { name: 'Flood decades' }).click();
-  await inspector().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(confirm().getByTestId('linked-count')).toContainText('1 entry links here');
-  await expect(confirm()).toContainText('The levee breaks');
-  await confirm().getByRole('button', { name: 'Move to trash' }).click();
-  await expect(arcs.getByRole('button', { name: 'Flood decades' })).toHaveCount(0);
-  await expect(inspector().getByTestId('arc-panel')).toContainText('This entry is in the trash');
-  await expect(inspector().getByRole('button', { name: 'Restore from trash' })).toBeVisible();
-  await undoButton().click();
-  await expect(arcs.getByRole('button', { name: 'Flood decades' })).toBeVisible();
-  await inspector().getByRole('button', { name: 'Close the arc' }).click();
-});
-
-test('KB-3 PL-3 beats reorder by dragging in the arc panel', async () => {
-  const arcs = page.getByTestId('outline-arcs');
-  if (!(await arcs.evaluate((d) => (d as HTMLDetailsElement).open))) {
-    await arcs.locator('summary').click();
-  }
-  await arcs.getByRole('button', { name: 'Iris: coming home' }).click();
-  const beats = inspector().getByTestId('arc-beats');
-  const titles = () => beats.locator('.beat-title').allTextContents();
-  const item = (t: string) => beats.locator('li').filter({ hasText: t });
-  expect(await titles()).toEqual(['The kitchen', 'The song']);
-  await item('The song').dragTo(item('The kitchen'));
-  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
-  await item('The song').dragTo(item('The kitchen'));
-  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
-  await inspector().getByRole('button', { name: 'Close the arc' }).click();
-});
-
-test('KB-3 PL-3 beats on the chapter page move with Up and Down and by dragging, in the arc that orders them', async () => {
-  const arcId = (await invoke('entry.list', { collection: 'arcs', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((a) => a.name === 'Iris: coming home')!._id;
-  const stored = async () =>
-    (await invoke('entry.list', { collection: 'plotBeats', trash: 'exclude' })).entries
-      .map((e) => e.entry)
-      .filter((b) => b.chapterId === 'CH2')
-      .map((b) => [
-        b.title,
-        (b.arcOrders as { arcId: string; order: number }[]).find((o) => o.arcId === arcId)?.order,
-      ])
-      .sort((a, b) => Number(a[1]) - Number(b[1]))
-      .map((x) => x[0]);
-  await label('CH2').click();
-  const beats = inspector().getByTestId('chapter-beats');
-  const titles = () => beats.locator('.beat-title').allTextContents();
-  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
-  await expect(beats.getByRole('button', { name: 'Move The kitchen up' })).toBeDisabled();
-  await beats.getByRole('button', { name: 'Move The song up' }).click();
-  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
-  expect(await stored()).toEqual(['The song', 'The kitchen']);
-  await beats.getByRole('button', { name: 'Move The song down' }).click();
-  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
-  expect(await stored()).toEqual(['The kitchen', 'The song']);
-
-  const item = (t: string) => beats.locator('li').filter({ hasText: t });
-  await item('The song').dragTo(item('The kitchen'));
-  await expect.poll(titles).toEqual(['The song', 'The kitchen']);
-  expect(await stored()).toEqual(['The song', 'The kitchen']);
-  await undoButton().click();
-  await expect.poll(titles).toEqual(['The kitchen', 'The song']);
-});
-
-test('KB-3 Alt+Down and Alt+Up on a book heading move the book among the books', async () => {
-  const riptide = (await invoke('entry.list', { collection: 'books', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((b) => b.title === 'Riptide')!;
-  const number = async (id: string) =>
-    (await invoke('entry.get', { collection: 'books', id })).entry.number;
-  const name = grid().locator('[data-book="BK1"]').getByTestId('book-name');
-  await name.focus();
-  await page.keyboard.press('Alt+ArrowDown');
-  await expect.poll(() => number('BK1')).toBe(2);
-  expect(await number(riptide._id)).toBe(1);
-  await expect(grid().locator('.ol-group.book').first()).toHaveAttribute('data-book', riptide._id);
-  await expect(name).toBeFocused();
-  await page.keyboard.press('Alt+ArrowUp');
-  await expect.poll(() => number('BK1')).toBe(1);
-  expect(await number(riptide._id)).toBe(2);
-  await expect(grid().locator('.ol-group.book').first()).toHaveAttribute('data-book', 'BK1');
+  // More, New part, by keyboard; Escape closes the form.
+  const foot = view().getByTestId('track-foot');
+  await foot.getByLabel('More to add').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await expect(foot.getByRole('button', { name: 'New part', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(foot.getByLabel('Part title')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(foot.getByLabel('Part title')).toHaveCount(0);
 });
 
 test('CU-2 culture by year lists the entries that apply to a community and year', async () => {
@@ -1138,7 +942,7 @@ test('GL-3 the editor shows a Meaning control on a title with Chinese and a prev
   await expect(field(editor, 'sourceNote').getByTestId('zh-meaning')).toHaveCount(0);
 });
 
-test('GL-3 the glossary table, the culture view, and the chapter page show the meaning of Chinese on hover and focus', async () => {
+test('GL-3 the glossary table and the culture view show the meaning of Chinese on hover and focus', async () => {
   // Glossary table.
   await rail(page, 'Glossary table').click();
   const table = page.getByTestId('glossary-table');
@@ -1176,26 +980,6 @@ test('GL-3 the glossary table, the culture view, and the chapter page show the m
   const gran = results.locator('[data-term="GL4"]').first();
   await gran.focus();
   await expect(gran.getByRole('tooltip')).toHaveText('wàipó: maternal grandmother');
-
-  // Chapter page: a place name with Chinese in a strand.
-  const { entry: place } = await invoke('entry.create', {
-    collection: 'places',
-    data: { title: '晓曦楼', status: 'idea' },
-  });
-  const ch7 = (await invoke('entry.get', { collection: 'chapters', id: 'CH7' })).entry;
-  const strands = (ch7.strands as { placeIds: string[] }[]).map((s) => ({
-    ...s,
-    placeIds: [...s.placeIds, place._id],
-  }));
-  await invoke('entry.update', { collection: 'chapters', id: 'CH7', patch: { strands } });
-  await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await grid().locator('[data-chapter="CH7"]').getByTestId('outline-label').click();
-  const places = inspector().getByTestId('chapter-places');
-  await expect(places).toContainText('Guangzhou');
-  const house = places.locator('[data-term="GL1"]');
-  await house.focus();
-  await expect(house.getByRole('tooltip')).toHaveText('xiǎoxī: dawn light');
 });
 
 test('GL-1 a system with no checker shows a visible note on the Romanization screen and flags nothing', async () => {

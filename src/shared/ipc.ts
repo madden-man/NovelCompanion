@@ -390,15 +390,15 @@ const OutlineStrandWire = z.strictObject({
   present: z.array(z.string()),
 });
 
-/** PL-5: a chapter's scenes, 1-based and inclusive. */
-const SceneRangeWire = z.strictObject({ from: z.int().min(1), to: z.int().min(1) });
-/** PL-5: the scene outline text, the chapters' scene ranges, and when it was last saved. */
 /** A37: the line each chapter's section starts on, 0-based. */
 const SceneBreaksWire = z.record(EntryId, z.int().min(0));
+/** SM-5: the line of a scene's bullet, 0-based, to the scene's own story year. */
+const SceneYearsWire = z.record(z.string().regex(/^(0|[1-9]\d*)$/), z.int().min(-10000).max(10000));
+/** PL-5: the scene outline text, the chapters' breaks, the scenes' years, and when it was last saved. */
 const SceneOutlineWire = z.strictObject({
   text: z.string(),
-  ranges: z.record(EntryId, SceneRangeWire),
   breaks: SceneBreaksWire,
+  years: SceneYearsWire,
   modifiedAt: z.string().nullable(),
 });
 /** PL-5: one saved version of the scene outline. */
@@ -1020,17 +1020,17 @@ export const contract = {
     }),
     response: WithWarnings,
   },
-  /** PL-5 (A36): the scene outline, one bulleted text per bible with the chapters' scene ranges, kept in meta and never an entry. */
+  /** PL-5 (A36), SM-5: the scene outline, one bulleted text per bible with the chapters' breaks and the scenes' years, kept in meta and never an entry. */
   'sceneOutline.get': {
     request: z.strictObject({}),
     response: SceneOutlineWire,
   },
-  /** Replace the text, ranges and breaks. Saves closer than ten minutes share one version. */
+  /** Replace the text, breaks and years. Saves closer than ten minutes share one version. */
   'sceneOutline.set': {
     request: z.strictObject({
       text: z.string().max(2_000_000),
-      ranges: z.record(EntryId, SceneRangeWire).default({}),
       breaks: SceneBreaksWire.default({}),
+      years: SceneYearsWire.default({}),
     }),
     response: SceneOutlineWire,
   },
@@ -1039,13 +1039,13 @@ export const contract = {
     request: z.strictObject({}),
     response: z.strictObject({ versions: z.array(SceneVersionSummary) }),
   },
-  /** One version with its text and ranges. */
+  /** One version with its text, breaks and years. */
   'sceneOutline.version': {
     request: z.strictObject({ id: z.string().min(1) }),
     response: SceneVersionSummary.extend({
       text: z.string(),
-      ranges: z.record(EntryId, SceneRangeWire),
       breaks: SceneBreaksWire,
+      years: SceneYearsWire,
     }),
   },
   /** Make a version the current outline again; the restore is a new version of its own. */

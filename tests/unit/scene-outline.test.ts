@@ -7,18 +7,32 @@ import {
   giveFirstScene,
   indentLines,
   refitFlow,
+  LEAD,
+  chapterBars,
+  edgeLimits,
+  moveEdge,
+  moveOnto,
+  neighbourOf,
+  retext,
+  rollbackFlow,
   sameBreaks,
-  sameRanges,
+  sameYears,
   sceneBreaks,
   sceneCount,
   sceneLines,
   sceneOutlineText,
-  sceneRanges,
   sceneStarts,
+  sceneYears,
+  section,
+  sectionOf,
+  setSceneYear,
+  shownYears,
   splitFlow,
   startsNewVersion,
   takeSceneAbove,
+  yearOf,
 } from '../../src/shared/domain/sceneOutline';
+import type { Flow, Section } from '../../src/shared/domain/sceneOutline';
 import {
   eraAt,
   eventLanes,
@@ -61,7 +75,7 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(continueBullet(at('Part one', 8))).toBeNull();
   });
 
-  test('PL-5 Tab indents the selected lines and Shift+Tab outdents them', () => {
+  test('PL-5 Cmd+] indents the selected lines and Cmd+[ outdents them', () => {
     const t = '- One\n- Two\n- Three';
     const r = indentLines(at(t, 6, 13), false);
     expect(r.text).toBe('- One\n  - Two\n  - Three');
@@ -73,7 +87,7 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(indentLines(at(t, 6, 12), false).text).toBe('- One\n  - Two\n- Three');
   });
 
-  test('PL-5 Shift+Tab on an unindented line changes nothing', () => {
+  test('PL-5 Cmd+[ on an unindented line changes nothing', () => {
     const r = indentLines(at('- One', 3), true);
     expect(r).toEqual(at('- One', 3));
   });
@@ -83,24 +97,6 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(sceneLines(text)).toEqual([null, 1, null, null, null, 2, null]);
     expect(sceneCount(text)).toBe(2);
     expect(sceneCount(EMPTY_OUTLINE)).toBe(0);
-  });
-
-  test('PL-5 stored ranges are cleaned: whole, 1-based, ordered pairs only', () => {
-    expect(
-      sceneRanges({
-        ranges: {
-          A: { from: 1, to: 3 },
-          B: { from: 4, to: 2 },
-          C: { from: 0, to: 1 },
-          D: 'x',
-          E: { from: 2.5, to: 3 },
-        },
-      }),
-    ).toEqual({ A: { from: 1, to: 3 } });
-    expect(sceneRanges(null)).toEqual({});
-    expect(sameRanges({ A: { from: 1, to: 2 } }, { A: { from: 1, to: 2 } })).toBe(true);
-    expect(sameRanges({ A: { from: 1, to: 2 } }, { A: { from: 1, to: 3 } })).toBe(false);
-    expect(sameRanges({}, { A: { from: 1, to: 2 } })).toBe(false);
   });
 
   test('PL-5 a save starts a new version when there is none, when forced, or after the gap', () => {
@@ -128,24 +124,25 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
   });
 });
 
-describe('A37 the scene outline reads as one flow with the chapters in it', () => {
+describe('A37 SM-7 the scene outline reads as one flow split among the chapters', () => {
   const text = 'Opening note\n- A\n  - a detail\n- B\n- C\n- D';
+  const lines = (f: Flow, key: string) => sectionOf(f, key).lines;
 
   test("A37 breaks split the text into the lead and each chapter's lines, and join back the same", () => {
-    const doc = { text, ranges: {}, breaks: { X: 1, Y: 4 } };
+    const doc = { text, breaks: { X: 1, Y: 4 } };
     const flow = splitFlow(doc, ['X', 'Y', 'Z']);
-    expect(flow).toEqual({
-      lead: ['Opening note'],
-      bodies: { X: ['- A', '  - a detail', '- B'], Y: ['- C', '- D'], Z: [] },
-    });
+    expect(lines(flow, LEAD)).toEqual(['Opening note']);
+    expect(lines(flow, 'X')).toEqual(['- A', '  - a detail', '- B']);
+    expect(lines(flow, 'Y')).toEqual(['- C', '- D']);
+    expect(lines(flow, 'Z')).toEqual([]);
     const back = composeFlow(flow, ['X', 'Y', 'Z']);
     expect(back.text).toBe(text);
     expect(back.breaks).toEqual({ X: 1, Y: 4, Z: 6 });
-    expect(back.ranges).toEqual({ X: { from: 1, to: 2 }, Y: { from: 3, to: 4 } });
+    expect(back.years).toEqual({});
   });
 
   test('A37 the text follows its chapters into a new reading order', () => {
-    const flow = splitFlow({ text, ranges: {}, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
+    const flow = splitFlow({ text, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
     const moved = composeFlow(flow, ['Y', 'X']);
     expect(moved.text).toBe('Opening note\n- C\n- D\n- A\n  - a detail\n- B');
     expect(moved.breaks).toEqual({ Y: 1, X: 3 });
@@ -153,51 +150,295 @@ describe('A37 the scene outline reads as one flow with the chapters in it', () =
     expect(splitFlow(moved, ['Y', 'X'])).toEqual(flow);
   });
 
-  test('A37 an outline saved with ranges only starts each chapter at the first scene of its range', () => {
-    const flow = splitFlow(
-      { text, ranges: { X: { from: 1, to: 2 }, Y: { from: 3, to: 4 } }, breaks: {} },
-      ['X', 'Y'],
-    );
-    expect(flow.lead).toEqual(['Opening note']);
-    expect(flow.bodies.X).toEqual(['- A', '  - a detail', '- B']);
-    expect(flow.bodies.Y).toEqual(['- C', '- D']);
-  });
-
   test('A37 a section whose chapter is gone joins the section above, so no line is lost', () => {
-    const flow = splitFlow({ text, ranges: {}, breaks: { X: 1, Gone: 4 } }, ['X']);
-    expect(flow.bodies.X).toEqual(['- A', '  - a detail', '- B', '- C', '- D']);
-    const start = splitFlow({ text, ranges: {}, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
+    const flow = splitFlow({ text, breaks: { X: 1, Gone: 4 } }, ['X']);
+    expect(lines(flow, 'X')).toEqual(['- A', '  - a detail', '- B', '- C', '- D']);
+    const start = splitFlow({ text, breaks: { X: 1, Y: 4 } }, ['X', 'Y']);
     const refit = refitFlow(start, ['X', 'Y'], ['Y']);
-    expect(refit.lead).toEqual(['Opening note', '- A', '  - a detail', '- B']);
-    expect(refit.bodies).toEqual({ Y: ['- C', '- D'] });
-    expect(refitFlow(start, ['X', 'Y'], ['X', 'Y', 'New']).bodies.New).toEqual([]);
+    expect(lines(refit, LEAD)).toEqual(['Opening note', '- A', '  - a detail', '- B']);
+    expect(Object.keys(refit.bodies)).toEqual(['Y']);
+    expect(lines(refit, 'Y')).toEqual(['- C', '- D']);
+    expect(lines(refitFlow(start, ['X', 'Y'], ['X', 'Y', 'New']), 'New')).toEqual([]);
   });
 
   test('A37 sections of blank lines and empty bullets are left out of the stored text', () => {
-    const out = composeFlow({ lead: [], bodies: { X: ['- '], Y: ['- One'] } }, ['X', 'Y']);
+    const out = composeFlow(
+      { lead: section(), bodies: { X: section(['- ']), Y: section(['- One']) } },
+      ['X', 'Y'],
+    );
     expect(out.text).toBe('- One');
     expect(out.breaks).toEqual({ X: 0, Y: 0 });
-    expect(out.ranges).toEqual({ Y: { from: 1, to: 1 } });
   });
 
   test("A37 a chapter starts a scene earlier or later, carrying the scene's indented lines", () => {
-    const above = ['- A', '- B', '  - b detail'];
-    const own = ['- C', '  - c detail', '- D'];
-    expect(sceneStarts(own)).toEqual([0, 2]);
+    const above = section(['- A', '- B', '  - b detail']);
+    const own = section(['- C', '  - c detail', '- D']);
+    expect(sceneStarts(own.lines)).toEqual([0, 2]);
     expect(takeSceneAbove(above, own)).toEqual({
-      above: ['- A'],
-      own: ['- B', '  - b detail', '- C', '  - c detail', '- D'],
+      above: section(['- A']),
+      own: section(['- B', '  - b detail', '- C', '  - c detail', '- D']),
     });
     expect(giveFirstScene(above, own)).toEqual({
-      above: ['- A', '- B', '  - b detail', '- C', '  - c detail'],
-      own: ['- D'],
+      above: section(['- A', '- B', '  - b detail', '- C', '  - c detail']),
+      own: section(['- D']),
     });
-    expect(giveFirstScene(above, ['- Only'])).toEqual({ above: [...above, '- Only'], own: [] });
+    expect(giveFirstScene(above, section(['- Only']))).toEqual({
+      above: section([...above.lines, '- Only']),
+      own: section(),
+    });
     // An empty bullet left in a section does not stay behind the scene that arrives.
-    expect(takeSceneAbove(['- A'], ['- '])).toEqual({ above: [], own: ['- A'] });
-    expect(giveFirstScene(['- '], ['- B'])).toEqual({ above: ['- B'], own: [] });
-    expect(takeSceneAbove(['A heading'], own)).toBeNull();
-    expect(giveFirstScene(above, [])).toBeNull();
+    expect(takeSceneAbove(section(['- A']), section(['- ']))).toEqual({
+      above: section(),
+      own: section(['- A']),
+    });
+    expect(giveFirstScene(section(['- ']), section(['- B']))).toEqual({
+      above: section(['- B']),
+      own: section(),
+    });
+    expect(takeSceneAbove(section(['A heading']), own)).toBeNull();
+    expect(giveFirstScene(above, section())).toBeNull();
+  });
+});
+
+describe('SM-5 every scene has a year, its own or inherited, kept in step with the text', () => {
+  const sec = (ls: string[], years: Record<number, number> = {}): Section => section(ls, years);
+
+  test('SM-5 stored years are cleaned: whole line numbers to whole years only', () => {
+    expect(
+      sceneYears({
+        years: { '0': 2040, '3': -50, '01': 2041, '-1': 2042, x: 2043, '4': 2044.5, '5': 20001 },
+      }),
+    ).toEqual({ '0': 2040, '3': -50 });
+    expect(sceneYears(null)).toEqual({});
+    expect(sceneYears({ years: 'x' })).toEqual({});
+    expect(sameYears({ '1': 2040 }, { '1': 2040 })).toBe(true);
+    expect(sameYears({ '1': 2040 }, { '1': 2041 })).toBe(false);
+  });
+
+  test('SM-5 A37 an outline saved with ranges only derives its breaks from them once', () => {
+    const text = 'Opening note\n- A\n  - a detail\n- B\n- C\n- D';
+    const old = {
+      text,
+      ranges: { X: { from: 1, to: 2 }, Y: { from: 3, to: 4 }, Z: { from: 9, to: 9 }, W: 'x' },
+    };
+    // Z's first scene is gone, so Z gets no break and starts empty.
+    expect(sceneBreaks(old)).toEqual({ X: 1, Y: 4 });
+    expect(sceneYears(old)).toEqual({});
+    const flow = splitFlow({ text, breaks: sceneBreaks(old) }, ['X', 'Y']);
+    expect(sectionOf(flow, LEAD).lines).toEqual(['Opening note']);
+    expect(sectionOf(flow, 'X').lines).toEqual(['- A', '  - a detail', '- B']);
+    expect(sectionOf(flow, 'Y').lines).toEqual(['- C', '- D']);
+    // Overlapping ranges (A36 allowed two chapters on one scene) still give each chapter its own
+    // start, always on a scene line: Y's forced start (line 2) is A's indented detail, so Y starts
+    // at the next scene, B, and A keeps its detail.
+    const overlapping = {
+      text,
+      ranges: { X: { from: 1, to: 3 }, Y: { from: 1, to: 2 }, Z: { from: 2, to: 4 } },
+    };
+    expect(sceneBreaks(overlapping)).toEqual({ X: 1, Y: 3, Z: 4 });
+    const parts = splitFlow({ text, breaks: sceneBreaks(overlapping) }, ['X', 'Y', 'Z']);
+    expect(sectionOf(parts, 'X').lines).toEqual(['- A', '  - a detail']);
+    expect(sectionOf(parts, 'Y').lines).toEqual(['- B']);
+    expect(sectionOf(parts, 'Z').lines).toEqual(['- C', '- D']);
+    // With no scene line left, the later chapter gets no break and its section is empty.
+    const one = { text: '- A\n  - a', ranges: { X: { from: 1, to: 1 }, Y: { from: 1, to: 1 } } };
+    expect(sceneBreaks(one)).toEqual({ X: 0 });
+    expect(
+      sectionOf(splitFlow({ ...one, breaks: sceneBreaks(one) }, ['X', 'Y']), 'Y').lines,
+    ).toEqual([]);
+    // Once breaks are stored, the ranges are ignored.
+    expect(sceneBreaks({ ...old, breaks: { X: 0 } })).toEqual({ X: 0 });
+    expect(sceneBreaks({ text, ranges: 'x' })).toEqual({});
+  });
+
+  test('SM-5 years split with the text into the sections and join back by line of the whole text', () => {
+    const doc = {
+      text: '- A\n- B\n  - b\n- C',
+      breaks: { X: 0, Y: 3 },
+      years: { '1': 2040, '3': 2050 },
+    };
+    const flow = splitFlow(doc, ['X', 'Y']);
+    expect(sectionOf(flow, 'X').years).toEqual({ 1: 2040 });
+    expect(sectionOf(flow, 'Y').years).toEqual({ 0: 2050 });
+    expect(composeFlow(flow, ['X', 'Y'])).toEqual(doc);
+    // A year on a line that is not a scene is not stored.
+    expect(
+      composeFlow(splitFlow({ ...doc, years: { '2': 2045 } }, ['X', 'Y']), ['X', 'Y']).years,
+    ).toEqual({});
+  });
+
+  test('SM-5 a year set on a scene survives a line inserted above it', () => {
+    const before = sec(['- A', '- B'], { 1: 2040 });
+    const after = retext(before, ['- New', '- A', '- B']);
+    expect(after.years).toEqual({ 2: 2040 });
+    expect(retext(before, ['- A', '  - a note', '- B']).years).toEqual({ 2: 2040 });
+    // Typing in the scene keeps its year on it.
+    expect(retext(before, ['- A', '- Bee']).years).toEqual({ 1: 2040 });
+  });
+
+  test("SM-5 a deleted scene's year goes", () => {
+    const before = sec(['- A', '- B', '- C'], { 0: 2030, 1: 2040, 2: 2050 });
+    expect(retext(before, ['- A', '- C']).years).toEqual({ 0: 2030, 1: 2050 });
+    // A scene turned into a note under the one above loses its year too.
+    expect(retext(before, ['- A', '  - B', '- C']).years).toEqual({ 0: 2030, 2: 2050 });
+  });
+
+  test('SM-5 a split scene keeps its year on the first half, and joined scenes keep the first year among them', () => {
+    const before = sec(['- Dawn lands Mark waits', '- C'], { 0: 2040 });
+    const split = retext(before, ['- Dawn lands', '-  Mark waits', '- C']);
+    expect(split.years).toEqual({ 0: 2040 });
+    const joined = retext(sec(['- A', '- B'], { 1: 2045 }), ['- A- B']);
+    expect(joined.years).toEqual({ 0: 2045 });
+    expect(retext(sec(['- A', '- B'], { 0: 2030, 1: 2045 }), ['- A- B']).years).toEqual({
+      0: 2030,
+    });
+  });
+
+  test('SM-5 a year is set on a scene and cleared back to inheritance; a line that is no scene takes none', () => {
+    const s0 = sec(['- A', '  - note', '- B']);
+    const set = setSceneYear(s0, 2, 2041);
+    expect(set.years).toEqual({ 2: 2041 });
+    expect(setSceneYear(set, 2, null).years).toEqual({});
+    expect(setSceneYear(s0, 1, 2041).years).toEqual({});
+  });
+
+  test('SM-5 a scene without a year inherits the nearest scene above with one, else its chapter year', () => {
+    const s0 = sec(['- A', '  - note', '- B', '- C', '- D'], { 2: 2041 });
+    expect(shownYears(s0, 2032)).toEqual([
+      { year: 2032, own: false },
+      null,
+      { year: 2041, own: true },
+      { year: 2041, own: false },
+      { year: 2041, own: false },
+    ]);
+    expect(shownYears(sec(['- A']), null)).toEqual([{ year: null, own: false }]);
+  });
+
+  test("SM-5 inheritance across a chapter boundary stops at the chapter's year", () => {
+    const doc = { text: '- A\n- B\n- C\n- D', breaks: { X: 0, Y: 2 }, years: { '1': 2050 } };
+    const years = { X: 2040, Y: 2032 };
+    expect(yearOf(doc, ['X', 'Y'], years, 0)).toEqual({ year: 2040, own: false });
+    expect(yearOf(doc, ['X', 'Y'], years, 1)).toEqual({ year: 2050, own: true });
+    // Chapter Y's first scene takes Y's year, not the 2050 of the scene above it.
+    expect(yearOf(doc, ['X', 'Y'], years, 2)).toEqual({ year: 2032, own: false });
+    expect(yearOf(doc, ['X', 'Y'], years, 3)).toEqual({ year: 2032, own: false });
+    expect(yearOf(doc, ['X', 'Y'], years, 9)).toBeNull();
+  });
+});
+
+describe('SM-7 a failed undo write leaves the screen as stored', () => {
+  test('SM-7 the flow goes back to how it was before the step, in the reading order now', () => {
+    const prior = splitFlow(
+      { text: '- A\n- B\n- C', breaks: { X: 0, Y: 2 }, years: { '1': 2040 } },
+      ['X', 'Y'],
+    );
+    // Same order: exactly the flow before the step.
+    expect(rollbackFlow(prior, ['X', 'Y'], ['X', 'Y'])).toEqual(prior);
+    // The step restored chapter W before its write failed: W is back but starts empty, as stored.
+    const back = rollbackFlow(prior, ['X', 'Y'], ['X', 'W', 'Y']);
+    expect(composeFlow(back, ['X', 'W', 'Y'])).toEqual({
+      text: '- A\n- B\n- C',
+      breaks: { X: 0, W: 2, Y: 2 },
+      years: { '1': 2040 },
+    });
+  });
+});
+
+describe('SM-7 the chapter bars beside the text', () => {
+  const doc = {
+    text: 'Opening\n- A\n- B\n  - b\n- C\n- D\n- E',
+    breaks: { X: 1, Y: 4, Z: 6 },
+    years: { '2': 2040, '4': 2045 },
+  };
+  const order = ['X', 'Y', 'Z'];
+  const flow = () => splitFlow(doc, order);
+
+  test('SM-7 each bar runs from its break to the next break or the end, with its scenes', () => {
+    expect(chapterBars(doc, order)).toEqual([
+      { id: 'X', from: 1, to: 4, scenes: 2, firstScene: 1 },
+      { id: 'Y', from: 4, to: 6, scenes: 2, firstScene: 3 },
+      { id: 'Z', from: 6, to: 7, scenes: 1, firstScene: 5 },
+    ]);
+    // A chapter with no break starts empty at the end.
+    expect(chapterBars(doc, [...order, 'W']).at(-1)).toEqual({
+      id: 'W',
+      from: 7,
+      to: 7,
+      scenes: 0,
+      firstScene: 6,
+    });
+  });
+
+  test('SM-7 the limits of the edges: no chapter gives away or takes the last scene of a chapter', () => {
+    expect(edgeLimits(flow(), order, 'X')).toEqual({
+      start: { up: 0, down: 1 },
+      end: { up: 1, down: 1 },
+    });
+    expect(edgeLimits(flow(), order, 'Z')).toEqual({
+      start: { up: 1, down: 0 },
+      end: { up: 0, down: 0 },
+    });
+    // The lines before the first chapter can give all their scenes.
+    const led = splitFlow({ text: '- L1\n- L2\n- A', breaks: { X: 2 } }, ['X']);
+    expect(edgeLimits(led, ['X'], 'X').start).toEqual({ up: 2, down: 0 });
+    expect(edgeLimits(flow(), order, 'missing').start).toEqual({ up: 0, down: 0 });
+  });
+
+  test("SM-7 pulling a bar's end edge down a scene moves the break and the next chapter shrinks; years go with their scenes", () => {
+    const next = moveEdge(flow(), order, 'X', 'end', 1) as Flow;
+    const out = composeFlow(next, order);
+    expect(out.text).toBe(doc.text);
+    expect(out.breaks).toEqual({ X: 1, Y: 5, Z: 6 });
+    expect(out.years).toEqual(doc.years);
+    expect(chapterBars(out, order).map((b) => b.scenes)).toEqual([3, 1, 1]);
+    // Y cannot give its last scene away.
+    expect(moveEdge(next, order, 'X', 'end', 1)).toBeNull();
+    // Up gives X's last scene, with its indented line, to Y.
+    const up = composeFlow(moveEdge(flow(), order, 'X', 'end', -1) as Flow, order);
+    expect(up.breaks).toEqual({ X: 1, Y: 2, Z: 6 });
+  });
+
+  test("SM-7 pulling a bar's start edge moves the break with the section above, within the limits", () => {
+    const up = composeFlow(moveEdge(flow(), order, 'Z', 'start', -1) as Flow, order);
+    expect(up.breaks).toEqual({ X: 1, Y: 4, Z: 5 });
+    const down = composeFlow(moveEdge(flow(), order, 'Y', 'start', 5) as Flow, order);
+    // Y keeps one scene however far the edge is pulled.
+    expect(down.breaks).toEqual({ X: 1, Y: 5, Z: 6 });
+    expect(moveEdge(flow(), order, 'X', 'start', -1)).toBeNull();
+    const intoLead = composeFlow(moveEdge(flow(), order, 'X', 'start', 1) as Flow, order);
+    expect(intoLead.breaks).toEqual({ X: 2, Y: 4, Z: 6 });
+  });
+
+  test('SM-7 a swap carries the years with their scenes', () => {
+    const swapped = composeFlow(flow(), ['Y', 'X', 'Z']);
+    expect(swapped.text).toBe('Opening\n- C\n- D\n- A\n- B\n  - b\n- E');
+    expect(swapped.breaks).toEqual({ Y: 1, X: 3, Z: 6 });
+    expect(swapped.years).toEqual({ '1': 2045, '4': 2040 });
+    expect(composeFlow(splitFlow(swapped, ['Y', 'X', 'Z']), order)).toEqual(doc);
+  });
+
+  test('SM-7 what one swap writes: the chapter goes just past its neighbour, in that part', () => {
+    const chapters = [
+      { id: 'A', partId: 'P1' },
+      { id: 'B', partId: 'P1' },
+      { id: 'C', partId: 'P2' },
+      { id: 'D', partId: 'P2' },
+    ];
+    expect(moveOnto(chapters, 'A', 'B')).toEqual({
+      kind: 'chapters',
+      groupId: 'P1',
+      movedId: 'A',
+      toIndex: 1,
+    });
+    expect(moveOnto(chapters, 'B', 'A')).toMatchObject({ groupId: 'P1', toIndex: 0 });
+    // Across a part: down lands after the target, up before it.
+    expect(moveOnto(chapters, 'B', 'C')).toMatchObject({ groupId: 'P2', toIndex: 1 });
+    expect(moveOnto(chapters, 'C', 'B')).toMatchObject({ groupId: 'P1', toIndex: 1 });
+    expect(moveOnto(chapters, 'D', 'A')).toMatchObject({ groupId: 'P1', toIndex: 0 });
+    expect(moveOnto(chapters, 'A', 'A')).toBeNull();
+    expect(neighbourOf(chapters, 'A', -1)).toBeNull();
+    expect(neighbourOf(chapters, 'A', 1)).toBe('B');
+    expect(neighbourOf(chapters, 'D', 1)).toBeNull();
   });
 });
 
