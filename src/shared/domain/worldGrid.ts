@@ -543,3 +543,41 @@ export function scrollToYear(s: YearScale, year: number, viewWidth: number): num
   const target = yearMid(s, clamp(year, s.from, s.to)) - viewWidth / 2;
   return clamp(target, 0, Math.max(0, scaleWidth(s) - viewWidth));
 }
+
+// ---------- the chapter being written ----------
+
+export interface WritingBand {
+  from: number;
+  to: number;
+  label: string;
+}
+
+/** The strand the Writing picker holds (A27), else its chapter's primary strand, as a band. */
+export function writingBand(
+  strands: readonly {
+    chapterId: string;
+    strandId: string;
+    primary: boolean;
+    startYear: number;
+    endYear: number;
+    readingOrder: number | null;
+    chapterTitle: string;
+    label: string;
+  }[],
+  chapterId: string | undefined,
+  strandId: string | undefined,
+): WritingBand | null {
+  if (!chapterId) return null;
+  const mine = strands.filter((s) => s.chapterId === chapterId);
+  const s =
+    mine.find((x) => strandId !== undefined && x.strandId === strandId) ??
+    mine.find((x) => x.primary) ??
+    mine[0];
+  if (!s) return null;
+  const years = s.startYear === s.endYear ? `${s.startYear}` : `${s.startYear} to ${s.endYear}`;
+  return {
+    from: s.startYear,
+    to: s.endYear,
+    label: `Chapter ${s.readingOrder ?? '?'}: ${s.chapterTitle}, ${s.label}, being written (${years})`,
+  };
+}

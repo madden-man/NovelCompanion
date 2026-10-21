@@ -44,7 +44,7 @@ type View =
   | { kind: 'search' }
   | { kind: 'tree'; focus?: string }
   | { kind: 'timeline' }
-  | { kind: 'backstory'; characterId?: string }
+  | { kind: 'backstory'; characterId?: string; at?: number }
   | { kind: 'outline' }
   /** KB-5: the Entries screen. */
   | { kind: 'entries' }
@@ -126,7 +126,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
 
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
-  useOpenBackstory((characterId) => setView({ kind: 'backstory', characterId }));
+  useOpenBackstory((characterId, at) => setView({ kind: 'backstory', characterId, at }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
     review: () => setView({ kind: 'review' }),
@@ -288,7 +288,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
         ) : view.kind === 'timeline' ? (
           <TimelineView />
         ) : view.kind === 'backstory' ? (
-          <BackstoryView characterId={view.characterId} onOpen={open} />
+          <BackstoryView characterId={view.characterId} openedAt={view.at} onOpen={open} />
         ) : view.kind === 'entries' ? (
           <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (

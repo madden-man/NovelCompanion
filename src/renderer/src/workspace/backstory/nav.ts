@@ -8,19 +8,30 @@ import { useEffect, useRef } from 'react';
 export const OPEN_BACKSTORY = 'nc:open-backstory';
 
 export function openBackstory(characterId?: string): void {
-  window.dispatchEvent(new CustomEvent(OPEN_BACKSTORY, { detail: { characterId } }));
+  // Self-contained (the event name is written out) so a test can run it in the window as is.
+  window.dispatchEvent(
+    new CustomEvent('nc:open-backstory', { detail: { characterId, at: Date.now() } }),
+  );
 }
 
-/** The workspace's side: called with the person to pick, or undefined for none. */
-export function useOpenBackstory(handler: (characterId: string | undefined) => void): void {
+/**
+ * The workspace's side: called with the person to pick (or undefined for none)
+ * and when the request was made, so the same person asked for twice is picked twice.
+ */
+export function useOpenBackstory(
+  handler: (characterId: string | undefined, at: number) => void,
+): void {
   const ref = useRef(handler);
   useEffect(() => {
     ref.current = handler;
   });
   useEffect(() => {
     const on = (e: Event) => {
-      const detail = (e as CustomEvent<{ characterId?: unknown }>).detail;
-      ref.current(typeof detail?.characterId === 'string' ? detail.characterId : undefined);
+      const detail = (e as CustomEvent<{ characterId?: unknown; at?: unknown }>).detail;
+      ref.current(
+        typeof detail?.characterId === 'string' ? detail.characterId : undefined,
+        typeof detail?.at === 'number' ? detail.at : Date.now(),
+      );
     };
     window.addEventListener(OPEN_BACKSTORY, on);
     return () => window.removeEventListener(OPEN_BACKSTORY, on);

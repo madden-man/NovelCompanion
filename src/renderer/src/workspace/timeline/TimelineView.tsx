@@ -16,10 +16,10 @@ import {
   inWindow,
   shiftEnd,
   shiftSpan,
+  writingBand,
   yearWindow,
 } from '../../../../shared/domain/worldGrid';
 import type { Zoom } from '../../../../shared/domain/worldGrid';
-import { writingBand } from '../../../../shared/domain/backstoryGrid';
 import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import { isPlainObject } from '../../../../shared/domain/paths';
 import { useWriteGuard } from '../../connection';

@@ -7,6 +7,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { connect } from '../../src/main/db';
 import { READ_ONLY_REASON } from '../../src/shared/ipcApp';
 import { loadFixture, readFixture } from '../helpers/loadFixture';
+import { openBackstory } from '../../src/renderer/src/workspace/backstory/nav';
 import { fileDb, invokeVia, launch, rail } from './helpers';
 import type { TestDb } from './helpers';
 
@@ -69,7 +70,7 @@ const liveMoments = async () =>
     (e) => e.entry as Record<string, unknown>,
   );
 
-async function openBackstory() {
+async function showBackstory() {
   await rail(page, 'Backstory').click();
   await expect(grid()).toBeVisible();
 }
@@ -145,7 +146,7 @@ const parseRgb = (s: string): Rgba => {
 };
 
 test('SM-9 FT-1 TL-2 the fixture families are headings in tree order, their people rows in tree order, each lifespan at its years', async () => {
-  await openBackstory();
+  await showBackstory();
   // The axis takes in every birth: Peter Hale, 1956.
   expect(await axis()).toMatchObject({ from: 1956, to: 2100 });
   await expect(grid().locator('.wg-group-label')).toHaveText([
@@ -294,6 +295,21 @@ test('SM-9 ED-3 a cell edit saves over IPC on Enter or blur, one undo step each,
   await expect
     .poll(async () => (await getMoment('Z3-lives-1')).body)
     .toBe('She misses the river smell and says so every spring.');
+  // Edit, blur, retype the original at once, blur: the original is what stays stored.
+  const what = cell('Z3-lives-1', 'title');
+  await what.fill('Lives in Seattle');
+  await page.keyboard.press('Tab');
+  await what.fill('Lives in Portland, Oregon');
+  await page.keyboard.press('Tab');
+  await expect
+    .poll(async () => (await getMoment('Z3-lives-1')).title)
+    .toBe('Lives in Portland, Oregon');
+  await expect(what).toHaveValue('Lives in Portland, Oregon');
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment('Z3-lives-1')).title).toBe('Lives in Seattle');
+  await page.keyboard.press('Meta+z');
+  await expect(what).toHaveValue('Lives in Portland, Oregon');
+  expect((await getMoment('Z3-lives-1')).title).toBe('Lives in Portland, Oregon');
   // The year saves on blur, and the age follows.
   const year = cell('Z3-lives-1', 'year');
   await year.fill('2029');
@@ -403,6 +419,18 @@ test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it;
   await expect(marker('H1-voice-0')).toBeFocused();
   expect((await getMoment('H1-voice-0')).year).toBe(2029);
   await blurAndUndo();
+  await expect(marker('H1-voice-0')).toHaveAttribute('data-year', '2028');
+  expect((await getMoment('H1-voice-0')).year).toBe(2028);
+  // Two quick presses add up: two years, two undo steps.
+  await marker('H1-voice-0').focus();
+  await marker('H1-voice-0').press('ArrowRight');
+  await marker('H1-voice-0').press('ArrowRight');
+  await expect.poll(async () => (await getMoment('H1-voice-0')).year).toBe(2030);
+  await expect(marker('H1-voice-0')).toHaveAttribute('data-year', '2030');
+  await blurAndUndo();
+  await expect(marker('H1-voice-0')).toHaveAttribute('data-year', '2029');
+  expect((await getMoment('H1-voice-0')).year).toBe(2029);
+  await page.keyboard.press('Meta+z');
   await expect(marker('H1-voice-0')).toHaveAttribute('data-year', '2028');
   expect((await getMoment('H1-voice-0')).year).toBe(2028);
   await marker('Z3-lives-0').focus();
@@ -564,13 +592,11 @@ test('SM-9 TM-3 the story year line and the writing band sit where the story tim
   await expect(band).toHaveCount(0);
 });
 
-test('SM-9 SM-10 Backstory opens on a person given to it: that person is picked and their table shown', async () => {
-  // From another screen: the window event Relevant to Session's "Their backstory" button sends.
+test('SM-9 SM-10 Backstory opens on a person given to it: that person is picked and their table shown, every time it is asked', async () => {
+  // From another screen, through openBackstory, which Relevant to Session's "Their backstory" calls.
   await rail(page, 'Family tree').click();
   await expect(view()).toHaveCount(0);
-  await page.evaluate(() =>
-    window.dispatchEvent(new CustomEvent('nc:open-backstory', { detail: { characterId: 'H5' } })),
-  );
+  await page.evaluate(openBackstory, 'H5');
   await expect(grid()).toBeVisible();
   await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
   await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
@@ -578,17 +604,24 @@ test('SM-9 SM-10 Backstory opens on a person given to it: that person is picked 
   await expect(table().locator('tbody tr')).toHaveCount(1);
   await expect(tableRow('H5-voice-0').getByTestId('moment-age')).toHaveText('29');
   // With the screen already open, another person.
-  await page.evaluate(() =>
-    window.dispatchEvent(new CustomEvent('nc:open-backstory', { detail: { characterId: 'Z3' } })),
-  );
+  await page.evaluate(openBackstory, 'Z3');
   await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
   await expect(label('H5')).toHaveAttribute('aria-pressed', 'false');
   await expect(view().getByTestId('moments-heading')).toHaveText('Zhou Lan 周兰, 1988');
+  // The same person asked for again after another was picked in the grid is picked again.
+  await page.evaluate(openBackstory, 'H5');
+  await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
+  await label('Z1').click();
+  await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(openBackstory, 'H5');
+  await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
+  await expect(label('Z1')).toHaveAttribute('aria-pressed', 'false');
+  await expect(view().getByTestId('moments-heading')).toHaveText('Iris Hale-Zhou 晓曦, 2031');
 });
 
 test('SM-9 NF-2 the screen works from the keyboard and its labels use the primary text colour in both themes', async () => {
   await rail(page, 'Family tree').click();
-  await openBackstory();
+  await showBackstory();
   // A row label picks the person with Enter.
   await view().getByRole('button', { name: 'Change' }).focus();
   await tabTo(label('Z1'));
@@ -734,7 +767,7 @@ test("SM-9 ARCH-6 read-only: Add a moment, the cells, the picker, Delete, drags,
     invoke = invokeVia(page);
     await invoke('bible.open', { slug: 'ro' });
     await expect(page.getByTestId('workspace')).toBeVisible();
-    await openBackstory();
+    await showBackstory();
     await label('Z3').click();
     await tableRow('Z3-lives-1').getByRole('button', { name: 'Delete' }).click();
     await tableRow('Z3-lives-1')
@@ -756,7 +789,7 @@ test("SM-9 ARCH-6 read-only: Add a moment, the cells, the picker, Delete, drags,
     await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
     await banner.getByTestId('open-snapshot').click();
     await expect(banner).toHaveAttribute('data-state', 'readOnly');
-    await openBackstory();
+    await showBackstory();
     await label('Z3').click();
     await expect(tableRow('Z3-lives-0')).toHaveCount(1);
 

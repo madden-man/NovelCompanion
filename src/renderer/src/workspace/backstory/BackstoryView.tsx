@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { entryTitle, manifests } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
-import { backstoryGrid, momentsOf, writingBand } from '../../../../shared/domain/backstoryGrid';
+import { backstoryGrid, momentsOf } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment } from '../../../../shared/domain/backstoryGrid';
 import {
   eraSpans,
@@ -10,7 +10,7 @@ import {
   fromCollections,
   strandSpans,
 } from '../../../../shared/domain/timeline';
-import { shiftEnd, shiftSpan } from '../../../../shared/domain/worldGrid';
+import { shiftEnd, shiftSpan, writingBand } from '../../../../shared/domain/worldGrid';
 import type { Zoom } from '../../../../shared/domain/worldGrid';
 import type { StoredPositions } from '../../../../shared/domain/tree';
 import { createCommand, editCommand, restoreCommand } from '../../../../shared/domain/undoRunner';
@@ -47,6 +47,8 @@ const FIELD_WORDS: Record<MomentField, string> = {
  */
 export function BackstoryView(props: {
   characterId?: string;
+  /** When the request to open on that person was made: every new request picks them again. */
+  openedAt?: number;
   /** Opens an entry in its section: an era picked in the era band. */
   onOpen?: (collection: EntryCollection, id: string) => void;
 }) {
@@ -83,10 +85,11 @@ export function BackstoryView(props: {
     };
   }, [characters, unions, parentLinks]);
 
-  // Their backstory button (SM-10) opens on a person, also when the screen is already open.
-  const [openedFor, setOpenedFor] = useState(props.characterId);
-  if (props.characterId !== openedFor) {
-    setOpenedFor(props.characterId);
+  // Their backstory button (SM-10) opens on a person, also when the screen is already open
+  // and when it is the same person again after another was picked.
+  const [openedFor, setOpenedFor] = useState(props.openedAt);
+  if (props.openedAt !== openedFor) {
+    setOpenedFor(props.openedAt);
     if (props.characterId) {
       setPicked(props.characterId);
       setSelected(null);
@@ -156,32 +159,12 @@ export function BackstoryView(props: {
     }
   };
 
-  /** Cell saves run one after another, so a blur and a pick right after it land in order. */
+  /** Cell saves and marker moves run one after another, so each starts from the last one's result. */
   const saving = useRef<Promise<unknown>>(Promise.resolve());
-
-  const save = (id: string, field: MomentField, value: string | number | null) => {
-    setError(null);
-    if (ro.off) return Promise.resolve();
+  const queue = (job: () => Promise<void>): Promise<void> => {
     const run = saving.current.then(async () => {
       try {
-        // The stored entry as it is now, so each step undoes exactly its own change.
-        const before = (await call('entry.get', { collection: 'moments', id })).entry as Record<
-          string,
-          unknown
-        >;
-        const patch: Record<string, unknown> = { [field]: value };
-        // A moment over several years keeps its length when its year changes.
-        if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
-          patch.endYear = before.endYear + (value - Number(before.year));
-        }
-        const { entry } = await call('entry.update', { collection: 'moments', id, patch });
-        const title = entryTitle(entry) || 'a moment';
-        undo.record(
-          editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
-        );
-        // Only a cell of this row counts the stored value as saved (ED-3).
-        const row = (document.activeElement as HTMLElement | null)?.closest('tr');
-        if (row?.getAttribute('data-id') === id) undo.markSaved(entry);
+        await job();
       } catch (e) {
         setError(plainError(e));
         throw e;
@@ -191,35 +174,67 @@ export function BackstoryView(props: {
     return run;
   };
 
-  const move = async (id: string, delta: number, part: MovePart) => {
+  const save = (id: string, field: MomentField, value: string | number | null) => {
     setError(null);
-    if (ro.off) return;
-    const before = momentEntries.find((e) => e._id === id);
-    const m = grid.moments.find((x) => x.id === id);
-    if (!before || !m) return;
-    let patch: Record<string, unknown>;
-    let label: string;
-    if (part === 'span') {
-      const moved = shiftSpan(m.year, m.endYear ?? m.year, delta, span);
-      if (moved.delta === 0) return;
-      patch = {
-        year: moved.startYear,
-        endYear: m.endYear === null ? null : m.endYear + moved.delta,
-      };
-      label = `Moved ${m.title.trim() || 'a moment'} to ${moved.startYear}`;
-    } else {
-      const end = m.endYear ?? m.year;
-      const to = shiftEnd(m.year, end, delta, span);
-      if (to === end) return;
-      patch = { endYear: to === m.year ? null : to };
-      label = `Set the end of ${m.title.trim() || 'a moment'} to ${to}`;
-    }
-    try {
+    if (ro.off) return Promise.resolve();
+    return queue(async () => {
+      // The stored entry as it is now, so each step undoes exactly its own change.
+      const before = (await call('entry.get', { collection: 'moments', id })).entry as Record<
+        string,
+        unknown
+      >;
+      const patch: Record<string, unknown> = { [field]: value };
+      // A moment over several years keeps its length when its year changes.
+      if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
+        patch.endYear = before.endYear + (value - Number(before.year));
+      }
+      const { entry } = await call('entry.update', { collection: 'moments', id, patch });
+      const title = entryTitle(entry) || 'a moment';
+      undo.record(
+        editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
+      );
+      // Only a cell of this row counts the stored value as saved (ED-3).
+      const row = (document.activeElement as HTMLElement | null)?.closest('tr');
+      if (row?.getAttribute('data-id') === id) undo.markSaved(entry);
+    });
+  };
+
+  /**
+   * A marker moved by a drag or an arrow key. It joins the cell saves' queue
+   * and reads the stored moment first, so quick presses add up and never
+   * write over a save still on its way.
+   */
+  const move = (id: string, delta: number, part: MovePart) => {
+    setError(null);
+    if (ro.off) return Promise.resolve();
+    return queue(async () => {
+      const before = (await call('entry.get', { collection: 'moments', id })).entry as Record<
+        string,
+        unknown
+      >;
+      const year = Number(before.year);
+      const endYear = typeof before.endYear === 'number' ? before.endYear : null;
+      const title = (typeof before.title === 'string' && before.title.trim()) || 'a moment';
+      let patch: Record<string, unknown>;
+      let label: string;
+      if (part === 'span') {
+        const moved = shiftSpan(year, endYear ?? year, delta, span);
+        if (moved.delta === 0) return;
+        patch = {
+          year: moved.startYear,
+          endYear: endYear === null ? null : endYear + moved.delta,
+        };
+        label = `Moved ${title} to ${moved.startYear}`;
+      } else {
+        const end = endYear ?? year;
+        const to = shiftEnd(year, end, delta, span);
+        if (to === end) return;
+        patch = { endYear: to === year ? null : to };
+        label = `Set the end of ${title} to ${to}`;
+      }
       const { entry } = await call('entry.update', { collection: 'moments', id, patch });
       undo.record(editCommand(label, 'moments', id, before, entry));
-    } catch (e) {
-      setError(plainError(e));
-    }
+    }).catch(() => undefined);
   };
 
   /** ED-5: the confirm moved it to the trash as one undo step; offer Undo here too. */
