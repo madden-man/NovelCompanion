@@ -2,14 +2,15 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { APP_MENU_ITEMS, RAIL_SCREENS, fileDb, invokeVia, launch, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
- * KB-1 the five-screen rail with everything else under More; KB-2 the Story
- * Time dialog as the year view, with Compare and Lived through inside it; KB-8
- * the new parts by keyboard. The TL-2, TL-5 and TL-7 rows that used to open
- * the Year view and Compare screens live here now, on the dialog.
+ * SM-6 the eight-screen rail with the App menu at its foot (KB-1's five
+ * screens and More are withdrawn by it); KB-2 the Story Time dialog as the
+ * year view, with Compare and Lived through inside it; KB-8 the new parts by
+ * keyboard. The TL-2, TL-5 and TL-7 rows that used to open the Year view and
+ * Compare screens live here, on the dialog.
  */
 let db: TestDb;
 let app: ElectronApplication;
@@ -53,7 +54,8 @@ test.afterAll(async () => {
 });
 
 const nav = () => page.getByRole('navigation', { name: 'Sections' });
-const more = () => nav().locator('details.rail-more');
+const appButton = () => nav().getByTestId('app-menu-button');
+const appMenu = () => nav().getByRole('menu');
 const dialog = () => page.getByTestId('story-time-dialog');
 const editor = () => page.getByTestId('editor');
 
@@ -79,106 +81,140 @@ async function fromTop() {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
-const MORE = {
-  Sessions: [
+/** What each screen of the rail shows when it opens. */
+const SCREEN_SHOWS: Record<(typeof RAIL_SCREENS)[number], () => Locator> = {
+  Characters: () => page.getByRole('heading', { name: 'Characters', level: 2 }),
+  'Family tree': () => page.getByTestId('tree-view'),
+  Outline: () => page.getByTestId('outline-view'),
+  'World events': () => page.getByTestId('world-grid'),
+  Backstory: () => page.getByTestId('backstory-view'),
+  'Continuity checker': () => page.getByTestId('continuity-view'),
+  Sessions: () => page.getByTestId('sessions-view'),
+  'Cultural data': () => page.getByTestId('cultural-data'),
+};
+
+/** What each App menu item shows when it opens. */
+const MENU_SHOWS: Record<(typeof APP_MENU_ITEMS)[number], () => Locator> = {
+  'Search and filters': () => page.getByTestId('search-view'),
+  'Review queue': () => page.getByTestId('review-queue'),
+  Import: () => page.getByTestId('import-view'),
+  Backups: () => page.getByTestId('backups-view'),
+  'Google Drive': () => page.getByTestId('drive-view'),
+  Lists: () => page.getByRole('heading', { name: 'Lists', level: 2 }),
+  Trash: () => page.getByRole('heading', { name: 'Trash', level: 2 }),
+  Bibles: () => page.getByTestId('bible-list'),
+  Settings: () => page.getByTestId('settings-view'),
+  'Place tree': () => page.getByTestId('places-view'),
+  Romanization: () => page.getByTestId('romanization-view'),
+  'Glossary table': () => page.getByTestId('glossary-table'),
+};
+
+test('SM-6 the rail is the eight screens in order under the search box, with no More, and the app opens on Sessions', async () => {
+  // DB-1 SM-11: the app opens on Sessions, which holds what the dashboard held.
+  await expect(page.getByTestId('sessions-view')).toBeVisible();
+  await expect(page.getByTestId('dashboard')).toBeVisible();
+  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
+  await expect(nav().getByTestId('rail-main').getByRole('button')).toHaveText([...RAIL_SCREENS]);
+  // The search box sits above the eight.
+  const search = nav().getByRole('searchbox', { name: 'Search the bible' });
+  await expect(search).toBeVisible();
+  expect(
+    await search.evaluate(
+      (a, b) => !!(a.compareDocumentPosition(b!) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await nav().getByTestId('rail-main').elementHandle(),
+    ),
+  ).toBe(true);
+  // No More disclosure, and nothing remembered for it (KB-1 withdrawn).
+  await expect(nav().locator('details')).toHaveCount(0);
+  await expect(nav().getByText('More', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate((id) => localStorage.getItem(`nc.rail.more.${id}`), bibleId)).toBe(
+    null,
+  );
+  // Only the eight and the App button are visible in the rail; the menu is closed.
+  await expect(nav().getByRole('button')).toHaveText([...RAIL_SCREENS, 'App']);
+  await expect(appButton()).toHaveAttribute('aria-expanded', 'false');
+  await expect(appMenu()).toBeHidden();
+  // The old screens and the raw section lists are gone from the rail.
+  for (const gone of [
+    'Timeline',
+    'Entries',
     'Dashboard',
     'Manuscript',
     'Relevant to Session',
     'Start session',
-    'Session log',
-    'Briefs',
-    'Continuity findings',
-  ],
-  // A39: the dropped sections leave the rail; moments join People.
-  People: ['Moments', 'Families', 'Unions', 'Parent links'],
-  Story: ['Books', 'Parts', 'Chapters'],
-  World: ['World events', 'Era states', 'Cultural entries', 'Places', 'Glossary'],
-  Knowledge: ['Open questions'],
-  Manage: [
-    'Search and filters',
-    'Review queue',
-    'Import',
-    'Backups',
-    'Google Drive',
-    'Lists',
-    'Trash',
-    'Bibles',
-    'Settings',
-  ],
-};
-
-test('KB-1 the rail holds five screens in order, then a closed More with every other screen in its group', async () => {
-  // DB-1: the app still opens on the dashboard, which now sits under More.
-  await expect(page.getByTestId('dashboard')).toBeVisible();
-  await expect(rail(page, 'Dashboard')).toHaveAttribute('aria-current', 'page');
-  await expect(nav().getByTestId('rail-main').getByRole('button')).toHaveText([
-    'Characters',
-    'Family tree',
-    'Outline',
-    'Timeline',
-    'Entries',
-  ]);
-  // The search box stays at the top; More sits below the five, closed by default.
-  await expect(nav().getByRole('searchbox', { name: 'Search the bible' })).toBeVisible();
-  await expect(more()).not.toHaveAttribute('open', '');
-  await expect(nav().getByRole('button', { name: 'Dashboard' })).toBeHidden();
-  await nav().getByText('More', { exact: true }).click();
-  await expect(more()).toHaveAttribute('open', '');
-  const groups = more().locator('.rail-group');
-  await expect(groups.locator('.eyebrow')).toHaveText(Object.keys(MORE));
-  for (const [i, buttons] of Object.values(MORE).entries()) {
-    await expect(groups.nth(i).getByRole('button')).toHaveText(buttons);
-  }
-  // Year view and Compare live in the year dialog, the four world tools in Entries.
-  for (const gone of [
-    'Year view',
-    'Compare',
+    'Moments',
+    'Chapters',
+    'Open questions',
     'Culture by year',
-    'Place tree',
-    'Romanization',
-    'Glossary table',
   ]) {
-    await expect(rail(page, gone)).toHaveCount(0);
+    await expect(nav().getByRole('button', { name: gone, exact: true })).toHaveCount(0);
+    await expect(
+      nav().getByRole('menuitem', { name: gone, exact: true, includeHidden: true }),
+    ).toHaveCount(0);
   }
-  // Every screen under More still opens.
-  await rail(page, 'Chapters').click();
-  await expect(page.getByRole('heading', { name: 'Chapters', level: 2 })).toBeVisible();
-  await rail(page, 'Entries').click();
-  await expect(page.getByTestId('entries-view')).toBeVisible();
-  await expect(rail(page, 'Entries')).toHaveAttribute('aria-current', 'page');
 });
 
-test('KB-1 More remembers its state for the bible across a reload', async () => {
-  await expect(more()).toHaveAttribute('open', '');
-  expect(await page.evaluate((id) => localStorage.getItem(`nc.rail.more.${id}`), bibleId)).toBe(
-    'open',
+test('SM-6 each of the eight screens opens from its rail button', async () => {
+  for (const screen of RAIL_SCREENS) {
+    await rail(page, screen).click();
+    await expect(rail(page, screen)).toHaveAttribute('aria-current', 'page');
+    await expect(SCREEN_SHOWS[screen]()).toBeVisible();
+  }
+  // "Timeline" still names World events while the older specs are renamed.
+  await rail(page, 'Timeline').click();
+  await expect(rail(page, 'World events')).toHaveAttribute('aria-current', 'page');
+});
+
+test('SM-6 the App menu holds the nine utilities and the reference views, and each item opens its screen', async () => {
+  await appButton().click();
+  await expect(appButton()).toHaveAttribute('aria-expanded', 'true');
+  await expect(appMenu()).toBeVisible();
+  await expect(appMenu().getByRole('group')).toHaveCount(2);
+  await expect(appMenu().getByRole('group', { name: 'Manage' }).getByRole('menuitem')).toHaveText(
+    APP_MENU_ITEMS.slice(0, 9),
   );
-  await page.reload();
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(more()).toHaveAttribute('open', '');
-  await more().locator('summary').click();
-  await expect(more()).not.toHaveAttribute('open', '');
-  await page.reload();
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(more()).not.toHaveAttribute('open', '');
-  // rail() opens More for a button inside it.
-  await rail(page, 'Dashboard').click();
-  await expect(more()).toHaveAttribute('open', '');
-  await expect(page.getByTestId('dashboard')).toBeVisible();
+  await expect(
+    appMenu().getByRole('group', { name: 'Reference' }).getByRole('menuitem'),
+  ).toHaveText(['Place tree', 'Romanization', 'Glossary table']);
+  // Escape closes it.
+  await page.keyboard.press('Escape');
+  await expect(appMenu()).toBeHidden();
+  await expect(appButton()).toBeFocused();
+  for (const item of APP_MENU_ITEMS) {
+    await rail(page, item).click();
+    await expect(appMenu()).toBeHidden();
+    await expect(MENU_SHOWS[item]()).toBeVisible();
+    await expect(rail(page, item)).toHaveAttribute('aria-current', 'page');
+  }
+  // A click outside closes an open menu.
+  await appButton().click();
+  await expect(appMenu()).toBeVisible();
+  await page.getByTestId('status-bar').click({ position: { x: 4, y: 4 } });
+  await expect(appMenu()).toBeHidden();
 });
 
-test('KB-1 a second bible starts with More closed while the first keeps it open', async () => {
-  await expect(more()).toHaveAttribute('open', '');
-  await invoke('bible.create', { slug: 'year-second', name: 'Year second' });
-  await invoke('bible.open', { slug: 'year-second' });
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(page.getByTestId('top-bar')).toBeVisible();
-  await expect(more()).not.toHaveAttribute('open', '');
-  await expect(nav().getByRole('button', { name: 'Dashboard' })).toBeHidden();
-  await invoke('bible.open', { slug: SLUG });
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(rail(page, 'Characters')).toBeVisible();
-  await expect(more()).toHaveAttribute('open', '');
+test('SM-6 SR-1 a section list that left the rail opens from Search and filters, and search still opens any entry', async () => {
+  await rail(page, 'Search and filters').click();
+  const view = page.getByTestId('search-view');
+  await expect(view.getByTestId('search-open-section')).toHaveCount(0);
+  await view.getByLabel('Section').selectOption({ label: 'Chapters' });
+  await view.getByTestId('search-open-section').click();
+  await expect(page.getByRole('heading', { name: 'Chapters', level: 2 })).toBeVisible();
+  await expect(page.getByTestId('entry-list').getByRole('button')).toHaveCount(
+    fixture.chapters!.length,
+  );
+  // A place and a glossary term open from the rail search box (SR-1).
+  const box = nav().getByRole('searchbox', { name: 'Search the bible' });
+  await box.fill('Portland');
+  await page
+    .getByTestId('search-results')
+    .getByRole('button', { name: /Portland/ })
+    .first()
+    .click();
+  await expect(editor()).toContainText('Portland');
+  await box.fill('团圆');
+  await page.getByTestId('search-results').getByRole('button', { name: /团圆/ }).first().click();
+  await expect(editor()).toContainText('团圆');
 });
 
 test('KB-2 the top bar year button opens the dialog: everyone first, then the era, the five-year strip, and the strands', async () => {
@@ -259,7 +295,6 @@ test('KB-2 an event title in the strip opens its entry and closes the dialog', a
   await expect(dialog()).toHaveCount(0);
   await expect(editor()).toBeVisible();
   await expect(editor()).toContainText('Grid batteries replace the last coal plant in Guangdong');
-  await expect(rail(page, 'World events')).toHaveAttribute('aria-current', 'page');
 });
 
 test('KB-2 TL-2 TL-5 the dialog lists everyone at 2075 and what a character lived through', async () => {
@@ -307,22 +342,33 @@ test('KB-2 TL-7 compare is a disclosure in the dialog: two characters side by si
   await closeDialog();
 });
 
-test('KB-8 NF-2 by keyboard: More opens from the rail, the top bar button opens the dialog, and its disclosures and strip answer Enter', async () => {
+test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar button opens the dialog, and its disclosures and strip answer Enter', async () => {
   await rail(page, 'Characters').click();
-  // More, closed, opens with Enter on its summary and its buttons take focus.
-  if (await more().evaluate((d) => (d as HTMLDetailsElement).open)) {
-    await more().locator('summary').click();
-  }
+  // The App menu: Enter opens it on its first item, the arrows move, Enter picks, focus comes back.
   await fromTop();
-  await tabTo(more().locator('summary'));
+  await tabTo(appButton());
   await page.keyboard.press('Enter');
-  await expect(more()).toHaveAttribute('open', '');
-  await tabTo(nav().getByRole('button', { name: 'Lists', exact: true }));
+  await expect(appMenu()).toBeVisible();
+  await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(appMenu().getByRole('menuitem', { name: 'Glossary table' })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  await expect(appMenu().getByRole('menuitem', { name: 'Lists' })).toBeFocused();
   await page.keyboard.press('Enter');
+  await expect(appMenu()).toBeHidden();
   await expect(rail(page, 'Lists')).toHaveAttribute('aria-current', 'page');
+  await expect(appButton()).toBeFocused();
+  // ArrowUp on the button opens it on the last item; Tab closes it and moves on.
+  await page.keyboard.press('ArrowUp');
+  await expect(appMenu().getByRole('menuitem', { name: 'Glossary table' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(appMenu()).toBeHidden();
 
   // The top bar's year button, then Escape returns focus to it.
   await invoke('storyTime.set', { time: { year: 2045 } });
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2045');
   const open = page.getByTestId('top-open-year');
   await fromTop();
   await tabTo(open);

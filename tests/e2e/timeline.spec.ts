@@ -4,7 +4,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { contrast } from '../helpers/contrast';
 import type { Rgba } from '../helpers/contrast';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -211,7 +211,7 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
 });
 
 test('WE-2 the eras screen flags a gap after an edit and never blocks the save', async () => {
-  await rail(page, 'Era states').click();
+  await screenTab(page, 'Cultural data', 'Eras');
   await expect(page.getByTestId('era-coverage-ok')).toBeVisible();
   await invoke('entry.update', {
     collection: 'eraStates',

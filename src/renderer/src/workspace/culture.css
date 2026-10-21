@@ -1,0 +1,41 @@
+/* SM-11: Cultural data, the community rows and the eras edited in place. */
+.culture-rows .culture-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  color: var(--fg);
+}
+.culture-rows .culture-row.applies {
+  background: var(--time-soft);
+  box-shadow: inset 3px 0 0 var(--time);
+}
+.era-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.era-row.current {
+  border-color: var(--time);
+  box-shadow: inset 3px 0 0 var(--time);
+}
+.era-head {
+  align-items: flex-end;
+}
+.era-row textarea {
+  width: 100%;
+  resize: vertical;
+}
+/*
+ * GL-3: the table scrolls sideways on a narrow window, so it clips what
+ * leaves it. Room under the last row keeps its meaning card inside, and the
+ * reserved gutter keeps a scroll bar from narrowing the columns under the pointer.
+ */
+.glossary-wrap {
+  padding-bottom: 5rem;
+  scrollbar-gutter: stable;
+}

@@ -3,7 +3,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, sectionList } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -785,7 +785,7 @@ test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on 
 });
 
 test('CU-2 culture by year lists the entries that apply to a community and year', async () => {
-  await rail(page, 'Culture by year').click();
+  await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
   await view.getByLabel('Community').selectOption({ label: 'Guangzhou' });
   await view.getByLabel('Year').fill('2020');
@@ -846,7 +846,7 @@ test('GL-1 a term that breaks the language system is flagged and listed, and the
   await expect(flagged).not.toContainText('gwong2dung1');
   await view.getByLabel('Mandarin').selectOption({ label: 'Hanyu Pinyin' });
   await expect(view.getByTestId('romanization-flagged')).toBeVisible();
-  await rail(page, 'Glossary').click();
+  await sectionList(page, 'Glossary');
   await page.getByTestId('entry-list').getByRole('button', { name: /^广东/ }).click();
   await expect(page.getByTestId('inspector').getByTestId('warning-count')).toBeVisible();
   await expect(field(page.getByTestId('editor'), 'romanization')).toContainText(
@@ -906,7 +906,7 @@ test('GL-3 the editor shows a Meaning control on a title with Chinese and a prev
     collection: 'places',
     data: { title: '晓曦的信', body: '她写了晓曦和月饼。\n\n第二段。', status: 'idea' },
   });
-  await rail(page, 'Places').click();
+  await sectionList(page, 'Places');
   await page
     .getByTestId('entry-list')
     .getByRole('button', { name: /晓曦\s*的信/ })
@@ -969,7 +969,7 @@ test('GL-3 the glossary table and the culture view show the meaning of Chinese o
       status: 'canon',
     },
   });
-  await rail(page, 'Culture by year').click();
+  await rail(page, 'Cultural data').click();
   const culture = page.getByTestId('culture-view');
   await culture.getByLabel('Community').selectOption({ label: 'Guangzhou' });
   await culture.getByLabel('Year').fill('2020');

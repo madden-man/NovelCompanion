@@ -19,6 +19,7 @@ import {
   launch,
   openListFor,
   rail,
+  sectionList,
   setField,
   waitSaved,
   withoutSystem,
@@ -173,7 +174,9 @@ const CHARACTER_PAGE_FIELDS = [
 ].map((name) => fieldByName(manifests.characters, name)!);
 
 async function openSection(collection: EntryCollection) {
-  await rail(page, collectionInfo[collection].plural).click();
+  await (collection === 'characters'
+    ? rail(page, 'Characters').click()
+    : sectionList(page, collectionInfo[collection].plural));
 }
 
 async function newCharacter(name: string, birthYear = 1958) {

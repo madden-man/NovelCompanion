@@ -131,7 +131,7 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await rail(page, 'Settings').click();
   await expect(page.getByTestId('settings-snapshot-keep')).toBeDisabled();
   // CC-1: the alignment check writes findings, so its run button is off with the reason.
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
   await expect(page.getByTestId('alignment-run')).toBeDisabled();
   await expect(page.getByTestId('alignment-run')).toHaveAttribute('title', READ_ONLY_REASON);

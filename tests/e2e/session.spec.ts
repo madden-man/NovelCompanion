@@ -7,7 +7,7 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { field, fileDb, invokeVia, launch, rail } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, screenTab, sectionList } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -125,9 +125,11 @@ const strand = (id: string) =>
 const groupIds = (scope: ReturnType<Page['locator']>, kind: string) =>
   scope.locator(`[data-testid="sel-group"][data-kind="${kind}"] [data-testid="sel-item"]`);
 
-test('DB-1 the app opens on the dashboard: last note, story time, position, open questions, rewrite tasks, two controls', async () => {
+test('DB-1 SM-11 the app opens on Sessions: last note, story time, position, open questions, rewrite tasks, two controls', async () => {
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
+  await expect(page.getByTestId('sessions-view')).toBeVisible();
+  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
   const dash = page.getByTestId('dashboard');
   await expect(dash).toBeVisible();
   // SL-1: the newest note first (SL3, 2026-10-09).
@@ -138,11 +140,35 @@ test('DB-1 the app opens on the dashboard: last note, story time, position, open
   await expect(dash.getByTestId('dash-position')).toContainText('Candles');
   await expect(dash.getByTestId('dash-questions').locator('.tile-num')).toHaveText('3');
   await expect(dash.getByTestId('dash-tasks')).toContainText('No open rewrite tasks.');
+  await expect(dash.getByTestId('dash-task-count').locator('.tile-num')).toHaveText('0');
+  // The questions tile leads to the questions list on the same screen.
+  await dash.getByRole('button', { name: 'Go to the questions' }).click();
+  await expect(page.getByTestId('questions-list')).toBeInViewport();
   await expect(dash.getByRole('button', { name: 'Start session' })).toBeVisible();
   await dash.getByRole('button', { name: 'Check alignment' }).click();
+  // SM-11: Check alignment opens the Continuity checker on its alignment tab.
+  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await expect(page.getByTestId('dashboard')).toBeVisible();
+});
+
+test('SM-11 SL-1 SB-8 Sessions lists the session log newest first and the saved briefs, a log opens in the inspector', async () => {
+  const log = page.getByTestId('session-log');
+  await expect(log.locator('.entry-row')).toHaveCount(3);
+  expect(
+    await log.locator('.entry-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-id'))),
+  ).toEqual(['SL3', 'SL2', 'SL1']);
+  await expect(log.locator('[data-id="SL3"]')).toContainText(
+    'Stopped at: Margaret blows out the candles.',
+  );
+  await log.locator('[data-id="SL2"]').click();
+  const inspector = page.getByTestId('inspector');
+  await expect(inspector.getByTestId('editor')).toHaveAttribute('data-entry-id', 'SL2');
+  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-current', 'true');
+  await inspector.getByRole('button', { name: 'Close the editor' }).click();
+  await expect(inspector.getByTestId('editor')).toHaveCount(0);
+  await expect(page.getByText('No briefs yet. Start a session to write one.')).toBeVisible();
 });
 
 test('TM-4 picking a chapter strand in Writing moves the story year to that strand year', async () => {
@@ -157,7 +183,7 @@ test('TM-4 picking a chapter strand in Writing moves the story year to that stra
 });
 
 test('SB-1 SB-2 Relevant to Session opens from every screen and shows the selection for the chapter being written, primary strand first', async () => {
-  for (const screen of ['Family tree', 'Timeline', 'Lists', 'Characters']) {
+  for (const screen of ['Family tree', 'World events', 'Lists', 'Characters']) {
     await rail(page, screen).click();
     await page.getByTestId('top-relevant').click();
     await expect(relevant()).toBeVisible();
@@ -178,13 +204,12 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect(strand('CH2-present').getByTestId('sel-backstory')).toContainText(
     'Backstory backstory · 2032',
   );
-  // A35: characters are a name and an age.
-  await expect(groupIds(strand('CH2-present'), 'characters')).toHaveText([
-    /^Daniel Hale60(POV)?$/,
-    /^Zhou Lan57$/,
-    /^Iris Hale-Zhou14$/,
-  ]);
-  // A35: world events lead, then backstory, characters, and culture; the rest is folded.
+  // SM-10: the characters are tiles: name, age, and point of view.
+  await expect(
+    strand('CH2-present').locator('[data-kind="characters"] [data-testid="tile-toggle"]'),
+  ).toHaveText([/^Daniel Hale60point of view$/, /^Zhou Lan57$/, /^Iris Hale-Zhou14$/]);
+  // SM-10: the scene note, the tiles, the world events strip, the cultural context; then
+  // the backstory of the backstory years (A35), and the rest folded.
   await expect
     .poll(() =>
       strand('CH2-present').evaluate((el) =>
@@ -194,7 +219,14 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
         ),
       ),
     )
-    .toEqual(['eventsWindow', 'sel-backstory', 'characters', 'culture', 'relevant-more']);
+    .toEqual([
+      'scene-note',
+      'characters',
+      'eventsWindow',
+      'culture',
+      'sel-backstory',
+      'relevant-more',
+    ]);
   await expect(strand('CH2-present').getByTestId('relevant-more')).not.toHaveAttribute('open');
 
   // The view follows the Writing picker live.
@@ -258,8 +290,113 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await groupIds(s, 'culture').getByRole('button', { name: 'Flood memorial walk' }).click();
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('editor')).toContainText('Flood memorial walk');
-  await rail(page, 'Relevant to Session').click();
+  await page.getByTestId('top-relevant').click();
   await expect(relevant()).toBeVisible();
+  await expect(page.getByTestId('top-relevant')).toHaveAttribute('aria-current', 'page');
+});
+
+test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step, and survives a reload', async () => {
+  const note = strand('CH6-present').getByTestId('scene-note');
+  const box = note.getByLabel('What happens in this scene');
+  await expect(box).toHaveValue('');
+  await box.fill('Iris climbs to the attic at night and finds the box.');
+  await expect(note.getByTestId('autosave')).toHaveText('Saved');
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.sceneNote,
+    )
+    .toBe('Iris climbs to the attic at night and finds the box.');
+  // One undo step for the pause, named for the field.
+  await expect(page.getByTestId('undo-history').locator('li').first()).toHaveText(
+    'Changed What happens in this scene on The Letter',
+  );
+  await page.reload();
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  await page.getByTestId('top-relevant').click();
+  await expect(
+    strand('CH6-present').getByTestId('scene-note').getByLabel('What happens in this scene'),
+  ).toHaveValue('Iris climbs to the attic at night and finds the box.');
+});
+
+test('SM-10 the tiles list the chapter characters with Chinese name and age, the point of view first and marked', async () => {
+  const tiles = strand('CH6-present').locator('[data-kind="characters"] [data-testid="sel-item"]');
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.getByTestId('tile-toggle')).toHaveText([
+    /^Iris Hale-Zhou14point of view$/,
+    /^Daniel Hale60$/,
+  ]);
+  await expect(tiles.nth(0).getByTestId('tile-chinese').locator('.zh-chars')).toHaveText('晓曦');
+  await expect(tiles.nth(1).getByTestId('tile-chinese')).toHaveCount(0);
+  await expect(tiles.nth(0)).toHaveClass(/pov/);
+  for (const t of await tiles.getByTestId('tile-toggle').all()) {
+    await expect(t).toHaveAttribute('aria-expanded', 'false');
+  }
+});
+
+test('SM-10 a tile opens to role, description, the three latest moments up to the year and the family; its buttons open the page and Backstory', async () => {
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H5',
+    patch: {
+      role: 'The daughter who finds the letter.',
+      body: 'Quiet, stubborn, draws on everything.',
+    },
+  });
+  const made: string[] = [];
+  for (const [title, year] of [
+    ['Starts at the river school', 2040],
+    ['Learns to make dumplings', 2043],
+    ['First year of high school', 2044],
+  ] as const) {
+    made.push(
+      (
+        await invoke('entry.create', {
+          collection: 'moments',
+          data: { title, status: 'idea', characterId: 'H5', year },
+        })
+      ).entry._id,
+    );
+  }
+  const iris = strand('CH6-present').locator('[data-testid="sel-item"][data-id="H5"]');
+  const toggle = iris.getByTestId('tile-toggle');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const detail = iris.getByTestId('tile-detail');
+  await expect(detail.getByTestId('tile-role')).toHaveText('The daughter who finds the letter.');
+  await expect(detail.getByTestId('tile-description')).toHaveText(
+    'Quiet, stubborn, draws on everything.',
+  );
+  // The latest three at or before 2045: not 2040, not B5 in 2050.
+  await expect(iris.getByTestId('tile-moments').locator('li')).toHaveText([
+    /^2043 Learns to make dumplings$/,
+    /^2044 First year of high school$/,
+    /^2045 Iris finds the letter\. Iris finds an envelope in the attic\.$/,
+  ]);
+  await expect(detail.getByTestId('tile-family')).toContainText('Parents: Daniel Hale, Zhou Lan.');
+  await expect(detail.getByTestId('tile-family')).toContainText('Partner: Tomas Reyes');
+  await expect(detail.getByTestId('tile-family')).not.toContainText('Child');
+  // Enter closes it again from the keyboard.
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(iris.getByTestId('tile-detail')).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  await iris.getByRole('button', { name: 'Their page' }).click();
+  await expect(page.getByTestId('character-page')).toContainText('Iris Hale-Zhou');
+  await expect(rail(page, 'Characters')).toHaveAttribute('aria-current', 'page');
+  await page.getByTestId('top-relevant').click();
+  await iris.getByTestId('tile-toggle').click();
+  await iris.getByRole('button', { name: 'Their backstory' }).click();
+  await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('backstory-view')).toHaveAttribute('data-character', 'H5');
+  await expect(page.getByTestId('backstory-view')).toContainText('Picked: Iris Hale-Zhou');
+  for (const id of made) await invoke('entry.delete', { collection: 'moments', id });
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H5',
+    patch: { role: '', body: '' },
+  });
 });
 
 let briefId = '';
@@ -353,6 +490,26 @@ test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and
   expect(readFileSync(pdf).subarray(0, 5).toString()).toBe('%PDF-');
 });
 
+test('SM-11 SB-8 DB-2 Start session lives on Sessions; a saved brief opens there in place and Back to Sessions returns', async () => {
+  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'brief');
+  await page.getByRole('button', { name: 'Back to Sessions' }).click();
+  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'home');
+  // The Start session panel is on the screen, its selection folded until asked for.
+  await expect(page.getByTestId('sessions-start').getByTestId('start-session')).toBeVisible();
+  await expect(page.getByTestId('start-selection')).not.toHaveAttribute('open', '');
+  const briefs = page.getByTestId('session-briefs');
+  await expect(briefs.locator(`[data-id="${briefId}"]`)).toContainText('Brief: Chapter 6');
+  await briefs.locator(`[data-id="${briefId}"]`).click();
+  await expect(page.getByTestId('brief-view')).toBeVisible();
+  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'brief');
+  await page.getByRole('button', { name: 'Back to Sessions' }).click();
+  await expect(page.getByTestId('session-log').locator('.entry-row').first()).toBeVisible();
+  // Start session in the top bar unfolds the selection.
+  await page.getByTestId('top-start-session').click();
+  await expect(page.getByTestId('start-selection')).toHaveAttribute('open', '');
+});
+
 test('SB-4 DB-4 with Claude available the brief is written by the brief model from the selection', async () => {
   await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   await start({
@@ -391,8 +548,9 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
   await expect(brief.locator('.uncited-flag')).toHaveText(['cites nothing']);
 });
 
-test('MS-1 MS-2 MS-3 MS-4 MS-5 import a chapter from Word, mark it written, approve the summary, promote, and re-import with a diff', async () => {
-  await rail(page, 'Manuscript').click();
+test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written, approve the summary, promote, and re-import with a diff', async () => {
+  // SM-11: the manuscript is the Continuity checker's second tab.
+  await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
   await view.locator('[data-chapter="CH6"]').click();
   const ch = view.getByTestId('ms-chapter');
@@ -516,7 +674,7 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
 
   // MS-2: the written chapter's summary is drafted by the summary model; nothing saved yet.
   const before = (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary;
-  await rail(page, 'Manuscript').click();
+  await screenTab(page, 'Continuity checker', 'Manuscript');
   const ms = page.getByTestId('manuscript-view');
   await ms.locator('[data-chapter="CH6"]').click();
   await ms.getByRole('button', { name: 'Summary and promotions' }).click();
@@ -572,7 +730,7 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
     );
   }
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
-  await rail(page, 'Relevant to Session').click();
+  await page.getByTestId('top-relevant').click();
   const s = strand('CH6-present');
   const section = s.getByTestId('sel-backstory');
   // No backstory strand: the three years before the story year.
@@ -590,7 +748,7 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
   await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', made[1]!);
 
   // A35: the culture section names its setting.
-  await rail(page, 'Relevant to Session').click();
+  await page.getByTestId('top-relevant').click();
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
   await expect(strand('CH6-present').getByTestId('relevant-setting')).toContainText('Setting');
 
@@ -601,7 +759,7 @@ test('SB-1 Relevant to Session takes places and other characters present for a s
   await writing().selectOption({ label: 'No chapter picked' });
   await page.getByTestId('top-year').fill('2045');
   await page.getByTestId('top-year').press('Enter');
-  await rail(page, 'Relevant to Session').click();
+  await page.getByTestId('top-relevant').click();
   await expect(relevant()).toBeVisible();
   await relevant().getByLabel('Point of view in 2045').selectOption('H5');
   const member = (id: string) => relevant().locator(`[data-testid="sel-item"][data-id="${id}"]`);
@@ -623,9 +781,9 @@ test('SB-1 Relevant to Session takes places and other characters present for a s
   await expect(view.locator('[data-testid="sel-item"][data-id="Z4"]').first()).toBeVisible();
 });
 
-test('MS-2 ticking Written in the chapter editor offers the summary and promotion flow', async () => {
+test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and promotion flow on the Continuity checker', async () => {
   await invoke('entry.update', { collection: 'chapters', id: 'CH3', patch: { written: false } });
-  await rail(page, 'Chapters').click();
+  await sectionList(page, 'Chapters');
   const title = String(
     (await invoke('entry.get', { collection: 'chapters', id: 'CH3' })).entry.title,
   );
@@ -638,4 +796,9 @@ test('MS-2 ticking Written in the chapter editor offers the summary and promotio
   await field(editor, 'written').locator('input[type="checkbox"]').check();
   await editor.getByTestId('written-offer').getByRole('button').click();
   await expect(page.getByTestId('written-flow')).toBeVisible();
+  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('tab', { name: 'Manuscript' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });

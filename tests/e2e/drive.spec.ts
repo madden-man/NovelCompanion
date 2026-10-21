@@ -5,7 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { FILE, READONLY, startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab } from './helpers';
 import type { TestDb } from './helpers';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/files');
@@ -199,7 +199,7 @@ test('MS-1 MS-5 a chapter is read from a Google Doc chosen in the Drive browser,
   });
   const writesBefore = fake.calls.filter((c) => /^(PATCH|PUT|DELETE) /.test(c)).length;
   const uploadsBefore = fake.uploads.length;
-  await rail(page, 'Manuscript').click();
+  await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
   await view.locator('[data-chapter="CHW"]').click();
   const ch = view.getByTestId('ms-chapter');

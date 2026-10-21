@@ -45,7 +45,7 @@ const chapterText = (f: Pick<FindingWire, 'readingOrder' | 'chapter'>) =>
   f.chapter ? `Chapter ${f.readingOrder ?? '?'}: ${f.chapter}` : 'Whole bible';
 
 /** Findings for a scope, reloaded whenever the bible changes. */
-function useFindings(chapterId: Scope, states?: FindingWire['state'][]) {
+export function useFindings(chapterId: Scope, states?: FindingWire['state'][]) {
   const { version } = useStore();
   const [data, setData] = useState<Response<'continuity.findings'> | null>(null);
   const key = JSON.stringify(states ?? null);

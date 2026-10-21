@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import type { EntryCollection } from '../../src/shared/schema';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, screenTab } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -52,37 +51,48 @@ test.afterAll(async () => {
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
 });
 
-const pick = (name: RegExp | string) =>
-  page.getByTestId('entry-list').getByRole('button', { name });
+const sessions = () => page.getByTestId('sessions-view');
+const questions = () => sessions().getByTestId('questions-list');
+const pick = (name: RegExp | string) => questions().getByRole('button', { name });
+const inspector = () => page.getByTestId('inspector');
+const saved = () => expect(inspector().getByTestId('autosave')).toHaveText('Saved');
 
-test('OQ-1 an open question is marked decided, warns until it has a decision, and filters by state', async () => {
-  await rail(page, 'Open questions').click();
+test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns until it has a decision, and filters by state', async () => {
+  await rail(page, 'Sessions').click();
+  await expect(sessions().getByTestId('questions-empty')).toHaveText('No questions yet.');
   for (const title of ['Who wrote the second letter?', 'Does Iris go back to Guangzhou?']) {
-    await page.getByRole('button', { name: 'New open question', exact: true }).click();
-    const form = page.getByTestId('new-entry');
+    await sessions().getByRole('button', { name: 'New question', exact: true }).click();
+    const form = inspector().getByTestId('new-entry');
     await field(form, 'title').locator(':scope > input').fill(title);
     await form.getByRole('button', { name: 'Create open question' }).click();
-    await expect(page.getByTestId('editor').getByRole('heading', { name: title })).toBeVisible();
-    await waitSaved(page);
+    // The new question opens in the inspector, beside the list.
+    await expect(
+      inspector().getByTestId('editor').getByRole('heading', { name: title }),
+    ).toBeVisible();
+    await saved();
   }
   await pick(/Who wrote/).click();
-  const editor = page.getByTestId('editor');
+  const editor = inspector().getByTestId('editor');
+  await expect(pick(/Who wrote/)).toHaveAttribute('aria-current', 'true');
   await field(editor, 'state').locator(':scope > select').selectOption('decided');
-  await waitSaved(page);
+  await saved();
   await expect(field(editor, 'decision')).toContainText('marked decided, but no decision');
   await field(editor, 'decision').locator(':scope > textarea').fill('Peter wrote it in 2029.');
-  await waitSaved(page);
+  await saved();
   await expect(field(editor, 'decision')).not.toContainText('marked decided, but no decision');
-  const show = page.getByLabel('Show questions');
+  const show = sessions().getByLabel('Show questions');
   await expect(pick(/Who wrote/)).toContainText('decided');
+  await expect(show.locator('option')).toHaveText(['All (2)', 'Open (1)', 'Decided (1)']);
   await show.selectOption('open');
-  await expect(page.getByTestId('entry-list').getByRole('button')).toHaveCount(1);
+  await expect(questions().getByRole('button')).toHaveCount(1);
   await expect(pick(/Does Iris go back/)).toBeVisible();
   await show.selectOption('decided');
-  await expect(page.getByTestId('entry-list').getByRole('button')).toHaveCount(1);
+  await expect(questions().getByRole('button')).toHaveCount(1);
   await expect(pick(/Who wrote/)).toBeVisible();
   await show.selectOption('all');
-  await expect(page.getByTestId('entry-list').getByRole('button')).toHaveCount(2);
+  await expect(questions().getByRole('button')).toHaveCount(2);
+  // DB-1: the overview counts the open one.
+  await expect(page.getByTestId('dash-questions').locator('.tile-num')).toHaveText('1');
   // A question links to any entry from the Links field.
   const stored = (
     await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })
@@ -90,20 +100,13 @@ test('OQ-1 an open question is marked decided, warns until it has a decision, an
   expect(stored.entry).toMatchObject({ state: 'decided', decision: 'Peter wrote it in 2029.' });
 });
 
-test('SL-1 a session log is listed newest first, and each entry has date, chapter, stop point, and notes', async () => {
-  await rail(page, 'Session log').click();
-  await page.getByRole('button', { name: 'New session log', exact: true }).click();
-  const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator(':scope > input').fill('Morning session');
-  await field(form, 'date').locator(':scope > input').fill('2026-10-01');
-  await form.getByRole('button', { name: 'Create session log' }).click();
-  const editor = page.getByTestId('editor');
-  await expect(editor.getByRole('heading', { name: 'Morning session' })).toBeVisible();
-  await waitSaved(page);
-  await field(editor, 'chapterId').locator(':scope > select').selectOption('CH2');
-  await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Daniel burns the rice');
-  await field(editor, 'notes').locator(':scope > textarea').fill('Check the kitchen timeline');
-  await waitSaved(page);
+test('SL-1 SM-11 the session log on Sessions is newest first, and each entry has date, chapter, stop point, and notes', async () => {
+  const morning = (
+    await invoke('entry.create', {
+      collection: 'sessionLogs',
+      data: { title: 'Morning session', status: 'canon', date: '2026-10-01' },
+    })
+  ).entry;
   await invoke('entry.create', {
     collection: 'sessionLogs',
     data: {
@@ -113,9 +116,28 @@ test('SL-1 a session log is listed newest first, and each entry has date, chapte
       stoppedAt: 'End of chapter 2',
     },
   });
-  const rows = page.getByTestId('entry-list').getByRole('button');
+  const rows = sessions().getByTestId('session-log').locator('.entry-row');
+  await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText('Later session');
+  await expect(rows.first()).toContainText('Stopped at: End of chapter 2');
   await expect(rows.last()).toContainText('Morning session');
+  // A log opens in the inspector, where its chapter, stop point and notes are edited.
+  await rows.last().click();
+  const editor = inspector().getByTestId('editor');
+  await expect(editor).toHaveAttribute('data-entry-id', morning._id);
+  await field(editor, 'chapterId').locator(':scope > select').selectOption('CH2');
+  await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Daniel burns the rice');
+  await field(editor, 'notes').locator(':scope > textarea').fill('Check the kitchen timeline');
+  await saved();
+  await expect(rows.last()).toContainText('Two Kitchens');
+  await expect(rows.last()).toContainText('Stopped at: Daniel burns the rice');
+  expect(
+    (await invoke('entry.get', { collection: 'sessionLogs', id: morning._id })).entry,
+  ).toMatchObject({
+    chapterId: 'CH2',
+    stoppedAt: 'Daniel burns the rice',
+    notes: 'Check the kitchen timeline',
+  });
 });
 
 test('SR-1 one search box finds entries, chapter text, briefs, and Chinese by characters and by tone-free romanization', async () => {
@@ -220,165 +242,168 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   await expect(count).toContainText('match');
 });
 
-const KB5: EntryCollection[] = ['culturalEntries', 'places', 'glossaryTerms', 'openQuestions'];
+const culture = () => page.getByTestId('culture-view');
 
-const entriesView = () => page.getByTestId('entries-view');
-const entryRows = () => entriesView().getByTestId('entries-list').locator('.entries-row');
-const chip = (name: string) =>
-  entriesView().getByRole('group', { name: 'Kinds' }).getByRole('button', { name, exact: true });
-
-async function liveEntries() {
-  const out: { collection: EntryCollection; entry: Record<string, unknown> }[] = [];
-  for (const collection of KB5) {
-    const { entries } = await invoke('entry.list', { collection, trash: 'exclude' });
-    for (const e of entries) out.push({ collection, entry: e.entry });
-  }
-  return out;
-}
-
-test('KB-5 the Entries list shows every kind together, newest change first, and a row opens the editor beside it', async () => {
-  await rail(page, 'Entries').click();
-  await expect(entriesView().getByRole('tab', { name: 'Entries' })).toHaveAttribute(
+test('CU-1 SM-11 Cultural data lists every cultural entry by community with its years, the ones covering the year marked, and a row opens in the inspector', async () => {
+  await invoke('storyTime.set', { time: { year: 2030 } });
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2030');
+  await rail(page, 'Cultural data').click();
+  await expect(page.getByRole('tab', { name: 'Communities' })).toHaveAttribute(
     'aria-selected',
     'true',
   );
-  const all = await liveEntries();
-  await expect(entryRows()).toHaveCount(all.length);
-  // A39: no facts, themes, or custom entries; the fixture has no open questions.
-  for (const kind of ['culturalEntries', 'places', 'glossaryTerms']) {
-    await expect(entriesView().locator(`.entries-row[data-kind="${kind}"]`).first()).toBeVisible();
+  // The year starts at the story year.
+  await expect(culture().getByLabel('Year')).toHaveValue('2030');
+  const groups = culture().getByTestId('culture-communities').locator('section[data-community]');
+  await expect(groups.locator('h4')).toHaveText(['Portland', 'Guangzhou']);
+  const row = (id: string) => culture().locator(`.culture-row[data-id="${id}"]`);
+  await expect(groups.nth(0).locator('.culture-row')).toHaveCount(2);
+  await expect(row('CU3')).toContainText('Sunday ferry picnics');
+  await expect(row('CU3')).toContainText('2000 to 2034');
+  await expect(row('CU4')).toContainText('2035 to 2100');
+  // Covering 2030: CU1 and CU3, marked; the others not.
+  for (const [id, on] of [
+    ['CU1', 'true'],
+    ['CU2', 'false'],
+    ['CU3', 'true'],
+    ['CU4', 'false'],
+  ] as const) {
+    await expect(row(id)).toHaveAttribute('data-applies', on);
   }
-  const newest = [...all].sort((a, b) =>
-    String(b.entry.modifiedAt).localeCompare(String(a.entry.modifiedAt)),
-  )[0]!;
-  await expect(entryRows().first()).toHaveAttribute('data-id', String(newest.entry._id));
-  // Each row shows kind, title, status, and the first line.
-  const picnic = entriesView().locator('.entries-row[data-id="CU3"]');
-  await expect(picnic.locator('.entries-kind')).toHaveText('Cultural entry');
-  await expect(picnic.locator('.entry-title')).toHaveText('Sunday ferry picnics');
-  await expect(picnic.locator('.chip')).toHaveText('Canon');
-  await picnic.click();
-  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'CU3');
-  await expect(picnic).toHaveAttribute('aria-current', 'true');
+  await expect(row('CU1')).toContainText('in 2030');
+  await culture().getByLabel('Year').fill('2050');
+  await expect(row('CU1')).toHaveAttribute('data-applies', 'false');
+  await expect(row('CU2')).toHaveAttribute('data-applies', 'true');
+  await row('CU4').click();
+  await expect(inspector().getByTestId('editor')).toHaveAttribute('data-entry-id', 'CU4');
 });
 
-test('KB-5 a kind chip hides its kind, and several chips can be off at once', async () => {
-  const all = await liveEntries();
-  const count = (c: EntryCollection) => all.filter((r) => r.collection === c).length;
-  await expect(chip('Glossary')).toHaveAttribute('aria-pressed', 'true');
-  await chip('Glossary').click();
-  await expect(chip('Glossary')).toHaveAttribute('aria-pressed', 'false');
-  await expect(entriesView().locator('.entries-row[data-kind="glossaryTerms"]')).toHaveCount(0);
-  await expect(entryRows()).toHaveCount(all.length - count('glossaryTerms'));
-  await chip('Places').click();
-  await expect(entriesView().locator('.entries-row[data-kind="places"]')).toHaveCount(0);
-  await expect(entryRows()).toHaveCount(all.length - count('glossaryTerms') - count('places'));
-  await chip('Glossary').click();
-  await chip('Places').click();
-  await expect(entryRows()).toHaveCount(all.length);
+test('CU-2 SM-11 a community and a year list the cultural entries that apply', async () => {
+  await culture().getByLabel('Community').selectOption({ label: 'Guangzhou' });
+  await culture().getByLabel('Year').fill('2020');
+  const results = culture().getByTestId('culture-results');
+  await expect(results.locator('[data-entry]')).toHaveCount(1);
+  await expect(results.locator('[data-entry="CU1"]')).toContainText('1980 to 2039');
+  await culture().getByLabel('Year').fill('2045');
+  await expect(results.locator('[data-entry]')).toHaveCount(1);
+  await expect(results.locator('[data-entry="CU2"]')).toBeVisible();
+  // Only Guangzhou is listed below while it is picked.
+  await expect(culture().locator('section[data-community]')).toHaveCount(1);
+  await culture().getByLabel('Year').fill('1900');
+  await expect(culture().getByTestId('culture-empty')).toBeVisible();
+  // Every community: what applies to each.
+  await culture().getByLabel('Community').selectOption({ label: 'Every community' });
+  await culture().getByLabel('Year').fill('2045');
+  await expect(results.locator('[data-entry]')).toHaveCount(2);
+  await results.getByRole('button', { name: 'Edit Flood memorial walk' }).click();
+  await expect(inspector().getByTestId('editor')).toHaveAttribute('data-entry-id', 'CU4');
 });
 
-test('KB-5 the status filter and the search box narrow the list', async () => {
-  const view = entriesView();
-  const all = await liveEntries();
-  await view.getByLabel('Show status').selectOption('planned');
-  await expect(entryRows()).toHaveCount(all.filter((r) => r.entry.status === 'planned').length);
-  for (const status of await entryRows().locator('.chip').allTextContents()) {
-    expect(status).toBe('Planned');
-  }
-  await view.getByLabel('Show status').selectOption('');
-  const box = view.getByLabel('Search entries');
-  await box.fill('picnics');
-  await expect(view.locator('.entries-row[data-id="CU3"]')).toBeVisible();
-  await expect(view.locator('.entries-row[data-id="CU1"]')).toHaveCount(0);
-  // Body text counts, not only titles: CU1's generation notes were folded into its body (SM-4).
-  await box.fill('homemade');
-  await expect(entryRows()).toHaveCount(1);
-  await expect(entryRows().first()).toHaveAttribute('data-id', 'CU1');
-  // Chapter text is not an entry here.
-  await box.fill('casseroles');
-  await expect(entryRows()).toHaveCount(0);
-  await expect(view.getByTestId('entries-empty')).toBeVisible();
-  // The search channel finds a glossary term by tone-free romanization (SR-1, GL-2).
-  await box.fill('tuanyuan');
-  await expect(entryRows()).toHaveCount(1);
-  await expect(entryRows().first()).toContainText('团圆');
-  await box.fill('');
-  await expect(entryRows()).toHaveCount(all.length);
-});
-
-test('KB-5 New entry picks a kind on the same screen, and the created entry appears first, open beside the list', async () => {
-  const view = entriesView();
-  await view.getByRole('button', { name: 'New entry', exact: true }).click();
-  const picker = page.getByTestId('kind-picker');
-  for (const kind of ['Cultural entry', 'Place', 'Glossary term', 'Open question']) {
-    await expect(picker.getByRole('button', { name: kind, exact: true })).toBeVisible();
-  }
-  await expect(
-    picker.getByRole('group', { name: 'Kind of entry' }).getByRole('button'),
-  ).toHaveCount(4);
-  await picker.getByRole('button', { name: 'Place', exact: true }).click();
-  const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator(':scope > input').fill('The ferry stops at midnight');
-  await form.getByRole('button', { name: 'Create place' }).click();
-  const editor = page.getByTestId('editor');
-  await expect(editor.getByRole('heading', { name: 'The ferry stops at midnight' })).toBeVisible();
-  await expect(entryRows().first()).toContainText('The ferry stops at midnight');
-  await expect(entryRows().first()).toHaveAttribute('aria-current', 'true');
-  await expect(entryRows().first()).toHaveAttribute('data-kind', 'places');
-});
-
-test('KB-5 the four tabs render their views, answer the keyboard, and the tab is remembered for the bible', async () => {
-  const tabs = entriesView().getByRole('tablist', { name: 'Entries screens' });
-  const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
-  await tab('Entries').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(tab('Culture by year')).toHaveAttribute('aria-selected', 'true');
-  await expect(tab('Culture by year')).toBeFocused();
-  await expect(page.getByTestId('culture-view')).toBeVisible();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByTestId('places-view')).toBeVisible();
-  await page.getByTestId('places-view').getByRole('button', { name: 'Portland' }).first().click();
-  await expect(page.getByTestId('inspector').getByTestId('editor')).toContainText('Portland');
-  // A term that breaks the Mandarin system, so Romanization lists one to open.
-  const flagged = await invoke('entry.create', {
-    collection: 'glossaryTerms',
-    data: {
-      title: '广东',
-      characters: '广东',
-      language: 'mandarin',
-      romanization: 'gwong2dung1',
-      status: 'canon',
-    },
-  });
-  await tab('Place tree').focus();
-  await page.keyboard.press('ArrowRight');
-  const roman = page.getByTestId('romanization-view');
-  await expect(roman).toBeVisible();
-  await roman.getByTestId('romanization-flagged').getByRole('button', { name: '广东' }).click();
-  await expect(page.getByTestId('inspector').getByTestId('editor')).toHaveAttribute(
-    'data-entry-id',
-    flagged.entry._id,
+test('CU-1 SM-11 New entry on Cultural data makes a cultural entry for the community picked, open in the inspector', async () => {
+  await culture().getByLabel('Community').selectOption({ label: 'Portland' });
+  await culture().getByRole('button', { name: 'New entry', exact: true }).click();
+  const form = inspector().getByTestId('new-entry');
+  // The community is already decided, so the form does not ask for it.
+  await expect(field(form, 'communityId')).toHaveCount(0);
+  await field(form, 'title').locator(':scope > input').fill('Rooftop gardens');
+  await form.getByRole('button', { name: 'Create cultural entry' }).click();
+  const editor = inspector().getByTestId('editor');
+  await expect(editor.getByRole('heading', { name: 'Rooftop gardens' })).toBeVisible();
+  await field(editor, 'startYear').locator(':scope > input').fill('2040');
+  await saved();
+  const made = (
+    await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })
+  ).entries.find((e) => e.entry.title === 'Rooftop gardens')!;
+  expect(made.entry).toMatchObject({ communityId: 'portland', startYear: 2040 });
+  await expect(culture().locator(`.culture-row[data-id="${made.entry._id}"]`)).toContainText(
+    'from 2040',
   );
-  await tab('Romanization').focus();
-  await page.keyboard.press('End');
-  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByTestId('glossary-table')).toBeVisible();
-  await page.getByRole('button', { name: 'Edit 团圆' }).click();
-  await expect(page.getByTestId('inspector').getByTestId('editor')).toContainText('团圆');
+});
 
-  // Remembered: another screen and back, and a reload, keep the Glossary table.
-  await rail(page, 'Characters').click();
-  await rail(page, 'Entries').click();
-  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
-  await page.reload();
+test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one undo step, flags a gap, and New era adds one', async () => {
+  await screenTab(page, 'Cultural data', 'Eras');
+  const eras = page.getByTestId('eras-view');
+  const rows = eras.locator('li[data-era]');
+  await expect(rows).toHaveCount(8);
+  await expect(eras.getByTestId('era-coverage-ok')).toBeVisible();
+  const forties = eras.locator('li[data-era="ERA-2040"]');
+  await expect(forties.getByLabel('Era name')).toHaveValue('The forties');
+  await expect(forties.getByLabel('Start year')).toHaveValue('2040');
+  await expect(forties.getByLabel('End year')).toHaveValue('2049');
+  await expect(forties.getByLabel('What the world is like')).toHaveValue(
+    /Grid batteries everywhere\./,
+  );
+  // The era of the story year (2030, set above) is marked.
+  await expect(eras.locator('li[data-era="ERA-2030"]')).toHaveAttribute('aria-current', 'date');
+  // Name and body are saved through the write path when the field is left.
+  await forties.getByLabel('Era name').fill('The battery forties');
+  await forties.getByLabel('What the world is like').focus();
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry,
+    )
+    .toMatchObject({ name: 'The battery forties', title: 'The battery forties' });
+  await expect(page.getByTestId('undo-history').locator('li').first()).toHaveText(
+    'Era name on The battery forties',
+  );
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.name,
+    )
+    .toBe('The forties');
+  await expect(eras.locator('li[data-era="ERA-2040"]').getByLabel('Era name')).toHaveValue(
+    'The forties',
+  );
+  // WE-2: an end year that leaves a gap is flagged and still saved.
+  const sixties = eras.locator('li[data-era="ERA-2060"]');
+  await sixties.getByLabel('End year').fill('2065');
+  await sixties.getByLabel('End year').press('Enter');
+  await expect(eras.getByTestId('era-coverage')).toContainText('No era covers 2066 to 2069.');
+  expect(
+    (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2060' })).entry.endYear,
+  ).toBe(2065);
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2060',
+    patch: { endYear: 2069 },
+  });
+  await expect(eras.getByTestId('era-coverage-ok')).toBeVisible();
+  // New era starts after the last one, with its name ready to type.
+  await eras.getByRole('button', { name: 'New era', exact: true }).click();
+  await expect(rows).toHaveCount(9);
+  const fresh = rows.last();
+  await expect(fresh.getByLabel('Era name')).toBeFocused();
+  await expect(fresh.getByLabel('Start year')).toHaveValue('2101');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('After the century');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () =>
+      (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries.some(
+        (e) => e.entry.name === 'After the century' && e.entry.startYear === 2101,
+      ),
+    )
+    .toBe(true);
+});
+
+test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', async () => {
+  await invoke('bible.create', { slug: 'knowledge-eras', name: 'Knowledge eras' });
+  await invoke('bible.open', { slug: 'knowledge-eras' });
   await expect(page.getByTestId('workspace')).toBeVisible();
-  await rail(page, 'Entries').click();
-  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
-  await tab('Glossary table').focus();
-  await page.keyboard.press('Home');
-  await expect(tab('Entries')).toHaveAttribute('aria-selected', 'true');
-  await expect(entriesView().getByTestId('entries-list')).toBeVisible();
+  const seeded = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' }))
+    .entries;
+  expect(seeded.length).toBeGreaterThan(0);
+  await screenTab(page, 'Cultural data', 'Eras');
+  const rows = page.getByTestId('eras-view').locator('li[data-era]');
+  await expect(rows).toHaveCount(seeded.length);
+  const first = [...seeded].sort(
+    (a, b) => Number(a.entry.startYear) - Number(b.entry.startYear),
+  )[0]!;
+  await expect(rows.first().getByLabel('Era name')).toHaveValue(String(first.entry.name));
+  await expect(page.getByTestId('eras-view').getByTestId('era-coverage-ok')).toBeVisible();
+  await openBible();
 });
 
 test('SL-1 closing the app asks where you stopped, saves the note, and the next launch shows it first', async () => {

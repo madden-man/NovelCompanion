@@ -1,13 +1,22 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useWriteGuard } from '../connection';
-import { descriptionFor, placeOutline } from '../../../shared/domain/culture';
+import { descriptionFor, entriesFor, placeOutline } from '../../../shared/domain/culture';
+import { createCommand } from '../../../shared/domain/undoRunner';
 import type { Response } from '../../../shared/ipc';
 import { entryTitle } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { call, plainError } from '../api';
 import { useEntries, useList, useStore } from './data';
+import type { Entry } from './data';
+import { InspectorAside } from './inspector';
+import type { Inspected } from './inspector';
+import { updateWithUndo } from './sessions/common';
 import { useStoryTime } from './storyTime';
+import { useUndo } from './undo';
+import { EraCoverage, NewEntryForm } from './views';
 import { Zh, ZhHtml } from './Zh';
+import './culture.css';
 
 type Open = (collection: EntryCollection, id: string) => void;
 
@@ -42,48 +51,160 @@ function span(start: unknown, end: unknown): string {
   return `${s} to ${e}`;
 }
 
-/** CU-1, CU-2: pick a community and a year; see the cultural entries that apply. */
-export function CultureView(props: { onOpen: Open }) {
-  const { version } = useStore();
+export type CultureTab = 'communities' | 'eras';
+
+const TABS: { tab: CultureTab; label: string }[] = [
+  { tab: 'communities', label: 'Communities' },
+  { tab: 'eras', label: 'Eras' },
+];
+
+/**
+ * SM-11: Cultural data. Tab Communities: the cultural entries by community
+ * with their years, the ones covering the year highlighted (CU-1), and what
+ * applies to a community in a year (CU-2). Tab Eras: the era states, edited
+ * in place. An entry picked here opens in the inspector.
+ */
+export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureTab) => void }) {
+  const [inspected, setInspected] = useState<Inspected | null>(null);
+  const [creating, setCreating] = useState<{ communityId: string } | null>(null);
+  const refs = useRef<Partial<Record<CultureTab, HTMLButtonElement | null>>>({});
+  const baseId = useId();
+  const onOpen: Open = (collection, id) => {
+    setCreating(null);
+    setInspected({ collection, id });
+  };
+  const onKey = (e: ReactKeyboardEvent, i: number) => {
+    let next: number | null = null;
+    if (e.key === 'ArrowRight') next = i + 1;
+    else if (e.key === 'ArrowLeft') next = i - 1;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = TABS.length - 1;
+    if (next === null) return;
+    e.preventDefault();
+    const target = TABS[(next + TABS.length) % TABS.length]?.tab;
+    if (!target) return;
+    props.onTab(target);
+    refs.current[target]?.focus();
+  };
+  return (
+    <>
+      <div className="ws-wide-area" data-testid="cultural-data" data-tab={props.tab}>
+        <div className="ws-wide stack">
+          <h2 id={`${baseId}-title`}>Cultural data</h2>
+          <div className="screen-tabs" role="tablist" aria-labelledby={`${baseId}-title`}>
+            {TABS.map((t, i) => (
+              <button
+                key={t.tab}
+                ref={(el) => {
+                  refs.current[t.tab] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`${baseId}-tab-${t.tab}`}
+                aria-selected={props.tab === t.tab}
+                aria-controls={`${baseId}-panel`}
+                tabIndex={props.tab === t.tab ? 0 : -1}
+                onClick={() => props.onTab(t.tab)}
+                onKeyDown={(e) => onKey(e, i)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div
+            id={`${baseId}-panel`}
+            role="tabpanel"
+            aria-labelledby={`${baseId}-tab-${props.tab}`}
+          >
+            {props.tab === 'communities' ? (
+              <CultureView
+                onOpen={onOpen}
+                onNew={(communityId) => {
+                  setInspected(null);
+                  setCreating({ communityId });
+                }}
+              />
+            ) : (
+              <ErasView />
+            )}
+          </div>
+        </div>
+      </div>
+      <InspectorAside
+        open={inspected}
+        onClose={() => setInspected(null)}
+        hint="Pick a cultural entry to edit it here."
+      >
+        {creating ? (
+          <NewEntryForm
+            key={creating.communityId}
+            collection="culturalEntries"
+            preset={creating.communityId ? { communityId: creating.communityId } : undefined}
+            onCreated={(id) => onOpen('culturalEntries', id)}
+            onCancel={() => setCreating(null)}
+          />
+        ) : undefined}
+      </InspectorAside>
+    </>
+  );
+}
+
+/**
+ * CU-1, CU-2: what applies to a community in a year, then every cultural
+ * entry by community with its years, the ones covering that year marked.
+ * The year starts at the story year.
+ */
+export function CultureView(props: { onOpen: Open; onNew?: (communityId: string) => void }) {
   const story = useStoryTime();
   const communities = useList('communities');
+  const entries = useEntries('culturalEntries');
+  const ro = useWriteGuard();
   const [community, setCommunity] = useState('');
   const [year, setYear] = useState(story.year);
-  const [result, setResult] = useState<Response<'culture.entriesFor'>['entries'] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const ids = { community: useId(), year: useId() };
-  const chosen = community || communities?.items[0]?.id || '';
-
-  useEffect(() => {
-    if (!chosen) return;
-    let live = true;
-    call('culture.entriesFor', { communityId: chosen, year })
-      .then((r) => {
-        if (live) {
-          setResult(r.entries);
-          setError(null);
-        }
-      })
-      .catch((e: unknown) => {
-        if (live) setError(plainError(e));
-      });
-    return () => {
-      live = false;
-    };
-  }, [chosen, year, version]);
+  const items = communities?.items ?? [];
+  const shown = community ? items.filter((c) => c.id === community) : items;
+  const label = (id: unknown) => items.find((c) => c.id === id)?.label ?? String(id ?? '');
+  const applies = useMemo(
+    () => new Set(shown.flatMap((c) => entriesFor(entries, c.id, year).map((e) => e._id))),
+    [entries, shown, year],
+  );
+  const result = useMemo(
+    () => shown.flatMap((c) => entriesFor(entries, c.id, year)),
+    [entries, shown, year],
+  );
+  const byCommunity = useMemo(
+    () =>
+      shown.map((c) => ({
+        id: c.id,
+        label: c.label,
+        rows: entries
+          .filter((e) => e.communityId === c.id)
+          .sort(
+            (a, b) =>
+              Number(a.startYear ?? -Infinity) - Number(b.startYear ?? -Infinity) ||
+              entryTitle(a).localeCompare(entryTitle(b)),
+          ),
+      })),
+    [entries, shown],
+  );
 
   return (
-    <section className="ws-wide stack" aria-labelledby="culture-title" data-testid="culture-view">
-      <h2 id="culture-title">Culture by year</h2>
+    <section className="stack" aria-label="Communities" data-testid="culture-view">
       <p className="lede">
-        Pick a community and a year to see the traditions that apply. Edit one to change it, or make
-        a new cultural entry on the Entries tab.
+        Traditions by community and by the years they apply to. Pick a community and a year to see
+        what applies; edit an entry in the inspector.
       </p>
       <div className="tree-toolbar">
         <div className="field">
           <label htmlFor={ids.community}>Community</label>
-          <select id={ids.community} value={chosen} onChange={(e) => setCommunity(e.target.value)}>
-            {(communities?.items ?? []).map((c) => (
+          <select
+            id={ids.community}
+            value={community}
+            onChange={(e) => setCommunity(e.target.value)}
+          >
+            <option value="">Every community</option>
+            {items.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label}
               </option>
@@ -91,46 +212,269 @@ export function CultureView(props: { onOpen: Open }) {
           </select>
         </div>
         <YearField id={ids.year} label="Year" value={year} onChange={setYear} />
+        {props.onNew && (
+          <button
+            type="button"
+            className="btn primary small"
+            disabled={ro.off || items.length === 0}
+            {...ro.tip}
+            onClick={() => props.onNew?.(community || items[0]?.id || '')}
+          >
+            New entry
+          </button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className="example-note">Add a community on the Lists screen first.</p>
+      ) : (
+        <>
+          <h3>{community ? `${label(community)} in ${year}` : `Every community in ${year}`}</h3>
+          {result.length === 0 ? (
+            <p className="example-note" data-testid="culture-empty">
+              No entries apply {community ? 'to this community ' : ''}in {year}.
+            </p>
+          ) : (
+            <ul className="stack-list culture-results" data-testid="culture-results">
+              {result.map((e) => (
+                <li key={e._id} className="panel stack tight" data-entry={e._id}>
+                  <div className="row tight">
+                    <strong>
+                      <Zh text={entryTitle(e)} />
+                    </strong>
+                    {!community && <span className="chip">{label(e.communityId)}</span>}
+                    <span className="chip">{span(e.startYear, e.endYear)}</span>
+                    {typeof e.status === 'string' && (
+                      <span className={`chip ${e.status}`}>{e.status}</span>
+                    )}
+                  </div>
+                  {typeof e.body === 'string' && e.body && <ZhHtml html={e.body} />}
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => props.onOpen('culturalEntries', e._id)}
+                  >
+                    Edit {entryTitle(e)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <h3>Every entry by community</h3>
+          <div className="stack" data-testid="culture-communities">
+            {byCommunity.map((c) => (
+              <section
+                key={c.id}
+                className="stack tight"
+                aria-label={c.label}
+                data-community={c.id}
+              >
+                <h4>{c.label}</h4>
+                {c.rows.length === 0 ? (
+                  <p className="example-note">No entries for {c.label} yet.</p>
+                ) : (
+                  <ul className="entry-list culture-rows">
+                    {c.rows.map((e) => {
+                      const on = applies.has(e._id);
+                      return (
+                        <li key={e._id}>
+                          <button
+                            type="button"
+                            className={`entry-row culture-row${on ? ' applies' : ''}`}
+                            data-id={e._id}
+                            data-applies={on ? 'true' : 'false'}
+                            onClick={() => props.onOpen('culturalEntries', e._id)}
+                          >
+                            <span className="entry-title">
+                              <Zh text={entryTitle(e)} actions={false} />
+                            </span>
+                            <span className="row tight">
+                              <span className="chip">{span(e.startYear, e.endYear)}</span>
+                              {on && <span className="chip time">in {year}</span>}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** WE-2, SM-4: the era states, each edited in place: name, start and end year, and body. */
+function ErasView() {
+  const eras = useEntries('eraStates');
+  const story = useStoryTime();
+  const undo = useUndo();
+  const ro = useWriteGuard();
+  const [error, setError] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<string | null>(null);
+  const rows = useMemo(
+    () => [...eras].sort((a, b) => Number(a.startYear ?? 0) - Number(b.startYear ?? 0)),
+    [eras],
+  );
+
+  const save = async (id: string, patch: Record<string, unknown>, label: string) => {
+    setError(null);
+    try {
+      await updateWithUndo(undo, 'eraStates', id, patch, label);
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+
+  const create = async () => {
+    setError(null);
+    const last = rows[rows.length - 1];
+    const start = last ? Number(last.endYear) + 1 : story.year;
+    try {
+      const { entry } = await call('entry.create', {
+        collection: 'eraStates',
+        data: {
+          title: 'New era',
+          name: 'New era',
+          startYear: start,
+          endYear: start + 9,
+          status: 'idea',
+        },
+      });
+      undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));
+      setFresh(entry._id);
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+
+  return (
+    <section className="stack" aria-label="Eras" data-testid="eras-view">
+      <p className="lede">
+        The state of the world in each era. Edit a field and leave it to save; each change is one
+        undo step.
+      </p>
+      <EraCoverage />
+      <div className="row">
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={() => void create()}
+          disabled={ro.off}
+          {...ro.tip}
+        >
+          New era
+        </button>
       </div>
       {error && (
         <p className="callout crit" role="alert">
           {error}
         </p>
       )}
-      {!chosen ? (
-        <p className="example-note">Add a community on the Lists screen first.</p>
-      ) : result === null ? (
-        <p aria-live="polite">Loading.</p>
-      ) : result.length === 0 ? (
-        <p className="example-note" data-testid="culture-empty">
-          No entries apply to this community in {year}.
-        </p>
+      {rows.length === 0 ? (
+        <p className="example-note">No eras yet.</p>
       ) : (
-        <ul className="stack-list culture-results" data-testid="culture-results">
-          {result.map((e) => (
-            <li key={e._id} className="panel stack tight" data-entry={e._id}>
-              <div className="row tight">
-                <strong>
-                  <Zh text={entryTitle(e)} />
-                </strong>
-                <span className="chip">{span(e.startYear, e.endYear)}</span>
-                {typeof e.status === 'string' && (
-                  <span className={`chip ${e.status}`}>{e.status}</span>
-                )}
-              </div>
-              {typeof e.body === 'string' && e.body && <ZhHtml html={e.body} />}
-              <button
-                type="button"
-                className="btn small"
-                onClick={() => props.onOpen('culturalEntries', e._id)}
-              >
-                Edit {entryTitle(e)}
-              </button>
-            </li>
+        <ul className="era-list">
+          {rows.map((e) => (
+            <EraRow
+              key={`${e._id}:${String(e.modifiedAt)}`}
+              era={e}
+              current={Number(e.startYear) <= story.year && story.year <= Number(e.endYear)}
+              autoFocus={fresh === e._id}
+              disabled={ro.off}
+              onSave={(patch, label) => void save(e._id, patch, label)}
+            />
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function EraRow(props: {
+  era: Entry;
+  current: boolean;
+  autoFocus: boolean;
+  disabled: boolean;
+  onSave: (patch: Record<string, unknown>, label: string) => void;
+}) {
+  const { era } = props;
+  const name = String(era.name ?? '');
+  const ids = { name: useId(), start: useId(), end: useId(), body: useId() };
+  const [draft, setDraft] = useState({
+    name,
+    start: String(era.startYear ?? ''),
+    end: String(era.endYear ?? ''),
+    body: String(era.body ?? ''),
+  });
+  const year = (t: string) => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
+  const commit = (key: keyof typeof draft) => {
+    const v = draft[key];
+    if (key === 'name') {
+      if (v.trim() && v !== name) props.onSave({ name: v.trim(), title: v.trim() }, 'Era name');
+      else setDraft((d) => ({ ...d, name }));
+    } else if (key === 'start' || key === 'end') {
+      const field = key === 'start' ? 'startYear' : 'endYear';
+      const n = year(v);
+      if (n !== null && n !== era[field]) {
+        props.onSave({ [field]: n }, key === 'start' ? 'Start year' : 'End year');
+      } else if (n === null) setDraft((d) => ({ ...d, [key]: String(era[field] ?? '') }));
+    } else if (v !== String(era.body ?? '')) props.onSave({ body: v }, 'Era description');
+  };
+  const input = (key: 'start' | 'end') => ({
+    value: draft[key],
+    onChange: (ev: { target: { value: string } }) =>
+      setDraft((d) => ({ ...d, [key]: ev.target.value })),
+    onBlur: () => commit(key),
+    onKeyDown: (ev: ReactKeyboardEvent) => {
+      if (ev.key === 'Enter') commit(key);
+    },
+  });
+  return (
+    <li
+      className={`panel stack tight era-row${props.current ? ' current' : ''}`}
+      data-era={era._id}
+      aria-current={props.current ? 'date' : undefined}
+    >
+      <fieldset className="write-group stack tight" disabled={props.disabled}>
+        <div className="row era-head">
+          <div className="field">
+            <label htmlFor={ids.name}>Era name</label>
+            <input
+              id={ids.name}
+              value={draft.name}
+              autoFocus={props.autoFocus}
+              onChange={(ev) => setDraft((d) => ({ ...d, name: ev.target.value }))}
+              onBlur={() => commit('name')}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter') commit('name');
+              }}
+            />
+          </div>
+          <div className="field year-field">
+            <label htmlFor={ids.start}>Start year</label>
+            <input id={ids.start} className="num" inputMode="numeric" {...input('start')} />
+          </div>
+          <div className="field year-field">
+            <label htmlFor={ids.end}>End year</label>
+            <input id={ids.end} className="num" inputMode="numeric" {...input('end')} />
+          </div>
+          {props.current && <span className="chip time">story year</span>}
+        </div>
+        <div className="field">
+          <label htmlFor={ids.body}>What the world is like</label>
+          <textarea
+            id={ids.body}
+            rows={4}
+            value={draft.body}
+            onChange={(ev) => setDraft((d) => ({ ...d, body: ev.target.value }))}
+            onBlur={() => commit('body')}
+          />
+        </div>
+      </fieldset>
+    </li>
   );
 }
 
@@ -312,7 +656,7 @@ export function GlossaryTable(props: { onOpen: Open }) {
       {rows.length === 0 ? (
         <p className="example-note">No glossary terms yet.</p>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap glossary-wrap">
           <table className="compact">
             <thead>
               <tr>

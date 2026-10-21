@@ -10,12 +10,13 @@ import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
 import type { Invoke } from '../helpers/t5';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { APP_MENU_ITEMS, RAIL_SCREENS, fileDb, invokeVia, launch, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
  * NF-2: every action is reachable by keyboard. Nothing here clicks: each
- * screen is opened by tabbing to its rail button and pressing Enter, every
+ * screen is opened by tabbing to its rail button (or to the App menu and
+ * arrowing to its item, SM-6) and pressing Enter, every
  * visible control on it is shown to take focus with Tab, and each screen's
  * primary controls are activated with Enter, Space, typing, or the app's
  * shortcuts, with the visible result asserted.
@@ -103,29 +104,38 @@ async function press(loc: Locator, key = 'Enter') {
   await page.keyboard.press(key);
 }
 
+const nav = () => page.getByRole('navigation', { name: 'Sections' });
+
 /**
- * Open a screen from the rail with the keyboard. A screen under More (KB-1)
- * is reached by tabbing to the disclosure and opening it with Enter first.
+ * Open a screen from the rail with the keyboard (SM-6). One of the eight is
+ * reached by Tab; an App menu item by Tab to the App button, Enter, and the
+ * arrow keys to the item.
  */
 async function go(screen: string) {
   const button = rail(page, screen);
   await fromTop();
-  if (!(await button.isVisible())) {
-    await press(page.getByRole('navigation', { name: 'Sections' }).locator('summary'));
-    await expect(button).toBeVisible();
+  if ((APP_MENU_ITEMS as readonly string[]).includes(screen)) {
+    const app = nav().getByTestId('app-menu-button');
+    await press(app);
+    const menu = nav().getByRole('menu');
+    await expect(menu).toBeVisible();
+    for (let i = 0; i < APP_MENU_ITEMS.length && !(await isFocused(button)); i++) {
+      await page.keyboard.press('ArrowDown');
+    }
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeHidden();
+  } else {
+    await press(button);
   }
-  await press(button);
   await expect(button).toHaveAttribute('aria-current', 'page');
 }
 
-/** Close the rail's More disclosure with the keyboard, when it is open. */
-async function closeMore() {
-  const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
-  if (await more.evaluate((d) => (d as HTMLDetailsElement).open)) {
-    await fromTop();
-    await press(more.locator('summary'));
-  }
-  await expect(more).not.toHaveAttribute('open', '');
+/** Pick an option of a select by typing its label, then let the type-ahead forget it. */
+async function typeInto(select: Locator, label: string) {
+  await tabTo(select);
+  await page.keyboard.type(label);
+  await page.waitForTimeout(1100);
 }
 
 /**
@@ -201,47 +211,56 @@ const status = () => page.getByTestId('status-bar');
 const topBar = () => page.getByTestId('top-bar');
 const editor = () => page.getByTestId('editor');
 
-test('NF-2 KB-8 every screen in the rail, the five and everything under More, opens from the keyboard, and every control on it takes focus with Tab', async () => {
+test('NF-2 SM-6 KB-8 every screen in the rail and every App menu item opens from the keyboard, and every control on it takes focus with Tab', async () => {
   test.setTimeout(600_000);
-  const nav = page.getByRole('navigation', { name: 'Sections' });
-  await closeMore();
-  // KB-1: five screens, then More, closed, holding the rest.
-  expect(await nav.getByRole('button').allTextContents()).toEqual([
-    'Characters',
-    'Family tree',
-    'Outline',
-    'Timeline',
-    'Entries',
-  ]);
-  const screens = await nav.getByRole('button', { includeHidden: true }).allTextContents();
-  // A39 took the dropped sections (facts, knowledge, themes, arcs, beats, relationships, custom) off the rail.
-  expect(screens.length).toBeGreaterThan(30);
+  // SM-6: the eight screens and the App button; the menu is closed.
+  expect(await nav().getByRole('button').allTextContents()).toEqual([...RAIL_SCREENS, 'App']);
   const missed: Record<string, string[]> = {};
-  for (const screen of screens) {
+  for (const screen of [...RAIL_SCREENS, ...APP_MENU_ITEMS]) {
     await go(screen);
     const left = await unreachable();
     if (left.length) missed[screen] = left;
   }
+  // The second tabs of Continuity checker and Cultural data, by the arrow keys.
+  for (const [screen, tab] of [
+    ['Continuity checker', 'Manuscript'],
+    ['Cultural data', 'Eras'],
+  ] as const) {
+    await go(screen);
+    await press(page.getByRole('tab', { selected: true }), 'ArrowRight');
+    await expect(page.getByRole('tab', { name: tab, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    const left = await unreachable();
+    if (left.length) missed[`${screen}: ${tab}`] = left;
+  }
+  // Relevant to Session, from the top bar.
+  await fromTop();
+  await press(topBar().getByRole('button', { name: 'Relevant to Session' }));
+  await expect(page.getByTestId('relevant-view')).toBeVisible();
+  const left = await unreachable();
+  if (left.length) missed['Relevant to Session'] = left;
   expect(missed).toEqual({});
 });
 
-test('NF-2 every section list opens an entry into its editor from the keyboard, and every editor control takes focus', async () => {
+test('NF-2 SM-6 every section list opens from Search and filters by keyboard, opens an entry into its editor, and every editor control takes focus', async () => {
   test.setTimeout(600_000);
   const sections = Object.keys(collectionInfo) as EntryCollection[];
   const missed: Record<string, string[]> = {};
   let opened = 0;
   for (const c of sections) {
     const info = collectionInfo[c];
-    // Custom entries are listed per custom section, each its own item under More.
-    if (!(await rail(page, info.plural).count())) continue;
-    await go(info.plural);
+    await go('Search and filters');
+    const view = page.getByTestId('search-view');
+    await typeInto(view.getByLabel('Section'), info.plural);
+    await expect(view.getByLabel('Section')).toHaveValue(c);
+    await press(view.getByTestId('search-open-section'));
     const list = page.getByTestId('entry-list');
     const empty = page.getByText(`No ${info.plural.toLowerCase()} yet.`, { exact: true });
     await expect(page.getByRole('heading', { name: info.plural, level: 2 })).toBeVisible();
     const stored = (await invoke('entry.list', { collection: c, trash: 'exclude' })).entries;
     const rows = list.locator('button.entry-row');
-    // Wait for this section's own list, not the one the screen showed before:
-    // two sections can hold the same number of entries, so match the titles too.
     const titles = new Set(stored.map((e) => entryTitle(e.entry)));
     const rowTitle = async () => (await rows.first().innerText()).split('\n')[0]!.trim();
     if (stored.length) {
@@ -287,7 +306,7 @@ test('NF-2 ED-1 a new character is made, edited, and saved from the keyboard', a
 });
 
 test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to Session, and Start session', async () => {
-  await go('Dashboard');
+  await go('Sessions');
   await fromTop();
   const year = topBar().getByRole('spinbutton', { name: 'Story year' });
   await tabTo(year);
@@ -301,20 +320,28 @@ test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to
   await expect(writing).not.toHaveValue('');
   await expect(status()).not.toContainText('Story time 2050');
   await press(topBar().getByRole('button', { name: 'Relevant to Session' }));
-  await expect(rail(page, 'Relevant to Session')).toHaveAttribute('aria-current', 'page');
+  await expect(topBar().getByRole('button', { name: 'Relevant to Session' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await fromTop();
   await press(topBar().getByRole('button', { name: 'Start session' }));
-  await expect(rail(page, 'Start session')).toHaveAttribute('aria-current', 'page');
+  // SM-11: Start session is on the Sessions screen.
+  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'start');
+  await expect(page.getByTestId('start-session')).toBeInViewport();
 });
 
-test('NF-2 DB-1 the dashboard: Start session and Check alignment open their screens', async () => {
-  await go('Dashboard');
+test('NF-2 DB-1 SM-11 Sessions: Start session and Check alignment open their parts', async () => {
+  await go('Sessions');
   const dash = page.getByTestId('dashboard');
   await press(dash.getByRole('button', { name: 'Start session' }));
-  await expect(rail(page, 'Start session')).toHaveAttribute('aria-current', 'page');
-  await go('Dashboard');
+  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'start');
+  await expect(page.getByTestId('start-session')).toBeInViewport();
+  await go('Sessions');
   await press(page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }));
-  // CC-1: since M8 the button opens the alignment check screen, which has no rail button.
+  // CC-1 SM-11: the button opens the Continuity checker on its alignment tab.
+  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
   await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
 });
@@ -331,7 +358,7 @@ test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to win
 });
 
 test('NF-2 SM-8 the world events grid by keyboard', async () => {
-  await go('Timeline');
+  await go('World events');
   const grid = page.getByTestId('world-grid');
   const category = page.getByRole('group', { name: 'Categories' }).getByLabel('Category');
   await tabTo(category);
@@ -358,7 +385,7 @@ test('NF-2 SM-8 the world events grid by keyboard', async () => {
 });
 
 test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens it, and Lived through opens and picks by typing', async () => {
-  await go('Dashboard');
+  await go('Sessions');
   const open = topBar().getByTestId('top-open-year');
   await fromTop();
   await press(open);
@@ -376,7 +403,7 @@ test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens 
 });
 
 test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and two characters picked by typing fill the table', async () => {
-  await go('Dashboard');
+  await go('Sessions');
   await page.keyboard.press('Meta+t');
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
@@ -394,16 +421,16 @@ test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and 
   await expect(dialog).toBeHidden();
 });
 
-test('NF-2 KB-5 CU-2 GL-1 the Entries tabs: culture by year, the place tree, and the glossary table answer the keyboard', async () => {
+test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and glossary table in the App menu answer the keyboard', async () => {
   // This bible starts with no communities; the screen needs one to pick.
   await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
-  await go('Entries');
-  const tabs = page.getByRole('tablist', { name: 'Entries screens' });
+  await go('Cultural data');
+  const tabs = page.getByRole('tablist', { name: 'Cultural data' });
   const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
-  await press(tabs.getByRole('tab', { selected: true }), 'Home');
-  await page.keyboard.press('ArrowRight');
-  await expect(tab('Culture by year')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('Communities')).toHaveAttribute('aria-selected', 'true');
   const culture = page.getByTestId('culture-view');
+  await typeInto(culture.getByLabel('Community'), 'Portland');
+  await expect(culture.getByLabel('Community')).toHaveValue('portland');
   await tabTo(culture.getByRole('spinbutton', { name: 'Year' }));
   await page.keyboard.press('Meta+a');
   await page.keyboard.type('2045');
@@ -411,17 +438,34 @@ test('NF-2 KB-5 CU-2 GL-1 the Entries tabs: culture by year, the place tree, and
     culture.getByTestId('culture-results').or(culture.getByTestId('culture-empty')),
   ).toBeVisible();
 
-  await press(tab('Culture by year'), 'ArrowRight');
-  await expect(tab('Place tree')).toHaveAttribute('aria-selected', 'true');
+  await press(tab('Communities'), 'ArrowRight');
+  await expect(tab('Eras')).toHaveAttribute('aria-selected', 'true');
+  await expect(tab('Eras')).toBeFocused();
+  const forties = page.getByTestId('eras-view').locator('li[data-era="ERA-2040"]');
+  await tabTo(forties.getByLabel('End year'));
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('2048');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.endYear,
+    )
+    .toBe(2048);
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2040',
+    patch: { endYear: 2049 },
+  });
+  await press(tab('Eras'), 'Home');
+  await expect(tab('Communities')).toHaveAttribute('aria-selected', 'true');
+
+  await go('Place tree');
   await press(page.getByTestId('places-view').getByRole('button', { name: 'Portland' }));
   await expect(editor()).toContainText('Portland');
-
-  await press(tab('Place tree'), 'End');
-  await expect(tab('Glossary table')).toHaveAttribute('aria-selected', 'true');
+  await go('Glossary table');
   await press(page.getByRole('button', { name: 'Edit 团圆' }));
   await expect(editor()).toContainText('团圆');
-  await press(tab('Glossary table'), 'Home');
-  await expect(tab('Entries')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('NF-2 SM-1 the character page from the keyboard: Edit name, each text box, and the relatives line opens the tree', async () => {
@@ -529,7 +573,7 @@ test('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, 
 });
 
 test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and Escape', async () => {
-  await go('Dashboard');
+  await go('Sessions');
   await page.keyboard.press('Meta+j');
   const panel = page.getByTestId('claude-panel');
   await expect(panel).toBeVisible();
@@ -553,7 +597,7 @@ test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and E
 });
 
 test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step buttons, and Escape', async () => {
-  await go('Dashboard');
+  await go('Sessions');
   await page.keyboard.press('Meta+t');
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
@@ -647,7 +691,8 @@ test('NF-2 ED-7 the review queue with a proposal diff open: every control takes 
 test('NF-2 SB-7 the brief view after generation: every control takes focus', async () => {
   // Without a key the brief is the structured one (SB-7): this test is about the keyboard, not Claude.
   await invoke('claude.clearKey', {});
-  await go('Start session');
+  await go('Sessions');
+  await press(page.getByTestId('dashboard').getByRole('button', { name: 'Start session' }));
   const view = page.getByTestId('start-session');
   await press(view.getByRole('button', { name: 'A chapter', exact: true }));
   await expect(view.getByTestId('start-chapter')).toBeVisible();

@@ -71,8 +71,13 @@ test.afterAll(async () => {
 const view = () => page.getByTestId('alignment-view');
 const finding = (check: string) => view().locator(`[data-testid="finding"][data-check="${check}"]`);
 
-test('CC-1 CC-2 CC-3 CC-5 Check alignment from the dashboard finds S1 and S3 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2)', async () => {
+test('CC-1 CC-2 CC-3 CC-5 SM-11 Check alignment on Sessions opens the Continuity checker, which finds S1 and S3 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2)', async () => {
   await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
+  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('tab', { name: 'Alignment check' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
   await expect(view().getByTestId('alignment-runner')).toContainText('Model: claude-opus-5-5');
   await view().getByTestId('alignment-run').click();
@@ -134,7 +139,7 @@ test('CC-4 ED-3 Manuscript wins shows the change set as a diff, applies it, and 
   await expect(finding('age')).toHaveAttribute('data-state', 'open');
 });
 
-test('CC-4 Rewrite recommended makes a rewrite task with the lines and what must change, on the alignment screen, the dashboard, and the chapter', async () => {
+test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and what must change, on the Continuity checker, on Sessions, and on the chapter', async () => {
   await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
   await expect(finding('place')).toHaveCount(0);
   const task = view().getByTestId('rewrite-task');
@@ -149,7 +154,8 @@ test('CC-4 Rewrite recommended makes a rewrite task with the lines and what must
     'Lives in Guangzhou',
   );
 
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
+  await expect(page.getByTestId('dash-task-count').locator('.tile-num')).toHaveText('1');
   const tile = page.getByTestId('dash-tasks');
   await expect(tile.getByTestId('rewrite-task')).toContainText('line 1');
   await expect(tile.getByTestId('rewrite-task')).toContainText('Lan had grown up in Shanghai');
@@ -169,7 +175,7 @@ test('CC-4 Rewrite recommended makes a rewrite task with the lines and what must
 });
 
 test('CC-4 Dismiss hides a finding, and it stays hidden when the check runs again', async () => {
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
   await finding('character-present-while-dead').getByRole('button', { name: 'Dismiss' }).click();
   await expect(finding('character-present-while-dead')).toHaveCount(0);
@@ -192,7 +198,7 @@ test('CC-4 Dismiss hides a finding, and it stays hidden when the check runs agai
 });
 
 test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records no new findings', async () => {
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
   const all = view().getByTestId('alignment-findings').getByTestId('finding');
   const before = await all.count();
@@ -220,4 +226,26 @@ test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records
     id: 'CH8',
     patch: { manuscriptText: text },
   });
+});
+
+test('SM-11 MS-1 CC-1 the Continuity checker holds the manuscript it reads as its second tab, reached by the arrow keys', async () => {
+  await rail(page, 'Continuity checker').click();
+  const alignment = page.getByRole('tab', { name: 'Alignment check' });
+  const manuscript = page.getByRole('tab', { name: 'Manuscript' });
+  await expect(page.getByRole('tablist', { name: 'Continuity checker' })).toBeVisible();
+  await alignment.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(manuscript).toHaveAttribute('aria-selected', 'true');
+  await expect(manuscript).toBeFocused();
+  const view = page.getByTestId('manuscript-view');
+  // MS-1: the chapters the check reads, each with the file its text came from.
+  await expect(view.getByTestId('ms-chapters').locator('[data-chapter]')).toHaveCount(
+    fixture.chapters!.length,
+  );
+  await view.locator('[data-chapter="CH5"]').click();
+  await expect(view.getByTestId('ms-source')).toHaveText('Source: chapter-05.docx');
+  await manuscript.focus();
+  await page.keyboard.press('Home');
+  await expect(alignment).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
 });

@@ -160,7 +160,7 @@ export function EntryList(props: {
 }
 
 /** WE-2: gaps and overlaps in the eras from 2025 to 2100. A flag, never a block. */
-function EraCoverage() {
+export function EraCoverage() {
   const { version } = useStore();
   const [messages, setMessages] = useState<string[] | null>(null);
   useEffect(() => {

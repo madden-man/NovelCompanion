@@ -1,10 +1,17 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { GROUP_TITLES } from '../../../../shared/domain/brief/selection';
 import { placePath } from '../../../../shared/domain/culture';
+import type { Response } from '../../../../shared/ipc';
+import { entryTitle } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
+import { call } from '../../api';
 import { captureNav } from '../capture';
-import { useEntries } from '../data';
+import { relativesLine } from '../character';
+import { useEntries, useList, useStore } from '../data';
+import type { Entry } from '../data';
+import { SaveState, useAutosave } from '../editor';
 import { useUndo } from '../undo';
+import { Zh } from '../Zh';
 import { EventsWindow, GroupBlock, onEventStrip, updateWithUndo } from './common';
 import type { OpenEntry, SelectionView } from './common';
 import './relevant.css';
@@ -14,6 +21,7 @@ type Group = Strand['groups'][number];
 type Item = Group['items'][number];
 type BackstoryPerson = Strand['backstory']['people'][number];
 type BackstoryRow = BackstoryPerson['rows'][number];
+type Relatives = Response<'character.page'>['page']['relatives'];
 
 /** The groups shown open, in this order; everything else folds under "More" (A35). */
 const LEAD = new Set(['eventsWindow', 'characters', 'culture']);
@@ -34,14 +42,160 @@ function ageText(item: Item): string {
   }
 }
 
+/** SM-10: the parents and partner from the tree, in one line; children are left to the page. */
+function familyLine(rel: Relatives | null, unionLabel: (id: string) => string): string {
+  if (!rel) return 'Loading the family.';
+  if (!rel.parents.length && !rel.partners.length) {
+    return 'No parents or partner in the family tree yet.';
+  }
+  return relativesLine({ ...rel, children: [] }, unionLabel);
+}
+
+/** SM-10: a moment's years, "2043" or "2040 to 2044". */
+function momentYears(m: Entry): string {
+  const end = typeof m.endYear === 'number' && m.endYear !== m.year ? m.endYear : null;
+  return end === null ? String(m.year) : `${String(m.year)} to ${end}`;
+}
+
+/** SM-10: one character of the chapter as a tile that opens to more on click. */
+function Tile(props: {
+  item: Item;
+  year: number;
+  pov: boolean;
+  onOpen: OpenEntry;
+  onBackstory: (characterId: string) => void;
+}) {
+  const { item } = props;
+  const characters = useEntries('characters');
+  const moments = useEntries('moments');
+  const unions = useList('unionTypes');
+  const { version } = useStore();
+  const [open, setOpen] = useState(false);
+  const [rel, setRel] = useState<Relatives | null>(null);
+  const detailId = useId();
+  const person = characters.find((c) => c._id === item.id);
+  const chinese = String((person?.names as { chinese?: string } | undefined)?.chinese ?? '');
+  const role = typeof person?.role === 'string' ? person.role : '';
+  const body = typeof person?.body === 'string' ? person.body : '';
+  const latest = useMemo(
+    () =>
+      moments
+        .filter((m) => m.characterId === item.id && Number(m.year) <= props.year)
+        .sort(
+          (a, b) => Number(a.year) - Number(b.year) || entryTitle(a).localeCompare(entryTitle(b)),
+        )
+        .slice(-3),
+    [moments, item.id, props.year],
+  );
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    call('character.page', { id: item.id })
+      .then((r) => {
+        if (live) setRel(r.page.relatives);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [open, item.id, version]);
+  const unionLabel = (id: string) => unions?.items.find((i) => i.id === id)?.label ?? id;
+  const age = ageText(item);
+  return (
+    <li
+      className={`rel-tile${props.pov ? ' pov' : ''}${open ? ' open' : ''}`}
+      data-testid="sel-item"
+      data-id={item.id}
+    >
+      <div className="rel-tile-head">
+        <button
+          type="button"
+          className="rel-tile-button"
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={() => setOpen((v) => !v)}
+          data-testid="tile-toggle"
+        >
+          <span className="rel-tile-name">{item.title}</span>
+          <span
+            className={`rel-age${item.state?.state === 'unknown' ? ' unknown' : ''}`}
+            data-testid="tile-age"
+          >
+            {age}
+          </span>
+          {props.pov && <span className="rel-pov">point of view</span>}
+        </button>
+        {chinese && (
+          <span className="rel-tile-zh" data-testid="tile-chinese">
+            <Zh text={chinese} actions={false} />
+          </span>
+        )}
+      </div>
+      <div id={detailId} className="rel-tile-detail stack tight" hidden={!open}>
+        {open && (
+          <>
+            <dl className="kv" data-testid="tile-detail">
+              <dt>In the story</dt>
+              <dd data-testid="tile-role">{role || 'Not written yet.'}</dd>
+              <dt>Description</dt>
+              <dd data-testid="tile-description">{body || 'Not written yet.'}</dd>
+              <dt>Family</dt>
+              <dd data-testid="tile-family">{familyLine(rel, unionLabel)}</dd>
+            </dl>
+            <div className="stack tight">
+              <strong>Latest moments up to {props.year}</strong>
+              {latest.length ? (
+                <ul className="plain-list rel-tile-moments" data-testid="tile-moments">
+                  {latest.map((m) => (
+                    <li key={m._id} data-id={m._id}>
+                      <span className="chip time num">{momentYears(m)}</span>{' '}
+                      <span>{entryTitle(m)}</span>
+                      {typeof m.body === 'string' && m.body && <span>. {m.body}</span>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="example-note" data-testid="tile-moments-empty">
+                  No moments up to {props.year} yet.
+                </p>
+              )}
+            </div>
+            <div className="row tight">
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => props.onOpen('characters', item.id)}
+              >
+                Their page
+              </button>
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => props.onBackstory(item.id)}
+              >
+                Their backstory
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** SM-10: the characters of the chapter as tiles: name, Chinese name, age, point of view. */
 function Characters({
   group,
+  year,
   pov,
   onOpen,
+  onBackstory,
 }: {
   group: Group;
+  year: number;
   pov: string | null;
   onOpen: OpenEntry;
+  onBackstory: (characterId: string) => void;
 }) {
   return (
     <section className="sel-group rel-sec" data-testid="sel-group" data-kind="characters">
@@ -49,31 +203,50 @@ function Characters({
         Characters <span className="num">({group.items.length})</span>
       </h4>
       {group.items.length ? (
-        <ul className="rel-people">
+        <ul className="rel-tiles">
           {group.items.map((it) => (
-            <li
+            <Tile
               key={it.id}
-              className={`rel-person${it.id === pov ? ' pov' : ''}`}
-              data-testid="sel-item"
-              data-id={it.id}
-            >
-              <button
-                type="button"
-                className="link-btn"
-                onClick={() => onOpen('characters', it.id)}
-              >
-                {it.title}
-              </button>
-              <span className={`rel-age${it.state?.state === 'unknown' ? ' unknown' : ''}`}>
-                {ageText(it)}
-              </span>
-              {it.id === pov && <span className="rel-pov">POV</span>}
-            </li>
+              item={it}
+              year={year}
+              pov={it.id === pov}
+              onOpen={onOpen}
+              onBackstory={onBackstory}
+            />
           ))}
         </ul>
       ) : (
         <p className="example-note">Nothing selected.</p>
       )}
+    </section>
+  );
+}
+
+/**
+ * SM-10: "What happens in this scene", kept on the chapter (`sceneNote`).
+ * It saves as you type, one undo step per pause, and says when it is saved.
+ */
+function SceneNote({ chapterId }: { chapterId: string }) {
+  const ed = useAutosave('chapters', chapterId);
+  const id = useId();
+  const ro = useWriteGuard();
+  const value = typeof ed.draft?.sceneNote === 'string' ? ed.draft.sceneNote : '';
+  return (
+    <section className="field rel-scene" data-testid="scene-note" aria-label="Scene note">
+      <div className="row tight">
+        <label htmlFor={id}>What happens in this scene</label>
+        <SaveState status={ed.status} error={ed.error} />
+      </div>
+      <textarea
+        id={id}
+        rows={4}
+        value={value}
+        disabled={!ed.draft || ro.off}
+        {...ro.tip}
+        placeholder="Who wants what, what goes wrong, where it ends."
+        onChange={(e) => ed.setField('sceneNote', e.target.value)}
+        onBlur={() => void ed.flush()}
+      />
     </section>
   );
 }
@@ -292,14 +465,17 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
 }
 
 /**
- * A35: Relevant to Session for the strand being written. The chapter heads it;
- * world events lead, then the backstory of the chapter's backstory years,
- * the characters by name and age, and the culture of the setting in that
- * year. Everything else in the SB-2 selection folds under "More".
+ * SM-10, A35: Relevant to Session for the strand being written. The chapter
+ * heads it; then the scene note, the characters as tiles, the five-year world
+ * events strip, the cultural context of the setting in that year, and the
+ * backstory of the chapter's backstory years. Everything else in the SB-2
+ * selection folds under "More".
  */
 export function RelevantBody(props: {
   selection: SelectionView;
   onOpen: OpenEntry;
+  /** SM-10: Their backstory on a character tile. */
+  onBackstory: (characterId: string) => void;
   writing: { chapterId?: string; strandId?: string } | null;
 }) {
   const { selection: sel, onOpen } = props;
@@ -343,14 +519,23 @@ export function RelevantBody(props: {
         {isWriting && <span className="chip canon">writing now</span>}
         {strand.povName && <span>Point of view: {strand.povName}</span>}
       </div>
+      {strand.chapterId && <SceneNote key={strand.chapterId} chapterId={strand.chapterId} />}
+      {characters && (
+        <Characters
+          group={characters}
+          year={strand.year}
+          pov={strand.povCharacterId}
+          onOpen={onOpen}
+          onBackstory={props.onBackstory}
+        />
+      )}
       {events && (
         <EventsWindow strand={strand} group={events} window={sel.window} onOpen={onOpen} />
       )}
-      <Backstory strand={strand} onOpen={onOpen} />
-      {characters && <Characters group={characters} pov={strand.povCharacterId} onOpen={onOpen} />}
       {culture && (
         <Culture key={strand.strandId ?? ''} strand={strand} group={culture} onOpen={onOpen} />
       )}
+      <Backstory strand={strand} onOpen={onOpen} />
       <details className="rel-more" data-testid="relevant-more">
         <summary>
           More for this chapter{' '}
