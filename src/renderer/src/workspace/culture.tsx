@@ -412,7 +412,7 @@ function EraRow(props: {
   };
   const [draft, setDraft] = useState(stored);
   /** Fields typed in and not yet committed: a change from elsewhere never overwrites them. */
-  const dirty = useRef(new Set<Key>());
+  const [dirty, setDirty] = useState<ReadonlySet<Key>>(new Set());
   const storedKey = JSON.stringify(stored);
   const [seen, setSeen] = useState(storedKey);
   if (seen !== storedKey) {
@@ -420,17 +420,21 @@ function EraRow(props: {
     setSeen(storedKey);
     setDraft((d) => {
       const next = { ...d };
-      for (const k of Object.keys(stored) as Key[]) if (!dirty.current.has(k)) next[k] = stored[k];
+      for (const k of Object.keys(stored) as Key[]) if (!dirty.has(k)) next[k] = stored[k];
       return next;
     });
   }
   const edit = (key: Key, value: string) => {
-    dirty.current.add(key);
+    setDirty((prev) => new Set(prev).add(key));
     setDraft((d) => ({ ...d, [key]: value }));
   };
   const year = (t: string) => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
   const commit = (key: Key) => {
-    dirty.current.delete(key);
+    setDirty((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
     const v = draft[key];
     if (key === 'name') {
       if (v.trim() && v !== name) props.onSave({ name: v.trim(), title: v.trim() }, 'Era name');

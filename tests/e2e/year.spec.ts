@@ -163,6 +163,10 @@ test('SM-6 each of the eight screens opens from its rail button', async () => {
   // "Timeline" still names World events while the older specs are renamed.
   await rail(page, 'Timeline').click();
   await expect(rail(page, 'World events')).toHaveAttribute('aria-current', 'page');
+  // A name the rail does not have fails at once, naming the valid ones, instead of timing out.
+  expect(() => rail(page, 'Dashboard')).toThrow(
+    /"Dashboard" is not in the rail\. The rail screens are Characters, Family tree, Outline, World events, Backstory, Continuity checker, Sessions, Cultural data \("Timeline" still names World events\)/,
+  );
 });
 
 test('SM-6 the App menu holds the nine utilities and the reference views, and each item opens its screen', async () => {
