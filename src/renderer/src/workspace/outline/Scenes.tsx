@@ -41,12 +41,14 @@ import { useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
+import { ChapterPanel } from './ChapterPage';
 import { InlineName, NameForm } from './InlineName';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
 type HeadRow = Extract<Outline['rows'][number], { kind: 'book' | 'part' }>;
 type PartRow = Extract<Outline['rows'][number], { kind: 'part' }>;
+type BookRow = Extract<Outline['rows'][number], { kind: 'book' }>;
 type VersionSummary = Response<'sceneOutline.versions'>['versions'][number];
 type Version = Response<'sceneOutline.version'>;
 type Open = (collection: EntryCollection, id: string) => void;
@@ -54,6 +56,9 @@ type Open = (collection: EntryCollection, id: string) => void;
 /** Autosave timing for the scene outline, the same as an entry (ED-2). */
 const SCENE_DEBOUNCE_MS = 500;
 const SCENE_MAX_WAIT_MS = 700;
+
+/** How long an undo step waits for a restored chapter to reach the reading order. */
+const ADOPT_WAIT_MS = 10_000;
 
 type SceneStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error';
 
@@ -74,7 +79,11 @@ const live: {
   current: { state(): SceneOutlineState | null; adopt(s: SceneOutlineState): Promise<void> } | null;
 } = { current: null };
 
-/** SM-7: an undo or redo step that puts the scene outline back to `to`, when it still holds `expect`. */
+/**
+ * SM-7: an undo or redo step that puts the scene outline back to `to`, when it
+ * still holds `expect`. It resolves once the outline is stored and throws when
+ * it could not be, so the step is reported and stays where it was.
+ */
 function outlineOp(expect: SceneOutlineState, to: SceneOutlineState): Op {
   return {
     kind: 'run',
@@ -116,7 +125,9 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
    * order (a chapter restored from the trash): it is split again once the
    * order next changes, so the chapter gets its lines back.
    */
-  const pending = useRef<SceneOutlineState | null>(null);
+  const pending = useRef<{ state: SceneOutlineState; done: (ok: boolean) => void } | null>(null);
+  /** Why the last save failed, for an undo step to report. */
+  const lastError = useRef<string | null>(null);
   /** Lines waiting for a new chapter to reach the reading order (Cmd+Enter). */
   const split = useRef<{ id: string | null; change: (f: Flow, id: string) => Flow } | null>(null);
 
@@ -147,28 +158,30 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     };
   }, [reloads]);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     if (inflight.current) await inflight.current;
     for (;;) {
       const target = stored();
-      if (target === null) return;
+      if (target === null) return true;
       if (sameState(saved.current, target)) {
         firstPending.current = null;
         setStatus('saved');
-        return;
+        return true;
       }
       setStatus('saving');
       const run = call('sceneOutline.set', target).then(
         (r) => {
           saved.current = stateOf(r);
+          lastError.current = null;
           setError(null);
           setSaves((n) => n + 1);
           return true;
         },
         (e: unknown) => {
-          setError(plainError(e));
+          lastError.current = plainError(e);
+          setError(lastError.current);
           setStatus('error');
           return false;
         },
@@ -176,12 +189,12 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       inflight.current = run.then(() => undefined);
       const ok = await run;
       inflight.current = null;
-      if (!ok) return;
+      if (!ok) return false;
       const now = stored();
       if (now === null || sameState(saved.current, now)) {
         firstPending.current = null;
         setStatus('saved');
-        return;
+        return true;
       }
     }
   }, []);
@@ -221,12 +234,18 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       setFlow(current.current);
       return;
     }
-    current.current = pending.current
-      ? splitFlow(pending.current, order)
-      : refitFlow(current.current, before, order);
+    const waiting = pending.current;
     pending.current = null;
+    current.current = waiting
+      ? splitFlow(waiting.state, order)
+      : refitFlow(current.current, before, order);
     setFlow(current.current);
     takeSplit();
+    if (waiting) {
+      // An undo step waits for this write; it fails if the write does.
+      void save().then(waiting.done);
+      return;
+    }
     const target = stored();
     if (target && !sameState(saved.current, target)) schedule();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,17 +263,35 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
 
   // An undo or redo writes what is pending first, and outline steps reach this flow.
   useEffect(() => {
-    const off = undo.registerFlush(save);
+    const off = undo.registerFlush(async () => {
+      await save();
+    });
+    const failed = () => new Error(lastError.current ?? 'The scene outline was not saved.');
     live.current = {
       state: stored,
       adopt: async (s) => {
         current.current = splitFlow(s, orderRef.current);
         setFlow(current.current);
         if (Object.keys(s.breaks).some((id) => !orderRef.current.includes(id))) {
-          pending.current = s;
+          // A chapter in it is not back in the reading order yet: wait for it, then write.
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              if (pending.current?.state !== s) return;
+              pending.current = null;
+              reject(new Error('The chapter did not come back in time to take its scenes.'));
+            }, ADOPT_WAIT_MS);
+            pending.current = {
+              state: s,
+              done: (ok) => {
+                clearTimeout(timeout);
+                if (ok) resolve();
+                else reject(failed());
+              },
+            };
+          });
           return;
         }
-        await save();
+        if (!(await save())) throw failed();
       },
     };
     return () => {
@@ -368,6 +405,10 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
   const [refocus, setRefocus] = useState<string | null>(null);
   const [focusText, setFocusText] = useState<string | null>(null);
   const [adding, setAdding] = useState<'part' | 'book' | null>(null);
+  /** The chapter whose page is open in the inspector (KB-3). */
+  const [openChapter, setOpenChapter] = useState<string | null>(null);
+  /** A heading moved from the keyboard keeps the focus once the outline reloads. */
+  const [headFocus, setHeadFocus] = useState<string | null>(null);
   const undo = useUndo();
   const areas = useRef(new Map<string, HTMLTextAreaElement>());
   const board = useRef<HTMLDivElement | null>(null);
@@ -480,7 +521,7 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
   // ---------- KB-3 on the track: books, parts and chapters made, moved and trashed ----------
 
   const heads = (outline?.rows ?? []).filter((r): r is HeadRow => r.kind !== 'chapter');
-  const books = heads.filter((r) => r.kind === 'book' && !r.missing);
+  const books = heads.filter((r): r is BookRow => r.kind === 'book' && !r.missing);
   const parts = heads.filter((r): r is PartRow => r.kind === 'part' && !r.missing);
   const inPart = (partId: string) => chapters.filter((c) => c.partId === partId);
 
@@ -494,9 +535,35 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
     el.scrollIntoView({ block: 'center' });
   }, [focusText, flow]);
 
-  /** New chapter: last in the last part, in the year of the chapter before it; one undo step. */
-  const addChapter = async () => {
-    const part = parts.at(-1);
+  useEffect(() => {
+    if (!headFocus) return;
+    const [kind, id] = headFocus.split(':');
+    const el = board.current?.querySelector<HTMLElement>(
+      `[data-testid="track-${kind}"][data-${kind}="${CSS.escape(id ?? '')}"] .ol-name`,
+    );
+    if (!el) return;
+    setHeadFocus(null);
+    if (document.activeElement !== el) el.focus();
+  }, [headFocus, outline]);
+
+  /** Alt+Up and Alt+Down on a heading: a part within its book, a book among the books (PL-3). */
+  const moveHeading = (row: PartRow | BookRow, by: -1 | 1) => {
+    const siblings: (PartRow | BookRow)[] =
+      row.kind === 'book' ? books : parts.filter((p) => p.bookId === row.bookId);
+    const to = siblings.findIndex((x) => x.id === row.id) + by;
+    if (to < 0 || to >= siblings.length) return;
+    setHeadFocus(`${row.kind}:${row.id}`);
+    void writes.reorder(
+      row.kind === 'book'
+        ? { kind: 'books', movedId: row.id, toIndex: to }
+        : { kind: 'parts', groupId: row.bookId, movedId: row.id, toIndex: to },
+      `Moved ${row.label} ${by < 0 ? 'earlier' : 'later'}`,
+    );
+  };
+
+  /** New chapter: last in a part (the last part by default), in the year of the chapter before it; one undo step. */
+  const addChapter = async (partId?: string) => {
+    const part = partId ? parts.find((p) => p.id === partId) : parts.at(-1);
     if (!part) {
       setNotice('Make a part first: More, then New part.');
       return;
@@ -506,11 +573,11 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
     const id = await writes.newChapter(part.id, 'New chapter', year);
     if (id) setFocusText(id);
   };
-  const addPart = async (title: string) => {
-    const book = books.at(-1);
+  const addPart = async (title: string, bookId?: string): Promise<boolean> => {
+    const book = bookId ? books.find((b) => b.id === bookId) : books.at(-1);
     if (!book) {
       setNotice('Make a book first: More, then New book.');
-      return;
+      return false;
     }
     const siblings = parts.filter((p) => p.bookId === book.id).map((p) => ({ number: p.number }));
     const id = await writes.create('parts', {
@@ -520,6 +587,7 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
       status: 'idea',
     });
     if (id) setAdding(null);
+    return id !== undefined;
   };
   const addBook = async (title: string) => {
     const id = await writes.create('books', {
@@ -675,8 +743,12 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
     },
     onLines: (key, lines) =>
       scene.edit((f) => withSection(f, key, retext(sectionOf(f, key), lines))),
+    // SM-5: a committed year is one undo step, as the story year field is.
     onYear: (key, line, year) =>
-      scene.edit((f) => withSection(f, key, setSceneYear(sectionOf(f, key), line, year))),
+      void scene.step(
+        year === null ? "Cleared a scene's year" : `Set a scene's year to ${year}`,
+        (f) => withSection(f, key, setSceneYear(sectionOf(f, key), line, year)),
+      ),
     onBlur: () => void scene.save(),
     onLeave: (key, by) => {
       const next = neighbour(key, by);
@@ -685,9 +757,15 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
     onNewChapter: (key, line) => void newChapterAt(key, line),
   };
 
+  const openRow = chapters.find((c) => c.id === openChapter) ?? null;
+  const openSiblings = openRow ? inPart(openRow.partId) : [];
+  const openIndex = openRow ? openSiblings.findIndex((c) => c.id === openRow.id) : -1;
   const guide = grab && grab.mode !== 'move' ? grab.guide : null;
   return (
-    <div className="ws-tree-area scenes" data-testid="outline-view">
+    <div
+      className={`ws-tree-area scenes${openChapter ? ' with-inspector' : ''}`}
+      data-testid="outline-view"
+    >
       <section
         className="tree-main stack"
         aria-labelledby="outline-title"
@@ -771,7 +849,12 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
                     >
                       <div className="sb-gap" aria-hidden="true" />
                       <div className="sb-track head">
-                        <TrackHeading row={item} />
+                        <TrackHeading
+                          row={item}
+                          onMove={(by) => item.missing || moveHeading(item, by)}
+                          onNewChapter={() => void addChapter(item.id)}
+                          onNewPart={(title) => addPart(title, item.id)}
+                        />
                       </div>
                     </div>
                   );
@@ -819,7 +902,7 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
                           onSwap={(by) => swap(row.id, by)}
                           onEdge={(edge, by) => pullEdge(row.id, edge, by)}
                           onFocusBar={() => setRefocus(null)}
-                          onOpen={onOpen}
+                          onOpen={(_c, id) => setOpenChapter(id)}
                           parts={parts}
                           onMoveToPart={(partId) => moveToPart(row.id, partId)}
                           onTrash={() => trashChapter(row.id)}
@@ -900,6 +983,32 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
         )}
         <Versions saves={scene.saves} onRestore={scene.replace} />
       </section>
+      {openRow && outline && (
+        <aside
+          className="inspector tree-inspector"
+          aria-label="Outline inspector"
+          data-testid="outline-inspector"
+        >
+          <span className="eyebrow">Inspector</span>
+          <ChapterPanel
+            key={openRow.id}
+            id={openRow.id}
+            outline={outline}
+            writes={writes}
+            onClose={() => setOpenChapter(null)}
+            canMove={{
+              up: openIndex > 0,
+              down: openIndex >= 0 && openIndex < openSiblings.length - 1,
+            }}
+            onMove={(by) => {
+              const other = openSiblings[openIndex + by];
+              if (other) moveChapter(openRow.id, other.id);
+            }}
+            onToPart={(partId) => moveToPart(openRow.id, partId)}
+            onOpenBeat={(id) => onOpen('plotBeats' as EntryCollection, id)}
+          />
+        </aside>
+      )}
     </div>
   );
 }
@@ -1169,9 +1278,16 @@ function MenuDetails(props: {
  * KB-3 on the track: a book or part heading, renamed in place, with Actions
  * holding Rename and Move to trash (which lists what links to it first).
  */
-function TrackHeading({ row }: { row: HeadRow }) {
+function TrackHeading(props: {
+  row: HeadRow;
+  onMove: (by: -1 | 1) => void;
+  onNewChapter: () => void;
+  onNewPart: (title: string) => Promise<boolean>;
+}) {
+  const { row } = props;
   const writes = useOutlineWrites();
   const wrap = useRef<HTMLDivElement | null>(null);
+  const [adding, setAdding] = useState(false);
   const collection = row.kind === 'book' ? 'books' : 'parts';
   const ids = row.kind === 'book' ? { 'data-book': row.id } : { 'data-part': row.id };
   if (row.missing) {
@@ -1190,6 +1306,7 @@ function TrackHeading({ row }: { row: HeadRow }) {
           disabled={writes.ro.off}
           testId={`${row.kind}-name`}
           onSave={(t) => writes.edit(collection, row.id, { title: t }, `Renamed ${row.label}`)}
+          onMove={writes.ro.off ? undefined : props.onMove}
         >
           {row.label}
         </InlineName>
@@ -1206,6 +1323,18 @@ function TrackHeading({ row }: { row: HeadRow }) {
             >
               Rename
             </button>
+            <button
+              type="button"
+              className="btn small"
+              disabled={writes.ro.off}
+              onClick={(e) => {
+                closeMenu(e.currentTarget);
+                if (row.kind === 'part') props.onNewChapter();
+                else setAdding(true);
+              }}
+            >
+              {row.kind === 'part' ? 'New chapter' : 'New part'}
+            </button>
             <TrashControls
               collection={collection}
               id={row.id}
@@ -1217,6 +1346,17 @@ function TrackHeading({ row }: { row: HeadRow }) {
           </>
         </MenuDetails>
       </span>
+      {adding && (
+        <NameForm
+          label="Part title"
+          submit="Create part"
+          testId="new-part"
+          onSubmit={async (title) => {
+            if (await props.onNewPart(title)) setAdding(false);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
       {writes.error && (
         <p className="callout crit" role="alert">
           {writes.error}

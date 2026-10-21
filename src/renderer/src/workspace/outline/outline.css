@@ -627,3 +627,17 @@
   left: auto;
   right: 0;
 }
+/* KB-3: the chapter page opens in the inspector beside the two panels. */
+.ws-tree-area.scenes.with-inspector {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+}
+@media (max-width: 900px) {
+  .ws-tree-area.scenes.with-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ws-tree-area.scenes.with-inspector .tree-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: none;
+  }
+}

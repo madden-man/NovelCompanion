@@ -149,3 +149,75 @@ describe('ED-3 undo steps check what they overwrite', () => {
     expect(m.stack.canRedo).toBe(false);
   });
 });
+
+describe("SM-7 a step outside the entries (kind: 'run', the scene outline)", () => {
+  /** An IO that runs `run` steps as the real one does. */
+  const runIO = (): UndoIO => ({
+    get: async () => undefined,
+    listLabel: async () => undefined,
+    apply: async (op) => {
+      if (op.kind === 'run') await op.apply();
+    },
+  });
+  const outline = { text: '- A\n- B', breaks: { X: 0, Y: 1 } };
+  /** A stored outline and a step that moves Y's break, as an edge pull does. */
+  function edge(opts: { failWrite?: boolean } = {}) {
+    let now = { ...outline, breaks: { X: 0, Y: 2 } };
+    const op = (expect: typeof now, to: typeof now): Op => ({
+      kind: 'run',
+      check: async () => (JSON.stringify(now) === JSON.stringify(expect) ? null : 'changed since'),
+      apply: async () => {
+        if (opts.failWrite) throw new Error('The scene outline was not saved.');
+        now = to;
+      },
+    });
+    const before = outline;
+    const after = { ...outline, breaks: { X: 0, Y: 2 } };
+    return {
+      cmd: { label: 'Moved where Y starts', undo: [op(after, before)], redo: [op(before, after)] },
+      state: () => now,
+      set: (s: typeof now) => (now = s),
+    };
+  }
+
+  test('SM-7 a run step applies when its check passes, and redo applies the other way', async () => {
+    const e = edge();
+    const m = new UndoManager();
+    m.record(e.cmd);
+    expect(await m.step('undo', runIO())).toEqual({
+      status: 'applied',
+      label: 'Moved where Y starts',
+    });
+    expect(e.state()).toEqual(outline);
+    expect(await m.step('redo', runIO())).toEqual(expect.objectContaining({ status: 'applied' }));
+    expect(e.state().breaks).toEqual({ X: 0, Y: 2 });
+  });
+
+  test('SM-7 a run step whose check fails is skipped and writes nothing', async () => {
+    const e = edge();
+    const m = new UndoManager();
+    m.record(e.cmd);
+    const typed = { text: '- A\n- B\n- C', breaks: { X: 0, Y: 2 } };
+    e.set(typed);
+    const r = await m.step('undo', runIO());
+    expect(r).toEqual({
+      status: 'skipped',
+      label: 'Moved where Y starts',
+      reason: 'changed since',
+    });
+    expect(e.state()).toEqual(typed);
+    expect(m.stack.canUndo).toBe(false);
+    expect(m.stack.canRedo).toBe(false);
+  });
+
+  test('SM-7 a run step whose write throws is reverted and reported', async () => {
+    const e = edge({ failWrite: true });
+    const m = new UndoManager();
+    m.record(e.cmd);
+    const r = await m.step('undo', runIO());
+    expect(r.status).toBe('failed');
+    expect(stepNotice('undo', r)).toBe('Could not undo: The scene outline was not saved.');
+    expect(m.stack.canUndo).toBe(true);
+    expect(m.stack.canRedo).toBe(false);
+  });
+});
