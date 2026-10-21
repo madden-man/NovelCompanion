@@ -159,7 +159,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     const open = await emptyBible('im-whole');
     const wb = await parseWorkbookFile(FIXTURE_WORKBOOK);
     const first = await runAll(open, wb);
-    expect(first[2]!.mapping.columns.map((c) => [c.header, c.field])).toEqual([
+    expect((first[2]!.mapping as TableMapping).columns.map((c) => [c.header, c.field])).toEqual([
       ['Chronological: Hale Family', 'title'],
       ['POV', 'characterId'],
       ['Year', 'year'],
