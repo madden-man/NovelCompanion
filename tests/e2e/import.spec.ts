@@ -199,7 +199,7 @@ test('IM-4 a Word document previews with its headings, italics, and scene break,
   await expect(view().getByTestId('import-result-counts')).toContainText('Created 1');
   // A39: a general note is an open question.
   const notes = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
-  expect(notes.entries[0]!.entry).toMatchObject({
+  expect(notes.entries.find((e) => e.entry.title === 'Wedding notes')?.entry).toMatchObject({
     title: 'Wedding notes',
     sourceRef: 'chapter-03.docx#p1-p4',
   });
