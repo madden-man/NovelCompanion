@@ -345,7 +345,7 @@ describe('SB-3 SB-5 A24 more known answers', () => {
     expect(ids.indexOf('B4')).toBeLessThan(ids.indexOf('B4A'));
   });
 
-  test('SM-3 SB-5 a whole-part session takes the moments up to the story year and none after it', () => {
+  test('SM-3 A5 a whole-part session reads each strand up to its own year, so a moment after the first chapter year comes in through a later strand', () => {
     const sel = selectForSession(briefData(true), { kind: 'part', partId: 'PT2' });
     expect(sel.year).toBe(2040);
     const moments = sel.strands.flatMap((s) => group(s.groups, 'moments').map((it) => it.id));
@@ -356,6 +356,33 @@ describe('SB-3 SB-5 A24 more known answers', () => {
     expect(sel.ids).not.toContain('B1');
     const md = structuredBrief(sel);
     expect(md).toContain('## 5. Backstory');
+  });
+
+  test('SM-3 SB-5 in a one-chapter session a moment after the chapter year is not backstory; the next year sits under Planned ahead', () => {
+    const cols = briefCollections(true);
+    const b4 = cols.moments!.find((m) => m._id === 'B4')!;
+    cols.moments = [
+      ...cols.moments!,
+      { ...b4, _id: 'M-NEXT', title: 'Iris answers the letter', year: 2046 },
+      { ...b4, _id: 'M-LATER', title: 'Iris moves to Seattle', year: 2050 },
+    ];
+    const sel = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH6' });
+    expect(sel.year).toBe(2045);
+    const strand = sel.strands[0]!;
+    const backstory = group(strand.groups, 'moments').map((it) => it.id);
+    expect(backstory).toContain('B4');
+    expect(backstory).not.toContain('M-NEXT');
+    expect(backstory).not.toContain('M-LATER');
+    const ahead = [...strand.groups, ...sel.shared]
+      .filter((g) => g.kind === 'plannedAhead')
+      .flatMap((g) => g.items.map((it) => it.id));
+    expect(ahead).toContain('M-NEXT');
+    expect(sel.ids).not.toContain('M-LATER');
+    const md = structuredBrief(sel);
+    const heading = md.indexOf('## Planned ahead (after 2045)');
+    expect(heading).toBeGreaterThan(0);
+    expect(md.indexOf('[[M-NEXT]]')).toBeGreaterThan(heading);
+    expect(md.indexOf('[[M-NEXT]]')).toBeGreaterThan(md.lastIndexOf('[[B4]]'));
   });
 
   test('A24 decided questions are selected by the same link rule and shown under Decided with their decision', () => {

@@ -790,9 +790,12 @@ export function selectForSession(
       const voice = voiceAt(moments, Y);
       push('characters', characterItem(c, Y, voice));
       // SM-3: their moments up to the story year are their backstory; the voice is on the character.
+      // SB-5, A33: a moment of the year after sits under Planned ahead, as events do; later ones wait.
       for (const m of moments) {
-        if ((num(m.year) as number) > Y || str(m._id) === str(voice?._id)) continue;
-        push('moments', momentItem(m, c));
+        if (str(m._id) === str(voice?._id)) continue;
+        const year = num(m.year) as number;
+        if (year <= Y) push('moments', momentItem(m, c));
+        else if (year <= Y + WINDOW_AHEAD) push('plannedAhead', momentItem(m, c));
       }
     }
 
