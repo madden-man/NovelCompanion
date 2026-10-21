@@ -2,7 +2,11 @@ import { ReadModel } from '../readmodel';
 import { SearchIndex } from '../search';
 import { createBible, migrate, openBible, schemaVersion } from './bibles';
 import { LATEST_SCHEMA_VERSION } from './migrations';
-import { MIGRATION9_SNAPSHOT_LABEL, needsDailySnapshot } from '../../shared/domain/snapshots';
+import {
+  MIGRATION10_SNAPSHOT_LABEL,
+  MIGRATION9_SNAPSHOT_LABEL,
+  needsDailySnapshot,
+} from '../../shared/domain/snapshots';
 import type { BibleHandle } from './bibles';
 import type { Store } from './connection';
 import { Repository } from './repository';
@@ -11,6 +15,8 @@ import { SnapshotService } from '../backup/snapshots';
 
 /** The schema version of migration 9 (A39), the one that drops collections. */
 const SIMPLIFIED_MODEL_VERSION = 9;
+/** The schema version of migration 10 (A44), the one that rewrites long text as Markdown. */
+const MARKDOWN_TEXT_VERSION = 10;
 
 /** The bible's snapshot keep setting (BK-1), read straight from `meta` before the read model exists. */
 async function storedSnapshotKeep(handle: BibleHandle): Promise<number> {
@@ -63,12 +69,17 @@ export async function openBibleSession(
       );
     }
   } else {
-    // SM-2: migration 9 drops whole collections, so the bible is snapshotted as it is first.
-    if (options.snapshotRoot && (await schemaVersion(handle)) < SIMPLIFIED_MODEL_VERSION) {
+    // SM-2: migration 9 drops whole collections, and A44: migration 10 rewrites every long
+    // text, so the bible is snapshotted as it is first. One snapshot covers both.
+    const have = options.snapshotRoot ? await schemaVersion(handle) : LATEST_SCHEMA_VERSION;
+    if (options.snapshotRoot && have < MARKDOWN_TEXT_VERSION) {
       // A migration snapshot is never pruned; the keep setting applies to the others.
       const keep = await storedSnapshotKeep(handle);
       const before = new SnapshotService(handle, options.snapshotRoot, () => keep, options.now);
-      await before.take('migration', MIGRATION9_SNAPSHOT_LABEL);
+      await before.take(
+        'migration',
+        have < SIMPLIFIED_MODEL_VERSION ? MIGRATION9_SNAPSHOT_LABEL : MIGRATION10_SNAPSHOT_LABEL,
+      );
     }
     await migrate(handle);
   }

@@ -1,8 +1,12 @@
 /**
  * Word documents (IM-4, MS-1): the HTML mammoth makes from a .docx becomes
  * the body format the editor stores. Headings, italics, bold, lists, and
- * scene breaks survive; everything else is plain text.
+ * scene breaks survive; everything else is plain text. Since A44 the bodies
+ * the editor stores are Markdown (`blocksToMarkdown`); the manuscript text of
+ * a chapter stays the HTML of `blocksToBody`, read only, since its line
+ * numbers and finding hashes are taken from it (CC-3, CC-4).
  */
+import { htmlToMarkdown } from '../markdown';
 
 export interface DocBlock {
   /** The paragraph number in the document, from 1, counting every paragraph, heading, and list item. */
@@ -220,6 +224,11 @@ export function blocksToBody(blocks: DocBlock[]): string {
   closeList();
   while (out[out.length - 1] === '<hr>') out.pop();
   return out.join('');
+}
+
+/** A44: the body as an editable field stores it, Markdown: `##` and `###` headings, lists, `---` scene breaks. */
+export function blocksToMarkdown(blocks: DocBlock[]): string {
+  return htmlToMarkdown(blocksToBody(blocks));
 }
 
 /** Body HTML for mammoth's output (IM-4). */

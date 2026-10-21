@@ -12,6 +12,8 @@ import type { Entry } from '../data';
 import { SaveState, useAutosave } from '../editor';
 import { useUndo } from '../undo';
 import { Zh } from '../Zh';
+import { RichText } from '../richText/RichText';
+import { MarkdownView } from '../richText/MarkdownView';
 import { EventsWindow, GroupBlock, onEventStrip, updateWithUndo } from './common';
 import type { OpenEntry, SelectionView } from './common';
 import './relevant.css';
@@ -136,9 +138,13 @@ function Tile(props: {
           <>
             <dl className="kv" data-testid="tile-detail">
               <dt>In the story</dt>
-              <dd data-testid="tile-role">{role || 'Not written yet.'}</dd>
+              <dd data-testid="tile-role">
+                {role ? <MarkdownView text={role} /> : 'Not written yet.'}
+              </dd>
               <dt>Description</dt>
-              <dd data-testid="tile-description">{body || 'Not written yet.'}</dd>
+              <dd data-testid="tile-description">
+                {body ? <MarkdownView text={body} /> : 'Not written yet.'}
+              </dd>
               <dt>Family</dt>
               <dd data-testid="tile-family">{familyLine(rel, unionLabel)}</dd>
             </dl>
@@ -150,7 +156,11 @@ function Tile(props: {
                     <li key={m._id} data-id={m._id}>
                       <span className="chip time num">{momentYears(m)}</span>{' '}
                       <span>{entryTitle(m)}</span>
-                      {typeof m.body === 'string' && m.body && <span>. {m.body}</span>}
+                      {typeof m.body === 'string' && m.body && (
+                        <span>
+                          . <MarkdownView text={m.body} inline />
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -229,22 +239,20 @@ function Characters({
 function SceneNote({ chapterId }: { chapterId: string }) {
   const ed = useAutosave('chapters', chapterId);
   const id = useId();
-  const ro = useWriteGuard();
   const value = typeof ed.draft?.sceneNote === 'string' ? ed.draft.sceneNote : '';
   return (
     <section className="field rel-scene" data-testid="scene-note" aria-label="Scene note">
       <div className="row tight">
-        <label htmlFor={id}>What happens in this scene</label>
+        <label id={id}>What happens in this scene</label>
         <SaveState status={ed.status} error={ed.error} />
       </div>
-      <textarea
-        id={id}
-        rows={4}
+      <RichText
+        labelledBy={id}
+        size="notes"
         value={value}
-        disabled={!ed.draft || ro.off}
-        {...ro.tip}
+        disabled={!ed.draft}
         placeholder="Who wants what, what goes wrong, where it ends."
-        onChange={(e) => ed.setField('sceneNote', e.target.value)}
+        onChange={(md) => ed.setField('sceneNote', md)}
         onBlur={() => void ed.flush()}
       />
     </section>
@@ -265,7 +273,12 @@ function MomentRow(props: { row: BackstoryRow; onOpen: OpenEntry }) {
         <button type="button" className="link-btn" onClick={() => props.onOpen('moments', row.id)}>
           {row.title}
         </button>
-        {row.body && <> {row.body}</>}
+        {row.body && (
+          <>
+            {' '}
+            <MarkdownView text={row.body} inline />
+          </>
+        )}
       </span>
     </li>
   );

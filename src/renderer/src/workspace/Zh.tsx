@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useMemo, useState } from 'react';
 import { useWriteGuard } from '../connection';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent } from 'react';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { zhPieces } from '../../../shared/domain/zh';
 import type { ZhTerm } from '../../../shared/domain/zh';
@@ -140,70 +140,11 @@ export function Zh({ text, actions = true }: { text: string; actions?: boolean }
   );
 }
 
-const BLOCKS = new Set(['p', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'div']);
-const INLINE = new Set(['em', 'strong', 'i', 'b', 'u', 'span']);
-
-function renderNode(node: Node, key: string): ReactNode {
-  if (node.nodeType === Node.TEXT_NODE) return <Zh key={key} text={node.textContent ?? ''} />;
-  if (node.nodeType !== Node.ELEMENT_NODE) return null;
-  const el = node as Element;
-  const tag = el.tagName.toLowerCase();
-  const kids = Array.from(el.childNodes).map((n, i) => renderNode(n, `${key}.${i}`));
-  if (tag === 'br' || tag === 'hr') return tag === 'br' ? <br key={key} /> : <hr key={key} />;
-  if (BLOCKS.has(tag) || INLINE.has(tag)) {
-    const Tag = tag as 'p';
-    return <Tag key={key}>{kids}</Tag>;
-  }
-  return <span key={key}>{kids}</span>;
-}
-
-/**
- * Stored rich text shown read-only with its Chinese runs wrapped (GL-3).
- * Only plain structure survives: paragraphs, lists, headings, emphasis.
- */
-export function ZhHtml({ html }: { html: string }) {
-  const nodes = useMemo(() => {
-    const body = new DOMParser().parseFromString(html, 'text/html').body;
-    return Array.from(body.childNodes);
-  }, [html]);
-  return <div className="zh-html">{nodes.map((n, i) => renderNode(n, String(i)))}</div>;
-}
-
 const CJK_TEST = /[㐀-䶿一-鿿豈-﫿\u{20000}-\u{2fa1f}]/u;
 
 /** True when the text holds any Chinese character. */
 export function hasCjk(text: string): boolean {
   return CJK_TEST.test(text);
-}
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** Plain text from a text area as simple HTML: blank lines split paragraphs, single breaks stay. */
-export function plainToHtml(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
-    .join('');
-}
-
-/** Stored text that is already HTML (manuscript text, rich bodies) is shown as it is. */
-const looksLikeHtml = (text: string) =>
-  /<\/?(p|em|strong|i|b|u|ul|ol|li|h[1-4]|br|blockquote)\b/i.test(text);
-
-/**
- * GL-3: a read-only preview shown beside a long-text field that holds Chinese
- * characters, so the characters can be hovered or focused for their meaning
- * while the field itself stays a plain text area.
- */
-export function ZhPreview({ text }: { text: string }) {
-  if (!hasCjk(text)) return null;
-  return (
-    <div className="zh-preview" data-testid="zh-preview" aria-label="Preview with meanings">
-      <span className="eyebrow">Preview with meanings</span>
-      <ZhHtml html={looksLikeHtml(text) ? text : plainToHtml(text)} />
-    </div>
-  );
 }
 
 /**

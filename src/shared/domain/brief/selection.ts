@@ -45,6 +45,7 @@ import type { LifeState } from '../ages';
 import { describeState } from '../ages';
 import { descriptionFor, entriesFor, placeForText, placePath } from '../culture';
 import { yearOf } from '../dates';
+import { plainText } from '../markdown';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { latestLog } from '../sessionLog';
@@ -309,22 +310,12 @@ const idList = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Plain text from the editor's HTML, for briefs and the budget. */
-export function plain(html: unknown): string {
-  return str(html)
-    .replace(/<hr\s*\/?>/gi, '\n* * *\n')
-    .replace(/<\/(p|h[1-6]|li|blockquote|div)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n\s*\n+/g, '\n')
-    .trim();
+/**
+ * Plain text of a stored long text, for briefs and the budget: Markdown since
+ * A44, and the HTML stored before it reads the same way.
+ */
+export function plain(text: unknown): string {
+  return plainText(text);
 }
 
 const joinText = (...parts: string[]) =>

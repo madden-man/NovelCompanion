@@ -60,8 +60,13 @@ const label = (id: string) => row(id).locator('.bs-row-label');
 const marker = (id: string) => grid().locator(`.bs-marker[data-id="${id}"]`);
 const table = () => view().getByTestId('moments-table');
 const tableRow = (id: string) => table().locator(`tr[data-id="${id}"]`);
+/** A cell's box: an input for years, a text area for the title, a rich text box (A44) for the notes. */
 const cell = (id: string, field: string) =>
-  tableRow(id).locator(`[data-field="${field}"] textarea, [data-field="${field}"] input`).first();
+  tableRow(id)
+    .locator(
+      `[data-field="${field}"] input, [data-field="${field}"] textarea, [data-field="${field}"] [role="textbox"]`,
+    )
+    .first();
 
 const getMoment = async (id: string) =>
   (await invoke('entry.get', { collection: 'moments', id })).entry as Record<string, unknown>;
@@ -282,7 +287,7 @@ test('SM-9 TL-3 picking a person lists their moments in year order with their ag
   await expect(label('H1')).toHaveAttribute('aria-pressed', 'true');
   await expect(tableRow('H1-voice-0')).toHaveAttribute('aria-current', 'true');
   await expect(tableRow('H1-voice-0').getByTestId('moment-age')).toHaveText('70');
-  await expect(cell('H1-voice-0', 'body')).toHaveValue(
+  await expect(cell('H1-voice-0', 'body')).toHaveText(
     'Speaks in short, dry sentences and never raises her voice.',
   );
 });
@@ -339,7 +344,7 @@ test('SM-9 ED-3 a cell edit saves over IPC on Enter or blur, one undo step each,
   await expect(cell('Z3-lives-1', 'year')).toHaveValue('2027');
   expect((await getMoment('Z3-lives-1')).year).toBe(2027);
   await page.keyboard.press('Meta+z');
-  await expect(cell('Z3-lives-1', 'body')).toHaveValue('');
+  await expect(cell('Z3-lives-1', 'body')).toHaveText('');
   expect((await getMoment('Z3-lives-1')).body).toBe('');
 });
 
@@ -507,7 +512,7 @@ test('SM-9 A33 the picker lists the world events of the year plus or minus one a
   await expect
     .poll(async () => (await getMoment('H1-voice-0')).worldContext)
     .toBe('Care robots licensed for home use in Oregon');
-  await expect(cell('H1-voice-0', 'worldContext')).toHaveValue(
+  await expect(cell('H1-voice-0', 'worldContext')).toHaveText(
     'Care robots licensed for home use in Oregon',
   );
   // Picking it again adds nothing; Escape closes the list.
@@ -515,7 +520,7 @@ test('SM-9 A33 the picker lists the world events of the year plus or minus one a
   await page.keyboard.press('Escape');
   await expect(picker).toHaveCount(0);
   await blurAndUndo();
-  await expect(cell('H1-voice-0', 'worldContext')).toHaveValue('');
+  await expect(cell('H1-voice-0', 'worldContext')).toHaveText('');
   expect((await getMoment('H1-voice-0')).worldContext).toBe('');
   // Text typed in the cell and not yet saved is kept: the title goes after it.
   const ctx = cell('H1-voice-0', 'worldContext');
@@ -525,13 +530,14 @@ test('SM-9 A33 the picker lists the world events of the year plus or minus one a
   await expect
     .poll(async () => (await getMoment('H1-voice-0')).worldContext)
     .toBe('Rents doubled that spring.\nCare robots licensed for home use in Oregon');
-  await expect(ctx).toHaveValue(
+  await expect(ctx).toHaveText(
     'Rents doubled that spring.\nCare robots licensed for home use in Oregon',
+    { useInnerText: true },
   );
   await blurAndUndo();
-  await expect(ctx).toHaveValue('Rents doubled that spring.');
+  await expect(ctx).toHaveText('Rents doubled that spring.');
   await page.keyboard.press('Meta+z');
-  await expect(ctx).toHaveValue('');
+  await expect(ctx).toHaveText('');
   expect((await getMoment('H1-voice-0')).worldContext).toBe('');
   // Z3 in 1988: no events within a year.
   await label('Z3').click();

@@ -322,7 +322,7 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
 
     // The documents.
     expect(open.repo.list('characters').find((c) => c.title === 'Dawn')!.backstory).toBe(
-      '<p>Dawn was born.</p><p>Dawn grew.</p>',
+      'Dawn was born.\n\nDawn grew.',
     );
     const manuscript = open.repo.list('chapters').filter((c) => c.sourceFile === 'East_Winds.docx');
     expect(manuscript.map((c) => c.title).sort()).toEqual(['A first chapter', 'Introduction']);
@@ -339,7 +339,7 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
     const note = open.repo
       .list('openQuestions')
       .find((e) => e.title.startsWith('East Winds: the rest'))!;
-    expect(note.body).toBe('<h1>Characters</h1><p>Character notes.</p>');
+    expect(note.body).toBe('## Characters\n\nCharacter notes.');
     const eras = open.repo
       .list('eraStates')
       .filter((e) => e.sourceRef.startsWith('East_Winds_World_Development.docx'));

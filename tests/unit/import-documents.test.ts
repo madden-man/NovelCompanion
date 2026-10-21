@@ -223,9 +223,9 @@ describe('IM-4 World Development: era states by their headings', () => {
       ['2039: The hinge', 2039, 2039],
       ['The 2030s', 2030, 2039],
     ]);
-    // SM-4: an era is a name, years, and a body; its sub-headings stay in the body.
+    // SM-4: an era is a name, years, and a body; its sub-headings stay in the body (A44: as Markdown).
     expect(eras[0]!.body).toBe(
-      '<p>It starts quietly.</p><h3>Technology</h3><p>Robots.</p><h3>Climate</h3><p>Floods.</p>',
+      'It starts quietly.\n\n### Technology\n\nRobots.\n\n### Climate\n\nFloods.',
     );
     expect(skipped.map((s) => s.heading?.text ?? null)).toEqual([
       'How the world gets here',

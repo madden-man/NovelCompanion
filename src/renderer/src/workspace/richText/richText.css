@@ -1,0 +1,161 @@
+/* A44: the rich text box. It reads like a page: a measure of about 75
+   characters, open line spacing, and a height that follows the text. */
+.rich-text {
+  position: relative;
+  max-width: 75ch;
+  min-width: 0;
+}
+.rich-text-input {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  cursor: text;
+}
+.rich-text-input.rich-prose {
+  min-height: calc(1.55em * 6 + 18px);
+}
+.rich-text-input.rich-notes {
+  min-height: calc(1.55em * 3 + 18px);
+}
+.rich-text-input.rich-quick {
+  min-height: calc(1.55em * 2 + 18px);
+}
+.rich-text-input:focus-visible,
+.rich-text-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rich-text.is-disabled .rich-text-input {
+  background: var(--surface-2);
+  cursor: default;
+}
+.has-warning .rich-text-input {
+  border-color: var(--warning-ink);
+}
+.has-error .rich-text-input {
+  border-color: var(--critical);
+}
+.rich-text-input > :first-child,
+.md-body > :first-child {
+  margin-top: 0;
+}
+.rich-text-input > :last-child,
+.md-body > :last-child {
+  margin-bottom: 0;
+}
+.rich-text-input p,
+.md-body p {
+  margin: 0 0 0.6em;
+}
+.rich-text-input h2,
+.md-body h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--fg);
+  margin: 0.9em 0 0.35em;
+}
+.rich-text-input h3,
+.md-body h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--fg);
+  margin: 0.8em 0 0.3em;
+}
+.rich-text-input ul,
+.rich-text-input ol,
+.md-body ul,
+.md-body ol {
+  margin: 0 0 0.6em;
+  padding-left: 1.5em;
+}
+.rich-text-input li > p,
+.md-body li > p {
+  margin: 0;
+}
+.rich-text-input blockquote,
+.md-body blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--fg-2);
+}
+.rich-text-input hr,
+.md-body hr {
+  border: 0;
+  text-align: center;
+  margin: 0.9em 0;
+}
+.rich-text-input hr::after,
+.md-body hr::after {
+  content: '* * *';
+  color: var(--fg-2);
+  letter-spacing: 0.4em;
+}
+.rich-text-input hr.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+.rich-text.is-empty .rich-text-input[data-placeholder]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--fg-2);
+  pointer-events: none;
+}
+.mention-chip {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.rich-bubble {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 50;
+}
+.rich-tool {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.rich-tool:hover {
+  background: var(--surface-2);
+}
+.rich-tool[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.md-body {
+  line-height: 1.55;
+  max-width: 75ch;
+  overflow-wrap: anywhere;
+}
+/* A table cell (Backstory moments): the box fits the row. */
+.bs-cell-rich {
+  min-width: 9rem;
+}
+.bs-cell-rich .rich-text-input {
+  font-size: inherit;
+  padding: 4px 6px;
+}

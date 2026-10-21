@@ -103,7 +103,7 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   // Reading works: an entry, search, and the deterministic views.
   await openMargaret();
   const editor = page.getByTestId('editor');
-  await expect(field(editor, 'role').locator('textarea').first()).toBeDisabled();
+  await expect(field(editor, 'role').getByRole('textbox').first()).toBeDisabled();
   // A38: the character page is several write groups, one per section; every one carries the reason.
   const groups = editor.locator('fieldset.write-group');
   await expect(groups.first()).toHaveAttribute('title', READ_ONLY_REASON);
@@ -151,7 +151,7 @@ test('ARCH-6 when MongoDB goes away mid-session, an edit shows Not saved, never 
   await expect(autosave).toHaveText('Saved');
   await server.stop({ doCleanup: false, force: true });
 
-  await field(page.getByTestId('editor'), 'role').locator('textarea').first().fill('Lost town');
+  await field(page.getByTestId('editor'), 'role').getByRole('textbox').first().fill('Lost town');
   await expect(autosave).toContainText('Not saved', { timeout: 60_000 });
   await expect(autosave).toContainText('lost its connection to MongoDB');
   await expect(autosave).not.toHaveText('Saved');
@@ -159,7 +159,7 @@ test('ARCH-6 when MongoDB goes away mid-session, an edit shows Not saved, never 
   await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
   await expect(banner.getByTestId('open-snapshot')).toBeVisible();
   // The typed text is still in the field, so nothing is lost on screen either.
-  await expect(field(page.getByTestId('editor'), 'role').locator('textarea').first()).toHaveValue(
+  await expect(field(page.getByTestId('editor'), 'role').getByRole('textbox').first()).toHaveText(
     'Lost town',
   );
   await stop();
@@ -178,7 +178,7 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await invoke('bible.open', { slug: SLUG });
   await openMargaret();
   const editor = page.getByTestId('editor');
-  const role = () => field(page.getByTestId('editor'), 'role').locator('textarea').first();
+  const role = () => field(page.getByTestId('editor'), 'role').getByRole('textbox').first();
   await expect(editor.getByTestId('autosave').first()).toHaveText('Saved');
   await member.stop({ doCleanup: false, force: true });
 
@@ -197,7 +197,7 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await expect(page.getByTestId('current-bible')).toHaveText(NAME);
   await openMargaret();
   await expect(role()).toBeDisabled();
-  await expect(role()).not.toHaveValue('Offline town');
+  await expect(role()).not.toHaveText('Offline town');
 
   // MongoDB is back: Try again closes the snapshot and opens the live bible, writable again.
   await member.start(true);

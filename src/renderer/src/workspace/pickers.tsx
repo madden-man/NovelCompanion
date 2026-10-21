@@ -86,7 +86,7 @@ export function PickerList(props: {
 
 /** Arrow keys, Enter, and Escape for a picker. Returns true when it used the key. */
 export function pickerKeys(
-  e: KeyboardEvent,
+  e: Pick<KeyboardEvent, 'key' | 'preventDefault'>,
   hits: Hit[],
   active: number,
   setActive: (n: number) => void,

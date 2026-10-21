@@ -1,6 +1,7 @@
 import { monotonicFactory } from 'ulid';
 import {
   blocksToBody,
+  blocksToMarkdown,
   itemNeeds,
   mapSheet,
   planChanges,
@@ -88,7 +89,9 @@ export function planDocumentImport(
   const ctx = contextFor(open, file);
   const set = planDocument({
     file,
-    body: blocksToBody(blocks),
+    // A44: a chapter's manuscript text stays HTML (its line numbers come from it); every
+    // other target is an editable field, which stores Markdown.
+    body: target.kind === 'chapter' ? blocksToBody(blocks) : blocksToMarkdown(blocks),
     span: spanOf(blocks),
     target,
     entries: (c: EntryCollection) => ctx.entries(c),

@@ -25,6 +25,8 @@ import { ProposalDiff } from './review';
 import { formatMoment, useStoryTime } from './storyTime';
 import { createCommand } from '../../../shared/domain/undoRunner';
 import { useUndo } from './undo';
+import { RichText } from './richText/RichText';
+import type { RichTextHandle } from './richText/RichText';
 import './capture.css';
 
 /**
@@ -410,7 +412,7 @@ function CaptureDialog(props: {
   const { phase, status, cards, saved } = props;
   const ids = { title: useId(), input: useId(), hint: useId(), time: useId() };
   const dialogRef = useRef<HTMLDivElement>(null);
-  const area = useRef<HTMLTextAreaElement>(null);
+  const area = useRef<RichTextHandle>(null);
   const opener = useRef<Element | null>(null);
   useFocusTrap(dialogRef);
 
@@ -423,13 +425,7 @@ function CaptureDialog(props: {
     };
   }, []);
 
-  // The field grows with the text and takes focus whenever the box is ready for typing.
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
-  }, [props.text, phase]);
+  // The field grows with the text (A44) and takes focus whenever the box is ready for typing.
   useEffect(() => {
     if (phase === 'edit') area.current?.focus();
     else if (phase !== 'running')
@@ -485,22 +481,24 @@ function CaptureDialog(props: {
 
         {phase === 'edit' && (
           <div className="field">
-            <label htmlFor={ids.input}>What do you want to add?</label>
-            <textarea
-              id={ids.input}
-              ref={area}
-              rows={2}
+            <label id={ids.input}>What do you want to add?</label>
+            <RichText
+              handle={area}
+              mode="inline"
+              size="quick"
               className="capture-input"
+              labelledBy={ids.input}
+              describedBy={ids.hint}
               value={props.text}
-              aria-describedby={ids.hint}
-              onChange={(e) => props.setText(e.target.value)}
+              onChange={props.setText}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-                  e.preventDefault();
                   props.onSend();
+                  return true;
                 }
+                return false;
               }}
-              data-testid="capture-input"
+              testId="capture-input"
             />
             <p className="capture-hint" id={ids.hint}>
               Enter sends it to Claude, Shift+Enter for a new line.

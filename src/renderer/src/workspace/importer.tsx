@@ -11,7 +11,7 @@ import type { GridMapping, Mapping, TableMapping } from '../../../shared/domain/
 import { call, plainError } from '../api';
 import { useEntries } from './data';
 import { formatTime } from './format';
-import { ZhHtml } from './Zh';
+import { MarkdownView } from './richText/MarkdownView';
 import { ImportProposals } from './importProposals';
 
 type WorkbookInfo = Response<'import.workbook'>;
@@ -955,7 +955,7 @@ function DocumentImporter(props: {
           </ul>
         )}
         <div className="doc-preview">
-          <ZhHtml html={info.body} />
+          <MarkdownView text={info.body} />
         </div>
       </div>
       <div className="row">

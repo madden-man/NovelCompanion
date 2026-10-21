@@ -87,14 +87,14 @@ test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with th
   await input().pressSequentially('First line');
   await input().press('Shift+Enter');
   await input().pressSequentially('second line');
-  await expect(input()).toHaveValue('First line\nsecond line');
+  await expect(input()).toHaveText('First line\nsecond line', { useInnerText: true });
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
 
   await rail(page, 'Family tree').click();
   await page.keyboard.press('Meta+k');
   await expect(box()).toBeVisible();
-  await expect(input()).toHaveValue('First line\nsecond line');
+  await expect(input()).toHaveText('First line\nsecond line', { useInnerText: true });
   // NF-2: Tab stays inside the box.
   for (let i = 0; i < 4; i++) {
     await page.keyboard.press('Tab');
@@ -225,7 +225,7 @@ test('KB-6 Review later leaves the proposal pending in the review queue', async 
   );
   // Reopening starts fresh: the sent text is not put back.
   await page.keyboard.press('Meta+k');
-  await expect(input()).toHaveValue('');
+  await expect(input()).toHaveText('');
   await page.keyboard.press('Escape');
 });
 
@@ -267,7 +267,7 @@ test('KB-7 with the key removed, Enter saves an open question and sends nothing'
   expect((await invoke('claude.runs', { feature: 'capture' })).runs).toHaveLength(before);
   // Add another clears the box for the next one.
   await box().getByRole('button', { name: 'Add another' }).click();
-  await expect(input()).toHaveValue('');
+  await expect(input()).toHaveText('');
   await expect(input()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();

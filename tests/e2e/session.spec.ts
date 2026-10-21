@@ -315,7 +315,7 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
 test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step, and survives a reload', async () => {
   const note = strand('CH6-present').getByTestId('scene-note');
   const box = note.getByLabel('What happens in this scene');
-  await expect(box).toHaveValue('');
+  await expect(box).toHaveText('');
   await box.fill('Iris climbs to the attic at night and finds the box.');
   await expect(note.getByTestId('autosave')).toHaveText('Saved');
   await expect
@@ -334,7 +334,7 @@ test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step
   await page.getByTestId('top-relevant').click();
   await expect(
     strand('CH6-present').getByTestId('scene-note').getByLabel('What happens in this scene'),
-  ).toHaveValue('Iris climbs to the attic at night and finds the box.');
+  ).toHaveText('Iris climbs to the attic at night and finds the box.');
 });
 
 test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing across a pause is two, and Undo restores the stored note', async () => {
@@ -345,12 +345,13 @@ test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing 
   const stored = async () =>
     (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.sceneNote;
   const first = 'Iris climbs to the attic at night and finds the box.';
-  await expect(box).toHaveValue(first);
+  await expect(box).toHaveText(first);
   const label = 'Changed What happens in this scene on The Letter';
 
   // Within a pause: a few keys, one save, one step.
   const before = await history.count();
-  await box.press('End');
+  await box.press('Meta+ArrowRight');
+  await page.waitForTimeout(60);
   await box.pressSequentially(' Rain.');
   await expect(note.getByTestId('autosave')).toHaveText('Saved');
   await expect.poll(stored).toBe(`${first} Rain.`);
@@ -372,12 +373,12 @@ test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing 
   const undo = page.getByTestId('top-bar').getByRole('button', { name: 'Undo', exact: true });
   await undo.click();
   await expect.poll(stored).toBe(`${first} Rain. She waits.`);
-  await expect(box).toHaveValue(`${first} Rain. She waits.`);
+  await expect(box).toHaveText(`${first} Rain. She waits.`);
   await undo.click();
   await expect.poll(stored).toBe(`${first} Rain.`);
   await undo.click();
   await expect.poll(stored).toBe(first);
-  await expect(box).toHaveValue(first);
+  await expect(box).toHaveText(first);
 });
 
 test('KB-6 SM-6 Cmd+K opens the capture box with the story time on Continuity checker, Cultural data and Backstory, and Escape closes it', async () => {
@@ -655,7 +656,7 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   const flow = ch.getByTestId('written-flow');
   const draft = flow.getByLabel('Summary to approve');
   // The recorded Claude (T-3) drafts it from the imported chapter text.
-  await expect(draft).toHaveValue(
+  await expect(draft).toHaveText(
     'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
   expect((await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary).toBe(
@@ -756,7 +757,7 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
   await ms.locator('[data-chapter="CH6"]').click();
   await ms.getByRole('button', { name: 'Summary and promotions' }).click();
   const flow = ms.getByTestId('written-flow');
-  await expect(flow.getByLabel('Summary to approve')).toHaveValue(
+  await expect(flow.getByLabel('Summary to approve')).toHaveText(
     'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
   await expect(flow).toContainText('Generated summary (claude-sonnet-5-5)');

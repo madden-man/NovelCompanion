@@ -299,7 +299,8 @@ describe('GD-2 choose files and folders; Word, Excel, Google Docs, and Google Sh
     expect(file).toMatchObject({ name: 'Chapter 3.docx', kind: 'document' });
     expect(fake.calls).toContain('GET /drive/v3/files/docCh3/export');
     const doc = await invoke('import.document', { fileId: file.id });
-    expect(doc.body).toContain('<em>lucky</em>');
+    // A44: the preview body is the Markdown the note will store.
+    expect(doc.body).toContain('*lucky*');
     const plan = await invoke('import.documentPlan', {
       fileId: file.id,
       target: { kind: 'note', title: 'Wedding notes' },
@@ -307,7 +308,7 @@ describe('GD-2 choose files and folders; Word, Excel, Google Docs, and Google Sh
     expect(plan.created).toBe(1);
     await invoke('import.apply', { planId: plan.planId, approved: plan.items.map((i) => i.id) });
     const entry = open.repo.list('openQuestions').find((e) => e.title === 'Wedding notes')!;
-    expect(entry.body).toContain('<em>lucky</em>');
+    expect(entry.body).toContain('*lucky*');
     expect(entry.sourceRef).toBe('Chapter 3.docx#p1-p4');
   });
 

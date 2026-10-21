@@ -1,5 +1,6 @@
 import MiniSearch from 'minisearch';
 import { ENTRY_COLLECTIONS } from '../../shared/schema';
+import { plainText } from '../../shared/domain/markdown';
 import type { ReadModel, StoredDoc } from '../readmodel';
 import { tokenizeForIndex, tokenizeForQuery } from './tokenize';
 
@@ -40,8 +41,9 @@ const BODY_FIELDS = [
   'sceneNote',
 ];
 
-function stripTags(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ');
+/** A44: the words of a stored long text, without Markdown marks or older HTML tags. */
+function bodyText(text: string): string {
+  return plainText(text);
 }
 
 function collectStrings(value: unknown, out: string[]): void {
@@ -59,7 +61,7 @@ const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 /** Text inside nested fields: place descriptions and strand labels. */
 function collectText(value: unknown, out: string[]): void {
   if (typeof value === 'string') {
-    if (!ULID.test(value)) out.push(stripTags(value));
+    if (!ULID.test(value)) out.push(bodyText(value));
   } else if (Array.isArray(value)) value.forEach((v) => collectText(v, out));
   else if (value && typeof value === 'object') {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -75,7 +77,7 @@ export function entrySnippet(doc: StoredDoc, max = 140): string {
   for (const f of BODY_FIELDS) {
     const v = doc[f];
     if (typeof v !== 'string') continue;
-    const text = stripTags(v).replace(/\s+/g, ' ').trim();
+    const text = bodyText(v).replace(/\s+/g, ' ').trim();
     if (text) return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
   }
   return '';
@@ -85,7 +87,7 @@ function toIndexed(collection: string, doc: StoredDoc): IndexedDoc {
   const body: string[] = [];
   for (const f of BODY_FIELDS) {
     const v = doc[f];
-    if (typeof v === 'string') body.push(stripTags(v));
+    if (typeof v === 'string') body.push(bodyText(v));
   }
   const names: string[] = [];
   collectStrings(doc.names, names);

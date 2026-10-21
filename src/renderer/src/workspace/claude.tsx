@@ -15,6 +15,8 @@ import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { formatTime } from './format';
+import { RichText } from './richText/RichText';
+import type { RichTextHandle } from './richText/RichText';
 import './claude.css';
 
 /**
@@ -408,7 +410,7 @@ function ClaudePanel() {
   const [runId, setRunId] = useState<string | null>(null);
   const [asked, setAsked] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<RichTextHandle>(null);
   const opener = useRef<Element | null>(document.activeElement);
   const ids = { title: useId(), input: useId(), history: useId() };
 
@@ -610,20 +612,22 @@ function ClaudePanel() {
           void ask();
         }}
       >
-        <label htmlFor={ids.input}>Your question about the bible or the manuscript</label>
-        <textarea
-          id={ids.input}
-          ref={inputRef}
-          rows={3}
+        <label id={ids.input}>Your question about the bible or the manuscript</label>
+        <RichText
+          handle={inputRef}
+          mode="inline"
+          size="notes"
+          labelledBy={ids.input}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={setDraft}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
               void ask();
+              return true;
             }
+            return false;
           }}
-          data-testid="claude-input"
+          testId="claude-input"
         />
         <div className="row tight">
           <button

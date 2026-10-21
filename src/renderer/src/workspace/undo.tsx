@@ -19,16 +19,63 @@ export type { Op, UndoCommand };
 /** Undo writes go through the same IPC channels as every other write. */
 const io: UndoIO = undoIO(call);
 
-type TextField = HTMLInputElement | HTMLTextAreaElement;
+/**
+ * A text box Cmd+Z can step through before the app's history (ED-3): a native
+ * input or text area, or a rich text box (A44) that registers itself.
+ */
+export interface TextTarget {
+  /** The box's current text, as it would be saved. */
+  value(): string;
+  /** Step the box's own history; true when it did. */
+  undo(): boolean;
+  redo(): boolean;
+}
 
-function focusedTextField(): TextField | null {
+const richTargets = new WeakMap<Element, TextTarget>();
+
+/** A rich text box registers its editable element; the return value unregisters it. */
+export function registerTextTarget(el: Element, target: TextTarget): () => void {
+  richTargets.set(el, target);
+  return () => {
+    if (richTargets.get(el) === target) richTargets.delete(el);
+  };
+}
+
+/** What a text box inside `scope` holds now, typed text included, or undefined when it has none. */
+export function textBoxValue(scope: Element | null | undefined): string | undefined {
+  if (!scope) return undefined;
+  const rich = scope.querySelector('[role="textbox"]');
+  const target = rich ? richTargets.get(rich) : undefined;
+  if (target) return target.value();
+  return scope.querySelector('textarea')?.value;
+}
+
+function nativeTarget(el: HTMLInputElement | HTMLTextAreaElement): TextTarget {
+  return {
+    value: () => el.value,
+    undo: () => {
+      document.execCommand('undo');
+      return true;
+    },
+    redo: () => {
+      document.execCommand('redo');
+      return true;
+    },
+  };
+}
+
+/** The focused text box: its element and how to read and step it. */
+function focusedTextTarget(): { el: Element; target: TextTarget } | null {
   const el = document.activeElement;
-  if (el instanceof HTMLTextAreaElement) return el;
+  if (!el) return null;
+  const rich = richTargets.get(el);
+  if (rich) return { el, target: rich };
+  if (el instanceof HTMLTextAreaElement) return { el, target: nativeTarget(el) };
   if (
     el instanceof HTMLInputElement &&
     !['checkbox', 'radio', 'button', 'submit'].includes(el.type)
   ) {
-    return el;
+    return { el, target: nativeTarget(el) };
   }
   return null;
 }
@@ -59,14 +106,15 @@ const UndoContext = createContext<Undo | null>(null);
 /**
  * Session undo and redo (ED-3): at least 50 steps, Cmd+Z and Shift+Cmd+Z.
  * Inside a text field holding unsaved typing, the keys undo the typing (the
- * browser's own text undo); everywhere else they step through the app's history.
+ * browser's own text undo, or a rich text box's own history, A44); everywhere
+ * else they step through the app's history.
  */
 export function UndoProvider({ children }: { children: ReactNode }) {
   const manager = useRef(new UndoManager());
   const flushes = useRef(new Set<() => Promise<void>>());
   const busy = useRef(Promise.resolve());
   /** The value the focused text field held when it was focused or last saved. */
-  const savedValue = useRef<{ el: TextField; value: string; nativeUndone: boolean } | null>(null);
+  const savedValue = useRef<{ el: Element; value: string; nativeUndone: boolean } | null>(null);
   const [snapshot, setSnapshot] = useState(() => ({
     canUndo: false,
     canRedo: false,
@@ -106,18 +154,17 @@ export function UndoProvider({ children }: { children: ReactNode }) {
 
   /** Undo typing in the focused field when it has unsaved typing; true when it did. */
   const textStep = useCallback((direction: 'undo' | 'redo'): boolean => {
-    const el = focusedTextField();
+    const focused = focusedTextTarget();
     const saved = savedValue.current;
-    if (!el || !saved || saved.el !== el) return false;
-    const dirty = el.value !== saved.value;
-    if (direction === 'undo' && dirty) {
-      document.execCommand('undo');
+    if (!focused || !saved || saved.el !== focused.el) return false;
+    const { target } = focused;
+    const dirty = target.value() !== saved.value;
+    if (direction === 'undo' && dirty && target.undo()) {
       saved.nativeUndone = true;
       return true;
     }
-    if (direction === 'redo' && saved.nativeUndone) {
-      document.execCommand('redo');
-      if (el.value === saved.value) saved.nativeUndone = false;
+    if (direction === 'redo' && saved.nativeUndone && target.redo()) {
+      if (target.value() === saved.value) saved.nativeUndone = false;
       return true;
     }
     return false;
@@ -132,8 +179,8 @@ export function UndoProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onFocus = () => {
-      const el = focusedTextField();
-      savedValue.current = el ? { el, value: el.value, nativeUndone: false } : null;
+      const f = focusedTextTarget();
+      savedValue.current = f ? { el: f.el, value: f.target.value(), nativeUndone: false } : null;
     };
     const off = window.api.on('app.command', ({ command: c }) => {
       if (c === 'undo' || c === 'redo') command(c);
@@ -161,14 +208,15 @@ export function UndoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const markSaved = useCallback((saved: Record<string, unknown>) => {
-    const el = focusedTextField();
-    if (!el) return;
+    const f = focusedTextTarget();
+    if (!f) return;
+    const { el, target } = f;
     const text = savedFieldText(saved, el.closest('[data-field]')?.getAttribute('data-field'));
     if (text === undefined) return;
     const cur = savedValue.current;
     if (cur && cur.el === el) {
       cur.value = text;
-      if (el.value === text) cur.nativeUndone = false;
+      if (target.value() === text) cur.nativeUndone = false;
     } else {
       savedValue.current = { el, value: text, nativeUndone: false };
     }

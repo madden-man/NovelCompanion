@@ -32,6 +32,8 @@ import { RowEditor } from './rowEditor';
 import type { Picked } from './rowEditor';
 import { InlineName } from './outline/InlineName';
 import { Zh } from './Zh';
+import { RichText } from './richText/RichText';
+import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
 
 function YearField(props: {
@@ -470,17 +472,16 @@ function CommunityNote(props: {
   };
   return (
     <div className="field cu-about">
-      <label htmlFor={id}>About {props.community}</label>
-      <textarea
-        id={id}
-        rows={3}
+      <span id={id}>About {props.community}</span>
+      <RichText
+        labelledBy={id}
         value={draft}
         disabled={props.disabled}
         placeholder="What this community is like overall: who belongs, what they value, how it changes."
-        data-testid="community-note"
-        onChange={(e) => {
+        testId="community-note"
+        onChange={(md) => {
           setDirty(true);
-          setDraft(e.target.value);
+          setDraft(md);
         }}
         onBlur={commit}
       />
@@ -549,7 +550,7 @@ function LineRow(props: {
 }) {
   const { entry: e } = props;
   const title = entryTitle(e);
-  const ids = { text: useId(), group: useId(), decade: useId(), note: useId() };
+  const ids = { text: useId(), group: useId(), decade: useId() };
   type Key = 'text' | 'note';
   const stored: Record<Key, string> = { text: title, note: String(e.body ?? '') };
   const [draft, setDraft] = useState(stored);
@@ -660,15 +661,14 @@ function LineRow(props: {
         </button>
       </div>
       {hasNote && (
-        <textarea
-          id={ids.note}
+        <RichText
+          mode="inline"
           className="cu-note"
-          aria-label={`Note on ${title}`}
-          rows={2}
+          label={`Note on ${title}`}
           value={draft.note}
           disabled={props.disabled}
-          data-testid="line-note"
-          onChange={(ev) => set('note', ev.target.value)}
+          testId="line-note"
+          onChange={(md) => set('note', md)}
           onBlur={() => commit('note')}
         />
       )}
@@ -894,12 +894,12 @@ function EraRow(props: {
           {props.current && <span className="chip time">story year</span>}
         </div>
         <div className="field">
-          <label htmlFor={ids.body}>What the world is like</label>
-          <textarea
-            id={ids.body}
-            rows={4}
+          <span id={ids.body}>What the world is like</span>
+          <RichText
+            labelledBy={ids.body}
             value={draft.body}
-            onChange={(ev) => edit('body', ev.target.value)}
+            disabled={props.disabled}
+            onChange={(md) => edit('body', md)}
             onBlur={() => commit('body')}
           />
         </div>
@@ -1137,7 +1137,9 @@ export function GlossaryTable() {
                     </td>
                     <td>{String(t.romanization ?? '')}</td>
                     <td>{label(t.language)}</td>
-                    <td>{String(t.meaning ?? '')}</td>
+                    <td>
+                      <MarkdownView text={String(t.meaning ?? '')} inline />
+                    </td>
                     <td>
                       <button
                         type="button"

@@ -851,7 +851,7 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   await select('Ruth Hale');
   // A43: the top bar's Undo names the step it takes back, without taking the focus.
   const undoButton = page.getByTestId('top-undo');
-  const place = field(editor(), 'role').locator('textarea');
+  const place = field(editor(), 'role').getByRole('textbox');
   await place.fill('Astoria, Oregon');
   // Straight into another field before the save of the first one lands.
   await page.getByRole('button', { name: 'Add person', exact: true }).click();
@@ -1108,7 +1108,7 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   await expect(rel).toContainText('Partner: Tomas Reyes (partnered 2056 to 2064).');
   await expect(rel).toContainText('Child: Noor Zhou.');
   // Then three text boxes, and nothing else: no carets, no other field.
-  const boxes = p.locator('.char-texts textarea');
+  const boxes = p.locator('.char-texts [role="textbox"]');
   await expect(boxes).toHaveCount(3);
   for (const label of ['In the story', 'Description', 'Backstory']) {
     await expect(p.getByLabel(label, { exact: true })).toBeVisible();
@@ -1152,7 +1152,8 @@ test('SM-1 ED-2 each text box saves on its own and grows with its text', async (
   expect(ruth).toMatchObject({
     role: 'Ruth keeps the family letters.',
     body: 'A nurse in Portland.',
-    backstory: 'One.\nTwo.\nThree.\nFour.\nFive.\nSix.\nSeven.\nEight.',
+    // A44: each line filled in is a paragraph of the rich text box.
+    backstory: 'One.\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n\nSix.\n\nSeven.\n\nEight.',
   });
 });
 

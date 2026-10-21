@@ -17,6 +17,7 @@ import { FamilyChips, StateText, span, useFamilies, useYearView } from './common
 import { CompareView } from './CompareView';
 import { LivedThrough } from './LivedThrough';
 import { WorldEventsStrip } from './WorldEventsStrip';
+import { MarkdownView } from '../richText/MarkdownView';
 import './year.css';
 
 type Preview = Response<'storyTime.promotePreview'>;
@@ -544,7 +545,7 @@ export function StoryTimeDialog(props: {
                       {view.eras.length} eras cover {view.year}. The one that started last applies.
                     </p>
                   )}
-                  {view.era.body && <p style={{ whiteSpace: 'pre-wrap' }}>{view.era.body}</p>}
+                  {view.era.body && <MarkdownView text={view.era.body} />}
                 </>
               ) : (
                 <p>No era covers {time.year}.</p>

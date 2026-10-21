@@ -330,7 +330,8 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
 
   test('SM-3 every beat, voice note, and place lived becomes a moment, the trash carried over', async () => {
     expect(await schemaVersion(bible)).toBe(LATEST_SCHEMA_VERSION);
-    expect(LATEST_SCHEMA_VERSION).toBe(9);
+    // A44: migration 10 runs after it.
+    expect(LATEST_SCHEMA_VERSION).toBe(10);
     const moments = await open.handle.collection('moments').find({}).sort({ _id: 1 }).toArray();
     expect(
       moments.map((m) => [m._id, m.characterId, m.year, m.endYear, m.title, !!m.deletedAt]),
@@ -491,7 +492,7 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     const before = (await open.snapshots!.list()).find((s) => s.reason === 'migration')!;
     const out = await restoreSnapshot(open, before.id);
     expect(out.restored.schemaVersion).toBe(8);
-    expect(await schemaVersion(open.handle)).toBe(9);
+    expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const restored = await dumpBible(open.handle);
     for (const c of DROPPED_COLLECTIONS) expect(restored.collections[c], c).toBeUndefined();
     const ids = (d: typeof restored, c: string) =>
@@ -525,7 +526,7 @@ describe('SM-2 BK-3 an export written before A39 still imports', () => {
     };
     const handle = await createBible(store, freshSlug('mig9-json'), 'Imported');
     const docs = await importBibleJson(handle, JSON.stringify(file));
-    expect(await schemaVersion(handle)).toBe(9);
+    expect(await schemaVersion(handle)).toBe(LATEST_SCHEMA_VERSION);
     expect(docs.facts).toBeUndefined();
     expect(docs.plotBeats).toBeUndefined();
     expect(docs.moments!.map((m) => m._id).sort()).toEqual([
