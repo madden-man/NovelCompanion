@@ -1,6 +1,13 @@
 import { z } from 'zod';
 
-export const SNAPSHOT_REASONS = ['daily', 'manual', 'import', 'restore', 'bulk'] as const;
+export const SNAPSHOT_REASONS = [
+  'daily',
+  'manual',
+  'import',
+  'restore',
+  'bulk',
+  'migration',
+] as const;
 export type SnapshotReason = (typeof SNAPSHOT_REASONS)[number];
 
 export const SNAPSHOT_REASON_LABELS: Record<SnapshotReason, string> = {
@@ -9,7 +16,11 @@ export const SNAPSHOT_REASON_LABELS: Record<SnapshotReason, string> = {
   import: 'Before an import',
   restore: 'Before a restore',
   bulk: 'Before a bulk change',
+  migration: 'Before a schema migration',
 };
+
+/** SM-2: the label of the snapshot taken before migration 9 drops the collections A39 cuts. */
+export const MIGRATION9_SNAPSHOT_LABEL = 'Before migration 9';
 
 /** `manifest.json` of a snapshot (BK-1): what was dumped, when, why, and the schema version. */
 export const SnapshotManifest = z.strictObject({
