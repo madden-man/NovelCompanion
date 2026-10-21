@@ -145,12 +145,21 @@ const ALIASES: Record<string, string> = { Timeline: 'World events' };
  * item of the App menu at the rail's foot. Acting on an App menu item (click,
  * focus, press, and the like) opens the menu first. The locator matches the
  * hidden items of a closed menu too, so `count()` and attribute checks work
- * without opening it. "Timeline" still names World events.
+ * without opening it. "Timeline" still names World events. Any other name
+ * throws at once, naming the valid ones, instead of waiting for a button
+ * that is not there.
  */
 export function rail(page: Page, name: string): Locator {
-  const nav = page.getByRole('navigation', { name: 'Sections' });
   const label = ALIASES[name] ?? name;
   const inMenu = (APP_MENU_ITEMS as readonly string[]).includes(label);
+  if (!inMenu && !(RAIL_SCREENS as readonly string[]).includes(label)) {
+    throw new Error(
+      `"${name}" is not in the rail. The rail screens are ${RAIL_SCREENS.join(', ')} ` +
+        `("Timeline" still names World events); the App menu items are ${APP_MENU_ITEMS.join(', ')}. ` +
+        'A section list opens with sectionList(page, plural).',
+    );
+  }
+  const nav = page.getByRole('navigation', { name: 'Sections' });
   const button = inMenu
     ? nav.getByRole('menuitem', { name: label, exact: true, includeHidden: true })
     : nav.getByTestId('rail-main').getByRole('button', { name: label, exact: true });
