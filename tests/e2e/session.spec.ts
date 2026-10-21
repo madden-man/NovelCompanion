@@ -319,6 +319,63 @@ test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step
   ).toHaveValue('Iris climbs to the attic at night and finds the box.');
 });
 
+test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing across a pause is two, and Undo restores the stored note', async () => {
+  const note = strand('CH6-present').getByTestId('scene-note');
+  const box = note.getByLabel('What happens in this scene');
+  const history = page.getByTestId('undo-history').locator('li:not(.empty)');
+  const stored = async () =>
+    (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.sceneNote;
+  const first = 'Iris climbs to the attic at night and finds the box.';
+  await expect(box).toHaveValue(first);
+  const label = 'Changed What happens in this scene on The Letter';
+
+  // Within a pause: a few keys, one save, one step.
+  const before = await history.count();
+  await box.press('End');
+  await box.pressSequentially(' Rain.');
+  await expect(note.getByTestId('autosave')).toHaveText('Saved');
+  await expect.poll(stored).toBe(`${first} Rain.`);
+  await expect(history).toHaveCount(before + 1);
+  await expect(history.first()).toHaveText(label);
+
+  // Across a pause: two bursts with a wait longer than the autosave pause between, two steps.
+  await box.pressSequentially(' She waits.');
+  await expect(note.getByTestId('autosave')).toHaveText('Saved');
+  await page.waitForTimeout(1200);
+  await box.pressSequentially(' Lan calls.');
+  await expect(note.getByTestId('autosave')).toHaveText('Saved');
+  await expect.poll(stored).toBe(`${first} Rain. She waits. Lan calls.`);
+  await expect(history).toHaveCount(before + 3);
+  await expect(history.nth(0)).toHaveText(label);
+  await expect(history.nth(1)).toHaveText(label);
+
+  // Undo takes back one pause at a time, in the bible and in the box.
+  const undo = page.getByTestId('inspector').getByRole('button', { name: 'Undo', exact: true });
+  await undo.click();
+  await expect.poll(stored).toBe(`${first} Rain. She waits.`);
+  await expect(box).toHaveValue(`${first} Rain. She waits.`);
+  await undo.click();
+  await expect.poll(stored).toBe(`${first} Rain.`);
+  await undo.click();
+  await expect.poll(stored).toBe(first);
+  await expect(box).toHaveValue(first);
+});
+
+test('KB-6 SM-6 Cmd+K opens the capture box with the story time on Continuity checker, Cultural data and Backstory, and Escape closes it', async () => {
+  const capture = page.getByTestId('capture-box');
+  for (const screen of ['Continuity checker', 'Cultural data', 'Backstory']) {
+    await rail(page, screen).click();
+    await expect(rail(page, screen)).toHaveAttribute('aria-current', 'page');
+    await page.keyboard.press('Meta+k');
+    await expect(capture).toBeVisible();
+    await expect(capture.getByTestId('capture-time')).toContainText('Story time 2045');
+    await expect(capture.getByTestId('capture-input')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(capture).toBeHidden();
+  }
+  await page.getByTestId('top-relevant').click();
+});
+
 test('SM-10 the tiles list the chapter characters with Chinese name and age, the point of view first and marked', async () => {
   const tiles = strand('CH6-present').locator('[data-kind="characters"] [data-testid="sel-item"]');
   await expect(tiles).toHaveCount(2);
