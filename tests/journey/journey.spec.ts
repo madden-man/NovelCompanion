@@ -725,7 +725,7 @@ test('SL-1 a session log entry is written and listed newest first', async () => 
 // Every section's form and editor (T-4, ED-1)
 
 /** The entries the walk makes, one per collection, for the trash step after it. */
-/** `rail` is the rail item the entry is listed under: its section, or for a custom entry its custom section (KB-4). */
+/** `rail` is the section's plural: Characters in the rail, or the list opened from Search and filters (SM-6). */
 const trial: { collection: EntryCollection; id: string; title: string; rail: string }[] = [];
 
 /**
