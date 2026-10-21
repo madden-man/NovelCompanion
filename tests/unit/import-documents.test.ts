@@ -13,6 +13,10 @@ import {
 } from '../../src/shared/domain/import';
 import { parseDocxBuffer, parseDocxFile } from '../../src/main/import/docx';
 import { splitManuscript } from '../../src/main/import/eastwinds';
+import {
+  IMPORT_PROPOSAL_SECTIONS,
+  ImportProposalsOutput,
+} from '../../src/main/claude/features/importProposals';
 import { join } from 'node:path';
 
 const FILE = { fileName: 'chapter-03.docx', modifiedAt: '2026-01-15T09:00:00.000Z' };
@@ -314,5 +318,37 @@ describe('IM-4 the East Winds manuscript is split at its chapter headings', () =
     expect(split.rest.map((b) => b.text)).toEqual(['Characters', 'Notes.']);
     expect(split.chapterTitle).toBe('1: Laid the Foundation');
     expect(splitManuscript(parseBlocks('<p>No headings</p>'))).toBeNull();
+  });
+});
+
+describe('IM-5 SM-2 Claude proposes entries of the simplified model only', () => {
+  test('IM-5 SM-2 import proposals name characters, moments, world events, and open questions, and nothing else', () => {
+    expect([...IMPORT_PROPOSAL_SECTIONS]).toEqual([
+      'characters',
+      'moments',
+      'worldEvents',
+      'openQuestions',
+    ]);
+    const proposal = (collection: string) => ({
+      summary: 'One proposal',
+      proposals: [
+        {
+          op: 'create',
+          collection,
+          targetId: null,
+          fields: '{}',
+          link: null,
+          paragraphs: [1],
+          quote: 'words',
+          reason: 'why',
+        },
+      ],
+    });
+    for (const ok of IMPORT_PROPOSAL_SECTIONS) {
+      expect(ImportProposalsOutput.safeParse(proposal(ok)).success).toBe(true);
+    }
+    for (const dropped of ['plotBeats', 'relationships', 'facts', 'arcs', 'places', 'families']) {
+      expect(ImportProposalsOutput.safeParse(proposal(dropped)).success).toBe(false);
+    }
   });
 });

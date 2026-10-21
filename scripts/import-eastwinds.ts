@@ -1,6 +1,7 @@
 /**
- * On-demand import of the East Winds material (M5). Run with
- * `npm run import:eastwinds`, optionally followed by `-- --dry-run`.
+ * On-demand import of the East Winds material (M5, A39). `npm run
+ * import:eastwinds` is a dry run that prints what would change; add
+ * `-- --yes` to apply it, after a snapshot.
  *
  * It bundles scripts/eastwinds-cli.ts with esbuild (a dev dependency)
  * and runs it under Node, because the app code uses extensionless

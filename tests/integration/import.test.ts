@@ -8,6 +8,7 @@ import type { Store } from '../../src/main/db';
 import { applyPlan, planDocumentImport, planSheet } from '../../src/main/import/run';
 import { parseDocxFile } from '../../src/main/import/docx';
 import { parseWorkbookFile } from '../../src/main/import/xlsx';
+import { guessMapping } from '../../src/shared/domain/import';
 import type { GridMapping, ParsedWorkbook, TableMapping } from '../../src/shared/domain/import';
 import { freshSlug, localStore } from '../helpers/db';
 import { FIXTURE_WORKBOOK } from '../helpers/importSim';
@@ -129,6 +130,93 @@ describe('IM-1 IM-2 IM-6 a workbook imports into a real database through the wri
     expect(cats.find((c) => c.label === 'Floods')!.parentId).toBe(
       cats.find((c) => c.label === 'Climate')!.id,
     );
+  });
+});
+
+describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bible', () => {
+  /** Plan and apply every sheet in order, as the import screen would one after another. */
+  const runAll = async (open: OpenBible, wb: ParsedWorkbook) => {
+    const hale = wb.sheets.find((x) => x.name === 'Hale family')!;
+    // The guessed mapping reads the long headers of a moment sheet (IM-1).
+    const moments = guessMapping(hale, 'table', { collection: 'moments' }) as TableMapping;
+    const mappings = [
+      people,
+      { ...grid, regionsFromLabels: true, addOnly: ['regions'] },
+      moments,
+      // A grid of people by year: each cell a moment of the person the row names (SM-12).
+      { ...grid, sheet: 'Lives by year', target: { collection: 'moments' as const } },
+    ];
+    const out = [];
+    for (const m of mappings) {
+      const sheet = wb.sheets.find((x) => x.name === m.sheet)!;
+      const { set } = planSheet(open, sheet, wb, m);
+      out.push({ set, result: await applyPlan(open, set, wb, 'all'), mapping: m });
+    }
+    return out;
+  };
+
+  test('IM-1 IM-2 IM-3 SM-3 every sheet imports, the failing rows are reported, a second run changes nothing, and a changed year updates the moment in place', async () => {
+    const open = await emptyBible('im-whole');
+    const wb = await parseWorkbookFile(FIXTURE_WORKBOOK);
+    const first = await runAll(open, wb);
+    expect((first[2]!.mapping as TableMapping).columns.map((c) => [c.header, c.field])).toEqual([
+      ['Chronological: Hale Family', 'title'],
+      ['POV', 'characterId'],
+      ['Year', 'year'],
+      ['Relevant World Events', 'worldContext'],
+      ['How the POV Character Experiences This', 'body'],
+    ]);
+    // IM-2: the nameless person and the moment of someone the bible does not have are reported, the rest import.
+    expect(first.flatMap((r) => r.result.failed.map((f) => [f.where, f.reason]))).toEqual([
+      ['People row 9', expect.stringMatching(/not a year|no value for the title/)],
+      ['Hale family row 6', 'Character: No entry is called "Ghost"'],
+    ]);
+    expect(open.repo.list('worldEvents')).toHaveLength(7);
+    const people$ = new Map(open.repo.list('characters').map((c) => [c.title, c._id]));
+    const moments = open.repo.list('moments');
+    expect(moments.map((m) => [m.title, m.characterId, m.year]).sort()).toEqual(
+      [
+        ['Margaret meets Peter at the harbour', people$.get('Margaret Hale'), 1980],
+        ['Peter and Margaret marry', people$.get('Peter Hale'), 1982],
+        ['Daniel is born', people$.get('Margaret Hale'), 1985],
+        // A Chinese given name finds Zhou Meiling (周美玲).
+        ['Meiling moves to Guangzhou', people$.get('Zhou Meiling'), 1990],
+        ['Moves to Portland', people$.get('Margaret Hale'), 1980],
+        ['Starts school in Guangzhou', people$.get('Zhou Lan'), 1990],
+      ].sort(),
+    );
+    const marry = moments.find((m) => m.title === 'Peter and Margaret marry')!;
+    expect(marry).toMatchObject({
+      body: 'Nervous all day',
+      worldContext: 'Rain all spring',
+      sourceRef: 'fixture-workbook.xlsx#Hale family!A3',
+    });
+
+    // IM-3: the same file again changes nothing.
+    const again = await runAll(open, wb);
+    expect(again.map((r) => r.set.items.length)).toEqual([0, 0, 0, 0]);
+    expect(open.repo.list('moments')).toHaveLength(6);
+
+    // A newer version of the file moves the wedding a year: the same moment changes, nothing is added.
+    const sheet = wb.sheets.find((x) => x.name === 'Hale family')!;
+    const moved: ParsedWorkbook = {
+      ...wb,
+      modifiedAt: new Date(Date.parse(wb.modifiedAt) + 86_400_000).toISOString(),
+      sheets: wb.sheets.map((x) =>
+        x === sheet
+          ? {
+              ...x,
+              cells: x.cells.map((r, i) => (i === 2 ? [r[0]!, r[1]!, 1983, ...r.slice(3)] : r)),
+            }
+          : x,
+      ),
+    };
+    const third = await runAll(open, moved);
+    expect(
+      third[2]!.set.items.map((i) => [i.kind, i.entryId, i.deltas.map((d) => d.path)]),
+    ).toEqual([['changed', marry._id, ['year']]]);
+    expect(open.repo.list('moments')).toHaveLength(6);
+    expect(open.repo.get('moments', marry._id)!.year).toBe(1983);
   });
 });
 
@@ -368,6 +456,8 @@ describe('IM-1 the IPC channels preview, compare, and apply through the contract
     expect(info.sheets.map((s) => [s.name, s.shape, s.headerRow])).toEqual([
       ['People', 'table', 1],
       ['High Level', 'grid', 1],
+      ['Hale family', 'table', 1],
+      ['Lives by year', 'grid', 1],
     ]);
     expect(info.saved).toEqual([]);
 

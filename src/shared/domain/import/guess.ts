@@ -27,6 +27,20 @@ const SYNONYMS: Record<string, string[]> = {
   tags: ['tags', 'tag'],
 };
 
+/** The sections a grid sheet can fill (A12, SM-12). */
+export const GRID_TARGETS = ['worldEvents', 'moments', 'chapters'] as const;
+
+/**
+ * Header starts that mean a field, for the long headers of the East Winds
+ * moment sheets: "Chronological: Sullivan Family" is what happens and "How
+ * the POV Character Experiences This" is how they experience it.
+ */
+const PREFIXES: Record<string, string[]> = {
+  title: ['chronological'],
+  body: ['howthepov', 'howthey'],
+  worldContext: ['relevantworld'],
+};
+
 /** Does this sheet read as a grid (years across the top) or a table? */
 export function guessShape(sheet: ParsedSheet): 'table' | 'grid' {
   const probe: GridMapping = {
@@ -63,7 +77,11 @@ function bestField(header: string, fields: ImportField[], taken: Set<string>): I
       squash(f.label) === h || squash(f.path) === h || squash(f.path.split('.').pop() ?? '') === h,
   );
   if (exact) return exact;
-  return free.find((f) => (SYNONYMS[f.path] ?? []).some((w) => squash(w) === h)) ?? null;
+  return (
+    free.find((f) => (SYNONYMS[f.path] ?? []).some((w) => squash(w) === h)) ??
+    free.find((f) => (PREFIXES[f.path] ?? []).some((w) => h.startsWith(w))) ??
+    null
+  );
 }
 
 /** A starting mapping for a sheet: columns matched to fields by header, ready to edit (IM-1). */
@@ -82,10 +100,14 @@ export function guessMapping(
     matchIn: 'sheet' as const,
   };
   if (shape === 'grid') {
+    // A grid fills world events (row labels are categories), moments (row labels are people), or chapters.
+    const collection = (GRID_TARGETS as readonly string[]).includes(target.collection)
+      ? target.collection
+      : 'worldEvents';
     return {
       shape: 'grid',
       ...base,
-      target: { collection: 'worldEvents' },
+      target: { collection },
       headerRow: null,
       labelColumn: 0,
       yearOffset: 0,

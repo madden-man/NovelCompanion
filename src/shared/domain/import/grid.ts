@@ -4,6 +4,7 @@ import { isPlainObject } from '../paths';
 import { buildEntry } from './build';
 import { cellRef } from './source';
 import { normalizeIdentity, ordinalKey } from './table';
+import { mapChapterGrid, mapMomentGrid } from './gridEntries';
 import type { GridMapping, ListAdd, MapContext, MapOutput, ParsedSheet } from './types';
 import { cellText, isBlank, labelRegex, parseYearHeader } from './values';
 
@@ -25,7 +26,7 @@ interface YearColumn {
 }
 
 /** Cells covered by a merge but not its top left cell repeat the master and are not entries. */
-function mergedSlave(sheet: ParsedSheet, row: number, column: number): boolean {
+export function mergedSlave(sheet: ParsedSheet, row: number, column: number): boolean {
   return sheet.merges.some(
     (m) =>
       row >= m.top &&
@@ -61,6 +62,61 @@ export function findYearHeader(
   return null;
 }
 
+/** Words in a row label that name a region, and the region they name. */
+const REGION_WORDS: [RegExp, string][] = [
+  [/\b(US|USA|U\.S\.)(?![a-z])/, 'United States'],
+  [/\bAmerican?s?\b/i, 'United States'],
+  [/\bChin(a|ese)\b/i, 'China'],
+  [/\bEurope(an)?\b|\bEU\b/i, 'Europe'],
+  [/\bIndia(n)?\b/i, 'India'],
+  [/\bJapan(ese)?\b/i, 'Japan'],
+  [/\bRussia(n)?\b/i, 'Russia'],
+  [/\bMexic(o|an)\b/i, 'Mexico'],
+  [/\bTaiwan(ese)?\b/i, 'Taiwan'],
+  [/\bAfrica(n)?\b/i, 'Africa'],
+];
+
+/**
+ * The regions a row label names, in the order they appear: "US: Oil" is the
+ * United States, "US/China Tension" is both, "Chinese Leadership" is China.
+ * A label that names none gives none.
+ */
+export function regionsOfLabel(label: string): string[] {
+  const found: { at: number; region: string }[] = [];
+  for (const [re, region] of REGION_WORDS) {
+    const m = re.exec(label);
+    if (m && !found.some((f) => f.region === region)) found.push({ at: m.index, region });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.region);
+}
+
+/** The rows a grid mapping reads: from its start label down to just above its end label. */
+export function gridRowRange(
+  sheet: ParsedSheet,
+  mapping: GridMapping,
+  first: number,
+  notes: string[],
+): { startAt: number; endAt: number } {
+  const startAt = startRow(sheet, mapping, first, notes);
+  let endAt = Number.POSITIVE_INFINITY;
+  if (mapping.endLabel) {
+    const re = labelRegex(mapping.endLabel);
+    if (!re) {
+      notes.push(
+        `The end label "${mapping.endLabel}" is not a valid pattern, so no rows were skipped for it.`,
+      );
+    } else {
+      for (let r = Math.max(first, startAt); r < sheet.cells.length; r++) {
+        if (re.test(cellText(sheet.cells[r]?.[mapping.labelColumn]).trim())) {
+          endAt = r + 1;
+          break;
+        }
+      }
+    }
+  }
+  return { startAt, endAt };
+}
+
 /** The category path of a grid entry: the heading above, then the row label. */
 export function categoryPath(mapping: GridMapping, heading: string, label: string): string[] {
   return [mapping.categoryRoot ?? '', heading, label].map((s) => s.trim()).filter(Boolean);
@@ -72,9 +128,11 @@ export function categoryPath(mapping: GridMapping, heading: string, label: strin
  * label and the nearest heading row above it.
  */
 export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContext): MapOutput {
+  if (mapping.target.collection === 'moments') return mapMomentGrid(sheet, mapping, ctx);
+  if (mapping.target.collection === 'chapters') return mapChapterGrid(sheet, mapping, ctx);
   const out: MapOutput = { rows: [], listAdds: [], stubs: [], notes: [] };
   if (mapping.target.collection !== 'worldEvents') {
-    out.notes.push('A grid sheet fills world events.');
+    out.notes.push('A grid sheet fills world events, moments, or chapters.');
     return out;
   }
   const header = findYearHeader(sheet, mapping);
@@ -112,7 +170,7 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
   let ordinal = 0;
   const isHeading = headingTest(sheet, mapping);
   const skipPatterns = (mapping.skipLabels ?? []).flatMap((p) => labelRegex(p) ?? []);
-  const startAt = startRow(sheet, mapping, header.row, out.notes);
+  const { startAt, endAt } = gridRowRange(sheet, mapping, header.row, out.notes);
   const skipped: { row: number; label: string; cells: number }[] = [];
   for (let r = header.row; r < sheet.cells.length; r++) {
     const row = r + 1;
@@ -122,7 +180,11 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
       (y) => !isBlank(cells[y.column]) && !mergedSlave(sheet, row, y.column + 1),
     );
     // Rows above the start row, and rows the mapping skips, make nothing and are reported (IM-2).
-    if (row < startAt || (label && skipPatterns.some((re) => re.test(label.trim())))) {
+    if (
+      row < startAt ||
+      row >= endAt ||
+      (label && skipPatterns.some((re) => re.test(label.trim())))
+    ) {
       if (label || filled.length) skipped.push({ row, label, cells: filled.length });
       continue;
     }
@@ -168,6 +230,10 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
       const last = span ? header.columns.find((c) => c.column === span.right - 1) : undefined;
       const endYear = last ? (last.end ?? last.start) : y.end;
       if (endYear !== null && endYear !== y.start) fields.end = { year: endYear };
+      if (mapping.regionsFromLabels) {
+        const regions = regionsOfLabel(label);
+        if (regions.length) fields.regions = regions;
+      }
       const built = buildEntry({
         target: mapping.target,
         fields,
@@ -242,7 +308,7 @@ function headingTest(
   return (row) => bold.has(row);
 }
 
-function skipNote(skipped: { row: number; label: string; cells: number }[]): string {
+export function skipNote(skipped: { row: number; label: string; cells: number }[]): string {
   const cells = skipped.reduce((n, s) => n + s.cells, 0);
   const labels = skipped
     .filter((s) => s.label)

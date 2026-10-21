@@ -511,7 +511,7 @@ describe('IM-5 import proposals', () => {
     expect(
       views.map((v) => [v.proposal.source, v.proposal.op, v.proposal.collection, v.proposal.state]),
     ).toEqual([
-      ['claude', 'create', 'places', 'pending'],
+      ['claude', 'create', 'moments', 'pending'],
       ['claude', 'update', 'characters', 'pending'],
     ]);
     // IM-6: the proposal says where in the document it comes from.

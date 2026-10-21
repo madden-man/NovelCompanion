@@ -22,8 +22,8 @@ import type {
   TableMapping,
 } from '../../shared/domain/import';
 import { bareTitle } from '../../shared/domain/numbering';
-import { ENTRY_COLLECTIONS, entryTitle } from '../../shared/schema';
-import type { Chapter } from '../../shared/schema';
+import { ENTRY_COLLECTIONS, collectionInfo, entryTitle } from '../../shared/schema';
+import type { Chapter, EntryCollection } from '../../shared/schema';
 import type { OpenBible } from '../db/session';
 import { parseDocxFile } from './docx';
 import type { ParsedDocument } from './docx';
@@ -40,6 +40,8 @@ export const EAST_WINDS_FILES = {
   ] as const,
   manuscript: 'East_Winds.docx',
   worldDevelopment: 'East_Winds_World_Development.docx',
+  /** A29: the Introduction is set in 2078. */
+  introductionYear: 2078,
 };
 
 export interface StepReport {
@@ -50,8 +52,21 @@ export interface StepReport {
   questions: number;
   failed: { where: string; reason: string }[];
   notes: string[];
+  /** Entries made and changed per section, such as `moments`, for the report's totals. */
+  touched: Partial<Record<EntryCollection, { created: number; updated: number }>>;
   /** The change set, kept when nothing is applied: what is new and what would change (ED-7). */
   changes?: StepChanges;
+}
+
+/** Entries made and changed per section in a change set. */
+function touchedBy(set: ChangeSet): StepReport['touched'] {
+  const out: StepReport['touched'] = {};
+  for (const i of set.items) {
+    const t = (out[i.collection] ??= { created: 0, updated: 0 });
+    if (i.kind === 'new') t.created += 1;
+    else t.updated += 1;
+  }
+  return out;
 }
 
 export interface StepChanges {
@@ -77,40 +92,92 @@ export interface EastWindsReport {
 
 const header = (sheet: ParsedSheet, row = 0) => (sheet.cells[row] ?? []).map((c) => cellText(c));
 
+/** The 1-based row of the first label in column A that matches, or null. */
+function labelRow(sheet: ParsedSheet, re: RegExp): number | null {
+  const i = sheet.cells.findIndex((r) => re.test(cellText(r[0]).trim()));
+  return i < 0 ? null : i + 1;
+}
+
+const PLANNED = { status: 'planned', provenance: 'invented' } as const;
+
 /**
- * The default mapping for a sheet of the East Winds workbook. Columns are
- * found by their header text, so a moved column still lands in the right field.
+ * The default mappings for the East Winds workbook (A39). Columns are found
+ * by their header text, so a moved column still lands in the right field.
+ *
+ * - High Level: three bands of one grid. The chapter rows above "Characters"
+ *   are Book One's chapters (A29: 12 per part, a present strand and a
+ *   "Backstory: ..." strand), matched to the bible's chapters by part and
+ *   title. The Characters block is moments, one per filled cell. From
+ *   "Foundational Drivers" down, every cell is a world event filed under its
+ *   group and subcategory, with the regions its row label names.
+ * - Sullivan and 李: one moment per row, the character from the POV column.
+ * - Plot v1: Book Two's chapters. Book One's rows are left out while the High
+ *   Level sheet plans that book (A29).
  */
 export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
   const out: Mapping[] = [];
   const high = wb.sheets.find((s) => s.name === 'High Level');
+  let plansBookOne = false;
   if (high) {
     // Year columns headed 9 to 100 stand for 2009 to 2100.
     const years = (high.cells[0] ?? [])
       .map((c) => parseYear(c))
       .filter((y): y is number => y !== null);
     const short = years.length > 3 && years.every((y) => y > 0 && y < 200);
-    out.push({
+    const grid = {
       shape: 'grid',
       sheet: 'High Level',
-      target: { collection: 'worldEvents' },
       headerRow: null,
       labelColumn: 0,
       yearOffset: short ? 2000 : 0,
       categoryRoot: null,
       categoryList: 'eventCategories',
+      fixed: { ...PLANNED },
+      addMissingListItems: false,
+      createMissing: false,
+    } as const;
+    const characters = labelRow(high, /^characters$/i);
+    const drivers = labelRow(high, /^foundational drivers$/i);
+    const firstPart = labelRow(high, /^part\b/i);
+    if (firstPart !== null && (characters === null || firstPart < characters)) {
+      plansBookOne = true;
+      out.push({
+        ...grid,
+        target: { collection: 'chapters' },
+        ...(characters !== null ? { endLabel: '^Characters$' } : {}),
+        partLabel: '^Part\\b',
+        bookTitle: 'Book One',
+        // The bible's Book One chapters were made from this sheet by hand (A29): match any chapter by part and title.
+        matchIn: 'section',
+      } satisfies GridMapping);
+    }
+    if (characters !== null) {
+      out.push({
+        ...grid,
+        target: { collection: 'moments' },
+        startLabel: '^Characters$',
+        ...(drivers !== null ? { endLabel: '^Foundational Drivers$' } : {}),
+        // A name that matches no one becomes a character, as the beat sheets' names do.
+        createMissing: true,
+        matchIn: 'sheet',
+      } satisfies GridMapping);
+    }
+    out.push({
+      ...grid,
+      target: { collection: 'worldEvents' },
       // Only the Foundational Drivers block and what follows describes world events. The Part rows, the
-      // chapter rows, and the Characters block above it are skipped and reported. Section headings are the bold rows.
-      startLabel: '^Foundational Drivers$',
+      // chapter rows, and the Characters block above it are other mappings' rows. Section headings are the bold rows.
+      ...(drivers !== null ? { startLabel: '^Foundational Drivers$' } : {}),
       skipLabels: ['^Ch\\.?\\s*\\d+', '^Part\\b'],
       headingBy: (high.boldRows?.length ?? 0) > 0 ? 'style' : 'any',
-      fixed: { status: 'planned', provenance: 'invented' },
       addMissingListItems: true,
-      createMissing: false,
+      regionsFromLabels: true,
+      // Regions set by hand stay; the sheet only adds the ones its labels name.
+      addOnly: ['regions'],
       matchIn: 'sheet',
     } satisfies GridMapping);
   }
-  const beatSheet = (name: string, tag: string): TableMapping | null => {
+  const momentSheet = (name: string, hints: string[]): TableMapping | null => {
     const sheet = wb.sheets.find((s) => s.name === name);
     if (!sheet) return null;
     const columns = columnsFor(header(sheet), {
@@ -120,8 +187,8 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
       worldContext: /^relevant world/i,
       body: /^how the pov/i,
     });
-    // A beat is the same beat when its sheet and title match, so a changed year updates it. When a
-    // title repeats within the sheet, the point of view tells the repeats apart.
+    // A moment is the same moment when its sheet and title match, so a changed year updates it. When a
+    // title repeats within the sheet, the character tells the repeats apart.
     const titleAt = columns.find((c) => c.field === 'title')?.index ?? 0;
     const titles = sheet.cells.slice(1).map((r) => cellText(r[titleAt]).trim().toLowerCase());
     const repeats = titles.some((t, i) => t !== '' && titles.indexOf(t) !== i);
@@ -135,14 +202,17 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
         repeats && columns.some((c) => c.field === 'characterId')
           ? ['title', 'characterId']
           : ['title'],
-      fixed: { status: 'planned', provenance: 'invented', tags: [tag] },
+      fixed: { ...PLANNED, tags: [name] },
       addMissingListItems: false,
       createMissing: true,
       matchIn: 'sheet',
       headings: [],
+      // "Qin" on the 李 sheet is Li Qin; the sheet's family settles a name two people share.
+      nameHints: hints,
     };
   };
-  for (const m of [beatSheet('Sullivan', 'Sullivan'), beatSheet('李', '李')]) if (m) out.push(m);
+  for (const m of [momentSheet('Sullivan', ['Sullivan']), momentSheet('李', ['李', 'Li'])])
+    if (m) out.push(m);
   const plot = wb.sheets.find((s) => s.name === 'Plot v1');
   if (plot) {
     out.push({
@@ -158,7 +228,7 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
         summary: /^how the pov/i,
       }),
       identity: ['title'],
-      fixed: { status: 'planned', provenance: 'invented' },
+      fixed: { ...PLANNED },
       addMissingListItems: false,
       createMissing: true,
       matchIn: 'sheet',
@@ -169,7 +239,7 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
           labelPattern: '^Book\\b',
           linkField: 'bookId',
           numberField: 'number',
-          fixed: { status: 'planned', provenance: 'invented' },
+          fixed: { ...PLANNED },
         },
         {
           collection: 'parts',
@@ -180,9 +250,11 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
           textField: 'summary',
           numberField: 'number',
           implicitTitle: 'Chapters with no part named',
-          fixed: { status: 'planned', provenance: 'invented' },
+          fixed: { ...PLANNED },
         },
       ],
+      // A29: Book One's chapters come from the High Level sheet; its Plot v1 rows are neither chapters nor moments.
+      ...(plansBookOne ? { skipSections: ['^Book One$'] } : {}),
     } satisfies TableMapping);
   }
   return out;
@@ -394,6 +466,7 @@ export async function importEastWinds(
       unchanged: set.unchanged,
       failed: set.failed.map((f) => ({ where: f.where, reason: f.reason })),
       notes: [...notes, ...set.notes],
+      touched: touchedBy(set),
     };
     if (!writes) {
       const r = {
@@ -412,13 +485,27 @@ export async function importEastWinds(
     return r;
   };
 
-  // The workbook: grid, beats, and chapters.
+  // The workbook: Book One's chapters, moments, world events, then Book Two's chapters.
   const wb = await parseWorkbookFile(join(dir, EAST_WINDS_FILES.workbook));
-  for (const mapping of defaultMappings(wb)) {
+  const mappings = defaultMappings(wb);
+  // New chapters read after every chapter already planned, in this run too.
+  let lastOrder = Math.max(0, ...open.repo.list('chapters').map((c) => c.readingOrder));
+  for (const mapping of mappings) {
     const sheet = wb.sheets.find((s) => s.name === mapping.sheet);
     if (!sheet) continue;
-    const { set } = planSheet(open, sheet, wb, mapping);
-    await record(`${wb.fileName}, sheet ${mapping.sheet}`, set, wb);
+    const planned =
+      mapping.target.collection === 'chapters' ? { ...mapping, orderFrom: lastOrder + 1 } : mapping;
+    const { set } = planSheet(open, sheet, wb, planned);
+    for (const i of set.items) {
+      const order = i.data?.readingOrder;
+      if (i.collection === 'chapters' && typeof order === 'number') {
+        lastOrder = Math.max(lastOrder, order);
+      }
+    }
+    const shared = mappings.filter((m) => m.sheet === mapping.sheet).length > 1;
+    const section = collectionInfo[mapping.target.collection].plural.toLowerCase();
+    await record(`${wb.fileName}, sheet ${mapping.sheet}${shared ? `, ${section}` : ''}`, set, wb);
+    lastOrder = Math.max(lastOrder, ...open.repo.list('chapters').map((c) => c.readingOrder));
   }
 
   // The lives: one backstory each.
@@ -446,16 +533,23 @@ export async function importEastWinds(
         questions: 0,
         failed: [],
         notes: [`Would make a character called ${name} and set the backstory.`],
+        touched: { characters: { created: 1, updated: 0 } },
       });
       continue;
     }
     const plan = planDocumentImport(open, doc, { kind: 'backstory', characterId: id });
-    await record(
+    const step = await record(
       `${file}, backstory of ${entryTitle(open.model.get('characters', id) ?? { title: name })}`,
       plan.set,
       plan.file,
       found ? [] : [`Made a character called ${name}; it had no entry.`],
     );
+    // The character made just above counts as new, not as a changed one.
+    const people = step.touched.characters;
+    if (!found && people && people.updated > 0) {
+      people.updated -= 1;
+      people.created += 1;
+    }
   }
 
   // The manuscript.
@@ -475,6 +569,7 @@ export async function importEastWinds(
         },
       ],
       notes: [],
+      touched: {},
     });
   } else {
     // Chapter 1 belongs to the chapter Plot v1 already made, when there is one.
@@ -511,6 +606,7 @@ export async function importEastWinds(
           questions: 0,
           failed: [],
           notes: ['Would make a book and a part to hold the manuscript chapters.'],
+          touched: { chapters: { created: 1, updated: 0 } },
         });
         continue;
       }
@@ -527,7 +623,14 @@ export async function importEastWinds(
             );
       const target: DocumentTarget = existing
         ? { kind: 'chapter', chapterId: existing._id }
-        : { kind: 'chapter', chapterId: null, title: t.title, partId: part, year };
+        : {
+            kind: 'chapter',
+            chapterId: null,
+            title: t.title,
+            partId: part,
+            // A29: the Introduction is set in 2078; chapter 1 takes its plan chapter's year.
+            year: t.isOne ? year : EAST_WINDS_FILES.introductionYear,
+          };
       const plan = planDocumentImport(open, manuscript, target, t.blocks);
       const notes = existing
         ? t.isOne && one && existing._id === one._id
@@ -543,7 +646,7 @@ export async function importEastWinds(
         : one
           ? [`New chapter placed in the part of "${one.title}", just before it.`]
           : [
-              `New chapter placed in the first part with story year ${year}. Edit the year and the part in the app.`,
+              `New chapter placed in the first part with story year ${t.isOne ? year : EAST_WINDS_FILES.introductionYear}. Edit the year and the part in the app.`,
             ];
       const done = await record(`${manuscript.fileName}, ${t.title}`, plan.set, plan.file, notes);
       // The introduction reads just before chapter 1: take its number and move the later chapters down one.

@@ -5,6 +5,8 @@ import { createBibleWithDefaults, openBibleSession } from '../src/main/db/sessio
 import { isLocalMongoUri, mongoUri } from '../src/main/secrets';
 import { importEastWinds } from '../src/main/import/eastwinds';
 import type { StepChanges } from '../src/main/import/eastwinds';
+import { collectionInfo } from '../src/shared/schema';
+import type { EntryCollection } from '../src/shared/schema';
 
 /** Where the app keeps snapshots: the same folder the desktop app uses. */
 export const DEFAULT_SNAPSHOT_ROOT = join(
@@ -28,7 +30,7 @@ function parse(argv: string[]): Args {
     dir: resolve('source-material'),
     bible: 'eastwinds',
     snapshots: DEFAULT_SNAPSHOT_ROOT,
-    dryRun: false,
+    dryRun: true,
     yes: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -40,9 +42,11 @@ function parse(argv: string[]): Args {
     else if (a === '--snapshots') args.snapshots = resolve(argv[++i] ?? '');
     else
       throw new Error(
-        `Unknown option ${String(a)}. Use --dry-run, --yes, --dir, --bible, or --snapshots.`,
+        `Unknown option ${String(a)}. Use --yes, --dry-run, --dir, --bible, or --snapshots.`,
       );
   }
+  // A dry run unless told to apply (A39): --yes writes, after a snapshot.
+  args.dryRun = !args.yes;
   return args;
 }
 
@@ -65,10 +69,14 @@ function printChanges(changes: StepChanges | undefined): void {
   }
 }
 
+/** The sections the report always totals, in this order, then any other the run touched. */
+const REPORTED: EntryCollection[] = ['chapters', 'worldEvents', 'moments', 'characters'];
+
 /**
- * `npm run import:eastwinds`: import the East Winds workbook and Word
- * documents into the bible, with a snapshot first, and print the counts and
- * every failed row. It never prints the connection string.
+ * `npm run import:eastwinds`: compare the East Winds workbook and Word
+ * documents with the bible and print what would change, the counts per
+ * section, and every failed row. Nothing is written without `--yes`, which
+ * takes a snapshot first. It never prints the connection string.
  */
 export async function main(argv: string[]): Promise<void> {
   const args = parse(argv);
@@ -114,6 +122,26 @@ export async function main(argv: string[]): Promise<void> {
     console.log(
       `\nTotal: created ${total('created')}, updated ${total('updated')}, unchanged ${total('unchanged')}, open questions ${total('questions')}, failed rows ${failed}.`,
     );
+    const bySection = new Map<EntryCollection, { created: number; updated: number }>();
+    for (const step of report.steps) {
+      for (const [c, t] of Object.entries(step.touched) as [
+        EntryCollection,
+        { created: number; updated: number },
+      ][]) {
+        const sum = bySection.get(c) ?? { created: 0, updated: 0 };
+        bySection.set(c, { created: sum.created + t.created, updated: sum.updated + t.updated });
+      }
+    }
+    const sections = [...REPORTED, ...[...bySection.keys()].filter((c) => !REPORTED.includes(c))];
+    const verb = report.dryRun || report.held ? 'would be' : 'were';
+    console.log(`Entries that ${verb} made or changed, by section:`);
+    for (const c of sections) {
+      const t = bySection.get(c) ?? { created: 0, updated: 0 };
+      console.log(`  ${collectionInfo[c].plural}: ${t.created} new, ${t.updated} changed`);
+    }
+    if (report.dryRun) {
+      console.log('\nThis was a dry run: nothing was written. Run again with --yes to apply it.');
+    }
     if (report.held) {
       console.log(
         `\nThe bible "${args.bible}" already holds imported entries, so nothing was written. Review the changes above, then run again with --yes to apply them.`,

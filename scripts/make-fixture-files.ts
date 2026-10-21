@@ -48,6 +48,50 @@ async function workbook(): Promise<void> {
     grid.getRow(r).font = { bold: true };
   });
 
+  // A moments sheet shaped like the East Winds Sullivan and 李 sheets (SM-3, A39): one row per moment, the
+  // character by a short name or a Chinese name, and one row that names no one.
+  const moments = wb.addWorksheet('Hale family');
+  moments.addRow([
+    'Chronological: Hale Family',
+    'POV',
+    'Year',
+    'POV Age',
+    'Relevant World Events',
+    'How the POV Character Experiences This',
+  ]);
+  const momentRows: (string | number | null)[][] = [
+    [
+      'Margaret meets Peter at the harbour',
+      'Margaret',
+      1980,
+      22,
+      'A cold decade',
+      'Thinks he is too quiet',
+    ],
+    ['Peter and Margaret marry', 'Peter', 1982, 26, 'Rain all spring', 'Nervous all day'],
+    ['Daniel is born', 'Margaret', 1985, 27, 'Satellite television arrives', 'Tired and proud'],
+    [
+      'Meiling moves to Guangzhou',
+      '美玲',
+      1990,
+      28,
+      'Guangdong opens to trade',
+      'Lonely the first year',
+    ],
+    ['Nobody remembers the storm', 'Ghost', 2001, null, null, null],
+  ];
+  momentRows.forEach((r) => moments.addRow(r));
+  moments.getRow(1).font = { bold: true };
+
+  // A grid of people by year (SM-12): each filled cell is a moment of the person the row names.
+  const lives = wb.addWorksheet('Lives by year');
+  lives.addRow(['', 1980, 1985, 1990]);
+  lives.addRow(['Hale family']);
+  lives.addRow(['Margaret', 'Moves to Portland', null, null]);
+  lives.addRow(['Zhou Lan', null, null, 'Starts school in Guangzhou']);
+  lives.getRow(1).font = { bold: true };
+  lives.getRow(2).font = { bold: true };
+
   await wb.xlsx.writeFile(join(OUT, 'fixture-workbook.xlsx'));
 }
 

@@ -140,7 +140,13 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
     createMissing: mapping.createMissing,
     ref: () => ref,
     where: () => where,
+    hints: mapping.nameHints ?? [],
   });
+  // A section another sheet plans (Book One under A29) is read for its numbering only: its rows are left out and reported.
+  const skipPatterns = (mapping.skipSections ?? []).flatMap((p) => labelRegex(p) ?? []);
+  /** The heading level a skipped section starts at, or -1 when rows are kept. */
+  let skipFrom = -1;
+  const skipped: { where: string; label: string }[] = [];
   const env: CoerceEnv = {
     ctx,
     addMissingListItems: mapping.addMissingListItems,
@@ -152,6 +158,8 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
   const startHeading = (level: number, title: string, text?: string) => {
     const rule = mapping.headings[level];
     if (!rule) return;
+    if (skipFrom >= 0 && level <= skipFrom) skipFrom = -1;
+    if (skipFrom < 0 && skipPatterns.some((re) => re.test(title.trim()))) skipFrom = level;
     const parent = current[level - 1] ?? null;
     const id = ctx.newId();
     const counterKey = `${level}:${parent?.id ?? ''}`;
@@ -182,8 +190,14 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       ordinal: number,
     });
     const counts = headingCounts[level] ?? (headingCounts[level] = new Map());
-    const key = ordinalKey(counts, normalizeIdentity(identityTitle(rule.collection, title)));
     current.length = level;
+    if (skipFrom >= 0) {
+      // Counted, so the next book or part keeps its number, but nothing is made.
+      current[level] = { id };
+      skipped.push({ where, label: title });
+      return;
+    }
+    const key = ordinalKey(counts, normalizeIdentity(identityTitle(rule.collection, title)));
     const base = {
       ref,
       where,
@@ -218,6 +232,10 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
     );
     if (level >= 0) {
       startHeading(level, distinct[0]?.text ?? '', distinct[1]?.text);
+      continue;
+    }
+    if (skipFrom >= 0) {
+      skipped.push({ where, label: distinct[0]?.text ?? '' });
       continue;
     }
     // Rows under a book with no part get an implicit part to belong to.
@@ -289,7 +307,8 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       fixed: mapping.fixed,
       newId: id,
       ref,
-      ordinal,
+      // A new chapter reads after the chapters a run already planned (see `orderFrom`).
+      ordinal: (mapping.orderFrom ?? 1) + ordinal - 1,
     });
     if (!built.ok) {
       failRow(built.reason);
@@ -314,6 +333,16 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
   }
   out.listAdds = listAdds;
   out.stubs = resolver.stubs;
+  if (skipped.length) {
+    const first = skipped[0];
+    const last = skipped[skipped.length - 1];
+    out.notes.push(
+      `Left out ${skipped.length} ${skipped.length === 1 ? 'row' : 'rows'} (${first?.where} to ${last?.where}) because another sheet plans that section: ${skipped
+        .slice(0, 4)
+        .map((s) => s.label)
+        .join('; ')}${skipped.length > 4 ? `; and ${skipped.length - 4} more` : ''}.`,
+    );
+  }
   return out;
 }
 

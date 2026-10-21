@@ -116,7 +116,7 @@ interface IssueLike {
 export function describeIssue(target: Target, issue: IssueLike, titleMissing = false): string {
   const path = issue.path.map(String).join('.');
   if (path === 'title' || (titleMissing && path === '')) return 'There is no value for the title';
-  const mapped = path.replace(/^strands\.0\./, 'strand.');
+  const mapped = path.replace(/^strands\.0\./, 'strand.').replace(/^strands\.1\./, 'backstory.');
   const label = pathLabel(target, mapped);
   const missing =
     /received undefined|Invalid input: expected \w+, received undefined|Required/i.test(

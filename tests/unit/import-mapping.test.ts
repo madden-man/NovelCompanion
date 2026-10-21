@@ -1,11 +1,19 @@
 import { describe, expect, test } from 'vitest';
 import {
+  chapterStrands,
   conflictQuestion,
   mappingKey,
   parseYear,
   parseYearHeader,
+  regionsOfLabel,
 } from '../../src/shared/domain/import';
-import type { GridMapping, Mapping, TableMapping } from '../../src/shared/domain/import';
+import { defaultMappings } from '../../src/main/import/eastwinds';
+import type {
+  GridMapping,
+  Mapping,
+  ParsedWorkbook,
+  TableMapping,
+} from '../../src/shared/domain/import';
 import { SimBible, fixtureWorkbook } from '../helpers/importSim';
 
 const FILE = { fileName: 'fixture-workbook.xlsx', modifiedAt: '2026-01-15T09:00:00.000Z' };
@@ -59,9 +67,14 @@ describe('IM-1 the mapping engine reads table and grid sheets', () => {
     expect(parseYearHeader('Technology')).toBeNull();
   });
 
-  test('IM-1 the fixture workbook has a table sheet and a grid sheet', async () => {
+  test('IM-1 the fixture workbook has a table sheet, a grid sheet, and a moments sheet and grid', async () => {
     const wb = await fixtureWorkbook();
-    expect(wb.sheets.map((s) => s.name)).toEqual(['People', 'High Level']);
+    expect(wb.sheets.map((s) => s.name)).toEqual([
+      'People',
+      'High Level',
+      'Hale family',
+      'Lives by year',
+    ]);
     expect(wb.sheets[1]!.cells[0]!.slice(0, 3)).toEqual(['', 2030, 2035]);
   });
 
@@ -839,5 +852,399 @@ describe('review fixes: identity, headings, skipped rows, and sources', () => {
     ]);
     // The old reading, every label-only row, is still there when asked for.
     expect(path({ ...gridBase, headingBy: 'any' })).toEqual(['Drones', 'Ships']);
+  });
+});
+
+describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and world events', () => {
+  const at = '2026-08-23T00:00:00.000Z';
+  const years = [49, 50, 51, 52, 53, 54, 55, 56, 57, 58];
+  const across = (from: number, to: number, label: string) =>
+    years.map((y) => (y + 2000 >= from && y + 2000 <= to ? label : null));
+  const merge = (a: (string | null)[], b: (string | null)[]): (string | null)[] =>
+    a.map((v, i) => v ?? b[i] ?? null);
+  /** A High Level sheet shaped like the real one: chapter rows, the Characters block, the world tracker. */
+  const highLevel = () => {
+    const blank = years.map(() => null);
+    const rows: (string | number | null)[][] = [
+      ['East Winds: World', ...years],
+      ['Part One: Sins of the Father', ...blank],
+      [
+        'Ch. 1: Mark Feels Free',
+        ...merge(
+          across(2051, 2054, 'Backstory: High School'),
+          across(2055, 2058, 'Mark: College Arc'),
+        ),
+      ],
+      [
+        'Ch. 3: Mark Gets Drunk',
+        ...merge(across(2049, 2050, 'Siyuan: Early Years'), across(2056, 2057, 'Forestory: Kids')),
+      ],
+      ['Part Two: Lost Spirits', ...blank],
+      ['Ch. 1: Dawn is Shy', ...across(2052, 2053, 'Dawn: College Arc')],
+      ['Characters', ...blank],
+      ['Sullivan Family', ...blank],
+      ['Mark', ...years.map((y) => (y === 55 ? 'Goes to USC' : null))],
+      ['Foundational Drivers', ...blank],
+      ['Resources', ...blank],
+      ['US: Oil', ...years.map((y) => (y === 50 ? 'Fracking declines' : null))],
+      ['US/China', ...years.map((y) => (y === 53 ? 'Relief loans' : null))],
+      ['Commodity Prices', ...years.map((y) => (y === 54 ? 'Grain spikes' : null))],
+    ];
+    return { name: 'High Level', cells: rows, merges: [], boldRows: [1, 2, 5, 7, 10, 11] };
+  };
+  const momentSheet = (name: string, rows: (string | number | null)[][]) => ({
+    name,
+    cells: [
+      [
+        `Chronological: ${name} Family`,
+        'POV',
+        'Year',
+        'POV Age',
+        'Relevant World Events',
+        'How the POV Character Experiences This',
+      ],
+      ...rows,
+    ],
+    merges: [],
+    boldRows: [1],
+  });
+  const plotV1 = () => ({
+    name: 'Plot v1',
+    cells: [
+      ['Plot: Chiasm Form', 'POV', 'Year', 'POV Age', 'Relevant World Events', 'How the POV'],
+      ['Book One', null, null, null, null, null],
+      ['Part One: Sins of the Father', null, null, null, null, null],
+      ['Mark goes to school', 'Mark', 2055, 18, 'A world', 'Nervous'],
+      ['Book Two: I Take Refuge in You', null, null, null, null, null],
+      ['Part One: Claws Come Out', null, null, null, null, null],
+      ['Sydney sneaks out', 'Sydney', 2044, 14, 'A party', 'Bold'],
+    ],
+    merges: [],
+    boldRows: [1, 2, 5],
+  });
+  const workbook = (sheets: ReturnType<typeof highLevel>[]): ParsedWorkbook => ({
+    fileName: 'East_Winds_World.xlsx',
+    modifiedAt: at,
+    sheets,
+  });
+  const mappingFor = (wb: ReturnType<typeof workbook>, collection: string, sheet = 'High Level') =>
+    defaultMappings(wb).find((m) => m.sheet === sheet && m.target.collection === collection)!;
+  const person = (id: string, full: string, chinese?: string) => ({
+    _id: id,
+    title: full,
+    names: { full, ...(chinese ? { chinese } : {}) },
+    birth: { unknown: true },
+    status: 'planned',
+  });
+
+  test('IM-1 A29 a High Level chapter row is a chapter in its part with a present strand and a backstory strand', () => {
+    const wb = workbook([highLevel()]);
+    const { rows, set } = SimBible.empty().plan(wb, mappingFor(wb, 'chapters'));
+    expect(set.failed).toEqual([]);
+    const made = (c: string) => set.items.filter((i) => i.collection === c).map((i) => i.data!);
+    expect(made('books').map((b) => [b.title, b.number])).toEqual([['Book One', 1]]);
+    expect(made('parts').map((p) => [p.title, p.number])).toEqual([
+      ['Sins of the Father', 1],
+      ['Lost Spirits', 2],
+    ]);
+    const chapters = made('chapters');
+    expect(chapters.map((c) => [c.title, c.readingOrder])).toEqual([
+      ['Mark Feels Free', 1],
+      ['Mark Gets Drunk', 2],
+      ['Dawn is Shy', 3],
+    ]);
+    const one = chapters[0]!;
+    expect(one.partId).toBe(
+      made('parts')[0]!._id ?? set.items.find((i) => i.collection === 'parts')!.entryId,
+    );
+    expect(one.strands).toEqual([
+      expect.objectContaining({
+        label: 'Mark: College Arc',
+        startYear: 2055,
+        endYear: 2058,
+        primary: true,
+      }),
+      expect.objectContaining({
+        label: 'Backstory: High School',
+        startYear: 2051,
+        endYear: 2054,
+        primary: false,
+      }),
+    ]);
+    // A chapter with one strand has only the present one.
+    expect((chapters[2]!.strands as unknown[]).length).toBe(1);
+    // IM-6: the chapter records the cell of its label.
+    expect(one.sourceRef).toBe('East_Winds_World.xlsx#High Level!A3');
+    // "Ch. 3" is the second chapter of its part: the place comes from the sheet and the report says so.
+    expect(rows.notes.join(' ')).toContain(
+      '"Ch. 3: Mark Gets Drunk" says chapter 3 but is chapter 2',
+    );
+    // The Characters block and the world tracker are other mappings' rows: no chapter is made from them.
+    expect(chapters.map((c) => c.title)).not.toContain('Mark');
+  });
+
+  test('A29 when neither strand says backstory, the later span is the present and the earlier one is labelled backstory', () => {
+    const wb = workbook([highLevel()]);
+    const { set } = SimBible.empty().plan(wb, mappingFor(wb, 'chapters'));
+    const drunk = set.items.find((i) => i.title === 'Mark Gets Drunk')!.data!;
+    expect(drunk.strands).toEqual([
+      expect.objectContaining({ label: 'Forestory: Kids', startYear: 2056, primary: true }),
+      expect.objectContaining({
+        label: 'Backstory: Siyuan: Early Years',
+        startYear: 2049,
+        primary: false,
+      }),
+    ]);
+    expect(chapterStrands([])).toEqual({ problem: 'The row has no strand labels under its years' });
+    expect(
+      chapterStrands([
+        { label: 'A', start: 1, end: 1 },
+        { label: 'B', start: 2, end: 2 },
+        { label: 'C', start: 3, end: 3 },
+      ]),
+    ).toMatchObject({ problem: expect.stringContaining('names 3 strands') });
+  });
+
+  test('IM-3 A29 a chapter already in the bible is found by its part and title, so a changed strand year is one change, not a new chapter', () => {
+    const wb = workbook([highLevel()]);
+    const sim = SimBible.empty();
+    // Made by hand, as the bible's Book One chapters were (A29): no source records, the number gone from the title.
+    sim.docs.set('books', [{ _id: 'B1', title: 'Book One', number: 1, status: 'planned' }]);
+    sim.docs.set('parts', [
+      { _id: 'P1', title: 'Sins of the Father', bookId: 'B1', number: 1, status: 'planned' },
+    ]);
+    sim.docs.set('chapters', [
+      {
+        _id: 'C1',
+        title: 'Mark Feels Free',
+        partId: 'P1',
+        readingOrder: 7,
+        status: 'planned',
+        strands: [
+          {
+            id: 'S1',
+            label: 'Mark: College Arc',
+            startYear: 2055,
+            endYear: 2058,
+            primary: true,
+            povCharacterId: 'M1',
+            characterIds: ['M1'],
+            placeIds: [],
+          },
+          {
+            id: 'S2',
+            label: 'Backstory: High School',
+            startYear: 2050,
+            endYear: 2054,
+            primary: false,
+            povCharacterId: null,
+            characterIds: [],
+            placeIds: [],
+          },
+        ],
+      },
+    ]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'chapters'));
+    const free = set.items.filter((i) => i.title === 'Mark Feels Free');
+    expect(free).toHaveLength(1);
+    expect(free[0]).toMatchObject({ kind: 'changed', entryId: 'C1' });
+    expect(free[0]!.deltas.map((d) => [d.label, d.before, d.after])).toEqual([
+      ['Story year (backstory strand)', 2050, 2051],
+    ]);
+    sim.apply(set);
+    // The strand keeps its point of view and characters; only the year moved. The reading order is the bible's.
+    const after = sim.entries('chapters').find((c) => c._id === 'C1')!;
+    expect(after.readingOrder).toBe(7);
+    expect(
+      (after.strands as { povCharacterId: string | null; startYear: number }[]).map((s) => [
+        s.povCharacterId,
+        s.startYear,
+      ]),
+    ).toEqual([
+      ['M1', 2055],
+      [null, 2051],
+    ]);
+    // The book and the part were found; only what the bible lacks is new.
+    expect(set.items.filter((i) => i.kind === 'new').map((i) => i.title)).toEqual([
+      'Lost Spirits',
+      'Mark Gets Drunk',
+      'Dawn is Shy',
+    ]);
+    expect(sim.plan(wb, mappingFor(wb, 'chapters')).set.items).toEqual([]);
+  });
+
+  test('SM-12 A12 a category grid cell is a world event with its category, its year, and the regions its row label names', () => {
+    const wb = workbook([highLevel()]);
+    const sim = SimBible.empty();
+    const { set } = sim.plan(wb, mappingFor(wb, 'worldEvents'));
+    expect(set.failed).toEqual([]);
+    const events = set.items.filter((i) => i.collection === 'worldEvents').map((i) => i.data!);
+    expect(events.map((e) => [e.title, (e.start as { year: number }).year, e.regions])).toEqual([
+      ['Fracking declines', 2050, ['United States']],
+      ['Relief loans', 2053, ['United States', 'China']],
+      ['Grain spikes', 2054, []],
+    ]);
+    const path = (id: unknown) => {
+      const label = (x: string) => set.listAdds.find((a) => a.id === x)!;
+      const leaf = label(String(id));
+      return [label(String(leaf.parentId)).label, leaf.label];
+    };
+    expect(path(events[0]!.categoryId)).toEqual(['Resources', 'US: Oil']);
+    // Nothing above Foundational Drivers is a world event.
+    expect(events.map((e) => e.title)).not.toContain('Goes to USC');
+    expect(regionsOfLabel('Chinese Leadership')).toEqual(['China']);
+    expect(regionsOfLabel('Fertility Rate: US')).toEqual(['United States']);
+    expect(regionsOfLabel('Unemployment (US)')).toEqual(['United States']);
+    expect(regionsOfLabel('Dollar Dominance')).toEqual([]);
+    expect(regionsOfLabel('Business')).toEqual([]);
+  });
+
+  test('IM-3 SM-4 regions are only added to: a region set by hand stays when the sheet is imported again', () => {
+    const wb = workbook([highLevel()]);
+    const sim = SimBible.empty();
+    sim.apply(sim.plan(wb, mappingFor(wb, 'worldEvents')).set);
+    const oil = sim.entries('worldEvents').find((e) => e.title === 'Fracking declines')!;
+    oil.regions = ['Texas'];
+    const { set } = sim.plan(wb, mappingFor(wb, 'worldEvents'));
+    expect(set.items).toHaveLength(1);
+    expect(set.items[0]!.deltas).toMatchObject([
+      { label: 'Regions', before: ['Texas'], after: ['Texas', 'United States'] },
+    ]);
+    sim.apply(set);
+    expect(sim.plan(wb, mappingFor(wb, 'worldEvents')).set.items).toEqual([]);
+  });
+
+  test('SM-12 a cell of the Characters block is a moment of the character the row names', () => {
+    const wb = workbook([highLevel()]);
+    const sim = SimBible.empty();
+    sim.docs.set('characters', [person('M1', 'Mark Sullivan'), person('F1', 'Frank Sullivan')]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments'));
+    expect(set.failed).toEqual([]);
+    expect(
+      set.items.map((i) => [i.collection, i.data!.title, i.data!.characterId, i.data!.year]),
+    ).toEqual([['moments', 'Goes to USC', 'M1', 2055]]);
+    expect(set.items[0]!.ref).toBe('East_Winds_World.xlsx#High Level!H9');
+  });
+
+  test('SM-3 a Sullivan row is a moment: the character, the year, what happens, how they experience it, and the world around it', () => {
+    const wb = workbook([
+      momentSheet('Sullivan', [
+        [
+          'Frank meets Laura',
+          'Frank',
+          2027,
+          27,
+          'The Politburo elevates AI',
+          'Meets Laura the same year',
+        ],
+        ['HaoYu is killed by a Chinese drone', null, null, null, null, null],
+      ]),
+    ]);
+    const sim = SimBible.empty();
+    sim.docs.set('characters', [person('F1', 'Frank Sullivan')]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments', 'Sullivan'));
+    expect(set.items.map((i) => i.data)).toEqual([
+      expect.objectContaining({
+        title: 'Frank meets Laura',
+        characterId: 'F1',
+        year: 2027,
+        body: 'Meets Laura the same year',
+        worldContext: 'The Politburo elevates AI',
+        tags: ['Sullivan'],
+        sourceRef: 'East_Winds_World.xlsx#Sullivan!A2',
+      }),
+    ]);
+    // IM-2: a row with no character and no year is reported, not dropped.
+    expect(set.failed).toEqual([
+      expect.objectContaining({
+        where: 'Sullivan row 3',
+        reason: 'There is no value for Character',
+      }),
+    ]);
+  });
+
+  test('SM-3 a 李 row names the character by a Chinese name or one word of the full name, and the sheet settles a name two people share', () => {
+    const wb = workbook([
+      momentSheet('李', [
+        ['Qin becomes foreman', '勤', 2046, null, 'The Party endorses', 'Proud'],
+        ['Qin doubts Xuan', 'Qin', 2066, null, 'A coalition wins', 'Uneasy'],
+        ['Dawn goes to USC', 'Dawn', 2057, null, 'Growth', 'Excited'],
+      ]),
+    ]);
+    const sim = SimBible.empty();
+    sim.docs.set('characters', [
+      person('Q1', 'Li Qin', '李勤'),
+      person('D1', 'Dawn Li', '李晓曦'),
+      person('D2', 'Dawn Sullivan'),
+    ]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments', '李'));
+    expect(set.failed).toEqual([]);
+    expect(set.items.map((i) => [i.data!.title, i.data!.characterId])).toEqual([
+      ['Qin becomes foreman', 'Q1'],
+      ['Qin doubts Xuan', 'Q1'],
+      ['Dawn goes to USC', 'D1'],
+    ]);
+    // On a sheet with no family to go by, the shared name is reported as ambiguous.
+    const loose = SimBible.empty();
+    loose.docs.set('characters', sim.entries('characters'));
+    const plain = { ...mappingFor(wb, 'moments', '李'), nameHints: [] };
+    expect(loose.plan(wb, plain).set.failed).toEqual([
+      expect.objectContaining({
+        where: '李 row 4',
+        reason: expect.stringContaining('More than one'),
+      }),
+    ]);
+  });
+
+  test('A29 a Plot v1 Book One row makes nothing while High Level plans Book One, and a Book Two row is a chapter', () => {
+    const wb = workbook([highLevel(), plotV1()]);
+    const { rows, set } = SimBible.empty().plan(wb, mappingFor(wb, 'chapters', 'Plot v1'));
+    const made = (c: string) => set.items.filter((i) => i.collection === c).map((i) => i.data!);
+    expect(made('chapters').map((c) => c.title)).toEqual(['Sydney sneaks out']);
+    expect(made('books').map((b) => [b.title, b.number])).toEqual([['I Take Refuge in You', 2]]);
+    expect(made('parts').map((p) => p.title)).toEqual(['Claws Come Out']);
+    expect(rows.notes.join(' ')).toMatch(/Left out 3 rows \(Plot v1 row 2 to Plot v1 row 4\)/);
+    // Without a High Level plan, Book One's rows are chapters as before.
+    const alone = workbook([plotV1()]);
+    const { set: before } = SimBible.empty().plan(alone, mappingFor(alone, 'chapters', 'Plot v1'));
+    expect(before.items.filter((i) => i.collection === 'chapters').map((i) => i.title)).toEqual([
+      'Mark goes to school',
+      'Sydney sneaks out',
+    ]);
+  });
+
+  test('IM-3 IM-7 SM-3 a moment made from a plot beat keeps its records: a body edited by hand stays, a changed year updates it', () => {
+    const wb = workbook([
+      momentSheet('Sullivan', [['Frank meets Laura', 'Frank', 2028, 27, 'World', 'Feels']]),
+    ]);
+    const sim = SimBible.empty();
+    sim.docs.set('characters', [person('F1', 'Frank Sullivan')]);
+    const ref = 'East_Winds_World.xlsx#Sullivan!A2';
+    // Migration 9 kept the beat's ID, sourceRef, and records written under the beat's field names.
+    sim.docs.set('moments', [
+      {
+        _id: 'BEAT1',
+        title: 'Frank meets Laura',
+        characterId: 'F1',
+        year: 2027,
+        endYear: null,
+        body: 'Rewritten by hand',
+        worldContext: 'World',
+        sourceRef: ref,
+        status: 'planned',
+      },
+    ]);
+    const old = '2026-08-23T00:00:00.000Z';
+    sim.sources.set('BEAT1', [
+      { path: 'title', ref, at: old, value: 'Frank meets Laura', others: [] },
+      { path: 'povCharacterId', ref, at: old, value: 'F1', others: [] },
+      { path: 'year', ref, at: old, value: 2027, others: [] },
+      { path: 'worldContext', ref, at: old, value: 'World', others: [] },
+      { path: 'experienceNote', ref, at: old, value: 'Feels', others: [] },
+    ]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments', 'Sullivan'));
+    expect(set.items).toHaveLength(1);
+    expect(set.items[0]).toMatchObject({ kind: 'changed', entryId: 'BEAT1' });
+    expect(set.items[0]!.deltas.map((d) => [d.path, d.after])).toEqual([['year', 2028]]);
   });
 });
