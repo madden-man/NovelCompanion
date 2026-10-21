@@ -1278,6 +1278,66 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     ]);
   });
 
+  test('IM-7 A13 a value cleared by hand after the entry was made is kept and filed when newer; a blank on an entry never edited is filled quietly', () => {
+    const wb = workbook([
+      momentSheet('Sullivan', [
+        ['Frank meets Laura', 'Frank Sullivan', 2027, 27, 'World', 'Meets Laura the same year'],
+        ['Frank proposes', 'Frank Sullivan', 2029, 29, 'World', 'Proposes into a new world'],
+      ]),
+    ]);
+    const sim = SimBible.empty();
+    sim.docs.set('characters', [person('F1', 'Frank Sullivan')]);
+    const moment = (id: string, title: string, year: number, row: number, modifiedAt: string) => ({
+      _id: id,
+      title,
+      characterId: 'F1',
+      year,
+      endYear: null,
+      body: '',
+      worldContext: 'World',
+      sourceRef: `East_Winds_World.xlsx#Sullivan!A${row}`,
+      status: 'planned',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      modifiedAt,
+    });
+    sim.docs.set('moments', [
+      // The writer emptied the body on 2026-10-20, after the workbook (2026-01-15) was saved.
+      moment('M1', 'Frank meets Laura', 2027, 2, '2026-10-20T00:00:00.000Z'),
+      // Never edited since it was made.
+      moment('M2', 'Frank proposes', 2029, 3, '2026-01-01T00:00:00.000Z'),
+    ]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments', 'Sullivan'));
+    const of = (id: string) => set.items.find((i) => i.entryId === id)!;
+    expect(of('M1').deltas).toEqual([
+      expect.objectContaining({
+        path: 'body',
+        before: '',
+        after: 'Meets Laura the same year',
+        outcome: 'keep',
+        conflict: expect.objectContaining({
+          winner: 'existing',
+          claims: [
+            expect.objectContaining({ ref: HAND_EDIT_REF, value: '', kept: true }),
+            expect.objectContaining({ value: 'Meets Laura the same year', kept: false }),
+          ],
+        }),
+      }),
+    ]);
+    expect(of('M2').deltas).toEqual([
+      expect.objectContaining({
+        path: 'body',
+        after: 'Proposes into a new world',
+        outcome: 'apply',
+      }),
+    ]);
+    expect(of('M2').deltas[0]!.conflict).toBeUndefined();
+    sim.apply(set);
+    expect(sim.entries('moments').map((m) => [m._id, m.body])).toEqual([
+      ['M1', ''],
+      ['M2', 'Proposes into a new world'],
+    ]);
+  });
+
   test('SM-3 a 李 row names the character by its Chinese given name or one word of the full name within the sheet family, and every such match is reported', () => {
     const wb = workbook([
       momentSheet('李', [

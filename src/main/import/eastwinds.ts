@@ -595,9 +595,11 @@ export async function importEastWinds(
       one?.strands[0]?.startYear ??
       firstChapterYear(open) ??
       2000;
+    // Chapter 1 first: placing the Introduction moves the later chapters, and a chapter moved since it was made
+    // no longer takes a blank field from a source quietly (IM-7).
     const targets: { title: string; blocks: DocBlock[]; isOne: boolean }[] = [
-      { title: 'Introduction', blocks: split.introduction, isOne: false },
       { title: split.chapterTitle, blocks: split.chapterOne, isOne: true },
+      { title: 'Introduction', blocks: split.introduction, isOne: false },
     ];
     for (const t of targets) {
       if (!part) {
