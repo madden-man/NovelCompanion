@@ -502,6 +502,9 @@ test('SM-8 ED-3 dragging a marker along its row changes its year, shown live, an
   await page.mouse.up();
   await expect(grid().getByTestId('drag-year')).toHaveCount(0);
   await expect(marker('E5')).toHaveAttribute('data-year', '2045');
+  // After a drag, a plain click on another marker opens it: no click is lost.
+  await marker('E3').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E3');
   await expect.poll(async () => (await getEvent('E5')).start).toEqual({ year: 2045 });
   // Still in its own row.
   await expect(grid().locator('.wg-row[data-row="energy"] .wg-marker[data-id="E5"]')).toHaveCount(
@@ -596,14 +599,63 @@ test('SM-8 the region chips narrow the markers', async () => {
   );
 });
 
+test('WE-1 SM-8 the category filter narrows the rows', async () => {
+  const filter = view().getByRole('group', { name: 'Categories' });
+  const category = filter.getByLabel('Category', { exact: true });
+  const all = ['technology', 'robotics', 'energy', 'climate', 'geopolitics', 'economy', 'culture'];
+  expect(await rowKeys()).toEqual(all);
+  await expect(category.locator('option')).toHaveText([
+    'All categories',
+    'Technology',
+    'Climate',
+    'Geopolitics',
+    'Economy',
+    'Culture',
+  ]);
+  // A group with no subcategories offers no second level.
+  await category.selectOption({ label: 'Climate' });
+  expect(await rowKeys()).toEqual(['climate']);
+  await expect(filter.getByLabel('Subcategory')).toHaveCount(0);
+  await expect(grid().locator('.wg-marker')).toHaveCount(3);
+  await category.selectOption({ label: 'Technology' });
+  expect(await rowKeys()).toEqual(['technology', 'robotics', 'energy']);
+  await expect(grid().locator('.wg-group')).toHaveCount(1);
+  await expect(grid().locator('.wg-marker')).toHaveCount(4);
+  const sub = filter.getByLabel('Subcategory');
+  await expect(sub.locator('option')).toHaveText(['All subcategories', 'Robotics', 'Energy']);
+  await sub.selectOption({ label: 'Robotics' });
+  expect(await rowKeys()).toEqual(['robotics']);
+  expect(
+    await grid()
+      .locator('.wg-marker')
+      .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id)),
+  ).toEqual(['E2', 'E9']);
+  await category.selectOption({ label: 'All categories' });
+  expect(await rowKeys()).toEqual(all);
+  await expect(grid().locator('.wg-marker')).toHaveCount(11);
+});
+
 test('SM-8 TM-3 the story year line and the writing band sit where the story time says', async () => {
-  // Chapter 7's present strand runs 2060 to 2063 for this test.
+  // For this test Chapter 7's present strand runs 2060 to 2063, and it gains a backstory
+  // strand, not primary, from 2052 to 2054.
   const ch7 = (await invoke('entry.get', { collection: 'chapters', id: 'CH7' })).entry;
   const strands = ch7.strands as Record<string, unknown>[];
   await invoke('entry.update', {
     collection: 'chapters',
     id: 'CH7',
-    patch: { strands: strands.map((s) => ({ ...s, endYear: 2063 })) },
+    patch: {
+      strands: [
+        ...strands.map((s) => ({ ...s, endYear: 2063 })),
+        {
+          ...strands[0],
+          id: 'CH7-backstory',
+          label: 'backstory',
+          primary: false,
+          startYear: 2052,
+          endYear: 2054,
+        },
+      ],
+    },
   });
   await invoke('storyTime.set', {
     time: { year: 2061, chapterId: 'CH7', strandId: 'CH7-present' },
@@ -627,6 +679,14 @@ test('SM-8 TM-3 the story year line and the writing band sit where the story tim
   const last = (await grid().locator('.wg-line').last().boundingBox())!;
   expect(lb.y).toBeLessThanOrEqual(first.y + 1);
   expect(lb.y + lb.height).toBeGreaterThanOrEqual(last.y + last.height - 1);
+  // The Writing picker on the backstory strand: the band follows that strand, not the primary.
+  await invoke('storyTime.set', {
+    time: { year: 2053, chapterId: 'CH7', strandId: 'CH7-backstory' },
+  });
+  await expect(band).toHaveAttribute('data-from', '2052');
+  await expect(band).toHaveAttribute('data-to', '2054');
+  await expect(band).toHaveAttribute('title', /Rain in Guangzhou, backstory/);
+  await expect(line).toHaveAttribute('data-year', '2053');
   // Story time moves the line; no chapter, no band.
   await invoke('storyTime.set', { time: { year: 2050 } });
   await expect(line).toHaveAttribute('data-year', '2050');
@@ -714,16 +774,53 @@ test('SM-8 NF-2 the whole screen works from the keyboard and its labels use the 
   expect((await getEvent(id)).categoryId).toBe('energy');
   await blurAndUndo();
   await expect(marker(id)).toHaveCount(0);
-  // Markers are Tab stops in reading order, row by row and year by year; Enter opens one.
+  // The markers are one Tab stop. Up and Down walk them in reading order, row by row and
+  // year by year; Home and End jump to the ends; Enter opens one; Tab leaves them.
   const order = await grid()
     .locator('.wg-marker')
     .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
   expect(order).toEqual(['E11', 'E2', 'E9', 'E5', 'E3', 'E6', 'E10', 'E4', 'E7', 'E8', 'E1']);
-  await tabTo(marker('E2'));
-  await page.keyboard.press('Tab');
+  const stop = grid().locator('.wg-marker[tabindex="0"]');
+  await expect(stop).toHaveCount(1);
+  const focusedMarker = () =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return el?.classList.contains('wg-marker') ? (el.dataset.id ?? null) : null;
+    });
+  await view().getByRole('button', { name: 'Change' }).focus();
+  let reached = 0;
+  for (let i = 0; i < 80 && !(await focusedMarker()); i++) await page.keyboard.press('Tab');
+  const landed = (await focusedMarker())!;
+  expect(landed).toBe(await stop.getAttribute('data-id'));
+  await page.keyboard.press('Home');
+  await expect(marker('E11')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(marker('E2')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await expect(marker('E9')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(marker('E2')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(marker('E1')).toBeFocused();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(marker('E9')).toBeFocused();
+  await expect(stop).toHaveAttribute('data-id', 'E9');
   await page.keyboard.press('Enter');
   await expect(inspector()).toHaveAttribute('data-entry-id', 'E9');
+  // Tab from the grid's stop reaches no other marker: the rest of the screen, then out.
+  await marker('E9').focus();
+  await page.keyboard.press('Tab');
+  expect(await focusedMarker()).toBeNull();
+  for (let i = 0; i < 60; i++) {
+    await page.keyboard.press('Tab');
+    if (await focusedMarker()) reached += 1;
+    const inGrid = await grid().evaluate((g) => g.contains(document.activeElement));
+    if (!inGrid) break;
+  }
+  expect(reached).toBe(0);
+  expect(await grid().evaluate((g) => g.contains(document.activeElement))).toBe(false);
   // An era opens from the keyboard too.
   const era = grid().getByTestId('era-band').locator('.wg-era[data-id="ERA-2040"]');
   await era.focus();
