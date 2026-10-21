@@ -378,14 +378,35 @@ test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one un
   await expect(fresh.getByLabel('Start year')).toHaveValue('2101');
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('After the century');
+  // Tab saves the name and moves on; the save does not rebuild the row, so focus stays and
+  // what is typed while it is written is kept.
+  await page.keyboard.press('Tab');
+  const start = fresh.getByLabel('Start year');
+  await expect(start).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('2102');
+  const freshId = String(await fresh.getAttribute('data-era'));
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'eraStates', id: freshId })).entry.name,
+    )
+    .toBe('After the century');
+  await expect(start).toBeFocused();
+  await expect(start).toHaveValue('2102');
+  await expect(fresh.getByLabel('Era name')).toHaveValue('After the century');
   await page.keyboard.press('Enter');
   await expect
-    .poll(async () =>
-      (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries.some(
-        (e) => e.entry.name === 'After the century' && e.entry.startYear === 2101,
-      ),
-    )
-    .toBe(true);
+    .poll(async () => (await invoke('entry.get', { collection: 'eraStates', id: freshId })).entry)
+    .toMatchObject({ name: 'After the century', title: 'After the century', startYear: 2102 });
+  await expect(start).toBeFocused();
+  // One undo step each, newest first, after the step that made the era.
+  await expect(page.getByTestId('undo-history').locator('li').nth(0)).toHaveText(
+    'Start year on After the century',
+  );
+  await expect(page.getByTestId('undo-history').locator('li').nth(1)).toHaveText(
+    'Era name on After the century',
+  );
+  await expect(page.getByTestId('undo-history').locator('li').nth(2)).toHaveText('Created New era');
 });
 
 test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', async () => {

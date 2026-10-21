@@ -379,7 +379,7 @@ function ErasView() {
         <ul className="era-list">
           {rows.map((e) => (
             <EraRow
-              key={`${e._id}:${String(e.modifiedAt)}`}
+              key={e._id}
               era={e}
               current={Number(e.startYear) <= story.year && story.year <= Number(e.endYear)}
               autoFocus={fresh === e._id}
@@ -403,14 +403,34 @@ function EraRow(props: {
   const { era } = props;
   const name = String(era.name ?? '');
   const ids = { name: useId(), start: useId(), end: useId(), body: useId() };
-  const [draft, setDraft] = useState({
+  type Key = 'name' | 'start' | 'end' | 'body';
+  const stored: Record<Key, string> = {
     name,
     start: String(era.startYear ?? ''),
     end: String(era.endYear ?? ''),
     body: String(era.body ?? ''),
-  });
+  };
+  const [draft, setDraft] = useState(stored);
+  /** Fields typed in and not yet committed: a change from elsewhere never overwrites them. */
+  const dirty = useRef(new Set<Key>());
+  const storedKey = JSON.stringify(stored);
+  const [seen, setSeen] = useState(storedKey);
+  if (seen !== storedKey) {
+    // Adjusted during render: a save, an undo or another writer changed the era.
+    setSeen(storedKey);
+    setDraft((d) => {
+      const next = { ...d };
+      for (const k of Object.keys(stored) as Key[]) if (!dirty.current.has(k)) next[k] = stored[k];
+      return next;
+    });
+  }
+  const edit = (key: Key, value: string) => {
+    dirty.current.add(key);
+    setDraft((d) => ({ ...d, [key]: value }));
+  };
   const year = (t: string) => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
-  const commit = (key: keyof typeof draft) => {
+  const commit = (key: Key) => {
+    dirty.current.delete(key);
     const v = draft[key];
     if (key === 'name') {
       if (v.trim() && v !== name) props.onSave({ name: v.trim(), title: v.trim() }, 'Era name');
@@ -425,8 +445,7 @@ function EraRow(props: {
   };
   const input = (key: 'start' | 'end') => ({
     value: draft[key],
-    onChange: (ev: { target: { value: string } }) =>
-      setDraft((d) => ({ ...d, [key]: ev.target.value })),
+    onChange: (ev: { target: { value: string } }) => edit(key, ev.target.value),
     onBlur: () => commit(key),
     onKeyDown: (ev: ReactKeyboardEvent) => {
       if (ev.key === 'Enter') commit(key);
@@ -446,7 +465,7 @@ function EraRow(props: {
               id={ids.name}
               value={draft.name}
               autoFocus={props.autoFocus}
-              onChange={(ev) => setDraft((d) => ({ ...d, name: ev.target.value }))}
+              onChange={(ev) => edit('name', ev.target.value)}
               onBlur={() => commit('name')}
               onKeyDown={(ev) => {
                 if (ev.key === 'Enter') commit('name');
@@ -469,7 +488,7 @@ function EraRow(props: {
             id={ids.body}
             rows={4}
             value={draft.body}
-            onChange={(ev) => setDraft((d) => ({ ...d, body: ev.target.value }))}
+            onChange={(ev) => edit('body', ev.target.value)}
             onBlur={() => commit('body')}
           />
         </div>
