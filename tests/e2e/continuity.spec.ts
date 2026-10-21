@@ -51,7 +51,7 @@ test.beforeAll(async () => {
     });
   }
   // The M7 supplement gives the chapters arcs and beats, so the stored plot is there to compare.
-  for (const c of ['arcs', 'plotBeats']) {
+  for (const c of ['moments']) {
     const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
     await invoke('entry.createMany', {
       items: docs.map((d) => ({ collection: c as never, data: strip(d) })),

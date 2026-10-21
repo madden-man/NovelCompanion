@@ -203,7 +203,8 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   const s = strand('CH6-present');
   await expect(groupIds(s, 'era')).toHaveAttribute('data-id', 'ERA-2040');
   await expect(groupIds(s, 'culture')).toHaveAttribute('data-id', 'CU4');
-  await expect(groupIds(s, 'plannedAhead')).toHaveAttribute('data-id', 'E9');
+  // SM-4: world events have no places, so E9 (2072, the Hale house) no longer reaches this chapter.
+  await expect(groupIds(s, 'plannedAhead')).toHaveCount(0);
   // A33: the window is a strip of five year columns, 2042 to 2046 around 2045, titles only.
   const strip = s.locator('[data-testid="sel-group"][data-kind="eventsWindow"]');
   await expect(strip.locator('h4')).toHaveText('World events 2042 to 2046 (1)');
@@ -272,13 +273,10 @@ test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured
     '2. World events ongoing',
     '3. Cultural expectations',
     '4. Places',
-    '5. Who knows what',
+    '5. Backstory',
     '6. Previous chapters',
-    '7. Beats',
-    '8. Glossary, themes, and open questions',
-    '9. Custom entries',
-    '10. Last session note',
-    'Planned ahead (after 2045)',
+    '7. Glossary and open questions',
+    '8. Last session note',
   ]);
   await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
   const briefs = (await invoke('entry.list', { collection: 'briefs', trash: 'exclude' })).entries;
@@ -315,7 +313,7 @@ test('SB-9 removing and adding entries in the brief view, then regenerating', as
   const saved = (await invoke('entry.get', { collection: 'briefs', id: briefId })).entry;
   expect(saved.entryIds).toContain('Z4');
   expect(saved.entryIds).not.toContain('E5');
-  await expect(brief.getByTestId('brief-body')).toContainText('11. Added by you');
+  await expect(brief.getByTestId('brief-body')).toContainText('9. Added by you');
   await expect(brief.getByTestId('brief-body')).toContainText('removed by you');
 });
 
@@ -345,6 +343,13 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
     NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-session-key-0123456789abcdef',
   });
   await openBible();
+  // The recorded brief puts E9 under Planned ahead. World events lost their places in A39, so
+  // E9 reaches CH6 only as the year after the story year (A33), as in the integration test.
+  await invoke('entry.update', {
+    collection: 'worldEvents',
+    id: 'E9',
+    patch: { start: { year: 2046 } },
+  });
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
   await view.getByRole('button', { name: 'A chapter', exact: true }).click();
