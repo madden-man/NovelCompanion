@@ -21,6 +21,8 @@ export function SearchView(props: {
   query: string;
   onQuery: (q: string) => void;
   onOpen: (collection: EntryCollection, id: string) => void;
+  /** SM-6: every section's own list, which left the rail, opens from its Section filter. */
+  onOpenSection?: (collection: EntryCollection) => void;
 }) {
   const { query } = props;
   const { version } = useStore();
@@ -121,6 +123,16 @@ export function SearchView(props: {
               </option>
             ))}
           </select>
+          {section && props.onOpenSection && (
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => props.onOpenSection?.(section as EntryCollection)}
+              data-testid="search-open-section"
+            >
+              List every {collectionInfo[section as EntryCollection].singular.toLowerCase()}
+            </button>
+          )}
         </div>
         <div className="field">
           <label htmlFor={ids.status}>Status</label>

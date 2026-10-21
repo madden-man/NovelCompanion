@@ -35,6 +35,8 @@ const KINDS: { kind: Kind; label: string }[] = [
 export function StartSessionView(props: {
   onOpen: OpenEntry;
   onStarted: (briefId: string, note: string | null, noteSettings: boolean) => void;
+  /** SM-11: the selection shows open when Start session was asked for, folded otherwise. */
+  showSelection?: boolean;
 }) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
@@ -131,8 +133,8 @@ export function StartSessionView(props: {
 
   const ro = useWriteGuard();
   return (
-    <div className="ws-wide stack" data-testid="start-session">
-      <h2>Start session</h2>
+    <div className="stack" data-testid="start-session">
+      <h3>Start session</h3>
       <div className="panel stack">
         <div className="row" role="group" aria-label="Section of plot">
           {KINDS.map((k) => (
@@ -259,14 +261,18 @@ export function StartSessionView(props: {
         )}
       </div>
       {result && (
-        <>
-          <div className="row">
-            <h3>What the bible selects: {result.selection.label}</h3>
+        <details
+          className="start-selection"
+          open={props.showSelection !== false}
+          data-testid="start-selection"
+        >
+          <summary className="row">
+            <strong>What the bible selects: {result.selection.label}</strong>
             <span className="chip time">{result.selection.year}</span>
             <span>{result.selection.ids.length} entries</span>
-          </div>
+          </summary>
           <SelectionBody selection={result.selection} onOpen={props.onOpen} />
-        </>
+        </details>
       )}
     </div>
   );

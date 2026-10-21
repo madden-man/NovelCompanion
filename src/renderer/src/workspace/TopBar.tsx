@@ -10,9 +10,15 @@ import { useStrandOptions } from './timeline/StoryTimeDialog';
  * chapter being written, Relevant to Session, and Start session. The first two
  * read and write the one story time (TM-3), so the tree, the timeline,
  * character ages, and the session selection follow them. Start session opens
- * the DB-2 flow with the chapter being written as its section.
+ * the DB-2 flow on the Sessions screen (SM-11) with the chapter being written
+ * as its section.
  */
-export function TopBar(props: { onRelevant: () => void; onStartSession: () => void }) {
+export function TopBar(props: {
+  onRelevant: () => void;
+  onStartSession: () => void;
+  /** SM-10: Relevant to Session is the screen showing. */
+  relevantActive?: boolean;
+}) {
   const story = useStoryTime();
   const characters = useEntries('characters');
   const strands = useStrandOptions();
@@ -111,6 +117,7 @@ export function TopBar(props: { onRelevant: () => void; onStartSession: () => vo
           type="button"
           className="btn small"
           onClick={props.onRelevant}
+          aria-current={props.relevantActive ? 'page' : undefined}
           data-testid="top-relevant"
           title="The entries that matter for the chapter being written"
         >

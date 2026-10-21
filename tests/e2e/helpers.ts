@@ -97,7 +97,7 @@ export function invokeVia(page: Page): Invoke {
     ] as const) as Promise<Response<C>>;
 }
 
-/** Locator methods that act on the button, so the More disclosure opens first (KB-8). */
+/** Locator methods that act on the button, so the App menu opens first for one of its items. */
 const RAIL_ACTIONS = new Set([
   'click',
   'dblclick',
@@ -109,45 +109,58 @@ const RAIL_ACTIONS = new Set([
   'waitFor',
 ]);
 
-/** The Entries screen's tabs (KB-5), which were rail items before M11. */
-const ENTRIES_TABS = new Set(['Culture by year', 'Place tree', 'Romanization', 'Glossary table']);
+/** SM-6: the eight screens of the rail, in order. */
+export const RAIL_SCREENS = [
+  'Characters',
+  'Family tree',
+  'Outline',
+  'World events',
+  'Backstory',
+  'Continuity checker',
+  'Sessions',
+  'Cultural data',
+] as const;
+
+/** SM-6: the App menu's items: the nine utilities, then the reference views. */
+export const APP_MENU_ITEMS = [
+  'Search and filters',
+  'Review queue',
+  'Import',
+  'Backups',
+  'Google Drive',
+  'Lists',
+  'Trash',
+  'Bibles',
+  'Settings',
+  'Place tree',
+  'Romanization',
+  'Glossary table',
+] as const;
+
+/** Names the specs used before SM-6, while they are renamed. */
+const ALIASES: Record<string, string> = { Timeline: 'World events' };
 
 /**
- * A button in the rail. KB-1 puts everything but the five screens under the
- * "More" disclosure; acting on a button there (click, focus, press, and the
- * like) opens More first when the button is not visible. The locator matches
- * hidden buttons too, so `count()` finds one inside a closed More. A name the
- * rail does not have (Culture by year, Place tree, Romanization, Glossary
- * table: KB-5) is reached as a tab of the Entries screen.
+ * A screen in the rail (SM-6), by its name: one of the eight buttons, or an
+ * item of the App menu at the rail's foot. Acting on an App menu item (click,
+ * focus, press, and the like) opens the menu first. The locator matches the
+ * hidden items of a closed menu too, so `count()` and attribute checks work
+ * without opening it. "Timeline" still names World events.
  */
 export function rail(page: Page, name: string): Locator {
   const nav = page.getByRole('navigation', { name: 'Sections' });
-  const button = nav.getByRole('button', { name, exact: true, includeHidden: true });
-  const openMore = async () => {
+  const label = ALIASES[name] ?? name;
+  const inMenu = (APP_MENU_ITEMS as readonly string[]).includes(label);
+  const button = inMenu
+    ? nav.getByRole('menuitem', { name: label, exact: true, includeHidden: true })
+    : nav.getByTestId('rail-main').getByRole('button', { name: label, exact: true });
+  const openMenu = async () => {
     await nav.waitFor();
     if (await button.isVisible()) return;
-    const more = nav.locator('details.rail-more');
-    if (!(await more.count())) return;
-    if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) {
-      await more.locator('summary').click();
-    }
+    const app = nav.getByTestId('app-menu-button');
+    if ((await app.getAttribute('aria-expanded')) !== 'true') await app.click();
   };
-  /** The Entries screen's tab for a name the rail lacks, or null. */
-  const viaEntries = async (): Promise<Locator | null> => {
-    if (!ENTRIES_TABS.has(name)) return null;
-    await nav.waitFor();
-    if (await button.count()) return null;
-    const entries = nav.getByRole('button', { name: 'Entries', exact: true });
-    if (!(await entries.count())) return null;
-    await entries.click();
-    const view = page.getByTestId('entries-view');
-    await view.waitFor();
-    const tab = view.getByRole('tablist', { name: 'Entries screens' }).getByRole('tab', {
-      name,
-      exact: true,
-    });
-    return (await tab.count()) ? tab : null;
-  };
+  if (!inMenu) return button;
   return new Proxy(button, {
     get(target, prop, receiver) {
       const value: unknown = Reflect.get(target, prop, receiver);
@@ -155,12 +168,7 @@ export function rail(page: Page, name: string): Locator {
       const fn = value as (...args: unknown[]) => unknown;
       if (typeof prop === 'string' && RAIL_ACTIONS.has(prop)) {
         return async (...args: unknown[]) => {
-          const there = await viaEntries();
-          if (there) {
-            const act = Reflect.get(there, prop) as (...a: unknown[]) => unknown;
-            return act.apply(there, args);
-          }
-          await openMore();
+          await openMenu();
           return fn.apply(target, args);
         };
       }
@@ -169,12 +177,27 @@ export function rail(page: Page, name: string): Locator {
   });
 }
 
-/** Open the rail's More disclosure (KB-1) when it is closed. */
-export async function openMore(page: Page): Promise<void> {
-  const more = page.getByRole('navigation', { name: 'Sections' }).locator('details.rail-more');
-  if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) {
-    await more.locator('summary').click();
-  }
+/**
+ * SM-6: a section's own list (Chapters, Families, Era states and the rest),
+ * which left the rail. It opens from Search and filters: pick the section,
+ * then "List every ...".
+ */
+export async function sectionList(page: Page, plural: string): Promise<void> {
+  await rail(page, 'Search and filters').click();
+  const view = page.getByTestId('search-view');
+  await view.getByLabel('Section').selectOption({ label: plural });
+  await view.getByTestId('search-open-section').click();
+  await expect(page.getByRole('heading', { name: plural, level: 2 })).toBeVisible();
+}
+
+/** A screen of the rail opened on one of its tabs: Continuity checker's Manuscript, Cultural data's Eras. */
+export async function screenTab(page: Page, screen: string, tab: string): Promise<void> {
+  await rail(page, screen).click();
+  await page.getByRole('tab', { name: tab, exact: true }).click();
+  await expect(page.getByRole('tab', { name: tab, exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 }
 
 export function field(scope: Locator, path: string): Locator {
@@ -204,7 +227,8 @@ export function withoutSystem(specs: readonly FieldSpec[], value: unknown): unkn
 /**
  * Open the list an entry of `collection` is made on, and return the name of
  * its New button and the fields its form presets there and does not show.
- * Every section has a rail item named for it.
+ * Characters is a screen of the rail; every other section's list opens from
+ * Search and filters (SM-6).
  */
 export async function openListFor(
   page: Page,
@@ -212,7 +236,8 @@ export async function openListFor(
   collection: EntryCollection,
   _entry: Record<string, unknown>,
 ): Promise<{ newButton: string; preset: Record<string, unknown> }> {
-  await rail(page, collectionInfo[collection].plural).click();
+  if (collection === 'characters') await rail(page, 'Characters').click();
+  else await sectionList(page, collectionInfo[collection].plural);
   return { newButton: `New ${collectionInfo[collection].singular.toLowerCase()}`, preset: {} };
 }
 

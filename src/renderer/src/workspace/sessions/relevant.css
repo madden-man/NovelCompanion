@@ -185,3 +185,80 @@
 .rel-bs-more {
   font-size: 0.85rem;
 }
+
+/* SM-10: the scene note and the character tiles. */
+.rel-scene textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+}
+.rel-tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+.rel-tile {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rel-tile.pov {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.rel-tile.open {
+  grid-column: 1 / -1;
+}
+.rel-tile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+.rel-tile-button {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  color: var(--fg);
+  border-radius: 4px;
+}
+.rel-tile-button:hover .rel-tile-name {
+  text-decoration: underline;
+}
+.rel-tile-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.rel-tile-name {
+  font-weight: 600;
+}
+.rel-tile-zh {
+  font-family: var(--font-cjk);
+  color: var(--fg);
+}
+.rel-tile-detail[hidden] {
+  display: none;
+}
+.rel-tile-detail {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.rel-tile-moments li {
+  padding: 2px 0;
+}
+@media (max-width: 400px) {
+  .rel-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

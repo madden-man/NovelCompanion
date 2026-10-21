@@ -158,13 +158,21 @@ export function BriefSettings({
 }
 
 /**
- * Relevant to Session: what matters for the chapter being written (A35):
- * world events first, then the backstory of the chapter's backstory years,
- * the characters by name and age, and the culture of the setting in that
- * year, with the rest of the selection folded below. It is the same
- * selection the brief is written from (SB-2, SB-3), shown live.
+ * Relevant to Session (SB-10, SM-10): what matters for the chapter being
+ * written, from the Writing picker, else a story year and point of view
+ * (SB-1). The chapter heads it, then the scene note, the characters as tiles,
+ * the world events strip and the cultural context, with the rest of the
+ * selection folded below. It is the same selection the brief is written from
+ * (SB-2, SB-3), shown live.
  */
-export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
+export function RelevantView({
+  onOpen,
+  onBackstory,
+}: {
+  onOpen: OpenEntry;
+  /** SM-10: Their backstory on a tile opens Backstory with that person picked. */
+  onBackstory: (characterId: string) => void;
+}) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
   const characters = useEntries('characters');
@@ -221,6 +229,7 @@ export function RelevantView({ onOpen }: { onOpen: OpenEntry }) {
         <RelevantBody
           selection={sel}
           onOpen={onOpen}
+          onBackstory={onBackstory}
           writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
         />
       )}
