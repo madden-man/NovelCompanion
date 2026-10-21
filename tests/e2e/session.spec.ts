@@ -446,8 +446,9 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
   await iris.getByTestId('tile-toggle').click();
   await iris.getByRole('button', { name: 'Their backstory' }).click();
   await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByTestId('backstory-view')).toHaveAttribute('data-character', 'H5');
-  await expect(page.getByTestId('backstory-view')).toContainText('Picked: Iris Hale-Zhou');
+  await expect(
+    page.getByTestId('backstory-view').locator('.bs-row-label[aria-pressed="true"]'),
+  ).toContainText('Iris Hale-Zhou');
   for (const id of made) await invoke('entry.delete', { collection: 'moments', id });
   await invoke('entry.update', {
     collection: 'characters',
