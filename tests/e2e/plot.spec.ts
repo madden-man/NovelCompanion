@@ -72,8 +72,9 @@ const bar = (id: string) => view().locator(`[data-testid="chapter-bar"][data-cha
 const yearOf = (scene: number) =>
   view().locator(`.sl[data-scene="${scene}"]`).getByTestId('scene-year');
 const stored = () => invoke('sceneOutline.get', {});
-const undo = () => view().getByRole('button', { name: 'Undo', exact: true }).click();
-const redo = () => view().getByRole('button', { name: 'Redo', exact: true }).click();
+// A43: Undo and Redo are in the top bar on every screen.
+const undo = () => page.getByTestId('top-undo').click();
+const redo = () => page.getByTestId('top-redo').click();
 const readingOrder = async (id: string) =>
   (await invoke('entry.get', { collection: 'chapters', id })).entry.readingOrder;
 const chapterIds = () =>
@@ -629,52 +630,45 @@ test('KB-3 SM-7 a part heading moves to the trash from its Actions menu after li
   await expect(trackBook(bookId).getByTestId('book-name')).toHaveText('Book 2: Riptide');
 });
 
-test('KB-3 A40 the outline inspector shows a chapter as its title, story year and scene count (the bullets of its section), and edits the title and the year as one undo step each', async () => {
-  // Chapter 2 holds two scenes (one with an indented line under it); chapter 6 holds one.
-  await bar('CH2').getByLabel('Actions for chapter 2').click();
-  await bar('CH2').getByTestId('chapter-open').click();
-  const inspector = page.getByTestId('outline-inspector');
-  const panel = inspector.getByTestId('chapter-panel');
-  await expect(panel.getByRole('heading', { name: 'Chapter 2' })).toBeVisible();
-  await expect(panel.getByTestId('panel-title')).toHaveValue('Two Kitchens');
-  // The count is the bar's count: the top-level bullets of the chapter's section.
-  const barScenes = async (id: string) =>
-    (await bar(id).getByTestId('chapter-scenes').textContent())?.trim() ?? '';
-  expect(await barScenes('CH2')).toMatch(/^\d+ scenes?$/);
-  await expect(panel.getByTestId('panel-scenes')).toHaveText(
-    `${await barScenes('CH2')} in the outline.`,
-  );
-  await bar('CH6').getByLabel('Actions for chapter 6').click();
-  await bar('CH6').getByTestId('chapter-open').click();
-  await expect(panel.getByRole('heading', { name: 'Chapter 6' })).toBeVisible();
-  await expect(panel.getByTestId('panel-title')).toHaveValue('The Letter');
-  await expect(panel.getByTestId('panel-year')).toHaveValue('2045');
-  await expect(panel.getByTestId('panel-scenes')).toHaveText(
-    `${await barScenes('CH6')} in the outline.`,
-  );
-  // Nothing else sits in the panel: no strands, no generic fields, no move controls.
-  await expect(panel.locator('[data-field]')).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: /Move/ })).toHaveCount(0);
-  // The title writes on Enter and the bar follows.
-  await panel.getByTestId('panel-title').fill('The Letter, Again');
-  await panel.getByTestId('panel-title').press('Enter');
+test('KB-3 A40 A43 each chapter bar shows its title, story year and scene count (the bullets of its section), edits the title and the year as one undo step each, and opens the chapter page', async () => {
+  // There is no side panel: everything the panel held is on the bar.
+  await expect(page.getByTestId('outline-inspector')).toHaveCount(0);
+  // The count is the top-level bullets of the chapter's section.
+  const bullets = async (id: string) =>
+    (await section(id).inputValue()).split('\n').filter((l) => /^[-*•]\s?.*\S/.test(l)).length;
+  for (const id of ['CH2', 'CH6']) {
+    const n = await bullets(id);
+    await expect(bar(id).getByTestId('chapter-scenes')).toHaveText(
+      `${n} ${n === 1 ? 'scene' : 'scenes'}`,
+    );
+  }
+  await expect(bar('CH6').getByTestId('chapter-title')).toHaveText('The Letter');
+  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2045');
+  // The title is renamed in place on the bar and writes on Enter.
+  await bar('CH6').getByTestId('chapter-title').click();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('The Letter, Again');
+  await page.keyboard.press('Enter');
   await expect.poll(async () => (await chapterOf('CH6')).title).toBe('The Letter, Again');
   await expect(bar('CH6').getByTestId('chapter-title')).toHaveText('The Letter, Again');
-  // The year moves the primary strand, as the bar's year field does.
-  await panel.getByTestId('panel-year').fill('2047');
-  await panel.getByTestId('panel-year').press('Enter');
+  // The year moves the primary strand.
+  await bar('CH6').getByTestId('chapter-year').fill('2047');
+  await bar('CH6').getByTestId('chapter-year').press('Enter');
   await expect
     .poll(async () => ((await chapterOf('CH6')).strands as { startYear: number }[])[0]!.startYear)
     .toBe(2047);
-  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2047');
-  // One undo step each (ED-3).
+  // One undo step each (ED-3), from the top bar.
   await undo();
-  await expect(panel.getByTestId('panel-year')).toHaveValue('2045');
+  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2045');
   await undo();
-  await expect(panel.getByTestId('panel-title')).toHaveValue('The Letter');
   await expect(bar('CH6').getByTestId('chapter-title')).toHaveText('The Letter');
-  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
-  await expect(inspector).toHaveCount(0);
+  // Actions open the chapter's own page.
+  await bar('CH6').getByLabel('Actions for chapter 6').click();
+  await bar('CH6').getByRole('button', { name: 'Open the chapter page' }).click();
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'CH6');
+  await expect(page.getByTestId('editor').getByTestId('chapter-strand').first()).toBeVisible();
+  await rail(page, 'Outline').click();
+  await expect(view()).toBeVisible();
 });
 
 /** The chapter's own page, opened from the Chapters list under More (A40). */
@@ -690,7 +684,7 @@ async function openChapterPage(id: string) {
   return editor;
 }
 const pageSaved = () =>
-  expect(page.getByTestId('inspector').getByTestId('autosave')).toHaveText('Saved');
+  expect(page.getByTestId('editor').getByTestId('autosave')).toHaveText('Saved');
 
 test('KB-3 A40 the chapter page under More edits strand label, end year, places, a new strand and the primary choice', async () => {
   const editor = await openChapterPage('CH6');
@@ -885,6 +879,16 @@ test('PC-1 the place tree nests places and shows each description for the year',
   await expect(child.getByTestId('place-description')).toContainText('Warehouses by the river.');
   await view.getByLabel('Year').fill('2050');
   await expect(child.getByTestId('place-description')).toContainText('Stilt houses');
+  // A43: a picked place opens its editor in place, under its row, and Close puts it away.
+  const name = child.getByRole('button', { name: 'Pearl District', exact: true });
+  await name.click();
+  await expect(name).toHaveAttribute('aria-expanded', 'true');
+  const placeEditor = child.getByTestId('place-editor').getByTestId('editor');
+  await expect(placeEditor.getByRole('heading', { name: 'Pearl District' })).toBeVisible();
+  await expect(page.getByTestId('inspector')).toHaveCount(0);
+  await placeEditor.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(view.getByTestId('place-editor')).toHaveCount(0);
+  await expect(name).toBeFocused();
 });
 
 test('GL-1 a term that breaks the language system is flagged and listed, and the setting changes that', async () => {
@@ -913,7 +917,7 @@ test('GL-1 a term that breaks the language system is flagged and listed, and the
   await expect(view.getByTestId('romanization-flagged')).toBeVisible();
   await sectionList(page, 'Glossary');
   await page.getByTestId('entry-list').getByRole('button', { name: /^广东/ }).click();
-  await expect(page.getByTestId('inspector').getByTestId('warning-count')).toBeVisible();
+  await expect(page.getByTestId('editor').getByTestId('warning-count')).toBeVisible();
   await expect(field(page.getByTestId('editor'), 'romanization')).toContainText(
     'does not follow Hanyu Pinyin',
   );
@@ -1021,6 +1025,18 @@ test('GL-3 the glossary table shows the meaning of Chinese on hover and focus', 
   await chars.hover();
   await expect(chars.getByRole('tooltip')).toBeVisible();
   await page.mouse.move(0, 0);
+
+  // A43: Edit opens the term in a row right under its own, the width of the table.
+  const edit = row.getByRole('button', { name: /^Edit / });
+  await edit.click();
+  await expect(edit).toHaveAttribute('aria-expanded', 'true');
+  const under = row.locator('xpath=following-sibling::tr[1]');
+  await expect(under.getByTestId('term-editor').getByTestId('editor')).toHaveAttribute(
+    'data-entry-id',
+    'GL5',
+  );
+  await under.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(table.getByTestId('term-editor')).toHaveCount(0);
 
   // A42: the culture lines are plain fields, so the meaning shows on the glossary table and in text, not there.
 });

@@ -12,6 +12,7 @@ import type { EntryCollection } from '../../src/shared/schema';
 import { build, t5Verify, t5Write } from '../helpers/t5';
 import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
 import {
+  changes,
   field,
   fileDb,
   fillDateBox,
@@ -237,17 +238,26 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   await newCharacter('Undo Hale', 1960);
   const editor = page.getByTestId('editor');
   const input = field(editor, 'role').locator('textarea');
-  const top = page.getByTestId('inspector').getByTestId('undo-history').locator('li').first();
+  // A43: the Undo button in the top bar names the step it takes back.
+  const undoButton = page.getByTestId('top-undo');
   for (let n = 1; n <= 51; n++) {
     await input.fill(`Place ${n}`);
     await waitSaved(page);
-    await expect(top).toHaveText('Changed In the story on Undo Hale');
+    await expect(undoButton).toHaveAttribute(
+      'title',
+      'Undo Changed In the story on Undo Hale (Cmd Z)',
+    );
     await expect
       .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
       .toBe(`Place ${n}`);
   }
   expect((await currentEntry('characters', 'Undo Hale')).role).toBe('Place 51');
-  await page.locator('body').click();
+  await expect((await changes(page)).locator('li').first()).toHaveText(
+    'Changed In the story on Undo Hale',
+  );
+  // Out of every text field (the page centre now falls on a text box), so Cmd+Z steps the app history.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   for (let n = 0; n < 50; n++) await page.keyboard.press('Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
     /^Undid: Changed In the story on Undo Hale$/,
@@ -280,10 +290,10 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
 
 test('ED-3 undo and redo cover creating, deleting, restoring, and editing links', async () => {
   await newCharacter('Temp Person');
-  const inspector = page.getByTestId('inspector');
+  const tools = page.getByTestId('entry-tools');
   // Delete, then undo the delete.
-  await inspector.getByRole('button', { name: 'Move to trash' }).click();
-  await inspector
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
+  await tools
     .getByRole('dialog', { name: 'Move to trash' })
     .getByRole('button', { name: 'Move to trash' })
     .click();
@@ -345,7 +355,7 @@ test('ED-4 the history drawer compares any revision with the current entry and r
   await waitSaved(page);
   await input.fill('Boston');
   await waitSaved(page);
-  await page.getByTestId('inspector').getByRole('button', { name: 'History' }).click();
+  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
   const drawer = page.getByTestId('history');
   const revisions = drawer
     .getByRole('list', { name: 'Revisions, newest first' })
@@ -394,10 +404,10 @@ test('ED-5 deleting lists what links here, moves it to the trash, and restores i
     .getByTestId('entry-list')
     .getByRole('button', { name: /Ada Sullivan/ })
     .click();
-  const inspector = page.getByTestId('inspector');
-  await expect(inspector.getByTestId('linked-from')).toContainText('Character: Linker Zhou');
-  await inspector.getByRole('button', { name: 'Move to trash' }).click();
-  const dialog = inspector.getByRole('dialog', { name: 'Move to trash' });
+  const tools = page.getByTestId('entry-tools');
+  await expect(tools.getByTestId('linked-from')).toContainText('Character: Linker Zhou');
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
+  const dialog = tools.getByRole('dialog', { name: 'Move to trash' });
   await expect(dialog.getByTestId('linked-count')).toHaveText(/^1 entry links here\./);
   await expect(dialog).toContainText('Character: Linker Zhou');
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
@@ -443,7 +453,7 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
     .getByTestId('entry-list')
     .getByRole('button', { name: /Revision Doyle/ })
     .click();
-  const linked = page.getByTestId('inspector').getByTestId('linked-from');
+  const linked = page.getByTestId('entry-tools').getByTestId('linked-from');
   await expect(linked).toContainText('Character: Linker Zhou');
   await linked.getByRole('button', { name: 'Character: Linker Zhou' }).click();
   await expect(
@@ -464,7 +474,7 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
     'The death date 1990 is before the birth date 2000. It still saves.',
   );
   expect((await currentEntry('characters', 'Warned Hale')).death).toEqual({ year: 1990 });
-  await expect(page.getByTestId('inspector').getByTestId('warning-count')).toHaveText(
+  await expect(page.getByTestId('editor').getByTestId('warning-count')).toHaveText(
     '1 field has a warning. It still saved.',
   );
   // Fixing it clears the warning.
@@ -627,9 +637,9 @@ test('ED-3 tree edits undo to the start and redo to the end: a union and a paren
     .click();
   await field(page.getByTestId('editor'), 'type').locator('select').selectOption('partnered');
   await waitSaved(page);
-  const inspector = page.getByTestId('inspector');
-  await inspector.getByRole('button', { name: 'Move to trash' }).click();
-  await inspector
+  const tools = page.getByTestId('entry-tools');
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
+  await tools
     .getByRole('dialog', { name: 'Move to trash' })
     .getByRole('button', { name: 'Move to trash' })
     .click();
@@ -680,9 +690,9 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
     .click();
   const editor = page.getByTestId('editor');
   const input = field(editor, 'role').locator('textarea');
-  const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
   await input.fill('Saved city');
   await waitSaved(page);
+  const history = (await changes(page)).locator('li');
   await expect(history.first()).toHaveText('Changed In the story on Ada Sullivan');
   const historyBefore = await history.allTextContents();
   await input.fill('Unsaved typing');
@@ -690,7 +700,9 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
   await expect(input).toHaveValue('Saved city');
   await waitSaved(page);
   expect((await currentEntry('characters', 'Ada Sullivan')).role).toBe('Saved city');
-  expect(await history.allTextContents()).toEqual(historyBefore);
+  expect(await (await changes(page)).locator('li').allTextContents()).toEqual(historyBefore);
+  // Back in the field, so the next Cmd+Z is not a text undo of another control.
+  await input.focus();
   // With nothing unsaved in the field, Cmd+Z steps back through saved changes again.
   await page.keyboard.press('Meta+z');
   await expect

@@ -2,6 +2,10 @@
 .wg-main {
   gap: 12px;
 }
+/* A43: no side panel; the editor for what is picked opens under the grid. */
+.ws-tree-area.wg-area {
+  grid-template-columns: minmax(0, 1fr);
+}
 .wg-around h3 {
   font-size: 0.95rem;
   margin: 0;
@@ -70,4 +74,11 @@
 .wg-categories label {
   color: var(--fg);
   font-weight: 700;
+}
+.wg-coverage summary {
+  cursor: pointer;
+  color: var(--fg);
+}
+.wg-coverage[open] summary {
+  margin-bottom: 6px;
 }

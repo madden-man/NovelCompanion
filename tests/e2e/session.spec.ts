@@ -7,7 +7,7 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { field, fileDb, invokeVia, launch, rail, screenTab, sectionList } from './helpers';
+import { changes, field, fileDb, invokeVia, launch, rail, screenTab, sectionList } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -153,7 +153,7 @@ test('DB-1 SM-11 the app opens on Sessions: last note, story time, position, ope
   await expect(page.getByTestId('dashboard')).toBeVisible();
 });
 
-test('SM-11 SL-1 SB-8 Sessions lists the session log newest first and the saved briefs, a log opens in the inspector', async () => {
+test('SM-11 SL-1 SB-8 A43 Sessions lists the session log newest first and the saved briefs, a log opens under its row', async () => {
   const log = page.getByTestId('session-log');
   await expect(log.locator('.entry-row')).toHaveCount(3);
   expect(
@@ -163,11 +163,28 @@ test('SM-11 SL-1 SB-8 Sessions lists the session log newest first and the saved 
     'Stopped at: Margaret blows out the candles.',
   );
   await log.locator('[data-id="SL2"]').click();
-  const inspector = page.getByTestId('inspector');
-  await expect(inspector.getByTestId('editor')).toHaveAttribute('data-entry-id', 'SL2');
-  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-current', 'true');
-  await inspector.getByRole('button', { name: 'Close the editor' }).click();
-  await expect(inspector.getByTestId('editor')).toHaveCount(0);
+  // The editor opens inside the row's list item, right under the row.
+  const row = log.locator('li').filter({ has: page.locator('[data-id="SL2"]') });
+  const opened = row.getByTestId('session-row-editor');
+  await expect(opened.getByTestId('editor')).toHaveAttribute('data-entry-id', 'SL2');
+  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-expanded', 'true');
+  // One at a time: another log replaces it.
+  await log.locator('[data-id="SL3"]').click();
+  await expect(page.getByTestId('session-row-editor')).toHaveCount(1);
+  await expect(page.getByTestId('session-row-editor').getByTestId('editor')).toHaveAttribute(
+    'data-entry-id',
+    'SL3',
+  );
+  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-expanded', 'false');
+  // A second click on the open row closes it, as Close does.
+  await log.locator('[data-id="SL3"]').click();
+  await expect(page.getByTestId('session-row-editor')).toHaveCount(0);
+  await log.locator('[data-id="SL2"]').click();
+  await opened.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByTestId('session-row-editor')).toHaveCount(0);
+  await expect(log.locator('[data-id="SL2"]')).toBeFocused();
+  // No inspector column beside the screen.
+  await expect(page.getByTestId('inspector')).toHaveCount(0);
   await expect(page.getByText('No briefs yet. Start a session to write one.')).toBeVisible();
 });
 
@@ -308,9 +325,10 @@ test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step
     )
     .toBe('Iris climbs to the attic at night and finds the box.');
   // One undo step for the pause, named for the field.
-  await expect(page.getByTestId('undo-history').locator('li').first()).toHaveText(
+  await expect((await changes(page)).locator('li').first()).toHaveText(
     'Changed What happens in this scene on The Letter',
   );
+  await page.keyboard.press('Escape');
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
   await page.getByTestId('top-relevant').click();
@@ -322,7 +340,8 @@ test('SM-10 the scene note saves to chapters.sceneNote over IPC as one undo step
 test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing across a pause is two, and Undo restores the stored note', async () => {
   const note = strand('CH6-present').getByTestId('scene-note');
   const box = note.getByLabel('What happens in this scene');
-  const history = page.getByTestId('undo-history').locator('li:not(.empty)');
+  // A43: the Changes popover stays open while the box is typed in; it updates as steps land.
+  const history = (await changes(page)).locator('li:not(.empty)');
   const stored = async () =>
     (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.sceneNote;
   const first = 'Iris climbs to the attic at night and finds the box.';
@@ -350,7 +369,7 @@ test('SM-10 ED-3 the scene note: typing within a pause is one undo step, typing 
   await expect(history.nth(1)).toHaveText(label);
 
   // Undo takes back one pause at a time, in the bible and in the box.
-  const undo = page.getByTestId('inspector').getByRole('button', { name: 'Undo', exact: true });
+  const undo = page.getByTestId('top-bar').getByRole('button', { name: 'Undo', exact: true });
   await undo.click();
   await expect.poll(stored).toBe(`${first} Rain. She waits.`);
   await expect(box).toHaveValue(`${first} Rain. She waits.`);

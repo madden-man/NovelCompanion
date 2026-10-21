@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail, screenTab } from './helpers';
+import { changes, field, fileDb, invokeVia, launch, rail, screenTab } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -54,43 +54,54 @@ test.afterAll(async () => {
 const sessions = () => page.getByTestId('sessions-view');
 const questions = () => sessions().getByTestId('questions-list');
 const pick = (name: RegExp | string) => questions().getByRole('button', { name });
-const inspector = () => page.getByTestId('inspector');
-const saved = () => expect(inspector().getByTestId('autosave')).toHaveText('Saved');
+/** A43: a log or a question opens in place, under its row. */
+const rowEditor = () => sessions().getByTestId('session-row-editor');
+const saved = () => expect(rowEditor().getByTestId('autosave')).toHaveText('Saved');
+const questionRows = () => questions().locator('.entry-row');
 
 test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns until it has a decision, and filters by state', async () => {
   await rail(page, 'Sessions').click();
   await expect(sessions().getByTestId('questions-empty')).toHaveText('No questions yet.');
   for (const title of ['Who wrote the second letter?', 'Does Iris go back to Guangzhou?']) {
     await sessions().getByRole('button', { name: 'New question', exact: true }).click();
-    const form = inspector().getByTestId('new-entry');
+    // A43: the form opens at the top of the questions, and the new question opens under its row.
+    const form = sessions().getByTestId('question-new').getByTestId('new-entry');
     await field(form, 'title').locator(':scope > input').fill(title);
     await form.getByRole('button', { name: 'Create open question' }).click();
-    // The new question opens in the inspector, beside the list.
+    await expect(sessions().getByTestId('question-new')).toHaveCount(0);
     await expect(
-      inspector().getByTestId('editor').getByRole('heading', { name: title }),
+      rowEditor().getByTestId('editor').getByRole('heading', { name: title }),
     ).toBeVisible();
+    await expect(pick(title)).toHaveAttribute('aria-expanded', 'true');
     await saved();
   }
   await pick(/Who wrote/).click();
-  const editor = inspector().getByTestId('editor');
-  await expect(pick(/Who wrote/)).toHaveAttribute('aria-current', 'true');
+  // One row is open at a time: picking another closes the first.
+  await expect(rowEditor()).toHaveCount(1);
+  const editor = rowEditor().getByTestId('editor');
+  await expect(pick(/Who wrote/)).toHaveAttribute('aria-expanded', 'true');
+  await expect(pick(/Does Iris go back/)).toHaveAttribute('aria-expanded', 'false');
   await field(editor, 'state').locator(':scope > select').selectOption('decided');
   await saved();
   await expect(field(editor, 'decision')).toContainText('marked decided, but no decision');
   await field(editor, 'decision').locator(':scope > textarea').fill('Peter wrote it in 2029.');
   await saved();
   await expect(field(editor, 'decision')).not.toContainText('marked decided, but no decision');
+  // Close puts the editor away and gives the focus back to the row.
+  await editor.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(rowEditor()).toHaveCount(0);
+  await expect(pick(/Who wrote/)).toBeFocused();
   const show = sessions().getByLabel('Show questions');
   await expect(pick(/Who wrote/)).toContainText('decided');
   await expect(show.locator('option')).toHaveText(['All (2)', 'Open (1)', 'Decided (1)']);
   await show.selectOption('open');
-  await expect(questions().getByRole('button')).toHaveCount(1);
+  await expect(questionRows()).toHaveCount(1);
   await expect(pick(/Does Iris go back/)).toBeVisible();
   await show.selectOption('decided');
-  await expect(questions().getByRole('button')).toHaveCount(1);
+  await expect(questionRows()).toHaveCount(1);
   await expect(pick(/Who wrote/)).toBeVisible();
   await show.selectOption('all');
-  await expect(questions().getByRole('button')).toHaveCount(2);
+  await expect(questionRows()).toHaveCount(2);
   // DB-1: the overview counts the open one.
   await expect(page.getByTestId('dash-questions').locator('.tile-num')).toHaveText('1');
   // A question links to any entry from the Links field.
@@ -121,9 +132,12 @@ test('SL-1 SM-11 the session log on Sessions is newest first, and each entry has
   await expect(rows.first()).toContainText('Later session');
   await expect(rows.first()).toContainText('Stopped at: End of chapter 2');
   await expect(rows.last()).toContainText('Morning session');
-  // A log opens in the inspector, where its chapter, stop point and notes are edited.
+  // A43: a log opens under its row, where its chapter, stop point and notes are edited.
   await rows.last().click();
-  const editor = inspector().getByTestId('editor');
+  const editor = sessions()
+    .getByTestId('session-log')
+    .getByTestId('session-row-editor')
+    .getByTestId('editor');
   await expect(editor).toHaveAttribute('data-entry-id', morning._id);
   await field(editor, 'chapterId').locator(':scope > select').selectOption('CH2');
   await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Daniel burns the rice');
@@ -423,7 +437,7 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
-test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as one undo step, flags a gap, and New era adds one', async () => {
+test("SM-11 WE-2 the Eras tab shows the story year's era, edits it in place as one undo step, flags a gap, and New era adds one", async () => {
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
   const rows = eras.locator('li[data-era]');
@@ -449,7 +463,7 @@ test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as 
       async () => (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry,
     )
     .toMatchObject({ name: 'The battery forties', title: 'The battery forties' });
-  await expect(page.getByTestId('undo-history').locator('li').first()).toHaveText(
+  await expect((await changes(page)).locator('li').first()).toHaveText(
     'Era name on The battery forties',
   );
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
@@ -505,13 +519,11 @@ test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as 
     .toMatchObject({ name: 'After the century', title: 'After the century', startYear: 2102 });
   await expect(start).toBeFocused();
   // One undo step each, newest first, after the step that made the era.
-  await expect(page.getByTestId('undo-history').locator('li').nth(0)).toHaveText(
-    'Start year on After the century',
-  );
-  await expect(page.getByTestId('undo-history').locator('li').nth(1)).toHaveText(
-    'Era name on After the century',
-  );
-  await expect(page.getByTestId('undo-history').locator('li').nth(2)).toHaveText('Created New era');
+  const history = (await changes(page)).locator('li');
+  await expect(history.nth(0)).toHaveText('Start year on After the century');
+  await expect(history.nth(1)).toHaveText('Era name on After the century');
+  await expect(history.nth(2)).toHaveText('Created New era');
+  await page.keyboard.press('Escape');
   await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
@@ -545,9 +557,9 @@ test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', asy
   await invoke('storyTime.set', { time: { year: Number(first.entry.startYear) } });
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
-  await expect(eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name')).toHaveValue(
-    String(first.entry.name),
-  );
+  await expect(
+    eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name'),
+  ).toHaveValue(String(first.entry.name));
   await expect(eras).toContainText(`${seeded.length} eras in all`);
   await openBible();
 });

@@ -25,7 +25,7 @@ import { isPlainObject } from '../../../../shared/domain/paths';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
 import { useEntries, useList } from '../data';
-import { EmbeddedEditor, UndoPanel } from '../editor';
+import { RowEditor } from '../rowEditor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { WorldEventsStrip } from './WorldEventsStrip';
@@ -42,8 +42,9 @@ const ZOOMS: { zoom: Zoom; label: string }[] = [
 /**
  * The world events screen (SM-8): "The world around <story year>" (A33),
  * the zoom and region controls, then the grid of events by category and
- * year. Everything picked opens in the inspector (ED-1); new events and
- * moves go through the write path with one undo step each (ED-3).
+ * year. Everything picked opens in an editor under the grid (ED-1, A43);
+ * new events and moves go through the write path with one undo step each
+ * (ED-3). A gap in the era coverage shows above the grid.
  */
 export function TimelineView() {
   const story = useStoryTime();
@@ -194,7 +195,7 @@ export function TimelineView() {
   };
 
   return (
-    <div className="ws-tree-area" data-testid="timeline-view">
+    <div className="ws-tree-area wg-area" data-testid="timeline-view">
       <section className="tree-main stack wg-main" aria-labelledby="timeline-title">
         <div className="list-head">
           <h2 id="timeline-title">World events</h2>
@@ -306,11 +307,29 @@ export function TimelineView() {
           </p>
         )}
         <p className="example-note">
-          Click an empty spot in a row, or a row name, to add an event there. Drag a marker to
-          change its year. From the keyboard, Tab to the markers, Up and Down move between them,
-          Enter opens one, Left and Right change its year, and Shift with Left or Right changes the
-          end year.
+          Click an empty spot in a row, or a row name, to add an event there. Click a marker, an
+          era, or a title above to edit it under the grid. Drag a marker to change its year. From
+          the keyboard, Tab to the markers, Up and Down move between them, Enter opens one, Left and
+          Right change its year, and Shift with Left or Right changes the end year.
         </p>
+        {/* A43: one coverage problem shows as it is; several fold under a count, so the grid stays in view. */}
+        {coverage.length === 1 && (
+          <p className="callout warn" data-testid="timeline-coverage">
+            <strong>Era coverage:</strong> {coverage[0]}
+          </p>
+        )}
+        {coverage.length > 1 && (
+          <details className="callout warn wg-coverage" data-testid="timeline-coverage">
+            <summary>
+              <strong>Era coverage</strong>: {coverage.length} problems
+            </summary>
+            <div className="stack tight">
+              {coverage.map((c) => (
+                <span key={c}>{c}</span>
+              ))}
+            </div>
+          </details>
+        )}
         {categories ? (
           <WorldEventsGrid
             events={gridEvents}
@@ -352,39 +371,15 @@ export function TimelineView() {
             Chapter being written
           </span>
         </div>
+        {selected && (
+          <RowEditor
+            key={`${selected.collection}:${selected.id}`}
+            open={selected}
+            onClose={() => setSelected(null)}
+            testId="timeline-editor"
+          />
+        )}
       </section>
-      <aside
-        className="inspector tree-inspector"
-        aria-label="World events inspector"
-        data-testid="timeline-inspector"
-      >
-        <span className="eyebrow">Inspector</span>
-        {coverage.length > 0 && (
-          <div className="callout warn stack tight" data-testid="timeline-coverage">
-            <strong>Era coverage</strong>
-            {coverage.map((c) => (
-              <span key={c}>{c}</span>
-            ))}
-          </div>
-        )}
-        {selected ? (
-          <>
-            <button type="button" className="btn small" onClick={() => setSelected(null)}>
-              Close the editor
-            </button>
-            <EmbeddedEditor
-              key={`${selected.collection}:${selected.id}`}
-              collection={selected.collection}
-              id={selected.id}
-            />
-          </>
-        ) : (
-          <p className="example-note">
-            Pick a marker, an era, or a title in the world around {year} to edit it here.
-          </p>
-        )}
-        <UndoPanel />
-      </aside>
     </div>
   );
 }

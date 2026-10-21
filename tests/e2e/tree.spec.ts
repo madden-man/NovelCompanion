@@ -11,7 +11,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
 import { decodePng, pdfFillColors } from '../helpers/png';
-import { field, fileDb, fillDateBox, invokeVia, launch, rail, waitSaved } from './helpers';
+import { changes, field, fileDb, fillDateBox, invokeVia, launch, rail, waitSaved } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -769,7 +769,8 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
 
 test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved typing undoes that typing', async () => {
   await select('Ruth Hale');
-  const history = inspector().getByTestId('undo-history').locator('li');
+  // A43: the top bar's Undo names the step it takes back, without taking the focus.
+  const undoButton = page.getByTestId('top-undo');
   const place = field(editor(), 'role').locator('textarea');
   await place.fill('Astoria, Oregon');
   // Straight into another field before the save of the first one lands.
@@ -777,19 +778,23 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   const name = inspector().getByTestId('add-form').getByLabel('Name');
   await name.pressSequentially('Typed name');
   await waitSaved(page);
-  await expect(history.first()).toHaveText('Changed In the story on Ruth Hale');
-  const before = await history.allTextContents();
+  const next = 'Undo Changed In the story on Ruth Hale (Cmd Z)';
+  await expect(undoButton).toHaveAttribute('title', next);
   await expect(name).toBeFocused();
   await page.keyboard.press('Meta+z');
   await expect(name).not.toHaveValue('Typed name');
   // The saved change in the first field is untouched.
-  expect(await history.allTextContents()).toEqual(before);
+  await expect(undoButton).toHaveAttribute('title', next);
   const t = await invoke('tree.get', {});
   const ruth = t.people.find((p) => p.name === 'Ruth Hale')!;
   expect((await invoke('entry.get', { collection: 'characters', id: ruth.id })).entry.role).toBe(
     'Astoria, Oregon',
   );
   await inspector().getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
+  await expect((await changes(page)).locator('li').first()).toHaveText(
+    'Changed In the story on Ruth Hale',
+  );
+  await page.keyboard.press('Escape');
 });
 
 test('FT-10 adding a child to Sam leaves every other node where it was', async () => {
@@ -1083,8 +1088,9 @@ test('SM-1 TL-3 Birth is one box: a month and a full date save on Enter as one u
   await waitSaved(page);
   await expect(birth).toHaveValue('1990-03');
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
-  const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
+  const history = (await changes(page)).locator('li');
   await expect(history.first()).toHaveText('Changed Birth on Ruth Hale');
+  await page.keyboard.press('Escape');
   // A value it cannot read is refused at the box, and nothing is written.
   await birth.fill('March 1990');
   await birth.press('Enter');
@@ -1236,7 +1242,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await waitSaved(page);
   expect(await ada()).toMatchObject({ birth: { year: 2040 }, status: 'planned' });
   // Delete and restore through the trash.
-  await page.getByTestId('inspector').getByRole('button', { name: 'Move to trash' }).click();
+  await page.getByTestId('entry-tools').getByRole('button', { name: 'Move to trash' }).click();
   await page
     .getByRole('dialog', { name: 'Move to trash' })
     .getByRole('button', { name: 'Move to trash' })
@@ -1244,7 +1250,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await expect(
     page.getByTestId('entry-list').getByRole('button', { name: /^Ada Lin/ }),
   ).toHaveCount(0);
-  await page.getByTestId('inspector').getByRole('button', { name: 'Restore from trash' }).click();
+  await page.getByTestId('entry-tools').getByRole('button', { name: 'Restore from trash' }).click();
   await expect(
     page.getByTestId('entry-list').getByRole('button', { name: /^Ada Lin/ }),
   ).toHaveCount(1);

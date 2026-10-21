@@ -7,8 +7,8 @@ import { logsNewestFirst } from '../../../../shared/domain/sessionLog';
 import { useWriteGuard } from '../../connection';
 import { call } from '../../api';
 import { useEntries, useStore } from '../data';
-import { InspectorAside } from '../inspector';
-import type { Inspected } from '../inspector';
+import { RowEditor } from '../rowEditor';
+import type { Picked } from '../rowEditor';
 import { formatMoment, useStoryTime } from '../storyTime';
 import { useYearView } from '../timeline/common';
 import { NewEntryForm } from '../views';
@@ -30,7 +30,8 @@ export type SessionsSub = 'home' | 'start' | 'brief';
  * position, the open questions and rewrite tasks, Start session and Check
  * alignment. Then Start session (DB-2 to DB-4), the session log (SL-1), the
  * saved briefs, each opening here in place (SB-8), and the open questions
- * (OQ-1). A log or a question opens in the inspector.
+ * (OQ-1). A43: a log or a question opens in place under its row, one at a
+ * time, and New question opens at the top of the questions.
  */
 export function SessionsView(props: {
   sub: SessionsSub;
@@ -43,7 +44,7 @@ export function SessionsView(props: {
   /** Leave the launch panel and start working: the characters. */
   onDone: () => void;
 }) {
-  const [inspected, setInspected] = useState<Inspected | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(null);
   const [newQuestion, setNewQuestion] = useState(false);
   const startRef = useRef<HTMLElement>(null);
   const questionsRef = useRef<HTMLElement>(null);
@@ -52,98 +53,89 @@ export function SessionsView(props: {
     if (props.sub === 'start') startRef.current?.scrollIntoView({ block: 'start' });
   }, [props.sub]);
 
-  const inspect = (collection: Inspected['collection'], id: string) => {
+  /** A43: a second pick of the open row closes it. */
+  const pick = (collection: Picked['collection'], id: string) => {
     setNewQuestion(false);
-    setInspected({ collection, id });
+    setPicked((p) => (p?.collection === collection && p.id === id ? null : { collection, id }));
   };
-
-  const inspector = (
-    <InspectorAside
-      open={inspected}
-      onClose={() => setInspected(null)}
-      hint="Pick a session log or a question to edit it here."
-    >
-      {newQuestion ? (
-        <NewEntryForm
-          collection="openQuestions"
-          onCreated={(id) => inspect('openQuestions', id)}
-          onCancel={() => setNewQuestion(false)}
-        />
-      ) : undefined}
-    </InspectorAside>
-  );
+  const close = () => setPicked(null);
 
   if (props.sub === 'brief' && props.briefId) {
     return (
-      <>
-        <div className="ws-wide-area" data-testid="sessions-view" data-sub="brief">
-          <div className="ws-wide stack">
-            <div className="row">
-              <button type="button" className="btn small" onClick={() => props.onSub('home')}>
-                Back to Sessions
-              </button>
-            </div>
-            <BriefView
-              id={props.briefId}
-              note={props.note}
-              noteSettings={props.noteSettings}
-              onOpen={props.onOpen}
-            />
+      <div className="ws-wide-area" data-testid="sessions-view" data-sub="brief">
+        <div className="ws-wide stack">
+          <div className="row">
+            <button type="button" className="btn small" onClick={() => props.onSub('home')}>
+              Back to Sessions
+            </button>
           </div>
+          <BriefView
+            id={props.briefId}
+            note={props.note}
+            noteSettings={props.noteSettings}
+            onOpen={props.onOpen}
+          />
         </div>
-        {inspector}
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <div className="ws-wide-area" data-testid="sessions-view" data-sub={props.sub}>
-        <div className="ws-wide stack sessions">
-          <h2>Sessions</h2>
-          <Overview
-            onStart={() => {
-              props.onSub('start');
-              startRef.current?.scrollIntoView({ block: 'start' });
-            }}
-            onCheckAlignment={props.onCheckAlignment}
-            onQuestions={() => questionsRef.current?.scrollIntoView({ block: 'start' })}
-            onOpenBrief={(id) => props.onSub('brief', id)}
-            onOpenChapter={(id) => props.onOpen('chapters', id)}
-            onDone={props.onDone}
+    <div className="ws-wide-area" data-testid="sessions-view" data-sub={props.sub}>
+      <div className="ws-wide stack sessions">
+        <h2>Sessions</h2>
+        <Overview
+          onStart={() => {
+            props.onSub('start');
+            startRef.current?.scrollIntoView({ block: 'start' });
+          }}
+          onCheckAlignment={props.onCheckAlignment}
+          onQuestions={() => questionsRef.current?.scrollIntoView({ block: 'start' })}
+          onOpenBrief={(id) => props.onSub('brief', id)}
+          onOpenChapter={(id) => props.onOpen('chapters', id)}
+          onDone={props.onDone}
+        />
+        <section
+          ref={startRef}
+          className="sessions-part stack"
+          aria-label="Start session"
+          data-testid="sessions-start"
+        >
+          <StartSessionView
+            onOpen={props.onOpen}
+            showSelection={props.sub === 'start'}
+            onStarted={(id, note, noteSettings) => props.onSub('brief', id, note, noteSettings)}
           />
-          <section
-            ref={startRef}
-            className="sessions-part stack"
-            aria-label="Start session"
-            data-testid="sessions-start"
-          >
-            <StartSessionView
-              onOpen={props.onOpen}
-              showSelection={props.sub === 'start'}
-              onStarted={(id, note, noteSettings) => props.onSub('brief', id, note, noteSettings)}
-            />
-          </section>
-          <SessionLog current={inspected?.id ?? null} onPick={(id) => inspect('sessionLogs', id)} />
-          <Briefs onOpenBrief={(id) => props.onSub('brief', id)} />
-          <section
-            ref={questionsRef}
-            className="sessions-part stack tight"
-            aria-labelledby="sessions-questions"
-          >
-            <Questions
-              current={inspected?.id ?? null}
-              onPick={(id) => inspect('openQuestions', id)}
-              onNew={() => {
-                setInspected(null);
-                setNewQuestion(true);
-              }}
-            />
-          </section>
-        </div>
+        </section>
+        <SessionLog
+          open={picked?.collection === 'sessionLogs' ? picked : null}
+          onPick={(id) => pick('sessionLogs', id)}
+          onClose={close}
+        />
+        <Briefs onOpenBrief={(id) => props.onSub('brief', id)} />
+        <section
+          ref={questionsRef}
+          className="sessions-part stack tight"
+          aria-labelledby="sessions-questions"
+        >
+          <Questions
+            open={picked?.collection === 'openQuestions' ? picked : null}
+            onPick={(id) => pick('openQuestions', id)}
+            onClose={close}
+            newQuestion={newQuestion}
+            onNew={() => {
+              setPicked(null);
+              setNewQuestion(true);
+            }}
+            onCreated={(id) => {
+              setNewQuestion(false);
+              setPicked({ collection: 'openQuestions', id });
+            }}
+            onCancelNew={() => setNewQuestion(false)}
+          />
+        </section>
       </div>
-      {inspector}
-    </>
+    </div>
   );
 }
 
@@ -268,8 +260,12 @@ function Overview(props: {
   );
 }
 
-/** SL-1: every session log, newest first. A row opens the log in the inspector. */
-function SessionLog(props: { current: string | null; onPick: (id: string) => void }) {
+/** SL-1: every session log, newest first. A row opens the log under it (A43). */
+function SessionLog(props: {
+  open: Picked | null;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
   const logs = useEntries('sessionLogs');
   const chapters = useEntries('chapters');
   const rows = useMemo(() => logsNewestFirst(logs), [logs]);
@@ -291,7 +287,7 @@ function SessionLog(props: { current: string | null; onPick: (id: string) => voi
                   type="button"
                   className="entry-row"
                   data-id={l._id}
-                  aria-current={props.current === l._id ? 'true' : undefined}
+                  aria-expanded={props.open?.id === l._id}
                   onClick={() => props.onPick(l._id)}
                 >
                   <span className="row tight">
@@ -301,6 +297,13 @@ function SessionLog(props: { current: string | null; onPick: (id: string) => voi
                   </span>
                   {stopped && <span>Stopped at: {stopped}</span>}
                 </button>
+                {props.open?.id === l._id && (
+                  <RowEditor
+                    open={props.open}
+                    onClose={props.onClose}
+                    testId="session-row-editor"
+                  />
+                )}
               </li>
             );
           })}
@@ -350,11 +353,18 @@ function Briefs(props: { onOpenBrief: (id: string) => void }) {
   );
 }
 
-/** OQ-1: the open questions, filtered by state; a row opens in the inspector; New question. */
+/**
+ * OQ-1: the open questions, filtered by state; a row opens under it (A43);
+ * New question opens its form at the top of the list.
+ */
 function Questions(props: {
-  current: string | null;
+  open: Picked | null;
   onPick: (id: string) => void;
+  onClose: () => void;
+  newQuestion: boolean;
   onNew: () => void;
+  onCreated: (id: string) => void;
+  onCancelNew: () => void;
 }) {
   const questions = useEntries('openQuestions');
   const [state, setState] = useState<QuestionFilter>('all');
@@ -377,11 +387,21 @@ function Questions(props: {
           className="btn primary small"
           onClick={props.onNew}
           disabled={ro.off}
+          aria-expanded={props.newQuestion}
           {...ro.tip}
         >
           New question
         </button>
       </div>
+      {props.newQuestion && (
+        <div className="row-editor" data-testid="question-new">
+          <NewEntryForm
+            collection="openQuestions"
+            onCreated={props.onCreated}
+            onCancel={props.onCancelNew}
+          />
+        </div>
+      )}
       <div className="field narrow">
         <label htmlFor={stateId}>Show questions</label>
         <select
@@ -406,7 +426,7 @@ function Questions(props: {
                 type="button"
                 className="entry-row"
                 data-id={q._id}
-                aria-current={props.current === q._id ? 'true' : undefined}
+                aria-expanded={props.open?.id === q._id}
                 onClick={() => props.onPick(q._id)}
               >
                 <span className="entry-title">
@@ -421,6 +441,9 @@ function Questions(props: {
                   )}
                 </span>
               </button>
+              {props.open?.id === q._id && (
+                <RowEditor open={props.open} onClose={props.onClose} testId="session-row-editor" />
+              )}
             </li>
           ))}
         </ul>

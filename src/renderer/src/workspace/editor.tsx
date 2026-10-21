@@ -210,7 +210,7 @@ export function SaveState({ status, error }: { status: SaveStatus; error: string
 
 /**
  * Move to trash and restore (ED-5): before deleting, list what links here.
- * Used by the entry inspector and by the tree inspector (FT-2).
+ * Used at the foot of an entry page, in an embedded editor, and by the tree inspector (FT-2).
  */
 export function TrashControls(props: {
   collection: EntryCollection;
@@ -351,7 +351,7 @@ export function TrashControls(props: {
   );
 }
 
-/** The editor in the middle and the inspector on the right for one entry. */
+/** One entry's page beside its section list, with its links, history and trash at the foot (A43). */
 export function EntryPane(props: {
   collection: EntryCollection;
   id: string;
@@ -405,49 +405,20 @@ export function EntryPane(props: {
   }
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
-  // SM-1: the Characters screen is the list and the page; the page takes the inspector's width
-  // and keeps undo, links, history and trash at its foot.
-  const isCharacter = collection === 'characters';
-  const tools = (
-    <>
-      {ed.warnings.length > 0 && (
-        <p className="callout warn" data-testid="warning-count">
-          {ed.warnings.length === 1
-            ? '1 field has a warning. It still saved.'
-            : `${ed.warnings.length} fields have warnings. They still saved.`}
-        </p>
-      )}
-      <UndoPanel />
-      <div className="stack tight">
-        <span className="eyebrow">Linked from</span>
-        <Backlinks backlinks={ed.backlinks} onOpen={props.onOpen} />
-      </div>
-      <dl className="kv">
-        <dt>Created</dt>
-        <dd>{formatTime(draft.createdAt)}</dd>
-        <dt>Last changed</dt>
-        <dd>{formatTime(draft.modifiedAt)}</dd>
-      </dl>
-      <TrashControls
-        collection={collection}
-        id={id}
-        title={entryTitle(draft)}
-        inTrash={inTrash}
-        beforeDelete={ed.flush}
-        onChanged={ed.reload}
-        extra={
-          <button type="button" className="btn" onClick={() => setShowHistory(true)}>
-            History
-          </button>
-        }
-      />
-    </>
+  const warningCount = ed.warnings.length > 0 && (
+    <span className="chip warn-chip" data-testid="warning-count">
+      {ed.warnings.length === 1
+        ? '1 field has a warning. It still saved.'
+        : `${ed.warnings.length} fields have warnings. They still saved.`}
+    </span>
   );
 
+  // SM-1, A43: every section is the list and the page, and the page takes the whole width.
+  // Links, dates, history and trash sit at its foot; undo is in the top bar.
   return (
     <>
       <section
-        className={isCharacter ? 'ws-editor ws-editor-wide' : 'ws-editor'}
+        className="ws-editor"
         // SM-1: a character page's own heading is the only name on it.
         {...(collection === 'characters'
           ? { 'aria-label': entryTitle(draft) }
@@ -464,7 +435,10 @@ export function EntryPane(props: {
               </h2>
             </div>
           )}
-          <SaveState status={ed.status} error={ed.error} />
+          <span className="row tight editor-state">
+            {warningCount}
+            <SaveState status={ed.status} error={ed.error} />
+          </span>
         </header>
         {inTrash && (
           <p className="callout warn" role="status">
@@ -499,7 +473,7 @@ export function EntryPane(props: {
               <WriteFieldset>
                 {editableFields(manifest).map((spec) =>
                   collection === 'chapters' && spec.name === 'strands' ? (
-                    // KB-3, A40: the strands with ages and places, as the outline's inspector had them.
+                    // KB-3, A40: the strands with ages and places.
                     <ChapterStrands
                       key={spec.name}
                       id={id}
@@ -527,28 +501,38 @@ export function EntryPane(props: {
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
         )}
-        {isCharacter && (
-          <aside
-            className="char-tools stack"
-            aria-label="Undo, links, history and trash"
-            data-testid="inspector"
-          >
-            {tools}
-          </aside>
-        )}
-      </section>
-      {!isCharacter && (
-        <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
-          <span className="eyebrow">Inspector</span>
-          <div className="stack">
-            <h3>
-              <Zh text={entryTitle(draft)} />
-            </h3>
-            <SaveState status={ed.status} error={ed.error} />
-            {tools}
+        <aside
+          className="entry-tools"
+          aria-label="Links, history and trash"
+          data-testid="entry-tools"
+        >
+          <div className="stack tight">
+            <span className="eyebrow">Linked from</span>
+            <Backlinks backlinks={ed.backlinks} onOpen={props.onOpen} />
+          </div>
+          <dl className="kv">
+            <dt>Created</dt>
+            <dd>{formatTime(draft.createdAt)}</dd>
+            <dt>Last changed</dt>
+            <dd>{formatTime(draft.modifiedAt)}</dd>
+          </dl>
+          <div className="stack tight">
+            <TrashControls
+              collection={collection}
+              id={id}
+              title={entryTitle(draft)}
+              inTrash={inTrash}
+              beforeDelete={ed.flush}
+              onChanged={ed.reload}
+              extra={
+                <button type="button" className="btn" onClick={() => setShowHistory(true)}>
+                  History
+                </button>
+              }
+            />
           </div>
         </aside>
-      )}
+      </section>
       {showHistory && (
         <HistoryDrawer
           collection={collection}
@@ -564,7 +548,7 @@ export function EntryPane(props: {
 
 /**
  * The generic editor for one entry inside another screen, such as the tree's
- * inspector (FT-7): the same fields, autosave, warnings, undo, and trash flow
+ * inspector (FT-7) or a row opened in place (A43): the same fields, autosave, warnings, undo, and trash flow
  * as the main editor, so an edit here is the same data everywhere (FT-3).
  */
 export function EmbeddedEditor(props: {
@@ -573,12 +557,26 @@ export function EmbeddedEditor(props: {
   onChanged?: () => void;
   /** False when the host shows its own trash control for this entry (the tree inspector). */
   trash?: boolean;
+  /** A43: the editor opened in place on its screen; Close shows in its heading. */
+  onClose?: () => void;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
   const manifest = manifests[collection];
   const draft = ed.draft;
-  if (ed.status === 'missing') return <p className="callout warn">This entry no longer exists.</p>;
+  const close = props.onClose && (
+    <button type="button" className="btn small" onClick={props.onClose}>
+      Close
+    </button>
+  );
+  if (ed.status === 'missing') {
+    return (
+      <div className="row">
+        <p className="callout warn">This entry no longer exists.</p>
+        {close}
+      </div>
+    );
+  }
   if (!draft) return <p aria-live="polite">Loading the entry.</p>;
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
@@ -604,7 +602,10 @@ export function EmbeddedEditor(props: {
             <Zh text={entryTitle(draft)} />
           </h3>
         </div>
-        <SaveState status={ed.status} error={ed.error} />
+        <span className="row tight editor-state">
+          <SaveState status={ed.status} error={ed.error} />
+          {close}
+        </span>
       </header>
       {inTrash && (
         <p className="callout warn" role="status">
@@ -679,55 +680,5 @@ function Backlinks(props: {
         </li>
       ))}
     </ul>
-  );
-}
-
-/** Undo and redo buttons with the session history, newest first (ED-3). */
-export function UndoPanel() {
-  const undo = useUndo();
-  const items = [
-    ...undo.history.redo.map((c) => ({ label: c.label, redo: true })).reverse(),
-    ...undo.history.undo.map((c) => ({ label: c.label, redo: false })),
-  ];
-  return (
-    <div className="stack tight undo-panel">
-      <div className="row">
-        <button
-          type="button"
-          className="btn small"
-          disabled={!undo.canUndo}
-          onClick={() => void undo.undo()}
-          title="Cmd+Z"
-        >
-          Undo
-        </button>
-        <button
-          type="button"
-          className="btn small"
-          disabled={!undo.canRedo}
-          onClick={() => void undo.redo()}
-          title="Shift+Cmd+Z"
-        >
-          Redo
-        </button>
-      </div>
-      {undo.notice && (
-        <p className="example-note" role="status" data-testid="undo-notice">
-          {undo.notice}
-        </p>
-      )}
-      <span className="eyebrow">Changes this session (newest first)</span>
-      <ul className="stack-list" data-testid="undo-history">
-        {items.length === 0 ? (
-          <li className="empty">No changes yet. The last 100 are kept.</li>
-        ) : (
-          items.map((it, i) => (
-            <li key={i} className={it.redo ? 'redo' : undefined}>
-              {it.redo ? `Undone: ${it.label}` : it.label}
-            </li>
-          ))
-        )}
-      </ul>
-    </div>
   );
 }

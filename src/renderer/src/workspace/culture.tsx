@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useWriteGuard } from '../connection';
 import {
@@ -22,19 +22,17 @@ import {
 import type { Response } from '../../../shared/ipc';
 import { DEMOGRAPHIC_OPTIONS } from '../../../shared/schema/world';
 import { entryTitle } from '../../../shared/schema';
-import type { EntryCollection } from '../../../shared/schema';
 import { call, plainError } from '../api';
 import { useEntries, useList, useStore } from './data';
 import type { Entry } from './data';
 import { updateWithUndo } from './sessions/common';
 import { useStoryTime } from './storyTime';
 import { useUndo } from './undo';
-import { InspectorAside } from './inspector';
+import { RowEditor } from './rowEditor';
+import type { Picked } from './rowEditor';
 import { InlineName } from './outline/InlineName';
 import { Zh } from './Zh';
 import './culture.css';
-
-type Open = (collection: EntryCollection, id: string) => void;
 
 function YearField(props: {
   id: string;
@@ -87,46 +85,34 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
     refs.current[target]?.focus();
   };
   return (
-    <>
-      <div className="ws-wide-area" data-testid="cultural-data" data-tab={props.tab}>
-        <div className="ws-wide stack">
-          <h2 id={`${baseId}-title`}>Cultural data</h2>
-          <div className="screen-tabs" role="tablist" aria-labelledby={`${baseId}-title`}>
-            {TABS.map((t, i) => (
-              <button
-                key={t.tab}
-                ref={(el) => {
-                  refs.current[t.tab] = el;
-                }}
-                type="button"
-                role="tab"
-                id={`${baseId}-tab-${t.tab}`}
-                aria-selected={props.tab === t.tab}
-                aria-controls={`${baseId}-panel`}
-                tabIndex={props.tab === t.tab ? 0 : -1}
-                onClick={() => props.onTab(t.tab)}
-                onKeyDown={(e) => onKey(e, i)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <div
-            id={`${baseId}-panel`}
-            role="tabpanel"
-            aria-labelledby={`${baseId}-tab-${props.tab}`}
-          >
-            {props.tab === 'communities' ? <CommunityView /> : <ErasView />}
-          </div>
+    <div className="ws-wide-area" data-testid="cultural-data" data-tab={props.tab}>
+      <div className="ws-wide stack">
+        <h2 id={`${baseId}-title`}>Cultural data</h2>
+        <div className="screen-tabs" role="tablist" aria-labelledby={`${baseId}-title`}>
+          {TABS.map((t, i) => (
+            <button
+              key={t.tab}
+              ref={(el) => {
+                refs.current[t.tab] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`${baseId}-tab-${t.tab}`}
+              aria-selected={props.tab === t.tab}
+              aria-controls={`${baseId}-panel`}
+              tabIndex={props.tab === t.tab ? 0 : -1}
+              onClick={() => props.onTab(t.tab)}
+              onKeyDown={(e) => onKey(e, i)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div id={`${baseId}-panel`} role="tabpanel" aria-labelledby={`${baseId}-tab-${props.tab}`}>
+          {props.tab === 'communities' ? <CommunityView /> : <ErasView />}
         </div>
       </div>
-      {/* Everything on this screen is edited in place; the aside keeps undo and its history (ED-3). */}
-      <InspectorAside
-        open={null}
-        onClose={() => undefined}
-        hint="Everything here is edited where it sits. Undo and redo are below."
-      />
-    </>
+    </div>
   );
 }
 
@@ -135,7 +121,7 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
  * for the story year's decade (the year control at the top moves it),
  * grouped by age group. Every line edits where it sits; its age group and
  * decade are selects at the end of the row. Every change is one undo step
- * (ED-3). Nothing here needs the inspector.
+ * (ED-3), and Undo is in the top bar (A43).
  */
 export function CommunityView() {
   const story = useStoryTime();
@@ -763,8 +749,8 @@ function ErasView() {
   return (
     <section className="stack" aria-label="Eras" data-testid="eras-view">
       <p className="lede">
-        The state of the world in the story year&apos;s era. Move the year at the top to see
-        another era. Edit a field and leave it to save; each change is one undo step.
+        The state of the world in the story year&apos;s era. Move the year at the top to see another
+        era. Edit a field and leave it to save; each change is one undo step.
       </p>
       {covering.length === 0 && (
         <p className="callout warn" role="status" data-testid="era-gap">
@@ -922,9 +908,13 @@ function EraRow(props: {
   );
 }
 
-/** PC-1: places nested under the places they sit in, each with its description for a chosen year. */
-export function PlacesView(props: { onOpen: Open }) {
+/**
+ * PC-1: places nested under the places they sit in, each with its description
+ * for a chosen year. A43: a picked place opens its editor in place, under its row.
+ */
+export function PlacesView() {
   const story = useStoryTime();
+  const [open, setOpen] = useState<Picked | null>(null);
   const places = useEntries('places');
   const [year, setYear] = useState(story.year);
   const yearId = useId();
@@ -936,7 +926,7 @@ export function PlacesView(props: { onOpen: Open }) {
       <h2 id="places-title">Place tree</h2>
       <p className="lede">
         Places sit inside larger places. Each shows its description for the year you pick. Pick a
-        place to set its parent and its descriptions by year.
+        place to set its parent and its descriptions by year; its editor opens under it.
       </p>
       <YearField id={yearId} label="Year" value={year} onChange={setYear} />
       {nodes.length === 0 ? (
@@ -956,7 +946,10 @@ export function PlacesView(props: { onOpen: Open }) {
                 <button
                   type="button"
                   className="link-btn"
-                  onClick={() => props.onOpen('places', n.id)}
+                  aria-expanded={open?.id === n.id}
+                  onClick={() =>
+                    setOpen(open?.id === n.id ? null : { collection: 'places', id: n.id })
+                  }
                 >
                   <Zh text={n.title || 'Untitled'} actions={false} />
                 </button>
@@ -967,6 +960,9 @@ export function PlacesView(props: { onOpen: Open }) {
                     <span className="example-note">No description for {year}.</span>
                   )}
                 </span>
+                {open?.id === n.id && (
+                  <RowEditor open={open} onClose={() => setOpen(null)} testId="place-editor" />
+                )}
               </li>
             );
           })}
@@ -976,9 +972,10 @@ export function PlacesView(props: { onOpen: Open }) {
   );
 }
 
-/** GL-1: one romanization system per language, and the terms that do not follow it. */
-export function RomanizationView(props: { onOpen: Open }) {
+/** GL-1: one romanization system per language, and the terms that do not follow it, each opening in place (A43). */
+export function RomanizationView() {
   const ro = useWriteGuard();
+  const [open, setOpen] = useState<Picked | null>(null);
   const undo = useUndo();
   const { version } = useStore();
   const [data, setData] = useState<Response<'romanization.get'> | null>(null);
@@ -1070,11 +1067,19 @@ export function RomanizationView(props: { onOpen: Open }) {
               <button
                 type="button"
                 className="link-btn"
-                onClick={() => props.onOpen('glossaryTerms', entry._id)}
+                aria-expanded={open?.id === entry._id}
+                onClick={() =>
+                  setOpen(
+                    open?.id === entry._id ? null : { collection: 'glossaryTerms', id: entry._id },
+                  )
+                }
               >
                 <Zh text={entryTitle(entry)} actions={false} />
               </button>{' '}
               <span>{warnings.find((w) => w.code === 'romanization-system')?.message}</span>
+              {open?.id === entry._id && (
+                <RowEditor open={open} onClose={() => setOpen(null)} testId="term-editor" />
+              )}
             </li>
           ))}
         </ul>
@@ -1083,9 +1088,14 @@ export function RomanizationView(props: { onOpen: Open }) {
   );
 }
 
-/** GL-1, GL-3: every glossary term in one table. Hovering or focusing the characters shows the meaning. */
-export function GlossaryTable(props: { onOpen: Open }) {
+/**
+ * GL-1, GL-3: every glossary term in one table. Hovering or focusing the
+ * characters shows the meaning. A43: Edit opens the term's editor in a row
+ * under its own.
+ */
+export function GlossaryTable() {
   const terms = useEntries('glossaryTerms');
+  const [open, setOpen] = useState<Picked | null>(null);
   const languages = useList('languages');
   const label = (id: unknown) =>
     languages?.items.find((l) => l.id === id)?.label ?? String(id ?? '');
@@ -1120,23 +1130,37 @@ export function GlossaryTable(props: { onOpen: Open }) {
             </thead>
             <tbody>
               {rows.map((t) => (
-                <tr key={t._id} data-term={t._id}>
-                  <td>
-                    <Zh text={String(t.characters ?? '')} />
-                  </td>
-                  <td>{String(t.romanization ?? '')}</td>
-                  <td>{label(t.language)}</td>
-                  <td>{String(t.meaning ?? '')}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn small"
-                      onClick={() => props.onOpen('glossaryTerms', t._id)}
-                    >
-                      Edit {String(t.characters ?? '')}
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={t._id}>
+                  <tr data-term={t._id}>
+                    <td>
+                      <Zh text={String(t.characters ?? '')} />
+                    </td>
+                    <td>{String(t.romanization ?? '')}</td>
+                    <td>{label(t.language)}</td>
+                    <td>{String(t.meaning ?? '')}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn small"
+                        aria-expanded={open?.id === t._id}
+                        onClick={() =>
+                          setOpen(
+                            open?.id === t._id ? null : { collection: 'glossaryTerms', id: t._id },
+                          )
+                        }
+                      >
+                        Edit {String(t.characters ?? '')}
+                      </button>
+                    </td>
+                  </tr>
+                  {open?.id === t._id && (
+                    <tr className="row-editor-tr">
+                      <td colSpan={5}>
+                        <RowEditor open={open} onClose={() => setOpen(null)} testId="term-editor" />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

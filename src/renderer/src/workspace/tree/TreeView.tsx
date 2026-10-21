@@ -44,7 +44,7 @@ import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { useGlossary } from '../Zh';
 import { zhHint } from '../../../../shared/domain/zh';
-import { EmbeddedEditor, TrashControls, UndoPanel } from '../editor';
+import { EmbeddedEditor, TrashControls } from '../editor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
@@ -1178,7 +1178,6 @@ function TreeInspector(props: {
             trash={person === undefined}
           />
         ))}
-      <UndoPanel />
     </aside>
   );
 }

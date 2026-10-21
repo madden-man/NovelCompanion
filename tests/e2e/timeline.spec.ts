@@ -263,7 +263,8 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
 const view = () => page.getByTestId('timeline-view');
 const grid = () => view().getByTestId('world-grid');
 const marker = (id: string) => grid().locator(`.wg-marker[data-id="${id}"]`);
-const inspector = () => view().getByTestId('timeline-inspector').getByTestId('editor');
+/** A43: what is picked opens in an editor under the grid, the whole width of the screen. */
+const inspector = () => view().getByTestId('timeline-editor').getByTestId('editor');
 const rowKeys = () =>
   grid()
     .locator('.wg-row')
@@ -425,7 +426,7 @@ test('SM-8 a group heading collapses its rows and their markers merge onto the h
   await expect(grid().locator('.wg-row[data-group="technology"]')).toHaveCount(3);
 });
 
-test('SM-8 ED-3 a click on an empty spot adds an event at that row and year through the write path; the inspector opens it and Undo removes it', async () => {
+test('SM-8 ED-3 a click on an empty spot adds an event at that row and year through the write path; the editor under the grid opens it and Undo removes it', async () => {
   await zoomTo('Close');
   await showYear(2045);
   const before = (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' }))
@@ -474,11 +475,21 @@ test('SM-8 ED-3 a click on an empty spot adds an event at that row and year thro
   ).toHaveLength(before);
 });
 
-test('SM-8 ED-1 a click on a marker opens its event in the inspector, and a saved edit shows on the marker', async () => {
+test('SM-8 ED-1 A43 a click on a marker opens its event under the grid, Close puts it away, and a saved edit shows on the marker', async () => {
   await showYear(2036);
   await marker('E4').click();
   await expect(inspector()).toHaveAttribute('data-entry-id', 'E4');
   await expect(marker('E4')).toHaveAttribute('aria-current', 'true');
+  // The editor sits under the grid and spans the screen; there is no side panel.
+  await expect(page.getByTestId('timeline-inspector')).toHaveCount(0);
+  const gridBox = (await grid().boundingBox())!;
+  const editorBox = (await view().getByTestId('timeline-editor').boundingBox())!;
+  expect(editorBox.y).toBeGreaterThan(gridBox.y + gridBox.height);
+  expect(editorBox.width).toBeGreaterThan(gridBox.width * 0.9);
+  await inspector().getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(view().getByTestId('timeline-editor')).toHaveCount(0);
+  await marker('E4').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E4');
   await invoke('entry.update', {
     collection: 'worldEvents',
     id: 'E4',

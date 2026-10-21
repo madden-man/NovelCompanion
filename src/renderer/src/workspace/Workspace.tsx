@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
-import { EntryPane, UndoPanel } from './editor';
+import { EntryPane } from './editor';
 import { StopPrompt } from './session';
 import { RelevantView } from './sessions/relevant';
 import { SessionsView } from './sessions/SessionsView';
@@ -13,7 +13,7 @@ import type { ContinuityTab } from './sessions/ContinuityView';
 import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
-import { UndoProvider } from './undo';
+import { UndoProvider, useUndo } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
@@ -34,8 +34,6 @@ import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude'
 import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
 import { AppMenu } from './AppMenu';
-import { InspectorAside } from './inspector';
-import type { Inspected } from './inspector';
 import './shell.css';
 
 type View =
@@ -123,7 +121,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
   },
 ];
 
-/** The app frame for an open bible: the eight screens in the rail, the screen, an inspector. */
+/** The app frame for an open bible: the top bar, the nine screens in the rail, the screen (A43: no inspector column). */
 export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   return (
     <DataProvider key={props.bibleId}>
@@ -237,7 +235,6 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                   onCreated={(id) => setView({ ...view, selected: id, creating: false })}
                   onCancel={() => setView({ ...view, creating: false })}
                 />
-                <SideInspector />
               </>
             ) : view.selected ? (
               <EntryPane
@@ -259,22 +256,18 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                     {collectionInfo[view.collection].singular.toLowerCase()}.
                   </p>
                 </div>
-                <SideInspector />
               </>
             )}
           </>
         ) : view.kind === 'search' ? (
-          <>
-            <div className="ws-wide-area">
-              <SearchView
-                query={query}
-                onQuery={setQuery}
-                onOpen={open}
-                onOpenSection={openSection}
-              />
-            </div>
-            <SideInspector />
-          </>
+          <div className="ws-wide-area">
+            <SearchView
+              query={query}
+              onQuery={setQuery}
+              onOpen={open}
+              onOpenSection={openSection}
+            />
+          </div>
         ) : view.kind === 'tree' ? (
           <TreeView onOpen={open} focus={view.focus} />
         ) : view.kind === 'timeline' ? (
@@ -304,35 +297,32 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         ) : view.kind === 'places' || view.kind === 'romanization' || view.kind === 'glossary' ? (
           <ReferenceScreen key={view.kind} kind={view.kind} />
         ) : (
-          <>
-            <div className="ws-wide-area">
-              {view.kind === 'trash' && <TrashView onOpen={open} />}
-              {view.kind === 'lists' && <ListsView />}
-              {view.kind === 'review' && <ReviewQueue />}
-              {view.kind === 'import' && <ImportView />}
-              {view.kind === 'backups' && <BackupsView />}
-              {view.kind === 'drive' && <DriveView />}
-              {view.kind === 'settings' && <SettingsView />}
-              {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
-              {view.kind === 'relevant' && (
-                <RelevantView
-                  onOpen={open}
-                  onBackstory={(characterId) => setView({ kind: 'backstory', characterId })}
-                />
-              )}
-              {view.kind === 'continuity' && (
-                <ContinuityView
-                  key={view.chapterId ?? ''}
-                  tab={view.tab}
-                  chapterId={view.chapterId}
-                  openFlow={view.openFlow}
-                  onTab={(tab) => setView({ kind: 'continuity', tab, chapterId: view.chapterId })}
-                  onOpen={open}
-                />
-              )}
-            </div>
-            <SideInspector />
-          </>
+          <div className="ws-wide-area">
+            {view.kind === 'trash' && <TrashView onOpen={open} />}
+            {view.kind === 'lists' && <ListsView />}
+            {view.kind === 'review' && <ReviewQueue />}
+            {view.kind === 'import' && <ImportView />}
+            {view.kind === 'backups' && <BackupsView />}
+            {view.kind === 'drive' && <DriveView />}
+            {view.kind === 'settings' && <SettingsView />}
+            {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
+            {view.kind === 'relevant' && (
+              <RelevantView
+                onOpen={open}
+                onBackstory={(characterId) => setView({ kind: 'backstory', characterId })}
+              />
+            )}
+            {view.kind === 'continuity' && (
+              <ContinuityView
+                key={view.chapterId ?? ''}
+                tab={view.tab}
+                chapterId={view.chapterId}
+                openFlow={view.openFlow}
+                onTab={(tab) => setView({ kind: 'continuity', tab, chapterId: view.chapterId })}
+                onOpen={open}
+              />
+            )}
+          </div>
         )}
         <StatusBar />
         <StoryTimeGate onOpen={open} />
@@ -342,19 +332,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   );
 }
 
-/** PC-1, GL-1, GL-3: the place tree, romanization and glossary table, each with an inspector. */
+/** PC-1, GL-1, GL-3: the place tree, romanization and glossary table; a picked row opens in place (A43). */
 function ReferenceScreen({ kind }: { kind: 'places' | 'romanization' | 'glossary' }) {
-  const [inspected, setInspected] = useState<Inspected | null>(null);
-  const onOpen = (collection: EntryCollection, id: string) => setInspected({ collection, id });
   return (
-    <>
-      <div className="ws-wide-area">
-        {kind === 'places' && <PlacesView onOpen={onOpen} />}
-        {kind === 'romanization' && <RomanizationView onOpen={onOpen} />}
-        {kind === 'glossary' && <GlossaryTable onOpen={onOpen} />}
-      </div>
-      <InspectorAside open={inspected} onClose={() => setInspected(null)} />
-    </>
+    <div className="ws-wide-area">
+      {kind === 'places' && <PlacesView />}
+      {kind === 'romanization' && <RomanizationView />}
+      {kind === 'glossary' && <GlossaryTable />}
+    </div>
   );
 }
 
@@ -363,9 +348,13 @@ function StoryTimeGate({ onOpen }: { onOpen: (collection: EntryCollection, id: s
   return story.dialogOpen ? <StoryTimeDialog onOpen={onOpen} /> : null;
 }
 
-/** TM-3: the current story time, its era, and the chapter being written, on every screen. */
+/**
+ * TM-3: the current story time, its era, and the chapter being written, on
+ * every screen. A43: what the last undo or redo did, or why it could not (ED-3).
+ */
 function StatusBar() {
   const story = useStoryTime();
+  const undo = useUndo();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const strands = useStrandOptions();
@@ -380,20 +369,14 @@ function StatusBar() {
         {story.time ? '' : ' (from the current position, not set)'}
       </span>
       {strand && <span data-testid="status-strand">Writing: {strand.label}</span>}
+      <span className="status-undo" role="status" aria-live="polite">
+        {undo.notice && <span data-testid="undo-notice">{undo.notice}</span>}
+      </span>
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
       <AskClaudeButton />
       <CaptureButton />
     </footer>
-  );
-}
-
-function SideInspector() {
-  return (
-    <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
-      <span className="eyebrow">Inspector</span>
-      <UndoPanel />
-    </aside>
   );
 }
