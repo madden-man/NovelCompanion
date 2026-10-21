@@ -89,11 +89,11 @@ const MORE = {
     'Briefs',
     'Continuity findings',
   ],
-  People: ['Families', 'Unions', 'Parent links', 'Relationships'],
-  Story: ['Books', 'Parts', 'Arcs', 'Chapters', 'Plot beats'],
+  // A39: the dropped sections leave the rail; moments join People.
+  People: ['Moments', 'Families', 'Unions', 'Parent links'],
+  Story: ['Books', 'Parts', 'Chapters'],
   World: ['World events', 'Era states', 'Cultural entries', 'Places', 'Glossary'],
-  Knowledge: ['Facts', 'Knowledge records', 'Themes and motifs', 'Open questions'],
-  Custom: ['Custom sections', 'Family recipes'],
+  Knowledge: ['Open questions'],
   Manage: [
     'Search and filters',
     'Review queue',

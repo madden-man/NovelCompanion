@@ -281,6 +281,8 @@ export interface EraSpan {
   name: string;
   startYear: number;
   endYear: number;
+  /** The era's text; A39 folded its five prose fields into it (SM-4). */
+  body: string;
 }
 
 /** Live eras in start order. An era whose end is before its start covers nothing. */
@@ -296,6 +298,7 @@ export function eraSpans(data: TimelineData): EraSpan[] {
       name: str(e.name) || str(e.title) || String(e._id),
       startYear: s,
       endYear: t,
+      body: str(e.body),
     });
   }
   return out.sort((a, b) => a.startYear - b.startYear || a.endYear - b.endYear);

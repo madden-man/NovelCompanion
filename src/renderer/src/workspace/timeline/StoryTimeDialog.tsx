@@ -527,6 +527,7 @@ export function StoryTimeDialog(props: {
                       {view.eras.length} eras cover {view.year}. The one that started last applies.
                     </p>
                   )}
+                  {view.era.body && <p style={{ whiteSpace: 'pre-wrap' }}>{view.era.body}</p>}
                 </>
               ) : (
                 <p>No era covers {time.year}.</p>

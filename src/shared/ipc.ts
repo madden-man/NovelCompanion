@@ -298,6 +298,7 @@ const EraWire = z.strictObject({
   name: z.string(),
   startYear: z.number(),
   endYear: z.number(),
+  body: z.string(),
 });
 
 const EventWire = z.strictObject({
