@@ -238,6 +238,22 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await invoke('entry.delete', { collection: 'moments', id: made._id });
   await expect.poll(() => ids('moments', s)).toEqual(['B4']);
 
+  // SB-5: a moment of the year after the chapter is not backstory; it sits under Planned ahead,
+  // never on the world events strip.
+  const ahead = (
+    await invoke('entry.create', {
+      collection: 'moments',
+      data: { title: 'Iris answers the letter', status: 'idea', characterId: 'H5', year: 2046 },
+    })
+  ).entry;
+  await expect.poll(() => ids('plannedAhead', s)).toEqual([ahead._id]);
+  await expect(groupIds(s, 'plannedAhead')).toContainText('Iris answers the letter');
+  await expect.poll(() => ids('moments', s)).toEqual(['B4']);
+  await expect(strip.locator(`[data-id="${ahead._id}"]`)).toHaveCount(0);
+  await expect(strip.locator('h4')).toHaveText('World events 2042 to 2046 (1)');
+  await invoke('entry.delete', { collection: 'moments', id: ahead._id });
+  await expect(groupIds(s, 'plannedAhead')).toHaveCount(0);
+
   // Each item opens its entry.
   await groupIds(s, 'culture').getByRole('button', { name: 'Flood memorial walk' }).click();
   await expect(page.getByTestId('editor')).toBeVisible();

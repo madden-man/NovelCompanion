@@ -1166,7 +1166,7 @@ test('CH-3 SM-1 the story time drives the age on character pages', async () => {
   const p = await openCharacter('Margaret Hale');
   await expect(p.getByTestId('char-age')).toHaveText('Dies this year, age 83');
   const noor = await openCharacter('Noor Zhou');
-  await expect(noor.getByTestId('char-age')).toHaveText('Born 2058');
+  await expect(noor.getByTestId('char-age')).toHaveText('Not yet born (2058)');
   await expect(byId('H1')).toHaveCount(0);
   await openTree();
   await expect(byId('H1')).toHaveAttribute('data-state', 'dying');

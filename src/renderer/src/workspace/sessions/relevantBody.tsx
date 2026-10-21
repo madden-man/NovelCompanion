@@ -1,11 +1,11 @@
 import { useId, useState } from 'react';
-import { GROUP_TITLES, WINDOW_AHEAD } from '../../../../shared/domain/brief/selection';
+import { GROUP_TITLES } from '../../../../shared/domain/brief/selection';
 import { placePath } from '../../../../shared/domain/culture';
 import { useWriteGuard } from '../../connection';
 import { captureNav } from '../capture';
 import { useEntries } from '../data';
 import { useUndo } from '../undo';
-import { EventsWindow, GroupBlock, updateWithUndo } from './common';
+import { EventsWindow, GroupBlock, onEventStrip, updateWithUndo } from './common';
 import type { OpenEntry, SelectionView } from './common';
 import './relevant.css';
 
@@ -322,9 +322,7 @@ export function RelevantBody(props: {
       g.kind === 'plannedAhead'
         ? {
             ...g,
-            items: g.items.filter(
-              (it) => typeof it.year !== 'number' || it.year > strand.year + WINDOW_AHEAD,
-            ),
+            items: g.items.filter((it) => !onEventStrip(it, strand.year)),
           }
         : g,
     );

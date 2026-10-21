@@ -95,12 +95,26 @@ export function GroupBlock(props: {
   );
 }
 
+/**
+ * True when a selected item is a world event the strip of years shows (A33):
+ * a world event up to the year after the story year. Everything else under
+ * Planned ahead, moments included (SB-5), stays in the Planned ahead list.
+ */
+export function onEventStrip(it: Item, strandYear: number): boolean {
+  return (
+    it.collection === 'worldEvents' &&
+    typeof it.year === 'number' &&
+    it.year <= strandYear + WINDOW_AHEAD
+  );
+}
+
 /** The world events of a strand's window as strip events: titles only, placed by year (A33). */
 function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
   const out: StripEvent[] = [];
   for (const g of groups) {
     if (g.kind !== 'eventsWindow' && g.kind !== 'plannedAhead') continue;
     for (const it of g.items) {
+      if (it.collection !== 'worldEvents') continue;
       if (typeof it.year !== 'number' || it.year > to) continue;
       const endYear = it.endYear ?? it.year;
       if (endYear < from) continue;
@@ -112,8 +126,8 @@ function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
 
 /**
  * A33: the world events of the window as a strip of years, in place of the
- * list. Planned-ahead events inside the window sit on the strip too, so the
- * list under "Planned ahead" keeps only what lies past it.
+ * list. Planned-ahead world events inside the window sit on the strip too, so
+ * the list under "Planned ahead" keeps the rest: later events and moments (SB-5).
  */
 export function EventsWindow(props: {
   strand: SelectionView['strands'][number];
@@ -210,9 +224,7 @@ export function SelectionBody(props: {
                 g.kind === 'plannedAhead'
                   ? {
                       ...g,
-                      items: g.items.filter(
-                        (it) => typeof it.year !== 'number' || it.year > s.year + WINDOW_AHEAD,
-                      ),
+                      items: g.items.filter((it) => !onEventStrip(it, s.year)),
                     }
                   : g;
               return (

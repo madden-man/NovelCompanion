@@ -316,7 +316,7 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
     expect(bible.model.get('proposals', p._id)!.state).toBe('pending');
   });
 
-  test('ED-7 SM-1 a proposal naming a field its kind does not have is refused when it is made', async () => {
+  test('ED-7 SM-1 a proposal naming a field its kind does not have, at any depth, or a value of the wrong shape, is refused when it is made', async () => {
     const before = bible.repo.listProposals().length;
     await expect(
       bible.repo.propose({
@@ -337,6 +337,49 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
         data: { title: 'Flood', status: 'idea', placeIds: [], reality: 'real' },
       }),
     ).rejects.toThrow('World events have no fields named placeIds, reality');
-    expect(bible.repo.listProposals()).toHaveLength(before);
+    // Nested: a dropped name field inside names is refused, naming its path.
+    await expect(
+      bible.repo.propose({
+        source: 'claude',
+        op: 'update',
+        collection: 'characters',
+        targetId: 'H2',
+        data: { names: { full: 'Peter Hale', romanization: 'x' } },
+      }),
+    ).rejects.toThrow(
+      'Characters have no field named names.romanization, so this change cannot be proposed.',
+    );
+    // A prototype key is not a field.
+    await expect(
+      bible.repo.propose({
+        source: 'claude',
+        op: 'update',
+        collection: 'characters',
+        targetId: 'H2',
+        data: JSON.parse('{"toString": "x", "constructor": "y"}') as Record<string, unknown>,
+      }),
+    ).rejects.toThrow('Characters have no fields named toString, constructor');
+    // A value of the wrong shape is refused when it is made too.
+    await expect(
+      bible.repo.propose({
+        source: 'claude',
+        op: 'update',
+        collection: 'characters',
+        targetId: 'H2',
+        data: { birth: { year: 'soon' } },
+      }),
+    ).rejects.toThrow(/^The proposed birth/);
+    // A whole, valid nested value is accepted.
+    const ok = await bible.repo.propose({
+      source: 'claude',
+      op: 'update',
+      collection: 'characters',
+      targetId: 'H2',
+      data: { names: { full: 'Peter Hale', chinese: '' } },
+    });
+    expect(ok.state).toBe('pending');
+    // Only the valid one was queued.
+    expect(bible.repo.listProposals()).toHaveLength(before + 1);
+    await bible.repo.rejectProposal(ok._id);
   });
 });
