@@ -36,6 +36,8 @@ export const BackstoryMark = z.strictObject({
 });
 
 export const Character = entry({
+  /** A38: one or two sentences on what they are to the story, shown first on their page. */
+  role: z.string().default(''),
   names: Names,
   birth: StoryDate,
   /** Null means the character is not recorded as dead. */
@@ -51,6 +53,9 @@ export type Character = z.infer<typeof Character>;
 
 export const characterFields: FieldSpec[] = [
   ...commonFields,
+  f.text('role', 'In the story', {
+    hint: 'One or two sentences: what they are to the story.',
+  }),
   f.object(
     'names',
     'Names',

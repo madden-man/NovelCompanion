@@ -254,6 +254,15 @@ async function clearChips(f: Locator) {
  * Set one field through the editor the way a person would: typing, picking,
  * adding and removing items (ED-1). Walks into groups and lists by the manifest.
  */
+/** A38: open every closed caret section above an element, so it can be seen and used. */
+export async function reveal(target: Locator): Promise<void> {
+  await target.first().evaluate((el) => {
+    for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) {
+      if (!d.open) d.open = true;
+    }
+  });
+}
+
 export async function setField(
   ctx: UiContext,
   scope: Locator,
@@ -263,6 +272,7 @@ export async function setField(
   root: Record<string, unknown>,
 ): Promise<void> {
   const f = field(scope, path);
+  await reveal(f);
   switch (spec.kind) {
     case 'text':
     case 'int':

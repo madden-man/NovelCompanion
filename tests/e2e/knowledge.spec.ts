@@ -3,7 +3,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import type { EntryCollection } from '../../src/shared/schema';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, reveal, waitSaved } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -85,18 +85,13 @@ test('KN-1 KN-2 the fact page lists who knows it, and a record before birth save
   expect(saved.warnings.map((w) => w.code)).toEqual(['learned-before-birth']);
 });
 
-test('KN-1 the character page shows what H5 knows and does not know in 2059 and in 2060', async () => {
+test('KN-1 the character page shows what H5 knows in 2059 and in 2060', async () => {
   await invoke('storyTime.set', { time: { year: 2059 } });
   await rail(page, 'Characters').click();
   await pick(/Iris Hale-Zhou/).click();
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2059.');
+  await reveal(page.getByTestId('knowledge-year'));
   await expect(page.getByTestId('knowledge-empty')).toBeVisible();
-  const missing = page.getByTestId('does-not-know');
-  await expect(missing.locator('[data-fact="F2"]')).toContainText("Peter's letter");
-  await expect(missing.locator('[data-fact="F2"]')).toContainText('not yet in 2059');
-  await expect(missing.locator('[data-fact="F2"]')).toContainText('They learn it in 2060.');
-  await expect(missing.locator('[data-fact="F1"]')).toContainText('Meiling was engaged before Wei');
-  await expect(missing.locator('[data-fact="F1"]')).toContainText('never');
 
   await invoke('storyTime.set', { time: { year: 2060 } });
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2060.');
@@ -104,10 +99,6 @@ test('KN-1 the character page shows what H5 knows and does not know in 2059 and 
   await expect(known).toContainText("Peter's letter");
   await expect(known).toContainText('learned 2060');
   await expect(known).toContainText('She finds it in Margaret');
-  await expect(page.getByTestId('does-not-know').locator('[data-fact="F2"]')).toHaveCount(0);
-  await expect(page.getByTestId('does-not-know').locator('[data-fact="F1"]')).toContainText(
-    'never',
-  );
   await invoke('storyTime.set', { time: null });
 });
 

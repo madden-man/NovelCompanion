@@ -13,8 +13,11 @@ import type { LifeState } from '../../../../shared/domain/ages';
 import {
   NODE_H,
   NODE_W,
+  ROW_H,
+  SIBLING_GAP,
   TreeActionError,
   assembleGraph,
+  childrenOf,
   filterPeople,
   hasBranch,
   hideCollapsed,
@@ -40,7 +43,7 @@ import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { useGlossary } from '../Zh';
 import { zhHint } from '../../../../shared/domain/zh';
-import { EmbeddedEditor, UndoPanel } from '../editor';
+import { EmbeddedEditor, TrashControls, UndoPanel } from '../editor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
@@ -50,6 +53,8 @@ type View = { x: number; y: number; w: number; h: number };
 type Status = 'canon' | 'planned' | 'idea';
 
 const PAD = 40;
+/** A pointer that moves less than this many screen pixels is a click, not a drag (FT-11). */
+const DRAG_START = 4;
 const LINK_STYLES = new Set(['biological', 'adoptive', 'step', 'guardian']);
 const UNION_STYLES = new Set(['married', 'partnered']);
 
@@ -109,6 +114,8 @@ interface NodeProps {
   colors: string[];
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
+  /** FT-11: Alt with an arrow moves the person one slot, or one row. */
+  onMove: (id: string, dx: number, dy: number) => void;
   /** GL-3: show or hide the visible meaning card for this node's Chinese name. */
   onCard: (card: { text: string; el: Element } | null) => void;
 }
@@ -120,6 +127,20 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
   const label = p.person.chinese ? `${p.person.name} ${p.person.chinese}` : p.person.name;
   const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${p.person.status}, ${stateText(s)}${p.hint ? `, ${p.hint}` : ''}`;
   const onKey = (e: ReactKeyboardEvent) => {
+    if (e.altKey) {
+      const step: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      };
+      const d = step[e.key];
+      if (d) {
+        e.preventDefault();
+        p.onMove(p.person.id, d[0], d[1]);
+      }
+      return;
+    }
     const k = treeNodeKey(e.key, p.branch);
     if (!k) return;
     e.preventDefault();
@@ -142,7 +163,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       aria-label={aria}
       aria-pressed={p.selected}
       aria-expanded={p.branch ? !p.collapsed : undefined}
-      aria-keyshortcuts={p.branch ? 'Enter Space I' : 'Enter Space'}
+      aria-keyshortcuts={p.branch ? 'Enter Space I Alt+ArrowKeys' : 'Enter Space I Alt+ArrowKeys'}
       data-person={p.person.id}
       data-state={s.state === 'alive' && s.dyingThisYear ? 'dying' : s.state}
       data-age={s.state === 'alive' ? s.age : undefined}
@@ -228,6 +249,19 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
+  /** FT-11: the person being dragged and where they are right now, drawn live. */
+  const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** FT-11: a person dropped on another: the choice of link, or just the move, placed under the pointer. */
+  const [drop, setDrop] = useState<{
+    id: string;
+    onto: string;
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    error: string | null;
+  } | null>(null);
+  const [adding, setAdding] = useState<RelativeKind | null>(null);
   /** What is typed in the year box while it is not a whole year yet, such as a blank. */
   const [yearDraft, setYearDraft] = useState<string | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
@@ -299,6 +333,16 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
     return layoutFromPositions(kept);
   }, [graph, placed, filter, collapsed]);
 
+  /** The layout with the dragged person where the pointer has them (FT-11). */
+  const liveLayout = useMemo(() => {
+    if (!layout || !moving || !layout.nodes.has(moving.id)) return layout;
+    const m = new Map<string, { x: number; y: number }>();
+    for (const [id, p] of layout.nodes) {
+      m.set(id, id === moving.id ? { x: moving.x, y: moving.y } : { x: p.x, y: p.y });
+    }
+    return layoutFromPositions(m);
+  }, [layout, moving]);
+
   const [confirmTidy, setConfirmTidy] = useState(false);
   const tidy = async () => {
     if (!graph) return;
@@ -311,8 +355,39 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   };
 
   const edges = useMemo(
-    () => (graph && layout ? treeEdges(graph, layout, year) : null),
-    [graph, layout, year],
+    () => (graph && liveLayout ? treeEdges(graph, liveLayout, year) : null),
+    [graph, liveLayout, year],
+  );
+
+  /**
+   * FT-11: put one person at a spot and keep it. The row snaps to the grid so
+   * partners stay side by side and generations stay rows; someone with no ties
+   * put in the row above the tree is loose there, as the layout would have them.
+   */
+  const moveTo = useCallback(
+    async (id: string, x: number, y: number) => {
+      if (!data || !graph || ro.off) return;
+      const row = Math.round(y / ROW_H) * ROW_H;
+      const ties =
+        parentsOf(graph, id).length + childrenOf(graph, id).length + partnersOf(graph, id).length;
+      const at =
+        row === -ROW_H && ties === 0
+          ? { x: Math.round(x), y: row, loose: true }
+          : { x: Math.round(x), y: row };
+      const positions = { ...(data.positions ?? {}), [id]: at };
+      saveSeq.current += 1;
+      setData((d) => (d ? { ...d, positions } : d));
+      await call('tree.savePositions', { positions });
+    },
+    [data, graph, ro.off],
+  );
+  const nudge = useCallback(
+    (id: string, dx: number, dy: number) => {
+      const at = layout?.nodes.get(id);
+      if (!at) return;
+      void moveTo(id, at.x + dx * (NODE_W + SIBLING_GAP), at.y + dy * ROW_H);
+    },
+    [layout, moveTo],
   );
 
   const colorOf = useMemo(() => {
@@ -439,13 +514,64 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   };
 
   const drag = useRef<{ x: number; y: number; v: View; id: number } | null>(null);
+  /** FT-11: a press on a person; it becomes a drag once the pointer has moved DRAG_START. */
+  const nodeDrag = useRef<{
+    id: string;
+    x: number;
+    y: number;
+    ox: number;
+    oy: number;
+    v: View;
+    moved: boolean;
+  } | null>(null);
+  const toSvg = (el: SVGSVGElement, v: View, clientX: number, clientY: number) => {
+    const r = el.getBoundingClientRect();
+    return {
+      x: v.x + ((clientX - r.left) / r.width) * v.w,
+      y: v.y + ((clientY - r.top) / r.height) * v.h,
+    };
+  };
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (!view || (e.target as Element).closest('.tnode')) return;
+    if (!view) return;
+    const nodeEl = (e.target as Element).closest('.tnode');
+    if (nodeEl) {
+      if (ro.off || e.button !== 0 || (e.target as Element).closest('.tnode-toggle')) return;
+      const id = nodeEl.getAttribute('data-person') ?? '';
+      const at = layout?.nodes.get(id);
+      if (!at) return;
+      nodeDrag.current = {
+        id,
+        x: e.clientX,
+        y: e.clientY,
+        ox: at.x,
+        oy: at.y,
+        v: view,
+        moved: false,
+      };
+      return;
+    }
     drag.current = { x: e.clientX, y: e.clientY, v: view, id: e.pointerId };
     e.currentTarget.setPointerCapture(e.pointerId);
     e.currentTarget.classList.add('dragging');
   };
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const n = nodeDrag.current;
+    if (n) {
+      if (!n.moved) {
+        if (Math.hypot(e.clientX - n.x, e.clientY - n.y) < DRAG_START) return;
+        // Capture only once it is a drag, so a plain click still reaches the person.
+        n.moved = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.currentTarget.classList.add('moving');
+      }
+      const k = n.v.w / e.currentTarget.clientWidth;
+      setMoving({
+        id: n.id,
+        x: Math.round(n.ox + (e.clientX - n.x) * k),
+        y: Math.round(n.oy + (e.clientY - n.y) * k),
+      });
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     const k = d.v.w / e.currentTarget.clientWidth;
@@ -454,6 +580,36 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const endDrag = (e: ReactPointerEvent<SVGSVGElement>) => {
     drag.current = null;
     e.currentTarget.classList.remove('dragging');
+    const n = nodeDrag.current;
+    if (!n) return;
+    nodeDrag.current = null;
+    e.currentTarget.classList.remove('moving');
+    setMoving(null);
+    if (!n.moved || e.type !== 'pointerup' || !layout) return;
+    const k = n.v.w / e.currentTarget.clientWidth;
+    const x = Math.round(n.ox + (e.clientX - n.x) * k);
+    const y = Math.round(n.oy + (e.clientY - n.y) * k);
+    // Dropped on someone: ask what the drop means before anything is written.
+    const at = toSvg(e.currentTarget, n.v, e.clientX, e.clientY);
+    let onto: string | null = null;
+    for (const [id, p] of layout.nodes) {
+      if (id === n.id) continue;
+      if (at.x >= p.x && at.x <= p.x + NODE_W && at.y >= p.y && at.y <= p.y + NODE_H) onto = id;
+    }
+    if (onto) {
+      const box = wrap.current?.getBoundingClientRect();
+      setDrop({
+        id: n.id,
+        onto,
+        x,
+        y,
+        left: Math.max(4, Math.min(e.clientX - (box?.left ?? 0), (box?.width ?? 400) - 300)),
+        top: Math.max(4, Math.min(e.clientY - (box?.top ?? 0) + 4, (box?.height ?? 300) - 220)),
+        error: null,
+      });
+      return;
+    }
+    void moveTo(n.id, x, y);
   };
 
   const toggle = useCallback(
@@ -528,7 +684,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const rangeId = useId();
   const yearId = useId();
 
-  if (!data || !graph || !layout || !edges) {
+  if (!data || !graph || !layout || !liveLayout || !edges) {
     return (
       <div className="ws-tree-area">
         <p aria-live="polite">Loading the family tree.</p>
@@ -608,6 +764,15 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
               />
             </div>
             <div className="row tight tree-buttons">
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => setAdding('person')}
+                disabled={ro.off}
+                {...ro.tip}
+              >
+                Add person
+              </button>
               <button type="button" className="btn" onClick={fit}>
                 Fit to window
               </button>
@@ -708,29 +873,46 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
                 ))}
               </g>
               <g className="tree-nodes">
-                {graph.people.map((p) => {
-                  const at = layout.nodes.get(p.id);
-                  if (!at) return null;
-                  return (
-                    <TreeNode
-                      key={p.id}
-                      person={p}
-                      hint={zhHint(p.chinese, glossary)}
-                      x={at.x}
-                      y={at.y}
-                      year={year}
-                      selected={selected === p.id}
-                      collapsed={collapsed.has(p.id)}
-                      branch={hasBranch(graph, p.id)}
-                      colors={colorOf(p.familyIds)}
-                      onSelect={setSelected}
-                      onToggle={toggle}
-                      onCard={showCard}
-                    />
-                  );
-                })}
+                {[...graph.people]
+                  // The person being dragged is drawn last, over everyone.
+                  .sort((a, b) => (a.id === moving?.id ? 1 : b.id === moving?.id ? -1 : 0))
+                  .map((p) => {
+                    const at = liveLayout.nodes.get(p.id);
+                    if (!at) return null;
+                    return (
+                      <TreeNode
+                        key={p.id}
+                        person={p}
+                        hint={zhHint(p.chinese, glossary)}
+                        x={at.x}
+                        y={at.y}
+                        year={year}
+                        selected={selected === p.id}
+                        collapsed={collapsed.has(p.id)}
+                        branch={hasBranch(graph, p.id)}
+                        colors={colorOf(p.familyIds)}
+                        onSelect={setSelected}
+                        onToggle={toggle}
+                        onMove={nudge}
+                        onCard={showCard}
+                      />
+                    );
+                  })}
               </g>
             </svg>
+            {drop && (
+              <DropMenu
+                graph={graph}
+                drop={drop}
+                onMove={() => {
+                  const d = drop;
+                  setDrop(null);
+                  void moveTo(d.id, d.x, d.y);
+                }}
+                onError={(error) => setDrop((d) => (d ? { ...d, error } : d))}
+                onDone={() => setDrop(null)}
+              />
+            )}
             {card && (
               <div
                 className="tree-card"
@@ -800,6 +982,8 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
         selected={selected}
         year={year}
         collapsed={selected ? collapsed.has(selected) : false}
+        adding={adding}
+        setAdding={setAdding}
         onSelect={setSelected}
         onToggle={toggle}
         onOpen={props.onOpen}
@@ -846,8 +1030,10 @@ function Legend({ families }: { families: { id: string; name: string; color: str
         Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.
       </span>
       <span className="example-note" data-testid="tree-keys">
-        Keys on a person: Enter or Space collapses or expands their branch when they have one, and
-        opens the inspector when they do not. I opens the inspector for anyone.
+        Drag a person to move them. Drop them on someone to make them that person&apos;s parent,
+        child or partner. Keys on a person: Enter or Space collapses or expands their branch when
+        they have one, and opens the inspector when they do not. I opens the inspector for anyone.
+        Alt with an arrow moves them one slot.
       </span>
     </div>
   );
@@ -858,13 +1044,15 @@ function TreeInspector(props: {
   selected: string | null;
   year: number;
   collapsed: boolean;
+  adding: RelativeKind | null;
+  setAdding: (kind: RelativeKind | null) => void;
   onSelect: (id: string | null) => void;
   onToggle: (id: string) => void;
   onOpen: (collection: EntryCollection, id: string) => void;
 }) {
-  const { graph, selected } = props;
+  const { graph, selected, adding, setAdding } = props;
+  const undo = useUndo();
   const person = selected ? graph.byId.get(selected) : undefined;
-  const [adding, setAdding] = useState<RelativeKind | null>(null);
   const [editing, setEditing] = useState<{ collection: EntryCollection; id: string } | null>(null);
 
   return (
@@ -874,11 +1062,13 @@ function TreeInspector(props: {
       data-testid="tree-inspector"
     >
       <span className="eyebrow">Inspector</span>
-      <div className="row">
-        <button type="button" className="btn primary small" onClick={() => setAdding('person')}>
-          Add person
-        </button>
-      </div>
+      {!selected && adding !== 'person' && (
+        <p className="example-note">
+          Add person above the tree starts someone new. Pick a person in the tree to edit them here.
+          Drag a person to move them, and drop them on someone to make them that person&apos;s
+          parent, child or partner.
+        </p>
+      )}
       {adding === 'person' && (
         <AddRelativeForm
           graph={graph}
@@ -890,7 +1080,6 @@ function TreeInspector(props: {
           }}
         />
       )}
-      {!selected && <p className="example-note">Pick a person in the tree to edit them here.</p>}
       {selected && person && (
         <div className="stack">
           <div className="stack tight">
@@ -899,19 +1088,21 @@ function TreeInspector(props: {
               {stateWords(lifeState(person, props.year), props.year)}
             </p>
           </div>
-          <div className="row tight" role="group" aria-label={`Add a relative of ${person.name}`}>
-            {(['parent', 'child', 'sibling', 'partner'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                className="btn small"
-                aria-pressed={adding === k}
-                onClick={() => setAdding(k)}
-              >
-                Add {k}
-              </button>
-            ))}
-          </div>
+          <WriteFieldset>
+            <div className="row tight" role="group" aria-label={`Add a relative of ${person.name}`}>
+              {(['parent', 'child', 'sibling', 'partner'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="btn small"
+                  aria-pressed={adding === k}
+                  onClick={() => setAdding(k)}
+                >
+                  Add {k}
+                </button>
+              ))}
+            </div>
+          </WriteFieldset>
           {adding && adding !== 'person' && (
             <AddRelativeForm
               graph={graph}
@@ -938,7 +1129,15 @@ function TreeInspector(props: {
             </button>
           </div>
           <LinkList graph={graph} person={person} onEdit={setEditing} onSelect={props.onSelect} />
-          <LinkExistingForm graph={graph} person={person} />
+          <TrashControls
+            collection="characters"
+            id={person.id}
+            title={person.name}
+            inTrash={false}
+            label={`Remove ${person.name}`}
+            beforeDelete={undo.flush}
+            onChanged={() => undefined}
+          />
         </div>
       )}
       {selected &&
@@ -954,7 +1153,12 @@ function TreeInspector(props: {
             />
           </div>
         ) : (
-          <EmbeddedEditor key={`characters:${selected}`} collection="characters" id={selected} />
+          <EmbeddedEditor
+            key={`characters:${selected}`}
+            collection="characters"
+            id={selected}
+            trash={person === undefined}
+          />
         ))}
       <UndoPanel />
     </aside>
@@ -1273,26 +1477,39 @@ function LinkList(props: {
   );
 }
 
-/** Link the selected person to someone already in the tree. Self-ancestry is refused in plain words. */
-function LinkExistingForm({ graph, person }: { graph: TreeGraph; person: TreePerson }) {
+/**
+ * FT-11: one person was dropped on another. The link is made with the first
+ * link or union type, which the Links list can change; self-ancestry is refused
+ * in plain words and nothing is written. Just move puts them where they were dropped.
+ */
+function DropMenu(props: {
+  graph: TreeGraph;
+  drop: { id: string; onto: string; left: number; top: number; error: string | null };
+  onMove: () => void;
+  onError: (message: string) => void;
+  onDone: () => void;
+}) {
+  const { graph, drop } = props;
   const undo = useUndo();
   const linkTypes = useListItems('parentLinkTypes');
   const unionTypes = useListItems('unionTypes');
-  const [kind, setKind] = useState<'parent' | 'child' | 'partner'>('child');
-  const [other, setOther] = useState('');
-  const [type, setType] = useState('biological');
-  const [message, setMessage] = useState<{ text: string; bad: boolean } | null>(null);
-  const ids = { kind: useId(), other: useId(), type: useId() };
-  const types = kind === 'partner' ? unionTypes : linkTypes;
-  const shownType = types.some((t) => t.id === type) ? type : (types[0]?.id ?? '');
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
+  const A = graph.byId.get(drop.id)?.name ?? drop.id;
+  const B = graph.byId.get(drop.onto)?.name ?? drop.onto;
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setMessage(null);
+  const link = async (kind: 'parent' | 'child' | 'partner') => {
     try {
+      const type =
+        kind === 'partner'
+          ? (unionTypes.find((t) => t.id === 'married')?.id ?? unionTypes[0]?.id ?? 'married')
+          : (linkTypes.find((t) => t.id === 'biological')?.id ?? linkTypes[0]?.id ?? 'biological');
+      // The dropped person is the parent, child or partner of the one they landed on.
       const plan = planLinkExisting(
         graph,
-        { kind, anchorId: person.id, otherId: other, type: shownType, status: 'idea' },
+        { kind, anchorId: drop.onto, otherId: drop.id, type, status: 'idea' },
         () => ulid(),
       );
       const { entry } = await call('entry.create', {
@@ -1300,74 +1517,50 @@ function LinkExistingForm({ graph, person }: { graph: TreeGraph; person: TreePer
         data: plan.data,
       });
       undo.record(createCommand(plan.collection, entry._id, String(plan.data.title)));
-      setMessage({ text: `Linked. ${String(plan.data.title)}.`, bad: false });
-      setOther('');
+      props.onDone();
     } catch (err) {
-      setMessage({
-        text: err instanceof TreeActionError ? err.message : plainError(err),
-        bad: true,
-      });
+      props.onError(err instanceof TreeActionError ? err.message : plainError(err));
     }
   };
 
   return (
-    <WriteFieldset>
-      <form
-        className="panel stack"
-        onSubmit={(e) => void submit(e)}
-        aria-label="Link someone already in the tree"
-      >
-        <strong>Link someone already in the tree</strong>
-        <div className="field">
-          <label htmlFor={ids.kind}>They are {person.name}&apos;s</label>
-          <select
-            id={ids.kind}
-            value={kind}
-            onChange={(e) => setKind(e.target.value as typeof kind)}
-          >
-            <option value="parent">Parent</option>
-            <option value="child">Child</option>
-            <option value="partner">Partner</option>
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.other}>Person</label>
-          <select id={ids.other} value={other} onChange={(e) => setOther(e.target.value)}>
-            <option value="">Pick a person</option>
-            {graph.people
-              .filter((p) => p.id !== person.id)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.type}>{kind === 'partner' ? 'Union type' : 'Link type'}</label>
-          <select id={ids.type} value={shownType} onChange={(e) => setType(e.target.value)}>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="row tight">
-          <button type="submit" className="btn small" disabled={!other}>
-            Link
-          </button>
-        </div>
-        {message && (
-          <p
-            className={message.bad ? 'callout crit' : 'callout'}
-            role={message.bad ? 'alert' : 'status'}
-            data-testid="link-message"
-          >
-            {message.text}
-          </p>
-        )}
-      </form>
-    </WriteFieldset>
+    <div
+      className="tree-drop panel stack tight"
+      role="dialog"
+      aria-label={`${A} dropped on ${B}`}
+      data-testid="tree-drop"
+      style={{ left: drop.left, top: drop.top }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          props.onDone();
+        }
+      }}
+    >
+      <strong>
+        {A} on {B}
+      </strong>
+      <button ref={first} type="button" className="btn small" onClick={() => void link('parent')}>
+        Make {A} a parent of {B}
+      </button>
+      <button type="button" className="btn small" onClick={() => void link('child')}>
+        Make {A} a child of {B}
+      </button>
+      <button type="button" className="btn small" onClick={() => void link('partner')}>
+        Make {A} and {B} partners
+      </button>
+      <button type="button" className="btn small" onClick={props.onMove}>
+        Just move {A} here
+      </button>
+      <button type="button" className="btn small" onClick={props.onDone}>
+        Cancel
+      </button>
+      {drop.error && (
+        <p className="callout crit" role="alert">
+          {drop.error}
+        </p>
+      )}
+    </div>
   );
 }

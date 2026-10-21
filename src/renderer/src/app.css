@@ -771,6 +771,21 @@ legend.ed-label {
 .tree-svg.dragging {
   cursor: grabbing;
 }
+/* FT-11: a person on the move follows the pointer; the drop menu sits under it. */
+.tree-svg.moving,
+.tree-svg.moving .tnode {
+  cursor: grabbing;
+}
+.tree-drop {
+  position: absolute;
+  z-index: 31;
+  width: 280px;
+  align-items: stretch;
+  box-shadow: var(--shadow);
+}
+.tree-drop .btn {
+  text-align: left;
+}
 .tree-ctl {
   position: absolute;
   top: 8px;
@@ -1015,6 +1030,73 @@ legend.ed-label {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px 18px;
+}
+/* A38: the page is sections behind carets; the story line and status sit above them. */
+.char-story-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 12px;
+  align-items: start;
+}
+.char-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.char-section {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+.char-section > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  color: var(--fg);
+}
+.char-section > summary::-webkit-details-marker {
+  display: none;
+}
+.char-section > summary::before {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 2px;
+  border-right: 2px solid var(--fg);
+  border-bottom: 2px solid var(--fg);
+  transform: translateY(-0.15em) rotate(-45deg);
+  transition: transform 120ms ease;
+}
+.char-section[open] > summary::before {
+  transform: translateY(-0.3em) rotate(45deg);
+}
+.char-section > summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.char-section-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.char-section-hint {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+.char-section-body {
+  padding: 4px 0 8px 1.1em;
+}
+@media (max-width: 600px) {
+  .char-story-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .char-section-body {
+    padding-left: 0;
+  }
 }
 .table-wrap {
   overflow-x: auto;

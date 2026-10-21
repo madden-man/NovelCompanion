@@ -1,6 +1,6 @@
 # SPEC: novel companion desktop app
 
-Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A37 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
+Version 0.2, amended in Phase 0 on 2026-10-10 after the source material in `source-material/` was read (see `docs/SOURCE-MANIFEST.md` and `docs/PHASE0-FINDINGS.md`). Amendments are numbered A1 to A38 in the log at the end of section 10 and marked inline as `[A#]`. After I approve it, this file is the single authority: every piece of work is checked against the numbered criteria here.
 
 Each criterion has an ID (for example `FT-4`). A criterion passes only when there is a named automated test or a recorded manual check for it in `PROGRESS.md`.
 
@@ -43,7 +43,7 @@ All entries share: ID, title, body (rich text), status, provenance and source no
 | Entity | Additional fields |
 |---|---|
 | Family | name, notes, display color |
-| Character | names (see `CH-2`), birth date, death date, birthplace, family memberships, backstory, voice notes as a list of (story year or age, text) `[A9]`, places lived with year ranges |
+| Character | a line on what they are to the story `[A38]`, names (see `CH-2`), birth date, death date, birthplace, family memberships, backstory, voice notes as a list of (story year or age, text) `[A9]`, places lived with year ranges |
 | Union | two characters, type (married, partnered, other), start year, end year, end reason |
 | Parent link | parent, child, type (biological, adoptive, step, guardian), start year |
 | Relationship | two characters, free-text type (friend, rival, employer), year range |
@@ -86,13 +86,13 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 
 - **CH-1** Create, edit, and delete characters with all fields in section 4. A character can belong to zero, one, or several families.
 - **CH-2** Names support: full name, name in Chinese characters, romanization, name order (family name first or last), birth name, married name, nicknames, and what each other character calls them.
-- **CH-3** The character page shows current-position age, a personal timeline (own events, world events in their lifetime, chapters they appear in), relatives, and what they know.
+- **CH-3** The character page shows current-position age, a personal timeline (own events, world events in their lifetime, chapters they appear in), relatives, and what they know. The page opens on the line about their place in the story and their status, then Description, Family and Life; Names, What they know, the Personal timeline, Backstory, Voice notes and Source sit lower, each behind a caret that remembers whether it is open on this computer, with a one-line hint beside the title (the word count, the families and relatives, the years and birthplace) `[A38]`. The list of facts they do not know is gone `[A38]`.
 - **CH-4** A character with an unknown birth year is allowed and is reported as "age unknown" everywhere, never estimated.
 
 ### 5.3 Family tree
 
 - **FT-1** One overall tree shows every family together, including the links between the Sullivans and the Lis. I can filter to one family, or to the ancestors and descendants of one person.
-- **FT-2** The tree is fully editable in place: add a person; add a parent, child, sibling, or partner from any node; change or remove any link; change link and union types; delete a person (following `ED-5`).
+- **FT-2** The tree is fully editable in place: add a person (from the toolbar or the inspector); add a parent, child, sibling, or partner from any node; change or remove any link; change link and union types; delete a person with Remove on the inspector (following `ED-5`) `[A38]`. Two people already in the tree are linked by dropping one on the other (`FT-11`); the Link someone form is gone `[A38]`.
 - **FT-3** Edits in the tree and edits on character pages are the same data. A change in one appears in the other immediately.
 - **FT-4** The tree supports multiple unions per person, ended unions, half-siblings, adoptive, step, and guardian links (drawn distinctly from biological ones), people with one or no known parents, and people in no family.
 - **FT-5** A year control redraws the tree for any year: who is unborn, alive (with age), or dead, and which unions are active.
@@ -101,6 +101,7 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 - **FT-8** The tree stays readable and responsive with 200 people across six generations: pan, zoom, collapse and expand branches, and fit to window. The tree takes the panel's whole visible height, and a Full screen control shows the tree and its inspector on the whole screen; Escape or the control leaves it `[A26]`.
 - **FT-9** The tree can be exported as an image and as a PDF.
 - **FT-10** Layout is stable: adding one person does not rearrange unrelated branches.
+- **FT-11** `[A38]` People are dragged: a person dropped in empty space stays there (the row snaps to the generation grid, the place is stored with the layout, nobody else moves), and Alt with an arrow moves the focused person one slot. A person dropped on another opens a menu under the pointer: make them that person's parent, child or partner (the first link or union type, changeable in the Links list; self-ancestry is refused in plain words and nothing is written), just move them there, or cancel. Nothing is dragged while read-only (`ARCH-6`).
 
 ### 5.4 Timeline and ages
 
@@ -415,3 +416,4 @@ Answered on 2026-10-10. Tommy confirmed the same day: option A (Atlas is the sto
 | A35 | SB-2 step 4, SB-10, section 4 Character | Relevant to Session is reshaped around the scene: the chapter as heading, world events first, dated backstory for the chapter's backstory years, characters as name and age, cultural context from the setting (strand places, else the point of view's place lived that year) through every enclosing community. Characters gain `backstoryMarks` (a passage's year set by hand, or a pin). | Tommy, 2026-10-13: "we need to be smarter about what information is 'relevant to session'. world events is perfect - you can put that at the top. as for the characters, just show the name and age. based on the setting we can have a section for cultural context that fits the year of the scene." Then: "why does it say 'backstory: high school'? below the world event stuff, you can have the backstory that's relevant (in this case, yes, the high school stuff) and whichever parts of backstory that might be relevant." Then: "build it". |
 | A36 | PL-5 | A scene-by-scene outline as one editable bulleted text, versioned, with the chapters beside it: title, story year and scene range editable in place, Up and Down moves; the Outline screen opens on it and the year grid fills the screen. | Tommy, 2026-10-17: a scene outline "that transcends the chapter titles from before", "basically just one long text bulleted list", with the chapter titles on the right side to match to scenes. |
 | A37 | PL-5, PL-6 (new), PL-2 | The chapters become headings inside the scene outline, one scrolling flow, each with its own scenes and the world of its year; time gaps between chapters list the events in between; the year grid gains a world band, decade lines and a year panel. Replaces the side list and the chapter track of A36. | Tommy, 2026-10-17: "the two panes for 'outline' should scroll together - instead of them being separate constructs, i want the chapters to be a natural editable part of the scene outline flow on novel companion. also think through how we can connect the outline to the world events/make the year view super intuitive." |
+| A38 | FT-2, FT-11 (new), CH-3, section 4 Character | Tree people are dragged to move and dropped on each other to link; Remove sits on the inspector; the Link someone form goes. The character page opens on a line about their place in the story, then Description, Family and Life, with Names, What they know, the timeline, Backstory, Voice notes and Source behind carets lower down; the facts they do not know are no longer listed. | Tommy, 2026-10-21: "the family tree items should be draggable, audit the controls in there and make it more intuitive to add/remove people ... i really don't care about the whole 'link someone' thing, nor the 'what they don't know' either" and "in the characters page, it should have a short description of the person's attachment to the story, and the longer one should be farther below, and any deep dive on their whole life should be even lower. carats for every section to make everything easier to navigate." |

@@ -315,3 +315,13 @@ End-to-end runs are hidden from now on: `NOVEL_COMPANION_HIDDEN=1` (set by `test
 
 The scene outline's `meta` document and its versions gain `breaks` (chapter ID to the line its section starts on). The side list of chapters and the chapter track of A36 are gone; the year grid is unchanged apart from the world band, decade lines, year buttons and the year panel.
 
+## A38: draggable tree, character page sections, 2026-10-21
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| FT-11 (drag to move, drop to link) | pass | `tests/e2e/tree.spec.ts` "FT-11 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, and a drop on someone can be just a move"; the hand-built tree now links Zhou Wei to Zhou Lan by dropping (FT-2 FT-4 test) and FT-6 refuses self-ancestry from the drop menu. |
+| FT-2 (Remove on the inspector, Add person in the toolbar) | pass | `tests/e2e/tree.spec.ts` "FT-2 change a link type, remove a link and undo it, and delete and restore a person through the trash" clicks Remove Noor Zhou; the inspector's embedded editor shows Restore once the person is in the trash. |
+| CH-3 (page sections) | pass | `src/renderer/src/workspace/character.tsx` `CharacterPage` replaces the summary plus generic field list for characters; `tests/e2e/editing.spec.ts` ED-2 opens the Backstory caret before typing; knowledge and journey specs no longer look for the does-not-know list. The `role` field ("In the story") is new on characters, a string with an empty default, so no migration. |
+
+Node drags are pointer events on the tree SVG: a press on a person becomes a drag after 4 screen pixels (capture is taken only then, so a plain click still selects), the person follows the pointer live (`liveLayout`), and the release stores the position through `tree.savePositions` with the row snapped to `ROW_H`. A release over another person opens `DropMenu`, which writes one union or parent link through `planLinkExisting`.
+

@@ -18,6 +18,7 @@ import {
   launch,
   openListFor,
   rail,
+  reveal,
   setField,
   waitSaved,
   withoutSystem,
@@ -195,6 +196,8 @@ test('ED-2 a change saves on its own within one second, with no save button, and
 
 test('ED-2 continuous typing still saves within one second of the first change', async () => {
   const editor = page.getByTestId('editor');
+  // A38: the backstory sits behind a caret low on the page.
+  await reveal(field(editor, 'backstory'));
   const input = field(editor, 'backstory').locator('textarea');
   await input.click();
   const start = Date.now();

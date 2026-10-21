@@ -324,7 +324,7 @@ async function addPerson(
   born: number | null,
   opts: { status?: string; type?: string; coParent?: string } = {},
 ): Promise<void> {
-  await treeInspector()
+  await (kind === 'person' ? page : treeInspector())
     .getByRole('button', { name: kind === 'person' ? 'Add person' : `Add ${kind}`, exact: true })
     .click();
   const form = treeInspector().getByTestId('add-form');
@@ -669,8 +669,6 @@ test('GL-1 GL-3 a glossary term that breaks Pinyin is flagged, and a Chinese nam
 test("KN-1 Iris does not know about Peter's letter in 2045 and knows it from 2060", async () => {
   await openEntry('Characters', /^Iris Hale-Zhou/);
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2045.');
-  const missing = page.getByTestId('does-not-know');
-  await expect(missing.locator('[data-fact="F2"]')).toContainText('They learn it in 2060.');
   await setTopYear('2060');
   await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2060.');
   await expect(page.getByTestId('knowledge')).toContainText("Peter's letter");

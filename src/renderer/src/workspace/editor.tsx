@@ -23,7 +23,7 @@ import { Field } from './fields';
 import { formatTime } from './format';
 import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
-import { CharacterSummary } from './character';
+import { CharacterPage } from './character';
 import { FactSummary } from './knowledge';
 import { ChapterAlignment } from './sessions/alignment';
 import { Zh } from './Zh';
@@ -221,6 +221,8 @@ export function TrashControls(props: {
   beforeDelete: () => Promise<void>;
   onChanged: () => void;
   extra?: ReactNode;
+  /** The trash button's text, when "Move to trash" does not say enough where it sits. */
+  label?: string;
 }) {
   const { collection, id, title } = props;
   const undo = useUndo();
@@ -293,7 +295,7 @@ export function TrashControls(props: {
             disabled={ro.off}
             {...ro.tip}
           >
-            Move to trash
+            {props.label ?? 'Move to trash'}
           </button>
         )}
       </div>
@@ -435,24 +437,36 @@ export function EntryPane(props: {
             </button>
           </p>
         )}
-        {collection === 'characters' && <CharacterSummary id={id} onOpen={props.onOpen} />}
-        {collection === 'facts' && <FactSummary id={id} onOpen={props.onOpen} />}
-        <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
-          <WriteFieldset>
-            {editableFields(manifest).map((spec) => (
-              <Field
-                key={spec.name}
-                spec={spec}
-                value={draft[spec.name]}
-                path={spec.name}
-                messages={messages}
-                root={draft}
-                onMention={onMention}
-                onChange={(v) => ed.setField(spec.name, v)}
-              />
-            ))}
-          </WriteFieldset>
-        </form>
+        {collection === 'characters' ? (
+          <CharacterPage
+            id={id}
+            draft={draft}
+            messages={messages}
+            onChange={ed.setField}
+            onMention={onMention}
+            onOpen={props.onOpen}
+          />
+        ) : (
+          <>
+            {collection === 'facts' && <FactSummary id={id} onOpen={props.onOpen} />}
+            <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
+              <WriteFieldset>
+                {editableFields(manifest).map((spec) => (
+                  <Field
+                    key={spec.name}
+                    spec={spec}
+                    value={draft[spec.name]}
+                    path={spec.name}
+                    messages={messages}
+                    root={draft}
+                    onMention={onMention}
+                    onChange={(v) => ed.setField(spec.name, v)}
+                  />
+                ))}
+              </WriteFieldset>
+            </form>
+          </>
+        )}
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
         )}
@@ -519,6 +533,8 @@ export function EmbeddedEditor(props: {
   collection: EntryCollection;
   id: string;
   onChanged?: () => void;
+  /** False when the host shows its own trash control for this entry (the tree inspector). */
+  trash?: boolean;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
@@ -564,17 +580,19 @@ export function EmbeddedEditor(props: {
             : `${ed.warnings.length} fields have warnings. They still saved.`}
         </p>
       )}
-      <TrashControls
-        collection={collection}
-        id={id}
-        title={entryTitle(draft)}
-        inTrash={inTrash}
-        beforeDelete={ed.flush}
-        onChanged={() => {
-          ed.reload();
-          props.onChanged?.();
-        }}
-      />
+      {props.trash !== false && (
+        <TrashControls
+          collection={collection}
+          id={id}
+          title={entryTitle(draft)}
+          inTrash={inTrash}
+          beforeDelete={ed.flush}
+          onChanged={() => {
+            ed.reload();
+            props.onChanged?.();
+          }}
+        />
+      )}
       <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
         <WriteFieldset>
           {editableFields(manifest).map((spec) => (

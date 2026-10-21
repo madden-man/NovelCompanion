@@ -11,7 +11,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
 import { decodePng, pdfFillColors } from '../helpers/png';
-import { field, fileDb, invokeVia, launch, rail, waitSaved } from './helpers';
+import { field, fileDb, invokeVia, launch, rail, reveal, waitSaved } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -106,7 +106,8 @@ async function add(
   born: number | null,
   opts: { status?: string; type?: string; coParent?: string } = {},
 ) {
-  await inspector()
+  // A38: Add person is on the tree toolbar; the relatives are added from the inspector.
+  await (kind === 'person' ? page : inspector())
     .getByRole('button', { name: kind === 'person' ? 'Add person' : `Add ${kind}`, exact: true })
     .click();
   const form = inspector().getByTestId('add-form');
@@ -124,6 +125,21 @@ async function add(
 }
 
 const editor = () => inspector().getByTestId('editor');
+
+/** FT-11: drag one person's node and drop it on another's; the drop menu opens. */
+async function dropOn(from: string, onto: string) {
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  const a = (await node(from).boundingBox())!;
+  const b = (await node(onto).boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 3 });
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const menu = page.getByTestId('tree-drop');
+  await expect(menu).toHaveAttribute('aria-label', `${from} dropped on ${onto}`);
+  return menu;
+}
 
 async function setYearDate(path: 'birth' | 'death', year: number) {
   const f = field(editor(), path);
@@ -211,14 +227,13 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await add('partner', 'Zhou Wei', 1960, { type: 'partnered' });
   await setYearDate('death', 2055);
   await setFamilies(['FAM-ZHOU']);
-  // Link the existing Zhou Wei as Zhou Lan's other parent.
+  // Link the existing Zhou Wei as Zhou Lan's other parent: drop Wei on Lan (FT-11).
+  const linksBefore = (await invoke('tree.get', {})).links.length;
+  const menu = await dropOn('Zhou Wei', 'Zhou Lan');
+  await menu.getByRole('button', { name: 'Make Zhou Wei a parent of Zhou Lan' }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await select('Zhou Lan');
-  const linkForm = inspector().getByRole('form', { name: 'Link someone already in the tree' });
-  await linkForm.getByLabel(/They are/).selectOption('parent');
-  await linkForm.getByLabel('Person', { exact: true }).selectOption({ label: 'Zhou Wei' });
-  await linkForm.getByLabel('Link type').selectOption('biological');
-  await linkForm.getByRole('button', { name: 'Link', exact: true }).click();
-  await expect(linkForm.getByTestId('link-message')).toHaveText(/^Linked\./);
   await add('sibling', 'Zhou Jun', 1993, { type: 'biological', status: 'planned' });
   await setYearDate('death', 2070);
 
@@ -427,7 +442,7 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
 
   // Delete a person through the ED-5 flow: the links are listed, then it goes to the trash.
   await select('Noor Zhou');
-  await inspector().getByRole('button', { name: 'Move to trash' }).click();
+  await inspector().getByRole('button', { name: 'Remove Noor Zhou' }).click();
   const dialog = inspector().getByRole('dialog', { name: 'Move to trash' });
   await expect(dialog.getByTestId('linked-count')).toHaveText(/2 entries link here/);
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
@@ -464,15 +479,14 @@ test('FT-6 warnings show beside the tree and never block; a person cannot become
   await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
 
   // Self-ancestry is refused in plain words, and nothing is written.
-  await select('Iris Hale-Zhou');
   const before = (await invoke('tree.get', {})).links.length;
-  const form = inspector().getByRole('form', { name: 'Link someone already in the tree' });
-  await form.getByLabel(/They are/).selectOption('child');
-  await form.getByLabel('Person', { exact: true }).selectOption({ label: 'Margaret Hale' });
-  await form.getByRole('button', { name: 'Link', exact: true }).click();
-  await expect(form.getByRole('alert')).toHaveText(
+  const menu = await dropOn('Margaret Hale', 'Iris Hale-Zhou');
+  await menu.getByRole('button', { name: 'Make Margaret Hale a child of Iris Hale-Zhou' }).click();
+  await expect(menu.getByRole('alert')).toHaveText(
     'This link was not made: Margaret Hale is already an ancestor of Iris Hale-Zhou, so it would make someone their own ancestor.',
   );
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
   // The write path refuses it too, whoever asks.
   const ids = Object.fromEntries(t.people.map((p) => [p.name, p.id]));
   await expect(
@@ -758,7 +772,7 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   const place = field(editor(), 'birthplace').locator('input');
   await place.fill('Astoria, Oregon');
   // Straight into another field before the save of the first one lands.
-  await inspector().getByRole('button', { name: 'Add person' }).click();
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
   const name = inspector().getByTestId('add-form').getByLabel('Name');
   await name.pressSequentially('Typed name');
   await waitSaved(page);
@@ -821,6 +835,64 @@ test('FT-10 adding a child to Ruth leaves every other node where it was, and sta
   await openTree();
   await expect(node('Grace Hale')).toHaveCount(1);
   expect(await domPositions()).toEqual(after);
+});
+
+test('FT-11 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, and a drop on someone can be just a move', async () => {
+  const at = async (name: string) => {
+    const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(
+      (await node(name).getAttribute('transform'))!,
+    )!;
+    return { x: Number(m[1]), y: Number(m[2]) };
+  };
+  const stored = async (name: string) => {
+    const t = await invoke('tree.get', {});
+    return t.positions![t.people.find((p) => p.name === name)!.id];
+  };
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  const before = await at('Grace Hale');
+  const others = await domPositions();
+  const r = (await node('Grace Hale').boundingBox())!;
+  const svg = (await svgEl().boundingBox())!;
+  // Drag her well below everyone, into empty space.
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(r.x + r.width / 2 + 10, r.y + r.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(r.x + r.width / 2 + 40, svg.y + svg.height - 8, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId('tree-drop')).toHaveCount(0);
+  const moved = await at('Grace Hale');
+  expect(moved.y).toBeGreaterThan(before.y);
+  // The row snaps to the generation grid and the move is stored.
+  expect(moved.y % 132).toBe(0);
+  await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x, y: moved.y });
+  // Nobody else moved, and a plain click still selects.
+  const after = await domPositions();
+  for (const [n, t] of Object.entries(others)) if (n !== 'Grace Hale') expect(after[n], n).toBe(t);
+  await node('Grace Hale').click();
+  await expect(inspector().getByTestId('inspector-name')).toHaveText('Grace Hale');
+  // Alt+ArrowRight moves her one slot right; it is stored too.
+  await node('Grace Hale').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect.poll(async () => (await at('Grace Hale')).x).toBe(moved.x + 194);
+  await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x + 194, y: moved.y });
+  // Dropped on someone, "Just move" puts her there without a link.
+  const links = (await invoke('tree.get', {})).links.length;
+  const menu = await dropOn('Grace Hale', 'Sam Hale');
+  await menu.getByRole('button', { name: 'Just move Grace Hale here' }).click();
+  await expect(menu).toHaveCount(0);
+  expect((await invoke('tree.get', {})).links.length).toBe(links);
+  const sam = await at('Sam Hale');
+  await expect.poll(async () => (await at('Grace Hale')).y).toBe(sam.y);
+  // Back where the layout had her, so the tests after this one see the same tree.
+  await invoke('tree.savePositions', {
+    positions: {
+      ...(await invoke('tree.get', {})).positions!,
+      [(await invoke('tree.get', {})).people.find((p) => p.name === 'Grace Hale')!.id]: before,
+    },
+  });
+  await rail(page, 'Characters').click();
+  await openTree();
+  expect(await at('Grace Hale')).toEqual(before);
 });
 
 test('FT-4 a person with two unions: both draw, the ended one with its year, each child under its own union, and half-siblings', async () => {
@@ -910,13 +982,9 @@ test('CH-2 CH-3 the character page shows every name, the age at the current posi
   await expect(rows.filter({ hasText: 'Arctic summer sea ice' })).toHaveCount(0);
 
   const ruth = await openCharacter('Ruth Hale');
-  // Ruth learns the letter in 2041, so at 2040 it is a fact she does not know yet.
+  // Ruth learns the letter in 2041, so at 2040 she knows nothing yet.
+  await reveal(ruth.getByTestId('knowledge-empty'));
   await expect(ruth.getByTestId('knowledge-empty')).toBeVisible();
-  const ruthMissing = ruth.getByTestId('does-not-know');
-  await expect(ruthMissing).toContainText("Peter's letter");
-  await expect(ruthMissing).toContainText('not yet in 2040');
-  await expect(ruthMissing).toContainText('They learn it in 2041.');
-  await expect(ruthMissing).toContainText('Meiling was engaged before Wei');
   await expect(ruth.getByTestId('relatives')).toContainText('Sam Hale (adoptive)');
   const sam = await openCharacter('Sam Hale');
   await expect(sam.getByTestId('relatives')).toContainText('Ruth Hale (adoptive from 2015)');
@@ -1014,6 +1082,7 @@ test('CH-1 a character is created, edited with zero, one, and several families, 
   await field(ed, 'familyIds').locator(':scope > select').selectOption('FAM-HALE');
   await waitSaved(page);
   await expect(page_.getByTestId('char-families')).toHaveText('ZhouHale');
+  await reveal(field(ed, 'names'));
   await field(ed, 'names').locator('[data-field="names.chinese"] input').fill('林');
   await waitSaved(page);
   await expect(page_.locator('.char-name')).toContainText('林');

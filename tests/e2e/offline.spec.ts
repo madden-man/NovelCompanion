@@ -104,7 +104,10 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await openMargaret();
   const editor = page.getByTestId('editor');
   await expect(field(editor, 'birthplace').locator('input').first()).toBeDisabled();
-  await expect(editor.locator('fieldset.write-group')).toHaveAttribute('title', READ_ONLY_REASON);
+  // A38: the character page is several write groups, one per section; every one carries the reason.
+  const groups = editor.locator('fieldset.write-group');
+  await expect(groups.first()).toHaveAttribute('title', READ_ONLY_REASON);
+  await expect(groups.last()).toHaveAttribute('title', READ_ONLY_REASON);
   const newButton = page.locator('.ws-list .list-head button');
   await expect(newButton).toBeDisabled();
   await expect(newButton).toHaveAttribute('title', READ_ONLY_REASON);
