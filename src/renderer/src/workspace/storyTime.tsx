@@ -139,7 +139,11 @@ export function StoryTimeProvider({ children }: { children: ReactNode }) {
   // Stable, so the dialog's open effect (focus and select the year box) runs once,
   // not after every keystroke that changes the time (NF-2: typing 2041 gave 1).
   const openDialog = useCallback(() => setDialogOpen(true), []);
-  const closeDialog = useCallback(() => setDialogOpen(false), []);
+  // Closing writes any year still waiting on the save delay first, so nothing set after the
+  // dialog is gone (the Writing picker, a test seam) is overwritten by a late write.
+  const closeDialog = useCallback(() => {
+    void flush().finally(() => setDialogOpen(false));
+  }, [flush]);
   const value = useMemo<StoryTime>(() => {
     const year = current?.year ?? stored?.position.year ?? new Date().getFullYear();
     return {
