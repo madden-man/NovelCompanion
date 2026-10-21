@@ -30,3 +30,25 @@ Snapshot "Before the title cleanup 2026-10-11" (2026-10-12T02:47:32.936Z). `scri
 - Every chapter number matched the chapter's place in its part (the Introduction not counted), so no open question was needed.
 - Left alone: "Book One" (only a number, no name to keep); the two chapters Tommy had already renamed and reordered ("Mark Meets Dawn", "Mark Feels Free"); open question titles that quote the source sheet's "Ch. N" names; primary strand labels such as "Mark: College Arc" (the A29 arc span names).
 - The write path also filled two missing schema defaults on the 46 chapters (`summaryOutOfDate: false`, `manuscriptSource: null`); nothing else changed.
+
+## 2026-10-21: the importer follows A39 (not yet run on the real bible)
+
+Branch `a39-importer`. Nothing was written to Atlas; the re-import is the architect's to run with Tommy. `npm run import:eastwinds` is now a dry run unless given `--yes`, which takes a snapshot first. The report ends with entries made or changed per section (chapters, world events, moments, characters, then any other).
+
+What the default mapping does with `East_Winds_World.xlsx` now:
+
+- **High Level, rows above "Characters"** become Book One's chapters (A29): a "Part ..." row starts a part of "Book One", and each chapter row's strand labels, read across the year columns, become a present (primary) strand and a backstory strand with their start and end years. A label starting "Backstory:" is the backstory strand. When neither label says so (Part Four: "Siyuan: ..." and "Forestory: ..."), the later span is the present and the earlier one is labelled "Backstory: <label>". Titles lose their "Ch. N:" (the second "Ch. 8" is "HaoYu and Family Break", and the report notes it). A chapter is matched by its part's title and its own title, among all chapters, so the 48 chapters made by hand on 2026-10-11 are updated, not duplicated. The strand's point of view, characters and places are kept; only label and years come from the sheet.
+- **High Level, the Characters block** (four filled cells: Frank, Mark, Qin, Dawn) becomes moments of the person the row names. These were skipped before.
+- **High Level, from "Foundational Drivers" down** stays world events under group and subcategory, matched by category and year as before. Regions are read from the row label (US, China, Europe, India, Japan, Russia, Mexico, Taiwan, Africa) and only added: a region set by hand stays.
+- **Sullivan and 李** become moments (one per row). The character is found by the full name, a word of it ("Qin" is Li Qin), or the Chinese given name (勤 is 李勤); when two people share the name, the sheet's family decides. Moments made from plot beats by migration 9 keep their IDs and their import records (the beat's `povCharacterId` and `experienceNote` records now speak for `characterId` and `body`), so a body edited since is not reverted and a changed year updates the moment in place.
+- **Plot v1**: Book One's rows are left out and reported (High Level plans that book); Book Two's rows stay chapters, read after every chapter already planned.
+- **The Introduction**, when the import has to make it, is set in 2078.
+- Claude's import proposals (IM-5) name characters, moments, world events and open questions only.
+
+Rehearsal on a fresh local bible (local replica set, 2026-10-21), from `source-material/`:
+
+- Dry run: High Level chapters 53 new (1 book, 4 parts, 48 chapters), High Level moments 8 (4 moments, 4 people), world events 226, Sullivan 105 (97 moments, 8 people), 李 36 (32 moments, 4 people), Plot v1 64 (Book Two: 1 book, 4 parts, 50 chapters, 9 people; Book One's 55 rows left out). A dry run cannot see what earlier steps would make, so on an empty bible it counts a person once per sheet that names them.
+- Applied with `--yes`: chapters 99 new (48, 50, the Introduction), world events 226, moments 132, characters 13 new and 3 given backstories, books 2, parts 8, era states 9, open questions 2. One row failed: Sullivan row 98, "HaoYu is killed by a Chinese drone", has no POV and no year ("There is no value for Character"); the real bible's moment for it (year 2093 and point of view set by hand on 2026-10-11) is left alone.
+- A second run reported created 0, updated 0, unchanged 482, failed 1 (the same row).
+
+To check before applying on the real bible: the strand changes the dry run lists for the 48 hand-made chapters (labels and years the 2026-10-11 work may have set differently, Part Four especially), and any moment the run would create because its title differs from the beat it was made from.
