@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
+  HAND_EDIT_REF,
   chapterStrands,
+  chineseGivenName,
   conflictQuestion,
   mappingKey,
   parseYear,
@@ -72,7 +74,7 @@ describe('IM-1 the mapping engine reads table and grid sheets', () => {
     expect(wb.sheets.map((s) => s.name)).toEqual([
       'People',
       'High Level',
-      'Hale family',
+      'Hale and Zhou families',
       'Lives by year',
     ]);
     expect(wb.sheets[1]!.cells[0]!.slice(0, 3)).toEqual(['', 2030, 2035]);
@@ -983,18 +985,69 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     expect(chapters.map((c) => c.title)).not.toContain('Mark');
   });
 
-  test('A29 when neither strand says backstory, the later span is the present and the earlier one is labelled backstory', () => {
-    const wb = workbook([highLevel()]);
+  test('A29 the primary strand is the arc span: in Part Four Siyuan is primary and Forestory keeps its label, a strand before the arc is labelled backstory', () => {
+    // The real Part Four rows: two chapters of Siyuan's arc with a later Forestory strand.
+    const ys = [9, 10, 74, 75, 76, 96, 97];
+    const at = (from: number, to: number, label: string) =>
+      ys.map((y) => (y + 2000 >= from && y + 2000 <= to ? label : null));
+    const both = (x: (string | null)[], y: (string | null)[]) => x.map((v, i) => v ?? y[i] ?? null);
+    const sheet = {
+      name: 'High Level',
+      cells: [
+        ['East Winds: World', ...ys],
+        ['Part Four: Circulation', ...ys.map(() => null)],
+        [
+          'Ch. 1: Attachments',
+          ...both(at(2009, 2010, 'Siyuan: Early Buddhism'), at(2076, 2076, 'Forestory: Kids')),
+        ],
+        [
+          'Ch. 10: O Death',
+          ...both(at(2074, 2075, 'Siyuan: Lost Years'), at(2096, 2097, 'Forestory: John')),
+        ],
+        // Two arc spans: the one named for the part's arc character (Siyuan) is primary, the earlier other is backstory.
+        [
+          'Ch. 11: Wheel of Life',
+          ...both(at(2009, 2010, 'Qin: Factory Years'), at(2074, 2075, 'Siyuan: Lost Years')),
+        ],
+      ],
+      merges: [],
+      boldRows: [1, 2],
+    };
+    const wb = workbook([sheet]);
     const { set } = SimBible.empty().plan(wb, mappingFor(wb, 'chapters'));
-    const drunk = set.items.find((i) => i.title === 'Mark Gets Drunk')!.data!;
-    expect(drunk.strands).toEqual([
-      expect.objectContaining({ label: 'Forestory: Kids', startYear: 2056, primary: true }),
-      expect.objectContaining({
-        label: 'Backstory: Siyuan: Early Years',
-        startYear: 2049,
-        primary: false,
-      }),
+    const strandsOf = (t: string) =>
+      (set.items.find((i) => i.title === t)!.data!.strands as Record<string, unknown>[]).map(
+        (x) => [x.label, x.startYear, x.endYear, x.primary],
+      );
+    expect(strandsOf('Attachments')).toEqual([
+      ['Siyuan: Early Buddhism', 2009, 2010, true],
+      ['Forestory: Kids', 2076, null, false],
     ]);
+    expect(strandsOf('O Death')).toEqual([
+      ['Siyuan: Lost Years', 2074, 2075, true],
+      ['Forestory: John', 2096, 2097, false],
+    ]);
+    expect(strandsOf('Wheel of Life')).toEqual([
+      ['Siyuan: Lost Years', 2074, 2075, true],
+      ['Backstory: Qin: Factory Years', 2009, 2010, false],
+    ]);
+    // With no arc character to go by, the earlier of two arc spans is primary.
+    expect(
+      chapterStrands([
+        { label: 'Ann: Arc', start: 2010, end: 2011 },
+        { label: 'Ben: Arc', start: 2020, end: 2021 },
+      ]),
+    ).toMatchObject({ primary: { label: 'Ann: Arc' }, other: { label: 'Ben: Arc' } });
+    // A strand already labelled backstory is never primary while an arc span is there.
+    expect(
+      chapterStrands([
+        { label: 'Backstory: High School', start: 2051, end: 2054 },
+        { label: 'Mark: College Arc', start: 2055, end: 2058 },
+      ]),
+    ).toMatchObject({
+      primary: { label: 'Mark: College Arc' },
+      other: { label: 'Backstory: High School' },
+    });
     expect(chapterStrands([])).toEqual({ problem: 'The row has no strand labels under its years' });
     expect(
       chapterStrands([
@@ -1005,72 +1058,126 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     ).toMatchObject({ problem: expect.stringContaining('names 3 strands') });
   });
 
-  test('IM-3 A29 a chapter already in the bible is found by its part and title, so a changed strand year is one change, not a new chapter', () => {
-    const wb = workbook([highLevel()]);
+  /** Book One as the bible holds it: made by hand on 2026-10-11, after the workbook (2026-08-23), with no import records. */
+  const handMade = () => {
     const sim = SimBible.empty();
-    // Made by hand, as the bible's Book One chapters were (A29): no source records, the number gone from the title.
+    const edited = '2026-10-11T21:37:08.162Z';
     sim.docs.set('books', [{ _id: 'B1', title: 'Book One', number: 1, status: 'planned' }]);
     sim.docs.set('parts', [
       { _id: 'P1', title: 'Sins of the Father', bookId: 'B1', number: 1, status: 'planned' },
     ]);
+    const strand = (id: string, label: string, start: number, end: number, primary: boolean) => ({
+      id,
+      label,
+      startYear: start,
+      endYear: end,
+      primary,
+      povCharacterId: primary ? 'M1' : null,
+      characterIds: primary ? ['M1'] : [],
+      placeIds: [],
+    });
     sim.docs.set('chapters', [
+      {
+        _id: 'C0',
+        title: 'Introduction',
+        partId: 'P1',
+        readingOrder: 1,
+        status: 'planned',
+        modifiedAt: edited,
+        strands: [strand('S0', 'present', 2078, 2078, true)],
+      },
       {
         _id: 'C1',
         title: 'Mark Feels Free',
         partId: 'P1',
-        readingOrder: 7,
+        readingOrder: 2,
         status: 'planned',
+        modifiedAt: edited,
         strands: [
-          {
-            id: 'S1',
-            label: 'Mark: College Arc',
-            startYear: 2055,
-            endYear: 2058,
-            primary: true,
-            povCharacterId: 'M1',
-            characterIds: ['M1'],
-            placeIds: [],
-          },
-          {
-            id: 'S2',
-            label: 'Backstory: High School',
-            startYear: 2050,
-            endYear: 2054,
-            primary: false,
-            povCharacterId: null,
-            characterIds: [],
-            placeIds: [],
-          },
+          strand('S1', 'Mark: College Arc', 2055, 2058, true),
+          strand('S2', 'Backstory: High School', 2050, 2054, false),
+        ],
+      },
+      {
+        _id: 'C2',
+        title: 'Mark Drinks Too Much',
+        partId: 'P1',
+        readingOrder: 3,
+        status: 'planned',
+        modifiedAt: edited,
+        strands: [
+          strand('S3', 'Siyuan: Early Years', 2049, 2050, true),
+          strand('S4', 'Forestory: Kids', 2056, 2057, false),
         ],
       },
     ]);
+    return sim;
+  };
+
+  test('IM-3 IM-7 A29 a hand-made chapter is found by its part and title; a year that differs keeps the newer value and files the disagreement', () => {
+    const wb = workbook([highLevel()]);
+    const sim = handMade();
     const { set } = sim.plan(wb, mappingFor(wb, 'chapters'));
     const free = set.items.filter((i) => i.title === 'Mark Feels Free');
     expect(free).toHaveLength(1);
     expect(free[0]).toMatchObject({ kind: 'changed', entryId: 'C1' });
-    expect(free[0]!.deltas.map((d) => [d.label, d.before, d.after])).toEqual([
-      ['Story year (backstory strand)', 2050, 2051],
+    // The chapter was edited after the workbook was saved: its value stays and both are listed (IM-7).
+    expect(free[0]!.deltas).toEqual([
+      expect.objectContaining({
+        label: 'Story year (second strand)',
+        before: 2050,
+        after: 2051,
+        outcome: 'keep',
+        conflict: expect.objectContaining({
+          winner: 'existing',
+          claims: [
+            expect.objectContaining({ ref: HAND_EDIT_REF, value: 2050, kept: true }),
+            expect.objectContaining({
+              ref: 'East_Winds_World.xlsx#High Level!A3',
+              value: 2051,
+              kept: false,
+            }),
+          ],
+        }),
+      }),
     ]);
     sim.apply(set);
-    // The strand keeps its point of view and characters; only the year moved. The reading order is the bible's.
     const after = sim.entries('chapters').find((c) => c._id === 'C1')!;
-    expect(after.readingOrder).toBe(7);
-    expect(
-      (after.strands as { povCharacterId: string | null; startYear: number }[]).map((s) => [
-        s.povCharacterId,
-        s.startYear,
-      ]),
-    ).toEqual([
-      ['M1', 2055],
-      [null, 2051],
+    expect(after.readingOrder).toBe(2);
+    expect((after.strands as { startYear: number }[]).map((x) => x.startYear)).toEqual([
+      2055, 2050,
     ]);
-    // The book and the part were found; only what the bible lacks is new.
+    // A newer workbook wins instead, and still names both values.
+    const newer = { fileName: wb.fileName, modifiedAt: '2026-11-01T00:00:00.000Z' };
+    const fresh = handMade();
+    const won = fresh
+      .plan(wb, mappingFor(wb, 'chapters'), newer)
+      .set.items.find((i) => i.entryId === 'C1')!;
+    expect(won.deltas[0]).toMatchObject({ outcome: 'apply', conflict: { winner: 'incoming' } });
+    // The run after the first has nothing new to say about the kept value.
+    expect(
+      sim.plan(wb, mappingFor(wb, 'chapters')).set.items.filter((i) => i.entryId === 'C1'),
+    ).toEqual([]);
+  });
+
+  test('IM-3 IM-7 A29 a chapter renamed by hand is found by its place in the part, and its title is listed as a change, not a new chapter', () => {
+    const wb = workbook([highLevel()]);
+    const sim = handMade();
+    const { set } = sim.plan(wb, mappingFor(wb, 'chapters'));
+    // "Ch. 3: Mark Gets Drunk" is the second chapter row of Part One; the bible's second chapter (the
+    // Introduction not counted) is "Mark Drinks Too Much".
+    const renamed = set.items.find((i) => i.entryId === 'C2')!;
+    expect(renamed.kind).toBe('changed');
+    expect(renamed.deltas.map((d) => [d.label, d.before, d.after, d.outcome])).toEqual([
+      ['Title', 'Mark Drinks Too Much', 'Mark Gets Drunk', 'keep'],
+    ]);
     expect(set.items.filter((i) => i.kind === 'new').map((i) => i.title)).toEqual([
       'Lost Spirits',
-      'Mark Gets Drunk',
       'Dawn is Shy',
     ]);
-    expect(sim.plan(wb, mappingFor(wb, 'chapters')).set.items).toEqual([]);
+    expect(set.notes.join(' ')).toContain(
+      '"Mark Gets Drunk" matched chapter 2 of its part, "Mark Drinks Too Much", by its place',
+    );
   });
 
   test('SM-12 A12 a category grid cell is a world event with its category, its year, and the regions its row label names', () => {
@@ -1097,6 +1204,14 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     expect(regionsOfLabel('Unemployment (US)')).toEqual(['United States']);
     expect(regionsOfLabel('Dollar Dominance')).toEqual([]);
     expect(regionsOfLabel('Business')).toEqual([]);
+    // Other Americas and the Indian Ocean are not the United States or India.
+    expect(regionsOfLabel('Latin America')).toEqual([]);
+    expect(regionsOfLabel('South American Trade')).toEqual([]);
+    expect(regionsOfLabel('Central American Migration')).toEqual([]);
+    expect(regionsOfLabel('Indian Ocean Shipping')).toEqual([]);
+    expect(regionsOfLabel('American Elites')).toEqual(['United States']);
+    expect(regionsOfLabel('Indian Leadership')).toEqual(['India']);
+    expect(regionsOfLabel('EU/India Trade')).toEqual(['Europe', 'India']);
   });
 
   test('IM-3 SM-4 regions are only added to: a region set by hand stays when the sheet is imported again', () => {
@@ -1163,12 +1278,13 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     ]);
   });
 
-  test('SM-3 a 李 row names the character by a Chinese name or one word of the full name, and the sheet settles a name two people share', () => {
+  test('SM-3 a 李 row names the character by its Chinese given name or one word of the full name within the sheet family, and every such match is reported', () => {
     const wb = workbook([
       momentSheet('李', [
         ['Qin becomes foreman', '勤', 2046, null, 'The Party endorses', 'Proud'],
         ['Qin doubts Xuan', 'Qin', 2066, null, 'A coalition wins', 'Uneasy'],
         ['Dawn goes to USC', 'Dawn', 2057, null, 'Growth', 'Excited'],
+        ['Ming visits', '明', 2060, null, '', ''],
       ]),
     ]);
     const sim = SimBible.empty();
@@ -1176,24 +1292,63 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
       person('Q1', 'Li Qin', '李勤'),
       person('D1', 'Dawn Li', '李晓曦'),
       person('D2', 'Dawn Sullivan'),
+      // A two-character surname: 欧阳明's given name is 明. He is in the 李 family by marriage.
+      { ...person('O1', 'Ouyang Ming', '欧阳明'), familyIds: ['FLI'] },
     ]);
-    const { set } = sim.plan(wb, mappingFor(wb, 'moments', '李'));
+    sim.docs.set('families', [{ _id: 'FLI', title: '李', name: '李', status: 'planned' }]);
+    const { set, rows } = sim.plan(wb, mappingFor(wb, 'moments', '李'));
     expect(set.failed).toEqual([]);
     expect(set.items.map((i) => [i.data!.title, i.data!.characterId])).toEqual([
       ['Qin becomes foreman', 'Q1'],
       ['Qin doubts Xuan', 'Q1'],
       ['Dawn goes to USC', 'D1'],
+      ['Ming visits', 'O1'],
     ]);
-    // On a sheet with no family to go by, the shared name is reported as ambiguous.
-    const loose = SimBible.empty();
-    loose.docs.set('characters', sim.entries('characters'));
-    const plain = { ...mappingFor(wb, 'moments', '李'), nameHints: [] };
-    expect(loose.plan(wb, plain).set.failed).toEqual([
+    expect(rows.notes).toContain(
+      '李: names matched by part of a name, check them: "勤" matched Li Qin; "Qin" matched Li Qin; "Dawn" matched Dawn Li; "明" matched Ouyang Ming.',
+    );
+  });
+
+  test('SM-3 IM-2 a short name never matches by part without a family hint, and two people of the family sharing it are reported', () => {
+    const wb = workbook([
+      momentSheet('Sullivan', [
+        ['John is born', 'John', 2095, 0, '', ''],
+        ['Frank meets Laura', 'Frank', 2027, 27, '', ''],
+      ]),
+    ]);
+    const sim = SimBible.empty();
+    // An existing John from another family is not the Sullivan sheet's new John.
+    sim.docs.set('characters', [
+      person('J1', 'John Reyes'),
+      person('F1', 'Frank Sullivan'),
+      person('F2', 'Frank Sullivan Jr'),
+    ]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments', 'Sullivan'));
+    const john = set.items.find((i) => i.data?.title === 'John is born')!;
+    expect(john.data!.characterId).not.toBe('J1');
+    expect(set.items.some((i) => i.collection === 'characters' && i.title === 'John')).toBe(true);
+    // Two Sullivans called Frank: the row fails with its reason.
+    expect(set.failed).toEqual([
       expect.objectContaining({
-        where: '李 row 4',
+        where: 'Sullivan row 3',
         reason: expect.stringContaining('More than one'),
       }),
     ]);
+    // A mapping with no hints matches whole names only: "Frank" makes a new character, as before.
+    const plain = { ...mappingFor(wb, 'moments', 'Sullivan'), nameHints: [] };
+    const loose = SimBible.empty();
+    loose.docs.set('characters', [person('F1', 'Frank Sullivan')]);
+    const out = loose.plan(wb, plain).set;
+    expect(out.failed).toEqual([]);
+    expect(
+      out.items
+        .filter((i) => i.collection === 'characters')
+        .map((i) => i.title)
+        .sort(),
+    ).toEqual(['Frank', 'John']);
+    expect(chineseGivenName('李勤')).toBe('勤');
+    expect(chineseGivenName('欧阳明')).toBe('明');
+    expect(chineseGivenName('勤')).toBe('');
   });
 
   test('A29 a Plot v1 Book One row makes nothing while High Level plans Book One, and a Book Two row is a chapter', () => {

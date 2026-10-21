@@ -211,7 +211,8 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
       nameHints: hints,
     };
   };
-  for (const m of [momentSheet('Sullivan', ['Sullivan']), momentSheet('李', ['李', 'Li'])])
+  // The Sullivan sheet follows the Sullivans and the Shaws who married in (Darnell, Leon).
+  for (const m of [momentSheet('Sullivan', ['Sullivan', 'Shaw']), momentSheet('李', ['李', 'Li'])])
     if (m) out.push(m);
   const plot = wb.sheets.find((s) => s.name === 'Plot v1');
   if (plot) {
@@ -253,6 +254,8 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
           fixed: { ...PLANNED },
         },
       ],
+      // Book Two's points of view come from both families.
+      nameHints: ['Sullivan', 'Shaw', '李', 'Li'],
       // A29: Book One's chapters come from the High Level sheet; its Plot v1 rows are neither chapters nor moments.
       ...(plansBookOne ? { skipSections: ['^Book One$'] } : {}),
     } satisfies TableMapping);
@@ -598,15 +601,27 @@ export async function importEastWinds(
     ];
     for (const t of targets) {
       if (!part) {
+        // The first chapter would bring the part (and the book, when the bible has none) it goes in.
+        const first = t === targets[0];
+        const book = first && open.repo.list('books').length === 0 ? 1 : 0;
+        const holder = first ? 1 : 0;
         report.steps.push({
           step: `${manuscript.fileName}, ${t.title}`,
-          created: 1,
+          created: 1 + holder + book,
           updated: 0,
           unchanged: 0,
           questions: 0,
           failed: [],
-          notes: ['Would make a book and a part to hold the manuscript chapters.'],
-          touched: { chapters: { created: 1, updated: 0 } },
+          notes: [
+            first
+              ? `Would make the chapter, and ${book ? 'a book and ' : ''}a part to hold the manuscript chapters.`
+              : 'Would make the chapter in that part.',
+          ],
+          touched: {
+            chapters: { created: 1, updated: 0 },
+            ...(holder ? { parts: { created: 1, updated: 0 } } : {}),
+            ...(book ? { books: { created: 1, updated: 0 } } : {}),
+          },
         });
         continue;
       }

@@ -102,6 +102,16 @@ export interface PlanInput {
 
 const PLACEHOLDER_TIME = '2000-01-01T00:00:00.000Z';
 
+/** The source named for a value that was on an entry before any import set it: written in the app by hand. */
+export const HAND_EDIT_REF = 'the bible (edited by hand)';
+
+/** True for a value that says nothing: missing, blank text, false, an empty list, or an unknown date. */
+function isEmptyValue(v: unknown): boolean {
+  if (v === null || v === undefined || v === '' || v === false) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  return isPlainObject(v) && v.unknown === true && Object.keys(v).length === 1;
+}
+
 function replaceIds(value: unknown, map: Map<string, string>): unknown {
   if (typeof value === 'string') return map.get(value) ?? value;
   if (Array.isArray(value)) return value.map((v) => replaceIds(v, map));
@@ -259,6 +269,34 @@ export function planChanges(input: PlanInput): ChangeSet {
     if (hit && !taken.has(String(hit._id))) claim(row, hit);
   }
 
+  // A chapter whose title matches nothing in its part may have been renamed by hand: the chapter at the same
+  // place in that part is the same chapter, and the title shows as a change (IM-3, IM-7). The Introduction
+  // is not counted, as in the title cleanup.
+  const notes: string[] = [];
+  if (mapping.shape === 'grid' && mapping.target.collection === 'chapters') {
+    const chapters = input.existing('chapters');
+    for (const row of ordered) {
+      if (matches.has(row) || row.kind !== 'entry' || row.position === undefined) continue;
+      const partId = idMap.get(String(row.fields.partId));
+      if (!partId) continue;
+      const inPart = chapters
+        .filter(
+          (c) => c.partId === partId && String(c.title).trim().toLowerCase() !== 'introduction',
+        )
+        .sort(
+          (x, y) =>
+            Number(x.readingOrder) - Number(y.readingOrder) ||
+            String(x._id).localeCompare(String(y._id)),
+        );
+      const hit = inPart[row.position - 1];
+      if (!hit || taken.has(String(hit._id))) continue;
+      claim(row, hit);
+      notes.push(
+        `${row.where}: "${String(row.fields.title)}" matched chapter ${row.position} of its part, "${String(hit.title)}", by its place; its title is listed as a change.`,
+      );
+    }
+  }
+
   for (const stub of output.stubs) {
     items.push({
       id: nextId(),
@@ -319,7 +357,13 @@ export function planChanges(input: PlanInput): ChangeSet {
     else if (result.kind === 'failed') failed.push(result.failure);
     else items.push(result.item);
   }
-  return { items, unchanged, failed, listAdds: output.listAdds, notes: output.notes };
+  return {
+    items,
+    unchanged,
+    failed,
+    listAdds: output.listAdds,
+    notes: [...output.notes, ...notes],
+  };
 }
 
 /** Existing entries by a key, counted the way a sheet's rows are. */
@@ -389,6 +433,24 @@ export function changedItem(
       after: incoming,
       outcome: 'apply',
     };
+    // No source ever set this field, and the entry already holds a value: it was written by hand (or by an
+    // older tool). The newer of the entry and the file wins, and the disagreement is filed like two sources' (IM-7).
+    if (!rec && !isEmptyValue(prior) && !a.addOnly?.includes(path)) {
+      const edited = typeof existing.modifiedAt === 'string' ? existing.modifiedAt : null;
+      const incomingWins = edited === null || file.modifiedAt >= edited;
+      delta.outcome = incomingWins ? 'apply' : 'keep';
+      delta.conflict = {
+        path,
+        label,
+        winner: incomingWins ? 'incoming' : 'existing',
+        claims: [
+          { ref: HAND_EDIT_REF, at: edited ?? PLACEHOLDER_TIME, value: prior, kept: !incomingWins },
+          { ref: a.ref, at: file.modifiedAt, value: incoming, kept: incomingWins },
+        ],
+      };
+      deltas.push(delta);
+      continue;
+    }
     // The value still on the entry came from an earlier source: two sources (or two versions of one) disagree.
     if (rec && deepEqual(rec.value, prior)) {
       const incomingWins = file.modifiedAt >= rec.at;
@@ -470,7 +532,13 @@ function sourceUpdates(
 ): SourceRecord[] {
   const out: SourceRecord[] = [];
   for (const d of deltas) {
-    const prior = records.find((r) => r.path === d.path);
+    // A value written by hand gets a record of its own, so the next run sees the same claim and stays quiet.
+    const hand = d.conflict?.claims.find((c) => c.ref === HAND_EDIT_REF);
+    const prior =
+      records.find((r) => r.path === d.path) ??
+      (hand
+        ? { path: d.path, ref: hand.ref, at: hand.at, value: hand.value, others: [] }
+        : undefined);
     if (d.outcome === 'apply') {
       out.push({
         path: d.path,

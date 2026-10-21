@@ -208,6 +208,8 @@ export interface MappedRow {
   identity: string;
   /** Rows of a heading make parents first. */
   kind: 'entry' | 'heading';
+  /** A chapter row's place in its part, from 1: what matches it when its title does not (IM-3). */
+  position?: number;
 }
 
 export interface MapContext {

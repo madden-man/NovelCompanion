@@ -43,41 +43,113 @@ function wordsOf(doc: Doc): string[] {
   return out.map((w) => w.trim().toLowerCase()).filter(Boolean);
 }
 
-/** The Chinese name without its one-character surname: 李勤 answers to 勤. */
-function chineseGiven(doc: Doc): string {
-  const names = doc.names;
-  const chinese =
-    isPlainObject(names) && typeof names.chinese === 'string' ? names.chinese.trim() : '';
-  return [...chinese].length > 1 ? [...chinese].slice(1).join('') : '';
+/** Chinese surnames of two characters; any other surname is taken to be one character. */
+export const TWO_CHARACTER_SURNAMES = [
+  '欧阳',
+  '司马',
+  '上官',
+  '诸葛',
+  '东方',
+  '皇甫',
+  '尉迟',
+  '公孙',
+  '慕容',
+  '令狐',
+  '长孙',
+  '宇文',
+  '司徒',
+  '夏侯',
+  '轩辕',
+  '端木',
+  '独孤',
+  '南宫',
+  '西门',
+  '百里',
+];
+
+/** The Chinese name without its surname: 李勤 answers to 勤, 欧阳明 to 明. */
+export function chineseGivenName(chinese: string): string {
+  const chars = [...chinese.trim()];
+  const surname = TWO_CHARACTER_SURNAMES.includes(chars.slice(0, 2).join('')) ? 2 : 1;
+  return chars.length > surname ? chars.slice(surname).join('') : '';
 }
 
-/** True when a hint names this person: one word of their names, or Chinese characters within their Chinese name. */
-function hinted(doc: Doc, hint: string): boolean {
-  const h = hint.trim().toLowerCase();
-  if (wordsOf(doc).includes(h)) return true;
+function chineseOf(doc: Doc): string {
   const names = doc.names;
-  const chinese = isPlainObject(names) && typeof names.chinese === 'string' ? names.chinese : '';
-  return /\p{Script=Han}/u.test(h) && chinese.includes(h);
+  return isPlainObject(names) && typeof names.chinese === 'string' ? names.chinese.trim() : '';
+}
+
+/**
+ * True when a hint names this person's family: one word of their names, Chinese
+ * characters within their Chinese name, or the name of a family they belong to.
+ */
+function hinted(doc: Doc, hint: string, familyNames: (doc: Doc) => string[]): boolean {
+  const h = hint.trim().toLowerCase();
+  if (!h) return false;
+  if (wordsOf(doc).includes(h)) return true;
+  if (/\p{Script=Han}/u.test(h) && chineseOf(doc).includes(h)) return true;
+  return familyNames(doc).some((f) => f === h || f.split(/\s+/).includes(h));
 }
 
 /**
  * A person a short name means when no entry carries it whole: one word of the
- * title or full name ("Frank" for Frank Sullivan, "Qin" for Li Qin), or the
- * Chinese name without its surname (勤 for 李勤). Several such people are
- * narrowed by the hints (the sheet's family); more than one left is ambiguous.
+ * title or full name ("Qin" for Li Qin), or the Chinese name without its
+ * surname (勤 for 李勤). Only a mapping with hints (the sheet's family) may
+ * match this way, and only when exactly one such person is in the family;
+ * more than one is ambiguous, none falls back to the mapping's stub rule.
  */
-function personByPart(people: Doc[], want: string, hints: string[]): string | null | 'ambiguous' {
-  const hits = people.filter((d) => wordsOf(d).includes(want) || chineseGiven(d) === want);
-  if (hits.length === 0) return null;
-  if (hits.length === 1) return String(hits[0]?._id);
-  const narrowed = hits.filter((d) => hints.some((h) => hinted(d, h)));
-  return narrowed.length === 1 ? String(narrowed[0]?._id) : 'ambiguous';
+function personByPart(
+  people: Doc[],
+  want: string,
+  hints: string[],
+  familyNames: (doc: Doc) => string[],
+): Doc | null | 'ambiguous' {
+  if (hints.length === 0) return null;
+  const hits = people.filter(
+    (d) => wordsOf(d).includes(want) || (chineseOf(d) && chineseGivenName(chineseOf(d)) === want),
+  );
+  const narrowed = hits.filter((d) => hints.some((h) => hinted(d, h, familyNames)));
+  if (narrowed.length > 1) return 'ambiguous';
+  return narrowed[0] ?? null;
+}
+
+/** Common surnames in pinyin and characters, so "Li Family" also hints 李. */
+const SURNAME_CHARACTERS: Record<string, string> = {
+  li: '李',
+  wang: '王',
+  zhang: '张',
+  liu: '刘',
+  chen: '陈',
+  zhou: '周',
+  huang: '黄',
+  wu: '吴',
+};
+
+/** The family words a heading row gives: "Li Family" hints Li and 李, "Sullivan Family" Sullivan. */
+export function familyHints(heading: string): string[] {
+  const words = heading
+    .split(/[\s,]+/)
+    .map((w) => w.trim())
+    .filter((w) => w && !/^(family|families|the|and|&)$/i.test(w));
+  return words.flatMap((w) => {
+    const han = SURNAME_CHARACTERS[w.toLowerCase()];
+    return han ? [w, han] : [w];
+  });
+}
+
+/** The report line for names matched by part of a person's name. */
+export function partialNote(sheet: string, partials: string[]): string | null {
+  return partials.length
+    ? `${sheet}: names matched by part of a name, check them: ${partials.join('; ')}.`
+    : null;
 }
 
 export interface NameResolver {
   resolve(spec: FieldSpec, name: string): string | null | 'ambiguous';
   /** Stub entries made so far for names that matched nothing. */
   stubs: MappedRow[];
+  /** Names matched by part of a person's name, for the report: `"Qin" matched Li Qin`. */
+  partials: string[];
   /** A point to return to when the row that made new stubs fails. */
   mark(): number;
   rollback(mark: number): void;
@@ -94,14 +166,24 @@ export function nameResolver(
     createMissing: boolean;
     ref: () => string;
     where: () => string;
-    /** Words that pick among several people a short name could mean. */
-    hints?: string[];
+    /** The family words that allow a short name to match (the sheet's family, or the heading above the row). */
+    hints?: string[] | (() => string[]);
   },
 ): NameResolver {
   const stubs: MappedRow[] = [];
+  const partials: string[] = [];
   const made = new Map<string, string>();
+  let families: Map<string, string> | null = null;
+  const familyNames = (doc: Doc): string[] => {
+    families ??= new Map(
+      ctx.entries('families').map((f) => [String(f._id), entryTitle(f).toLowerCase()]),
+    );
+    const ids = Array.isArray(doc.familyIds) ? doc.familyIds : [];
+    return ids.flatMap((id) => families?.get(String(id)) ?? []);
+  };
   return {
     stubs,
+    partials,
     mark: () => stubs.length,
     rollback(mark) {
       for (const dropped of stubs.splice(mark)) {
@@ -123,8 +205,14 @@ export function nameResolver(
       const [only] = [...hits];
       if (hits.size === 1 && only !== undefined) return only;
       if (collections.includes('characters') && want) {
-        const part = personByPart(ctx.entries('characters'), want, opts.hints ?? []);
-        if (part !== null) return part;
+        const hints = typeof opts.hints === 'function' ? opts.hints() : (opts.hints ?? []);
+        const part = personByPart(ctx.entries('characters'), want, hints, familyNames);
+        if (part === 'ambiguous') return part;
+        if (part) {
+          const line = `"${name.trim()}" matched ${entryTitle(part)}`;
+          if (!partials.includes(line)) partials.push(line);
+          return String(part._id);
+        }
       }
       const key = `${collections.join(',')}:${want}`;
       const prior = made.get(key);

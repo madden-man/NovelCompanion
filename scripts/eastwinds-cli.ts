@@ -26,6 +26,7 @@ interface Args {
 }
 
 function parse(argv: string[]): Args {
+  let explicitDryRun = false;
   const args: Args = {
     dir: resolve('source-material'),
     bible: 'eastwinds',
@@ -35,7 +36,7 @@ function parse(argv: string[]): Args {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--dry-run') args.dryRun = true;
+    if (a === '--dry-run') explicitDryRun = true;
     else if (a === '--yes') args.yes = true;
     else if (a === '--dir') args.dir = resolve(argv[++i] ?? '');
     else if (a === '--bible') args.bible = argv[++i] ?? args.bible;
@@ -45,8 +46,9 @@ function parse(argv: string[]): Args {
         `Unknown option ${String(a)}. Use --yes, --dry-run, --dir, --bible, or --snapshots.`,
       );
   }
-  // A dry run unless told to apply (A39): --yes writes, after a snapshot.
-  args.dryRun = !args.yes;
+  // A dry run unless told to apply (A39): --yes writes, after a snapshot. --dry-run always wins.
+  args.dryRun = explicitDryRun || !args.yes;
+  if (args.dryRun) args.yes = false;
   return args;
 }
 
@@ -140,7 +142,9 @@ export async function main(argv: string[]): Promise<void> {
       console.log(`  ${collectionInfo[c].plural}: ${t.created} new, ${t.updated} changed`);
     }
     if (report.dryRun) {
-      console.log('\nThis was a dry run: nothing was written. Run again with --yes to apply it.');
+      console.log(
+        '\nThis was a dry run: nothing was written. Each sheet is compared on its own, so a name that is new in several sheets is counted once per sheet. Run again with --yes to apply it.',
+      );
     }
     if (report.held) {
       console.log(

@@ -2,7 +2,7 @@ import { bareTitle, numberedKindOf, splitNumberedTitle } from '../numbering';
 import type { Doc } from '../paths';
 import { buildEntry } from './build';
 import { importableFields, readField } from './fields';
-import { nameResolver } from './names';
+import { nameResolver, partialNote } from './names';
 import { cellRef } from './source';
 import type {
   ColumnAssignment,
@@ -333,6 +333,8 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
   }
   out.listAdds = listAdds;
   out.stubs = resolver.stubs;
+  const partial = partialNote(sheet.name, resolver.partials);
+  if (partial) out.notes.push(partial);
   if (skipped.length) {
     const first = skipped[0];
     const last = skipped[skipped.length - 1];

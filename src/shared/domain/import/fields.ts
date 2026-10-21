@@ -77,21 +77,21 @@ const STRAND_FIELDS: ImportField[] = [
       nullable: true,
     }),
   },
-  // A29: the chapter's other strand, labelled "Backstory: ..." when it jumps back in story time.
+  // A29: the chapter's second strand: "Backstory: ..." when it jumps back in story time, or a later one such as "Forestory: John".
   {
     path: 'backstory.label',
-    label: 'Strand label (backstory strand)',
-    spec: f.text('backstory.label', 'Strand label (backstory strand)'),
+    label: 'Strand label (second strand)',
+    spec: f.text('backstory.label', 'Strand label (second strand)'),
   },
   {
     path: 'backstory.startYear',
-    label: 'Story year (backstory strand)',
-    spec: f.year('backstory.startYear', 'Story year (backstory strand)'),
+    label: 'Story year (second strand)',
+    spec: f.year('backstory.startYear', 'Story year (second strand)'),
   },
   {
     path: 'backstory.endYear',
-    label: 'Ends in year (backstory strand)',
-    spec: f.year('backstory.endYear', 'Ends in year (backstory strand)', { nullable: true }),
+    label: 'Ends in year (second strand)',
+    spec: f.year('backstory.endYear', 'Ends in year (second strand)', { nullable: true }),
   },
 ];
 

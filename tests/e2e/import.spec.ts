@@ -139,13 +139,13 @@ test('IM-1 a grid sheet imports its cells as world events under the categories t
 
 test('IM-1 SM-3 SM-12 a moment sheet maps column by column to Moments, a grid of people maps to Moments, and the import creates them', async () => {
   await chooseWorkbook();
-  await view().getByTestId('import-sheet').selectOption('Hale family');
+  await view().getByTestId('import-sheet').selectOption('Hale and Zhou families');
   await view().getByTestId('import-section').selectOption('moments');
   // Sheet to section, column to field: the long headers of a moment sheet are matched to the moment's fields.
   const columns = view().getByTestId('import-columns');
-  await expect(columns.getByLabel('Field for column Chronological: Hale Family')).toHaveValue(
-    'title',
-  );
+  await expect(
+    columns.getByLabel('Field for column Chronological: Hale and Zhou Families'),
+  ).toHaveValue('title');
   await expect(columns.getByLabel('Field for column POV', { exact: true })).toHaveValue(
     'characterId',
   );
@@ -157,6 +157,11 @@ test('IM-1 SM-3 SM-12 a moment sheet maps column by column to Moments, a grid of
     columns.getByLabel('Field for column How the POV Character Experiences This'),
   ).toHaveValue('body');
   await expect(columns.getByLabel('Field for column POV Age')).toHaveValue('');
+  // The sheet is named for its families, so a short name may match a person in them, and each match is reported.
+  await expect(view().getByTestId('import-name-hints')).toHaveValue('Hale, Zhou, 周');
+  await expect(view().getByTestId('import-preview')).toContainText(
+    '"Margaret" matched Margaret Hale; "Peter" matched Peter Hale; "美玲" matched Zhou Meiling',
+  );
   // The preview lists the moments, and the row that names no one fails with its reason.
   await expect(view().getByTestId('import-preview-counts')).toContainText(
     '5 rows: 4 ready, 1 will fail',
@@ -164,7 +169,7 @@ test('IM-1 SM-3 SM-12 a moment sheet maps column by column to Moments, a grid of
   const rows = view().getByTestId('import-preview-row');
   await expect(rows.filter({ hasText: 'Peter and Margaret marry' })).toContainText('Year: 1982');
   const failing = view().locator('[data-testid="import-preview-row"][data-ok="false"]');
-  await expect(failing).toContainText('Hale family row 6');
+  await expect(failing).toContainText('Hale and Zhou families row 6');
   await expect(failing).toContainText('No entry is called "Ghost"');
   await view().getByTestId('import-compare').click();
   await expect(view().getByTestId('import-summary')).toContainText('4 new, 0 changed');
@@ -188,7 +193,7 @@ test('IM-1 SM-3 SM-12 a moment sheet maps column by column to Moments, a grid of
     ].sort(),
   );
   expect(made.find((m) => m.title === 'Peter and Margaret marry')!.sourceRef).toBe(
-    'fixture-workbook.xlsx#Hale family!A3',
+    'fixture-workbook.xlsx#Hale and Zhou families!A3',
   );
 
   // A grid sheet can fill Moments too: its row label names the person.
