@@ -122,14 +122,14 @@ test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the questi
   await expect(disclosure).toContainText('export to Google Drive');
   await input().press('Meta+Enter');
   await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
-  await expect(input()).toHaveValue('How old is Margaret in 2040?');
+  await expect(input()).toHaveText('How old is Margaret in 2040?');
   await disclosure.getByRole('button', { name: 'Continue' }).click();
   await expect(disclosure).toBeHidden();
   await panel().getByTestId('claude-send').click();
   const error = lastTurn().getByTestId('claude-error');
   await expect(error).toContainText('Claude needs an Anthropic API key');
   // AI-7: the question is back in the box.
-  await expect(input()).toHaveValue('How old is Margaret in 2040?');
+  await expect(input()).toHaveText('How old is Margaret in 2040?');
   await error.getByRole('button', { name: 'Open settings' }).click();
   await expect(page.getByTestId('settings-view')).toBeVisible();
   await expect(panel()).toBeHidden();
@@ -165,7 +165,7 @@ test('ARCH-4 the key is set in settings, checked, shown masked, and the models c
 
 test('AI-1 AI-2 the answer streams in, lists the entries read, and the conversation is saved and reopened', async () => {
   await page.keyboard.press('Meta+j');
-  await expect(input()).toHaveValue('How old is Margaret in 2040?');
+  await expect(input()).toHaveText('How old is Margaret in 2040?');
   await panel().getByTestId('claude-send').click();
   const answer = lastTurn().getByTestId('claude-answer');
   // Streaming: the first part shows before the run ends.
@@ -252,7 +252,7 @@ test('AI-7 a rate limit says what to do and keeps the question', async () => {
     'Wait a minute, then try again',
   );
   await expect(lastTurn().getByTestId('claude-error').getByRole('button')).toHaveCount(0);
-  await expect(input()).toHaveValue('Am I rate limited?');
+  await expect(input()).toHaveText('Am I rate limited?');
   await input().fill('');
 });
 

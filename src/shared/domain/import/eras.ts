@@ -1,5 +1,5 @@
 import type { DocBlock, DocSection } from './document';
-import { blocksToBody, sectionsAt, spanOf } from './document';
+import { blocksToMarkdown, sectionsAt, spanOf } from './document';
 
 export interface EraDraft {
   name: string;
@@ -81,7 +81,7 @@ export function erasFromBlocks(source: DocBlock[]): { eras: EraDraft[]; skipped:
       name: section.heading.text,
       startYear: years.start,
       endYear: years.end,
-      body: blocksToBody(section.blocks),
+      body: blocksToMarkdown(section.blocks),
       first: span.first,
       last: span.last,
     });

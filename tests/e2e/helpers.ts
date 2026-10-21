@@ -316,7 +316,7 @@ export async function setField(
       await f.locator(':scope > input').fill(value === null ? '' : String(value));
       return;
     case 'longText':
-      await f.locator(':scope > textarea').fill(String(value ?? ''));
+      await f.locator(':scope > .rich-text [role="textbox"]').fill(String(value ?? ''));
       return;
     case 'boolean':
       await f.locator('input[type="checkbox"]').setChecked(value === true);

@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import { collectionInfo, entryTitle, isEntryCollection } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
@@ -10,8 +10,10 @@ import { warningsAt } from '../../../shared/domain/warnings';
 import type { FieldWarning } from '../../../shared/domain/warnings';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import { useEntries, useList } from './data';
-import { EntryPicker, PickerList, pickerKeys, useLookup, useSearch } from './pickers';
-import { ZhMeaning, ZhPreview } from './Zh';
+import { EntryPicker, useLookup } from './pickers';
+import { ZhMeaning } from './Zh';
+import { RichText } from './richText/RichText';
+import { ZhPreview } from './richText/MarkdownView';
 
 export interface Messages {
   warnings: FieldWarning[];
@@ -28,7 +30,7 @@ export interface FieldProps {
   root: Doc;
   /** Add a cross-link to the entry, used by `@` in long text (ED-9). */
   onMention: (targetId: string) => void;
-  /** SM-1: a long text box that grows with its text instead of scrolling. */
+  /** SM-1: a long text box that grows with its text. Since A44 every long text box does. */
   grow?: boolean;
 }
 
@@ -49,10 +51,12 @@ function FieldShell(props: {
   path: string;
   messages: Messages;
   htmlFor?: string;
+  /** A44: the label's own ID, for a rich text box that names itself by it. */
+  labelId?: string;
   group?: boolean;
   children: ReactNode;
 }) {
-  const { spec, path, messages, htmlFor, group, children } = props;
+  const { spec, path, messages, htmlFor, labelId, group, children } = props;
   const mine = messagesFor(spec, path, messages);
   const notes = (
     <>
@@ -86,7 +90,16 @@ function FieldShell(props: {
   }
   return (
     <div className={`ed-field${flagged}${errored}`} data-field={path} data-kind={spec.kind}>
-      <label className="ed-label" htmlFor={htmlFor}>
+      <label
+        className="ed-label"
+        htmlFor={htmlFor}
+        id={labelId}
+        onClick={
+          labelId
+            ? () => document.querySelector<HTMLElement>(`[aria-labelledby="${labelId}"]`)?.focus()
+            : undefined
+        }
+      >
         {spec.label}
       </label>
       {children}
@@ -162,70 +175,42 @@ function TextField({ spec, value, onChange, path, messages }: FieldProps) {
   );
 }
 
-/** Long text with an `@` link picker (ED-9). */
-function LongTextField({ spec, value, onChange, path, messages, onMention, grow }: FieldProps) {
-  const id = useId();
-  const listId = useId();
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
-  const [active, setActive] = useState(0);
-  const hits = useSearch(mention ? mention.query : null);
+/** A44: long text fields that hold a line or two, not pages: their box starts at three lines. */
+const NOTE_FIELDS = new Set([
+  'role',
+  'meaning',
+  'usageNote',
+  'question',
+  'decision',
+  'stoppedAt',
+  'sourceNote',
+  'worldContext',
+  'quote',
+  'resolutionNote',
+  'mustChange',
+  'sceneNote',
+]);
+
+/** Long text as a rich text box (A44) with an `@` link picker (ED-9). */
+function LongTextField({ spec, value, onChange, path, messages, onMention, root }: FieldProps) {
+  const labelId = useId();
   const text = asString(value);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!grow || !el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
-  }, [grow, text]);
-
-  const detect = (el: HTMLTextAreaElement) => {
-    const before = el.value.slice(0, el.selectionStart);
-    const m = /(^|\s)@([^\s@]{0,40})$/.exec(before);
-    const query = m?.[2];
-    if (query !== undefined) {
-      setMention({ start: before.length - query.length - 1, query });
-      setActive(0);
-    } else {
-      setMention(null);
-    }
-  };
-
-  const pick = (hit: { id: string; title: string }) => {
-    if (!mention) return;
-    const end = mention.start + 1 + mention.query.length;
-    const inserted = `@${hit.title} `;
-    const next = `${text.slice(0, mention.start)}${inserted}${text.slice(end)}`;
-    onChange(next);
-    onMention(hit.id);
-    setMention(null);
-    const caret = mention.start + inserted.length;
-    requestAnimationFrame(() => {
-      ref.current?.focus();
-      ref.current?.setSelectionRange(caret, caret);
-    });
-  };
-
+  const ids = asArray(root.links)
+    .filter(isPlainObject)
+    .map((l) => String(l.targetId ?? ''))
+    .filter(Boolean);
+  const found = useLookup(ids);
+  const titles = ids.map((id) => found.get(id)?.title ?? '').filter(Boolean);
   return (
-    <FieldShell spec={spec} path={path} messages={messages} htmlFor={id}>
-      <textarea
-        id={id}
-        ref={ref}
-        rows={grow ? 2 : Math.min(10, Math.max(3, text.split('\n').length + 1))}
-        className={grow ? 'grow' : undefined}
+    <FieldShell spec={spec} path={path} messages={messages} labelId={labelId}>
+      <RichText
         value={text}
-        aria-controls={mention ? listId : undefined}
-        onChange={(e) => {
-          onChange(e.target.value);
-          detect(e.target);
-        }}
-        onKeyDown={(e) => {
-          if (mention) pickerKeys(e, hits, active, setActive, pick, () => setMention(null));
-        }}
-        onBlur={() => setMention(null)}
+        onChange={onChange}
+        labelledBy={labelId}
+        size={NOTE_FIELDS.has(spec.name) ? 'notes' : 'prose'}
+        onMention={(hit) => onMention(hit.id)}
+        mentionTitles={titles}
       />
-      {mention && (
-        <PickerList hits={hits} active={active} onPick={pick} id={listId} query={mention.query} />
-      )}
       <ZhPreview text={text} />
     </FieldShell>
   );

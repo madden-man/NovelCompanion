@@ -297,7 +297,7 @@ test('NF-2 ED-1 a new character is made, edited, and saved from the keyboard', a
   await press(page.getByRole('button', { name: 'Create character' }));
   await expect(editor()).toBeVisible();
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');
-  const role = editor().locator('[data-field="role"] textarea');
+  const role = editor().locator('[data-field="role"] [role="textbox"]');
   await tabTo(role);
   await page.keyboard.type('Tacoma');
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');

@@ -851,11 +851,11 @@ test("CU-2 A42 a community and the story year's decade list the lines that apply
   await invoke('storyTime.set', { time: { year: 2025 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
   await expect(line('CU1').getByTestId('line-text')).toHaveValue('Mid-Autumn mooncakes');
-  await expect(line('CU1').getByTestId('line-note')).toHaveValue(/lotus seed mooncakes/);
+  await expect(line('CU1').getByTestId('line-note')).toHaveText(/lotus seed mooncakes/);
   await expect(line('CU2')).toHaveCount(0);
   await invoke('storyTime.set', { time: { year: 2083 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2080s');
-  await expect(line('CU2').getByTestId('line-note')).toHaveValue(/Printed mooncakes/);
+  await expect(line('CU2').getByTestId('line-note')).toHaveText(/Printed mooncakes/);
   await expect(line('CU1')).toHaveCount(0);
   await invoke('storyTime.set', { time: { year: 1975 } });
   await expect(view.locator('.cu-line')).toHaveCount(0);
@@ -987,9 +987,9 @@ test('GL-3 the editor shows a Meaning control on a title with Chinese and a prev
   await expect(card).toBeVisible();
   await expect(card).toContainText('晓曦: xiǎoxī, dawn light');
   await expect(card).toContainText('的信: not in the glossary yet');
-  // The long text field keeps its text area and adds a read-only preview with focusable runs.
+  // The long text field keeps its rich text box (A44) and adds a read-only preview with focusable runs.
   const body = field(editor, 'body');
-  await expect(body.locator('textarea')).toHaveValue(/晓曦和月饼/);
+  await expect(body.getByRole('textbox')).toHaveText(/晓曦和月饼/);
   const preview = body.getByTestId('zh-preview');
   await expect(preview).toBeVisible();
   await expect(preview.locator('p')).toHaveCount(2);

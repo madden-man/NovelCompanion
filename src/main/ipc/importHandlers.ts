@@ -15,7 +15,7 @@ import type {
   ParsedWorkbook,
   SourceFile,
 } from '../../shared/domain/import';
-import { blocksToBody } from '../../shared/domain/import';
+import { blocksToMarkdown } from '../../shared/domain/import';
 import { createBible, dropBible } from '../db/bibles';
 import type { OpenBible } from '../db/session';
 import { exportBibleJson, importBibleJson, readBibleFile } from '../backup/json';
@@ -255,7 +255,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
           .map((b) => ({ level: b.level, text: b.text, index: b.index })),
         paragraphs: doc.blocks.length,
         sceneBreaks: doc.blocks.filter((b) => b.kind === 'scene').length,
-        body: blocksToBody(doc.blocks),
+        body: blocksToMarkdown(doc.blocks),
       };
     },
 

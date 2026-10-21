@@ -203,7 +203,7 @@ test('ED-2 a change saves on its own within one second, with no save button, and
   await newCharacter('Ada Sullivan', 1990);
   const editor = page.getByTestId('editor');
   await expect(editor.getByRole('button', { name: /^Save$/ })).toHaveCount(0);
-  const input = field(editor, 'role').locator('textarea');
+  const input = field(editor, 'role').getByRole('textbox');
   await input.fill('San Francisco');
   const typed = Date.now();
   await expect(editor.getByTestId('autosave')).toHaveText('Saving soon');
@@ -215,7 +215,7 @@ test('ED-2 a change saves on its own within one second, with no save button, and
 
 test('ED-2 continuous typing still saves within one second of the first change', async () => {
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'backstory').locator('textarea');
+  const input = field(editor, 'backstory').getByRole('textbox');
   await input.click();
   const start = Date.now();
   // Type for longer than the debounce; the first save still lands within a second.
@@ -236,7 +236,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   test.setTimeout(240_000);
   await newCharacter('Undo Hale', 1960);
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'role').locator('textarea');
+  const input = field(editor, 'role').getByRole('textbox');
   const top = page.getByTestId('inspector').getByTestId('undo-history').locator('li').first();
   for (let n = 1; n <= 51; n++) {
     await input.fill(`Place ${n}`);
@@ -255,7 +255,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   await expect
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 1');
-  await expect(input).toHaveValue('Place 1');
+  await expect(input).toHaveText('Place 1');
   await page.keyboard.press('Meta+z');
   await expect.poll(async () => (await currentEntry('characters', 'Undo Hale')).role).toBe('');
   await page.keyboard.press('Shift+Meta+z');
@@ -263,7 +263,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   await expect
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 2');
-  await expect(input).toHaveValue('Place 2');
+  await expect(input).toHaveText('Place 2');
   // Redo walks every remaining step forward to the last change.
   for (let n = 0; n < 49; n++) await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
@@ -272,7 +272,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   await expect
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 51');
-  await expect(input).toHaveValue('Place 51');
+  await expect(input).toHaveText('Place 51');
   await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText('Nothing to redo.');
   expect((await currentEntry('characters', 'Undo Hale')).role).toBe('Place 51');
@@ -340,7 +340,7 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
 test('ED-4 the history drawer compares any revision with the current entry and restores it', async () => {
   await newCharacter('Revision Doyle', 1950);
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'role').locator('textarea');
+  const input = field(editor, 'role').getByRole('textbox');
   await input.fill('Cork');
   await waitSaved(page);
   await input.fill('Boston');
@@ -363,7 +363,7 @@ test('ED-4 the history drawer compares any revision with the current entry and r
   await expect(revisions).toHaveCount(5);
   await expect(revisions.nth(0)).toContainText('Restored the version from');
   await drawer.getByRole('button', { name: 'Close' }).click();
-  await expect(input).toHaveValue('Cork');
+  await expect(input).toHaveText('Cork');
   expect((await currentEntry('characters', 'Revision Doyle')).role).toBe('Cork');
   // The restore is undoable like any change.
   await page.keyboard.press('Meta+z');
@@ -377,7 +377,7 @@ test('ED-5 deleting lists what links here, moves it to the trash, and restores i
   // page has no links box, so the link is a mention typed in the description.
   await newCharacter('Linker Zhou', 1992);
   const editor = page.getByTestId('editor');
-  const desc = field(editor, 'body').locator('textarea');
+  const desc = field(editor, 'body').getByRole('textbox');
   await desc.click();
   await desc.pressSequentially('Cousin of @Ada');
   await expect(
@@ -426,14 +426,14 @@ test('ED-9 typing @ in a long text field searches, inserts a link, and the targe
     .getByRole('button', { name: /Linker Zhou/ })
     .click();
   const editor = page.getByTestId('editor');
-  const body = field(editor, 'body').locator('textarea');
+  const body = field(editor, 'body').getByRole('textbox');
   await body.click();
   await body.press('End');
   await body.pressSequentially('Compare with @Revi');
   const picker = field(editor, 'body').getByRole('listbox', { name: 'Matching entries' });
   await expect(picker.getByRole('option').first()).toContainText('Revision Doyle');
   await page.keyboard.press('Enter');
-  await expect(body).toHaveValue(/Compare with @Revision Doyle $/);
+  await expect(body).toHaveText(/Compare with @Revision Doyle $/);
   await waitSaved(page);
   const linker = await currentEntry('characters', 'Linker Zhou');
   const doyle = await currentEntry('characters', 'Revision Doyle');
@@ -552,7 +552,7 @@ test('ED-6 generated content and imported content are edited like any other fiel
   for (const [c, name] of cases) {
     await openSection(c);
     await page.getByTestId('entry-list').getByRole('button').first().click();
-    const box = field(page.getByTestId('editor'), name).locator('textarea');
+    const box = field(page.getByTestId('editor'), name).getByRole('textbox');
     const text = `Edited by hand: ${c} ${name}.`;
     await box.fill(text);
     await waitSaved(page);
@@ -679,7 +679,7 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
     .getByRole('button', { name: /Ada Sullivan/ })
     .click();
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'role').locator('textarea');
+  const input = field(editor, 'role').getByRole('textbox');
   const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
   await input.fill('Saved city');
   await waitSaved(page);
@@ -687,7 +687,7 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
   const historyBefore = await history.allTextContents();
   await input.fill('Unsaved typing');
   await page.keyboard.press('Meta+z');
-  await expect(input).toHaveValue('Saved city');
+  await expect(input).toHaveText('Saved city');
   await waitSaved(page);
   expect((await currentEntry('characters', 'Ada Sullivan')).role).toBe('Saved city');
   expect(await history.allTextContents()).toEqual(historyBefore);
@@ -736,7 +736,7 @@ test('ED-7 a proposal waits in the review queue with its diff; approve writes it
 
   // Edit the proposed value, then approve.
   await card.getByRole('button', { name: 'Edit' }).click();
-  await field(card, 'role').locator('textarea').fill('Davis');
+  await field(card, 'role').getByRole('textbox').fill('Davis');
   await card.getByRole('button', { name: 'Save proposed values' }).click();
   await expect(cells(card).nth(1)).toHaveText('Davis');
   expect((await fromMongo('characters', ada._id))!.role).toBe(before!.role);

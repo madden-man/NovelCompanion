@@ -6,6 +6,7 @@ import { entryTitle } from '../../../shared/schema';
 import { call, plainError } from '../api';
 import { useEntries } from './data';
 import { useFocusTrap } from './focusTrap';
+import { RichText } from './richText/RichText';
 import { useUndo } from './undo';
 
 /**
@@ -31,11 +32,9 @@ function StopDialog({ quitting, onCancel }: { quitting: boolean; onCancel: () =>
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const area = useRef<HTMLTextAreaElement>(null);
   const ids = { title: useId(), text: useId(), chapter: useId() };
   useFocusTrap(dialogRef);
   useEffect(() => {
-    area.current?.focus();
     // Tell main the prompt is up, so it waits for the person instead of timing out.
     void call('app.closePromptShown', {});
   }, []);
@@ -80,13 +79,13 @@ function StopDialog({ quitting, onCancel }: { quitting: boolean; onCancel: () =>
       >
         <h2 id={ids.title}>Where did you stop?</h2>
         <div className="field">
-          <label htmlFor={ids.text}>Where did you stop?</label>
-          <textarea
-            id={ids.text}
-            ref={area}
-            rows={4}
+          <label id={ids.text}>Where did you stop?</label>
+          <RichText
+            labelledBy={ids.text}
+            size="notes"
+            autoFocus
             value={stoppedAt}
-            onChange={(e) => setStoppedAt(e.target.value)}
+            onChange={setStoppedAt}
             placeholder="For example, halfway through the kitchen scene, Iris about to open the box."
           />
         </div>

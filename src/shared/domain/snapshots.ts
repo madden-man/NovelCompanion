@@ -22,6 +22,9 @@ export const SNAPSHOT_REASON_LABELS: Record<SnapshotReason, string> = {
 /** SM-2: the label of the snapshot taken before migration 9 drops the collections A39 cuts. */
 export const MIGRATION9_SNAPSHOT_LABEL = 'Before migration 9';
 
+/** A44: the label of the snapshot taken before migration 10 rewrites long text as Markdown. */
+export const MIGRATION10_SNAPSHOT_LABEL = 'Before migration 10';
+
 /** `manifest.json` of a snapshot (BK-1): what was dumped, when, why, and the schema version. */
 export const SnapshotManifest = z.strictObject({
   format: z.literal('novel-companion-snapshot'),

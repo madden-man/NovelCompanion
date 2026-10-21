@@ -7,6 +7,8 @@ import type { EventSpan } from '../../../../shared/domain/timeline';
 import { useWriteGuard } from '../../connection';
 import { TrashControls } from '../editor';
 import { span } from '../timeline/common';
+import { RichText } from '../richText/RichText';
+import { textBoxValue } from '../undo';
 
 export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext';
 
@@ -180,7 +182,7 @@ function MomentRow(props: {
       </td>
       <td data-field="body">
         <Cell
-          kind="text"
+          kind="rich"
           label={`${FIELD_LABEL.body}, ${what}`}
           value={m.body}
           onSave={(v) => props.onSave('body', v)}
@@ -189,7 +191,7 @@ function MomentRow(props: {
       <td data-field="worldContext">
         <div className="bs-world">
           <Cell
-            kind="text"
+            kind="rich"
             label={`${FIELD_LABEL.worldContext}, ${what}`}
             value={m.worldContext}
             onSave={(v) => props.onSave('worldContext', v)}
@@ -220,9 +222,12 @@ function MomentRow(props: {
   );
 }
 
-/** One editable cell: saves on blur or Enter, Escape puts the stored value back. */
+/**
+ * One editable cell: saves on blur or Enter, Escape puts the stored value back.
+ * A `rich` cell is an inline rich text box (A44): bold, italic, strikethrough.
+ */
 function Cell(props: {
-  kind: 'year' | 'text';
+  kind: 'year' | 'text' | 'rich';
   /** A year cell that may be left blank. */
   blank?: boolean;
   label: string;
@@ -293,7 +298,29 @@ function Cell(props: {
 
   return (
     <>
-      {props.kind === 'year' ? (
+      {props.kind === 'rich' ? (
+        <RichText
+          mode="inline"
+          size="quick"
+          className="bs-cell-rich"
+          label={props.label}
+          value={draft}
+          onChange={setDraft}
+          onFocus={common.onFocus}
+          onBlur={common.onBlur}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+              void commit();
+              return true;
+            }
+            if (e.key === 'Escape') {
+              setDraft(props.value);
+              setError(null);
+            }
+            return false;
+          }}
+        />
+      ) : props.kind === 'year' ? (
         <input
           {...common}
           className="bs-cell bs-cell-year num"
@@ -393,7 +420,7 @@ function EventPicker(props: {
                 className="bs-picker-item"
                 data-id={e.id}
                 onClick={() => {
-                  const typed = button.current?.closest('td')?.querySelector('textarea')?.value;
+                  const typed = textBoxValue(button.current?.closest('td'));
                   void props.onPick(e.title, typed).catch(() => undefined);
                   close(true);
                 }}

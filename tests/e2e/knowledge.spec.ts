@@ -77,7 +77,9 @@ test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns un
   await field(editor, 'state').locator(':scope > select').selectOption('decided');
   await saved();
   await expect(field(editor, 'decision')).toContainText('marked decided, but no decision');
-  await field(editor, 'decision').locator(':scope > textarea').fill('Peter wrote it in 2029.');
+  await field(editor, 'decision')
+    .locator(':scope > .rich-text [role="textbox"]')
+    .fill('Peter wrote it in 2029.');
   await saved();
   await expect(field(editor, 'decision')).not.toContainText('marked decided, but no decision');
   const show = sessions().getByLabel('Show questions');
@@ -126,8 +128,12 @@ test('SL-1 SM-11 the session log on Sessions is newest first, and each entry has
   const editor = inspector().getByTestId('editor');
   await expect(editor).toHaveAttribute('data-entry-id', morning._id);
   await field(editor, 'chapterId').locator(':scope > select').selectOption('CH2');
-  await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Daniel burns the rice');
-  await field(editor, 'notes').locator(':scope > textarea').fill('Check the kitchen timeline');
+  await field(editor, 'stoppedAt')
+    .locator(':scope > .rich-text [role="textbox"]')
+    .fill('Daniel burns the rice');
+  await field(editor, 'notes')
+    .locator(':scope > .rich-text [role="textbox"]')
+    .fill('Check the kitchen timeline');
   await saved();
   await expect(rows.last()).toContainText('Two Kitchens');
   await expect(rows.last()).toContainText('Stopped at: Daniel burns the rice');
@@ -273,7 +279,7 @@ test("CU-1 A42 SM-11 Cultural data shows one community for the story year's deca
   await expect(lineOf('CU3').getByTestId('line-text')).toHaveValue('Sunday ferry picnics');
   await expect(lineOf('CU3').getByTestId('line-span')).toHaveText('2000 to 2034');
   await expect(lineOf('CU4').getByTestId('line-span')).toHaveText('2035 to 2100');
-  await expect(lineOf('CU3').getByTestId('line-note')).toHaveValue(/ride the river ferry/);
+  await expect(lineOf('CU3').getByTestId('line-note')).toHaveText(/ride the river ferry/);
   await expect(lineOf('CU3').getByTestId('line-group')).toHaveValue('all');
   await expect(lineOf('CU3').getByTestId('line-decade')).toHaveValue('2000');
   // No decade picker: the year at the top moves the decade.
@@ -295,7 +301,7 @@ test("CU-1 A42 SM-11 Cultural data shows one community for the story year's deca
     .toBe('River city; the Lis came from here.');
   await page.keyboard.press('Meta+z');
   await expect.poll(async () => (await notesOf()).guangzhou).toBeUndefined();
-  await expect(culture().getByLabel('About Guangzhou')).toHaveValue('');
+  await expect(culture().getByLabel('About Guangzhou')).toHaveText('');
 });
 
 test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited directly, moved by its age group and decade selects, given a note, and removed, each one undo step', async () => {
@@ -346,7 +352,7 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
     id,
     patch: { body: 'Union jobs.' },
   });
-  await expect(line().getByTestId('line-note')).toHaveValue('Union jobs.');
+  await expect(line().getByTestId('line-note')).toHaveText('Union jobs.');
   await line().getByTestId('line-note').fill('Union jobs for the first time since the flood.');
   await line().getByTestId('line-text').focus();
   await expect
@@ -423,7 +429,7 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
-test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as one undo step, flags a gap, and New era adds one', async () => {
+test("SM-11 WE-2 the Eras tab shows the story year's era, edits it in place as one undo step, flags a gap, and New era adds one", async () => {
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
   const rows = eras.locator('li[data-era]');
@@ -438,7 +444,7 @@ test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as 
   await expect(forties.getByLabel('Era name')).toHaveValue('The forties');
   await expect(forties.getByLabel('Start year')).toHaveValue('2040');
   await expect(forties.getByLabel('End year')).toHaveValue('2049');
-  await expect(forties.getByLabel('What the world is like')).toHaveValue(
+  await expect(forties.getByLabel('What the world is like')).toHaveText(
     /Grid batteries everywhere\./,
   );
   // Name and body are saved through the write path when the field is left.
@@ -545,9 +551,9 @@ test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', asy
   await invoke('storyTime.set', { time: { year: Number(first.entry.startYear) } });
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
-  await expect(eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name')).toHaveValue(
-    String(first.entry.name),
-  );
+  await expect(
+    eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name'),
+  ).toHaveValue(String(first.entry.name));
   await expect(eras).toContainText(`${seeded.length} eras in all`);
   await openBible();
 });

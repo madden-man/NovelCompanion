@@ -11,6 +11,7 @@ import { OpenSettingsButton, claudeNav } from '../claude';
 import { DriveDocumentPicker } from '../drive';
 import { useClaudeRun } from './claudeRun';
 import { updateWithUndo } from './common';
+import { RichText } from '../richText/RichText';
 import type { OpenEntry } from './common';
 
 type Read = Response<'manuscript.read'>;
@@ -356,13 +357,8 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
         {draft !== null ? (
           <>
             <div className="field">
-              <label htmlFor={summaryId}>Summary to approve</label>
-              <textarea
-                id={summaryId}
-                rows={4}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-              />
+              <label id={summaryId}>Summary to approve</label>
+              <RichText labelledBy={summaryId} value={draft} onChange={setDraft} />
             </div>
             <div className="row">
               <button

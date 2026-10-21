@@ -428,10 +428,9 @@ describe('IM-4 a Word document imports as a backstory, a chapter, or a note, kee
     const doc = await parseDocxFile(DOCX);
     const back = planDocumentImport(open, doc, { kind: 'backstory', characterId: 'H1' });
     await applyPlan(open, back.set, back.file, 'all');
-    expect(open.repo.get('characters', 'H1')!.backstory).toContain(
-      '<h1>Chapter 3: Wedding Weather</h1>',
-    );
-    expect(open.repo.get('characters', 'H1')!.backstory).toContain('<em>lucky</em>');
+    // A44: an editable field stores Markdown; the top heading lands on the upper level.
+    expect(open.repo.get('characters', 'H1')!.backstory).toContain('## Chapter 3: Wedding Weather');
+    expect(open.repo.get('characters', 'H1')!.backstory).toContain('*lucky*');
     expect(open.repo.get('characters', 'H1')!.sourceRef).toBe('chapter-03.docx#p1-p4');
 
     // A39: a general note is an open question, where the capture box files loose notes too.
@@ -439,7 +438,7 @@ describe('IM-4 a Word document imports as a backstory, a chapter, or a note, kee
     await applyPlan(open, note.set, note.file, 'all');
     const entry = open.repo.list('openQuestions').find((e) => e.title === 'Wedding notes')!;
     expect(entry).toMatchObject({ sourceRef: 'chapter-03.docx#p1-p4', state: 'open' });
-    expect(entry.body).toContain('<hr>');
+    expect(entry.body).toContain('\n\n---\n\n');
     // The second import finds the note unchanged.
     const second = planDocumentImport(open, doc, { kind: 'note', title: 'Wedding notes' });
     expect(second.set.unchanged).toBe(1);
