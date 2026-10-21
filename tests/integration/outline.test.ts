@@ -357,13 +357,37 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
       years: {},
       modifiedAt: at,
     });
+    // A37: the version saved with ranges only gets its breaks from them.
     const v = await run('sceneOutline.version', { id: 'OLDVERSION' });
-    expect(v).toMatchObject({ text: '- A', breaks: {}, years: {}, scenes: 1 });
+    expect(v).toMatchObject({ text: '- A', breaks: { CH1: 0 }, years: {}, scenes: 1 });
     const restored = await run('sceneOutline.restore', { id: 'OLDVERSION' });
-    expect(restored).toMatchObject({ text: '- A', breaks: {}, years: {} });
+    expect(restored).toMatchObject({ text: '- A', breaks: { CH1: 0 }, years: {} });
     const meta = await again.handle
       .collection<{ _id: string }>('meta')
       .findOne({ _id: 'sceneOutline' });
+    expect(meta).not.toHaveProperty('ranges');
+  });
+
+  test('SM-5 A37 an outline saved with ranges only, before breaks, opens with breaks derived from its ranges; the next save writes them and drops the ranges', async () => {
+    const fresh = await openBibleSession(
+      store,
+      (await loadFixture(store, freshSlug('outline-a36'))).id,
+    );
+    await fresh.handle.collection<Record<string, unknown> & { _id: string }>('meta').insertOne({
+      _id: 'sceneOutline',
+      text: 'Notes\n- A\n  - a detail\n- B\n- C',
+      ranges: { CH1: { from: 1, to: 2 }, CH2: { from: 3, to: 3 } },
+      modifiedAt: '2026-10-16T10:00:00.000Z',
+    });
+    const again = await openBibleSession(store, fresh.handle.id);
+    const run = ipcFor(() => again);
+    const opened = await run('sceneOutline.get', {});
+    expect(opened).toMatchObject({ breaks: { CH1: 1, CH2: 4 }, years: {} });
+    await run('sceneOutline.set', { text: opened.text, breaks: opened.breaks });
+    const meta = await again.handle
+      .collection<{ _id: string }>('meta')
+      .findOne({ _id: 'sceneOutline' });
+    expect(meta).toMatchObject({ breaks: { CH1: 1, CH2: 4 }, years: {} });
     expect(meta).not.toHaveProperty('ranges');
   });
 });

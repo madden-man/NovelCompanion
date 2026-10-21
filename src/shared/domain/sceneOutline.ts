@@ -39,13 +39,33 @@ export function sceneOutlineText(doc: Record<string, unknown> | null | undefined
   return doc && typeof doc.text === 'string' ? doc.text : '';
 }
 
-/** Fix a stored document's breaks: only whole, non-negative line numbers survive. */
+/**
+ * Fix a stored document's breaks: only whole, non-negative line numbers
+ * survive. An outline (or a version) saved before A37 holds scene ranges and
+ * no breaks; its breaks are derived from them once, each chapter starting at
+ * the first line of its range's first scene (past the end when the scene is
+ * gone). The next save writes the breaks and drops the ranges.
+ */
 export function sceneBreaks(doc: Record<string, unknown> | null | undefined): SceneBreaks {
   const raw = doc?.breaks;
-  if (!isRecord(raw)) return {};
   const out: SceneBreaks = {};
-  for (const [id, line] of Object.entries(raw)) {
-    if (typeof line === 'number' && Number.isInteger(line) && line >= 0) out[id] = line;
+  if (isRecord(raw)) {
+    for (const [id, line] of Object.entries(raw)) {
+      if (typeof line === 'number' && Number.isInteger(line) && line >= 0) out[id] = line;
+    }
+  }
+  if (Object.keys(out).length > 0 || !isRecord(doc?.ranges)) return out;
+  const text = sceneOutlineText(doc);
+  const firstLine = new Map<number, number>();
+  sceneLines(text).forEach((n, i) => {
+    if (n !== null && !firstLine.has(n)) firstLine.set(n, i);
+  });
+  const count = text === '' ? 0 : text.split('\n').length;
+  for (const [id, r] of Object.entries(doc.ranges)) {
+    if (!isRecord(r) || typeof r.from !== 'number' || !Number.isInteger(r.from) || r.from < 1) {
+      continue;
+    }
+    out[id] = firstLine.get(r.from) ?? count;
   }
   return out;
 }

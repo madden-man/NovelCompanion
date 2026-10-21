@@ -214,6 +214,23 @@ describe('SM-5 every scene has a year, its own or inherited, kept in step with t
     expect(sameYears({ '1': 2040 }, { '1': 2041 })).toBe(false);
   });
 
+  test('SM-5 A37 an outline saved with ranges only derives its breaks from them once', () => {
+    const text = 'Opening note\n- A\n  - a detail\n- B\n- C\n- D';
+    const old = {
+      text,
+      ranges: { X: { from: 1, to: 2 }, Y: { from: 3, to: 4 }, Z: { from: 9, to: 9 }, W: 'x' },
+    };
+    expect(sceneBreaks(old)).toEqual({ X: 1, Y: 4, Z: 6 });
+    expect(sceneYears(old)).toEqual({});
+    const flow = splitFlow({ text, breaks: sceneBreaks(old) }, ['X', 'Y']);
+    expect(sectionOf(flow, LEAD).lines).toEqual(['Opening note']);
+    expect(sectionOf(flow, 'X').lines).toEqual(['- A', '  - a detail', '- B']);
+    expect(sectionOf(flow, 'Y').lines).toEqual(['- C', '- D']);
+    // Once breaks are stored, the ranges are ignored.
+    expect(sceneBreaks({ ...old, breaks: { X: 0 } })).toEqual({ X: 0 });
+    expect(sceneBreaks({ text, ranges: 'x' })).toEqual({});
+  });
+
   test('SM-5 years split with the text into the sections and join back by line of the whole text', () => {
     const doc = {
       text: '- A\n- B\n  - b\n- C',
