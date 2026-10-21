@@ -161,7 +161,7 @@ export function buildGroups(
   for (const i of items) {
     const c = chain(i.id);
     // A broken parent chain makes the topmost item found a root.
-    rowOf.set(i.id, (c[1] ?? c[0]!).id);
+    rowOf.set(i.id, (c[1] ?? c[0] ?? i).id);
   }
   const usedSet = new Set(used);
   const groups: GridGroup[] = [];
@@ -404,7 +404,8 @@ export function lineAt(layout: GridLayout, y: number): GridLine | null {
   let hi = lines.length - 1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    const l = lines[mid]!;
+    const l = lines[mid];
+    if (!l) return null;
     if (y < l.y) hi = mid - 1;
     else if (y >= l.y + l.height) lo = mid + 1;
     else return l;
@@ -421,8 +422,8 @@ export function markerAt(
 ): PlacedMarker | null {
   const lane = Math.floor((yInRow - metrics.rowPad) / metrics.lane);
   for (let i = row.markers.length - 1; i >= 0; i--) {
-    const m = row.markers[i]!;
-    if (m.lane === lane && x >= m.x && x <= m.x + m.width) return m;
+    const m = row.markers[i];
+    if (m && m.lane === lane && x >= m.x && x <= m.x + m.width) return m;
   }
   return null;
 }

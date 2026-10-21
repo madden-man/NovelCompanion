@@ -1,36 +1,66 @@
-/* m11-world, KB-4: the Timeline screen is the world. Colors come only from theme tokens. */
-.tl-frame.tl-fixed {
-  /* The chart keeps one height so the strip and the list stay in reach below it. */
-  height: 340px;
-  overflow-y: auto;
-  border-radius: 8px;
+/* a39-world, SM-8: the World events screen around the grid. Colors come only from theme tokens. */
+.wg-main {
+  gap: 12px;
 }
-.world-list h2 {
-  font-size: 1.05rem;
-  margin: 0;
-}
-.world-cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px 18px;
-  align-items: start;
-}
-.world-col h3 {
+.wg-around h3 {
   font-size: 0.95rem;
   margin: 0;
-}
-.world-col .entry-row {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 4px;
-}
-.world-years {
-  font-size: 0.85rem;
-  font-weight: 600;
   color: var(--fg);
 }
-.world-list .btn[aria-pressed='true'] {
+.wg-toolbar {
+  align-items: center;
+  gap: 8px 20px;
+}
+.wg-toolbar-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+.wg-regions {
+  flex-wrap: wrap;
+}
+.wg-toolbar .btn[aria-pressed='true'] {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--fg);
+}
+.wg-toolbar .btn[aria-pressed='false'] {
+  background: transparent;
+  border-style: dashed;
+}
+.wg-chip {
+  border-radius: 999px;
+}
+.wg-key {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--fg-2);
+}
+.wg-key.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.wg-key.dot.big {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: 2px solid var(--fg);
+}
+.wg-key.bar {
+  width: 24px;
+  height: 8px;
+  border-radius: 4px;
+}
+.wg-key.story {
+  width: 2px;
+  height: 14px;
+  background: var(--time);
+}
+.wg-key.writing {
+  width: 14px;
+  height: 14px;
+  background: var(--time-soft);
+  border: 1px solid var(--time);
 }
