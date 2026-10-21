@@ -423,12 +423,17 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
-test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one undo step, flags a gap, and New era adds one', async () => {
+test('SM-11 WE-2 the Eras tab shows the story year\'s era, edits it in place as one undo step, flags a gap, and New era adds one', async () => {
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
   const rows = eras.locator('li[data-era]');
-  await expect(rows).toHaveCount(8);
-  await expect(eras.getByTestId('era-coverage-ok')).toBeVisible();
+  // Only the era of the story year (2030, set above) is shown, and it is marked.
+  await expect(rows).toHaveCount(1);
+  await expect(eras.locator('li[data-era="ERA-2030"]')).toHaveAttribute('aria-current', 'date');
+  await expect(eras.getByTestId('era-gap')).toHaveCount(0);
+  // Moving the story year moves the era.
+  await invoke('storyTime.set', { time: { year: 2045 } });
+  await expect(rows).toHaveCount(1);
   const forties = eras.locator('li[data-era="ERA-2040"]');
   await expect(forties.getByLabel('Era name')).toHaveValue('The forties');
   await expect(forties.getByLabel('Start year')).toHaveValue('2040');
@@ -436,8 +441,6 @@ test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one un
   await expect(forties.getByLabel('What the world is like')).toHaveValue(
     /Grid batteries everywhere\./,
   );
-  // The era of the story year (2030, set above) is marked.
-  await expect(eras.locator('li[data-era="ERA-2030"]')).toHaveAttribute('aria-current', 'date');
   // Name and body are saved through the write path when the field is left.
   await forties.getByLabel('Era name').fill('The battery forties');
   await forties.getByLabel('What the world is like').focus();
@@ -456,26 +459,25 @@ test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one un
         (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.name,
     )
     .toBe('The forties');
-  await expect(eras.locator('li[data-era="ERA-2040"]').getByLabel('Era name')).toHaveValue(
-    'The forties',
-  );
-  // WE-2: an end year that leaves a gap is flagged and still saved.
-  const sixties = eras.locator('li[data-era="ERA-2060"]');
-  await sixties.getByLabel('End year').fill('2065');
-  await sixties.getByLabel('End year').press('Enter');
-  await expect(eras.getByTestId('era-coverage')).toContainText('No era covers 2066 to 2069.');
+  await expect(forties.getByLabel('Era name')).toHaveValue('The forties');
+  // WE-2: an end year that leaves the story year uncovered is flagged and still saved, and
+  // the row stays on screen.
+  await forties.getByLabel('End year').fill('2044');
+  await forties.getByLabel('End year').press('Enter');
+  await expect(eras.getByTestId('era-gap')).toContainText('No era covers 2045.');
+  await expect(forties).toBeVisible();
   expect(
-    (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2060' })).entry.endYear,
-  ).toBe(2065);
+    (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.endYear,
+  ).toBe(2044);
   await invoke('entry.update', {
     collection: 'eraStates',
-    id: 'ERA-2060',
-    patch: { endYear: 2069 },
+    id: 'ERA-2040',
+    patch: { endYear: 2049 },
   });
-  await expect(eras.getByTestId('era-coverage-ok')).toBeVisible();
+  await expect(eras.getByTestId('era-gap')).toHaveCount(0);
   // New era starts after the last one, with its name ready to type.
   await eras.getByRole('button', { name: 'New era', exact: true }).click();
-  await expect(rows).toHaveCount(9);
+  await expect(rows).toHaveCount(2);
   const fresh = rows.last();
   await expect(fresh.getByLabel('Era name')).toBeFocused();
   await expect(fresh.getByLabel('Start year')).toHaveValue('2101');
@@ -510,6 +512,24 @@ test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one un
     'Era name on After the century',
   );
   await expect(page.getByTestId('undo-history').locator('li').nth(2)).toHaveText('Created New era');
+  await invoke('storyTime.set', { time: { year: 2030 } });
+});
+
+test('WE-2 with no era for the story year, New era fills the gap around it', async () => {
+  await invoke('storyTime.set', { time: { year: 2150 } });
+  await screenTab(page, 'Cultural data', 'Eras');
+  const eras = page.getByTestId('eras-view');
+  await expect(eras.getByTestId('era-gap')).toContainText('No era covers 2150.');
+  await expect(eras.locator('li[data-era]')).toHaveCount(0);
+  await eras.getByRole('button', { name: 'New era for 2150' }).click();
+  const fresh = eras.locator('li[data-era]');
+  await expect(fresh).toHaveCount(1);
+  await expect(fresh).toHaveAttribute('aria-current', 'date');
+  const start = Number(await fresh.getByLabel('Start year').inputValue());
+  expect(start).toBeLessThanOrEqual(2150);
+  expect(Number(await fresh.getByLabel('End year').inputValue())).toBeGreaterThanOrEqual(2150);
+  await expect(eras.getByTestId('era-gap')).toHaveCount(0);
+  await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
 test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', async () => {
@@ -519,14 +539,16 @@ test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', asy
   const seeded = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' }))
     .entries;
   expect(seeded.length).toBeGreaterThan(0);
-  await screenTab(page, 'Cultural data', 'Eras');
-  const rows = page.getByTestId('eras-view').locator('li[data-era]');
-  await expect(rows).toHaveCount(seeded.length);
   const first = [...seeded].sort(
     (a, b) => Number(a.entry.startYear) - Number(b.entry.startYear),
   )[0]!;
-  await expect(rows.first().getByLabel('Era name')).toHaveValue(String(first.entry.name));
-  await expect(page.getByTestId('eras-view').getByTestId('era-coverage-ok')).toBeVisible();
+  await invoke('storyTime.set', { time: { year: Number(first.entry.startYear) } });
+  await screenTab(page, 'Cultural data', 'Eras');
+  const eras = page.getByTestId('eras-view');
+  await expect(eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name')).toHaveValue(
+    String(first.entry.name),
+  );
+  await expect(eras).toContainText(`${seeded.length} eras in all`);
   await openBible();
 });
 

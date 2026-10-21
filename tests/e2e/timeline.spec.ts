@@ -210,17 +210,21 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
   await closeDialog();
 });
 
-test('WE-2 the eras screen flags a gap after an edit and never blocks the save', async () => {
+test('WE-2 the eras screen flags a gap at the story year after an edit and never blocks the save', async () => {
+  const before = (await invoke('storyTime.get', {})).time;
+  await invoke('storyTime.set', { time: { year: 2067 } });
   await screenTab(page, 'Cultural data', 'Eras');
-  await expect(page.getByTestId('era-coverage-ok')).toBeVisible();
+  const eras = page.getByTestId('eras-view');
+  await expect(eras.locator('li[data-era="ERA-2060"]')).toHaveAttribute('aria-current', 'date');
+  await expect(eras.getByTestId('era-gap')).toHaveCount(0);
   await invoke('entry.update', {
     collection: 'eraStates',
     id: 'ERA-2060',
     patch: { endYear: 2065 },
   });
-  const flag = page.getByTestId('era-coverage');
-  await expect(flag).toContainText('No era covers 2066 to 2069.');
-  await expect(flag).toContainText('Every era still saves.');
+  const flag = eras.getByTestId('era-gap');
+  await expect(flag).toContainText('No era covers 2067.');
+  await expect(flag).toContainText('every era still saves.');
   expect(
     (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2060' })).entry.endYear,
   ).toBe(2065);
@@ -229,7 +233,8 @@ test('WE-2 the eras screen flags a gap after an edit and never blocks the save',
     id: 'ERA-2060',
     patch: { endYear: 2069 },
   });
-  await expect(page.getByTestId('era-coverage-ok')).toBeVisible();
+  await expect(flag).toHaveCount(0);
+  await invoke('storyTime.set', { time: before });
 });
 
 test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf and I open the inspector', async () => {

@@ -29,7 +29,6 @@ import type { Entry } from './data';
 import { updateWithUndo } from './sessions/common';
 import { useStoryTime } from './storyTime';
 import { useUndo } from './undo';
-import { EraCoverage } from './views';
 import { InspectorAside } from './inspector';
 import { InlineName } from './outline/InlineName';
 import { Zh } from './Zh';
@@ -691,7 +690,11 @@ function LineRow(props: {
   );
 }
 
-/** WE-2, SM-4: the era states, each edited in place: name, start and end year, and body. */
+/**
+ * WE-2, SM-4: the era of the story year, edited in place: name, start and end year, and body.
+ * The year control at the top moves it. An era stays on screen while its years are edited,
+ * until the story year changes, so a new end year never pulls the row away mid-edit.
+ */
 function ErasView() {
   const eras = useEntries('eraStates');
   const story = useStoryTime();
@@ -699,10 +702,28 @@ function ErasView() {
   const ro = useWriteGuard();
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<string | null>(null);
-  const rows = useMemo(
+  const year = story.year;
+  const covers = (e: Entry) => Number(e.startYear) <= year && year <= Number(e.endYear);
+  const sorted = useMemo(
     () => [...eras].sort((a, b) => Number(a.startYear ?? 0) - Number(b.startYear ?? 0)),
     [eras],
   );
+  const currentIds = sorted.filter(covers).map((e) => e._id);
+  const [kept, setKept] = useState<{ year: number; ids: ReadonlySet<string> }>({
+    year,
+    ids: new Set(currentIds),
+  });
+  if (kept.year !== year) {
+    // Adjusted during render: the story year moved, so start over from its eras.
+    setKept({ year, ids: new Set(currentIds) });
+    setFresh(null);
+  } else if (currentIds.some((id) => !kept.ids.has(id))) {
+    setKept({ year, ids: new Set([...kept.ids, ...currentIds]) });
+  }
+  const rows = sorted.filter(
+    (e) => covers(e) || (kept.year === year && kept.ids.has(e._id)) || e._id === fresh,
+  );
+  const covering = sorted.filter(covers);
 
   const save = async (id: string, patch: Record<string, unknown>, label: string) => {
     setError(null);
@@ -713,20 +734,24 @@ function ErasView() {
     }
   };
 
+  /** With no era for the story year the new one fills the gap around it; otherwise it follows the last. */
   const create = async () => {
     setError(null);
-    const last = rows[rows.length - 1];
-    const start = last ? Number(last.endYear) + 1 : story.year;
+    let start: number;
+    let end: number;
+    if (covering.length === 0) {
+      const before = sorted.filter((e) => Number(e.endYear) < year).at(-1);
+      const after = sorted.find((e) => Number(e.startYear) > year);
+      start = before ? Math.max(Number(before.endYear) + 1, year - 9) : year;
+      end = after ? Number(after.startYear) - 1 : start + 9;
+    } else {
+      start = Number(sorted.at(-1)?.endYear ?? year) + 1;
+      end = start + 9;
+    }
     try {
       const { entry } = await call('entry.create', {
         collection: 'eraStates',
-        data: {
-          title: 'New era',
-          name: 'New era',
-          startYear: start,
-          endYear: start + 9,
-          status: 'idea',
-        },
+        data: { title: 'New era', name: 'New era', startYear: start, endYear: end, status: 'idea' },
       });
       undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));
       setFresh(entry._id);
@@ -738,10 +763,20 @@ function ErasView() {
   return (
     <section className="stack" aria-label="Eras" data-testid="eras-view">
       <p className="lede">
-        The state of the world in each era. Edit a field and leave it to save; each change is one
-        undo step.
+        The state of the world in the story year&apos;s era. Move the year at the top to see
+        another era. Edit a field and leave it to save; each change is one undo step.
       </p>
-      <EraCoverage />
+      {covering.length === 0 && (
+        <p className="callout warn" role="status" data-testid="era-gap">
+          No era covers {year}. This is a flag only; every era still saves.
+        </p>
+      )}
+      {covering.length > 1 && (
+        <p className="callout warn" role="status" data-testid="era-overlap">
+          {covering.length} eras cover {year}. Their years overlap. This is a flag only; every era
+          still saves.
+        </p>
+      )}
       <div className="row">
         <button
           type="button"
@@ -750,23 +785,24 @@ function ErasView() {
           disabled={ro.off}
           {...ro.tip}
         >
-          New era
+          {covering.length === 0 ? `New era for ${year}` : 'New era'}
         </button>
+        <span className="example-note">
+          {sorted.length} {sorted.length === 1 ? 'era' : 'eras'} in all
+        </span>
       </div>
       {error && (
         <p className="callout crit" role="alert">
           {error}
         </p>
       )}
-      {rows.length === 0 ? (
-        <p className="example-note">No eras yet.</p>
-      ) : (
+      {rows.length > 0 && (
         <ul className="era-list">
           {rows.map((e) => (
             <EraRow
               key={e._id}
               era={e}
-              current={Number(e.startYear) <= story.year && story.year <= Number(e.endYear)}
+              current={covers(e)}
               autoFocus={fresh === e._id}
               disabled={ro.off}
               onSave={(patch, label) => void save(e._id, patch, label)}
