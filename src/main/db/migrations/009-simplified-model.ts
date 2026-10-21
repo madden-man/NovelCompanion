@@ -1,6 +1,13 @@
 import type { Document } from 'mongodb';
 import { Moment } from '../../../shared/schema/moment';
-import { beatToMoment, characterMoments, foldedBody } from '../../../shared/domain/moments';
+import { GlossaryTerm } from '../../../shared/schema/world';
+import {
+  beatToMoment,
+  characterMoments,
+  foldedBody,
+  nameGlossaryTerms,
+  nameLanguage,
+} from '../../../shared/domain/moments';
 import type { MomentDoc, Skip } from '../../../shared/domain/moments';
 import type { BibleHandle } from '../bibles';
 import type { Migration } from './types';
@@ -68,6 +75,10 @@ export interface Migration9Summary {
   proposalsRejected: number;
   /** Saved import mappings that wrote to a dropped collection, now removed. */
   mappingsRemoved: number;
+  /** SM-1: glossary terms made for character names from their romanization. */
+  glossaryMade: number;
+  /** SM-1: glossary terms for a name that had no romanization, filled from the character. */
+  glossaryFilled: number;
   takenAt: string;
 }
 
@@ -135,6 +146,42 @@ export const simplifiedModel: Migration = {
     await moments.createIndex({ characterId: 1, year: 1 });
     await moments.createIndex({ deletedAt: 1 });
     await moments.createIndex({ 'links.targetId': 1 });
+
+    // 1b. SM-1: a name's romanization moves to the glossary term for the name, before it is unset.
+    const languages = existing.has('lists')
+      ? await bible.collection<Document>('lists').findOne({ _id: 'languages' } as Document)
+      : null;
+    const terms = nameGlossaryTerms(
+      characters,
+      await all('glossaryTerms'),
+      nameLanguage(languages),
+    );
+    if (terms.made.length && !existing.has('glossaryTerms')) {
+      await bible.db.createCollection(bible.qualified('glossaryTerms'));
+    }
+    const glossary = bible.collection<Document>('glossaryTerms');
+    let glossaryMade = 0;
+    for (const t of terms.made) {
+      const parsed = GlossaryTerm.safeParse(t);
+      if (!parsed.success) continue;
+      const res = await glossary.updateOne(
+        { _id: t._id } as Document,
+        { $setOnInsert: parsed.data } as Document,
+        { upsert: true },
+      );
+      glossaryMade += res.upsertedCount;
+    }
+    let glossaryFilled = 0;
+    for (const f of terms.filled) {
+      const res = await glossary.updateOne(
+        {
+          _id: f._id,
+          $or: [{ romanization: '' }, { romanization: { $exists: false } }],
+        } as Document,
+        { $set: { romanization: f.romanization } },
+      );
+      glossaryFilled += res.modifiedCount;
+    }
 
     // 2. Prose folded into the body, then the dropped fields unset (and in the history too).
     for (const [collection, fields] of Object.entries(FOLDED)) {
@@ -256,6 +303,8 @@ export const simplifiedModel: Migration = {
       linksRemoved,
       proposalsRejected,
       mappingsRemoved,
+      glossaryMade,
+      glossaryFilled,
       takenAt,
     };
     await meta.updateOne(
