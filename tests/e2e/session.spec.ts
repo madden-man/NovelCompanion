@@ -81,15 +81,14 @@ test.beforeAll(async () => {
   ] as const) {
     await invoke('lists.addItem', { listId: 'eventCategories', label, parentId });
   }
-  const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
-  for (const c of order) {
+  for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
     await invoke('entry.createMany', {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
-  // The M7 brief supplement: arcs, beats, themes, questions, session logs, and communities.
-  for (const c of ['arcs', 'plotBeats', 'themes', 'openQuestions', 'knowledgeRecords']) {
+  // The M7 brief supplement: moments, questions, session logs, and communities.
+  for (const c of ['moments', 'openQuestions']) {
     const docs = supplement.entries[c]!;
     await invoke('entry.createMany', {
       items: docs.map((d) => {
@@ -102,7 +101,7 @@ test.beforeAll(async () => {
       await invoke('entry.delete', { collection: c as never, id: d._id });
     }
   }
-  for (const c of ['customEntries', 'sessionLogs']) {
+  for (const c of ['sessionLogs']) {
     await invoke('entry.createMany', {
       items: supplement.entries[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
@@ -204,7 +203,8 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   const s = strand('CH6-present');
   await expect(groupIds(s, 'era')).toHaveAttribute('data-id', 'ERA-2040');
   await expect(groupIds(s, 'culture')).toHaveAttribute('data-id', 'CU4');
-  await expect(groupIds(s, 'plannedAhead')).toHaveAttribute('data-id', 'E9');
+  // SM-4: world events have no places, so E9 (2072, the Hale house) no longer reaches this chapter.
+  await expect(groupIds(s, 'plannedAhead')).toHaveCount(0);
   // A33: the window is a strip of five year columns, 2042 to 2046 around 2045, titles only.
   const strip = s.locator('[data-testid="sel-group"][data-kind="eventsWindow"]');
   await expect(strip.locator('h4')).toHaveText('World events 2042 to 2046 (1)');
@@ -218,29 +218,25 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
     'Grid batteries replace the last coal plant in Guangdong',
   );
   await expect(strip).not.toContainText('planned');
-  await expect(groupIds(s, 'povUnknown')).toContainText(
-    'Daniel Hale knows; Iris Hale-Zhou does not',
-  );
   const shared = relevant();
-  const ids = async (kind: string) =>
-    groupIds(shared, kind).evaluateAll((els) => els.map((e) => e.getAttribute('data-id')));
-  await expect.poll(() => ids('beats')).toEqual(['B4', 'B1', 'B7', 'B3']);
+  const ids = async (kind: string, scope = shared) =>
+    groupIds(scope, kind).evaluateAll((els) => els.map((e) => e.getAttribute('data-id')));
+  // SM-3: the moments of the characters present, up to the story year.
+  await expect.poll(() => ids('moments', s)).toEqual(['B4']);
   await expect.poll(() => ids('previousChapters')).toEqual(['CH1', 'CH3', 'CH4', 'CH5']);
-  await expect.poll(() => ids('themes')).toEqual(['TH1', 'TH2']);
   await expect.poll(() => ids('openQuestions')).toEqual(['Q1', 'Q4']);
   await expect.poll(() => ids('sessionNote')).toEqual(['SL2']);
 
   // A change anywhere in the bible shows at once.
-  const th3 = (await invoke('entry.get', { collection: 'themes', id: 'TH3' })).entry;
-  const apps = th3.appearances as { chapterId: string; note: string }[];
-  await invoke('entry.update', {
-    collection: 'themes',
-    id: 'TH3',
-    patch: { appearances: [...apps, { chapterId: 'CH6', note: 'Dinner' }] },
-  });
-  await expect.poll(() => ids('themes')).toEqual(['TH3', 'TH1', 'TH2']);
-  await invoke('entry.update', { collection: 'themes', id: 'TH3', patch: { appearances: apps } });
-  await expect.poll(() => ids('themes')).toEqual(['TH1', 'TH2']);
+  const made = (
+    await invoke('entry.create', {
+      collection: 'moments',
+      data: { title: 'Iris paints the attic', status: 'idea', characterId: 'H5', year: 2044 },
+    })
+  ).entry;
+  await expect.poll(() => ids('moments', s)).toEqual([made._id, 'B4']);
+  await invoke('entry.delete', { collection: 'moments', id: made._id });
+  await expect.poll(() => ids('moments', s)).toEqual(['B4']);
 
   // Each item opens its entry.
   await groupIds(s, 'culture').getByRole('button', { name: 'Flood memorial walk' }).click();
@@ -277,13 +273,10 @@ test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured
     '2. World events ongoing',
     '3. Cultural expectations',
     '4. Places',
-    '5. Who knows what',
+    '5. Backstory',
     '6. Previous chapters',
-    '7. Beats',
-    '8. Glossary, themes, and open questions',
-    '9. Custom entries',
-    '10. Last session note',
-    'Planned ahead (after 2045)',
+    '7. Glossary and open questions',
+    '8. Last session note',
   ]);
   await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
   const briefs = (await invoke('entry.list', { collection: 'briefs', trash: 'exclude' })).entries;
@@ -320,7 +313,7 @@ test('SB-9 removing and adding entries in the brief view, then regenerating', as
   const saved = (await invoke('entry.get', { collection: 'briefs', id: briefId })).entry;
   expect(saved.entryIds).toContain('Z4');
   expect(saved.entryIds).not.toContain('E5');
-  await expect(brief.getByTestId('brief-body')).toContainText('11. Added by you');
+  await expect(brief.getByTestId('brief-body')).toContainText('9. Added by you');
   await expect(brief.getByTestId('brief-body')).toContainText('removed by you');
 });
 
@@ -350,6 +343,13 @@ test('SB-4 DB-4 with Claude available the brief is written by the brief model fr
     NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-session-key-0123456789abcdef',
   });
   await openBible();
+  // The recorded brief puts E9 under Planned ahead. World events lost their places in A39, so
+  // E9 reaches CH6 only as the year after the story year (A33), as in the integration test.
+  await invoke('entry.update', {
+    collection: 'worldEvents',
+    id: 'E9',
+    patch: { start: { year: 2046 } },
+  });
   await page.getByTestId('top-start-session').click();
   const view = page.getByTestId('start-session');
   await view.getByRole('button', { name: 'A chapter', exact: true }).click();
@@ -415,18 +415,14 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 import a chapter from Word, mark it written, appr
   await expect(flow.getByTestId('summary-done')).toHaveText('Summary saved.');
   await expect(ch.getByTestId('summary-stale')).toHaveCount(0);
   const list = flow.getByTestId('promote-list');
-  await expect(list.locator('label')).toHaveText([
-    'Iris finds the letter (a beat of this chapter)',
-    "Peter's letter (a fact in play)",
-  ]);
-  await list.getByLabel('Iris finds the letter (a beat of this chapter)').check();
+  // SM-3: Iris's planned moment of 2045 is the one this chapter establishes.
+  const label = 'Iris finds the letter (a moment of the point of view in these years)';
+  await expect(list.locator('label')).toHaveText([label]);
+  await list.getByLabel(label).check();
   await flow.getByRole('button', { name: 'Promote checked to canon' }).click();
-  await expect(list.locator('label')).toHaveText(["Peter's letter (a fact in play)"]);
-  expect((await invoke('entry.get', { collection: 'plotBeats', id: 'B4' })).entry.status).toBe(
+  await expect(list.locator('label')).toHaveCount(0);
+  expect((await invoke('entry.get', { collection: 'moments', id: 'B4' })).entry.status).toBe(
     'canon',
-  );
-  expect((await invoke('entry.get', { collection: 'facts', id: 'F2' })).entry.status).toBe(
-    'planned',
   );
 
   // MS-4: the file changes; reading it again shows the diff and marks the summary.
@@ -543,19 +539,22 @@ test('A27 TM-3 the top bar year slider and typed year move the story time, the e
   await expect(page.getByTestId('status-time')).toContainText('Story time 2041');
 });
 
-test('A35 Relevant to Session shows the backstory of the years before the scene; a year is corrected and a passage pinned', async () => {
-  const iris = (await invoke('entry.get', { collection: 'characters', id: 'H5' })).entry;
-  await invoke('entry.update', {
-    collection: 'characters',
-    id: 'H5',
-    patch: {
-      backstory:
-        '<p>Iris is born in Portland in 2031.</p>' +
-        '<p>When Iris is twelve, her grandmother teaches her to make dumplings.</p>' +
-        '<p>She learns the recipes by heart.</p>' +
-        '<p>Iris’s first year of high school is lonely.</p>',
-    },
-  });
+test('SM-3 A35 Relevant to Session lists the moments of the years before the scene', async () => {
+  const made: string[] = [];
+  for (const [title, year, body] of [
+    ['Learns to make dumplings', 2043, 'Her grandmother teaches her.'],
+    ['First year of high school', 2044, 'Lonely.'],
+    ['Too early to list', 2039, ''],
+  ] as const) {
+    made.push(
+      (
+        await invoke('entry.create', {
+          collection: 'moments',
+          data: { title, status: 'idea', characterId: 'H5', year, body },
+        })
+      ).entry._id,
+    );
+  }
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
   await rail(page, 'Relevant to Session').click();
   const s = strand('CH6-present');
@@ -565,46 +564,21 @@ test('A35 Relevant to Session shows the backstory of the years before the scene;
   const person = section.locator('[data-testid="backstory-person"][data-id="H5"]');
   await expect(person).toContainText('ages 11 to 13');
   const rows = person.getByTestId('backstory-row');
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toContainText('2031Leading up');
-  await expect(rows.nth(1)).toContainText('2043Age 12');
-  await expect(rows.nth(2)).toContainText('2043She learns the recipes by heart.');
-
-  // A carried year is corrected by hand.
-  await rows.nth(2).getByRole('button', { name: '2043' }).click();
-  const year = rows.nth(2).getByLabel(/Year of this passage/);
-  await year.fill('2044');
-  await year.press('Enter');
-  await expect(rows.nth(2).getByRole('button', { name: '2044' })).toBeVisible();
-
-  // A pinned passage shows in a session about any year.
-  await rows.nth(1).getByRole('button', { name: 'Pin' }).click();
-  await expect(rows.nth(1).getByRole('button', { name: 'Pinned' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText(
+    '2043Learns to make dumplings Her grandmother teaches her.',
   );
-  const marks = (await invoke('entry.get', { collection: 'characters', id: 'H5' })).entry
-    .backstoryMarks as { key: string; year?: number; pinned?: boolean }[];
-  expect(marks).toEqual([
-    { key: 'she learns the recipes by heart', year: 2044 },
-    { key: 'when iris is twelve her grandmother teaches her to make dump', pinned: true },
-  ]);
-  await writing().selectOption({ label: 'Chapter 2: Two Kitchens, present (2045)' });
-  const pinned = strand('CH2-present').locator(
-    '[data-testid="backstory-person"][data-id="H5"] [data-testid="backstory-row"]',
-  );
-  await expect(pinned).toHaveCount(1);
-  await expect(pinned).toContainText('2043Pinned');
+  await expect(rows.nth(1)).toContainText('2044First year of high school Lonely.');
+  // Each moment opens in the editor.
+  await rows.nth(1).getByRole('button', { name: 'First year of high school' }).click();
+  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', made[1]!);
 
   // A35: the culture section names its setting.
+  await rail(page, 'Relevant to Session').click();
   await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
   await expect(strand('CH6-present').getByTestId('relevant-setting')).toContainText('Setting');
 
-  await invoke('entry.update', {
-    collection: 'characters',
-    id: 'H5',
-    patch: { backstory: iris.backstory, backstoryMarks: [] },
-  });
+  for (const id of made) await invoke('entry.delete', { collection: 'moments', id });
 });
 
 test('SB-1 Relevant to Session takes places and other characters present for a story year and point of view', async () => {

@@ -197,10 +197,9 @@ test('IM-4 a Word document previews with its headings, italics, and scene break,
   await expect(view().getByTestId('import-summary')).toContainText('1 new');
   await view().getByTestId('import-apply').click();
   await expect(view().getByTestId('import-result-counts')).toContainText('Created 1');
-  const sections = await invoke('entry.list', { collection: 'customSections', trash: 'exclude' });
-  expect(sections.entries.map((e) => e.entry.name)).toEqual(['Notes']);
-  const notes = await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' });
-  expect(notes.entries[0]!.entry).toMatchObject({
+  // A39: a general note is an open question.
+  const notes = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
+  expect(notes.entries.find((e) => e.entry.title === 'Wedding notes')?.entry).toMatchObject({
     title: 'Wedding notes',
     sourceRef: 'chapter-03.docx#p1-p4',
   });
@@ -220,11 +219,13 @@ test('BK-1 BK-2 a snapshot taken on request can be restored, which takes a safet
   expect(id).toBeTruthy();
 
   await invoke('entry.create', {
-    collection: 'facts',
+    collection: 'places',
     data: { title: 'Added after the snapshot', status: 'idea' },
   });
   expect(
-    (await invoke('entry.list', { collection: 'facts', trash: 'exclude' })).entries,
+    (await invoke('entry.list', { collection: 'places', trash: 'exclude' })).entries.filter(
+      (e) => e.entry.title === 'Added after the snapshot',
+    ),
   ).toHaveLength(1);
 
   const target = page.locator(`[data-testid="snapshot-row"][data-id="${id}"]`);
@@ -234,7 +235,9 @@ test('BK-1 BK-2 a snapshot taken on request can be restored, which takes a safet
   await expect
     .poll(
       async () =>
-        (await invoke('entry.list', { collection: 'facts', trash: 'exclude' })).entries.length,
+        (await invoke('entry.list', { collection: 'places', trash: 'exclude' })).entries.filter(
+          (e) => e.entry.title === 'Added after the snapshot',
+        ).length,
     )
     .toBe(0);
   expect(

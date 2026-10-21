@@ -9,13 +9,6 @@ import {
   renameCascade,
   tagsUsed,
 } from '../../src/shared/domain/lists';
-import { customFieldSpecs } from '../../src/shared/schema';
-
-const section = {
-  _id: 'S',
-  fields: [{ id: 'flavor', label: 'Flavors', type: 'tags' as const, options: [] }],
-};
-const custom = (id: string) => (id === 'S' ? customFieldSpecs(section) : undefined);
 
 const docs = () => [
   {
@@ -36,28 +29,24 @@ const docs = () => [
     ],
   },
   {
-    collection: 'customEntries',
-    manifest: manifests.customEntries,
-    docs: [{ _id: 'E', sectionId: 'S', tags: [], values: { flavor: ['teacher', 'sweet'] } }],
+    collection: 'moments',
+    manifest: manifests.moments,
+    docs: [{ _id: 'M', characterId: 'A', year: 2030, tags: ['teacher', 'sweet'] }],
   },
 ];
 
 describe('ED-8 list rename cascade', () => {
-  test('ED-8 renaming a tag rewrites it on every entry that carries it, including custom tag fields', () => {
-    expect(renameCascade('tags', 'teacher', 'educator', docs(), custom)).toEqual([
+  test('ED-8 renaming a tag rewrites it on every entry that carries it', () => {
+    expect(renameCascade('tags', 'teacher', 'educator', docs())).toEqual([
       { collection: 'characters', id: 'A', patch: { tags: ['matriarch', 'educator'] } },
       { collection: 'characters', id: 'B', patch: { tags: ['educator'] } },
       { collection: 'unions', id: 'U2', patch: { tags: ['educator'] } },
-      {
-        collection: 'customEntries',
-        id: 'E',
-        patch: { values: { flavor: ['educator', 'sweet'] } },
-      },
+      { collection: 'moments', id: 'M', patch: { tags: ['educator', 'sweet'] } },
     ]);
   });
 
   test('ED-8 renaming a tag onto one an entry already has merges them', () => {
-    expect(renameCascade('tags', 'teacher', 'matriarch', docs(), custom)[0]).toEqual({
+    expect(renameCascade('tags', 'teacher', 'matriarch', docs())[0]).toEqual({
       collection: 'characters',
       id: 'A',
       patch: { tags: ['matriarch'] },
@@ -65,8 +54,8 @@ describe('ED-8 list rename cascade', () => {
   });
 
   test('ED-8 lists stored by item ID need no entry changes; the new label shows everywhere at once', () => {
-    expect(renameCascade('unionTypes', 'Married', 'Wed', docs(), custom)).toEqual([]);
-    expect(renameCascade('tags', 'teacher', 'teacher', docs(), custom)).toEqual([]);
+    expect(renameCascade('unionTypes', 'Married', 'Wed', docs())).toEqual([]);
+    expect(renameCascade('tags', 'teacher', 'teacher', docs())).toEqual([]);
   });
 
   test('ED-8 usage counts entries by item ID for lists and by label for tags', () => {
@@ -74,19 +63,12 @@ describe('ED-8 list rename cascade', () => {
     expect(
       countListUsage('unionTypes', { id: 'married', label: 'Married', parentId: null }, all),
     ).toBe(1);
-    expect(countListUsage('tags', { id: 't', label: 'teacher', parentId: null }, all, custom)).toBe(
-      4,
-    );
-    expect(countListUsage('tags', { id: 'n', label: 'nobody', parentId: null }, all, custom)).toBe(
-      0,
-    );
+    expect(countListUsage('tags', { id: 't', label: 'teacher', parentId: null }, all)).toBe(4);
+    expect(countListUsage('tags', { id: 'n', label: 'nobody', parentId: null }, all)).toBe(0);
   });
 
-  test('ED-8 tags used are collected from entry tags and custom tag fields', () => {
-    expect(tagsUsed(manifests.customEntries, docs()[2]!.docs[0]!, custom)).toEqual([
-      'teacher',
-      'sweet',
-    ]);
+  test('ED-8 tags used are collected from entry tags', () => {
+    expect(tagsUsed(manifests.moments, docs()[2]!.docs[0]!)).toEqual(['teacher', 'sweet']);
   });
 
   test('ED-8 hierarchical items show their path, and new item IDs are unique', () => {
@@ -104,18 +86,13 @@ describe('ED-8 list rename cascade', () => {
     expect(newItemId(list, '济南')).toBe('济南');
   });
 
-  test('ED-8 renaming a family, a section, or an era renames the entry and a title that contains the name', () => {
+  test('ED-8 renaming a family or an era renames the entry and a title that contains the name', () => {
     expect(
       derivedRename('families', { _id: 'F', name: 'Hale', title: 'Hale family' }, 'Hale-Doyle'),
     ).toEqual({
       collection: 'families',
       id: 'F',
       patch: { name: 'Hale-Doyle', title: 'Hale-Doyle family' },
-    });
-    expect(derivedRename('sectionNames', { _id: 'S', name: 'Recipes' }, 'Family recipes')).toEqual({
-      collection: 'customSections',
-      id: 'S',
-      patch: { name: 'Family recipes' },
     });
     expect(
       derivedRename('eraRanges', { _id: 'E', name: 'Late twenties', title: 'Other' }, 'Hinge')

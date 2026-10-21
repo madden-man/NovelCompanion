@@ -27,8 +27,7 @@ import type { Chapter } from '../../shared/schema';
 import type { OpenBible } from '../db/session';
 import { parseDocxFile } from './docx';
 import type { ParsedDocument } from './docx';
-import { applyPlan, contextFor, notesSection, planDocumentImport, planSheet } from './run';
-import type { DocumentPlan } from './run';
+import { applyPlan, contextFor, planDocumentImport, planSheet } from './run';
 import { parseWorkbookFile } from './xlsx';
 
 /** Where the East Winds material lives, relative to the folder given to the importer. */
@@ -105,7 +104,7 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
       startLabel: '^Foundational Drivers$',
       skipLabels: ['^Ch\\.?\\s*\\d+', '^Part\\b'],
       headingBy: (high.boldRows?.length ?? 0) > 0 ? 'style' : 'any',
-      fixed: { status: 'planned', provenance: 'invented', reality: 'invented' },
+      fixed: { status: 'planned', provenance: 'invented' },
       addMissingListItems: true,
       createMissing: false,
       matchIn: 'sheet',
@@ -116,10 +115,10 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
     if (!sheet) return null;
     const columns = columnsFor(header(sheet), {
       title: /^chronological/i,
-      povCharacterId: /^pov$/i,
+      characterId: /^pov$/i,
       year: /^year$/i,
       worldContext: /^relevant world/i,
-      experienceNote: /^how the pov/i,
+      body: /^how the pov/i,
     });
     // A beat is the same beat when its sheet and title match, so a changed year updates it. When a
     // title repeats within the sheet, the point of view tells the repeats apart.
@@ -129,12 +128,12 @@ export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
     return {
       shape: 'table',
       sheet: name,
-      target: { collection: 'plotBeats' },
+      target: { collection: 'moments' },
       headerRow: 1,
       columns,
       identity:
-        repeats && columns.some((c) => c.field === 'povCharacterId')
-          ? ['title', 'povCharacterId']
+        repeats && columns.some((c) => c.field === 'characterId')
+          ? ['title', 'characterId']
           : ['title'],
       fixed: { status: 'planned', provenance: 'invented', tags: [tag] },
       addMissingListItems: false,
@@ -393,7 +392,7 @@ export async function importEastWinds(
     step: string,
     set: ChangeSet,
     file: SourceFile,
-    createSection: DocumentPlan['createSection'] = null,
+    _createSection: null = null,
     notes: string[] = [],
   ) => {
     const base = {
@@ -413,7 +412,7 @@ export async function importEastWinds(
       report.steps.push(r);
       return r;
     }
-    const done = await applyPlan(open, set, file, 'all', createSection);
+    const done = await applyPlan(open, set, file, 'all');
     const r = { ...base, created: done.created, updated: done.updated, questions: done.questions };
     report.steps.push(r);
     return r;
@@ -578,20 +577,13 @@ export async function importEastWinds(
       }
     }
     if (split.rest.length) {
-      const section = notesSection(open);
       const plan = planDocumentImport(
         open,
         manuscript,
-        { kind: 'note', sectionId: '', title: 'East Winds: the rest of the manuscript document' },
+        { kind: 'note', title: 'East Winds: the rest of the manuscript document' },
         split.rest,
-        section,
       );
-      await record(
-        `${manuscript.fileName}, general note for the rest`,
-        plan.set,
-        plan.file,
-        plan.createSection,
-      );
+      await record(`${manuscript.fileName}, general note for the rest`, plan.set, plan.file);
     }
   }
 
@@ -654,7 +646,7 @@ async function importEras(
     step: string,
     set: ChangeSet,
     file: SourceFile,
-    createSection?: DocumentPlan['createSection'],
+    createSection?: null,
     notes?: string[],
   ) => Promise<unknown>,
 ): Promise<void> {
@@ -673,20 +665,13 @@ async function importEras(
   ]);
   const rest = skipped.flatMap((s) => (s.heading ? [s.heading, ...s.blocks] : s.blocks));
   if (rest.length) {
-    const section = notesSection(open);
     const plan = planDocumentImport(
       open,
       doc,
-      { kind: 'note', sectionId: '', title: 'East Winds: world development, other sections' },
+      { kind: 'note', title: 'East Winds: world development, other sections' },
       rest,
-      section,
     );
-    await record(
-      `${doc.fileName}, general note for text outside the eras`,
-      plan.set,
-      plan.file,
-      plan.createSection,
-    );
+    await record(`${doc.fileName}, general note for text outside the eras`, plan.set, plan.file);
   }
 }
 

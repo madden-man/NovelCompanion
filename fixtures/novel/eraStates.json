@@ -9,11 +9,7 @@
     "name": "The late twenties",
     "startYear": 2025,
     "endYear": 2029,
-    "technology": "Phones and early care robots.",
-    "climate": "Hotter summers, smoke seasons.",
-    "economy": "Tight housing.",
-    "politics": "Polarized and loud.",
-    "dailyLife": "Long commutes and remote work."
+    "body": "Technology: Phones and early care robots.\n\nClimate: Hotter summers, smoke seasons.\n\nEconomy: Tight housing.\n\nPolitics: Polarized and loud.\n\nDaily life: Long commutes and remote work."
   },
   {
     "_id": "ERA-2030",
@@ -25,11 +21,7 @@
     "name": "The thirties",
     "startYear": 2030,
     "endYear": 2039,
-    "technology": "Home robots become ordinary.",
-    "climate": "Floods on the Columbia.",
-    "economy": "Recovery after a slump.",
-    "politics": "Trade talks across the Pacific.",
-    "dailyLife": "Families split across time zones."
+    "body": "Technology: Home robots become ordinary.\n\nClimate: Floods on the Columbia.\n\nEconomy: Recovery after a slump.\n\nPolitics: Trade talks across the Pacific.\n\nDaily life: Families split across time zones."
   },
   {
     "_id": "ERA-2040",
@@ -41,11 +33,7 @@
     "name": "The forties",
     "startYear": 2040,
     "endYear": 2049,
-    "technology": "Grid batteries everywhere.",
-    "climate": "Seawalls under construction.",
-    "economy": "Steady growth.",
-    "politics": "A new trade accord holds.",
-    "dailyLife": "Video calls feel like rooms."
+    "body": "Technology: Grid batteries everywhere.\n\nClimate: Seawalls under construction.\n\nEconomy: Steady growth.\n\nPolitics: A new trade accord holds.\n\nDaily life: Video calls feel like rooms."
   },
   {
     "_id": "ERA-2050",
@@ -57,11 +45,7 @@
     "name": "The fifties",
     "startYear": 2050,
     "endYear": 2059,
-    "technology": "Translation earpieces are free.",
-    "climate": "Delta seawall finished.",
-    "economy": "Automation layoffs.",
-    "politics": "Visa lottery reopens.",
-    "dailyLife": "More people work from home than not."
+    "body": "Technology: Translation earpieces are free.\n\nClimate: Delta seawall finished.\n\nEconomy: Automation layoffs.\n\nPolitics: Visa lottery reopens.\n\nDaily life: More people work from home than not."
   },
   {
     "_id": "ERA-2060",
@@ -73,11 +57,7 @@
     "name": "The sixties",
     "startYear": 2060,
     "endYear": 2069,
-    "technology": "Robots do most deliveries.",
-    "climate": "Wildfire smoke returns.",
-    "economy": "Basic income pilots.",
-    "politics": "Regional blocs strengthen.",
-    "dailyLife": "Shorter work weeks."
+    "body": "Technology: Robots do most deliveries.\n\nClimate: Wildfire smoke returns.\n\nEconomy: Basic income pilots.\n\nPolitics: Regional blocs strengthen.\n\nDaily life: Shorter work weeks."
   },
   {
     "_id": "ERA-2070",
@@ -89,11 +69,7 @@
     "name": "The seventies",
     "startYear": 2070,
     "endYear": 2079,
-    "technology": "Household robots outnumber cars.",
-    "climate": "Cooler wet years.",
-    "economy": "Slow growth.",
-    "politics": "Calm.",
-    "dailyLife": "Grandparents live with grandchildren again."
+    "body": "Technology: Household robots outnumber cars.\n\nClimate: Cooler wet years.\n\nEconomy: Slow growth.\n\nPolitics: Calm.\n\nDaily life: Grandparents live with grandchildren again."
   },
   {
     "_id": "ERA-2080",
@@ -105,11 +81,7 @@
     "name": "The eighties",
     "startYear": 2080,
     "endYear": 2089,
-    "technology": "Coastal transit lines.",
-    "climate": "Sea level up half a meter.",
-    "economy": "Service economy.",
-    "politics": "Quiet.",
-    "dailyLife": "Neighborhood gardens."
+    "body": "Technology: Coastal transit lines.\n\nClimate: Sea level up half a meter.\n\nEconomy: Service economy.\n\nPolitics: Quiet.\n\nDaily life: Neighborhood gardens."
   },
   {
     "_id": "ERA-2090",
@@ -121,10 +93,6 @@
     "name": "The last decade",
     "startYear": 2090,
     "endYear": 2100,
-    "technology": "Ambient computing.",
-    "climate": "No Arctic summer ice.",
-    "economy": "Uncertain.",
-    "politics": "Climate treaties.",
-    "dailyLife": "People talk about the old coastline."
+    "body": "Technology: Ambient computing.\n\nClimate: No Arctic summer ice.\n\nEconomy: Uncertain.\n\nPolitics: Climate treaties.\n\nDaily life: People talk about the old coastline."
   }
 ]

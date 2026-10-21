@@ -5,9 +5,7 @@ export interface EraDraft {
   name: string;
   startYear: number;
   endYear: number;
-  /** Fields filled from sub-headings such as Technology or Daily life. */
-  fields: Partial<Record<'technology' | 'climate' | 'economy' | 'politics' | 'dailyLife', string>>;
-  /** Text under the heading that no sub-heading claims. */
+  /** The text under the heading, sub-headings included (SM-4: an era is a name, years, and a body). */
   body: string;
   first: number;
   last: number;
@@ -26,14 +24,6 @@ export function yearsInHeading(text: string): { start: number; end: number } | n
   const single = /\b(\d{4})\b/.exec(text);
   return single ? { start: Number(single[1]), end: Number(single[1]) } : null;
 }
-
-const SUB_FIELDS: [RegExp, keyof EraDraft['fields']][] = [
-  [/^tech/i, 'technology'],
-  [/^(climate|environment|weather)/i, 'climate'],
-  [/^(econom|money|work|jobs)/i, 'economy'],
-  [/^(politic|government|geopolit|war)/i, 'politics'],
-  [/^(daily|everyday|life|culture|home)/i, 'dailyLife'],
-];
 
 const ERA_LINE = /^\d{4}(?:\s*[-\u2013\u2014]\s*\d{4})?\s*:\s*\S/;
 
@@ -59,8 +49,7 @@ export function promoteCapsHeadings(blocks: DocBlock[]): DocBlock[] {
 
 /**
  * Era states from a document's headings (WE-1): each top heading with a year
- * range is an era; sub-headings named Technology, Climate, Economy, Politics,
- * or Daily life fill those fields; other text stays in the body.
+ * range is an era, and the text under it, sub-headings included, is its body.
  * Headings with no years are returned as `skipped` so nothing disappears silently.
  */
 export function erasFromBlocks(source: DocBlock[]): { eras: EraDraft[]; skipped: DocSection[] } {
@@ -87,26 +76,12 @@ export function erasFromBlocks(source: DocBlock[]): { eras: EraDraft[]; skipped:
       if (section.blocks.length || (section.heading && !isUpper)) skipped.push(section);
       continue;
     }
-    const subs = sectionsAt(section.blocks, 4);
-    const fields: EraDraft['fields'] = {};
-    const rest: DocBlock[] = [];
-    for (const sub of subs) {
-      const subHeading = sub.heading;
-      const field = subHeading
-        ? SUB_FIELDS.find(([re]) => re.test(subHeading.text))?.[1]
-        : undefined;
-      if (field && sub.heading) {
-        const text = blocksToBody(sub.blocks);
-        fields[field] = fields[field] ? `${fields[field]}${text}` : text;
-      } else rest.push(...(sub.heading ? [sub.heading] : []), ...sub.blocks);
-    }
     const span = spanOf([section.heading, ...section.blocks]);
     eras.push({
       name: section.heading.text,
       startYear: years.start,
       endYear: years.end,
-      fields,
-      body: blocksToBody(rest),
+      body: blocksToBody(section.blocks),
       first: span.first,
       last: span.last,
     });

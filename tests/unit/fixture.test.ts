@@ -2,13 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { configSchemas, entrySchemas, isEntryCollection } from '../../src/shared/schema';
-import type {
-  Chapter,
-  Character,
-  EraState,
-  KnowledgeRecord,
-  WorldEvent,
-} from '../../src/shared/schema';
+import type { Chapter, Character, EraState, Moment, WorldEvent } from '../../src/shared/schema';
 import ExcelJS from 'exceljs';
 import { readFixture } from '../helpers/loadFixture';
 import { readZipEntry } from '../helpers/zip';
@@ -52,7 +46,7 @@ const PEOPLE: [string, string, number | null, number | null][] = [
 describe('Section 7 fixture novel', () => {
   test('Section 7 every fixture document passes its zod schema', () => {
     const collections = Object.keys(fixture);
-    expect(collections.length).toBeGreaterThanOrEqual(15);
+    expect(collections.length).toBeGreaterThanOrEqual(14);
     for (const c of collections) {
       const schema = isEntryCollection(c)
         ? entrySchemas[c]
@@ -81,7 +75,10 @@ describe('Section 7 fixture novel', () => {
     expect(byId(characters, 'X1').familyIds).toEqual([]);
     expect(byId(characters, 'U1').familyIds).toEqual([]);
     expect(byId(characters, 'H5').familyIds.sort()).toEqual(['FAM-HALE', 'FAM-ZHOU']);
-    expect(byId(characters, 'Z3').placesLived[0]?.place).toBe('Guangzhou');
+    expect(byId(parsed<Moment>('moments'), 'Z3-lives-0')).toMatchObject({
+      characterId: 'Z3',
+      title: 'Lives in Guangzhou',
+    });
   });
 
   test('Section 7 unions and parent links match the people table', () => {
@@ -162,12 +159,20 @@ describe('Section 7 fixture novel', () => {
     for (const t of terms) expect(t.characters).toMatch(/^\p{Script=Han}+$/u);
   });
 
-  test('Section 7 two facts with knowledge records, one learned by H5 in 2060', () => {
-    const facts = parsed<{ _id: string }>('facts');
-    const records = parsed<KnowledgeRecord>('knowledgeRecords');
-    expect(facts).toHaveLength(2);
-    for (const f of facts) expect(records.some((r) => r.factId === f._id)).toBe(true);
-    expect(records.some((r) => r.characterId === 'H5' && r.yearLearned === 2060)).toBe(true);
+  test('Section 7 SM-3 the old voice notes and places lived are moments, as migration 9 makes them', () => {
+    const moments = parsed<Moment>('moments');
+    expect(moments.map((m) => [m._id, m.characterId, m.year, m.endYear, m.title])).toEqual([
+      ['H1-voice-0', 'H1', 2028, null, 'Voice'],
+      ['H5-voice-0', 'H5', 2060, null, 'Voice'],
+      ['Z3-lives-0', 'Z3', 1988, 2027, 'Lives in Guangzhou'],
+      ['Z3-lives-1', 'Z3', 2027, null, 'Lives in Portland, Oregon'],
+    ]);
+    // Margaret's voice note was set at age 70; she is born in 1958.
+    expect(byId(moments, 'H1-voice-0').body).toMatch(/short, dry sentences/);
+    // SM-2: the dropped collections are gone from the fixture.
+    for (const c of ['facts', 'knowledgeRecords', 'customSections', 'customEntries']) {
+      expect(fixture[c], c).toBeUndefined();
+    }
   });
 
   test('Section 7 eight chapters in two parts, out of chronological order, one with two strands', () => {
@@ -191,20 +196,13 @@ describe('Section 7 fixture novel', () => {
     });
   });
 
-  test('Section 7 planted structural errors S1, S2, S3 are present as data', () => {
+  test('Section 7 planted structural errors S1 and S3 are present as data', () => {
     const ch = (n: number) => chapters.find((c) => c.readingOrder === n)!;
     const year = (c: Chapter) => c.strands.find((s) => s.primary)!.startYear;
     // S1
     expect(year(ch(4))).toBe(2032);
     expect(ch(4).strands[0]!.characterIds).toContain('H2');
     expect(byId(characters, 'H2').death).toEqual({ year: 2030 });
-    // S2
-    expect(year(ch(6))).toBe(2045);
-    const acted = ch(6).factsInPlay.find((f) => f.characterId === 'H5')!;
-    const learned = parsed<KnowledgeRecord>('knowledgeRecords').find(
-      (r) => r.factId === acted.factId && r.characterId === 'H5',
-    );
-    expect(learned?.yearLearned).toBe(2060);
     // S3
     const ev = parsed<WorldEvent>('worldEvents').find(
       (e) => 'year' in e.start && e.start.year === 2090,
@@ -220,11 +218,6 @@ describe('Section 7 fixture novel', () => {
     expect(byId(characters, 'Z3').backstory).toMatch(/Guangzhou/);
   });
 
-  test('Section 7 one custom section with entries', () => {
-    expect(parsed('customSections')).toHaveLength(1);
-    expect(parsed('customEntries').length).toBeGreaterThan(0);
-  });
-
   test('Section 7 expected structural findings name real chapters and entries', () => {
     const exp = readExpected('structural-findings.json') as {
       $comment: string;
@@ -232,7 +225,7 @@ describe('Section 7 fixture novel', () => {
       cleanChapterIds: string[];
     };
     expect(exp.$comment).toMatch(/Hand-written.*never be generated/s);
-    expect(exp.findings.map((f) => f.id)).toEqual(['S1', 'S2', 'S3']);
+    expect(exp.findings.map((f) => f.id)).toEqual(['S1', 'S3']);
     const all = new Set(
       Object.values(fixture)
         .flat()

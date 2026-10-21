@@ -108,12 +108,7 @@ function headingRuleFor(rules: HeadingRule[], cells: DistinctCell[]): number {
 /** Map every row of a table sheet (IM-1): one entry per row, headings making parents. */
 export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapContext): MapOutput {
   const out: MapOutput = { rows: [], listAdds: [], stubs: [], notes: [] };
-  const section = mapping.target.sectionId ? ctx.section(mapping.target.sectionId) : undefined;
-  if (mapping.target.collection === 'customEntries' && !section) {
-    out.notes.push('The custom section for this mapping does not exist.');
-    return out;
-  }
-  const fields = importableFields(mapping.target, section);
+  const fields = importableFields(mapping.target);
   const headers = sheetHeaders(sheet, mapping.headerRow);
   if (!sheet.cells[mapping.headerRow - 1]) {
     out.notes.push(`The sheet ${sheet.name} has no row ${mapping.headerRow} for headers.`);
@@ -268,7 +263,6 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
         ok: false,
         reason,
         collection: mapping.target.collection,
-        sectionId: mapping.target.sectionId,
         newId: id,
         fields: values,
         data: {},
@@ -296,7 +290,6 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       newId: id,
       ref,
       ordinal,
-      section,
     });
     if (!built.ok) {
       failRow(built.reason);
@@ -312,7 +305,6 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       where,
       ok: true,
       collection: mapping.target.collection,
-      sectionId: mapping.target.sectionId,
       newId: id,
       fields: values,
       data: built.data,

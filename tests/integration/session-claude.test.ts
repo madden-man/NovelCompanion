@@ -76,6 +76,9 @@ beforeAll(async () => {
   store = await localStore();
   const { id } = await loadBriefFixture(store, freshSlug('m7claude'));
   bible = await openBibleSession(store, id);
+  // World events lost their places in A39, so E9 no longer reaches CH6 through the Hale house:
+  // dated 2046, it is the year after the story year, under Planned ahead (A33, SB-5).
+  await bible.repo.update('worldEvents', 'E9', { start: { year: 2046 } });
   fake = new FakeClaudeClient(loadRecordings(join(ROOT, 'fixtures/claude/recordings.json')));
   keys = new MemoryKeyStore(KEY);
   settings = new MemorySettingsStore();
@@ -134,7 +137,7 @@ describe('SB-4 DB-2 DB-4 AI-1 briefs through the Claude runtime', () => {
       '## 2. World events ongoing',
       '## 3. Cultural expectations',
     ]);
-    // SB-5: canon and planned apart; the 2072 event only under Planned ahead.
+    // SB-5: canon and planned apart; the 2046 event only under Planned ahead.
     expect(content).toContain('Canon:');
     expect(content).toContain('Planned or idea:');
     const ahead = content.indexOf('## Planned ahead (after 2045)');
@@ -192,7 +195,7 @@ describe('SB-4 DB-2 DB-4 AI-1 briefs through the Claude runtime', () => {
     const era = content.split('\n').findIndex((l) => l.includes('[[ERA-2030]]'));
     const before = content.split('\n').slice(0, era).reverse();
     expect(before.find((l) => l === 'Canon:' || l === 'Planned or idea:')).toBe('Planned or idea:');
-    // E9 (2072) was put among world events; it lands under Planned ahead.
+    // E9 (2046) was put among world events; it lands under Planned ahead.
     const ahead = content.indexOf('## Planned ahead (after 2045)');
     expect(ahead).toBeGreaterThan(0);
     expect(content.indexOf('[[E9]]')).toBeGreaterThan(ahead);

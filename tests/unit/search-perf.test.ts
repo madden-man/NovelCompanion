@@ -38,7 +38,7 @@ function bigBible(): OpenBible {
     put('characters', {
       ...base(`C${i}`, `Person ${i} ${ZH[i % ZH.length]}`),
       body: sentence(i, 12),
-      names: { full: `Person ${i}`, chinese: ZH[i % ZH.length], nicknames: [word(i)] },
+      names: { full: `Person ${i}`, chinese: ZH[i % ZH.length] },
       birth: { year: 1900 + (i % 180) },
       death: i % 3 === 0 ? { year: 1960 + (i % 120) } : null,
       familyIds: [`F${i % 5}`],
@@ -51,10 +51,8 @@ function bigBible(): OpenBible {
       body: sentence(i, 20),
       start: { year: 1950 + (i % 150) },
       end: i % 4 === 0 ? { year: 1955 + (i % 150) } : null,
-      reality: 'invented',
       categoryId: 'technology',
       regions: [],
-      placeIds: [`P${i % 50}`],
       characterIds: [],
       formative: false,
     });
@@ -72,7 +70,6 @@ function bigBible(): OpenBible {
           endYear: null,
           primary: true,
           characterIds: [`C${i}`],
-          placeIds: [`P${i % 50}`],
         },
       ],
     });
@@ -101,17 +98,17 @@ function bigBible(): OpenBible {
     });
   }
   const sections = [
-    ['customEntries', 'Recipe'],
-    ['facts', 'Fact'],
+    ['moments', 'Moment'],
+    ['culturalEntries', 'Custom'],
     ['openQuestions', 'Question'],
-    ['themes', 'Theme'],
+    ['places', 'Place'],
   ] as const;
   for (let i = 0; n < 5000; i++) {
     const [c, label] = sections[i % sections.length]!;
     put(c, {
       ...base(`X${i}`, `${label} ${i} ${word(i)}`),
       body: sentence(i, 25),
-      ...(c === 'customEntries' ? { sectionId: 'S', values: { note: sentence(i, 8) } } : {}),
+      ...(c === 'moments' ? { characterId: `C${i % 1900}`, year: 2000 + (i % 90) } : {}),
     });
   }
   expect(n).toBe(5000);

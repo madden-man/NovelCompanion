@@ -7,11 +7,9 @@ import type { FieldSpec } from './manifest';
 export const WorldEvent = entry({
   start: StoryDate,
   end: StoryDate.nullable().default(null),
-  reality: z.enum(['real', 'invented']),
   /** An item ID in the `eventCategories` list, which is a hierarchy. */
   categoryId: z.string().min(1),
   regions: z.array(z.string()).default([]),
-  placeIds: z.array(Id).default([]),
   characterIds: z.array(Id).default([]),
   formative: z.boolean().default(false),
 });
@@ -25,18 +23,8 @@ export const worldEventFields: FieldSpec[] = [
     warnings: ['range-end-before-start', 'impossible-date'],
     hint: 'Leave blank for a single date or year.',
   }),
-  f.enum(
-    'reality',
-    'Real or invented',
-    [
-      { value: 'real', label: 'Real' },
-      { value: 'invented', label: 'Invented' },
-    ],
-    { required: true },
-  ),
   f.listItem('categoryId', 'Category', 'eventCategories', { required: true }),
   f.strings('regions', 'Regions'),
-  f.refs('placeIds', 'Places', ['places']),
   f.refs('characterIds', 'Characters affected', ['characters']),
   f.boolean('formative', 'Formative', {
     hint: 'Formative events reach briefs for anyone who lived through them.',
@@ -48,11 +36,6 @@ export const EraState = entry({
   name: z.string().min(1),
   startYear: Year,
   endYear: Year,
-  technology: z.string().default(''),
-  climate: z.string().default(''),
-  economy: z.string().default(''),
-  politics: z.string().default(''),
-  dailyLife: z.string().default(''),
 });
 export type EraState = z.infer<typeof EraState>;
 
@@ -63,11 +46,6 @@ export const eraStateFields: FieldSpec[] = [
     startRequired: true,
     nullable: false,
   }).map((s) => ({ ...s, required: true })),
-  f.longText('technology', 'Technology'),
-  f.longText('climate', 'Climate'),
-  f.longText('economy', 'Economy'),
-  f.longText('politics', 'Politics'),
-  f.longText('dailyLife', 'Daily life'),
 ];
 
 /** Cultural entry (CU-1): a community list item ID and the years it applies to. */
@@ -75,7 +53,6 @@ export const CulturalEntry = entry({
   communityId: z.string().min(1),
   startYear: Year.nullable(),
   endYear: Year.nullable(),
-  generationNotes: z.string().default(''),
 });
 export type CulturalEntry = z.infer<typeof CulturalEntry>;
 
@@ -86,7 +63,6 @@ export const culturalEntryFields: FieldSpec[] = [
     ...s,
     required: true,
   })),
-  f.longText('generationNotes', 'Generation notes'),
 ];
 
 export const GlossaryTerm = entry({

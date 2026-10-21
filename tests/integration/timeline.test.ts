@@ -97,11 +97,7 @@ describe('TL-2 TM-2 the year view over IPC from the read model', () => {
 });
 
 describe('WE-1 WE-2 world events and eras through the repository', () => {
-  test('WE-1 events with a full date, a year, or a range, real or invented, with category, regions, places, characters, and the formative flag', async () => {
-    const place = await bible.repo.create('places', {
-      title: 'Pearl River delta',
-      status: 'canon',
-    } as never);
+  test('WE-1 SM-4 events with a full date, a year, or a range, with category, regions, characters, and the formative flag', async () => {
     const before = await revisionCount();
     const made = await bible.repo.createMany([
       {
@@ -111,10 +107,8 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
           title: 'Typhoon makes landfall',
           status: 'planned',
           start: { year: 2044, month: 9, day: 2 },
-          reality: 'invented',
           categoryId: 'climate',
           regions: ['Guangdong'],
-          placeIds: [place._id],
           characterIds: ['Z3'],
           formative: true,
         },
@@ -126,7 +120,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
           title: 'Ferry line closes',
           status: 'idea',
           start: { year: 2044 },
-          reality: 'invented',
           categoryId: 'economy',
         },
       },
@@ -138,7 +131,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
           status: 'planned',
           start: { year: 2043 },
           end: { year: 2046 },
-          reality: 'real',
           categoryId: 'climate',
         },
       },
@@ -148,11 +140,16 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
     const year = await invoke('timeline.year', { at: { year: 2044 } });
     expect(year.events.map((e) => e.id)).toEqual(['W-RANGE', 'W-YEAR', 'W-DATE']);
     const chart = await invoke('timeline.chart', {
-      filters: { familyId: null, placeId: place._id, status: null, categoryId: null },
+      filters: { familyId: null, placeId: null, status: null, categoryId: null },
     });
-    expect(chart.events.map((e) => [e.id, e.categoryPath, e.regions, e.formative])).toEqual([
-      ['W-DATE', 'Climate', ['Guangdong'], true],
-    ]);
+    expect(
+      chart.events
+        .filter((e) => e.id === 'W-DATE')
+        .map((e) => [e.id, e.categoryPath, e.regions, e.formative]),
+    ).toEqual([['W-DATE', 'Climate', ['Guangdong'], true]]);
+    // SM-4: real or invented and places are not event fields any more.
+    expect(bible.repo.get('worldEvents', 'W-DATE')).not.toHaveProperty('placeIds');
+    expect(bible.repo.get('worldEvents', 'W-DATE')).not.toHaveProperty('reality');
     const lived = await invoke('timeline.livedThrough', { characterId: 'Z3', year: 2044 });
     expect(lived.events.find((e) => e.id === 'W-DATE')).toMatchObject({ age: 56, formative: true });
   });

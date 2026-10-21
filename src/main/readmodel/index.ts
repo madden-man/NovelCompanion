@@ -1,5 +1,4 @@
-import { customFieldSpecs, isEntryCollection, manifests } from '../../shared/schema';
-import type { CustomSection, FieldSpec } from '../../shared/schema';
+import { isEntryCollection, manifests } from '../../shared/schema';
 import { outgoingRefs } from '../../shared/domain/refs';
 import type { BibleHandle } from '../db/bibles';
 
@@ -92,20 +91,13 @@ export class ReadModel {
     return this.maps.get(collection)?.size ?? 0;
   }
 
-  /** The specs of a custom section's own fields, for custom entries. */
-  customSpecs(sectionId: string): FieldSpec[] | undefined {
-    const section = this.get('customSections', sectionId) as CustomSection | undefined;
-    return section ? customFieldSpecs(section) : undefined;
-  }
-
   private buildReverse() {
     const reverse = new Map<string, { collection: string; id: string; kind: string }[]>();
-    const custom = (id: string) => this.customSpecs(id);
     for (const [collection, docs] of this.maps) {
       if (!isEntryCollection(collection)) continue;
       const manifest = manifests[collection];
       for (const doc of docs.values()) {
-        for (const ref of outgoingRefs(manifest, doc, custom)) {
+        for (const ref of outgoingRefs(manifest, doc)) {
           let list = reverse.get(ref.targetId);
           if (!list) reverse.set(ref.targetId, (list = []));
           if (

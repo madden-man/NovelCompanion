@@ -1,5 +1,5 @@
 import { entryTitle } from '../../schema';
-import type { CustomSection, EntryCollection } from '../../schema';
+import type { EntryCollection } from '../../schema';
 import { splitNumberedTitle } from '../numbering';
 import type { Doc } from '../paths';
 import { buildEntry } from './build';
@@ -24,7 +24,7 @@ export type DocumentTarget =
   | { kind: 'backstory'; characterId: string }
   | { kind: 'chapter'; chapterId: string }
   | { kind: 'chapter'; chapterId: null; title: string; partId: string; year: number }
-  | { kind: 'note'; sectionId: string; title: string };
+  | { kind: 'note'; title: string };
 
 export interface DocumentPlanInput {
   file: SourceFile;
@@ -36,7 +36,6 @@ export interface DocumentPlanInput {
   /** Live entries of a collection. */
   entries: (collection: EntryCollection) => Doc[];
   sources: (entryId: string) => SourceRecord[];
-  section?: (id: string) => Pick<CustomSection, 'fields'> | undefined;
   newId: () => string;
 }
 
@@ -60,23 +59,18 @@ export function planDocument(input: DocumentPlanInput): ChangeSet {
     collection: EntryCollection,
     existing: Doc | undefined,
     fields: Record<string, unknown>,
-    sectionId?: string,
   ): boolean => {
     if (!existing) return false;
     const result = changedItem({
       id: 'c1',
       collection,
-      sectionId,
       existing,
       fields,
       ref,
       where,
       file,
       records: input.sources(String(existing._id)),
-      catalog: importableFields(
-        { collection, sectionId },
-        sectionId ? input.section?.(sectionId) : undefined,
-      ),
+      catalog: importableFields({ collection }),
     });
     if (result.kind === 'unchanged') set.unchanged += 1;
     else if (result.kind === 'failed') set.failed.push(result.failure);
@@ -155,34 +149,31 @@ export function planDocument(input: DocumentPlanInput): ChangeSet {
     return withValues(set, fields);
   }
 
-  // A general note lives in a custom section.
+  // A general note is an open question, where the capture box files loose notes too (A39).
   const existing = input
-    .entries('customEntries')
+    .entries('openQuestions')
     .find(
       (d) =>
-        d.sectionId === target.sectionId &&
         typeof d.sourceRef === 'string' &&
         d.sourceRef.startsWith(documentPrefix(file.fileName)) &&
         entryTitle(d) === target.title,
     );
-  if (existingChange('customEntries', existing, { body }, target.sectionId)) {
+  if (existingChange('openQuestions', existing, { body })) {
     return withValues(set, { body });
   }
   const id = input.newId();
   const built = buildEntry({
-    target: { collection: 'customEntries', sectionId: target.sectionId },
+    target: { collection: 'openQuestions' },
     fields: { title: target.title, body },
     fixed: { status: 'planned' },
     newId: id,
     ref,
     ordinal: 1,
-    section: input.section?.(target.sectionId),
   });
   if (!built.ok) return fail(built.reason);
   created(
     {
-      collection: 'customEntries',
-      sectionId: target.sectionId,
+      collection: 'openQuestions',
       entryId: id,
       title: target.title,
       ref,
@@ -228,7 +219,6 @@ export function planEraDocument(input: EraPlanInput): ChangeSet {
       name: era.name,
       startYear: era.startYear,
       endYear: era.endYear,
-      ...era.fields,
       ...(era.body ? { body: era.body } : {}),
     };
     const built = buildEntry({

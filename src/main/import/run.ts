@@ -22,7 +22,7 @@ import type {
   SourceFile,
 } from '../../shared/domain/import';
 import { entryTitle } from '../../shared/schema';
-import type { CustomSection, EntryCollection } from '../../shared/schema';
+import type { EntryCollection } from '../../shared/schema';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 import type { ParsedDocument } from './docx';
@@ -41,8 +41,6 @@ export function contextFor(open: OpenBible, file: SourceFile): MapContext {
       return l ? (l as unknown as ReturnType<MapContext['list']>) : undefined;
     },
     entries: (c) => live(open.model.all(c)),
-    section: (id) =>
-      open.model.get('customSections', id) as unknown as Pick<CustomSection, 'fields'> | undefined,
   };
 }
 
@@ -68,22 +66,13 @@ export function planSheet(
     existing: ctx.entries,
     sources: (id) => open.repo.sourceRecords(id),
     list: (id) => open.model.get('lists', id) as never,
-    section: ctx.section,
   });
   return { set, output, file };
-}
-
-/** The ID of the custom section that holds general notes, or a new one to make at apply time. */
-export function notesSection(open: OpenBible): { id: string; create: boolean } {
-  const found = live(open.model.all('customSections')).find((s) => s.name === 'Notes');
-  return found ? { id: found._id, create: false } : { id: newId(), create: true };
 }
 
 export interface DocumentPlan {
   set: ChangeSet;
   file: SourceFile;
-  /** A custom section to create first, for a general note. */
-  createSection: { id: string; name: string } | null;
 }
 
 /** Plan importing a Word document into one entry (IM-4, IM-3). Writes nothing. */
@@ -92,29 +81,20 @@ export function planDocumentImport(
   doc: Pick<ParsedDocument, 'fileName' | 'modifiedAt' | 'blocks'>,
   target: DocumentTarget,
   blocksOverride?: DocBlock[],
-  noteSectionId?: { id: string; create: boolean },
 ): DocumentPlan {
   const blocks = blocksOverride ?? doc.blocks;
   const file = { fileName: doc.fileName, modifiedAt: doc.modifiedAt };
   const ctx = contextFor(open, file);
-  const sectionInfo = target.kind === 'note' ? (noteSectionId ?? notesSection(open)) : null;
-  const sectionId = sectionInfo?.id;
-  const finalTarget = target.kind === 'note' && sectionId ? { ...target, sectionId } : target;
   const set = planDocument({
     file,
     body: blocksToBody(blocks),
     span: spanOf(blocks),
-    target: finalTarget as DocumentTarget,
+    target,
     entries: (c: EntryCollection) => ctx.entries(c),
     sources: (id) => open.repo.sourceRecords(id),
-    section: (id) => (id === sectionId && sectionInfo?.create ? { fields: [] } : ctx.section(id)),
     newId: ctx.newId,
   });
-  return {
-    set,
-    file,
-    createSection: sectionInfo?.create && sectionId ? { id: sectionId, name: 'Notes' } : null,
-  };
+  return { set, file };
 }
 
 export interface ApplyResult {
@@ -135,7 +115,6 @@ export async function applyPlan(
   set: ChangeSet,
   file: SourceFile,
   approved: ReadonlySet<string> | 'all',
-  createSection: DocumentPlan['createSection'] = null,
 ): Promise<ApplyResult> {
   // An approved item brings along the new items it points at (a part, a book, a character stub), so no link dangles.
   const { ids } = approved === 'all' ? { ids: null } : withDependencies(set.items, approved);
@@ -144,12 +123,7 @@ export async function applyPlan(
   const listAdds =
     items.length === set.items.length ? set.listAdds : referencedListAdds(items, set.listAdds);
   const done = items.length
-    ? await open.repo.applyImport({
-        file,
-        items,
-        listAdds,
-        ...(createSection ? { createSections: [createSection] } : {}),
-      })
+    ? await open.repo.applyImport({ file, items, listAdds })
     : { created: 0, updated: 0, questions: 0 };
   return { ...done, unchanged: set.unchanged, failed: set.failed };
 }

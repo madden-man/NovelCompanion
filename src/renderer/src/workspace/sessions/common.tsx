@@ -236,7 +236,7 @@ export function SelectionBody(props: {
             group={g}
             onOpen={onOpen}
             action={props.action}
-            showEmpty={g.kind === 'previousChapters' || g.kind === 'beats'}
+            showEmpty={g.kind === 'previousChapters'}
           />
         ))}
       </section>

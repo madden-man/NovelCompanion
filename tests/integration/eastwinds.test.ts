@@ -187,17 +187,17 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
       true,
     );
 
-    // The beats: POV names became characters, with year, world context, and experience note.
-    const beats = open.repo.list('plotBeats');
+    // SM-3: the beats are moments: POV names became characters, with year, world context, and experience.
+    const beats = open.repo.list('moments');
     expect(beats).toHaveLength(3);
     const first = beats.find((b) => b.title === 'Event Ann 0')!;
     expect(first).toMatchObject({
       year: 2000,
       worldContext: 'World 0',
-      experienceNote: 'Feels 0',
+      body: 'Feels 0',
       tags: ['Sullivan'],
     });
-    expect(open.repo.get('characters', first.povCharacterId!)!.title).toBe('Ann');
+    expect(open.repo.get('characters', first.characterId)!.title).toBe('Ann');
     expect(beats.find((b) => b.title === 'Event Wei 0')!.tags).toEqual(['李']);
 
     // Plot v1: books and parts from heading rows, chapters under them, the bad year reported.
@@ -251,7 +251,7 @@ describe('IM-1 IM-4 the East Winds import maps the workbook and documents with s
       '<h1>East Winds</h1><p>Title page.</p><h1>Introduction</h1><p>Intro text.</p>',
     );
     const note = open.repo
-      .list('customEntries')
+      .list('openQuestions')
       .find((e) => e.title.startsWith('East Winds: the rest'))!;
     expect(note.body).toBe('<h1>Characters</h1><p>Character notes.</p>');
     const eras = open.repo
@@ -466,14 +466,14 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     expect(await partForManuscript(open, false)).toBe(onePart._id);
   });
 
-  test('IM-3 a beat is the same beat when its sheet and title match, so a changed year is an update, not a duplicate', async () => {
+  test('IM-3 SM-3 a beat moment is the same moment when its sheet and title match, so a changed year is an update, not a duplicate', async () => {
     const open = await bible();
     await importEastWinds(open, dir);
     const changed = await sources({ firstBeatYear: 2005 });
     const report = await importEastWinds(open, changed, { yes: true });
     const sullivan = report.steps.find((st) => st.step.endsWith('sheet Sullivan'))!;
     expect(sullivan).toMatchObject({ created: 0, updated: 1 });
-    const beats = open.repo.list('plotBeats');
+    const beats = open.repo.list('moments');
     expect(beats).toHaveLength(3);
     expect(beats.filter((b) => b.title === 'Event Ann 0')).toHaveLength(1);
     expect(beats.find((b) => b.title === 'Event Ann 0')!.year).toBe(2005);
@@ -488,7 +488,7 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     expect(held.held).toBe(true);
     expect(held.snapshot).toBeNull();
     expect((await open.snapshots!.list()).length).toBe(before);
-    expect(open.repo.list('plotBeats').find((b) => b.title === 'Event Ann 0')!.year).toBe(2000);
+    expect(open.repo.list('moments').find((b) => b.title === 'Event Ann 0')!.year).toBe(2000);
     const sullivan = held.steps.find((st) => st.step.endsWith('sheet Sullivan'))!;
     expect(sullivan.updated).toBe(1);
     expect(sullivan.unchanged).toBe(1);
@@ -502,7 +502,7 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
     const applied = await importEastWinds(open, changed, { yes: true });
     expect(applied.held).toBe(false);
     expect(applied.snapshot).not.toBeNull();
-    expect(open.repo.list('plotBeats').find((b) => b.title === 'Event Ann 0')!.year).toBe(2005);
+    expect(open.repo.list('moments').find((b) => b.title === 'Event Ann 0')!.year).toBe(2005);
   });
 
   test('IM-3 a first import into a bible with no imported entries applies everything without --yes', async () => {

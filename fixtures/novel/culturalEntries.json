@@ -6,11 +6,10 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "body": "Families exchange boxes of lotus seed mooncakes at work and at home.",
+    "body": "Families exchange boxes of lotus seed mooncakes at work and at home.\n\nGeneration notes: Grandparents insist on homemade; parents buy boxed sets.",
     "communityId": "guangzhou",
     "startYear": 1980,
-    "endYear": 2039,
-    "generationNotes": "Grandparents insist on homemade; parents buy boxed sets."
+    "endYear": 2039
   },
   {
     "_id": "CU2",
@@ -19,11 +18,10 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "body": "Printed mooncakes ordered from apps, eaten on video calls with relatives abroad.",
+    "body": "Printed mooncakes ordered from apps, eaten on video calls with relatives abroad.\n\nGeneration notes: Young people send digital red envelopes instead.",
     "communityId": "guangzhou",
     "startYear": 2040,
-    "endYear": 2100,
-    "generationNotes": "Young people send digital red envelopes instead."
+    "endYear": 2100
   },
   {
     "_id": "CU3",
@@ -32,11 +30,10 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "body": "Families ride the river ferry and eat on the far bank.",
+    "body": "Families ride the river ferry and eat on the far bank.\n\nGeneration notes: Stopped after the 2034 flood.",
     "communityId": "portland",
     "startYear": 2000,
-    "endYear": 2034,
-    "generationNotes": "Stopped after the 2034 flood."
+    "endYear": 2034
   },
   {
     "_id": "CU4",
@@ -45,10 +42,9 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "body": "Each January people walk the old waterline with lanterns.",
+    "body": "Each January people walk the old waterline with lanterns.\n\nGeneration notes: Children born after 2040 treat it as a festival.",
     "communityId": "portland",
     "startYear": 2035,
-    "endYear": 2100,
-    "generationNotes": "Children born after 2040 treat it as a festival."
+    "endYear": 2100
   }
 ]

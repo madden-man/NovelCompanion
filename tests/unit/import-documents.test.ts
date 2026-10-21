@@ -209,7 +209,7 @@ describe('IM-4 the plan for a document', () => {
 });
 
 describe('IM-4 World Development: era states by their headings', () => {
-  test('IM-4 headings with years become eras, and the text before them is kept apart', () => {
+  test('IM-4 SM-4 headings with years become eras, and the text before them is kept apart', () => {
     const blocks = parseBlocks(
       '<h1>How the world gets here</h1><p>Intro.</p><h2>2025\u20132038: The automation divide</h2><p>It starts quietly.</p><h3>Technology</h3><p>Robots.</p><h3>Climate</h3><p>Floods.</p><h2>2039: The hinge</h2><p>The event.</p><h2>The 2030s</h2><p>A decade.</p><h2>A note</h2><p>Last.</p>',
     );
@@ -219,8 +219,10 @@ describe('IM-4 World Development: era states by their headings', () => {
       ['2039: The hinge', 2039, 2039],
       ['The 2030s', 2030, 2039],
     ]);
-    expect(eras[0]!.fields).toEqual({ technology: '<p>Robots.</p>', climate: '<p>Floods.</p>' });
-    expect(eras[0]!.body).toBe('<p>It starts quietly.</p>');
+    // SM-4: an era is a name, years, and a body; its sub-headings stay in the body.
+    expect(eras[0]!.body).toBe(
+      '<p>It starts quietly.</p><h3>Technology</h3><p>Robots.</p><h3>Climate</h3><p>Floods.</p>',
+    );
     expect(skipped.map((s) => s.heading?.text ?? null)).toEqual([
       'How the world gets here',
       'A note',

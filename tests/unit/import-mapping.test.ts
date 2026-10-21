@@ -104,7 +104,8 @@ describe('IM-1 the mapping engine reads table and grid sheets', () => {
       ['Floods', 'climate'],
       ['Trade', 'geopolitics'],
     ]);
-    expect(events.every((r) => r.data.reality === 'invented')).toBe(true);
+    // SM-4: real or invented is not a world event field any more.
+    expect(events.every((r) => !('reality' in r.data))).toBe(true);
   });
 });
 
@@ -473,14 +474,14 @@ describe('IM-1 heading rows, merged cells, and year headers', () => {
     const beats: TableMapping = {
       shape: 'table',
       sheet: 'Beats',
-      target: { collection: 'plotBeats' },
+      target: { collection: 'moments' },
       headerRow: 1,
       columns: [
         { header: 'Event', index: 0, field: 'title' },
-        { header: 'POV', index: 1, field: 'povCharacterId' },
+        { header: 'POV', index: 1, field: 'characterId' },
       ],
       identity: [],
-      fixed: {},
+      fixed: { year: 2040 },
       addMissingListItems: false,
       createMissing: false,
       matchIn: 'sheet',
@@ -504,11 +505,11 @@ describe('IM-1 heading rows, merged cells, and year headers', () => {
     };
     const strict = sim.plan(book, beats).set;
     expect(
-      strict.items.map((i) => [i.title, (i.data as { povCharacterId: string }).povCharacterId]),
+      strict.items.map((i) => [i.title, (i.data as { characterId: string }).characterId]),
     ).toEqual([['One', 'C']]);
     expect(strict.failed.map((f) => f.reason)).toEqual([
-      'Point of view: More than one entry is called "Sam"',
-      'Point of view: No entry is called "Nobody"',
+      'Character: More than one entry is called "Sam"',
+      'Character: No entry is called "Nobody"',
     ]);
     const lenient = sim.plan(book, { ...beats, createMissing: true }).set;
     const stub = lenient.items.find((i) => i.collection === 'characters')!;
@@ -536,7 +537,7 @@ describe('IM-1 heading rows, merged cells, and year headers', () => {
         { header: 'Kind', index: 2, field: 'categoryId' },
       ],
       identity: [],
-      fixed: { reality: 'real' },
+      fixed: {},
       addMissingListItems: false,
       createMissing: false,
       matchIn: 'sheet',

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ENTRY_COLLECTIONS } from '../../schema';
-import type { CustomSection, EntryCollection } from '../../schema';
+import type { EntryCollection } from '../../schema';
 
 /** One cell after parsing: text, a number, a flag, or empty. Dates arrive as ISO text. */
 export const Cell = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -41,10 +41,9 @@ export type SourceFile = z.infer<typeof SourceFile>;
 
 const CollectionEnum = z.enum(ENTRY_COLLECTIONS as [EntryCollection, ...EntryCollection[]]);
 
-/** Where imported rows go: a section, and for custom entries the custom section. */
+/** Where imported rows go: a section. */
 export const Target = z.strictObject({
   collection: CollectionEnum,
-  sectionId: z.string().min(1).optional(),
 });
 export type Target = z.infer<typeof Target>;
 
@@ -173,7 +172,6 @@ export interface MappedRow {
   /** Why a row failed, in plain words (IM-2). */
   reason?: string;
   collection: EntryCollection;
-  sectionId?: string;
   /** The ID a new entry will get; heading entries need it so children can point at them. */
   newId: string;
   /** Imported values by field path (what the sheet supplies). */
@@ -195,8 +193,6 @@ export interface MapContext {
   ) => { items: { id: string; label: string; parentId: string | null }[] } | undefined;
   /** Live entries of a collection, to resolve names to IDs. */
   entries: (collection: EntryCollection) => Record<string, unknown>[];
-  /** Fields of a custom section, for `values.<id>` fields. */
-  section: (id: string) => Pick<CustomSection, 'fields'> | undefined;
 }
 
 export interface MapOutput {

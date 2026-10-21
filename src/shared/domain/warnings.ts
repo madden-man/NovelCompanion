@@ -4,15 +4,13 @@
  * field with a plain explanation. The checks come from the field manifests
  * (ranges, references, list items) plus the per-entity rules that need only
  * the entry and the entries it names: death before birth, years outside a
- * lifetime, KN-2 learning before birth, and the FT-6 parent-age and
+ * lifetime, and the FT-6 parent-age and
  * born-after-death checks. Tree-wide FT-6 checks (overlapping unions, a child
  * born before a union) use the whole tree when the context can list it.
  */
 import type { StoryDate } from '../schema/common';
 import type { FieldSpec } from '../schema/manifest';
 import type { ListDoc } from '../schema/lists';
-import type { CustomSection } from '../schema/custom';
-import { customValueIssues } from './customValues';
 import {
   bornAfterDeathWarning,
   buildGraph,
@@ -25,24 +23,20 @@ import { isPlainObject, joinPath } from './paths';
 import type { Doc } from './paths';
 import { outgoingRefs } from './refs';
 import { ROMANIZATION_META_ID, settingsFromMeta, termProblem } from './romanization';
-import type { CustomSpecs } from './refs';
 
 export interface FieldWarning {
-  /** Dotted path of the field, for example `death` or `voiceNotes.0.at`. */
+  /** Dotted path of the field, for example `death` or `strands.0.startYear`. */
   path: string;
   code: string;
   message: string;
 }
 
-/** What the checks may look up: other entries, lists, and custom section fields. */
+/** What the checks may look up: other entries and lists. */
 export interface WarningContext {
   get(collection: string, id: string): Doc | undefined;
   /** Find an entry in any collection, for links and `*` targets. */
   find(id: string): { collection: string; doc: Doc } | undefined;
   list(listId: string): ListDoc | undefined;
-  customSpecs?: CustomSpecs;
-  /** The raw custom section, for checking custom entry values against it. */
-  customSection?: (id: string) => CustomSection | undefined;
   /** Every stored entry of a collection, for checks that need the whole tree (FT-6). */
   all?: (collection: string) => Doc[];
 }
@@ -111,11 +105,6 @@ function manifestChecks(
         if (isPlainObject(item)) manifestChecks(fields, item, joinPath(path, i), ctx, out);
       });
     }
-    if (s.kind === 'customValues' && isPlainObject(v)) {
-      const sectionId = value.sectionId;
-      const sub = typeof sectionId === 'string' ? ctx.customSpecs?.(sectionId) : undefined;
-      if (sub) manifestChecks(sub, v, path, ctx, out);
-    }
   }
 }
 
@@ -126,7 +115,7 @@ function referenceChecks(
   ctx: WarningContext,
   out: FieldWarning[],
 ): void {
-  for (const ref of outgoingRefs(manifest, doc, ctx.customSpecs)) {
+  for (const ref of outgoingRefs(manifest, doc)) {
     const found = ref.target.includes('*')
       ? ctx.find(ref.targetId)?.doc
       : ref.target.map((c) => ctx.get(c, ref.targetId)).find(Boolean);
@@ -161,55 +150,41 @@ function characterChecks(doc: Doc, out: FieldWarning[]): void {
       message: `The death date ${formatStoryDate(death)} is before the birth date ${formatStoryDate(birth)}. It still saves.`,
     });
   }
-  const born = yearOf(birth);
-  const died = yearOf(death);
-  const notes = Array.isArray(doc.voiceNotes) ? doc.voiceNotes : [];
-  notes.forEach((n, i) => {
-    const at = isPlainObject(n) && isPlainObject(n.at) ? n.at : null;
-    const path = `voiceNotes.${i}.at`;
-    const year = num(at?.year);
-    const age = num(at?.age);
-    if (year !== null && born !== null && year < born) {
-      out.push({
-        path,
-        code: 'outside-lifetime',
-        message: `${year} is before this character is born in ${born}.`,
-      });
-    } else if (year !== null && died !== null && year > died) {
-      out.push({
-        path,
-        code: 'outside-lifetime',
-        message: `${year} is after this character dies in ${died}.`,
-      });
-    }
-    if (age !== null && born !== null && died !== null && age > died - born) {
-      out.push({
-        path,
-        code: 'outside-lifetime',
-        message: `This character dies at ${died - born}, so they never reach ${age}.`,
-      });
-    }
-  });
-  const places = Array.isArray(doc.placesLived) ? doc.placesLived : [];
-  places.forEach((p, i) => {
-    if (!isPlainObject(p)) return;
-    const from = num(p.startYear);
-    const to = num(p.endYear);
-    if (from !== null && born !== null && from < born) {
-      out.push({
-        path: `placesLived.${i}.startYear`,
-        code: 'outside-lifetime',
-        message: `${from} is before this character is born in ${born}.`,
-      });
-    }
-    if (to !== null && died !== null && to > died) {
-      out.push({
-        path: `placesLived.${i}.endYear`,
-        code: 'outside-lifetime',
-        message: `${to} is after this character dies in ${died}.`,
-      });
-    }
-  });
+}
+
+/**
+ * SM-3: a moment outside its character's lifetime, as the old voice note
+ * check did. Never blocks: backstory may mean family history before birth.
+ */
+function momentChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
+  const who =
+    typeof doc.characterId === 'string' ? ctx.get('characters', doc.characterId) : undefined;
+  if (!who) return;
+  const born = yearOf(asDate(who.birth));
+  const died = yearOf(asDate(who.death));
+  const name = titleOf(who);
+  const year = num(doc.year);
+  const end = num(doc.endYear);
+  if (year !== null && born !== null && year < born) {
+    out.push({
+      path: 'year',
+      code: 'outside-lifetime',
+      message: `${year} is before ${name} is born in ${born}.`,
+    });
+  } else if (year !== null && died !== null && year > died) {
+    out.push({
+      path: 'year',
+      code: 'outside-lifetime',
+      message: `${year} is after ${name} dies in ${died}.`,
+    });
+  }
+  if (end !== null && died !== null && end > died && !(year !== null && year > died)) {
+    out.push({
+      path: 'endYear',
+      code: 'outside-lifetime',
+      message: `${end} is after ${name} dies in ${died}.`,
+    });
+  }
 }
 
 /**
@@ -260,30 +235,6 @@ function unionChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
         message: `This union starts in ${start}, before ${titleOf(p)} is born in ${born}.`,
       });
     }
-  }
-}
-
-/** KN-2: a character cannot learn a fact before they are born. */
-function knowledgeChecks(doc: Doc, ctx: WarningContext, out: FieldWarning[]): void {
-  const year = num(doc.yearLearned);
-  const who =
-    typeof doc.characterId === 'string' ? ctx.get('characters', doc.characterId) : undefined;
-  if (year === null || !who) return;
-  const born = yearOf(asDate(who.birth));
-  const died = yearOf(asDate(who.death));
-  if (born !== null && year < born) {
-    out.push({
-      path: 'yearLearned',
-      code: 'learned-before-birth',
-      message: `${titleOf(who)} is born in ${born}, so they cannot learn this in ${year}.`,
-    });
-  }
-  if (died !== null && year > died) {
-    out.push({
-      path: 'yearLearned',
-      code: 'learned-after-death',
-      message: `${titleOf(who)} dies in ${died}, so they cannot learn this in ${year}.`,
-    });
   }
 }
 
@@ -357,8 +308,8 @@ export function computeWarnings(
       unionChecks(doc, ctx, out);
       unionTreeChecks(doc, ctx, out);
       break;
-    case 'knowledgeRecords':
-      knowledgeChecks(doc, ctx, out);
+    case 'moments':
+      momentChecks(doc, ctx, out);
       break;
     case 'chapters':
       chapterChecks(doc, out);
@@ -372,20 +323,6 @@ export function computeWarnings(
     case 'openQuestions':
       openQuestionChecks(doc, out);
       break;
-    case 'customEntries': {
-      const section =
-        typeof doc.sectionId === 'string' ? ctx.customSection?.(doc.sectionId) : undefined;
-      if (section && isPlainObject(doc.values)) {
-        for (const issue of customValueIssues(section, doc.values)) {
-          out.push({
-            path: `values.${issue.fieldId}`,
-            code: 'custom-value',
-            message: issue.message,
-          });
-        }
-      }
-      break;
-    }
     default:
       break;
   }

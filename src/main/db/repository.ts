@@ -8,8 +8,6 @@ import {
   LIST_IDS,
   ListDoc,
   Proposal,
-  choiceListId,
-  parseChoiceListId,
   entrySchemas,
   entryTitle,
   isEntryCollection,
@@ -17,14 +15,12 @@ import {
 } from '../../shared/schema';
 import type {
   AnyListId,
-  CustomSection,
   DerivedListId,
   EntryCollection,
   EntryInput,
   EntryOf,
   ListItem,
 } from '../../shared/schema';
-import { hasValue } from '../../shared/domain/customValues';
 import { contentOf, diffEntries } from '../../shared/domain/diff';
 import type { FieldChange } from '../../shared/domain/diff';
 import { StoryTimeValue } from '../../shared/storyTime';
@@ -215,22 +211,8 @@ export class Repository {
     return data;
   }
 
-  /** Shape rules that need other data: custom values must fit their section (CS-1). */
+  /** Shape rules that need other data: nobody may be their own ancestor (FT-6). */
   private checkShape(c: EntryCollection, doc: StoredDoc, ancestry = true): void {
-    const fail = (message: string) => {
-      throw new ValidationError(message, [
-        { code: 'custom', message, path: [], input: doc } as z.core.$ZodIssue,
-      ]);
-    };
-    if (c === 'customEntries') {
-      const section = this.model.get('customSections', String(doc.sectionId));
-      if (!section) return fail(`There is no custom section with the ID ${String(doc.sectionId)}.`);
-      // Values that no longer fit the section are warnings (ED-10), not refusals.
-    }
-    if (c === 'customSections') {
-      const ids = (doc.fields as { id: string }[]).map((f) => f.id);
-      if (new Set(ids).size !== ids.length) fail('Two fields in this section share an ID.');
-    }
     if (ancestry && c === 'parentLinks' && !doc.deletedAt) this.checkNotOwnAncestor(doc, []);
   }
 
@@ -283,7 +265,7 @@ export class Repository {
     const draft: ListDoc = { _id: 'tags', label: 'Tags', items: [...(tags?.items ?? [])] };
     const out: ListItem[] = [];
     for (const ch of changes) {
-      for (const label of tagsUsed(manifests[ch.collection], ch.next, this.customSpecs)) {
+      for (const label of tagsUsed(manifests[ch.collection], ch.next)) {
         if (known.has(label)) continue;
         known.add(label);
         const item = { id: newItemId(draft, label), label, parentId: null };
@@ -463,59 +445,9 @@ export class Repository {
 
   async create<C extends EntryCollection>(c: C, input: CreateInput<C>): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    let data = input as Record<string, unknown>;
-    let themes: string[] | null = null;
-    if (c === 'chapters' && 'themeIds' in data) {
-      const { themeIds, ...rest } = data;
-      data = rest;
-      themes = Array.isArray(themeIds) ? themeIds.map(String) : [];
-    }
-    const change = this.buildCreate(c, data);
-    const more = themes ? await this.themeChanges(change.next._id, themes) : [];
-    await this.commit([change, ...more]);
+    const change = this.buildCreate(c, input as Record<string, unknown>);
+    await this.commit([change]);
     return change.next as EntryOf<C>;
-  }
-
-  /**
-   * TH-1: a theme's appearances are the one record of which chapters it is in.
-   * The chapter's Themes field is derived from them, so setting it adds an
-   * appearance (with an empty note the person can fill) to each theme newly
-   * listed and removes the chapter's appearances from each theme dropped.
-   */
-  private async themeChanges(chapterId: string, wanted: string[]): Promise<Change[]> {
-    const want = [...new Set(wanted)];
-    for (const tid of want) {
-      const theme = this.model.get('themes', tid);
-      if (!theme) throw new RepositoryError(`No themes entry has the ID ${tid}.`);
-    }
-    const appearancesOf = (t: StoredDoc) =>
-      (Array.isArray(t.appearances) ? t.appearances : []) as { chapterId: string; note: string }[];
-    const changes: Change[] = [];
-    for (const theme of this.model.all('themes')) {
-      // A theme in the trash keeps its appearances; the chapter field never touches it.
-      if (theme.deletedAt) continue;
-      const apps = appearancesOf(theme);
-      const has = apps.some((a) => a.chapterId === chapterId);
-      const wants = want.includes(theme._id);
-      if (wants && !has) {
-        const prior = await this.current('themes', theme._id);
-        changes.push({
-          ...this.buildUpdate('themes', prior, {
-            appearances: [...appearancesOf(prior), { chapterId, note: '' }],
-          }),
-          note: 'Added from the chapter Themes field',
-        });
-      } else if (!wants && has) {
-        const prior = await this.current('themes', theme._id);
-        changes.push({
-          ...this.buildUpdate('themes', prior, {
-            appearances: appearancesOf(prior).filter((a) => a.chapterId !== chapterId),
-          }),
-          note: 'Removed from the chapter Themes field',
-        });
-      }
-    }
-    return changes;
   }
 
   /**
@@ -549,21 +481,8 @@ export class Repository {
   async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
     this.assertCollection(c);
     const prior = await this.current(c, id);
-    let own = patch as Record<string, unknown>;
-    let more: Change[] = [];
-    if (c === 'chapters' && 'themeIds' in own) {
-      const { themeIds, ...rest } = own;
-      own = rest;
-      more = await this.themeChanges(id, Array.isArray(themeIds) ? themeIds.map(String) : []);
-    }
-    if (more.length && Object.keys(this.stripSystem(own)).length === 0) {
-      // Only the derived Themes field changed: the chapter itself is not rewritten.
-      await this.commit(more);
-      return prior as EntryOf<C>;
-    }
-    const change = this.buildUpdate(c, prior, own);
-    if (c === 'customSections') this.guardSectionChange(prior, change.next);
-    await this.commit([change, ...more]);
+    const change = this.buildUpdate(c, prior, patch as Record<string, unknown>);
+    await this.commit([change]);
     return change.next as EntryOf<C>;
   }
 
@@ -605,88 +524,6 @@ export class Repository {
     }
     await this.commit(changes);
     return changes.map((c) => c.next);
-  }
-
-  /** Custom entries of a section, trash included, so a restore never meets a lost value. */
-  private sectionEntries(sectionId: string): StoredDoc[] {
-    return this.model.all('customEntries').filter((e) => e.sectionId === sectionId);
-  }
-
-  /**
-   * A section edit may not drop a field or a choice that entries still use
-   * (ED-8): it says how many use it, as list items in use do. Rename a choice
-   * on the Lists screen instead, which updates the entries too.
-   */
-  private guardSectionChange(prior: StoredDoc, next: StoredDoc): void {
-    type F = { id: string; label: string; type: string; options: string[] };
-    const before = prior.fields as F[];
-    const after = next.fields as F[];
-    const entries = this.sectionEntries(prior._id);
-    const values = (e: StoredDoc) => (e.values ?? {}) as Record<string, unknown>;
-    const count = (n: number) => (n === 1 ? '1 entry uses' : `${n} entries use`);
-    for (const field of before) {
-      const now = after.find((f) => f.id === field.id);
-      if (!now) {
-        const n = entries.filter((e) => hasValue(values(e)[field.id])).length;
-        if (n > 0) {
-          throw new RepositoryError(
-            `${count(n)} the field ${field.label}. Clear it on those entries first, or keep the field.`,
-          );
-        }
-        continue;
-      }
-      if (field.type !== 'singleChoice' || now.type !== 'singleChoice') continue;
-      for (const option of field.options.filter((o) => !now.options.includes(o))) {
-        const n = entries.filter((e) => values(e)[field.id] === option).length;
-        if (n > 0) {
-          throw new RepositoryError(
-            `${count(n)} the choice ${option} in ${field.label}. Rename it on the Lists screen, or change those entries first.`,
-          );
-        }
-      }
-    }
-  }
-
-  /** A section's single-choice field, for the choice lists. */
-  private choiceField(listId: string) {
-    const parsed = parseChoiceListId(listId);
-    if (!parsed) return null;
-    const section = this.model.get('customSections', parsed.sectionId);
-    const fields = (section?.fields ?? []) as {
-      id: string;
-      label: string;
-      type: string;
-      options: string[];
-    }[];
-    const field = fields.find((f) => f.id === parsed.fieldId && f.type === 'singleChoice');
-    if (!section || !field) throw new RepositoryError('That choice field no longer exists.');
-    return { section, field, fields };
-  }
-
-  private async writeChoices(
-    section: StoredDoc,
-    fieldId: string,
-    options: string[],
-    entryPatches: { id: string; values: Record<string, unknown> }[] = [],
-    note?: string,
-  ): Promise<number> {
-    const prior = await this.current('customSections', section._id);
-    const fields = (prior.fields as { id: string; options: string[] }[]).map((f) =>
-      f.id === fieldId ? { ...f, options } : f,
-    );
-    const changes: Change[] = [
-      { ...this.buildUpdate('customSections', prior, { fields }), ...(note ? { note } : {}) },
-    ];
-    for (const p of entryPatches) {
-      const e = await this.current('customEntries', p.id);
-      changes.push({
-        ...this.buildUpdate('customEntries', e, { values: p.values }),
-        ...(note ? { note } : {}),
-      });
-    }
-    await this.commit(changes);
-    this.emitter.emit('lists');
-    return entryPatches.length;
   }
 
   /** Move to the trash (ED-5). Links are kept so a restore brings them back. */
@@ -740,16 +577,12 @@ export class Repository {
     return out.sort((a, b) => String(b.entry.deletedAt).localeCompare(String(a.entry.deletedAt)));
   }
 
-  private readonly customSpecs = (sectionId: string) => this.model.customSpecs(sectionId);
-
   /** Field warnings for an entry (ED-10). They never block a write. */
   warnings(c: EntryCollection, doc: StoredDoc): FieldWarning[] {
     return computeWarnings(c, manifests[c], doc, {
       get: (col, id) => this.model.get(col, id),
       find: (id) => this.model.find(id),
       list: (id) => this.model.get('lists', id) as ListDoc | undefined,
-      customSpecs: this.customSpecs,
-      customSection: (id) => this.model.get('customSections', id) as CustomSection | undefined,
       all: (col) => this.model.all(col),
     });
   }
@@ -867,14 +700,6 @@ export class Repository {
         usage: this.model.backlinks(d._id).length,
       }));
     }
-    if (listId === 'sectionNames') {
-      return live('customSections').map((d) => ({
-        id: d._id,
-        label: String(d.name),
-        parentId: null,
-        usage: live('customEntries').filter((e) => e.sectionId === d._id).length,
-      }));
-    }
     return live('eraStates')
       .sort((a, b) => Number(a.startYear) - Number(b.startYear))
       .map((d) => ({
@@ -898,13 +723,12 @@ export class Repository {
         fixedItems: FIXED_ITEM_LISTS.includes(id),
         items: list.items.map((item) => ({
           ...item,
-          usage: countListUsage(id, item, all, this.customSpecs),
+          usage: countListUsage(id, item, all),
         })),
       };
     });
     const labels: Record<DerivedListId, string> = {
       families: 'Families',
-      sectionNames: 'Section names',
       eraRanges: 'Era names and ranges',
     };
     const derived: ListView[] = DERIVED_LIST_IDS.map((id) => ({
@@ -914,32 +738,7 @@ export class Repository {
       fixedItems: true,
       items: this.derivedItems(id),
     }));
-    const choices: ListView[] = [];
-    for (const section of this.model.all('customSections').filter((d) => !d.deletedAt)) {
-      const entries = this.sectionEntries(section._id).filter((e) => !e.deletedAt);
-      for (const f of section.fields as {
-        id: string;
-        label: string;
-        type: string;
-        options: string[];
-      }[]) {
-        if (f.type !== 'singleChoice') continue;
-        choices.push({
-          _id: choiceListId(section._id, f.id),
-          label: `${String(section.name)}: ${f.label}`,
-          derived: true,
-          fixedItems: false,
-          items: f.options.map((o) => ({
-            id: o,
-            label: o,
-            parentId: null,
-            usage: entries.filter((e) => (e.values as Record<string, unknown>)?.[f.id] === o)
-              .length,
-          })),
-        });
-      }
-    }
-    return [...stored, ...derived, ...choices];
+    return [...stored, ...derived];
   }
 
   /**
@@ -954,36 +753,8 @@ export class Repository {
     const to = label.trim();
     if (!to) throw new RepositoryError('A list item needs a name.');
     await this.bulkGuard('list rename');
-    const choice = this.choiceField(listId);
-    if (choice) {
-      const { section, field } = choice;
-      if (!field.options.includes(itemId)) {
-        throw new RepositoryError(`${field.label} has no choice called ${itemId}.`);
-      }
-      if (itemId === to) return { updated: 0, from: itemId };
-      if (field.options.includes(to)) {
-        throw new RepositoryError(`${field.label} already has a choice called ${to}.`);
-      }
-      // Every entry holding the old choice gets the new one, in the same transaction.
-      const patches = this.sectionEntries(section._id)
-        .filter((e) => (e.values as Record<string, unknown>)?.[field.id] === itemId)
-        .map((e) => ({ id: e._id, values: { ...(e.values as object), [field.id]: to } }));
-      const updated = await this.writeChoices(
-        section,
-        field.id,
-        field.options.map((o) => (o === itemId ? to : o)),
-        patches,
-        `Renamed ${itemId} to ${to} in ${field.label}`,
-      );
-      return { updated, from: itemId };
-    }
     if (isDerived(listId)) {
-      const collection =
-        listId === 'families'
-          ? 'families'
-          : listId === 'sectionNames'
-            ? 'customSections'
-            : 'eraStates';
+      const collection = listId === 'families' ? 'families' : 'eraStates';
       const prior = await this.current(collection, itemId);
       const from = String(prior.name);
       const { patch } = derivedRename(listId, prior, to);
@@ -1005,7 +776,7 @@ export class Repository {
     const items = clash
       ? list.items.filter((i) => i.id !== itemId)
       : list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
-    const patches = renameCascade(listId, from, to, this.allDocs(), this.customSpecs);
+    const patches = renameCascade(listId, from, to, this.allDocs());
     const changes: Change[] = [];
     for (const p of patches) {
       const collection = p.collection as EntryCollection;
@@ -1024,16 +795,6 @@ export class Repository {
     label: string,
     parentId: string | null = null,
   ): Promise<ListItem> {
-    const choice = this.choiceField(listId);
-    if (choice) {
-      const name = label.trim();
-      if (!name) throw new RepositoryError('A choice needs a name.');
-      if (choice.field.options.includes(name)) {
-        throw new RepositoryError(`${choice.field.label} already has a choice called ${name}.`);
-      }
-      await this.writeChoices(choice.section, choice.field.id, [...choice.field.options, name]);
-      return { id: name, label: name, parentId: null };
-    }
     if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
       throw new RepositoryError('Items in this list come from the entries themselves.');
     }
@@ -1053,31 +814,13 @@ export class Repository {
 
   /** Remove an unused item. An item in use is kept, and the message says how many use it. */
   async removeListItem(listId: string, itemId: string): Promise<void> {
-    const choice = this.choiceField(listId);
-    if (choice) {
-      const { section, field } = choice;
-      const n = this.sectionEntries(section._id).filter(
-        (e) => (e.values as Record<string, unknown>)?.[field.id] === itemId,
-      ).length;
-      if (n > 0) {
-        throw new RepositoryError(
-          `${n === 1 ? '1 entry uses' : `${n} entries use`} ${itemId}. Change them first, or rename the choice instead.`,
-        );
-      }
-      await this.writeChoices(
-        section,
-        field.id,
-        field.options.filter((o) => o !== itemId),
-      );
-      return;
-    }
     if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
       throw new RepositoryError('Items in this list come from the entries themselves.');
     }
     const list = this.storedList(listId);
     const item = list.items.find((i) => i.id === itemId);
     if (!item) throw new RepositoryError(`The ${list.label} list has no item ${itemId}.`);
-    const usage = countListUsage(listId, item, this.allDocs(), this.customSpecs);
+    const usage = countListUsage(listId, item, this.allDocs());
     if (usage > 0) {
       throw new RepositoryError(
         `${usage} ${usage === 1 ? 'entry uses' : 'entries use'} ${item.label}. Change them first, or rename the item instead.`,
@@ -1281,26 +1024,10 @@ export class Repository {
     file: { fileName: string; modifiedAt: string };
     items: ChangeItem[];
     listAdds: ListAdd[];
-    /** Custom sections to make in the same transaction, for a general note. */
-    createSections?: { id: string; name: string }[];
   }): Promise<{ created: number; updated: number; questions: number }> {
     await this.bulkGuard('import');
     const note = `Imported from ${input.file.fileName}`;
     const changes: Change[] = [];
-    // Made only here, after the snapshot, and in the same transaction as the entries that use them.
-    const newSections = new Set<string>();
-    for (const section of input.createSections ?? []) {
-      newSections.add(section.id);
-      changes.push({
-        ...this.buildCreate('customSections', {
-          _id: section.id,
-          name: section.name,
-          fields: [],
-          briefRule: 'never',
-        }),
-        note,
-      });
-    }
     let created = 0;
     let updated = 0;
     let questions = 0;
@@ -1312,10 +1039,7 @@ export class Repository {
           ...(item.data as Record<string, unknown>),
           _id: item.entryId,
         };
-        // An entry of a section made in this same import has no section in the read model yet.
-        const change = newSections.has(String(data.sectionId))
-          ? this.buildCreateUnchecked(item.collection, data)
-          : this.buildCreate(item.collection, data);
+        const change = this.buildCreate(item.collection, data);
         changes.push({ ...change, note });
         created += 1;
       } else {
@@ -1604,16 +1328,15 @@ export class Repository {
   // Plot reorder (PL-3) and romanization settings (GL-1).
 
   /**
-   * Change the order fields of several chapters or beats in one transaction
-   * (PL-3). Each patch carries only order fields (a chapter's reading order and
-   * part, a beat's per-arc positions); story years are never touched. Each
-   * entry gets a revision, so each step can be undone.
+   * Change the order fields of several chapters in one transaction (PL-3).
+   * Each patch carries only a chapter's reading order and part; story years
+   * are never touched. Each entry gets a revision, so each step can be undone.
    */
   async reorder(
-    collection: 'chapters' | 'plotBeats',
+    collection: 'chapters',
     patches: { id: string; patch: Record<string, unknown> }[],
   ): Promise<StoredDoc[]> {
-    const allowed = collection === 'chapters' ? ['readingOrder', 'partId'] : ['arcOrders'];
+    const allowed = ['readingOrder', 'partId'];
     const changes: Change[] = [];
     for (const m of patches) {
       const stray = Object.keys(m.patch).filter((k) => !allowed.includes(k));
@@ -1621,10 +1344,7 @@ export class Repository {
         throw new RepositoryError(`A reorder may only change ${allowed.join(' and ')}.`);
       }
       const prior = await this.current(collection, m.id);
-      changes.push({
-        ...this.buildUpdate(collection, prior, m.patch),
-        note: collection === 'chapters' ? 'Reordered chapters' : 'Reordered beats',
-      });
+      changes.push({ ...this.buildUpdate(collection, prior, m.patch), note: 'Reordered chapters' });
     }
     if (changes.length) await this.commit(changes);
     return changes.map((c) => c.next);

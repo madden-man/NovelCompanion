@@ -1,5 +1,5 @@
 import { entrySchemas, entryTitle, manifests } from '../../schema';
-import type { CustomSection, EntryCollection, FieldSpec } from '../../schema';
+import type { EntryCollection, FieldSpec } from '../../schema';
 import { getPath } from '../paths';
 import type { Doc } from '../paths';
 import { importableFields, readField, writeField } from './fields';
@@ -17,12 +17,11 @@ export interface BuildInput {
   ref: string;
   /** The row's place among the sheet's data rows, from 1, for numbering. */
   ordinal: number;
-  section?: Pick<CustomSection, 'fields'> | undefined;
 }
 
 /** A label for a path in plain words, for error messages. */
-export function pathLabel(target: Target, path: string, section?: BuildInput['section']): string {
-  const spec = importableFields(target, section).find((f) => f.path === path);
+export function pathLabel(target: Target, path: string): string {
+  const spec = importableFields(target).find((f) => f.path === path);
   if (spec) return spec.label;
   const top = path.split('.')[0] ?? path;
   const found = (manifests[target.collection] as FieldSpec[]).find((s) => s.name === top);
@@ -53,9 +52,7 @@ export function buildEntry(
     families: ['name'],
     eraStates: ['name'],
     glossaryTerms: ['characters'],
-    arcs: ['name'],
     openQuestions: ['question'],
-    customSections: ['name'],
   };
   if (!text('title')) {
     for (const path of titleFallbacks[c] ?? []) {
@@ -71,13 +68,8 @@ export function buildEntry(
   }
   if (c === 'families' && !text('name') && text('title')) data.name = text('title');
   if (c === 'eraStates' && !text('name') && text('title')) data.name = text('title');
-  if (c === 'arcs' && !text('name') && text('title')) data.name = text('title');
   if (c === 'glossaryTerms' && !text('characters') && text('title'))
     data.characters = text('title');
-  if (c === 'customEntries') {
-    data.sectionId = target.sectionId;
-    if (data.values === undefined) data.values = {};
-  }
   if (c === 'chapters') {
     if (data.readingOrder === undefined) data.readingOrder = input.ordinal;
     const strand = Array.isArray(data.strands) ? (data.strands[0] as Doc | undefined) : undefined;
@@ -103,7 +95,6 @@ export function buildEntry(
       reason: describeIssue(
         target,
         parsed.error.issues[0] ?? { code: 'custom', path: [], message: 'is not valid' },
-        input.section,
         missing,
       ),
     };
@@ -122,16 +113,11 @@ interface IssueLike {
 }
 
 /** One schema issue in plain words: which field, and what is wrong. */
-export function describeIssue(
-  target: Target,
-  issue: IssueLike,
-  section?: BuildInput['section'],
-  titleMissing = false,
-): string {
+export function describeIssue(target: Target, issue: IssueLike, titleMissing = false): string {
   const path = issue.path.map(String).join('.');
   if (path === 'title' || (titleMissing && path === '')) return 'There is no value for the title';
   const mapped = path.replace(/^strands\.0\./, 'strand.');
-  const label = pathLabel(target, mapped, section);
+  const label = pathLabel(target, mapped);
   const missing =
     /received undefined|Invalid input: expected \w+, received undefined|Required/i.test(
       issue.message,

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useWriteGuard } from '../../connection';
 import type { Response } from '../../../../shared/ipc';
@@ -527,24 +527,7 @@ export function StoryTimeDialog(props: {
                       {view.eras.length} eras cover {view.year}. The one that started last applies.
                     </p>
                   )}
-                  <dl className="kv">
-                    {(
-                      [
-                        ['Technology', view.era.technology],
-                        ['Climate', view.era.climate],
-                        ['Economy', view.era.economy],
-                        ['Politics', view.era.politics],
-                        ['Daily life', view.era.dailyLife],
-                      ] as const
-                    )
-                      .filter(([, v]) => v)
-                      .map(([k, v]) => (
-                        <Fragment key={k}>
-                          <dt>{k}</dt>
-                          <dd>{v}</dd>
-                        </Fragment>
-                      ))}
-                  </dl>
+                  {view.era.body && <p style={{ whiteSpace: 'pre-wrap' }}>{view.era.body}</p>}
                 </>
               ) : (
                 <p>No era covers {time.year}.</p>

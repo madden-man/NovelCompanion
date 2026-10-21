@@ -1,5 +1,5 @@
 /**
- * Session brief selection (SB-1 to SB-3, SB-5, SB-6, SB-9, CS-3). The one
+ * Session brief selection (SB-1 to SB-3, SB-5, SB-6, SB-9, SM-3). The one
  * deterministic query that decides which entries a session is about. The
  * "Relevant to Session" view, the structured brief (SB-7), the saved
  * manifest (SB-3), and the input Claude synthesizes from (SB-4) all come from
@@ -12,40 +12,46 @@
  *
  * Readings this module chose where SPEC left room (reported to the architect):
  * - A strand's setting is its places; with none, the place the point of view
- *   (else the first character present) lived in that year, matched to a place
- *   by name (A35). The setting feeds steps 4 and 5.
+ *   (else the first character present) lived in that year, read from their
+ *   "Lives in" moments and matched to a place by name (A35, SM-3). A "Lives in"
+ *   moment with no end year runs on until a later one. The setting feeds
+ *   steps 4 and 5.
+ * - SM-3: step 1 also takes the moments of the characters present up to the
+ *   story year, as their backstory. A character's voice is their latest
+ *   moment titled "Voice" at or before the story year: how they speak at that
+ *   age. Facts and knowledge (step 6), beats and arcs (steps 7 and 8), themes
+ *   (step 9), and custom sections (CS-3) went with A39.
  * - The setting's communities are every `communityId` from the place out to
  *   the outermost place, nearest first, then each one's parent in the
  *   communities list (A35, step 4).
  * - "Partners" in the step 1 fallback are partners in a union that has begun
  *   by the story year and not ended before it; everyone in the fallback is
  *   alive in the story year.
- * - World events linked to the strand's places that start after the story
- *   year go under "Planned ahead" (SB-5) instead of being left out, as do the
- *   events of the year after the story year (A33: the window looks one year
- *   ahead, and SB-5 keeps anything after the story year under that heading).
+ * - The events of the year after the story year go under "Planned ahead"
+ *   (SB-5) (A33: the window looks one year ahead, and SB-5 keeps anything
+ *   after the story year under that heading). World events have no places
+ *   since A39, so step 3 no longer takes events linked to the setting.
  * - Step 9 lists still-open questions and decided questions (A24) apart.
  * - With a year and point of view but no chapter, step 7 is the chapter with
  *   that point of view whose strand year is latest at or before the story
- *   year, and step 8 is empty (there are no arcs to follow).
- * - SB-6 does not rank planned-ahead items or custom entries (CS-3); they drop
- *   first. The DB-2 lead sections never drop (A25). Entries you add (SB-9) never drop.
+ *   year.
+ * - SB-6 does not rank planned-ahead items; they drop first. Moments drop
+ *   where beats did. The DB-2 lead sections never drop (A25). Entries you add
+ *   (SB-9) never drop.
  * - An entry is reported as left out only once it leaves the manifest.
  */
 import { groupLabel } from '../numbering';
 import type { LifeState } from '../ages';
 import { describeState } from '../ages';
-import { datePassages, passagesFor } from '../backstory';
-import type { BackstoryMark, BackstoryRow } from '../backstory';
 import { descriptionFor, entriesFor, placeForText, placePath } from '../culture';
 import { yearOf } from '../dates';
-import { knownBy } from '../knowledge';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { latestLog } from '../sessionLog';
 import { characterName, eraFor, eventSpans, eventsAhead, eventsUpTo, stateIn } from '../timeline';
 import type { EventSpan, TimelineData } from '../timeline';
 import { ENTRY_COLLECTIONS } from '../../schema';
+import { LIVES_IN_PREFIX, VOICE_MOMENT_TITLE } from '../../schema/moment';
 
 // ---------- inputs and settings ----------
 
@@ -88,43 +94,33 @@ export interface SelectionOverrides {
 
 export type GroupKind =
   | 'characters'
+  | 'moments'
   | 'era'
   | 'eventsWindow'
   | 'eventsFormative'
-  | 'eventsPlaces'
   | 'culture'
   | 'places'
-  | 'knowledge'
-  | 'povUnknown'
   | 'plannedAhead'
   | 'previousChapters'
-  | 'beats'
   | 'glossary'
-  | 'themes'
   | 'openQuestions'
   | 'decidedQuestions'
-  | 'custom'
   | 'sessionNote'
   | 'added';
 
 export const GROUP_TITLES: Record<GroupKind, string> = {
   characters: 'Characters present',
+  moments: 'Backstory',
   era: 'Era state',
   eventsWindow: 'World events in the window',
   eventsFormative: 'Formative events in a lifetime',
-  eventsPlaces: 'Events at these places',
   culture: 'Cultural expectations',
   places: 'Place descriptions',
-  knowledge: 'What the characters know',
-  povUnknown: 'What the point of view character does not know',
   plannedAhead: 'Planned ahead',
   previousChapters: 'Previous chapters',
-  beats: 'Beats',
   glossary: 'Glossary terms',
-  themes: 'Themes',
   openQuestions: 'Open questions',
   decidedQuestions: 'Decided',
-  custom: 'Custom entries',
   sessionNote: 'Last session note',
   added: 'Added by you',
 };
@@ -132,36 +128,29 @@ export const GROUP_TITLES: Record<GroupKind, string> = {
 /** The SB-2 step each group answers. Planned ahead is part of step 3; added entries are SB-9. */
 export const GROUP_STEP: Record<GroupKind, number> = {
   characters: 1,
+  moments: 1,
   era: 2,
   eventsWindow: 3,
   eventsFormative: 3,
-  eventsPlaces: 3,
   plannedAhead: 3,
   culture: 4,
   places: 5,
-  knowledge: 6,
-  povUnknown: 6,
   previousChapters: 7,
-  beats: 8,
   glossary: 9,
-  themes: 9,
   openQuestions: 9,
   decidedQuestions: 9,
-  custom: 9,
   sessionNote: 10,
   added: 0,
 };
 
 const STRAND_KINDS: GroupKind[] = [
   'characters',
+  'moments',
   'era',
   'eventsWindow',
   'eventsFormative',
-  'eventsPlaces',
   'culture',
   'places',
-  'knowledge',
-  'povUnknown',
   'plannedAhead',
 ];
 
@@ -178,17 +167,12 @@ export const LEAD_KINDS: GroupKind[] = ['characters', 'eventsWindow', 'eventsFor
  */
 export const DROP_ORDER: GroupKind[] = [
   'plannedAhead',
-  'custom',
   'decidedQuestions',
   'openQuestions',
-  'themes',
   'glossary',
   'places',
-  'eventsPlaces',
   'previousChapters',
-  'beats',
-  'povUnknown',
-  'knowledge',
+  'moments',
   'era',
   'sessionNote',
 ];
@@ -199,15 +183,15 @@ export interface SelectedItem {
   title: string;
   /** canon, planned, or idea (SB-5 keeps them apart). */
   status: string;
-  /** Why it was selected, or the computed fact about it (an age, a year learned). */
+  /** Why it was selected, or the computed fact about it (an age, a year). */
   note: string;
   /** The entry's text as the brief shows it; its length is what SB-6 counts. */
   detail: string;
-  /** Other entries this item draws on, such as knowledge records. They are in the manifest too. */
+  /** Other entries this item draws on, such as a character's voice moment. They are in the manifest too. */
   refs: string[];
   /** For characters: the state in the strand's year (TL-2). */
   state?: LifeState;
-  /** For events and beats: the year it starts. */
+  /** For events and moments: the year it starts. */
   year?: number | null;
   /** For events: the year it ends (the start year for a single date). */
   endYear?: number;
@@ -218,15 +202,28 @@ export interface SelectedItem {
 /** A35: where a strand is set, which step 4 and step 5 read. */
 export interface StrandSetting {
   placeIds: string[];
-  /** strand: the strand's own places; placesLived: where a character lived that year; none. */
-  source: 'strand' | 'placesLived' | 'none';
-  /** For placesLived, whose row it came from. */
+  /** strand: the strand's own places; livesIn: where a character lived that year (SM-3); none. */
+  source: 'strand' | 'livesIn' | 'none';
+  /** For livesIn, whose moment it came from. */
   characterId: string | null;
-  /** "from Mark Sullivan's places lived, 2055 to 2060", or empty. */
+  /** "from Mark Sullivan's Lives in San Francisco, 2055 to 2060", or empty. */
   note: string;
 }
 
-/** A35: the backstory of the chapter's backstory years, for Relevant to Session. Not in the manifest. */
+/** SM-3: one moment of a character's backstory, as Relevant to Session lists it. */
+export interface BackstoryRow {
+  id: string;
+  year: number;
+  endYear: number | null;
+  /** What happens. */
+  title: string;
+  /** How they experience it, plain. */
+  body: string;
+  worldContext: string;
+  status: string;
+}
+
+/** A35, SM-3: the moments of the chapter's backstory years, for Relevant to Session. Not in the manifest. */
 export interface StrandBackstory {
   from: number;
   to: number;
@@ -263,7 +260,7 @@ export interface StrandSelection {
   setting: StrandSetting;
   /** The communities of the setting, nearest first (step 4, A35). */
   communities: { id: string; label: string }[];
-  /** A35: the backstory passages for the chapter's backstory years. */
+  /** A35, SM-3: the moments of the chapter's backstory years. */
   backstory: StrandBackstory;
   groups: SelectionGroup[];
 }
@@ -283,7 +280,7 @@ export interface Selection {
   /** The chapters the section covers, in reading order. */
   chapterIds: string[];
   strands: StrandSelection[];
-  /** Steps 7 to 10, CS-3 custom entries, and SB-9 additions. */
+  /** Steps 7, 9 and 10, and SB-9 additions. */
   shared: SelectionGroup[];
   /** What SB-6 or the person left out. The brief says so. */
   omitted: OmittedItem[];
@@ -548,22 +545,74 @@ function family(data: TimelineData, pov: string, year: number): string[] {
   return out;
 }
 
-function characterItem(c: Doc, year: number): SelectedItem {
+/** SM-3: a character's live moments, by year, then title and ID. */
+export function momentsOf(data: TimelineData, characterId: string): Doc[] {
+  return data
+    .all('moments')
+    .filter(live)
+    .filter((m) => m.characterId === characterId && num(m.year) !== null)
+    .sort(
+      (a, b) =>
+        (num(a.year) as number) - (num(b.year) as number) ||
+        byText(title(a), title(b)) ||
+        byText(str(a._id), str(b._id)),
+    );
+}
+
+/** SM-3: a "Voice" moment says how the character speaks from its year on. */
+export const isVoiceMoment = (m: Doc) => title(m, '').trim() === VOICE_MOMENT_TITLE;
+
+/** SM-3: a "Lives in" moment says where the character lives from its year on. */
+export const isLivesInMoment = (m: Doc) => title(m, '').startsWith(LIVES_IN_PREFIX);
+
+/** The place a "Lives in" moment names. */
+export const livesInPlace = (m: Doc) => title(m, '').slice(LIVES_IN_PREFIX.length).trim();
+
+/**
+ * SB-2 step 1 (SB-3 intent, SM-3): how the character speaks at that age, from
+ * the latest "Voice" moment at or before the year. Null when none is.
+ */
+export function voiceAt(moments: readonly Doc[], year: number): Doc | null {
+  const voices = moments.filter((m) => isVoiceMoment(m) && (num(m.year) as number) <= year);
+  return voices[voices.length - 1] ?? null;
+}
+
+function characterItem(c: Doc, year: number, voice: Doc | null): SelectedItem {
   const id = str(c._id);
   const state = stateIn(c, year);
   const names = isPlainObject(c.names) ? c.names : {};
-  const voice = (Array.isArray(c.voiceNotes) ? c.voiceNotes : [])
-    .filter(isPlainObject)
-    .map((v) => str(v.text));
   return {
     id,
     collection: 'characters',
     title: characterName(c, id),
     status: str(c.status),
     note: describeState(state),
-    detail: joinText(str(names.chinese), plain(c.backstory), ...voice),
-    refs: [],
+    detail: joinText(
+      str(names.chinese),
+      plain(c.backstory),
+      voice ? `Voice from ${num(voice.year)}: ${plain(voice.body)}` : '',
+    ),
+    refs: voice ? [str(voice._id)] : [],
     state,
+  };
+}
+
+function momentItem(m: Doc, c: Doc): SelectedItem {
+  const y = num(m.year) as number;
+  const end = num(m.endYear);
+  const born = birthYear(c);
+  const age = born === null ? '' : `age ${y - born}`;
+  const when = end !== null && end !== y ? `${y} to ${end}` : String(y);
+  return {
+    id: str(m._id),
+    collection: 'moments',
+    title: title(m, 'Untitled moment'),
+    status: str(m.status),
+    note: joinText(`${characterName(c, str(c._id))}, ${when}${age ? ',' : ''}`, age),
+    detail: joinText(plain(m.body), plain(m.worldContext)),
+    refs: [],
+    year: y,
+    ...(end !== null && end >= y ? { endYear: end } : {}),
   };
 }
 
@@ -625,24 +674,25 @@ export function selectForSession(
     for (const id of who) {
       const c = characters.get(id);
       if (!live(c)) continue;
-      const rows = (Array.isArray(c.placesLived) ? c.placesLived : [])
-        .filter(isPlainObject)
-        .filter((r) => (num(r.startYear) ?? -Infinity) <= Y && Y <= (num(r.endYear) ?? Infinity))
-        .sort((a, b) => (num(b.startYear) ?? -Infinity) - (num(a.startYear) ?? -Infinity));
-      for (const r of rows) {
-        const p = placeForText(places, str(r.place));
+      // A "Lives in" moment with no end runs on; the latest one begun by the year wins.
+      const rows = momentsOf(data, id)
+        .filter(isLivesInMoment)
+        .filter((m) => (num(m.year) as number) <= Y && Y <= (num(m.endYear) ?? Infinity))
+        .reverse();
+      for (const m of rows) {
+        const p = placeForText(places, livesInPlace(m));
         if (!p) continue;
         return {
           placeIds: [p],
-          source: 'placesLived',
+          source: 'livesIn',
           characterId: id,
-          note: `from ${characterName(c, id)}'s places lived, ${rangeText(num(r.startYear), num(r.endYear))}`,
+          note: `from ${characterName(c, id)}'s ${title(m)}, ${rangeText(num(m.year), num(m.endYear))}`,
         };
       }
     }
     return { placeIds: [], source: 'none', characterId: spec.pov, note: '' };
   };
-  /** A35: the backstory passages of the chapter's backstory years. */
+  /** A35, SM-3: the moments of the chapter's backstory years. */
   const backstoryFor = (spec: StrandSpec, present: string[], Y: number): StrandBackstory => {
     const clean = (l: string) => l.replace(/^backstory\s*:\s*/i, '').trim();
     let from = Y - 3;
@@ -668,19 +718,21 @@ export function selectForSession(
     for (const id of [...new Set([...present, ...extra])]) {
       const c = characters.get(id);
       if (!live(c)) continue;
-      const names = isPlainObject(c.names) ? c.names : {};
-      const words = str(names.full).split(/\s+/).filter(Boolean);
-      const given = (names.order === 'family-first' ? words[words.length - 1] : words[0]) ?? '';
-      const nick = Array.isArray(names.nicknames) ? names.nicknames.map(str) : [];
-      const marks = (Array.isArray(c.backstoryMarks) ? c.backstoryMarks : []).filter(
-        isPlainObject,
-      ) as unknown as BackstoryMark[];
       const born = birthYear(c);
-      const rows = passagesFor(
-        datePassages(str(c.backstory), born, [given, ...nick], marks),
-        from,
-        to,
-      );
+      const rows: BackstoryRow[] = momentsOf(data, id)
+        .filter((m) => {
+          const y = num(m.year) as number;
+          return y <= to && Math.max(y, num(m.endYear) ?? y) >= from;
+        })
+        .map((m) => ({
+          id: str(m._id),
+          year: num(m.year) as number,
+          endYear: num(m.endYear),
+          title: title(m, 'Untitled moment'),
+          body: plain(m.body),
+          worldContext: plain(m.worldContext),
+          status: str(m.status),
+        }));
       if (!rows.length) continue;
       const ages =
         born === null
@@ -699,7 +751,6 @@ export function selectForSession(
   };
   const events = eventSpans(data);
   const eventDocs = index(data, 'worldEvents');
-  const factDocs = index(data, 'facts');
 
   const eventItem = (e: EventSpan, note: string): SelectedItem => ({
     id: e.id,
@@ -734,7 +785,15 @@ export function selectForSession(
     }
     for (const id of present) {
       const c = characters.get(id);
-      if (c) push('characters', characterItem(c, Y));
+      if (!c) continue;
+      const moments = momentsOf(data, id);
+      const voice = voiceAt(moments, Y);
+      push('characters', characterItem(c, Y, voice));
+      // SM-3: their moments up to the story year are their backstory; the voice is on the character.
+      for (const m of moments) {
+        if ((num(m.year) as number) > Y || str(m._id) === str(voice?._id)) continue;
+        push('moments', momentItem(m, c));
+      }
     }
 
     // 2. The era state covering the year.
@@ -746,16 +805,7 @@ export function selectForSession(
         title: era.name,
         status: str(data.all('eraStates').find((d) => d._id === era.id)?.status),
         note: rangeText(era.startYear, era.endYear),
-        detail: [
-          ['Technology', era.technology],
-          ['Climate', era.climate],
-          ['Economy', era.economy],
-          ['Politics', era.politics],
-          ['Daily life', era.dailyLife],
-        ]
-          .filter(([, v]) => v?.trim())
-          .map(([k, v]) => `${k}: ${(v ?? '').trim()}`)
-          .join(' '),
+        detail: plain(data.all('eraStates').find((d) => d._id === era.id)?.body),
         refs: [],
       });
     }
@@ -786,15 +836,6 @@ export function selectForSession(
       const names = who.map((x) => characterName(x.c, str(x.c._id))).join(', ');
       push('eventsFormative', eventItem(e, `formative for ${names}`));
     }
-    for (const e of events) {
-      if (taken.has(e.id)) continue;
-      const at = e.placeIds.filter((p) => spec.placeIds.includes(p));
-      if (!at.length) continue;
-      taken.add(e.id);
-      const where = `at ${at.map((p) => placePath(places, p) || p).join(', ')}`;
-      if (e.startYear <= Y) push('eventsPlaces', eventItem(e, where));
-      else push('plannedAhead', eventItem(e, where));
-    }
 
     // 4. Cultural entries for the setting's communities and the year (A35).
     const setting = settingFor(spec, present, Y);
@@ -818,7 +859,7 @@ export function selectForSession(
           title: title(c),
           status: str(c.status),
           note: `${communityLabel(community)}, ${rangeText(num(c.startYear), num(c.endYear))}`,
-          detail: joinText(plain(c.body), str(c.generationNotes)),
+          detail: plain(c.body),
           refs: [],
           community,
         });
@@ -840,64 +881,6 @@ export function selectForSession(
         detail: d.text,
         refs: [],
       });
-    }
-
-    // 6. What each character present knows, and what the point of view does not.
-    const knowers = new Map<
-      string,
-      { name: string; who: string; year: number; record: string }[]
-    >();
-    for (const id of present) {
-      for (const k of knownBy(data, id, Y).known) {
-        const list = knowers.get(k.factId) ?? [];
-        list.push({
-          name: characterName(characters.get(id), id),
-          who: id,
-          year: k.yearLearned,
-          record: k.recordId,
-        });
-        knowers.set(k.factId, list);
-      }
-    }
-    const factIds = [...knowers.keys()].sort(
-      (a, b) => byText(title(factDocs.get(a), a), title(factDocs.get(b), b)) || byText(a, b),
-    );
-    const factItem = (fid: string, note: string, refs: string[]): SelectedItem => ({
-      id: fid,
-      collection: 'facts',
-      title: title(factDocs.get(fid), fid),
-      status: str(factDocs.get(fid)?.status),
-      note,
-      detail: plain(factDocs.get(fid)?.body),
-      refs: [...new Set(refs)].sort(byText),
-    });
-    for (const fid of factIds) {
-      const list = knowers.get(fid) ?? [];
-      push(
-        'knowledge',
-        factItem(
-          fid,
-          `known by ${list.map((k) => `${k.name} (since ${k.year})`).join(', ')}`,
-          list.map((k) => k.record),
-        ),
-      );
-    }
-    if (spec.pov && live(characters.get(spec.pov))) {
-      const povKnows = new Set(knownBy(data, spec.pov, Y).known.map((k) => k.factId));
-      const povName = characterName(characters.get(spec.pov), spec.pov);
-      for (const fid of factIds) {
-        if (povKnows.has(fid)) continue;
-        const others = (knowers.get(fid) ?? []).filter((k) => k.who !== spec.pov);
-        if (!others.length) continue;
-        push(
-          'povUnknown',
-          factItem(
-            fid,
-            `${others.map((k) => k.name).join(', ')} ${others.length > 1 ? 'know' : 'knows'}; ${povName} does not`,
-            others.map((k) => k.record),
-          ),
-        );
-      }
     }
 
     return {
@@ -1091,7 +1074,7 @@ function genericText(doc: Doc): string {
   return joinText(...out);
 }
 
-// ---------- steps 7 to 10, and CS-3 ----------
+// ---------- steps 7, 9 and 10 ----------
 
 function sharedSteps(
   data: TimelineData,
@@ -1103,33 +1086,25 @@ function sharedSteps(
   const characters = index(data, 'characters');
   const chapters = data.all('chapters').filter(live);
   const chapterById = new Map(chapters.map((c) => [str(c._id), c]));
-  const arcs = index(data, 'arcs');
   const sectionIds = section.chapters.map((c) => str(c._id));
   const order = (c: Doc) => num(c.readingOrder) ?? 0;
   const byOrder = (a: Doc, b: Doc) => order(a) - order(b) || byText(str(a._id), str(b._id));
   const povs = [...new Set(section.strands.map((s) => s.pov).filter((p): p is string => !!p))];
   const hasPov = (c: Doc, pov: string) => strandsOf(c).some((s) => s.povCharacterId === pov);
 
-  // 7. Previous chapters: three in reading order, the previous in each arc, the previous with the same point of view.
+  // 7. Previous chapters: three in reading order and the previous with the same point of view.
   const reasons = new Map<string, string[]>();
   const note = (id: string, why: string) => {
     const list = reasons.get(id) ?? [];
     if (!list.includes(why)) list.push(why);
     reasons.set(id, list);
   };
-  const sectionArcs = [...new Set(section.chapters.flatMap((c) => idList(c.arcIds)))].sort(
-    (a, b) => byText(title(arcs.get(a), a), title(arcs.get(b), b)) || byText(a, b),
-  );
   if (section.chapters.length) {
     const first = section.chapters[0] as Doc;
     const before = chapters
       .filter((c) => !sectionIds.includes(str(c._id)) && order(c) < order(first))
       .sort(byOrder);
     for (const c of before.slice(-3)) note(str(c._id), 'previous in reading order');
-    for (const arc of sectionArcs) {
-      const prev = [...before].reverse().find((c) => idList(c.arcIds).includes(arc));
-      if (prev) note(str(prev._id), `previous in the arc ${title(arcs.get(arc), arc)}`);
-    }
     for (const pov of povs) {
       const prev = [...before].reverse().find((c) => hasPov(c, pov));
       if (prev) {
@@ -1173,47 +1148,6 @@ function sharedSteps(
       refs: [],
     }));
 
-  // 8. Beats planned for this chapter, and unresolved beats in its arcs (A18).
-  const beats: SelectedItem[] = [];
-  const beatDocs = data.all('plotBeats').filter(live);
-  const arcNames = (b: Doc) =>
-    idList(b.arcIds)
-      .map((a) => title(arcs.get(a), a))
-      .join(', ');
-  const beatItem = (b: Doc, why: string): SelectedItem => ({
-    id: str(b._id),
-    collection: 'plotBeats',
-    title: title(b, 'Untitled beat'),
-    status: str(b.status),
-    note: joinText(num(b.year) === null ? '' : `${num(b.year)},`, why),
-    detail: joinText(plain(b.description), plain(b.experienceNote), plain(b.worldContext)),
-    refs: [],
-    year: num(b.year),
-  });
-  const beatOrder = (a: Doc, b: Doc) =>
-    (num(a.year) ?? Infinity) - (num(b.year) ?? Infinity) ||
-    byText(title(a), title(b)) ||
-    byText(str(a._id), str(b._id));
-  // SB-5: a beat of the section dated after the story year is planned ahead, not a beat now.
-  const beatsAhead: SelectedItem[] = [];
-  for (const b of beatDocs.filter((b) => sectionIds.includes(str(b.chapterId))).sort(beatOrder)) {
-    const y = num(b.year);
-    if (y !== null && y > Y) beatsAhead.push(beatItem(b, 'planned for a chapter of this section'));
-    else beats.push(beatItem(b, 'planned for this chapter'));
-  }
-  if (sectionArcs.length) {
-    const unresolved = beatDocs
-      .filter((b) => !sectionIds.includes(str(b.chapterId)))
-      .filter((b) => idList(b.arcIds).some((a) => sectionArcs.includes(a)))
-      .filter((b) => num(b.year) !== null && (num(b.year) as number) <= Y)
-      .filter((b) => {
-        const ch = chapterById.get(str(b.chapterId));
-        return !str(b.chapterId) || !ch || ch.written !== true;
-      })
-      .sort(beatOrder);
-    for (const b of unresolved) beats.push(beatItem(b, `unresolved in ${arcNames(b)}`));
-  }
-
   // The entries selected so far, for step 9.
   const selected = new Set<string>(sectionIds);
   for (const s of strands) {
@@ -1225,7 +1159,6 @@ function sharedSteps(
     }
   }
   previous.forEach((p) => selected.add(p.id));
-  beats.forEach((b) => selected.add(b.id));
   const selectedDocs = [...selected].map((id) => findEntry(id)?.doc).filter((d): d is Doc => !!d);
   const linkedFrom = new Set(selectedDocs.flatMap(linksOf));
   const isLinked = (d: Doc) =>
@@ -1242,7 +1175,7 @@ function sharedSteps(
     return names.length ? `linked to ${names.join(', ')}` : '';
   };
 
-  // 9. Glossary terms, themes, and open questions linked to anything selected (A18).
+  // 9. Glossary terms and open questions linked to anything selected (A18).
   const selectedCharacters = strands
     .flatMap((s) => s.groups.find((g) => g.kind === 'characters')?.items ?? [])
     .map((it) => it.id)
@@ -1251,16 +1184,7 @@ function sharedSteps(
     .filter((c): c is Doc => !!c);
   const nameStrings = (c: Doc): string[] => {
     const n = isPlainObject(c.names) ? c.names : {};
-    return [
-      str(n.full),
-      str(n.chinese),
-      str(n.birthName),
-      str(n.marriedName),
-      ...idList(n.nicknames),
-      ...(Array.isArray(n.calledBy) ? n.calledBy : [])
-        .filter(isPlainObject)
-        .map((x) => str(x.name)),
-    ].filter(Boolean);
+    return [str(n.full), str(n.chinese)].filter(Boolean);
   };
   const glossary: SelectedItem[] = data
     .all('glossaryTerms')
@@ -1290,33 +1214,6 @@ function sharedSteps(
       status: str(g.status),
       note: why.join('; '),
       detail: joinText(str(g.meaning), str(g.usageNote)),
-      refs: [],
-    }));
-
-  const themeChapters = new Set([...sectionIds, ...previous.map((p) => p.id)]);
-  const themes: SelectedItem[] = data
-    .all('themes')
-    .filter(live)
-    .map((t) => {
-      const apps = (Array.isArray(t.appearances) ? t.appearances : [])
-        .filter(isPlainObject)
-        .filter((a) => themeChapters.has(str(a.chapterId)));
-      return { t, apps };
-    })
-    .filter((x) => x.apps.length)
-    .sort((a, b) => byText(title(a.t), title(b.t)) || byText(str(a.t._id), str(b.t._id)))
-    .map(({ t, apps }) => ({
-      id: str(t._id),
-      collection: 'themes',
-      title: title(t),
-      status: str(t.status),
-      note: `appears in ${[...new Set(apps.map((a) => str(a.chapterId)))]
-        .map((id) => chapterById.get(id))
-        .filter((c): c is Doc => !!c)
-        .sort(byOrder)
-        .map(chapterLabel)
-        .join(', ')}`,
-      detail: joinText(plain(t.description), ...apps.map((a) => str(a.note))),
       refs: [],
     }));
 
@@ -1350,55 +1247,6 @@ function sharedSteps(
       refs: [],
     }));
 
-  // CS-3: custom sections by their brief rule.
-  const sections = data
-    .all('customSections')
-    .filter(live)
-    .sort((a, b) => byText(str(a.name), str(b.name)) || byText(str(a._id), str(b._id)));
-  const custom: SelectedItem[] = [];
-  for (const sec of sections) {
-    const rule = str(sec.briefRule) || 'linked';
-    if (rule === 'never') continue;
-    const fields = (Array.isArray(sec.fields) ? sec.fields : []).filter(isPlainObject);
-    const entries = data
-      .all('customEntries')
-      .filter(live)
-      .filter((e) => e.sectionId === sec._id)
-      .filter((e) => {
-        const values = isPlainObject(e.values) ? e.values : {};
-        if (rule === 'always') return true;
-        if (rule === 'linked') {
-          return (
-            linksOf(e).some((t) => sectionIds.includes(t)) ||
-            fields.some((f) => f.type === 'link' && sectionIds.includes(str(values[str(f.id)])))
-          );
-        }
-        // storyYear: a year field equal to the year, or a year range covering it.
-        return fields.some((f) => {
-          const v = values[str(f.id)];
-          if (f.type === 'year') return v === Y;
-          if (f.type === 'yearRange' && isPlainObject(v)) {
-            const s = num(v.startYear);
-            const t = num(v.endYear);
-            return (s === null || s <= Y) && (t === null || t >= Y) && (s !== null || t !== null);
-          }
-          return false;
-        });
-      })
-      .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)));
-    for (const e of entries) {
-      custom.push({
-        id: str(e._id),
-        collection: 'customEntries',
-        title: title(e),
-        status: str(e.status),
-        note: `${str(sec.name)}, ${rule === 'always' ? 'always included' : rule === 'linked' ? 'linked to the chapter' : `matches ${Y}`}`,
-        detail: genericText({ values: e.values, body: e.body }),
-        refs: [],
-      });
-    }
-  }
-
   // 10. The last session log note for this chapter.
   const logs = data
     .all('sessionLogs')
@@ -1427,14 +1275,10 @@ function sharedSteps(
   });
   return [
     group('previousChapters', previous),
-    group('beats', beats),
     group('glossary', glossary),
-    group('themes', themes),
     group('openQuestions', questions),
     group('decidedQuestions', decided),
-    group('custom', custom),
     group('sessionNote', sessionNote),
-    group('plannedAhead', beatsAhead),
   ];
 }
 

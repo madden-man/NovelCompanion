@@ -13,17 +13,6 @@ let fxInvoke: Invoke;
 let fresh: OpenBible;
 let invoke: Invoke;
 
-const strand = (id: string, year: number, primary = true) => ({
-  id,
-  label: id,
-  startYear: year,
-  endYear: null,
-  primary,
-  povCharacterId: null,
-  characterIds: [],
-  placeIds: [],
-});
-
 beforeAll(async () => {
   store = await localStore();
   fixture = await openBibleSession(store, (await loadFixture(store, freshSlug('plot-fx'))).id);
@@ -35,96 +24,8 @@ afterAll(async () => {
   await store.close();
 });
 
-const orderIn = (beat: Record<string, unknown>, arcId: string) =>
-  ((beat.arcOrders as { arcId: string; order: number }[]).find((o) => o.arcId === arcId)?.order ??
-    0) as number;
-
 const make = async (collection: string, data: Record<string, unknown>) =>
   (await invoke('entry.create', { collection: collection as never, data })).entry;
-
-describe('PL-1 books, parts, chapters, arcs, and beats through the write path', () => {
-  test('PL-1 arcs keep scope, owner, and year range; chapters and beats join several arcs', async () => {
-    const book = await make('books', { title: 'Book One', number: 1, status: 'planned' });
-    const part = await make('parts', {
-      title: 'Part One',
-      bookId: book._id,
-      number: 1,
-      status: 'planned',
-    });
-    const family = await make('families', {
-      title: 'Hale',
-      name: 'Hale',
-      color: 'series-2',
-      status: 'canon',
-    });
-    const who = await make('characters', {
-      title: 'Iris',
-      names: { full: 'Iris Hale' },
-      birth: { year: 2000 },
-      familyIds: [family._id],
-      status: 'canon',
-    });
-    const whole = await make('arcs', {
-      title: 'Whole book',
-      name: 'Whole book',
-      scope: 'book',
-      startYear: 2030,
-      endYear: 2080,
-      status: 'planned',
-    });
-    const owned = await make('arcs', {
-      title: 'Iris',
-      name: 'Iris arc',
-      scope: 'character',
-      ownerCharacterId: who._id,
-      familyId: family._id,
-      startYear: 2040,
-      endYear: 2060,
-      status: 'planned',
-    });
-    expect(owned).toMatchObject({
-      scope: 'character',
-      ownerCharacterId: who._id,
-      startYear: 2040,
-      endYear: 2060,
-    });
-    const ch = await make('chapters', {
-      title: 'Opening',
-      partId: part._id,
-      readingOrder: 1,
-      strands: [strand('s1', 2045)],
-      arcIds: [whole._id, owned._id],
-      status: 'planned',
-    });
-    const beat = await make('plotBeats', {
-      title: 'The letter arrives',
-      arcIds: [whole._id, owned._id],
-      chapterId: ch._id,
-      year: 2045,
-      povCharacterId: who._id,
-      description: 'A letter.',
-      worldContext: 'Flood year.',
-      experienceNote: 'Iris feels cold.',
-      arcOrders: [
-        { arcId: whole._id, order: 1 },
-        { arcId: owned._id, order: 3 },
-      ],
-      status: 'planned',
-    });
-    expect(ch.arcIds).toEqual([whole._id, owned._id]);
-    expect(beat).toMatchObject({ worldContext: 'Flood year.', experienceNote: 'Iris feels cold.' });
-    expect(orderIn(beat, whole._id)).toBe(1);
-    expect(orderIn(beat, owned._id)).toBe(3);
-    const grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
-    const row = grid.rows.find((r) => r.kind === 'chapter');
-    expect(
-      row?.kind === 'chapter' && row.arcSpans.map((s) => [s.name, s.color, s.from, s.to]),
-    ).toEqual([
-      ['Whole book', 'series-4', 2030, 2080],
-      ['Iris arc', 'series-2', 2040, 2060],
-    ]);
-  });
-});
 
 describe('PL-2 PL-4 the outline and chapter page over IPC', () => {
   test('PL-2 outline.get returns the fixture chapters in reading order, then story order, with the cursor', async () => {
@@ -151,9 +52,8 @@ describe('PL-2 PL-4 the outline and chapter page over IPC', () => {
     await fxInvoke('storyTime.set', { time: null });
   });
 
-  test('PL-4 chapter.page shows strands with ages, facts in play, and rejects an unknown chapter', async () => {
+  test('PL-4 chapter.page shows strands with ages, and rejects an unknown chapter', async () => {
     const { page } = await fxInvoke('chapter.page', { id: 'CH3' });
-    expect(page.factsInPlay.map((f) => f.factId)).toEqual(['F1']);
     expect(page.strands[0]?.characters.find((c) => c.id === 'Z3')?.state).toMatchObject({
       state: 'alive',
       age: 41,
@@ -223,101 +123,9 @@ describe('PL-3 reordering changes reading order only', () => {
       });
     }
   });
-
-  test('PL-3 plot.reorder numbers the beats of an arc 1 to n and refuses an item outside the group', async () => {
-    const arc = await make('arcs', { title: 'A', name: 'A', scope: 'custom', status: 'planned' });
-    const ids: string[] = [];
-    for (const t of ['one', 'two', 'three']) {
-      ids.push(
-        (
-          await make('plotBeats', {
-            title: t,
-            arcIds: [arc._id],
-            arcOrders: [{ arcId: arc._id, order: ids.length + 1 }],
-            status: 'planned',
-          })
-        )._id,
-      );
-    }
-    const r = await invoke('plot.reorder', {
-      kind: 'beats',
-      groupId: arc._id,
-      movedId: ids[2]!,
-      toIndex: 0,
-    });
-    expect(r.collection).toBe('plotBeats');
-    const order = (
-      await invoke('entry.list', { collection: 'plotBeats', trash: 'exclude' })
-    ).entries
-      .map((e) => e.entry)
-      .filter((b) => (b.arcIds as string[]).includes(arc._id))
-      .sort((a, b) => orderIn(a, arc._id) - orderIn(b, arc._id))
-      .map((b) => b.title);
-    expect(order).toEqual(['three', 'one', 'two']);
-    await expect(
-      invoke('plot.reorder', { kind: 'beats', groupId: 'no-arc', movedId: ids[0]!, toIndex: 0 }),
-    ).rejects.toThrow(/not in this group/);
-  });
 });
 
-describe('PL-3 beat order per arc and chapters across parts', () => {
-  test('PL-3 a beat in two arcs reordered in one arc keeps its position in the other', async () => {
-    const a1 = await make('arcs', {
-      title: 'Arc one',
-      name: 'Arc one',
-      scope: 'custom',
-      status: 'planned',
-    });
-    const a2 = await make('arcs', {
-      title: 'Arc two',
-      name: 'Arc two',
-      scope: 'custom',
-      status: 'planned',
-    });
-    const beat = (title: string, orders: [string, number][]) =>
-      make('plotBeats', {
-        title,
-        status: 'planned',
-        arcIds: orders.map(([arcId]) => arcId),
-        arcOrders: orders.map(([arcId, order]) => ({ arcId, order })),
-      });
-    const x = await beat('x', [[a1._id, 1]]);
-    const y = await beat('y', [
-      [a1._id, 2],
-      [a2._id, 1],
-    ]);
-    const z = await beat('z', [
-      [a1._id, 3],
-      [a2._id, 2],
-    ]);
-    const r = await invoke('plot.reorder', {
-      kind: 'beats',
-      groupId: a1._id,
-      movedId: z._id,
-      toIndex: 0,
-    });
-    expect(r.collection).toBe('plotBeats');
-    const stored = async (id: string) =>
-      (await invoke('entry.get', { collection: 'plotBeats', id })).entry;
-    expect(orderIn(await stored(z._id), a1._id)).toBe(1);
-    expect(orderIn(await stored(x._id), a1._id)).toBe(2);
-    expect(orderIn(await stored(y._id), a1._id)).toBe(3);
-    // Arc two is untouched.
-    expect(orderIn(await stored(y._id), a2._id)).toBe(1);
-    expect(orderIn(await stored(z._id), a2._id)).toBe(2);
-    // Reordering arc two does not move anything in arc one.
-    await invoke('plot.reorder', { kind: 'beats', groupId: a2._id, movedId: z._id, toIndex: 0 });
-    expect(orderIn(await stored(z._id), a2._id)).toBe(1);
-    expect(orderIn(await stored(y._id), a2._id)).toBe(2);
-    expect(orderIn(await stored(z._id), a1._id)).toBe(1);
-    expect(orderIn(await stored(y._id), a1._id)).toBe(3);
-    // Undo through the write path puts the arc one positions back.
-    for (const c of r.changes) {
-      await invoke('entry.update', { collection: 'plotBeats', id: c.id, patch: c.before });
-    }
-    expect(orderIn(await stored(z._id), a1._id)).toBe(3);
-  });
-
+describe('PL-3 chapters across parts', () => {
   test('PL-3 dragging a chapter into another part takes the target part and renumbers both parts in one transaction', async () => {
     const list = async () =>
       (await fxInvoke('entry.list', { collection: 'chapters', trash: 'exclude' })).entries.map(
@@ -375,128 +183,6 @@ describe('PL-3 beat order per arc and chapters across parts', () => {
     await expect(
       fxInvoke('plot.reorder', { kind: 'chapters', groupId: 'PT1', movedId: 'nope', toIndex: 0 }),
     ).rejects.toThrow(/chapter does not exist/);
-  });
-});
-
-describe('TH-1 a theme and a chapter share one record', () => {
-  const themeApps = async (id: string) =>
-    ((await invoke('entry.get', { collection: 'themes', id })).entry.appearances ?? []) as {
-      chapterId: string;
-      note: string;
-    }[];
-
-  test('TH-1 adding a theme from the chapter Themes field creates an empty appearance, and removing it removes the appearance', async () => {
-    const theme = await make('themes', { title: 'Water', status: 'planned' });
-    const chapter = await make('chapters', {
-      title: 'Shore',
-      status: 'planned',
-      partId: 'P',
-      readingOrder: 1,
-      strands: [strand('s', 2040)],
-    });
-    expect(chapter.themeIds).toEqual([]);
-    const added = await invoke('entry.update', {
-      collection: 'chapters',
-      id: chapter._id,
-      patch: { themeIds: [theme._id] },
-    });
-    expect(added.entry.themeIds).toEqual([theme._id]);
-    expect(await themeApps(theme._id)).toEqual([{ chapterId: chapter._id, note: '' }]);
-    // The chapter itself stores no themeIds.
-    const stored = await fresh.handle.collection('chapters').findOne({ _id: chapter._id as never });
-    expect(stored).not.toHaveProperty('themeIds');
-    // The note the person fills in survives a second add of the same theme.
-    await invoke('entry.update', {
-      collection: 'themes',
-      id: theme._id,
-      patch: { appearances: [{ chapterId: chapter._id, note: 'Rain on the roof' }] },
-    });
-    await invoke('entry.update', {
-      collection: 'chapters',
-      id: chapter._id,
-      patch: { themeIds: [theme._id] },
-    });
-    expect(await themeApps(theme._id)).toEqual([
-      { chapterId: chapter._id, note: 'Rain on the roof' },
-    ]);
-    const removed = await invoke('entry.update', {
-      collection: 'chapters',
-      id: chapter._id,
-      patch: { themeIds: [] },
-    });
-    expect(removed.entry.themeIds).toEqual([]);
-    expect(await themeApps(theme._id)).toEqual([]);
-  });
-
-  test('TH-1 adding an appearance on the theme shows the theme on the chapter, and the chapter page lists it with its note', async () => {
-    const theme = await make('themes', { title: 'Fire', status: 'planned' });
-    const chapter = await make('chapters', {
-      title: 'Hearth',
-      status: 'planned',
-      partId: 'P',
-      readingOrder: 2,
-      strands: [strand('s', 2041)],
-    });
-    await invoke('entry.update', {
-      collection: 'themes',
-      id: theme._id,
-      patch: { appearances: [{ chapterId: chapter._id, note: 'Candles' }] },
-    });
-    expect(
-      (await invoke('entry.get', { collection: 'chapters', id: chapter._id })).entry.themeIds,
-    ).toEqual([theme._id]);
-    expect((await invoke('chapter.page', { id: chapter._id })).page.themes).toEqual([
-      { id: theme._id, title: 'Fire', note: 'Candles' },
-    ]);
-    // Removing the appearance on the theme removes it from the chapter.
-    await invoke('entry.update', {
-      collection: 'themes',
-      id: theme._id,
-      patch: { appearances: [] },
-    });
-    expect(
-      (await invoke('entry.get', { collection: 'chapters', id: chapter._id })).entry.themeIds,
-    ).toEqual([]);
-    expect((await invoke('chapter.page', { id: chapter._id })).page.themes).toEqual([]);
-  });
-
-  test('TH-1 the theme change and the chapter change are written together, each with a revision, and an unknown theme is refused', async () => {
-    const theme = await make('themes', { title: 'Light', status: 'planned' });
-    const chapter = await make('chapters', {
-      title: 'Lamp',
-      status: 'planned',
-      partId: 'P',
-      readingOrder: 3,
-      strands: [strand('s', 2042)],
-    });
-    await invoke('entry.update', {
-      collection: 'chapters',
-      id: chapter._id,
-      patch: { themeIds: [theme._id], summary: 'A lamp.' },
-    });
-    const history = await invoke('revisions.list', { collection: 'themes', id: theme._id });
-    expect(history.revisions.map((r) => r.note)).toContain('Added from the chapter Themes field');
-    await expect(
-      invoke('entry.update', {
-        collection: 'chapters',
-        id: chapter._id,
-        patch: { themeIds: ['no-such-theme'] },
-      }),
-    ).rejects.toThrow(/No themes entry/);
-  });
-
-  test('TH-1 a chapter created with themes gets the appearances', async () => {
-    const theme = await make('themes', { title: 'Salt', status: 'planned' });
-    const chapter = await make('chapters', {
-      title: 'Sea',
-      status: 'planned',
-      partId: 'P',
-      readingOrder: 4,
-      strands: [strand('s', 2043)],
-      themeIds: [theme._id],
-    });
-    expect(await themeApps(theme._id)).toEqual([{ chapterId: chapter._id, note: '' }]);
-    expect(chapter.themeIds).toEqual([theme._id]);
   });
 });
 

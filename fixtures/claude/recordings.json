@@ -211,13 +211,13 @@
     "match": "Section: Chapter 6: The Letter.",
     "steps": [
       {
-        "text": "{\"characters\": [{\"text\": \"Iris Hale-Zhou is 14, the point of view; raised between two families and two languages.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"H5\"]}, {\"text\": \"Daniel Hale is 60, an engineer.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"H3\"]}], \"worldEvents\": [{\"text\": \"The forties: grid batteries everywhere, seawalls under construction.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"ERA-2040\"]}, {\"text\": \"The Hale house in Portland has had licensed care robots within reach since 2027.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"E2\"]}, {\"text\": \"Grid batteries replaced the last coal plant in Guangdong in 2042.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E5\"]}, {\"text\": \"The 2034 king tide flood of downtown Portland is formative for Iris and Daniel; the 2008 Beijing Olympics for Daniel.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"E3\", \"E1\"]}, {\"text\": \"Care robots have been licensed for home use in Oregon since 2027.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"E2\"]}], \"culture\": [{\"text\": \"Each January Portland walks the old waterline with lanterns (the flood memorial walk).\", \"status\": \"plan"
+        "text": "{\"characters\": [{\"text\": \"Iris Hale-Zhou is 14, the point of view; raised between two families and two languages.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"H5\"]}, {\"text\": \"Daniel Hale is 60, an engineer.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"H3\"]}], \"worldEvents\": [{\"text\": \"The forties: grid batteries everywhere, seawalls under construction.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"ERA-2040\"]}, {\"text\": \"Grid batteries replaced the last coal plant in Guangdong in 2042.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E5\"]}, {\"text\": \"The 2034 king tide flood of downtown Portland is formative for Iris and Daniel; the 2008 Beijing Olympics for Daniel.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"E3\", \"E1\"]}], \"culture\": [{\"text\": \"Each January Portland walks the old waterline with lanterns (the flood "
       },
       {
-        "text": "ned\", \"strand\": null, \"cites\": [\"CU4\"]}], \"sections\": [{\"heading\": \"Places\", \"items\": [{\"text\": \"The Hale house: a narrow two-story house with the kitchen at the back.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"PLC2\"]}]}, {\"heading\": \"Who knows what\", \"items\": [{\"text\": \"Daniel has known about Peter's letter since 2044; Iris does not know.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"F2\", \"K4\"]}]}, {\"heading\": \"Previous chapters\", \"items\": [{\"text\": \"Chapter 5, Candles: Margaret's birthday.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH5\"]}, {\"text\": \"Chapter 4, After the Funeral: the Hales gather at the house.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH4\"]}, {\"text\": \"Chapter 1: Iris and Noor visit the Archivist.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH1\"]}, {\"text\": \"Chapter 3: Daniel and Lan marry in the rain.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH3\"]}]}, {\"heading\": \"Beats\", \"items\": [{\"text\": \"Planned here: Iris finds an envelope in the attic.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B4\"]}, {\"text\": \"Unresolved: Peter writes the letter, Ruth reads it, "
+        "text": "memorial walk).\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"CU4\"]}], \"sections\": [{\"heading\": \"Places\", \"items\": [{\"text\": \"The Hale house: a narrow two-story house with the kitchen at the back.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"PLC2\"]}]}, {\"heading\": \"Previous chapters\", \"items\": [{\"text\": \"Chapter 5, Candles: Margaret's birthday.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH5\"]}, {\"text\": \"Chapter 4, After the Funeral: the Hales gather at the house.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH4\"]}, {\"text\": \"Chapter 1: Iris and Noor visit the Archivist.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH1\"]}, {\"text\": \"Chapter 3: Daniel and Lan marry in the rain.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"CH3\"]}]}, {\"heading\": \"Backstory\", \"items\": [{\"text\": \"Iris finds an envelope in the atti"
       },
       {
-        "text": "Lan keeps her mother's letters.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B1\", \"B3\", \"B7\"]}]}, {\"heading\": \"Glossary, themes, and open questions\", \"items\": [{\"text\": \"\u6653\u66e6 xi\u01ceox\u012b, dawn light: Iris's Chinese name. \u56e2\u5706 tu\u00e1nyu\u00e1n, family reunion.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"GL1\", \"GL3\"]}, {\"text\": \"Themes: letters that outlive their writers; water.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"TH1\", \"TH2\"]}, {\"text\": \"Open: does Daniel know about the uncle? How cheap are grid batteries?\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q1\", \"Q4\"]}, {\"text\": \"Decided: Iris is left-handed.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q2\"]}]}, {\"heading\": \"Custom entries\", \"items\": [{\"text\": \"Hale house soda bread, an everyday family recipe.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"CE3\"]}]}, {\"heading\": \"Last session note\", \"items\": [{\"text\": \"Last session: Iris reads the first line.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"SL2\"]}]}], \"plannedAhead\": [{\"text\": \"By 2072 household robots outnumber cars in Portland.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E9\"]}]}"
+        "text": "c in 2045.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"B4\"]}]}, {\"heading\": \"Glossary and open questions\", \"items\": [{\"text\": \"\\u6653\\u66e6 xi\\u01ceox\\u012b, dawn light: Iris's Chinese name. \\u56e2\\u5706 tu\\u00e1nyu\\u00e1n, family reunion.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"GL1\", \"GL3\"]}, {\"text\": \"Open: does Daniel know about the uncle? How cheap are grid batteries?\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q1\", \"Q4\"]}, {\"text\": \"Decided: Iris is left-handed.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"Q2\"]}]}, {\"heading\": \"Last session note\", \"items\": [{\"text\": \"Last session: Iris reads the first line.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"SL2\"]}]}], \"plannedAhead\": [{\"text\": \"In 2046 household robots outnumber cars in Portland.\", \"status\": \"planned\", \"strand\": null, \"cites\": [\"E9\"]}]}"
       },
       {
         "result": {
@@ -245,12 +245,6 @@
                 "cites": ["ERA-2040"]
               },
               {
-                "text": "The Hale house in Portland has had licensed care robots within reach since 2027.",
-                "status": "canon",
-                "strand": null,
-                "cites": ["E2"]
-              },
-              {
                 "text": "Grid batteries replaced the last coal plant in Guangdong in 2042.",
                 "status": "planned",
                 "strand": null,
@@ -261,12 +255,6 @@
                 "status": "canon",
                 "strand": null,
                 "cites": ["E3", "E1"]
-              },
-              {
-                "text": "Care robots have been licensed for home use in Oregon since 2027.",
-                "status": "canon",
-                "strand": null,
-                "cites": ["E2"]
               }
             ],
             "culture": [
@@ -286,17 +274,6 @@
                     "status": "canon",
                     "strand": null,
                     "cites": ["PLC2"]
-                  }
-                ]
-              },
-              {
-                "heading": "Who knows what",
-                "items": [
-                  {
-                    "text": "Daniel has known about Peter's letter since 2044; Iris does not know.",
-                    "status": "planned",
-                    "strand": null,
-                    "cites": ["F2", "K4"]
                   }
                 ]
               },
@@ -330,36 +307,24 @@
                 ]
               },
               {
-                "heading": "Beats",
+                "heading": "Backstory",
                 "items": [
                   {
-                    "text": "Planned here: Iris finds an envelope in the attic.",
+                    "text": "Iris finds an envelope in the attic in 2045.",
                     "status": "planned",
                     "strand": null,
                     "cites": ["B4"]
-                  },
-                  {
-                    "text": "Unresolved: Peter writes the letter, Ruth reads it, Lan keeps her mother's letters.",
-                    "status": "planned",
-                    "strand": null,
-                    "cites": ["B1", "B3", "B7"]
                   }
                 ]
               },
               {
-                "heading": "Glossary, themes, and open questions",
+                "heading": "Glossary and open questions",
                 "items": [
                   {
-                    "text": "\u6653\u66e6 xi\u01ceox\u012b, dawn light: Iris's Chinese name. \u56e2\u5706 tu\u00e1nyu\u00e1n, family reunion.",
+                    "text": "晓曦 xiǎoxī, dawn light: Iris's Chinese name. 团圆 tuányuán, family reunion.",
                     "status": "canon",
                     "strand": null,
                     "cites": ["GL1", "GL3"]
-                  },
-                  {
-                    "text": "Themes: letters that outlive their writers; water.",
-                    "status": "canon",
-                    "strand": null,
-                    "cites": ["TH1", "TH2"]
                   },
                   {
                     "text": "Open: does Daniel know about the uncle? How cheap are grid batteries?",
@@ -372,17 +337,6 @@
                     "status": "planned",
                     "strand": null,
                     "cites": ["Q2"]
-                  }
-                ]
-              },
-              {
-                "heading": "Custom entries",
-                "items": [
-                  {
-                    "text": "Hale house soda bread, an everyday family recipe.",
-                    "status": "planned",
-                    "strand": null,
-                    "cites": ["CE3"]
                   }
                 ]
               },
@@ -400,7 +354,7 @@
             ],
             "plannedAhead": [
               {
-                "text": "By 2072 household robots outnumber cars in Portland.",
+                "text": "In 2046 household robots outnumber cars in Portland.",
                 "status": "planned",
                 "strand": null,
                 "cites": ["E9"]
@@ -417,13 +371,13 @@
     "match": "Section: Chapter 2: Two Kitchens.",
     "steps": [
       {
-        "text": "{\"characters\": [{\"text\": \"Daniel Hale is 60.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"H3\"]}, {\"text\": \"Zhou Lan is 57.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"Z3\"]}, {\"text\": \"Zhou Meiling is 70 and runs a tea shop near the Pearl River.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"Z1\"]}], \"worldEvents\": [{\"text\": \"The thirties: home robot"
+        "text": "{\"characters\": [{\"text\": \"Daniel Hale is 60.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"H3\"]}, {\"text\": \"Zhou Lan is 57.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"Z3\"]}, {\"text\": \"Zhou Meiling is 70 and runs a tea shop near the Pearl River.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"Z1\"]}], \"worldEvents\": [{\"text\": \"The thirties: ho"
       },
       {
-        "text": "s become ordinary.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"ERA-2030\"]}, {\"text\": \"Household robots outnumber cars in Portland.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"E9\"]}], \"culture\": [{\"text\": \"Mid-Autumn mooncakes are exchanged at work and at home in Guangzhou.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"CU1\"]}], \"sections\": [{\"he"
+        "text": "me robots become ordinary.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"ERA-2030\"]}, {\"text\": \"Household robots outnumber cars in Portland.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"E9\"]}], \"culture\": [{\"text\": \"Mid-Autumn mooncakes are exchanged at work and at home in Guangzhou.\", \"status\": \"canon\", \"strand\": \"backstory, 2032\", \"cites\": [\"CU1\"]}], \""
       },
       {
-        "text": "ading\": \"Who knows what\", \"items\": [{\"text\": \"Zhou Lan knows Meiling was engaged before Wei; Daniel does not.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"F1\", \"K1\"]}, {\"text\": \"Daniel has always hated rain.\", \"status\": \"canon\", \"strand\": null, \"cites\": []}, {\"text\": \"Lan's brother writes from Jinan.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"Z2\"]}]}], \"plannedAhead\": []}"
+        "text": "sections\": [{\"heading\": \"Backstory\", \"items\": [{\"text\": \"Zhou Lan has lived in Portland since 2027.\", \"status\": \"canon\", \"strand\": \"present, 2045\", \"cites\": [\"Z3-lives-1\"]}, {\"text\": \"Daniel has always hated rain.\", \"status\": \"canon\", \"strand\": null, \"cites\": []}, {\"text\": \"Lan's brother writes from Jinan.\", \"status\": \"canon\", \"strand\": null, \"cites\": [\"Z2\"]}]}], \"plannedAhead\": []}"
       },
       {
         "result": {
@@ -473,13 +427,13 @@
             ],
             "sections": [
               {
-                "heading": "Who knows what",
+                "heading": "Backstory",
                 "items": [
                   {
-                    "text": "Zhou Lan knows Meiling was engaged before Wei; Daniel does not.",
+                    "text": "Zhou Lan has lived in Portland since 2027.",
                     "status": "canon",
                     "strand": "present, 2045",
-                    "cites": ["F1", "K1"]
+                    "cites": ["Z3-lives-1"]
                   },
                   {
                     "text": "Daniel has always hated rain.",
@@ -581,7 +535,7 @@
         "text": "{\"findings\": [{\"kind\": \"place\", \"lineStart\": 1, \"lineEnd\": 1"
       },
       {
-        "text": ", \"quote\": \"Lan had grown up in Shanghai\", \"citedIds\": [\"Z3\"], \"explanation\": \"The text says Lan grew up in Shanghai. The bible says Zhou Lan was raised in Guangzhou.\", \"mustChange\": \"The city Lan grew up in must be Guangzhou, as the bible records.\", \"changeSet\": [{\"collection\": \"characters\", \"id\": \"Z3\", \"field\": \"birthplace\", \"value\": \"\\\"Shanghai\\\"\"}, {\"collection\": \"characters\", \"id\": \"Z3\", \"field\": \"hometown\", \"value\": \"\\\"Shanghai\\\"\"}]}, {\"kind\": \"other\", \"lineStart\": 2, \"lineEnd\": 2, \"quote\": \"waited out the storm\", \"citedIds\": [\"Z9\"], \"explanation\": \"A character the bible does not hold.\", \"mustChange\": \"Nothing.\", \"changeSet\": []}]}"
+        "text": ", \"quote\": \"Lan had grown up in Shanghai\", \"citedIds\": [\"Z3\"], \"explanation\": \"The text says Lan grew up in Shanghai. The bible says Zhou Lan was raised in Guangzhou.\", \"mustChange\": \"The city Lan grew up in must be Guangzhou, as the bible records.\", \"changeSet\": [{\"collection\": \"moments\", \"id\": \"Z3-lives-0\", \"field\": \"title\", \"value\": \"\\\"Lives in Shanghai\\\"\"}, {\"collection\": \"characters\", \"id\": \"Z3\", \"field\": \"hometown\", \"value\": \"\\\"Shanghai\\\"\"}]}, {\"kind\": \"other\", \"lineStart\": 2, \"lineEnd\": 2, \"quote\": \"waited out the storm\", \"citedIds\": [\"Z9\"], \"explanation\": \"A character the bible does not hold.\", \"mustChange\": \"Nothing.\", \"changeSet\": []}]}"
       },
       {
         "result": {
@@ -598,10 +552,10 @@
                 "mustChange": "The city Lan grew up in must be Guangzhou, as the bible records.",
                 "changeSet": [
                   {
-                    "collection": "characters",
-                    "id": "Z3",
-                    "field": "birthplace",
-                    "value": "\"Shanghai\""
+                    "collection": "moments",
+                    "id": "Z3-lives-0",
+                    "field": "title",
+                    "value": "\"Lives in Shanghai\""
                   },
                   {
                     "collection": "characters",
@@ -658,7 +612,7 @@
     ]
   },
   {
-    "name": "capture: a move files on the character and a new world event in the story year (KB-6)",
+    "name": "capture: a move files as a moment of the character and a new world event in the story year (KB-6, SM-3)",
     "feature": "capture",
     "match": "Zhou Lan moved to Seattle when Portland started rationing water",
     "steps": [
@@ -691,27 +645,14 @@
       {
         "tool": "propose_change",
         "input": {
-          "op": "update",
-          "collection": "characters",
-          "targetId": "Z3",
+          "op": "create",
+          "collection": "moments",
           "data": {
-            "placesLived": [
-              {
-                "place": "Guangzhou",
-                "startYear": 1988,
-                "endYear": 2027
-              },
-              {
-                "place": "Portland, Oregon",
-                "startYear": 2027,
-                "endYear": 2034
-              },
-              {
-                "place": "Seattle",
-                "startYear": 2034,
-                "endYear": null
-              }
-            ]
+            "characterId": "Z3",
+            "year": 2034,
+            "title": "Lives in Seattle",
+            "body": "<p>She leaves Portland when the water is rationed.</p>",
+            "status": "idea"
           },
           "reason": "The capture says Zhou Lan moved to Seattle; the text gives no year, so the story year 2034 is used."
         }
@@ -726,10 +667,8 @@
             "start": {
               "year": 2034
             },
-            "reality": "invented",
             "categoryId": "climate",
             "regions": ["Pacific Northwest"],
-            "placeIds": ["PLC1"],
             "characterIds": ["Z3"],
             "status": "idea"
           },
@@ -737,20 +676,20 @@
         }
       },
       {
-        "text": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034."
+        "text": "I proposed a moment for Zhou Lan, Lives in Seattle from 2034, and a new world event, Portland rations water, in 2034."
       },
       {
         "result": {
-          "text": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034.",
+          "text": "I proposed a moment for Zhou Lan, Lives in Seattle from 2034, and a new world event, Portland rations water, in 2034.",
           "structured": {
-            "summary": "I proposed Seattle from 2034 in Zhou Lan's places lived, and a new world event, Portland rations water, in 2034."
+            "summary": "I proposed a moment for Zhou Lan, Lives in Seattle from 2034, and a new world event, Portland rations water, in 2034."
           }
         }
       }
     ]
   },
   {
-    "name": "capture: a fact about two characters is linked to both (KB-6)",
+    "name": "capture: a fact about two characters is a moment for each of them (KB-6, SM-3)",
     "feature": "capture",
     "match": "Meiling and Ruth kept the same recipe box",
     "steps": [
@@ -772,32 +711,38 @@
         "tool": "propose_change",
         "input": {
           "op": "create",
-          "collection": "facts",
+          "collection": "moments",
           "data": {
-            "title": "Meiling and Ruth shared one recipe box",
-            "body": "<p>Zhou Meiling and Ruth Hale kept the same recipe box, passed between the two families.</p>",
-            "links": [
-              {
-                "targetId": "Z1",
-                "kind": "concerns"
-              },
-              {
-                "targetId": "H4",
-                "kind": "concerns"
-              }
-            ]
+            "characterId": "Z1",
+            "year": 2034,
+            "title": "Shares a recipe box with Ruth Hale",
+            "body": "<p>Zhou Meiling and Ruth Hale keep the same recipe box, passed between the two families.</p>"
           },
-          "reason": "The capture is a fact about Zhou Meiling and Ruth Hale together."
+          "reason": "The capture is about Zhou Meiling and Ruth Hale together: one moment for each of them."
         }
       },
       {
-        "text": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale."
+        "tool": "propose_change",
+        "input": {
+          "op": "create",
+          "collection": "moments",
+          "data": {
+            "characterId": "H4",
+            "year": 2034,
+            "title": "Shares a recipe box with Zhou Meiling",
+            "body": "<p>Ruth Hale and Zhou Meiling keep the same recipe box, passed between the two families.</p>"
+          },
+          "reason": "The capture is about Zhou Meiling and Ruth Hale together: one moment for each of them."
+        }
+      },
+      {
+        "text": "I proposed a moment for Zhou Meiling and one for Ruth Hale: they share one recipe box."
       },
       {
         "result": {
-          "text": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale.",
+          "text": "I proposed a moment for Zhou Meiling and one for Ruth Hale: they share one recipe box.",
           "structured": {
-            "summary": "I proposed one new fact, Meiling and Ruth shared one recipe box, linked to Zhou Meiling and Ruth Hale."
+            "summary": "I proposed a moment for Zhou Meiling and one for Ruth Hale: they share one recipe box."
           }
         }
       }

@@ -67,7 +67,7 @@ const INSTRUCTIONS = `You write the session brief a novelist reads before a writ
 Use only the selected entries inside the material tags. Do not add facts, guesses, or invented detail. Ages and alive-or-dead states are computed by the app: report them as given.
 Return structured items. Each item is one short plain statement and cites, in "cites", the ID of every entry it comes from (the ID in square brackets at the start of each entry). An item with no citation will be flagged.
 Fill these three lead sections first, every time, even if one is nearly empty: "characters" (each character present and their age at the story year), "worldEvents" (the era and the world events ongoing at that time, including formative ones), and "culture" (the cultural expectations bearing on those characters at that moment).
-Then add "sections" for the rest of the material, in this order where there is material for it: places, who knows what, previous chapters, beats, glossary and themes and open questions (decided questions with their decision, apart from open ones), custom entries, the last session note. Give each a short plain heading.
+Then add "sections" for the rest of the material, in this order where there is material for it: places, backstory (the moments of each character's life up to the story year), previous chapters, glossary and open questions (decided questions with their decision, apart from open ones), the last session note. Give each a short plain heading.
 Mark each item "canon" only when every entry it cites is canon; otherwise "planned".
 Nothing that happens after the story year goes anywhere except "plannedAhead".
 When the section has more than one strand, set "strand" to the strand's label for strand material; otherwise null.`;

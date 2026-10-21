@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import type { z } from 'zod';
 import {
-  CUSTOM_FIELD_TYPES,
   ENTRY_COLLECTIONS,
   collectionInfo,
-  customFieldSpecs,
   editableFields,
   entrySchemas,
   manifests,
@@ -53,8 +51,6 @@ const SCALAR: Partial<Record<FieldSpec['kind'], string[]>> = {
   links: ['array'],
   refPair: ['tuple'],
   storyDate: ['union'],
-  yearOrAge: ['union'],
-  customValues: ['record'],
   object: ['object'],
   objectList: ['array'],
 };
@@ -114,11 +110,11 @@ describe('T-5 field manifests match the schemas', () => {
     expect(problems).toEqual([]);
   });
 
-  test('TH-1 the only derived manifest field is the chapter Themes field, and it is not in the stored schema', () => {
+  test('SM-2 no manifest field is derived now that themes are gone, and chapters store no themes', () => {
     const derived = ENTRY_COLLECTIONS.flatMap((c) =>
       manifests[c].filter((s) => s.derived).map((s) => `${c}.${s.name}`),
     );
-    expect(derived).toEqual(['chapters.themeIds']);
+    expect(derived).toEqual([]);
     const shape = (entrySchemas.chapters as unknown as { shape: Record<string, z.ZodType> }).shape;
     expect(Object.keys(shape)).not.toContain('themeIds');
   });
@@ -148,30 +144,36 @@ describe('T-5 field manifests match the schemas', () => {
 
 describe('ED-1 every entity in section 4 has a schema and an editor manifest', () => {
   test('ED-1 every section 4 entity is a collection with an editable manifest', () => {
+    // SM-2: section 4 as A39 cut it, with moments (SM-3) in place of beats, voice notes and places lived.
     const section4 = [
       'families',
       'characters',
+      'moments',
       'unions',
       'parentLinks',
-      'relationships',
       'books',
       'parts',
-      'arcs',
       'chapters',
-      'plotBeats',
       'worldEvents',
       'eraStates',
       'culturalEntries',
       'places',
       'glossaryTerms',
+      'openQuestions',
+      'sessionLogs',
+    ];
+    for (const gone of [
       'facts',
       'knowledgeRecords',
       'themes',
-      'openQuestions',
-      'sessionLogs',
       'customSections',
       'customEntries',
-    ];
+      'arcs',
+      'relationships',
+      'plotBeats',
+    ]) {
+      expect(ENTRY_COLLECTIONS, gone).not.toContain(gone);
+    }
     for (const c of section4) {
       expect(ENTRY_COLLECTIONS, c).toContain(c);
       expect(editableFields(manifests[c as keyof typeof manifests]).length, c).toBeGreaterThan(0);
@@ -181,33 +183,12 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
 
   test('ED-1 entries share the common fields of section 4', () => {
     const common = ['title', 'body', 'status', 'provenance', 'sourceNote', 'tags', 'links'];
-    for (const c of ENTRY_COLLECTIONS.filter((x) => x !== 'customSections')) {
+    for (const c of ENTRY_COLLECTIONS) {
       expect(
         manifests[c].map((s) => s.name),
         c,
       ).toEqual(expect.arrayContaining(common));
     }
-  });
-
-  test('ED-1 a custom section yields a manifest with one field per CS-1 kind', () => {
-    const specs = customFieldSpecs({
-      fields: CUSTOM_FIELD_TYPES.map((t, i) => ({
-        id: `f${i}`,
-        label: t,
-        type: t,
-        options: ['A', 'B'],
-      })),
-    });
-    expect(specs.map((s) => s.kind)).toEqual([
-      'text',
-      'longText',
-      'number',
-      'year',
-      'object',
-      'enum',
-      'tags',
-      'ref',
-    ]);
   });
 });
 

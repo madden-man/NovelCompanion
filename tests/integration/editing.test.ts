@@ -35,7 +35,6 @@ beforeAll(async () => {
         .lists()
         .find((l) => l._id === id)!
         .items.map((i) => i.id),
-    customSpecs: (id) => bible.model.customSpecs(id),
   };
 });
 afterAll(async () => {
@@ -82,23 +81,23 @@ describe('ED-1 the write path works for every collection', () => {
 describe('ED-4 revision history', () => {
   test('ED-4 history lists every write newest first with the entry as it stood after it', async () => {
     const { repo } = fixture;
-    await repo.update('characters', 'H1', { birthplace: 'Salem, Oregon' });
-    await repo.update('characters', 'H1', { birthplace: 'Eugene, Oregon', tags: ['moved'] });
+    await repo.update('characters', 'H1', { backstory: 'Salem, Oregon' });
+    await repo.update('characters', 'H1', { backstory: 'Eugene, Oregon', tags: ['moved'] });
     const history = await repo.history('characters', 'H1');
     expect(history.map((h) => h.op)).toEqual(['update', 'update']);
-    expect(history[0]!.snapshot.birthplace).toBe('Eugene, Oregon');
-    expect(history[1]!.snapshot.birthplace).toBe('Salem, Oregon');
+    expect(history[0]!.snapshot.backstory).toBe('Eugene, Oregon');
+    expect(history[1]!.snapshot.backstory).toBe('Salem, Oregon');
   });
 
   test('ED-4 a revision compares with the current entry field by field', async () => {
     const { repo } = fixture;
     const [, older] = await repo.history('characters', 'H1');
     const { changes, current } = await repo.revisionDiff('characters', 'H1', older!._id);
-    expect(current.birthplace).toBe('Eugene, Oregon');
+    expect(current.backstory).toBe('Eugene, Oregon');
     expect(changes).toHaveLength(2);
     expect(changes).toEqual(
       expect.arrayContaining([
-        { path: 'birthplace', before: 'Salem, Oregon', after: 'Eugene, Oregon' },
+        { path: 'backstory', before: 'Salem, Oregon', after: 'Eugene, Oregon' },
         { path: 'tags', before: [], after: ['moved'] },
       ]),
     );
@@ -108,13 +107,13 @@ describe('ED-4 revision history', () => {
     const { repo } = fixture;
     const [, older] = await repo.history('characters', 'H1');
     const restored = await repo.restoreRevision('characters', 'H1', older!._id);
-    expect(restored.birthplace).toBe('Salem, Oregon');
+    expect(restored.backstory).toBe('Salem, Oregon');
     expect(restored.tags).toEqual([]);
     const history = await repo.history('characters', 'H1');
     expect(history).toHaveLength(3);
     expect(history[0]!.note).toMatch(/^Restored the version from /);
     // The restore is itself history: the version before it can be restored again.
-    expect(history[1]!.snapshot.birthplace).toBe('Eugene, Oregon');
+    expect(history[1]!.snapshot.backstory).toBe('Eugene, Oregon');
   });
 
   test('ED-4 a revision from another entry is refused', async () => {
@@ -134,14 +133,14 @@ describe('ED-4 revision history', () => {
       id: 'H1',
       revisionId: revisions[1]!._id,
     });
-    expect(diff.revision.snapshot.birthplace).toBe('Eugene, Oregon');
-    expect(diff.changes.map((c) => c.path)).toContain('birthplace');
+    expect(diff.revision.snapshot.backstory).toBe('Eugene, Oregon');
+    expect(diff.changes.map((c) => c.path)).toContain('backstory');
     const { entry } = await invoke('revisions.restore', {
       collection: 'characters',
       id: 'H1',
       revisionId: revisions[1]!._id,
     });
-    expect(entry.birthplace).toBe('Eugene, Oregon');
+    expect(entry.backstory).toBe('Eugene, Oregon');
   });
 });
 
@@ -150,7 +149,7 @@ describe('ED-5 trash', () => {
     const { count, entries } = fixture.repo.linkedFrom('Z3');
     expect(count).toBeGreaterThan(2);
     const kinds = entries.map((e) => `${e.collection}:${e.id}`);
-    expect(kinds).toEqual(expect.arrayContaining(['parentLinks:PL-Z1-Z3', 'knowledgeRecords:K1']));
+    expect(kinds).toEqual(expect.arrayContaining(['parentLinks:PL-Z1-Z3', 'moments:Z3-lives-0']));
     expect(entries.every((e) => e.title.length > 0)).toBe(true);
   });
 
@@ -174,14 +173,14 @@ describe('ED-5 trash', () => {
 
   test('ED-5 entries that point at a trashed entry warn, and stop warning after a restore', async () => {
     const { repo } = fixture;
-    await repo.softDelete('facts', 'F1');
-    const k1 = repo.get('knowledgeRecords', 'K1')!;
-    expect(repo.warnings('knowledgeRecords', k1 as never)).toContainEqual(
-      expect.objectContaining({ path: 'factId', code: 'missing-target' }),
+    await repo.softDelete('characters', 'Z3');
+    const moment = repo.get('moments', 'Z3-lives-0')!;
+    expect(repo.warnings('moments', moment as never)).toContainEqual(
+      expect.objectContaining({ path: 'characterId', code: 'missing-target' }),
     );
-    await repo.restore('facts', 'F1');
+    await repo.restore('characters', 'Z3');
     expect(
-      repo.warnings('knowledgeRecords', k1 as never).filter((w) => w.code === 'missing-target'),
+      repo.warnings('moments', moment as never).filter((w) => w.code === 'missing-target'),
     ).toEqual([]);
   });
 
@@ -262,15 +261,15 @@ describe('ED-10 warnings come back with every read and never block a write', () 
     expect(listed.entries.find((e) => e.entry._id === 'H2')!.warnings).toContainEqual(expected);
   });
 
-  test('ED-10 KN-2 a knowledge record before the character is born saves with a warning', async () => {
+  test('ED-10 SM-3 a moment before the character is born saves with a warning', async () => {
     const res = await ipcFor(() => fixture)('entry.update', {
-      collection: 'knowledgeRecords',
-      id: 'K1',
-      patch: { yearLearned: 1800 },
+      collection: 'moments',
+      id: 'H1-voice-0',
+      patch: { year: 1800 },
     });
-    expect(res.entry.yearLearned).toBe(1800);
+    expect(res.entry.year).toBe(1800);
     expect(res.warnings).toContainEqual(
-      expect.objectContaining({ path: 'yearLearned', code: 'learned-before-birth' }),
+      expect.objectContaining({ path: 'year', code: 'outside-lifetime' }),
     );
   });
 
@@ -360,14 +359,12 @@ describe('ED-8 editable lists', () => {
     expect(await fixture.handle.collection('revisions').countDocuments()).toBe(before);
   });
 
-  test('ED-8 renaming a family, a section name, or an era renames the entry', async () => {
+  test('ED-8 renaming a family or an era renames the entry', async () => {
     const { repo } = fixture;
     await repo.renameListItem('families', 'FAM-HALE', 'Hale-Doyle');
     expect(repo.get('families', 'FAM-HALE')).toEqual(
       expect.objectContaining({ name: 'Hale-Doyle', title: 'Hale-Doyle family' }),
     );
-    await repo.renameListItem('sectionNames', 'CS-RECIPES', 'Recipes');
-    expect(repo.get('customSections', 'CS-RECIPES')!.name).toBe('Recipes');
     await repo.renameListItem('eraRanges', 'ERA-2025', 'The hinge years');
     expect(repo.get('eraStates', 'ERA-2025')!.name).toBe('The hinge years');
     expect(
@@ -430,7 +427,7 @@ describe('ED-7 proposals wait for approval', () => {
       op: 'update',
       collection: 'characters',
       targetId: 'Z2',
-      data: { birthplace: 'Foshan' },
+      data: { role: 'Foshan' },
       reason: 'The workbook says Foshan.',
     });
     expect(p.state).toBe('pending');
@@ -438,9 +435,7 @@ describe('ED-7 proposals wait for approval', () => {
     expect(await stored('characters', 'Z2')).toEqual(before);
     expect(await revisionCount('Z2')).toBe(revsBefore);
     const view = await invoke('proposal.diff', { id: p._id });
-    expect(view.changes).toEqual([
-      { path: 'birthplace', before: before!.birthplace, after: 'Foshan' },
-    ]);
+    expect(view.changes).toEqual([{ path: 'role', before: before!.role, after: 'Foshan' }]);
     expect(view.conflict).toBe(false);
     expect(
       (await invoke('proposal.list', { state: 'pending' })).proposals.map((v) => v.proposal._id),
@@ -451,7 +446,7 @@ describe('ED-7 proposals wait for approval', () => {
       expect.objectContaining({ state: 'approved', edited: false, appliedEntryId: 'Z2' }),
     );
     expect(approved.decidedAt).not.toBeNull();
-    expect((await stored('characters', 'Z2'))!.birthplace).toBe('Foshan');
+    expect((await stored('characters', 'Z2'))!.role).toBe('Foshan');
     expect(await revisionCount('Z2')).toBe(revsBefore + 1);
     const [rev] = await repo.history('characters', 'Z2');
     expect(rev).toEqual(
@@ -510,7 +505,7 @@ describe('ED-7 proposals wait for approval', () => {
       op: 'update',
       collection: 'characters',
       targetId: 'Z2',
-      data: { birthplace: 'x' },
+      data: { role: 'x' },
     });
     await expect(fixture.repo.editProposal(p._id, { birth: { year: 'old' } })).rejects.toThrow(
       /not valid/,
@@ -521,17 +516,17 @@ describe('ED-7 proposals wait for approval', () => {
   test('ED-7 a rejected proposal leaves MongoDB unchanged; create and delete proposals apply through the write path', async () => {
     const { repo } = fixture;
     const invoke = ipcFor(() => fixture);
-    const before = await stored('facts', 'F2');
-    const revs = await revisionCount('F2');
+    const before = await stored('places', 'PLC4');
+    const revs = await revisionCount('PLC4');
     const rejected = await repo.propose({
       source: 'bulk',
       op: 'delete',
-      collection: 'facts',
-      targetId: 'F2',
+      collection: 'places',
+      targetId: 'PLC4',
     });
     await invoke('proposal.reject', { id: rejected._id });
-    expect(await stored('facts', 'F2')).toEqual(before);
-    expect(await revisionCount('F2')).toBe(revs);
+    expect(await stored('places', 'PLC4')).toEqual(before);
+    expect(await revisionCount('PLC4')).toBe(revs);
     expect(
       (await invoke('proposal.list', { state: 'rejected' })).proposals.map((v) => v.proposal._id),
     ).toContain(rejected._id);
@@ -539,124 +534,20 @@ describe('ED-7 proposals wait for approval', () => {
     const create = await repo.propose({
       source: 'import',
       op: 'create',
-      collection: 'facts',
-      data: { title: 'A new secret', status: 'idea' },
+      collection: 'places',
+      data: { title: 'A new place', status: 'idea' },
     });
     const { proposal: done } = await invoke('proposal.approve', { id: create._id });
-    expect((await stored('facts', done.appliedEntryId!))!.title).toBe('A new secret');
+    expect((await stored('places', done.appliedEntryId!))!.title).toBe('A new place');
     expect(await revisionCount(done.appliedEntryId!)).toBe(1);
     const del = await repo.propose({
       source: 'import',
       op: 'delete',
-      collection: 'facts',
+      collection: 'places',
       targetId: done.appliedEntryId,
     });
     await invoke('proposal.approve', { id: del._id });
-    expect((await stored('facts', done.appliedEntryId!))!.deletedAt).toBeDefined();
+    expect((await stored('places', done.appliedEntryId!))!.deletedAt).toBeDefined();
     expect(await revisionCount(done.appliedEntryId!)).toBe(2);
-  });
-});
-
-describe('ED-8 custom section choices and fields', () => {
-  const choiceList = 'choice:CS-RECIPES:occasion';
-  const values = async (id: string) =>
-    ((await fixture.handle.collection('customEntries').findOne({ _id: id as never }))!.values ??
-      {}) as Record<string, unknown>;
-
-  test('ED-8 renaming a choice updates every custom entry using it in one transaction, with revisions', async () => {
-    const { repo } = fixture;
-    const list = repo.lists().find((l) => l._id === choiceList)!;
-    expect(list.items.find((i) => i.id === 'Holiday')!.usage).toBeGreaterThan(0);
-    const users = repo
-      .list('customEntries')
-      .filter((e) => e.values.occasion === 'Holiday')
-      .map((e) => e._id);
-    const res = await ipcFor(() => fixture)('lists.rename', {
-      listId: choiceList,
-      itemId: 'Holiday',
-      label: 'Festival',
-    });
-    expect(res).toEqual({ updated: users.length, from: 'Holiday' });
-    for (const id of users) {
-      expect((await values(id)).occasion).toBe('Festival');
-      expect((await repo.history('customEntries', id))[0]!.note).toBe(
-        'Renamed Holiday to Festival in Occasion',
-      );
-    }
-    const section = await fixture.handle
-      .collection('customSections')
-      .findOne({ _id: 'CS-RECIPES' as never });
-    const occasion = (section!.fields as { id: string; options: string[] }[]).find(
-      (f) => f.id === 'occasion',
-    )!;
-    expect(occasion.options).toEqual(['Everyday', 'Festival', 'Funeral']);
-    for (const id of users) {
-      expect(repo.warnings('customEntries', repo.get('customEntries', id) as never)).toEqual([]);
-    }
-  });
-
-  test('ED-8 a choice in use cannot be removed, on the Lists screen or in the section editor, and the message says how many', async () => {
-    const { repo } = fixture;
-    await expect(repo.removeListItem(choiceList, 'Festival')).rejects.toThrow(
-      /^1 entry uses Festival\./,
-    );
-    const section = repo.get('customSections', 'CS-RECIPES')!;
-    const fields = section.fields.map((f) =>
-      f.id === 'occasion' ? { ...f, options: ['Everyday', 'Funeral'] } : f,
-    );
-    await expect(repo.update('customSections', 'CS-RECIPES', { fields })).rejects.toThrow(
-      /^1 entry uses the choice Festival in Occasion\./,
-    );
-    await repo.removeListItem(choiceList, 'Funeral');
-    expect(
-      repo.get('customSections', 'CS-RECIPES')!.fields.find((f) => f.id === 'occasion')!.options,
-    ).toEqual(['Everyday', 'Festival']);
-    await repo.addListItem(choiceList, 'Wedding');
-    expect(
-      repo
-        .lists()
-        .find((l) => l._id === choiceList)!
-        .items.map((i) => i.id),
-    ).toEqual(['Everyday', 'Festival', 'Wedding']);
-  });
-
-  test('ED-8 a field in use cannot be removed, and the message says how many', async () => {
-    const { repo } = fixture;
-    const section = repo.get('customSections', 'CS-RECIPES')!;
-    await expect(
-      repo.update('customSections', 'CS-RECIPES', {
-        fields: section.fields.filter((f) => f.id !== 'method'),
-      }),
-    ).rejects.toThrow(/entr(y|ies) uses? the field Method\. Clear it/);
-    // A field nobody fills in can go.
-    await repo.update('customSections', 'CS-RECIPES', {
-      fields: [...section.fields, { id: 'spare', label: 'Spare', type: 'text', options: [] }],
-    });
-    await repo.update('customSections', 'CS-RECIPES', { fields: section.fields });
-  });
-
-  test('ED-10 a custom value that no longer fits its section is a warning, and the entry still saves', async () => {
-    const { repo } = fixture;
-    const section = repo.get('customSections', 'CS-RECIPES')!;
-    // The field changes kind, so the stored choice no longer fits.
-    await repo.update('customSections', 'CS-RECIPES', {
-      fields: section.fields.map((f) =>
-        f.id === 'firstCooked' ? { ...f, type: 'singleChoice' as const, options: ['Early'] } : f,
-      ),
-    });
-    const ce = repo.get('customEntries', 'CE1')!;
-    const saved = await repo.update('customEntries', 'CE1', { title: `${ce.title} (checked)` });
-    expect(saved.title).toMatch(/\(checked\)$/);
-    expect(repo.warnings('customEntries', saved as never)).toContainEqual(
-      expect.objectContaining({ path: 'values.firstCooked', code: 'custom-value' }),
-    );
-    // A value for a field that no longer exists is kept and flagged too.
-    const stale = await repo.update('customEntries', 'CE1', {
-      values: { ...saved.values, gone: 'old text' },
-    });
-    expect(repo.warnings('customEntries', stale as never)).toContainEqual(
-      expect.objectContaining({ path: 'values.gone', code: 'custom-value' }),
-    );
-    await repo.update('customSections', 'CS-RECIPES', { fields: section.fields });
   });
 });

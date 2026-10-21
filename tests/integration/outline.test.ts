@@ -142,53 +142,6 @@ describe('KB-3 parts and books reorder, each move with a revision', () => {
   });
 });
 
-describe('KB-3 beats move on the chapter page', () => {
-  test('KB-3 plot.reorder chapterBeats moves a beat past its neighbour in the arc that orders it', async () => {
-    const arc = await make('arcs', {
-      title: 'Tide',
-      name: 'Tide',
-      scope: 'custom',
-      status: 'idea',
-    });
-    await invoke('entry.update', {
-      collection: 'chapters',
-      id: 'CH3',
-      patch: { arcIds: [arc._id] },
-    });
-    const ids: string[] = [];
-    for (const [i, t] of ['first', 'second'].entries()) {
-      const b = await make('plotBeats', {
-        title: t,
-        chapterId: 'CH3',
-        arcIds: [arc._id],
-        arcOrders: [{ arcId: arc._id, order: i + 1 }],
-        status: 'idea',
-      });
-      ids.push(b._id);
-    }
-    let page = (await invoke('chapter.page', { id: 'CH3' })).page;
-    expect(page.beats.map((b) => [b.title, b.canMoveUp, b.canMoveDown])).toEqual([
-      ['first', false, true],
-      ['second', true, false],
-    ]);
-    const r = await invoke('plot.reorder', {
-      kind: 'chapterBeats',
-      groupId: 'CH3',
-      movedId: ids[1]!,
-      by: -1,
-    });
-    expect(r.collection).toBe('plotBeats');
-    page = (await invoke('chapter.page', { id: 'CH3' })).page;
-    expect(page.beats.map((b) => b.title)).toEqual(['second', 'first']);
-    await expect(
-      invoke('plot.reorder', { kind: 'chapterBeats', groupId: 'CH3', movedId: ids[1]!, by: -1 }),
-    ).rejects.toThrow(/No beat that way/);
-    await expect(
-      invoke('plot.reorder', { kind: 'chapterBeats', groupId: 'CH2', movedId: ids[0]!, by: 1 }),
-    ).rejects.toThrow(/not in this group/);
-  });
-});
-
 describe('PL-5 the scene outline over IPC', () => {
   test('PL-5 empty until set, round-trips text and ranges, survives a reopen, and writes no entry or revision', async () => {
     const before = await revs();

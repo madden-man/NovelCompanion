@@ -89,31 +89,34 @@ describe('AI-5 entry text reaches Claude as material', () => {
     expect(hit.snippet).toMatch(/^<material /);
     expect(hit.snippet).toContain(INJECTION);
   });
-  test('AI-5 timeline_for_year wraps era and event text, and get_chapter wraps beat descriptions', async () => {
+  test('AI-5 timeline_for_year wraps era and event text, and get_chapter wraps strand labels', async () => {
     await invoke('entry.update', {
       collection: 'eraStates',
       id: 'ERA-2040',
-      patch: { politics: INJECTION },
+      patch: { name: `The forties. ${INJECTION}` },
     });
     const { run } = rig();
     const year = (await run('timeline_for_year', { year: 2040 })) as {
-      era: { politics: string; name: string; startYear: number };
+      era: { name: string; startYear: number };
     };
-    expect(year.era.politics).toMatch(/^<material /);
-    expect(year.era.politics).toContain(INJECTION);
     expect(year.era.name).toMatch(/^<material /);
+    expect(year.era.name).toContain(INJECTION);
     expect(typeof year.era.startYear).toBe('number');
     const chapter = bible.model.all('chapters').find((c) => !c.deletedAt)!;
-    await invoke('entry.create', {
-      collection: 'plotBeats',
-      data: { title: 'A beat', chapterId: chapter._id, description: INJECTION, status: 'canon' },
+    const strands = (chapter.strands as Record<string, unknown>[]).map((st, i) =>
+      i === 0 ? { ...st, label: INJECTION } : st,
+    );
+    await invoke('entry.update', {
+      collection: 'chapters',
+      id: chapter._id as string,
+      patch: { strands },
     });
     const got = (await run('get_chapter', { id: chapter._id as string })) as {
-      page: { beats: { description: string; id: string }[] };
+      page: { strands: { label: string; id: string }[] };
     };
-    const beat = got.page.beats.find((b) => b.description.includes(INJECTION))!;
-    expect(beat.description).toMatch(/^<material /);
-    expect(beat.id).not.toMatch(/^<material/);
+    const strand = got.page.strands.find((st) => st.label.includes(INJECTION))!;
+    expect(strand.label).toMatch(/^<material /);
+    expect(strand.id).not.toMatch(/^<material/);
   });
 
   test('AI-5 the import prompt wraps existing titles and keeps the file name out of the free text', () => {

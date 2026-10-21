@@ -211,7 +211,8 @@ test('NF-2 KB-8 every screen in the rail, the five and everything under More, op
     'Entries',
   ]);
   const screens = await nav.getByRole('button', { includeHidden: true }).allTextContents();
-  expect(screens.length).toBeGreaterThan(35);
+  // A39 took the dropped sections (facts, knowledge, themes, arcs, beats, relationships, custom) off the rail.
+  expect(screens.length).toBeGreaterThan(30);
   const missed: Record<string, string[]> = {};
   for (const screen of screens) {
     await go(screen);
@@ -274,12 +275,12 @@ test('NF-2 ED-1 a new character is made, edited, and saved from the keyboard', a
   await press(page.getByRole('button', { name: 'Create character' }));
   await expect(editor()).toBeVisible();
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');
-  const birthplace = editor().locator('[data-field="birthplace"] input');
-  await tabTo(birthplace);
+  const role = editor().locator('[data-field="role"] textarea');
+  await tabTo(role);
   await page.keyboard.type('Tacoma');
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');
   const saved = await invoke('entry.list', { collection: 'characters', trash: 'exclude' });
-  expect(saved.entries.some((e) => e.entry.birthplace === 'Tacoma')).toBe(true);
+  expect(saved.entries.some((e) => e.entry.role === 'Tacoma')).toBe(true);
 });
 
 test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to Session, and Start session', async () => {
@@ -428,16 +429,35 @@ test('NF-2 KB-5 CU-2 GL-1 the Entries tabs: culture by year, the place tree, and
   await expect(tab('Entries')).toHaveAttribute('aria-selected', 'true');
 });
 
-test('NF-2 KN-2 a fact page records who learned it from the keyboard', async () => {
-  await go('Facts');
-  await press(page.getByTestId('entry-list').getByRole('button', { name: /Peter's letter/ }));
-  const form = page.getByTestId('fact-record-form');
-  await tabTo(form.getByLabel('Character'));
-  await page.keyboard.type('Sam');
-  await tabTo(form.getByLabel('Year learned'));
-  await page.keyboard.type('2052');
-  await press(form.getByRole('button', { name: 'Record who learned it' }));
-  await expect(page.getByTestId('fact-record-result')).toBeVisible();
+test('NF-2 SM-1 the character page from the keyboard: Edit name, each text box, and the relatives line opens the tree', async () => {
+  await go('Characters');
+  await press(page.getByTestId('entry-list').getByRole('button', { name: /^Keyboard Person/ }));
+  const p = page.getByTestId('character-page');
+  await press(p.getByRole('button', { name: 'Edit name', exact: true }));
+  await tabTo(p.getByRole('textbox', { name: 'Name in Chinese characters' }));
+  await page.keyboard.type('键');
+  await press(p.getByRole('button', { name: 'Done', exact: true }));
+  await expect(p.getByTestId('char-chinese').locator('.zh-chars')).toHaveText('键');
+  for (const [label, text] of [
+    ['Description', 'Types fast.'],
+    ['Backstory', 'Learned on a typewriter.'],
+  ] as const) {
+    await tabTo(p.getByLabel(label, { exact: true }));
+    await page.keyboard.type(text);
+  }
+  await expect(editor().getByTestId('autosave')).toHaveText('Saved');
+  const saved = await invoke('entry.list', { collection: 'characters', trash: 'exclude' });
+  expect(saved.entries.find((e) => e.entry.title === 'Keyboard Person')?.entry).toMatchObject({
+    names: { full: 'Keyboard Person', chinese: '键' },
+    body: 'Types fast.',
+    backstory: 'Learned on a typewriter.',
+  });
+  await tabTo(p.getByTestId('char-relatives'), 300, 'Shift+Tab');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('tree-view')).toBeVisible();
+  await expect(page.getByTestId('tree-inspector').getByTestId('inspector-name')).toHaveText(
+    'Keyboard Person',
+  );
 });
 
 test('NF-2 SR-1 search from the rail box: type, Tab to a result, Enter opens it', async () => {
@@ -474,14 +494,14 @@ test('NF-2 ED-7 the review queue: a proposal is approved with the keyboard', asy
     op: 'update',
     collection: 'characters',
     targetId: 'H3',
-    data: { birthplace: 'Salem, Oregon' },
+    data: { role: 'Salem, Oregon' },
   });
   await go('Review queue');
   const queue = page.getByTestId('review-queue');
   await press(queue.getByRole('button', { name: 'Approve' }).first());
   await expect(queue.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   const h3 = await invoke('entry.get', { collection: 'characters', id: 'H3' });
-  expect(h3.entry.birthplace).toBe('Salem, Oregon');
+  expect(h3.entry.role).toBe('Salem, Oregon');
 });
 
 test('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, and linking a file, all by keyboard', async () => {
@@ -590,7 +610,7 @@ test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every c
   await invoke('entry.update', {
     collection: 'characters',
     id: 'H3',
-    patch: { birthplace: 'Hood River, Oregon' },
+    patch: { role: 'Hood River, Oregon' },
   });
   await go('Characters');
   await press(
@@ -619,7 +639,7 @@ test('NF-2 ED-7 the review queue with a proposal diff open: every control takes 
     op: 'update',
     collection: 'characters',
     targetId: 'H1',
-    data: { birthplace: 'Astoria, Oregon' },
+    data: { role: 'Astoria, Oregon' },
   });
   await go('Review queue');
   const queue = page.getByTestId('review-queue');
@@ -657,7 +677,7 @@ test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its di
   await invoke('bible.open', { slug: SLUG });
   // The M7 supplement gives the chapters their manuscript text, which the recorded check reads.
   const supplement = readSupplement();
-  for (const c of ['arcs', 'plotBeats']) {
+  for (const c of ['moments']) {
     const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
     await invoke('entry.createMany', {
       items: docs.map((d) => ({ collection: c as never, data: strip(d) })),

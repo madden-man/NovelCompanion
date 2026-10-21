@@ -7,21 +7,12 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
-      "full": "Margaret Hale",
-      "order": "family-last",
-      "birthName": "Margaret Doyle",
-      "marriedName": "Margaret Hale",
-      "nicknames": ["Maggie"],
-      "calledBy": [{ "characterId": "H5", "name": "Gran" }]
+      "full": "Margaret Hale"
     },
     "birth": { "year": 1958 },
     "death": { "year": 2041 },
-    "birthplace": "Portland, Oregon",
     "familyIds": ["FAM-HALE"],
     "backstory": "A schoolteacher who kept every letter the family ever sent.",
-    "voiceNotes": [
-      { "at": { "age": 70 }, "text": "Speaks in short, dry sentences and never raises her voice." }
-    ],
     "links": []
   },
   {
@@ -31,10 +22,9 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Peter Hale", "order": "family-last" },
+    "names": { "full": "Peter Hale" },
     "birth": { "year": 1956 },
     "death": { "year": 2030 },
-    "birthplace": "Portland, Oregon",
     "familyIds": ["FAM-HALE"],
     "backstory": "A ferry mechanic who died the year before his granddaughter was born."
   },
@@ -45,10 +35,9 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Daniel Hale", "order": "family-last", "nicknames": ["Dan"] },
+    "names": { "full": "Daniel Hale" },
     "birth": { "year": 1985 },
     "death": null,
-    "birthplace": "Portland, Oregon",
     "familyIds": ["FAM-HALE"],
     "backstory": "An engineer who met Zhou Lan at a conference in 2026."
   },
@@ -59,10 +48,9 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Ruth Hale", "order": "family-last" },
+    "names": { "full": "Ruth Hale" },
     "birth": { "year": 1990 },
     "death": { "year": 2067 },
-    "birthplace": "Portland, Oregon",
     "familyIds": ["FAM-HALE"],
     "backstory": "A nurse who adopted Sam in 2015."
   },
@@ -75,19 +63,12 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
       "full": "Iris Hale-Zhou",
-      "chinese": "晓曦",
-      "romanization": "Xiǎoxī",
-      "order": "family-last",
-      "nicknames": ["Xiaoxi"]
+      "chinese": "晓曦"
     },
     "birth": { "year": 2031, "month": 3, "day": 14 },
     "death": null,
-    "birthplace": "Portland, Oregon",
     "familyIds": ["FAM-HALE", "FAM-ZHOU"],
-    "backstory": "Raised between two families and two languages.",
-    "voiceNotes": [
-      { "at": { "year": 2060 }, "text": "Guarded after learning the truth about the letter." }
-    ]
+    "backstory": "Raised between two families and two languages."
   },
   {
     "_id": "H6",
@@ -96,7 +77,7 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Sam Hale", "order": "family-last" },
+    "names": { "full": "Sam Hale" },
     "birth": { "year": 2012 },
     "death": null,
     "familyIds": ["FAM-HALE"],
@@ -111,13 +92,10 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
       "full": "Zhou Meiling",
-      "chinese": "周美玲",
-      "romanization": "Zhōu Měilíng",
-      "order": "family-first"
+      "chinese": "周美玲"
     },
     "birth": { "year": 1962 },
     "death": { "year": 2050 },
-    "birthplace": "Guangzhou",
     "familyIds": ["FAM-ZHOU"],
     "backstory": "Ran a tea shop near the Pearl River for thirty years."
   },
@@ -130,13 +108,10 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
       "full": "Zhou Wei",
-      "chinese": "周伟",
-      "romanization": "Zhōu Wěi",
-      "order": "family-first"
+      "chinese": "周伟"
     },
     "birth": { "year": 1960 },
     "death": { "year": 2055 },
-    "birthplace": "Guangzhou",
     "familyIds": ["FAM-ZHOU"]
   },
   {
@@ -148,20 +123,12 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
       "full": "Zhou Lan",
-      "chinese": "周兰",
-      "romanization": "Zhōu Lán",
-      "order": "family-first",
-      "marriedName": "Lan Hale"
+      "chinese": "周兰"
     },
     "birth": { "year": 1988 },
     "death": null,
-    "birthplace": "Guangzhou",
     "familyIds": ["FAM-ZHOU"],
-    "backstory": "Raised in Guangzhou. Moved to Portland in 2027.",
-    "placesLived": [
-      { "place": "Guangzhou", "startYear": 1988, "endYear": 2027 },
-      { "place": "Portland, Oregon", "startYear": 2027, "endYear": null }
-    ]
+    "backstory": "Raised in Guangzhou. Moved to Portland in 2027."
   },
   {
     "_id": "Z4",
@@ -172,13 +139,10 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
       "full": "Zhou Jun",
-      "chinese": "周军",
-      "romanization": "Zhōu Jūn",
-      "order": "family-first"
+      "chinese": "周军"
     },
     "birth": { "year": 1993 },
     "death": { "year": 2070 },
-    "birthplace": "Guangzhou",
     "familyIds": ["FAM-ZHOU"]
   },
   {
@@ -188,7 +152,7 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Tomas Reyes", "order": "family-last" },
+    "names": { "full": "Tomas Reyes" },
     "birth": { "year": 2030 },
     "death": null,
     "familyIds": [],
@@ -201,7 +165,7 @@
     "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "Noor Zhou", "order": "family-last" },
+    "names": { "full": "Noor Zhou" },
     "birth": { "year": 2058 },
     "death": null,
     "familyIds": ["FAM-ZHOU"]
@@ -213,7 +177,7 @@
     "provenance": null,
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
-    "names": { "full": "The Archivist", "order": "family-last" },
+    "names": { "full": "The Archivist" },
     "birth": { "unknown": true },
     "death": null,
     "familyIds": [],

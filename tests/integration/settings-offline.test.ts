@@ -83,7 +83,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
       ipc('entry.update', {
         collection: 'characters',
         id: 'H1',
-        patch: { birthplace: 'Never saved' },
+        patch: { role: 'Never saved' },
       }),
     ).rejects.toThrow(CONNECTION_LOST_MESSAGE);
     await expect(ipc('brief.settings.set', { window: 3 })).rejects.toThrow(CONNECTION_LOST_MESSAGE);
@@ -104,7 +104,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const doc = await store.db
       .collection<{ _id: string; [k: string]: unknown }>(`${handle.id}.characters`)
       .findOne({ _id: 'H1' });
-    expect(doc?.birthplace).toEqual(before.birthplace);
+    expect(doc?.role).toEqual(before.role);
     const stored = await store.db
       .collection<{ _id: string; [k: string]: unknown }>(`${handle.id}.lists`)
       .findOne({ _id: 'tags' });
@@ -178,7 +178,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     const handle = await loadFixture(store, freshSlug('arch6-ro'));
     slug = handle.id;
     const live = await openBibleSession(store, slug, { snapshotRoot: snaps });
-    await live.repo.update('characters', 'H1', { birthplace: 'Before the snapshot' } as never);
+    await live.repo.update('characters', 'H1', { role: 'Before the snapshot' } as never);
     await live.snapshots!.take('manual');
     const latest = await latestSnapshot(snaps, slug);
     expect(latest?.bible).toBe(slug);
@@ -192,7 +192,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     const ipc = guardedIpc(() => session, { readOnly: () => true, lost: () => undefined });
     const h1 = await ipc('entry.get', { collection: 'characters', id: 'H1' });
     expect(h1.entry.title).toBe('Margaret Hale');
-    expect(h1.entry.birthplace).toBe('Before the snapshot');
+    expect(h1.entry.role).toBe('Before the snapshot');
     const found = await ipc('search.query', { query: 'Margaret', limit: 20 });
     expect(found.hits.map((h) => h.id)).toContain('H1');
     const year = await ipc('timeline.year', { at: { year: 2030 } });
@@ -210,7 +210,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
   test('ARCH-6 every write is refused with the reason, and nothing changes in memory, on disk, or in MongoDB', async () => {
     const ipc = guardedIpc(() => session, { readOnly: () => true, lost: () => undefined });
     await expect(
-      ipc('entry.update', { collection: 'characters', id: 'H1', patch: { birthplace: 'Changed' } }),
+      ipc('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'Changed' } }),
     ).rejects.toThrow(READ_ONLY_REASON);
     await expect(ipc('brief.settings.set', { window: 4 })).rejects.toThrow(READ_ONLY_REASON);
     await expect(ipc('lists.addItem', { listId: 'tags', label: 'New tag' })).rejects.toThrow(
@@ -218,13 +218,13 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     );
     // Below the IPC guard, the write path itself refuses: the handle has no way to write.
     await expect(
-      session.repo.update('characters', 'H1', { birthplace: 'Changed' } as never),
+      session.repo.update('characters', 'H1', { role: 'Changed' } as never),
     ).rejects.toBeInstanceOf(ReadOnlyError);
     await expect(session.repo.setBriefSettings({ window: 4 })).rejects.toBeInstanceOf(
       ReadOnlyError,
     );
     await expect(session.repo.setStoryTime({ year: 2040 })).rejects.toBeInstanceOf(ReadOnlyError);
-    expect(session.model.get('characters', 'H1')?.birthplace).toBe('Before the snapshot');
+    expect(session.model.get('characters', 'H1')?.role).toBe('Before the snapshot');
     expect(session.repo.briefSettings().window).toBe(3);
 
     const latest = await latestSnapshot(snaps, slug);
@@ -235,7 +235,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     const live = await store.db
       .collection<{ _id: string; [k: string]: unknown }>(`${slug}.characters`)
       .findOne({ _id: 'H1' });
-    expect(live?.birthplace).toBe('Before the snapshot');
+    expect(live?.role).toBe('Before the snapshot');
   });
 
   test('ARCH-6 BK-3 the snapshot keeps the bible name, and the whole-bible export works from it read-only', async () => {
@@ -256,7 +256,7 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     const target = await createBible(store, freshSlug('arch6-ro-import'), 'From the snapshot');
     await importBibleJson(target, await readFile(out, 'utf8'));
     const back = await openBibleSession(store, target.id);
-    expect(back.model.get('characters', 'H1')?.birthplace).toBe('Before the snapshot');
+    expect(back.model.get('characters', 'H1')?.role).toBe('Before the snapshot');
   });
 
   test('ARCH-6 every write channel is a channel of the contract and is refused before it runs', async () => {

@@ -24,12 +24,9 @@ let exportTo: string | null = null;
 const outDir = mkdtempSync(join(tmpdir(), 'nc-m7-'));
 let invoke: Invoke;
 
+// fixtures/expected/sb2-selection.json, the CH6 case with the supplement (SM-3: B4 is Iris's moment).
 const CH6_IDS = [
-  'B1',
-  'B3',
   'B4',
-  'B7',
-  'CE3',
   'CH1',
   'CH3',
   'CH4',
@@ -37,24 +34,18 @@ const CH6_IDS = [
   'CH6',
   'CU4',
   'E1',
-  'E2',
   'E3',
   'E5',
-  'E9',
   'ERA-2040',
-  'F2',
   'GL1',
   'GL3',
   'H3',
   'H5',
-  'K4',
   'PLC2',
   'Q1',
   'Q2',
   'Q4',
   'SL2',
-  'TH1',
-  'TH2',
 ];
 
 beforeAll(async () => {
@@ -106,7 +97,7 @@ describe('SB-2 SB-3 the selection over IPC, from the read model', () => {
       // A25: the lead sections stay, and the brief says it is over budget.
       expect(tight.selection.ids).toEqual(['CH6', 'CU4', 'E1', 'E3', 'E5', 'H3', 'H5']);
       expect(tight.selection.overBudget).toBe(true);
-      expect(tight.selection.omitted[0]).toMatchObject({ id: 'E9', reason: 'budget' });
+      expect(tight.selection.omitted[0]).toMatchObject({ id: 'Q2', reason: 'budget' });
       expect(tight.structured).toContain('## Left out');
       expect(tight.structured).toContain('## Over budget');
       await invoke('brief.settings.set', { budget: 40_000, window: 3 });
@@ -137,7 +128,9 @@ describe('DB-2 DB-3 SB-7 Start session without Claude', () => {
     expect(brief.sectionKind).toBe('chapter');
     expect((brief.selection as { ids: string[] }).ids).toEqual(CH6_IDS);
     expect(missingLeadSections(String(brief.content))).toEqual([]);
-    expect(String(brief.content)).toContain('## Planned ahead (after 2045)');
+    // SM-3: Iris's moment of 2045 is the chapter's backstory.
+    expect(String(brief.content)).toContain('## 5. Backstory');
+    expect(String(brief.content)).toContain('[[B4]]');
     // DB-3: one session log entry linked to the section and the brief.
     const log = bible.model.get('sessionLogs', r.log._id)!;
     expect(log).toMatchObject({
@@ -256,7 +249,7 @@ describe('SB-8 SB-9 saved briefs: edit, regenerate, export', () => {
     expect(brief.entryIds).toContain('Z4');
     expect(brief.removed).toEqual(['E5', 'GL1']);
     expect(brief.added).toEqual(['Z4']);
-    expect(String(brief.content)).toContain('## 11. Added by you');
+    expect(String(brief.content)).toContain('## 9. Added by you');
     expect(String(brief.content)).toContain('removed by you');
     const after = (await invoke('revisions.list', { collection: 'briefs', id })).revisions.length;
     expect(after).toBe(before + 1);
@@ -426,16 +419,16 @@ describe('MS-2 MS-3 marking a chapter as written', () => {
     claude = { briefs: null, summaries: null };
   });
 
-  test('MS-3 the planned entries the chapter establishes are listed, and promote one at a time', async () => {
+  test('MS-3 SM-3 the planned entries the chapter establishes are listed, and promote one at a time', async () => {
     const r = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    // Hand-checked: B4 is CH6's beat and F2 its fact in play, both planned. E10 (2090) is after the chapter.
+    // Hand-checked: B4 is Iris's planned moment of 2045, CH6's year and point of view (SM-3: beats
+    // became moments, found by year and strand). E10 (2090) is after the chapter.
     expect(r.items.map((i) => [i.id, i.why])).toEqual([
-      ['B4', 'a beat of this chapter'],
-      ['F2', 'a fact in play'],
+      ['B4', 'a moment of the point of view in these years'],
     ]);
-    await invoke('entry.update', { collection: 'plotBeats', id: 'B4', patch: { status: 'canon' } });
+    await invoke('entry.update', { collection: 'moments', id: 'B4', patch: { status: 'canon' } });
     const again = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    expect(again.items.map((i) => i.id)).toEqual(['F2']);
+    expect(again.items.map((i) => i.id)).toEqual([]);
   });
 });
 

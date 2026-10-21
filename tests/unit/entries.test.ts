@@ -31,25 +31,17 @@ function rows(): EntriesRow[] {
   return out;
 }
 
-const sections = fx.customSections ?? [];
-const kinds = entryKinds(sections);
+const kinds = entryKinds();
 const all = new Set(kinds.map((k) => k.key));
 
 describe('KB-5 the Entries list', () => {
-  test('KB-5 the kinds are the six built-in sections and one per custom section', () => {
-    expect(kinds.slice(0, 6).map((k) => k.plural)).toEqual([
-      'Facts',
+  test('KB-5 SM-2 the kinds are the four sections left after A39: no facts, themes, or custom sections', () => {
+    expect(kinds.map((k) => k.plural)).toEqual([
       'Cultural entries',
       'Places',
       'Glossary',
-      'Themes and motifs',
       'Open questions',
     ]);
-    expect(kinds.slice(6).map((k) => k.label)).toEqual(
-      sections.map((s) => String(s.name)).sort((a, b) => a.localeCompare(b)),
-    );
-    const deleted = entryKinds([{ _id: 'S9', name: 'Gone', deletedAt: '2026-01-01T00:00:00Z' }]);
-    expect(deleted.map((k) => k.label)).not.toContain('Gone');
   });
 
   test('KB-5 every kind is listed, newest change first', () => {
@@ -58,29 +50,26 @@ describe('KB-5 the Entries list', () => {
     const stamps = shown.map((r) => String(r.entry.modifiedAt));
     expect(stamps).toEqual([...stamps].sort().reverse());
     expect(new Set(shown.map((r) => r.collection))).toEqual(
-      new Set(['facts', 'culturalEntries', 'places', 'glossaryTerms', 'customEntries']),
+      new Set(['culturalEntries', 'places', 'glossaryTerms']),
     );
   });
 
-  test('KB-5 a kind left out of the chips is hidden; a custom section is its own kind', () => {
-    const noFacts = new Set([...all].filter((k) => k !== 'facts'));
-    const shown = filterEntries(rows(), { kinds: noFacts, status: null, query: '' });
-    expect(shown.some((r) => r.collection === 'facts')).toBe(false);
-    const recipes = kinds.find((k) => k.sectionId)!;
-    const only = filterEntries(rows(), { kinds: new Set([recipes.key]), status: null, query: '' });
-    expect(only.length).toBe(
-      (fx.customEntries ?? []).filter((e) => e.sectionId === recipes.sectionId).length,
-    );
-    expect(only.every((r) => kindKeyOf(r.collection, r.entry) === recipes.key)).toBe(true);
+  test('KB-5 a kind left out of the chips is hidden; one kind alone shows only its own', () => {
+    const noPlaces = new Set([...all].filter((k) => k !== 'places'));
+    const shown = filterEntries(rows(), { kinds: noPlaces, status: null, query: '' });
+    expect(shown.some((r) => r.collection === 'places')).toBe(false);
+    const only = filterEntries(rows(), { kinds: new Set(['places']), status: null, query: '' });
+    expect(only.length).toBe((fx.places ?? []).length);
+    expect(only.every((r) => kindKeyOf(r.collection, r.entry) === 'places')).toBe(true);
   });
 
   test('KB-5 the status filter and the search narrow the list', () => {
     const planned = filterEntries(rows(), { kinds: all, status: 'planned', query: '' });
     expect(planned.length).toBeGreaterThan(0);
     expect(planned.every((r) => r.entry.status === 'planned')).toBe(true);
-    const letter = filterEntries(rows(), { kinds: all, status: null, query: 'letter' });
-    expect(letter.map((r) => r.entry.title)).toContain("Peter's letter");
-    expect(letter.every((r) => textMatches(r.entry, 'letter'))).toBe(true);
+    const cakes = filterEntries(rows(), { kinds: all, status: null, query: 'mooncakes' });
+    expect(cakes.map((r) => r.entry.title)).toContain('Mid-Autumn mooncakes');
+    expect(cakes.every((r) => textMatches(r.entry, 'mooncakes'))).toBe(true);
     // A search hit counts even when the words are not in the text (GL-2 romanization).
     const term = (fx.glossaryTerms ?? []).find((t) => t.title === '团圆')!;
     const viaHits = filterEntries(rows(), {
@@ -113,7 +102,7 @@ describe('KB-5 the Entries list', () => {
       body: `<p>The ferry ${i} crosses at dawn.</p><p>Second line.</p>`,
       modifiedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
     }));
-    const big = indexEntries('facts', many);
+    const big = indexEntries('culturalEntries', many);
     expect(big[0]!.firstLine).toBe('The ferry 0 crosses at dawn.');
     const start = performance.now();
     for (const q of ['h', 'ha', 'har', 'harb', 'harbor', 'harbor ferry']) {

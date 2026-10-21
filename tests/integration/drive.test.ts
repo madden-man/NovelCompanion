@@ -306,7 +306,7 @@ describe('GD-2 choose files and folders; Word, Excel, Google Docs, and Google Sh
     });
     expect(plan.created).toBe(1);
     await invoke('import.apply', { planId: plan.planId, approved: plan.items.map((i) => i.id) });
-    const entry = open.repo.list('customEntries').find((e) => e.title === 'Wedding notes')!;
+    const entry = open.repo.list('openQuestions').find((e) => e.title === 'Wedding notes')!;
     expect(entry.body).toContain('<em>lucky</em>');
     expect(entry.sourceRef).toBe('Chapter 3.docx#p1-p4');
   });

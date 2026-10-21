@@ -19,7 +19,7 @@ import { filterQuestions, questionCounts } from '../../../shared/domain/question
 import type { QuestionFilter } from '../../../shared/domain/questions';
 import { logsNewestFirst } from '../../../shared/domain/sessionLog';
 import { call, plainError } from '../api';
-import { useEntries, useStore } from './data';
+import { useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
@@ -34,10 +34,8 @@ export function EntryList(props: {
   selected: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
-  /** CS-2: show only the entries of one custom section. */
-  sectionId?: string | null;
 }) {
-  const { collection, sectionId } = props;
+  const { collection } = props;
   const { version } = useStore();
   const [entries, setEntries] = useState<Listed[] | null>(null);
   const [filter, setFilter] = useState('');
@@ -45,9 +43,7 @@ export function EntryList(props: {
   const info = collectionInfo[collection];
   const filterId = useId();
   const stateId = useId();
-  const sections = useEntries('customSections');
-  const section = sectionId ? sections.find((s) => s._id === sectionId) : undefined;
-  const heading = section ? String(section.name ?? entryTitle(section)) : info.plural;
+  const heading = info.plural;
 
   useEffect(() => {
     let live = true;
@@ -62,7 +58,7 @@ export function EntryList(props: {
   const counts = useMemo(() => questionCounts((entries ?? []).map((e) => e.entry)), [entries]);
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    let rows = (entries ?? []).filter((e) => !sectionId || e.entry.sectionId === sectionId);
+    let rows = entries ?? [];
     if (collection === 'openQuestions') {
       const keep = new Set(
         filterQuestions(
@@ -78,7 +74,7 @@ export function EntryList(props: {
       return rows.sort((a, b) => (order.get(a.entry._id) ?? 0) - (order.get(b.entry._id) ?? 0));
     }
     return rows.sort((a, b) => entryTitle(a.entry).localeCompare(entryTitle(b.entry)));
-  }, [entries, filter, state, collection, sectionId]);
+  }, [entries, filter, state, collection]);
 
   const ro = useWriteGuard();
   return (
@@ -92,7 +88,7 @@ export function EntryList(props: {
           disabled={ro.off}
           {...ro.tip}
         >
-          {section ? `New entry in ${heading}` : `New ${info.singular.toLowerCase()}`}
+          New {info.singular.toLowerCase()}
         </button>
       </div>
       {collection === 'openQuestions' && (
@@ -200,18 +196,26 @@ export function NewEntryForm(props: {
   collection: EntryCollection;
   onCreated: (id: string) => void;
   onCancel: () => void;
-  /** Fields already decided, such as the section of a new custom entry (CS-2). They are not asked for. */
+  /** Fields already decided. They are not asked for. */
   preset?: Record<string, unknown>;
 }) {
   const { collection, preset } = props;
   const undo = useUndo();
   const manifest = manifests[collection];
-  const required = manifest.filter(
-    (s) => s.required && s.kind !== 'system' && !(preset && s.name in preset),
-  );
+  // SM-1: a new character asks for the full name only; the title follows it and the birth starts unknown.
+  const isCharacter = collection === 'characters';
+  const required = isCharacter
+    ? []
+    : manifest.filter((s) => s.required && s.kind !== 'system' && !(preset && s.name in preset));
   const [draft, setDraft] = useState<Entry>(
     () => ({ ...blankEntry(manifest), ...preset }) as Entry,
   );
+  const fullNameId = useId();
+  const fullName = isCharacter
+    ? String((draft.names as { full?: string } | undefined)?.full ?? '')
+    : '';
+  const setFullName = (v: string) =>
+    setDraft((d) => ({ ...d, title: v, names: { ...(d.names as object), full: v } }));
   const [issues, setIssues] = useState<FieldIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -257,6 +261,24 @@ export function NewEntryForm(props: {
       </p>
       <form className="editor-fields" onSubmit={(e) => void submit(e)} data-testid="new-entry">
         <WriteFieldset>
+          {isCharacter && (
+            <div className="field" data-field="names.full">
+              <label htmlFor={fullNameId}>Full name</label>
+              <input
+                id={fullNameId}
+                type="text"
+                autoComplete="off"
+                value={fullName}
+                aria-invalid={issues.some((i) => i.path.startsWith('names') || i.path === 'title')}
+                onChange={(ev) => setFullName(ev.target.value)}
+              />
+              {issues.some((i) => i.path.startsWith('names') || i.path === 'title') && (
+                <p className="ed-error" role="alert">
+                  A character needs a full name.
+                </p>
+              )}
+            </div>
+          )}
           {required.map((spec) => (
             <Field
               key={spec.name}
@@ -413,16 +435,7 @@ function ListPanel({ list }: { list: WireList }) {
     setMessage(null);
     try {
       const r = await call('lists.rename', { listId: list._id, itemId, label });
-      undo.record(
-        renameCommand(
-          list.label,
-          list._id,
-          itemId,
-          r.from,
-          label.trim(),
-          list._id.startsWith('choice:') ? label.trim() : itemId,
-        ),
-      );
+      undo.record(renameCommand(list.label, list._id, itemId, r.from, label.trim(), itemId));
       setMessage({
         text:
           r.updated > 0

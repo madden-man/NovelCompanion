@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { z } from 'zod';
-import { structuralFindings } from '../../src/shared/domain/continuity/structural';
+import {
+  STRUCTURAL_CHECKS,
+  structuralFindings,
+} from '../../src/shared/domain/continuity/structural';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import {
   locateQuote,
@@ -67,7 +70,7 @@ const shape = (f: {
 describe('CC-2 CC-5 structural checks against the fixture novel', () => {
   for (const withSupplement of [false, true]) {
     const label = withSupplement ? 'with the M7 supplement' : 'as in section 7';
-    test(`CC-5 the whole manuscript yields exactly S1, S2, S3 from the expected file (${label})`, () => {
+    test(`CC-5 the whole manuscript yields exactly S1 and S3 from the expected file (${label})`, () => {
       const found = structuralFindings(briefData(withSupplement));
       expect(found.map(shape)).toEqual(EXPECTED.findings.map(shape));
     });
@@ -95,11 +98,20 @@ describe('CC-2 CC-5 structural checks against the fixture novel', () => {
     }
   });
 
-  test('CC-2 one chapter alone gives only that chapter: Chapter 6 yields S2 and S3', () => {
+  test('CC-2 one chapter alone gives only that chapter: Chapter 6 yields S3', () => {
     const found = structuralFindings(briefData(false), { chapterId: 'CH6' });
-    expect(found.map((f) => f.check)).toEqual([
-      'fact-acted-on-before-learned',
+    expect(found.map((f) => f.check)).toEqual(['event-linked-as-happened-after-story-year']);
+  });
+
+  test('CC-2 SM-2 the facts step is gone: a check list without facts, and no finding about one', () => {
+    const found = structuralFindings(briefData(true));
+    expect(found.some((f) => f.check === ('fact-acted-on-before-learned' as never))).toBe(false);
+    expect(STRUCTURAL_CHECKS).toEqual([
+      'character-present-while-dead',
+      'character-present-while-unborn',
       'event-linked-as-happened-after-story-year',
+      'strand-year-outside-pov-lifetime',
+      'tree-warning',
     ]);
   });
 
@@ -203,8 +215,8 @@ describe('CC-3 change set checks', () => {
     const ok = (collection: string, id: string, field: string, value: unknown) =>
       changeProblem(d, { collection, id, field, value });
     expect(ok('characters', 'H1', 'birth', { year: 1970 })).toBeNull();
-    expect(ok('characters', 'Z3', 'birthplace', 'Shanghai')).toBeNull();
-    expect(ok('plotBeats', 'B4', 'chapterId', 'CH7')).toBeNull();
+    expect(ok('characters', 'Z3', 'backstory', 'Raised in Shanghai.')).toBeNull();
+    expect(ok('moments', 'B4', 'year', 2046)).toBeNull();
     expect(ok('chapters', 'CH4', 'strands.CH4-present.startYear', 2029)).toBeNull();
     expect(ok('characters', 'H9', 'birth', { year: 1970 })).toBe('there is no characters entry H9');
     expect(ok('characters', 'H1', 'hometown', 'x')).toBe('hometown is not a field of characters');
@@ -215,8 +227,12 @@ describe('CC-3 change set checks', () => {
     expect(ok('chapters', 'CH4', 'strands.CH9-x.startYear', 2029)).toBe(
       'the chapter has no strand CH9-x',
     );
-    expect(ok('plotBeats', 'B4', 'chapterId', 'CH99')).toBe(
+    expect(ok('moments', 'B4', 'characterId', 'CH99')).toBe(
       'it points to CH99, which is not in the bible',
+    );
+    // SM-2: a dropped section is not a part of the bible any more.
+    expect(ok('plotBeats', 'B4', 'year', 2046)).toBe(
+      'plotBeats is not a part of the bible a change set may write',
     );
     expect(ok('findings', 'X', 'text', 'x')).toBe(
       'findings is not a part of the bible a change set may write',
@@ -236,17 +252,17 @@ describe('CC-3 change set checks', () => {
         value: '2033',
       },
       { collection: 'chapters', id: 'CH2', field: 'strands.CH2-present.startYear', value: '2046' },
-      { collection: 'characters', id: 'Z3', field: 'birthplace', value: 'Shanghai' },
+      { collection: 'moments', id: 'Z3-lives-0', field: 'title', value: '"Lives in Shanghai"' },
       { collection: 'characters', id: 'Z3', field: 'nickname', value: '"Lan"' },
     ]);
-    expect(valid.map((v) => v.value)).toEqual([2033, 2046, 'Shanghai']);
+    expect(valid.map((v) => v.value)).toEqual([2033, 2046, 'Lives in Shanghai']);
     expect(rejected).toEqual([
       { summary: 'characters Z3 nickname: "Lan"', reason: 'nickname is not a field of characters' },
     ]);
     const patches = changeSetPatches(d, valid);
     expect(patches.map((p) => [p.collection, p.id, Object.keys(p.patch)])).toEqual([
       ['chapters', 'CH2', ['strands']],
-      ['characters', 'Z3', ['birthplace']],
+      ['moments', 'Z3-lives-0', ['title']],
     ]);
     expect((patches[0]!.patch.strands as { startYear: number }[]).map((s) => s.startYear)).toEqual([
       2046, 2033,
@@ -254,7 +270,7 @@ describe('CC-3 change set checks', () => {
     expect(describeChangeSet(d, valid).map((r) => [r.entry, r.label, r.before, r.after])).toEqual([
       ['Two Kitchens', 'backstory strand: Story year', '2032', '2033'],
       ['Two Kitchens', 'present strand: Story year', '2045', '2046'],
-      ['Zhou Lan', 'Birthplace', 'Guangzhou', 'Shanghai'],
+      ['Lives in Guangzhou', 'What happens', 'Lives in Guangzhou', 'Lives in Shanghai'],
     ]);
   });
 });
@@ -351,14 +367,11 @@ describe('CC-3 checking what Claude returns', () => {
     expect(alignmentMaterial(briefData(true), 'CH6')).toEqual(a);
     expect(a.heading).toBe('Chapter 6: The Letter [CH6]');
     expect(a.storyYear).toBe(2045);
-    expect(a.plot).toContain('Beats planned for this chapter:\n- Beat [B4] (2045, chapter CH6)');
-    expect(a.plot).toContain(
-      'Beats in its arcs (The Hale secret [ARC-HALE], Lan comes home [ARC-ZHOU]) dated at or before 2045:',
-    );
+    // A39: no beats, arcs, or facts in play; the moments come with the selected entries.
+    expect(a.plot).not.toMatch(/Beats|Facts in play/);
     expect(a.plot).toContain('8. Noor [CH8], 2085');
-    expect(a.given.map((g) => g.id)).toEqual(
-      expect.arrayContaining(['CH6', 'B4', 'F2', 'K2', 'H5', 'E3']),
-    );
+    expect(a.entries).toContain('[B4] Iris finds the letter (moments; planned)');
+    expect(a.given.map((g) => g.id)).toEqual(expect.arrayContaining(['CH6', 'B4', 'H5', 'E3']));
     expect(() => alignmentMaterial(briefData(true), 'CH99')).toThrow(
       'That chapter is not in the bible.',
     );
@@ -416,9 +429,16 @@ describe('CC-4 dismissals and re-runs', () => {
   });
 
   test('CC-4 a re-run creates new keys, refreshes open ones, keeps rewrite tasks, hides unchanged dismissals, reopens changed ones and applied ones, and trashes open ones no longer found', () => {
-    const data = briefData(false);
+    // A third planted error (S2 went with the facts, A39): Noor (born 2058) in Chapter 3 (2029).
+    const cols = briefCollections(false);
+    const ch3 = cols.chapters!.find((x) => x._id === 'CH3')!;
+    ch3.strands = (ch3.strands as Doc[]).map((st) => ({
+      ...st,
+      characterIds: [...(st.characterIds as string[]), 'Z5'],
+    }));
+    const data = fromCollections(cols);
     const fresh = structuralFindings(data).map(fromStructural);
-    const [s1, s2, s3] = fresh;
+    const [s2, s1, s3] = fresh;
     const dis = dismissalFor(data, s2!);
     const stored: Doc[] = [
       finding({ _id: 'A', kind: 'structural', key: s1!.key, state: 'open', text: 'old words' }),
@@ -468,9 +488,10 @@ describe('CC-4 dismissals and re-runs', () => {
       () => true,
       data,
     );
+    // In the order the run found them: Chapter 3 (B) before Chapter 4 (W).
     expect(changed.updates.map((u) => [u.id, u.patch.state])).toEqual([
-      ['W', 'open'],
       ['B', 'open'],
+      ['W', 'open'],
     ]);
     expect(changed.creates.map((c) => c.key)).toEqual([s3!.key]);
     expect(changed.creates[0]).toMatchObject({

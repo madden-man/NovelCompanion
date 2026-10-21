@@ -30,38 +30,6 @@ export const partFields: FieldSpec[] = [
   f.longText('summary', 'Summary'),
 ];
 
-/** Arc (A6): a scope, an optional owner character, and a story year range. */
-export const Arc = entry({
-  name: z.string().min(1),
-  scope: z.enum(['book', 'family', 'character', 'custom']),
-  familyId: Id.nullable().default(null),
-  ownerCharacterId: Id.nullable().default(null),
-  startYear: Year.nullable().default(null),
-  endYear: Year.nullable().default(null),
-  summary: z.string().default(''),
-});
-export type Arc = z.infer<typeof Arc>;
-
-export const arcFields: FieldSpec[] = [
-  ...commonFields,
-  f.text('name', 'Arc name', { required: true }),
-  f.enum(
-    'scope',
-    'Scope',
-    [
-      { value: 'book', label: 'Whole book' },
-      { value: 'family', label: 'A family' },
-      { value: 'character', label: 'A character' },
-      { value: 'custom', label: 'Custom' },
-    ],
-    { required: true },
-  ),
-  f.ref('familyId', 'Family', ['families'], { nullable: true }),
-  f.ref('ownerCharacterId', 'Owner character', ['characters'], { nullable: true }),
-  ...yearRange('startYear', 'endYear'),
-  f.longText('summary', 'Summary'),
-];
-
 /**
  * A chapter strand (A5). One strand per chapter is primary and supplies the
  * chapter's story year; more or fewer than one is a warning (ED-10).
@@ -78,19 +46,10 @@ export const Strand = z.strictObject({
 });
 export type Strand = z.infer<typeof Strand>;
 
-/** KN-3: which characters act on which facts in a chapter. */
-export const FactInPlay = z.strictObject({
-  factId: Id,
-  characterId: Id,
-  note: z.string().default(''),
-});
-
 export const Chapter = entry({
   partId: Id,
   readingOrder: z.int().min(1),
   strands: z.array(Strand).min(1),
-  arcIds: z.array(Id).default([]),
-  factsInPlay: z.array(FactInPlay).default([]),
   written: z.boolean().default(false),
   /** Read-only import of the manuscript (MS-5). */
   manuscriptText: z.string().default(''),
@@ -98,6 +57,8 @@ export const Chapter = entry({
   /** MS-4: set when a re-import changed the text after the summary was written. */
   summaryOutOfDate: z.boolean().default(false),
   sourceFile: z.string().nullable().default(null),
+  /** SM-10: what happens in the scene being written, kept on the chapter. */
+  sceneNote: z.string().default(''),
   /** MS-1: where the manuscript text is read from, for example `word:/path/Chapter 3.docx`. */
   manuscriptSource: z.string().max(2000).nullable().default(null),
 });
@@ -126,22 +87,6 @@ export const chapterFields: FieldSpec[] = [
     ],
     { required: true, minItems: 1, itemLabel: 'label', warnings: ['primary-strand-count'] },
   ),
-  f.refs('arcIds', 'Arcs', ['arcs']),
-  // Derived: a theme's appearances are the one place the link is stored (TH-1).
-  f.refs('themeIds', 'Themes', ['themes'], {
-    derived: true,
-    hint: 'Adding a theme here adds an appearance to that theme, with an empty note. Removing it removes the appearance.',
-  }),
-  f.objectList(
-    'factsInPlay',
-    'Facts in play',
-    [
-      f.ref('factId', 'Fact', ['facts'], { required: true }),
-      f.ref('characterId', 'Acted on by', ['characters'], { required: true }),
-      f.text('note', 'Note'),
-    ],
-    { itemLabel: 'note' },
-  ),
   f.boolean('written', 'Written'),
   f.longText('manuscriptText', 'Manuscript text', {
     hint: 'Imported from the manuscript. The app never writes back to it.',
@@ -151,93 +96,11 @@ export const chapterFields: FieldSpec[] = [
     hint: 'Set when a re-import changed the text after the summary was written.',
   }),
   f.text('sourceFile', 'Source file', { nullable: true }),
+  f.longText('sceneNote', 'What happens in this scene'),
   f.text('manuscriptSource', 'Manuscript source', {
     nullable: true,
     hint: 'Where the manuscript is read from. The app only reads it, never writes to it.',
   }),
-];
-
-/** The position of a beat within one arc (A7, PL-3). */
-export const BeatArcOrder = z.strictObject({ arcId: Id, order: z.int() });
-
-/** Plot beat (A7). */
-export const PlotBeat = entry({
-  arcIds: z.array(Id).default([]),
-  chapterId: Id.nullable().default(null),
-  year: Year.nullable().default(null),
-  povCharacterId: Id.nullable().default(null),
-  description: z.string().default(''),
-  worldContext: z.string().default(''),
-  experienceNote: z.string().default(''),
-  /** PL-3: the position in each arc the beat belongs to. A beat in two arcs has two positions. */
-  arcOrders: z.array(BeatArcOrder).default([]),
-});
-export type PlotBeat = z.infer<typeof PlotBeat>;
-
-export const plotBeatFields: FieldSpec[] = [
-  ...commonFields,
-  f.refs('arcIds', 'Arcs', ['arcs']),
-  f.ref('chapterId', 'Chapter', ['chapters'], { nullable: true }),
-  f.year('year', 'Story year', { nullable: true }),
-  f.ref('povCharacterId', 'Point of view', ['characters'], { nullable: true }),
-  f.longText('description', 'Description'),
-  f.longText('worldContext', 'World context'),
-  f.longText('experienceNote', 'How the point of view character experiences it'),
-  f.objectList(
-    'arcOrders',
-    'Order within each arc',
-    [
-      f.ref('arcId', 'Arc', ['arcs'], { required: true }),
-      f.int('order', 'Order', { required: true }),
-    ],
-    { itemLabel: 'arcId' },
-  ),
-];
-
-/** A fact is a secret or a piece of family history; its text is the shared body. */
-export const Fact = entry({});
-export type Fact = z.infer<typeof Fact>;
-
-export const factFields: FieldSpec[] = [...commonFields];
-
-export const KnowledgeRecord = entry({
-  factId: Id,
-  characterId: Id,
-  yearLearned: Year.nullable(),
-  chapterLearnedId: Id.nullable().default(null),
-  how: z.string().default(''),
-});
-export type KnowledgeRecord = z.infer<typeof KnowledgeRecord>;
-
-export const knowledgeRecordFields: FieldSpec[] = [
-  ...commonFields,
-  f.ref('factId', 'Fact', ['facts'], { required: true }),
-  f.ref('characterId', 'Character', ['characters'], { required: true }),
-  f.year('yearLearned', 'Year learned', {
-    required: true,
-    nullable: true,
-    warnings: ['learned-before-birth', 'learned-after-death'],
-  }),
-  f.ref('chapterLearnedId', 'Chapter learned', ['chapters'], { nullable: true }),
-  f.longText('how', 'How they learn it'),
-];
-
-/** Theme or motif (TH-1). */
-export const Theme = entry({
-  description: z.string().default(''),
-  appearances: z.array(z.strictObject({ chapterId: Id, note: z.string().default('') })).default([]),
-});
-export type Theme = z.infer<typeof Theme>;
-
-export const themeFields: FieldSpec[] = [
-  ...commonFields,
-  f.longText('description', 'Description'),
-  f.objectList(
-    'appearances',
-    'Appearances',
-    [f.ref('chapterId', 'Chapter', ['chapters'], { required: true }), f.text('note', 'Note')],
-    { itemLabel: 'note' },
-  ),
 ];
 
 /** Open question (OQ-1). Linked entries are the shared links. */

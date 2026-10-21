@@ -6,6 +6,7 @@
  */
 import type { ListDoc } from '../schema/lists';
 import type { StoryDate } from '../schema/common';
+import { LIVES_IN_PREFIX } from '../schema/moment';
 import { lifeState } from './ages';
 import type { LifeState, Lifespan, StoryMoment, YearStates } from './ages';
 import { compareStoryDates, isKnown, yearOf } from './dates';
@@ -125,10 +126,8 @@ export interface EventSpan {
   end: StoryDate | null;
   startYear: number;
   endYear: number;
-  reality: string;
   categoryId: string;
   regions: string[];
-  placeIds: string[];
   characterIds: string[];
   formative: boolean;
   status: string;
@@ -147,10 +146,8 @@ function eventSpan(e: Doc): EventSpan | null {
     end,
     startYear: s,
     endYear: endYear === null ? s : Math.max(endYear, s),
-    reality: str(e.reality),
     categoryId: str(e.categoryId),
     regions: ids(e.regions),
-    placeIds: ids(e.placeIds),
     characterIds: ids(e.characterIds),
     formative: e.formative === true,
     status: str(e.status),
@@ -284,11 +281,8 @@ export interface EraSpan {
   name: string;
   startYear: number;
   endYear: number;
-  technology: string;
-  climate: string;
-  economy: string;
-  politics: string;
-  dailyLife: string;
+  /** The era's text; A39 folded its five prose fields into it (SM-4). */
+  body: string;
 }
 
 /** Live eras in start order. An era whose end is before its start covers nothing. */
@@ -304,11 +298,7 @@ export function eraSpans(data: TimelineData): EraSpan[] {
       name: str(e.name) || str(e.title) || String(e._id),
       startYear: s,
       endYear: t,
-      technology: str(e.technology),
-      climate: str(e.climate),
-      economy: str(e.economy),
-      politics: str(e.politics),
-      dailyLife: str(e.dailyLife),
+      body: str(e.body),
     });
   }
   return out.sort((a, b) => a.startYear - b.startYear || a.endYear - b.endYear);
@@ -528,7 +518,7 @@ export interface LifespanBar {
   name: string;
   status: string;
   familyIds: string[];
-  /** Places the character is tied to: birthplace and places lived, as written. */
+  /** Places the character is tied to: the places of their "Lives in" moments (SM-3), as written. */
   placeNames: string[];
   birthYear: number;
   /** Null while alive at the end of the record. */
@@ -570,6 +560,13 @@ export function timelineChart(data: TimelineData): TimelineChart {
     ListDoc | undefined;
   const lifespans: LifespanBar[] = [];
   const undrawn: { id: string; name: string }[] = [];
+  const livedIn = new Map<string, string[]>();
+  for (const m of data.all('moments')) {
+    const t = str(m.title);
+    if (!live(m) || !t.startsWith(LIVES_IN_PREFIX)) continue;
+    const who = str(m.characterId);
+    livedIn.set(who, [...(livedIn.get(who) ?? []), t.slice(LIVES_IN_PREFIX.length).trim()]);
+  }
   for (const c of data.all('characters')) {
     if (!live(c)) continue;
     const id = String(c._id);
@@ -578,13 +575,12 @@ export function timelineChart(data: TimelineData): TimelineChart {
       undrawn.push({ id, name: characterName(c, id) });
       continue;
     }
-    const lived = Array.isArray(c.placesLived) ? c.placesLived.filter(isPlainObject) : [];
     lifespans.push({
       id,
       name: characterName(c, id),
       status: str(c.status),
       familyIds: ids(c.familyIds),
-      placeNames: [str(c.birthplace), ...lived.map((p) => str(p.place))].filter(Boolean),
+      placeNames: (livedIn.get(id) ?? []).filter(Boolean),
       birthYear: born,
       deathYear: yearOf(asDate(c.death)),
     });
@@ -623,7 +619,8 @@ export const NO_FILTERS: ChartFilters = {
 /**
  * TL-6 filters. Family keeps the lifespans of that family, the events that
  * affect its members, and the strands its members appear in. Place keeps what
- * is tied to that place (or a place inside it). Status and category act on
+ * is tied to that place (or a place inside it); world events have no places
+ * since A39, so a place leaves them as they are. Status and category act on
  * every item that has one. Eras are never filtered out.
  */
 export function filterChart(
@@ -675,7 +672,6 @@ export function filterChart(
     events: chart.events.filter(
       (e) =>
         (familyId === null || e.characterIds.some((c) => members.has(c))) &&
-        atPlace(e.placeIds) &&
         (status === null || e.status === status) &&
         (categoryId === null || categoryIds.has(e.categoryId)),
     ),

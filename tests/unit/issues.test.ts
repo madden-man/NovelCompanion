@@ -12,7 +12,6 @@ describe('ED-10 schema problems in plain words at the field', () => {
       modifiedAt: '2026-01-01T00:00:00.000Z',
       names: { full: '' },
       birth: { year: 2.5 },
-      voiceNotes: [{ at: { year: null }, text: 'x' }],
     });
     expect(r.success).toBe(false);
     const issues = fieldIssues(r.error!.issues);

@@ -32,8 +32,6 @@ export function blankValue(spec: FieldSpec, today = new Date()): unknown {
       return ['', ''];
     case 'object':
       return blankItem(spec.fields ?? [], today);
-    case 'customValues':
-      return {};
     case 'system':
       return newNestedId();
     default:

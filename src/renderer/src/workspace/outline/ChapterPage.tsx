@@ -4,14 +4,12 @@ import type { Response } from '../../../../shared/ipc';
 import { editableFields, manifests } from '../../../../shared/schema';
 import type { FieldSpec } from '../../../../shared/schema';
 import { call } from '../../api';
-import { useEntries, useStore } from '../data';
+import { useStore } from '../data';
 import { SaveState, TrashControls, useAutosave } from '../editor';
 import { Field } from '../fields';
 import { Zh } from '../Zh';
-import { lastBeatOrder } from './Arcs';
-import { beatsOfArc } from '../../../../shared/domain/outline';
 import type { OutlineWrites } from './actions';
-import { InlineName, NameForm } from './InlineName';
+import { InlineName } from './InlineName';
 import { StrandsEditor } from './Strands';
 
 type Outline = Response<'outline.get'>;
@@ -20,7 +18,7 @@ type Page = Response<'chapter.page'>['page'];
 /** Fields the chapter page edits in its own controls, so the generic list leaves them out. */
 const OWN = new Set(['title', 'partId', 'readingOrder', 'strands']);
 /** Fields shown open on the chapter page; every other one sits under More fields. */
-const MAIN = ['arcIds', 'themeIds', 'factsInPlay', 'written'];
+const MAIN = ['written'];
 const chapterSpecs = editableFields(manifests.chapters);
 /** A field of the chapter manifest by name; a renamed field fails here at once, not quietly. */
 function chapterSpec(name: string): FieldSpec {
@@ -31,7 +29,7 @@ function chapterSpec(name: string): FieldSpec {
 const mainSpecs = MAIN.map(chapterSpec);
 const moreSpecs = chapterSpecs.filter((s) => !OWN.has(s.name) && !MAIN.includes(s.name));
 
-/** The stored chapter page (PL-4), reloaded after every change in the bible. */
+/** The stored chapter page, reloaded after every change in the bible. */
 function useChapterPage(id: string): Page | null {
   const { version } = useStore();
   const [page, setPage] = useState<Page | null>(null);
@@ -52,11 +50,11 @@ function useChapterPage(id: string): Page | null {
 }
 
 /**
- * KB-3, PL-4: the chapter page in the outline's inspector. It shows the
- * chapter's beats, who is present and how old, places, themes, and facts in
- * play, and edits all of it in place: the title in the heading, the part
- * through Move to part, strands, arcs, themes, facts in play, written, and
- * beats (new, open, move). Every edit autosaves through the one write path.
+ * KB-3: the chapter page in the outline's inspector. It shows who is present
+ * and how old and the places, and edits them in place: the title in the
+ * heading, the part through Move to part, strands, and written. Arcs, beats,
+ * themes, and facts in play went with A39. Every edit autosaves through the
+ * one write path.
  */
 export function ChapterPanel(props: {
   id: string;
@@ -66,7 +64,6 @@ export function ChapterPanel(props: {
   onMove: (by: -1 | 1) => void;
   onToPart: (partId: string) => void;
   canMove: { up: boolean; down: boolean };
-  onOpenBeat: (id: string) => void;
 }) {
   const { id, outline, writes } = props;
   const ed = useAutosave('chapters', id);
@@ -189,21 +186,6 @@ export function ChapterPanel(props: {
           {page.storyYear === null ? 'No story year yet' : `Story year ${page.storyYear}`}
           {page.written ? ', written' : ', not written yet'}
         </p>
-        {page.arcs.length > 0 && (
-          <p className="row tight" data-testid="chapter-arcs">
-            {page.arcs.map((a) => (
-              <span key={a.id} className="chip">
-                <Zh text={a.name} />
-              </span>
-            ))}
-          </p>
-        )}
-        <ChapterBeats
-          page={page}
-          chapterArcs={Array.isArray(draft.arcIds) ? draft.arcIds.map(String) : []}
-          writes={writes}
-          onOpen={props.onOpenBeat}
-        />
         <WriteFieldset>
           <StrandsEditor
             value={draft.strands}
@@ -214,46 +196,6 @@ export function ChapterPanel(props: {
             onChange={(next) => ed.setField('strands', next)}
           />
         </WriteFieldset>
-        <div className="stack tight" data-testid="chapter-themes">
-          <span className="eyebrow">Themes</span>
-          {page.themes.length === 0 ? (
-            <p className="example-note">No themes linked.</p>
-          ) : (
-            <ul className="stack-list">
-              {page.themes.map((t) => (
-                <li key={t.id}>
-                  <Zh text={t.title} />
-                  {t.note && (
-                    <span className="example-note">
-                      {' '}
-                      <Zh text={t.note} />
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div className="stack tight" data-testid="chapter-facts">
-          <span className="eyebrow">Facts in play</span>
-          {page.factsInPlay.length === 0 ? (
-            <p className="example-note">No facts in play.</p>
-          ) : (
-            <ul className="stack-list">
-              {page.factsInPlay.map((f, i) => (
-                <li key={i}>
-                  <Zh text={f.character} /> acts on <Zh text={f.fact} />
-                  {f.note && (
-                    <span className="example-note">
-                      {' '}
-                      <Zh text={f.note} />
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </section>
       <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
         <WriteFieldset>
@@ -272,161 +214,6 @@ export function ChapterPanel(props: {
         beforeDelete={ed.flush}
         onChanged={ed.reload}
       />
-    </div>
-  );
-}
-
-/** PL-4, KB-3: the chapter's beats in order, each opening in the inspector, with moves and New beat. */
-function ChapterBeats(props: {
-  page: Page;
-  chapterArcs: string[];
-  writes: OutlineWrites;
-  onOpen: (id: string) => void;
-}) {
-  const { page, writes } = props;
-  const [adding, setAdding] = useState(false);
-  const beats = useEntries('plotBeats');
-  const [dragging, setDragging] = useState<string | null>(null);
-  const move = (beatId: string, by: -1 | 1) =>
-    void writes.reorder(
-      { kind: 'chapterBeats', groupId: page.id, movedId: beatId, by },
-      `Moved a beat in ${page.title}`,
-    );
-  /** PL-3: drop a beat on another the same arc orders; it takes that beat's place in the arc. */
-  const dropOn = (targetId: string) => {
-    const moved = page.beats.find((b) => b.id === dragging);
-    const target = page.beats.find((b) => b.id === targetId);
-    setDragging(null);
-    if (!moved || !target || moved === target || !moved.orderArcId) return;
-    if (moved.orderArcId !== target.orderArcId) return;
-    const arcId = moved.orderArcId;
-    const toIndex = beatsOfArc(beats, arcId).findIndex((b) => b._id === target.id);
-    if (toIndex < 0) return;
-    void writes.reorder(
-      { kind: 'beats', groupId: arcId, movedId: moved.id, toIndex },
-      `Moved a beat in ${page.title}`,
-    );
-  };
-  const draggedArc = page.beats.find((b) => b.id === dragging)?.orderArcId ?? null;
-  const create = async (name: string) => {
-    const arcId = props.chapterArcs[0];
-    const last = arcId ? lastBeatOrder(beats, arcId) : 0;
-    const made = await writes.create('plotBeats', {
-      title: name,
-      status: 'idea',
-      chapterId: page.id,
-      year: page.storyYear,
-      arcIds: arcId ? [arcId] : [],
-      arcOrders: arcId ? [{ arcId, order: last + 1 }] : [],
-    });
-    if (made) setAdding(false);
-  };
-  return (
-    <div className="stack tight" data-testid="chapter-beats">
-      <div className="row tight">
-        <span className="eyebrow">Beats</span>
-        {!adding && (
-          <button
-            type="button"
-            className="btn small"
-            disabled={writes.ro.off}
-            {...writes.ro.tip}
-            onClick={() => setAdding(true)}
-          >
-            New beat
-          </button>
-        )}
-      </div>
-      {adding && (
-        <NameForm
-          label="Beat title"
-          submit="Create beat"
-          testId="new-beat"
-          onSubmit={create}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-      {page.beats.length === 0 ? (
-        <p className="example-note">No beats yet.</p>
-      ) : (
-        <ol className="beat-list">
-          {page.beats.map((b, i) => (
-            <li
-              key={b.id}
-              data-beat={b.id}
-              draggable={!writes.ro.off && b.orderArcId !== null}
-              title={
-                b.orderArcId === null ? 'Add this beat to an arc to order it here.' : undefined
-              }
-              onDragStart={(e) => {
-                setDragging(b.id);
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', b.id);
-              }}
-              onDragEnd={() => setDragging(null)}
-              onDragOver={(e) => {
-                if (dragging && draggedArc !== null && b.orderArcId === draggedArc) {
-                  e.preventDefault();
-                }
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                dropOn(b.id);
-              }}
-            >
-              <span className="stack tight">
-                <button
-                  type="button"
-                  className="link-btn beat-title"
-                  onClick={() => props.onOpen(b.id)}
-                >
-                  <Zh text={b.title} actions={false} />
-                </button>
-                <span className="example-note">
-                  {b.year !== null && `${b.year}`}
-                  {b.year !== null && b.arcs.length > 0 && ', '}
-                  {b.arcs.length > 0 && <Zh text={b.arcs.join(', ')} />}
-                </span>
-                {b.description && (
-                  <span>
-                    <Zh text={b.description} />
-                  </span>
-                )}
-              </span>
-              <span className="row tight">
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={!b.canMoveUp || writes.ro.off}
-                  title={
-                    i > 0 && !b.canMoveUp
-                      ? 'No earlier beat here is in the arc that orders this one.'
-                      : undefined
-                  }
-                  aria-label={`Move ${b.title} up`}
-                  onClick={() => move(b.id, -1)}
-                >
-                  Up
-                </button>
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={!b.canMoveDown || writes.ro.off}
-                  title={
-                    i < page.beats.length - 1 && !b.canMoveDown
-                      ? 'No later beat here is in the arc that orders this one.'
-                      : undefined
-                  }
-                  aria-label={`Move ${b.title} down`}
-                  onClick={() => move(b.id, 1)}
-                >
-                  Down
-                </button>
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
     </div>
   );
 }

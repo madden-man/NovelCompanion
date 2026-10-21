@@ -76,8 +76,8 @@ function writeTab(bible: string, tab: EntriesTab): void {
 }
 
 /**
- * KB-5: one Entries screen. Facts, cultural entries, places, glossary terms,
- * themes, open questions, and custom entries in one list, newest first, with
+ * KB-5: one Entries screen. Cultural entries, places, glossary terms, and
+ * open questions in one list, newest first, with
  * kind chips, a status filter, and a search box; the ED-1 editor beside it.
  * Culture by year, Place tree, Romanization, and Glossary table are tabs,
  * and the open tab is remembered for the bible.
@@ -220,20 +220,16 @@ function useIndexed(collection: EntriesCollection): IndexedEntry[] {
 
 /** The list of every kind, its filters, and the editor beside it. */
 function EntriesList(props: { onOpen: Open }) {
-  const facts = useIndexed('facts');
   const cultural = useIndexed('culturalEntries');
   const places = useIndexed('places');
   const glossary = useIndexed('glossaryTerms');
-  const themes = useIndexed('themes');
   const questions = useIndexed('openQuestions');
-  const custom = useIndexed('customEntries');
-  const sections = useEntries('customSections');
   const ro = useWriteGuard();
   const statusLabel = useStatusLabel();
 
-  const kinds = useMemo(() => entryKinds(sections), [sections]);
+  const kinds = useMemo(() => entryKinds(), []);
   const labels = useMemo(() => new Map(kinds.map((k) => [k.key, k.label])), [kinds]);
-  /** Kinds turned off; every kind, a new custom section included, starts on. */
+  /** Kinds turned off; every kind starts on. */
   const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   const [status, setStatus] = useState<EntryStatus | null>(null);
   const [query, setQuery] = useState('');
@@ -274,8 +270,8 @@ function EntriesList(props: { onOpen: Open }) {
   }, [query]);
 
   const all = useMemo(
-    () => [...facts, ...cultural, ...places, ...glossary, ...themes, ...questions, ...custom],
-    [facts, cultural, places, glossary, themes, questions, custom],
+    () => [...cultural, ...places, ...glossary, ...questions],
+    [cultural, places, glossary, questions],
   );
   const searched = hits.query === deferred ? hits : null;
   const rows = useMemo(() => {
@@ -436,7 +432,6 @@ function EntriesList(props: { onOpen: Open }) {
           <NewEntryForm
             key={pane.entryKind.key}
             collection={pane.entryKind.collection}
-            preset={pane.entryKind.sectionId ? { sectionId: pane.entryKind.sectionId } : undefined}
             onCreated={(id) => {
               const key = pane.entryKind.key;
               setOff((prev) => {
@@ -504,7 +499,7 @@ const EntryRow = memo(function EntryRow(props: {
   );
 });
 
-/** New entry, step one: what kind. One button per kind, custom sections included. */
+/** New entry, step one: what kind. One button per kind. */
 function KindPicker(props: {
   kinds: EntryKind[];
   onPick: (k: EntryKind) => void;

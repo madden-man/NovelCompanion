@@ -100,11 +100,11 @@ test('GD-2 a folder is browsed, a Google Doc is linked, and it imports through t
   await expect(view.getByTestId('import-summary')).toContainText('1 new');
   // Nothing is written before approval.
   expect(
-    (await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' })).entries,
+    (await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).entries,
   ).toHaveLength(0);
   await view.getByTestId('import-apply').click();
   await expect(view.getByTestId('import-result-counts')).toContainText('Created 1');
-  const notes = await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' });
+  const notes = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
   expect(notes.entries[0]!.entry).toMatchObject({
     title: 'Wedding notes',
     sourceRef: 'Chapter 3.docx#p1-p4',
@@ -118,7 +118,7 @@ test('GD-2 a folder is browsed, a Google Doc is linked, and it imports through t
 
 test('GD-3 on launch the app says which linked file changed, and changes nothing until reviewed', async () => {
   fake.touch('docCh3', new Date(Date.now() + 60_000).toISOString());
-  const before = await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' });
+  const before = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
   const notice = page.getByTestId('drive-launch-notice');
@@ -129,7 +129,7 @@ test('GD-3 on launch the app says which linked file changed, and changes nothing
   const row = drive().getByTestId('drive-file').filter({ hasText: 'Chapter 3' });
   await expect(row).toHaveAttribute('data-state', 'changed');
   await expect(row.getByTestId('drive-review-file')).toHaveText('Review changes');
-  expect(await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' })).toEqual(
+  expect(await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).toEqual(
     before,
   );
   // On demand: Mark as reviewed clears it without importing.
@@ -158,7 +158,7 @@ test('GD-4 export asks for drive.file, makes a folder, and writes Markdown by se
   expect(JSON.parse(json!.content)).toMatchObject({ format: 'novel-companion-bible' });
   const md = fake.uploads.filter((u) => u.mimeType === 'text/markdown');
   expect(md.map((u) => u.name)).toContain(
-    `Wedding notes (${(await invoke('entry.list', { collection: 'customEntries', trash: 'exclude' })).entries[0]!.entry._id}).md`,
+    `Wedding notes (${(await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).entries[0]!.entry._id}).md`,
   );
 });
 
@@ -242,7 +242,7 @@ test('GD-5 disconnecting removes the tokens and the app keeps working without Dr
   await page.getByTestId('import-pick-document').click();
   await expect(page.getByTestId('import-document')).toBeVisible();
   await invoke('entry.create', {
-    collection: 'facts',
-    data: { title: 'Offline fact', status: 'idea' },
+    collection: 'places',
+    data: { title: 'Offline place', status: 'idea' },
   });
 });

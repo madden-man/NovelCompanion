@@ -101,7 +101,8 @@ function line(it: SelectedItem): string {
   const head = it.note ? `${it.title}: ${it.note}.` : `${it.title}.`;
   const body = it.detail ? ` ${it.detail}` : '';
   const refs = [it.id, ...it.refs].map((id) => `[[${id}]]`).join(' ');
-  return `- ${head}${body} ${refs}`.replace(/\s+\n/g, '\n');
+  // One item is one line, so a body of several paragraphs never leaves a line without its citation (SB-4).
+  return `- ${head}${body} ${refs}`.replace(/\s*\n\s*/g, ' ');
 }
 
 /** SB-5: canon first, then planned and idea material under its own label. */
@@ -147,25 +148,23 @@ export function structuredBrief(sel: Selection): string {
   section(LEAD_SECTIONS[0].heading, strandGroups(sel, ['characters'], 'characters'));
   section(
     LEAD_SECTIONS[1].heading,
-    strandGroups(sel, ['era', 'eventsWindow', 'eventsFormative', 'eventsPlaces'], 'world events'),
+    strandGroups(sel, ['era', 'eventsWindow', 'eventsFormative'], 'world events'),
   );
   section(LEAD_SECTIONS[2].heading, strandGroups(sel, ['culture'], 'this community and year'));
   section('4. Places', strandGroups(sel, ['places'], 'places'));
-  section('5. Who knows what', strandGroups(sel, ['knowledge', 'povUnknown'], 'knowledge'));
+  section('5. Backstory', strandGroups(sel, ['moments'], 'backstory up to this year'));
   const numbered: [string, GroupKind[]][] = [
     ['6. Previous chapters', ['previousChapters']],
-    ['7. Beats', ['beats']],
-    ['8. Glossary, themes, and open questions', ['glossary', 'themes', 'openQuestions']],
-    ['9. Custom entries', ['custom']],
-    ['10. Last session note', ['sessionNote']],
-    ['11. Added by you', ['added']],
+    ['7. Glossary and open questions', ['glossary', 'openQuestions']],
+    ['8. Last session note', ['sessionNote']],
+    ['9. Added by you', ['added']],
   ];
   for (const [heading, kinds] of numbered) {
     const items = kinds.flatMap((k) => sharedGroup(sel, k)?.items ?? []);
     const decided = kinds.includes('openQuestions')
       ? (sharedGroup(sel, 'decidedQuestions')?.items ?? [])
       : [];
-    if (!items.length && !decided.length && (kinds[0] === 'custom' || kinds[0] === 'added')) {
+    if (!items.length && !decided.length && kinds[0] === 'added') {
       continue;
     }
     const body =
@@ -178,10 +177,9 @@ export function structuredBrief(sel: Selection): string {
     if (decided.length) body.push('### Decided', ...decided.map(line));
     section(heading, body);
   }
-  const ahead = [
-    ...sel.strands.flatMap((s) => s.groups.find((g) => g.kind === 'plannedAhead')?.items ?? []),
-    ...(sharedGroup(sel, 'plannedAhead')?.items ?? []),
-  ];
+  const ahead = sel.strands.flatMap(
+    (s) => s.groups.find((g) => g.kind === 'plannedAhead')?.items ?? [],
+  );
   if (ahead.length) section(`Planned ahead (after ${sel.year})`, ahead.map(line));
   if (sel.overBudget) {
     section('Over budget', [

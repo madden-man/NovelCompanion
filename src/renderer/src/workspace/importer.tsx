@@ -193,7 +193,7 @@ export function ImportView(props: { initialFile?: PickedFile; heading?: string }
 // ---------- workbook mapping ----------
 
 function targetKey(target: Mapping['target']): string {
-  return target.sectionId ? `customEntries:${target.sectionId}` : target.collection;
+  return target.collection;
 }
 
 function WorkbookMapper(props: {
@@ -204,7 +204,6 @@ function WorkbookMapper(props: {
   onError: (m: string | null) => void;
 }) {
   const { info, onPlan, onError } = props;
-  const sections = useEntries('customSections');
   const sheetId = useId();
   const sectionId = useId();
   const first = info.sheets[0];
@@ -224,8 +223,7 @@ function WorkbookMapper(props: {
   const fileId = info.file.id;
 
   const targetParts = useMemo(() => {
-    const [collection, sid] = target.split(':') as [EntryCollection, string | undefined];
-    return { collection, sectionId: sid };
+    return { collection: target as EntryCollection };
   }, [target]);
 
   // The fields a column can fill, for the section chosen.
@@ -242,14 +240,13 @@ function WorkbookMapper(props: {
 
   const guess = useCallback(
     async (sheet: string, nextShape: 'table' | 'grid', nextTarget: string) => {
-      const [collection, sid] = nextTarget.split(':') as [EntryCollection, string | undefined];
+      const collection = nextTarget as EntryCollection;
       try {
         const r = await call('import.guess', {
           fileId,
           sheet,
           shape: nextShape,
           collection: nextShape === 'grid' ? 'worldEvents' : collection,
-          ...(sid && nextShape === 'table' ? { sectionId: sid } : {}),
         });
         setMapping(r.mapping);
         setUsedSaved(false);
@@ -309,14 +306,9 @@ function WorkbookMapper(props: {
     }
   };
 
-  const sectionOptions = [
-    ...ENTRY_COLLECTIONS.filter((c) => c !== 'customEntries' && c !== 'customSections').map(
-      (c) => [c as string, collectionInfo[c].plural] as const,
-    ),
-    ...sections
-      .filter((s) => s.deletedAt === undefined)
-      .map((s) => [`customEntries:${s._id}`, `Custom: ${String(s.name)}`] as const),
-  ];
+  const sectionOptions = ENTRY_COLLECTIONS.map(
+    (c) => [c as string, collectionInfo[c].plural] as const,
+  );
 
   return (
     <div className="stack" data-testid="import-workbook">

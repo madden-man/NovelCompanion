@@ -1,11 +1,9 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { GROUP_TITLES, WINDOW_AHEAD } from '../../../../shared/domain/brief/selection';
 import { placePath } from '../../../../shared/domain/culture';
-import { call, plainError } from '../../api';
 import { useWriteGuard } from '../../connection';
 import { captureNav } from '../capture';
 import { useEntries } from '../data';
-import type { Entry } from '../data';
 import { useUndo } from '../undo';
 import { EventsWindow, GroupBlock, updateWithUndo } from './common';
 import type { OpenEntry, SelectionView } from './common';
@@ -16,7 +14,6 @@ type Group = Strand['groups'][number];
 type Item = Group['items'][number];
 type BackstoryPerson = Strand['backstory']['people'][number];
 type BackstoryRow = BackstoryPerson['rows'][number];
-type Mark = { key: string; year?: number | null; pinned?: boolean };
 
 /** The groups shown open, in this order; everything else folds under "More" (A35). */
 const LEAD = new Set(['eventsWindow', 'characters', 'culture']);
@@ -81,124 +78,29 @@ function Characters({
   );
 }
 
-/** One dated passage: the year chip corrects the year, the pin keeps it in every session. */
-function PassageRow(props: {
-  row: BackstoryRow;
-  onYear: (year: number | null) => void;
-  onPin: (pinned: boolean) => void;
-  off: boolean;
-}) {
+/** SM-3: one moment of the character's backstory, opening in the editor. */
+function MomentRow(props: { row: BackstoryRow; onOpen: OpenEntry }) {
   const { row } = props;
-  const [editing, setEditing] = useState(false);
-  const [open, setOpen] = useState(false);
-  const tag = row.kind === 'pinned' ? 'Pinned' : row.kind === 'lead' ? 'Leading up' : row.tag;
-  const commit = (v: string) => {
-    setEditing(false);
-    const n = v.trim() === '' ? null : Number(v);
-    if (n === null || (Number.isInteger(n) && n !== row.year)) props.onYear(n);
-  };
+  const years =
+    row.endYear !== null && row.endYear !== row.year
+      ? `${row.year} to ${row.endYear}`
+      : String(row.year);
   return (
-    <li className={`rel-bs-row ${row.kind}`} data-testid="backstory-row" data-key={row.key}>
-      {editing ? (
-        <input
-          className="rel-year-input num"
-          type="number"
-          aria-label="Year of this passage (empty to date it from the text)"
-          defaultValue={row.year ?? ''}
-          autoFocus
-          onBlur={(e) => commit(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') commit(e.currentTarget.value);
-            if (e.key === 'Escape') setEditing(false);
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          className={`chip time rel-year${row.source === 'set' ? ' set' : ''}`}
-          title={
-            row.source === 'set'
-              ? 'Year set by hand. Click to change.'
-              : row.source === 'carried'
-                ? 'Dated from the passage before. Click to correct.'
-                : 'Dated from the text. Click to correct.'
-          }
-          disabled={props.off}
-          onClick={() => setEditing(true)}
-        >
-          {row.year ?? '?'}
-        </button>
-      )}
-      <span className="rel-bs-tag">{tag}</span>
+    <li className="rel-bs-row" data-testid="backstory-row" data-id={row.id}>
+      <span className="chip time rel-year num">{years}</span>
       <span className="rel-bs-text">
-        {open ? row.text : row.excerpt}
-        {row.text !== row.excerpt && (
-          <>
-            {' '}
-            <button
-              type="button"
-              className="link-btn rel-bs-more"
-              aria-expanded={open}
-              onClick={() => setOpen((v) => !v)}
-            >
-              {open ? 'Less' : 'More'}
-            </button>
-          </>
-        )}
+        <button type="button" className="link-btn" onClick={() => props.onOpen('moments', row.id)}>
+          {row.title}
+        </button>
+        {row.body && <> {row.body}</>}
       </span>
-      <button
-        type="button"
-        className="btn small rel-pin"
-        aria-pressed={row.pinned}
-        disabled={props.off}
-        onClick={() => props.onPin(!row.pinned)}
-        title={row.pinned ? 'Unpin: show only when its years are relevant' : 'Pin to every session'}
-      >
-        {row.pinned ? 'Pinned' : 'Pin'}
-      </button>
     </li>
   );
 }
 
+/** A35, SM-3: the moments of the characters here that fall in the chapter's backstory years. */
 function Backstory({ strand, onOpen }: { strand: Strand; onOpen: OpenEntry }) {
   const b = strand.backstory;
-  const undo = useUndo();
-  const ro = useWriteGuard();
-  const [error, setError] = useState<string | null>(null);
-  // Writes run one after another, each on the entry as it is now, so a quick
-  // pin after a year change never loses the year.
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const save = (
-    person: BackstoryPerson,
-    row: BackstoryRow,
-    patch: { year?: number | null; pinned?: boolean },
-  ) => {
-    queue.current = queue.current.then(async () => {
-      try {
-        const doc = (await call('entry.get', { collection: 'characters', id: person.characterId }))
-          .entry as Entry;
-        const marks = (Array.isArray(doc.backstoryMarks) ? doc.backstoryMarks : []) as Mark[];
-        const merged = { ...(marks.find((m) => m.key === row.key) ?? { key: row.key }), ...patch };
-        const clean: Mark = {
-          key: row.key,
-          ...(typeof merged.year === 'number' ? { year: merged.year } : {}),
-          ...(merged.pinned ? { pinned: true } : {}),
-        };
-        const keep = clean.year !== undefined || clean.pinned === true;
-        const next = [...marks.filter((m) => m.key !== row.key), ...(keep ? [clean] : [])];
-        await updateWithUndo(
-          undo,
-          'characters',
-          person.characterId,
-          { backstoryMarks: next },
-          'pinned' in patch ? 'Backstory pin' : 'Backstory date',
-        );
-        setError(null);
-      } catch (e) {
-        setError(plainError(e));
-      }
-    });
-  };
   const span = b.from === b.to ? String(b.from) : `${b.from} to ${b.to}`;
   return (
     <section className="sel-group rel-sec" data-testid="sel-backstory" aria-label="Backstory">
@@ -208,11 +110,6 @@ function Backstory({ strand, onOpen }: { strand: Strand; onOpen: OpenEntry }) {
           {b.label} · {span}
         </span>
       </h4>
-      {error && (
-        <p className="callout crit" role="alert">
-          {error}
-        </p>
-      )}
       {b.people.length ? (
         <div className="rel-bs">
           {b.people.map((p) => (
@@ -234,20 +131,14 @@ function Backstory({ strand, onOpen }: { strand: Strand; onOpen: OpenEntry }) {
               </div>
               <ul className="plain-list">
                 {p.rows.map((r) => (
-                  <PassageRow
-                    key={`${r.kind}|${r.key}`}
-                    row={r}
-                    off={ro.off}
-                    onYear={(year) => save(p, r, { year })}
-                    onPin={(pinned) => save(p, r, { pinned })}
-                  />
+                  <MomentRow key={r.id} row={r} onOpen={onOpen} />
                 ))}
               </ul>
             </div>
           ))}
         </div>
       ) : (
-        <p className="example-note">No backstory passage of the characters here falls in {span}.</p>
+        <p className="example-note">No moment of the characters here falls in {span}.</p>
       )}
     </section>
   );

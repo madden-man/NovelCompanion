@@ -7,7 +7,7 @@
  * - new key: a new open finding;
  * - open: its text, lines, and change set are refreshed;
  * - dismissed: stays dismissed and hidden while the chapter text (or, for a
- *   structural finding, the chapter's strands, facts in play, and links) and
+ *   structural finding, the chapter's strands and links) and
  *   every cited entry's revision are unchanged; otherwise it opens again;
  * - rewrite: the task stands as it is;
  * - manuscript wins: the change was applied, yet the conflict is back, so it opens again;
@@ -107,7 +107,8 @@ export function dismissalFor(
       ? typeof chapter.manuscriptText === 'string'
         ? chapter.manuscriptText
         : ''
-      : JSON.stringify([chapter.strands ?? [], chapter.factsInPlay ?? [], chapter.links ?? []]);
+      : // The empty middle slot held facts in play before A39; kept so earlier dismissals still match.
+        JSON.stringify([chapter.strands ?? [], [], chapter.links ?? []]);
   const revisions = [...new Set(f.entryIds)]
     .sort()
     .map((id) => {

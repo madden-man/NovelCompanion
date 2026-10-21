@@ -135,7 +135,9 @@ test('NF-1 KB-5 the Entries screen opens over the 5,000-entry bible within 500 m
   });
   const count = page.getByTestId('entries-count');
   await expect(count).toContainText(`${listed} entries, showing the newest ${ENTRIES_PAGE}`);
-  await expect(page.getByRole('button', { name: `Show ${ENTRIES_PAGE} more` })).toBeVisible();
+  // A39 took facts, themes and custom entries off the screen, so the rest may be under a full page.
+  const rest = Math.min(ENTRIES_PAGE, listed - ENTRIES_PAGE);
+  await expect(page.getByRole('button', { name: `Show ${rest} more` })).toBeVisible();
   expect(median(samples)).toBeLessThan(OPEN_MS);
 });
 

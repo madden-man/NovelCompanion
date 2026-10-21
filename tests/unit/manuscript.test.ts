@@ -68,22 +68,16 @@ describe('MS-1 MS-4 manuscript text and the re-import diff', () => {
 });
 
 describe('MS-3 the planned entries a chapter establishes', () => {
-  test('MS-3 CH6 with the supplement establishes its planned beat and fact in play, not a 2090 event', () => {
+  test('MS-3 SM-3 CH6 with the supplement establishes its point of view moment of 2045, not a 2090 event', () => {
     expect(establishedPlanned(briefData(true), 'CH6').map((e) => [e.id, e.why])).toEqual([
-      ['B4', 'a beat of this chapter'],
-      ['F2', 'a fact in play'],
+      ['B4', 'a moment of the point of view in these years'],
     ]);
   });
 
-  test('MS-3 CH7 establishes its planned characters, its learned knowledge, and its planned beat', () => {
-    // Hand-checked against the fixture: X1 Tomas is planned and present; K2 is learned in CH7;
-    // B6 is CH7's beat; F1 is canon; Z3, H5, PLC3 are canon; TH3 is planned and appears in CH7.
-    expect(establishedPlanned(briefData(true), 'CH7').map((e) => e.id)).toEqual([
-      'X1',
-      'B6',
-      'K2',
-      'TH3',
-    ]);
+  test('MS-3 SM-3 CH7 establishes its planned characters and the planned moment of its point of view', () => {
+    // Hand-checked against the fixture: X1 Tomas is planned and present; B6 is Lan's planned
+    // moment of 2060, CH7's year, and Lan is its point of view; Z3, H5, PLC3 are canon.
+    expect(establishedPlanned(briefData(true), 'CH7').map((e) => e.id)).toEqual(['X1', 'B6']);
   });
 });
 
