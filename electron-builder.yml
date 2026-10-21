@@ -1,7 +1,8 @@
 appId: com.maddenman.novelcompanion
 productName: Novel Companion
 directories:
-  output: release
+  # .noindex keeps Spotlight from listing these builds beside the installed app in /Applications.
+  output: release/build.noindex
   buildResources: build
 files:
   - out/**/*
