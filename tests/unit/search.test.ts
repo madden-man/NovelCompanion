@@ -45,10 +45,7 @@ describe('ARCH-2 search tokenizer', () => {
 describe('ARCH-2 search index', () => {
   const index = indexOf(
     ['characters', doc('C1', '晓曦')],
-    [
-      'characters',
-      doc('C2', 'Margaret Hale', { names: { full: 'Margaret Hale', nicknames: ['Maggie'] } }),
-    ],
+    ['characters', doc('C2', 'Margaret Hale', { names: { full: 'Margaret Hale', chinese: '玛' } })],
     [
       'glossaryTerms',
       doc('G1', '团圆', {
@@ -69,7 +66,7 @@ describe('ARCH-2 search index', () => {
   test('ARCH-2 an English title is found by a word', () => {
     expect(ids('margaret')).toEqual(['C2']);
     expect(ids('Hale')).toEqual(['C2']);
-    expect(ids('Maggie')).toEqual(['C2']);
+    expect(ids('玛')).toEqual(['C2']);
   });
 
   test('ARCH-2 a glossary term is found by characters, romanization with or without tones, and meaning', () => {

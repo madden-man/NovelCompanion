@@ -89,9 +89,9 @@ const byCheck = (fs: FindingWire[], chapterId: string, check: string) =>
   fs.find((f) => f.chapterId === chapterId && f.check === check)!;
 
 describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () => {
-  test('CC-1 CC-2 CC-5 the structural checks record exactly S1, S2, S3, and a re-run adds nothing', async () => {
+  test('CC-1 CC-2 CC-5 the structural checks record exactly S1 and S3, and a re-run adds nothing', async () => {
     const first = await invoke('continuity.check', { chapterId: null });
-    expect(first.found).toBe(3);
+    expect(first.found).toBe(2);
     expect(first.chapters.map((c) => c.id)).toEqual([
       'CH1',
       'CH2',
@@ -103,14 +103,13 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
       'CH8',
     ]);
     const again = await invoke('continuity.check', { chapterId: null });
-    expect(again.found).toBe(3);
+    expect(again.found).toBe(2);
     const fs = (await open()).filter((f) => f.kind === 'structural');
     expect(fs.map((f) => [f.chapterId, f.check, f.entries.map((e) => e.id)])).toEqual([
       ['CH4', 'character-present-while-dead', ['H2']],
-      ['CH6', 'fact-acted-on-before-learned', ['H5', 'F2', 'K2']],
       ['CH6', 'event-linked-as-happened-after-story-year', ['E10']],
     ]);
-    expect(bible.model.all('findings').filter((f) => !f.deletedAt)).toHaveLength(3);
+    expect(bible.model.all('findings').filter((f) => !f.deletedAt)).toHaveLength(2);
   });
 
   test('CC-1 CC-3 every chapter with text is read by Claude; the recorded P1 and P2 are stored with lines, quote, citation, kind, explanation, and change set', async () => {
@@ -151,7 +150,7 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
     expect(p2.lines[0]!.text).toMatch(/^Lan had grown up in Shanghai/);
     // CC-3: the change to a real field is kept; the one to a field that does not exist is shown, never applied.
     expect(p2.changes.map((c) => [c.field, c.before, c.after])).toEqual([
-      ['birthplace', 'Guangzhou', 'Shanghai'],
+      ['title', 'Lives in Guangzhou', 'Lives in Shanghai'],
     ]);
     expect(p2.rejectedChanges).toEqual([
       {
@@ -189,24 +188,20 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
       'Selected entries for Chapter 6: The Letter [CH6]',
       'Chapter 6: The Letter [CH6]',
     ]);
-    expect(blocks[0]![2]).toContain('Beat [B4]');
+    // SM-3: the moments arrive with the selected entries; the stored plot has no beats or facts.
+    expect(blocks[0]![2]).not.toMatch(/Beat|fact/);
+    expect(blocks[1]![2]).toMatch(/\[B4\] Iris finds the letter \(moments; /);
     expect(blocks[1]![2]).toMatch(/\[E3\] /);
     const outside = req.prompt.replace(/<material[\s\S]*?<\/material>/g, '');
-    expect(outside).not.toMatch(/Beat \[B|\[E3\]|acts on fact/);
+    expect(outside).not.toMatch(/\[B4\]|\[E3\]/);
     expect(req.prompt).toContain(
       '<material source="Chapter 6: The Letter [CH6]">\n1: Iris asked her father',
     );
     expect(req.prompt).toContain(
       'Strand [CH6-present] "present" (primary): story year 2045; point of view Iris Hale-Zhou [H5] (age 14)',
     );
-    expect(req.prompt).toContain('acts on fact [F2]');
-    expect(req.prompt).toContain('knowledge record [K2] says they learn it in 2060');
-    expect(req.prompt).toContain(
-      'Beats planned for this chapter:\n- Beat [B4] (2045, chapter CH6)',
-    );
-    // Beats in its arcs dated at or before 2045, and none after.
-    expect(req.prompt).toContain('- Beat [B1] (2029)');
-    expect(req.prompt).not.toContain('Beat [B5]');
+    // Iris's moments up to 2045 only: B5 (2050) is not given.
+    expect(req.prompt).not.toContain('[B5]');
     expect(req.prompt).toContain('6. The Letter [CH6], 2045 (this chapter)');
     // The M7 selection for the chapter (SB-2).
     expect(req.prompt).toMatch(/\[E3\] .*\(worldEvents; /);
@@ -286,7 +281,7 @@ describe('CC-4 the three resolutions', () => {
     });
     expect(r.finding.lines[0]!.text).toMatch(/grown up in Shanghai/);
     // Nothing in the bible changed but the finding.
-    expect(bible.model.get('characters', 'Z3')!.birthplace).toBe('Guangzhou');
+    expect(bible.model.get('moments', 'Z3-lives-0')!.title).toBe('Lives in Guangzhou');
     const stored = bible.model.get('findings', p2.id)!;
     expect(
       Object.keys(stored).filter((k) => /suggest|replace|prose|draft|rewritten|newText/i.test(k)),
@@ -358,7 +353,7 @@ describe('CC-4 the three resolutions', () => {
     });
     await invoke('continuity.check', { chapterId: 'CH6' });
     expect(bible.model.get('findings', s3.id)!.deletedAt).toBeTruthy();
-    expect((await open('CH6')).map((f) => f.check)).toEqual(['fact-acted-on-before-learned']);
+    expect((await open('CH6')).map((f) => f.check)).toEqual([]);
 
     const before = bible.model.all('findings').length;
     const failing = new FakeClaudeClient([

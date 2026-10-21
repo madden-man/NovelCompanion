@@ -11,7 +11,7 @@ import {
   schemaVersion,
 } from '../../src/main/db';
 import type { Store } from '../../src/main/db';
-import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
+import { LATEST_SCHEMA_VERSION, migrations } from '../../src/main/db/migrations';
 import type { Migration } from '../../src/main/db/migrations';
 import { openBibleSession } from '../../src/main/db/session';
 import { CONFIG_LIST_IDS, ENTRY_COLLECTIONS, LIST_IDS, ListDoc } from '../../src/shared/schema';
@@ -45,8 +45,12 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
       schemaVersion: LATEST_SCHEMA_VERSION,
     });
     const names = await allCollections();
-    for (const c of [...ENTRY_COLLECTIONS, 'lists', 'revisions', 'customSections']) {
+    for (const c of [...ENTRY_COLLECTIONS, 'lists', 'revisions']) {
       expect(names).toContain(`${slug}.${c}`);
+    }
+    // SM-2: a new bible ends with none of the collections A39 drops.
+    for (const c of ['facts', 'knowledgeRecords', 'themes', 'customSections', 'plotBeats']) {
+      expect(names).not.toContain(`${slug}.${c}`);
     }
     const indexes = await bible.collection('revisions').indexes();
     expect(indexes.map((i) => i.key)).toContainEqual({ entryId: 1, at: 1 });
@@ -210,6 +214,9 @@ describe('CC-4 migration 8 clears findings that were written without a key', () 
   });
 });
 
+// Migrations 4 and 5 are run up to version 8: migration 9 (A39) then drops beats and themes.
+const UP_TO_8 = migrations.slice(0, 8);
+
 describe('PL-3 TH-1 migrations carry old data forward', () => {
   test('PL-3 a beat with one order number becomes one position in each of its arcs', async () => {
     const bible = await createBible(store, freshSlug('beat-orders'), 'Beats');
@@ -237,7 +244,7 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
     await store.db
       .collection(REGISTRY)
       .updateOne({ _id: bible.id as never }, { $set: { schemaVersion: 3 } });
-    expect(await migrate(bible)).toEqual({ from: 3, to: LATEST_SCHEMA_VERSION });
+    expect(await migrate(bible, UP_TO_8)).toEqual({ from: 3, to: 8 });
     const b1 = await bible.collection('plotBeats').findOne({ _id: 'b1' as never });
     expect(b1).toMatchObject({
       arcOrders: [
@@ -266,7 +273,7 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
     await store.db
       .collection(REGISTRY)
       .updateOne({ _id: bible.id as never }, { $set: { schemaVersion: 4 } });
-    await migrate(bible);
+    await migrate(bible, UP_TO_8);
     expect(await bible.collection('themes').findOne({ _id: 'T1' as never })).toMatchObject({
       appearances: [{ chapterId: 'C1', note: '' }],
     });

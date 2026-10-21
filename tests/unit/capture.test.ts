@@ -136,7 +136,7 @@ describe('KB-6 the capture feature', () => {
     expect(prepareCaptureDraft(update, '2026-10-12')).toEqual(update);
   });
 
-  test('KB-6 T-3 the recordings file a place lived and a world event, and a fact linked to two characters', () => {
+  test('KB-6 T-3 SM-3 the recordings file a Lives in moment and a world event, and a moment for each of two characters', () => {
     const recs = loadRecordings(join(ROOT, 'fixtures/claude/recordings.json')).filter(
       (r) => r.feature === 'capture',
     );
@@ -144,8 +144,22 @@ describe('KB-6 the capture feature', () => {
       recs
         .find((r) => name.test(r.name))!
         .steps.filter((s) => 'tool' in s && s.tool === 'propose_change');
-    expect(proposals(/a move files on the character/)).toHaveLength(2);
-    expect(proposals(/a fact about two characters/)).toHaveLength(1);
+    const move = proposals(/a move files as a moment/);
+    expect(move).toHaveLength(2);
+    expect(
+      move.map((s) => ('input' in s ? (s.input as { collection: string }).collection : '')),
+    ).toEqual(['moments', 'worldEvents']);
+    expect(proposals(/a fact about two characters/)).toHaveLength(2);
+    // SM-2: no recording files to a dropped kind.
+    for (const r of recs) {
+      for (const s of r.steps) {
+        if ('tool' in s && s.tool === 'propose_change') {
+          expect(['facts', 'plotBeats', 'relationships']).not.toContain(
+            (s.input as { collection: string }).collection,
+          );
+        }
+      }
+    }
     expect(recs.some((r) => r.steps.some((s) => 'fail' in s))).toBe(true);
   });
 });

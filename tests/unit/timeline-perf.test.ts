@@ -30,7 +30,6 @@ function bigModel(): ReadModel {
         i % 97 === 0 ? { unknown: true } : { year: born, month: 1 + (i % 12), day: 1 + (i % 28) },
       death: i % 3 === 0 ? { year: born + 60 + (i % 30) } : null,
       familyIds: [`F${i % 5}`],
-      placesLived: [],
     });
   }
   for (let i = 0; i < 2800; i++) {
@@ -40,7 +39,6 @@ function bigModel(): ReadModel {
       status: 'planned',
       start: { year: 1950 + (i % 150) },
       end: i % 4 === 0 ? { year: 1955 + (i % 150) } : null,
-      reality: 'invented',
       categoryId: 'technology',
       regions: [],
       placeIds: [],

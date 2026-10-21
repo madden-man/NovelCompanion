@@ -101,7 +101,8 @@ function line(it: SelectedItem): string {
   const head = it.note ? `${it.title}: ${it.note}.` : `${it.title}.`;
   const body = it.detail ? ` ${it.detail}` : '';
   const refs = [it.id, ...it.refs].map((id) => `[[${id}]]`).join(' ');
-  return `- ${head}${body} ${refs}`.replace(/\s+\n/g, '\n');
+  // One item is one line, so a body of several paragraphs never leaves a line without its citation (SB-4).
+  return `- ${head}${body} ${refs}`.replace(/\s*\n\s*/g, ' ');
 }
 
 /** SB-5: canon first, then planned and idea material under its own label. */

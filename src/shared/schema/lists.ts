@@ -48,11 +48,9 @@ export type AnyListId = ListId | DerivedListId;
 export const AnyListIdSchema = z.enum([...LIST_IDS, ...DERIVED_LIST_IDS]);
 
 /** Any list the app can show, rename in, add to, or remove from. */
-export const ListIdParam = z
-  .string()
-  .refine((id) => AnyListIdSchema.safeParse(id).success, {
-    message: 'There is no list with that ID.',
-  });
+export const ListIdParam = z.string().refine((id) => AnyListIdSchema.safeParse(id).success, {
+  message: 'There is no list with that ID.',
+});
 
 /** Lists whose items are fixed by the schema; their labels can change, their items cannot. */
 export const FIXED_ITEM_LISTS: readonly string[] = ['statuses', 'provenance'];

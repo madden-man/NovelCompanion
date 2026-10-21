@@ -119,7 +119,6 @@ describe('IM-1 IM-2 IM-6 a workbook imports into a real database through the wri
     const courier = events.find((e) => e.title === 'Robot couriers')!;
     expect(courier).toMatchObject({
       start: { year: 2045 },
-      reality: 'invented',
       sourceRef: 'fixture-workbook.xlsx#High Level!E3',
     });
     const cats = open.repo.lists().find((l) => l._id === 'eventCategories')!.items;
@@ -651,7 +650,7 @@ describe('IM-1 IM-3 list choices follow the approved items that point at them', 
         { header: 'Category', index: 2, field: 'categoryId' },
       ],
       identity: ['title'],
-      fixed: { status: 'planned', reality: 'invented' },
+      fixed: { status: 'planned' },
       addMissingListItems: true,
       createMissing: false,
       matchIn: 'sheet',

@@ -4,7 +4,7 @@ import { zhPieces } from '../../src/shared/domain/zh';
 
 describe('ED-3 saved value of the focused field after a save (M1 review fix)', () => {
   const saved = {
-    birthplace: 'Astoria',
+    role: 'Astoria',
     names: { full: 'Ruth Hale', chinese: '' },
     birth: { year: 1990 },
     readingOrder: 3,
@@ -12,7 +12,7 @@ describe('ED-3 saved value of the focused field after a save (M1 review fix)', (
   };
 
   test('ED-3 a field of the saved entry takes the stored value, not what it shows now', () => {
-    expect(savedFieldText(saved, 'birthplace')).toBe('Astoria');
+    expect(savedFieldText(saved, 'role')).toBe('Astoria');
     expect(savedFieldText(saved, 'names.full')).toBe('Ruth Hale');
     expect(savedFieldText(saved, 'readingOrder')).toBe('3');
     expect(savedFieldText(saved, 'sourceFile')).toBe('');

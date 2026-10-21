@@ -74,7 +74,7 @@ afterAll(async () => {
 });
 
 describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
-  test('T-6 the generated volume is in the database: 5,000 entries, 100 chapters with text, beats, facts, knowledge, events, places', () => {
+  test('T-6 the generated volume is in the database: 5,000 entries, 100 chapters with text, moments, events, places', () => {
     const m = bible.model;
     const entries = [
       'characters',
@@ -83,22 +83,18 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
       'parentLinks',
       'books',
       'parts',
-      'arcs',
       'chapters',
-      'plotBeats',
+      'moments',
       'worldEvents',
       'eraStates',
       'places',
       'glossaryTerms',
-      'facts',
-      'knowledgeRecords',
-      'themes',
       'openQuestions',
     ].reduce((n, c) => n + m.size(c), 0);
     expect(entries).toBe(BIG.entries);
     expect(m.size('chapters')).toBe(100);
     expect(m.all('chapters').every((c) => String(c.manuscriptText).length > 2000)).toBe(true);
-    for (const c of ['plotBeats', 'facts', 'knowledgeRecords', 'worldEvents', 'places']) {
+    for (const c of ['moments', 'worldEvents', 'places']) {
       expect(m.size(c), c).toBeGreaterThanOrEqual(60);
     }
   });

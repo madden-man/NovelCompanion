@@ -30,6 +30,38 @@ const make = async (collection: string, data: Record<string, unknown>) =>
   await invoke('entry.create', { collection: collection as never, data });
 
 describe('OQ-1, SL-1 questions and the log', () => {
+  beforeAll(async () => {
+    // A person and a chapter to link and log against.
+    const book = (await make('books', { title: 'Book', status: 'planned', number: 1 })).entry;
+    const part = (
+      await make('parts', { title: 'Part', status: 'planned', bookId: book._id, number: 1 })
+    ).entry;
+    const who = (
+      await make('characters', {
+        title: 'Ada',
+        status: 'canon',
+        names: { full: 'Ada' },
+        birth: { year: 1980 },
+      })
+    ).entry;
+    await make('chapters', {
+      title: 'The house',
+      status: 'planned',
+      partId: part._id,
+      readingOrder: 1,
+      strands: [
+        {
+          id: 's1',
+          label: 'present',
+          startYear: 2030,
+          endYear: null,
+          primary: true,
+          characterIds: [who._id],
+        },
+      ],
+    });
+  });
+
   test('OQ-1 a question links to any entry, is decided with a decision text, and keeps its history', async () => {
     const person = (await invoke('entry.list', { collection: 'characters', trash: 'exclude' }))
       .entries[0]!.entry;

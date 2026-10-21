@@ -134,13 +134,13 @@ describe('ED-4 revision history', () => {
       revisionId: revisions[1]!._id,
     });
     expect(diff.revision.snapshot.backstory).toBe('Eugene, Oregon');
-    expect(diff.changes.map((c) => c.path)).toContain('birthplace');
+    expect(diff.changes.map((c) => c.path)).toContain('backstory');
     const { entry } = await invoke('revisions.restore', {
       collection: 'characters',
       id: 'H1',
       revisionId: revisions[1]!._id,
     });
-    expect(entry.birthplace).toBe('Eugene, Oregon');
+    expect(entry.backstory).toBe('Eugene, Oregon');
   });
 });
 
@@ -149,7 +149,7 @@ describe('ED-5 trash', () => {
     const { count, entries } = fixture.repo.linkedFrom('Z3');
     expect(count).toBeGreaterThan(2);
     const kinds = entries.map((e) => `${e.collection}:${e.id}`);
-    expect(kinds).toEqual(expect.arrayContaining(['parentLinks:PL-Z1-Z3', 'knowledgeRecords:K1']));
+    expect(kinds).toEqual(expect.arrayContaining(['parentLinks:PL-Z1-Z3', 'moments:Z3-lives-0']));
     expect(entries.every((e) => e.title.length > 0)).toBe(true);
   });
 
@@ -427,7 +427,7 @@ describe('ED-7 proposals wait for approval', () => {
       op: 'update',
       collection: 'characters',
       targetId: 'Z2',
-      data: { birthplace: 'Foshan' },
+      data: { role: 'Foshan' },
       reason: 'The workbook says Foshan.',
     });
     expect(p.state).toBe('pending');
@@ -435,9 +435,7 @@ describe('ED-7 proposals wait for approval', () => {
     expect(await stored('characters', 'Z2')).toEqual(before);
     expect(await revisionCount('Z2')).toBe(revsBefore);
     const view = await invoke('proposal.diff', { id: p._id });
-    expect(view.changes).toEqual([
-      { path: 'birthplace', before: before!.birthplace, after: 'Foshan' },
-    ]);
+    expect(view.changes).toEqual([{ path: 'role', before: before!.role, after: 'Foshan' }]);
     expect(view.conflict).toBe(false);
     expect(
       (await invoke('proposal.list', { state: 'pending' })).proposals.map((v) => v.proposal._id),
@@ -448,7 +446,7 @@ describe('ED-7 proposals wait for approval', () => {
       expect.objectContaining({ state: 'approved', edited: false, appliedEntryId: 'Z2' }),
     );
     expect(approved.decidedAt).not.toBeNull();
-    expect((await stored('characters', 'Z2'))!.birthplace).toBe('Foshan');
+    expect((await stored('characters', 'Z2'))!.role).toBe('Foshan');
     expect(await revisionCount('Z2')).toBe(revsBefore + 1);
     const [rev] = await repo.history('characters', 'Z2');
     expect(rev).toEqual(
@@ -507,7 +505,7 @@ describe('ED-7 proposals wait for approval', () => {
       op: 'update',
       collection: 'characters',
       targetId: 'Z2',
-      data: { birthplace: 'x' },
+      data: { role: 'x' },
     });
     await expect(fixture.repo.editProposal(p._id, { birth: { year: 'old' } })).rejects.toThrow(
       /not valid/,
@@ -518,17 +516,17 @@ describe('ED-7 proposals wait for approval', () => {
   test('ED-7 a rejected proposal leaves MongoDB unchanged; create and delete proposals apply through the write path', async () => {
     const { repo } = fixture;
     const invoke = ipcFor(() => fixture);
-    const before = await stored('facts', 'F2');
-    const revs = await revisionCount('F2');
+    const before = await stored('places', 'PLC4');
+    const revs = await revisionCount('PLC4');
     const rejected = await repo.propose({
       source: 'bulk',
       op: 'delete',
-      collection: 'facts',
-      targetId: 'F2',
+      collection: 'places',
+      targetId: 'PLC4',
     });
     await invoke('proposal.reject', { id: rejected._id });
-    expect(await stored('facts', 'F2')).toEqual(before);
-    expect(await revisionCount('F2')).toBe(revs);
+    expect(await stored('places', 'PLC4')).toEqual(before);
+    expect(await revisionCount('PLC4')).toBe(revs);
     expect(
       (await invoke('proposal.list', { state: 'rejected' })).proposals.map((v) => v.proposal._id),
     ).toContain(rejected._id);
@@ -536,20 +534,20 @@ describe('ED-7 proposals wait for approval', () => {
     const create = await repo.propose({
       source: 'import',
       op: 'create',
-      collection: 'facts',
-      data: { title: 'A new secret', status: 'idea' },
+      collection: 'places',
+      data: { title: 'A new place', status: 'idea' },
     });
     const { proposal: done } = await invoke('proposal.approve', { id: create._id });
-    expect((await stored('facts', done.appliedEntryId!))!.title).toBe('A new secret');
+    expect((await stored('places', done.appliedEntryId!))!.title).toBe('A new place');
     expect(await revisionCount(done.appliedEntryId!)).toBe(1);
     const del = await repo.propose({
       source: 'import',
       op: 'delete',
-      collection: 'facts',
+      collection: 'places',
       targetId: done.appliedEntryId,
     });
     await invoke('proposal.approve', { id: del._id });
-    expect((await stored('facts', done.appliedEntryId!))!.deletedAt).toBeDefined();
+    expect((await stored('places', done.appliedEntryId!))!.deletedAt).toBeDefined();
     expect(await revisionCount(done.appliedEntryId!)).toBe(2);
   });
 });

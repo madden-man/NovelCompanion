@@ -36,21 +36,15 @@ describe('T-5 editing coverage through the IPC layer', () => {
     }
   });
 
-  test('T-5 the walk reaches every M4 manifest: knowledge, themes, questions, log, custom sections, and custom entries', () => {
+  test('T-5 SM-3 the walk reaches every manifest the cut model keeps: moments, questions, log, briefs, places, glossary, culture', () => {
     const m4 = [
-      'facts',
-      'knowledgeRecords',
-      'themes',
+      'moments',
       'openQuestions',
       'sessionLogs',
       'briefs',
-      'customSections',
-      'customEntries',
       'places',
       'glossaryTerms',
       'culturalEntries',
-      'arcs',
-      'plotBeats',
     ] as const;
     for (const c of m4) {
       const item = plan.items.find((i) => i.collection === c);

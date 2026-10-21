@@ -7,7 +7,7 @@ describe('ED-4 revision comparison', () => {
       _id: 'H1',
       modifiedAt: '2026-01-01T00:00:00.000Z',
       title: 'Margaret Hale',
-      names: { full: 'Margaret Hale', nicknames: ['Maggie'] },
+      names: { full: 'Margaret Hale', chinese: '玛' },
       death: { year: 2041 },
       tags: [],
     };
@@ -15,13 +15,13 @@ describe('ED-4 revision comparison', () => {
       _id: 'H1',
       modifiedAt: '2026-02-01T00:00:00.000Z',
       title: 'Margaret Doyle Hale',
-      names: { full: 'Margaret Hale', nicknames: ['Maggie', 'Peg'] },
+      names: { full: 'Margaret Hale', chinese: '玛格' },
       death: null,
       tags: ['matriarch'],
     };
     expect(diffEntries(before, after)).toEqual([
       { path: 'title', before: 'Margaret Hale', after: 'Margaret Doyle Hale' },
-      { path: 'names.nicknames', before: ['Maggie'], after: ['Maggie', 'Peg'] },
+      { path: 'names.chinese', before: '玛', after: '玛格' },
       { path: 'death', before: { year: 2041 }, after: null },
       { path: 'tags', before: [], after: ['matriarch'] },
     ]);

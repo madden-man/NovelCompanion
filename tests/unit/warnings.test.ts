@@ -292,7 +292,7 @@ describe('ED-10 field warnings', () => {
       characterIds: [],
       placeIds: [],
     });
-    const ch = (...strands: unknown[]): Doc => ({ _id: 'C', links: [], strands, factsInPlay: [] });
+    const ch = (...strands: unknown[]): Doc => ({ _id: 'C', links: [], strands });
     expect(codes('chapters', ch(strand('a', false)))).toEqual(['strands:primary-strand-count']);
     expect(codes('chapters', ch(strand('a', true), strand('b', true)))).toEqual([
       'strands:primary-strand-count',

@@ -117,13 +117,13 @@ afterAll(async () => {
 });
 
 describe('KB-6 capture', () => {
-  test('KB-6 AI-3 AI-5 a recorded capture queues a place lived and a world event in the story year, from Claude, as ideas naming the capture, and writes nothing', async () => {
+  test('KB-6 SM-3 AI-3 AI-5 a recorded capture queues a Lives in moment and a world event in the story year, from Claude, as ideas naming the capture, and writes nothing', async () => {
     const eventsBefore = bible.model.all('worldEvents').length;
-    const lanBefore = bible.model.get('characters', 'Z3');
+    const momentsBefore = bible.model.all('moments').length;
     const { fake, turn, run } = await capture(MOVE);
     expect(turn.status).toBe('done');
     expect(run.feature).toBe('capture');
-    expect(turn.answer).toMatch(/^I proposed Seattle from 2034 in Zhou Lan's places lived/);
+    expect(turn.answer).toMatch(/^I proposed a moment for Zhou Lan, Lives in Seattle from 2034/);
     // AI-4, AI-5: the system prompt and the material.
     const req = fake.requests[0]!;
     expect(req.model).toBe('claude-sonnet-5-5');
@@ -146,14 +146,14 @@ describe('KB-6 capture', () => {
     expect(place).toMatchObject({
       source: 'claude',
       state: 'pending',
-      op: 'update',
-      collection: 'characters',
-      targetId: 'Z3',
+      op: 'create',
+      collection: 'moments',
     });
-    expect(place!.data.placesLived).toContainEqual({
-      place: 'Seattle',
-      startYear: 2034,
-      endYear: null,
+    expect(place!.data).toMatchObject({
+      characterId: 'Z3',
+      year: 2034,
+      title: 'Lives in Seattle',
+      status: 'idea',
     });
     expect(place!.reason).toMatch(/\(Claude, capture, run /);
     expect(event).toMatchObject({ source: 'claude', op: 'create', collection: 'worldEvents' });
@@ -166,7 +166,7 @@ describe('KB-6 capture', () => {
 
     // AI-3: nothing is written before File it.
     expect(bible.model.all('worldEvents')).toHaveLength(eventsBefore);
-    expect(bible.model.get('characters', 'Z3')).toEqual(lanBefore);
+    expect(bible.model.all('moments')).toHaveLength(momentsBefore);
   });
 
   test('KB-6 ED-3 File it approves the ticked proposal, rejects the unticked one, and the filing is one undo step', async () => {
@@ -174,7 +174,7 @@ describe('KB-6 capture', () => {
     const [place, event] = proposalsOf(turn.proposalIds).map(asCapture);
     const eventsBefore = bible.model.all('worldEvents').filter((e) => !e.deletedAt).length;
 
-    // The writer unticks the place lived and files the world event.
+    // The writer unticks the moment and files the world event.
     const filing = await fileCapture(invoke, [event!], [place!]);
     expect(filing.failed).toEqual([]);
     expect(filing.filed).toEqual([
@@ -187,10 +187,9 @@ describe('KB-6 capture', () => {
     });
     expect(bible.model.get('proposals', event!.id)).toMatchObject({ state: 'approved' });
     expect(bible.model.get('proposals', place!.id)).toMatchObject({ state: 'rejected' });
-    const lan = bible.model.get('characters', 'Z3') as unknown as {
-      placesLived: { place: string }[];
-    };
-    expect(lan.placesLived.map((p) => p.place)).not.toContain('Seattle');
+    expect(
+      bible.model.all('moments').some((m) => !m.deletedAt && m.title === 'Lives in Seattle'),
+    ).toBe(false);
 
     // One undo step takes the whole filing back; redo files it again.
     const undo = new UndoManager();
@@ -203,38 +202,39 @@ describe('KB-6 capture', () => {
     expect(bible.model.get('worldEvents', filedId)?.deletedAt).toBeFalsy();
   });
 
-  test('KB-6 ED-3 filing a change and a new entry together undoes both in one step', async () => {
+  test('KB-6 ED-3 SM-3 filing a moment and a world event together undoes both in one step', async () => {
     const { turn } = await capture(MOVE);
     const ticked = proposalsOf(turn.proposalIds).map(asCapture);
     const filing = await fileCapture(invoke, ticked, []);
-    expect(filing.filed.map((f) => f.collection)).toEqual(['characters', 'worldEvents']);
-    const lan = () =>
-      (bible.model.get('characters', 'Z3') as unknown as { placesLived: { place: string }[] })
-        .placesLived;
-    expect(lan().map((p) => p.place)).toContain('Seattle');
+    expect(filing.filed.map((f) => f.collection)).toEqual(['moments', 'worldEvents']);
+    const moment = () => bible.model.get('moments', filing.filed[0]!.id);
+    expect(moment()).toMatchObject({ characterId: 'Z3', title: 'Lives in Seattle', year: 2034 });
     const undo = new UndoManager();
     undo.record(filing.command!);
     expect(await undo.step('undo', undoIO(invoke))).toMatchObject({ status: 'applied' });
-    expect(lan().map((p) => p.place)).toEqual(['Guangzhou', 'Portland, Oregon']);
+    expect(moment()?.deletedAt).toBeTruthy();
     expect(bible.model.get('worldEvents', filing.filed[1]!.id)?.deletedAt).toBeTruthy();
   });
 
-  test('KB-6 a fact about two characters is proposed linked to both', async () => {
+  test('KB-6 SM-3 a fact about two characters is proposed as a moment for each of them, never a dropped kind', async () => {
     const { turn } = await capture(RECIPE);
-    const [fact] = proposalsOf(turn.proposalIds);
-    expect(turn.proposalIds).toHaveLength(1);
-    expect(fact).toMatchObject({ source: 'claude', op: 'create', collection: 'facts' });
-    expect(fact!.data).toMatchObject({
-      title: 'Meiling and Ruth shared one recipe box',
-      status: 'idea',
-      links: [
-        { targetId: 'Z1', kind: 'concerns' },
-        { targetId: 'H4', kind: 'concerns' },
-      ],
-    });
-    const filing = await fileCapture(invoke, [asCapture(fact!)], []);
+    const proposals = proposalsOf(turn.proposalIds);
+    expect(turn.proposalIds).toHaveLength(2);
+    expect(proposals.map((p) => [p!.collection, p!.data.characterId, p!.data.status])).toEqual([
+      ['moments', 'Z1', 'idea'],
+      ['moments', 'H4', 'idea'],
+    ]);
+    const filing = await fileCapture(
+      invoke,
+      proposals.map((p) => asCapture(p!)),
+      [],
+    );
     const backlinks = bible.model.backlinks('Z1').map((b) => b.id);
     expect(backlinks).toContain(filing.filed[0]!.id);
+    expect(bible.model.get('moments', filing.filed[1]!.id)).toMatchObject({
+      characterId: 'H4',
+      year: 2034,
+    });
   });
 });
 
@@ -262,6 +262,44 @@ describe('KB-6 a capture never deletes', () => {
     });
     expect(out).toEqual({ text: `Not queued: ${CAPTURE_NO_DELETE}`, isError: true });
     expect(rejected).toEqual([{ summary: 'delete characters: U1', reason: CAPTURE_NO_DELETE }]);
+    expect(proposed).toEqual([]);
+    expect(bible.model.all('proposals')).toHaveLength(before);
+  });
+});
+
+describe('SM-2 a capture never files to a dropped kind', () => {
+  test('SM-2 AI-3 propose_change refuses a fact, a beat, or a voice note list, and queues nothing', async () => {
+    const rejected: { summary: string; reason: string }[] = [];
+    const proposed: string[] = [];
+    const sink = {
+      label: 'capture, run test',
+      now: () => new Date(),
+      read: () => undefined,
+      proposed: (id: string) => proposed.push(id),
+      rejected: (summary: string, reason: string) => rejected.push({ summary, reason }),
+    };
+    const input = { text: 'x', storyTime: { year: 2034 }, capturedOn: '2026-10-12' };
+    const tool = FEATURES.capture.tools!(input, bible, sink).find(
+      (t) => t.name === 'propose_change',
+    )!;
+    const before = bible.model.all('proposals').length;
+    for (const collection of ['facts', 'plotBeats']) {
+      const out = await tool.handler({
+        op: 'create',
+        collection,
+        data: { title: 'Meiling and Ruth shared one recipe box' },
+        reason: 'r',
+      });
+      expect(out.isError, collection).toBe(true);
+    }
+    const voice = await tool.handler({
+      op: 'update',
+      collection: 'characters',
+      targetId: 'Z3',
+      data: { voiceNotes: [{ at: { year: 2034 }, text: 'Quiet.' }] },
+      reason: 'r',
+    });
+    expect(voice.isError).toBe(true);
     expect(proposed).toEqual([]);
     expect(bible.model.all('proposals')).toHaveLength(before);
   });
