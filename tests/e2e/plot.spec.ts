@@ -903,10 +903,10 @@ test('GL-3 hovering a glossary name in the place tree shows its romanization and
 
 test('GL-3 the editor shows a Meaning control on a title with Chinese and a preview of a long text field, both with the glossary meaning on focus', async () => {
   await invoke('entry.create', {
-    collection: 'facts',
+    collection: 'places',
     data: { title: '晓曦的信', body: '她写了晓曦和月饼。\n\n第二段。', status: 'idea' },
   });
-  await rail(page, 'Facts').click();
+  await rail(page, 'Places').click();
   await page
     .getByTestId('entry-list')
     .getByRole('button', { name: /晓曦\s*的信/ })

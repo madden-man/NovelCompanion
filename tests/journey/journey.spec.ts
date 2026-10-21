@@ -588,29 +588,33 @@ test('TL-2 TL-5 the year view lists who is alive in 2075 and what Iris lived thr
 // ---------------------------------------------------------------------------
 // Plot, places, culture, glossary, knowledge
 
-const grid = () => page.getByTestId('outline-grid');
+const outline = () => page.getByTestId('outline-view');
+const bar = (id: string) => outline().locator(`[data-testid="chapter-bar"][data-chapter="${id}"]`);
 const outlineInspector = () => page.getByTestId('outline-inspector');
 const readingOrder = async (id: string) =>
   (await invoke('entry.get', { collection: 'chapters', id })).entry.readingOrder;
 
-test('PL-2 PL-3 the plot outline: drag Chapter 2 above Chapter 1, see the order change, and undo it', async () => {
+test('SM-7 PL-3 the outline: drag the Chapter 2 bar above Chapter 1, see the order change, and undo it', async () => {
   await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await expect(grid()).toBeVisible();
-  await expect(grid().getByTestId('outline-label')).toHaveCount(8);
-  await grid()
-    .locator('[data-chapter="CH2"]')
-    .getByTestId('outline-label')
-    .dragTo(grid().locator('[data-chapter="CH1"]').getByTestId('outline-label'));
-  await expect(grid().getByTestId('outline-label').first()).toContainText('Two Kitchens');
+  await expect(outline()).toBeVisible();
+  await expect(outline().getByTestId('chapter-bar')).toHaveCount(8);
+  await bar('CH2').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const grip = (await bar('CH2').locator('.cbar-no').boundingBox())!;
+  const target = (await bar('CH1').boundingBox())!;
+  await page.mouse.move(grip.x + 4, grip.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 4, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(outline().getByTestId('chapter-bar').first()).toContainText('Two Kitchens');
   await expect.poll(() => readingOrder('CH2')).toBe(1);
-  await outlineInspector().getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(grid().getByTestId('outline-label').first()).toContainText("The Archivist's Door");
+  await outline().getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(outline().getByTestId('chapter-bar').first()).toContainText("The Archivist's Door");
   await expect.poll(() => readingOrder('CH2')).toBe(2);
 });
 
-test('PL-4 the chapter page shows strands, ages, and places', async () => {
-  await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
+test('KB-3 SM-7 the chapter page opens from its bar and shows strands, ages, and places', async () => {
+  await bar('CH2').getByLabel('Actions for chapter 2').click();
+  await bar('CH2').getByTestId('chapter-open').click();
   const chapter = outlineInspector().getByTestId('chapter-page');
   await expect(chapter).toContainText('Two Kitchens');
   await expect(chapter.locator('[data-strand="CH2-present"] [data-character="H5"]')).toContainText(
@@ -1070,8 +1074,7 @@ test('PL-1 a new chapter is created with two strands, present and backstory', as
   const stored = (await invoke('entry.get', { collection: 'chapters', id })).entry;
   expect((stored.strands as { startYear: number }[]).map((s) => s.startYear)).toEqual([2045, 2034]);
   await rail(page, 'Outline').click();
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  await expect(grid().getByTestId('outline-label').filter({ hasText: CHAPTER })).toHaveCount(1);
+  await expect(outline().getByTestId('chapter-bar').filter({ hasText: CHAPTER })).toHaveCount(1);
 });
 
 const claudePanel = () => page.getByTestId('claude-panel');

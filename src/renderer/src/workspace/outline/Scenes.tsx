@@ -1028,7 +1028,6 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
               if (other) moveChapter(openRow.id, other.id);
             }}
             onToPart={(partId) => moveToPart(openRow.id, partId)}
-            onOpenBeat={(id) => onOpen('plotBeats' as EntryCollection, id)}
           />
         </aside>
       )}

@@ -391,28 +391,6 @@ test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and 
   await expect(dialog).toBeHidden();
 });
 
-test('NF-2 PL-1 PL-4 KB-3 the plot outline: Enter on a chapter opens its chapter page, Alt+Down and Alt+Up move it, and its controls answer the keyboard', async () => {
-  await go('Outline');
-  await page.getByRole('button', { name: 'Year grid', exact: true }).click();
-  const candles = page.getByTestId('outline-grid').getByRole('button', { name: 'Candles' });
-  await press(candles);
-  const chapter = page.getByTestId('chapter-page');
-  await expect(chapter).toBeVisible();
-  await expect(chapter).toContainText('Candles');
-  const order = async () =>
-    (await invoke('entry.get', { collection: 'chapters', id: 'CH5' })).entry.readingOrder;
-  const before = await order();
-  await tabTo(candles);
-  await page.keyboard.press('Alt+ArrowDown');
-  await expect.poll(order).toBe(Number(before) + 1);
-  await expect(candles).toBeFocused();
-  await page.keyboard.press('Alt+ArrowUp');
-  await expect.poll(order).toBe(before);
-  expect(await unreachable()).toEqual([]);
-  await press(page.getByRole('button', { name: 'Close the chapter' }));
-  await expect(chapter).toBeHidden();
-});
-
 test('NF-2 KB-5 CU-2 GL-1 the Entries tabs: culture by year, the place tree, and the glossary table answer the keyboard', async () => {
   // This bible starts with no communities; the screen needs one to pick.
   await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
