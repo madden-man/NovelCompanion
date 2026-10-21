@@ -241,7 +241,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   for (let n = 1; n <= 51; n++) {
     await input.fill(`Place ${n}`);
     await waitSaved(page);
-    await expect(top).toHaveText('Changed Birthplace on Undo Hale');
+    await expect(top).toHaveText('Changed In the story on Undo Hale');
     await expect
       .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
       .toBe(`Place ${n}`);
@@ -250,7 +250,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   await page.locator('body').click();
   for (let n = 0; n < 50; n++) await page.keyboard.press('Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    /^Undid: Changed Birthplace on Undo Hale$/,
+    /^Undid: Changed In the story on Undo Hale$/,
   );
   await expect
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
@@ -267,7 +267,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   // Redo walks every remaining step forward to the last change.
   for (let n = 0; n < 49; n++) await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    'Redid: Changed Birthplace on Undo Hale',
+    'Redid: Changed In the story on Undo Hale',
   );
   await expect
     .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
@@ -659,7 +659,7 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
   const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
   await input.fill('Saved city');
   await waitSaved(page);
-  await expect(history.first()).toHaveText('Changed Birthplace on Ada Sullivan');
+  await expect(history.first()).toHaveText('Changed In the story on Ada Sullivan');
   const historyBefore = await history.allTextContents();
   await input.fill('Unsaved typing');
   await page.keyboard.press('Meta+z');

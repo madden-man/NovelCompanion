@@ -946,12 +946,12 @@ test('ED-3 a change is undone with Cmd+Z and redone with Shift+Cmd+Z', async () 
   await page.locator('body').click();
   await page.keyboard.press('Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    'Undid: Changed Birthplace on Sam Hale',
+    'Undid: Changed In the story on Sam Hale',
   );
   await expect(input).toHaveValue(before);
   await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    'Redid: Changed Birthplace on Sam Hale',
+    'Redid: Changed In the story on Sam Hale',
   );
   await expect(input).toHaveValue('Cannon Beach');
 });
