@@ -1,4 +1,5 @@
 import { createCommand, renameCommand, restoreCommand } from '../../../shared/domain/undoRunner';
+import { listAddCommand, listRemoveCommand } from '../../../shared/undoCommands';
 import { WriteFieldset, useWriteGuard } from '../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -453,7 +454,12 @@ function ListPanel({ list }: { list: WireList }) {
     e.preventDefault();
     setMessage(null);
     try {
-      await call('lists.addItem', { listId: list._id, label: newLabel, parentId: parent || null });
+      const { item } = await call('lists.addItem', {
+        listId: list._id,
+        label: newLabel,
+        parentId: parent || null,
+      });
+      undo.record(listAddCommand(call, list.label, list._id, item));
       setNewLabel('');
       setParent('');
     } catch (err) {
@@ -463,8 +469,18 @@ function ListPanel({ list }: { list: WireList }) {
 
   const remove = async (itemId: string) => {
     setMessage(null);
+    const item = list.items.find((i) => i.id === itemId);
     try {
       await call('lists.removeItem', { listId: list._id, itemId });
+      if (item) {
+        undo.record(
+          listRemoveCommand(call, list.label, list._id, {
+            id: item.id,
+            label: item.label,
+            parentId: item.parentId,
+          }),
+        );
+      }
     } catch (e) {
       setMessage({ text: plainError(e), bad: true });
     }

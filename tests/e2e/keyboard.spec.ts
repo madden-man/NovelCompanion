@@ -429,14 +429,19 @@ test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and g
   const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
   await expect(tab('Communities')).toHaveAttribute('aria-selected', 'true');
   const culture = page.getByTestId('culture-view');
-  await typeInto(culture.getByLabel('Community'), 'Portland');
-  await expect(culture.getByLabel('Community')).toHaveValue('portland');
-  await tabTo(culture.getByRole('spinbutton', { name: 'Year' }));
-  await page.keyboard.press('Meta+a');
-  await page.keyboard.type('2045');
-  await expect(
-    culture.getByTestId('culture-results').or(culture.getByTestId('culture-empty')),
-  ).toBeVisible();
+  await typeInto(culture.getByLabel('Community', { exact: true }), 'Portland');
+  await expect(culture.getByLabel('Community', { exact: true })).toHaveValue('portland');
+  // The description, then a line under an age group, each by keyboard (A41).
+  await tabTo(culture.getByLabel('About Portland'));
+  await page.keyboard.type('Rain and bridges.');
+  await tabTo(culture.getByLabel('Decade', { exact: true }));
+  await expect
+    .poll(async () => (await invoke('community.notes.get', {})).notes.portland)
+    .toBe('Rain and bridges.');
+  await tabTo(culture.getByLabel(/^New line for ages 18 to 30/));
+  await page.keyboard.type('Night markets');
+  await page.keyboard.press('Enter');
+  await expect(culture.locator('section[data-demographic="18-30"] .cu-line')).toHaveCount(1);
 
   await press(tab('Communities'), 'ArrowRight');
   await expect(tab('Eras')).toHaveAttribute('aria-selected', 'true');

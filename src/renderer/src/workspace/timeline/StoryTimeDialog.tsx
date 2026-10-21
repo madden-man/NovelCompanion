@@ -7,6 +7,8 @@ import type { LifeState } from '../../../../shared/domain/ages';
 import { eventSpans, fromCollections } from '../../../../shared/domain/timeline';
 import type { EntryCollection } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
+import { editCommand } from '../../../../shared/domain/undoRunner';
+import { useUndo } from '../undo';
 import { useEntries } from '../data';
 import { formatMoment, useStoryTime } from '../storyTime';
 import { Zh } from '../Zh';
@@ -71,6 +73,7 @@ export function StoryTimeDialog(props: {
   onOpen: (collection: EntryCollection, id: string) => void;
 }) {
   const story = useStoryTime();
+  const undo = useUndo();
   const close = story.closeDialog;
   const time: StoryTimeValue = story.time ?? { year: story.year };
   const view = useYearView(time);
@@ -203,11 +206,25 @@ export function StoryTimeDialog(props: {
   const promote = async () => {
     if (!preview) return;
     try {
-      await call('storyTime.promote', {
+      const { entry: before } = await call('entry.get', {
+        collection: 'chapters',
+        id: preview.chapterId,
+      });
+      const { entry: after } = await call('storyTime.promote', {
         chapterId: preview.chapterId,
         strandId: preview.strandId,
         baseModifiedAt: preview.baseModifiedAt,
       });
+      // TM-5, ED-3: the strand year written here is one undo step, like any chapter edit.
+      undo.record(
+        editCommand(
+          `Set the ${preview.strandLabel} strand of ${preview.chapterTitle} to ${preview.year}`,
+          'chapters',
+          preview.chapterId,
+          before,
+          after,
+        ),
+      );
       setNote({
         text: `${preview.chapterTitle}, ${preview.strandLabel} strand, now has the year ${preview.year}.`,
         bad: false,

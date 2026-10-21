@@ -132,6 +132,7 @@ export const WRITE_CHANNELS = [
   'plot.reorder',
   'outline.newChapter',
   'romanization.set',
+  'community.notes.set',
   'import.apply',
   'snapshot.take',
   'snapshot.restore',

@@ -1,0 +1,85 @@
+/* WT-1: writing tools, the Datamuse lookups on the Cultural data screen. */
+.words-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+.words-form .words-word {
+  flex: 1 1 220px;
+}
+.words-form .words-word input {
+  width: 100%;
+}
+.words-hint {
+  margin: 0;
+  color: var(--fg-2);
+  max-width: 62ch;
+}
+.words-title {
+  margin: 0;
+}
+.words-term {
+  color: var(--accent);
+}
+.words-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.words-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+}
+.words-chip {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.words-chip:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.words-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  padding-left: 6px;
+  font-size: 0.82rem;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.words-entry {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.words-headword {
+  margin: 0 0 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.words-defs {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.words-defs .words-pos {
+  color: var(--fg-2);
+  font-style: italic;
+}

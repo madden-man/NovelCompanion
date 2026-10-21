@@ -629,12 +629,71 @@ test('KB-3 SM-7 a part heading moves to the trash from its Actions menu after li
   await expect(trackBook(bookId).getByTestId('book-name')).toHaveText('Book 2: Riptide');
 });
 
-test('KB-3 the chapter page in the outline edits strand label, end year, places, a new strand and the primary choice', async () => {
+test('KB-3 A40 the outline inspector shows a chapter as its title, story year and scene count (the bullets of its section), and edits the title and the year as one undo step each', async () => {
+  // Chapter 2 holds two scenes (one with an indented line under it); chapter 6 holds one.
+  await bar('CH2').getByLabel('Actions for chapter 2').click();
+  await bar('CH2').getByTestId('chapter-open').click();
+  const inspector = page.getByTestId('outline-inspector');
+  const panel = inspector.getByTestId('chapter-panel');
+  await expect(panel.getByRole('heading', { name: 'Chapter 2' })).toBeVisible();
+  await expect(panel.getByTestId('panel-title')).toHaveValue('Two Kitchens');
+  // The count is the bar's count: the top-level bullets of the chapter's section.
+  const barScenes = async (id: string) =>
+    (await bar(id).getByTestId('chapter-scenes').textContent())?.trim() ?? '';
+  expect(await barScenes('CH2')).toMatch(/^\d+ scenes?$/);
+  await expect(panel.getByTestId('panel-scenes')).toHaveText(
+    `${await barScenes('CH2')} in the outline.`,
+  );
   await bar('CH6').getByLabel('Actions for chapter 6').click();
   await bar('CH6').getByTestId('chapter-open').click();
-  const inspector = page.getByTestId('outline-inspector');
-  const editor = inspector.getByTestId('editor');
-  const saved = () => expect(editor.getByTestId('autosave')).toHaveText('Saved');
+  await expect(panel.getByRole('heading', { name: 'Chapter 6' })).toBeVisible();
+  await expect(panel.getByTestId('panel-title')).toHaveValue('The Letter');
+  await expect(panel.getByTestId('panel-year')).toHaveValue('2045');
+  await expect(panel.getByTestId('panel-scenes')).toHaveText(
+    `${await barScenes('CH6')} in the outline.`,
+  );
+  // Nothing else sits in the panel: no strands, no generic fields, no move controls.
+  await expect(panel.locator('[data-field]')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /Move/ })).toHaveCount(0);
+  // The title writes on Enter and the bar follows.
+  await panel.getByTestId('panel-title').fill('The Letter, Again');
+  await panel.getByTestId('panel-title').press('Enter');
+  await expect.poll(async () => (await chapterOf('CH6')).title).toBe('The Letter, Again');
+  await expect(bar('CH6').getByTestId('chapter-title')).toHaveText('The Letter, Again');
+  // The year moves the primary strand, as the bar's year field does.
+  await panel.getByTestId('panel-year').fill('2047');
+  await panel.getByTestId('panel-year').press('Enter');
+  await expect
+    .poll(async () => ((await chapterOf('CH6')).strands as { startYear: number }[])[0]!.startYear)
+    .toBe(2047);
+  await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2047');
+  // One undo step each (ED-3).
+  await undo();
+  await expect(panel.getByTestId('panel-year')).toHaveValue('2045');
+  await undo();
+  await expect(panel.getByTestId('panel-title')).toHaveValue('The Letter');
+  await expect(bar('CH6').getByTestId('chapter-title')).toHaveText('The Letter');
+  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
+  await expect(inspector).toHaveCount(0);
+});
+
+/** The chapter's own page, opened from the Chapters list under More (A40). */
+async function openChapterPage(id: string) {
+  await sectionList(page, 'Chapters');
+  const title = String((await chapterOf(id)).title);
+  await page
+    .getByRole('button', { name: new RegExp(title) })
+    .first()
+    .click();
+  const editor = page.getByTestId('editor');
+  await expect(editor).toHaveAttribute('data-entry-id', id);
+  return editor;
+}
+const pageSaved = () =>
+  expect(page.getByTestId('inspector').getByTestId('autosave')).toHaveText('Saved');
+
+test('KB-3 A40 the chapter page under More edits strand label, end year, places, a new strand and the primary choice', async () => {
+  const editor = await openChapterPage('CH6');
   type S = {
     id: string;
     label: string;
@@ -647,55 +706,54 @@ test('KB-3 the chapter page in the outline edits strand label, end year, places,
 
   await field(editor, 'strands.0.label').locator('input').fill('now');
   await field(editor, 'strands.0.endYear').locator('input').fill('2047');
-  await saved();
+  await pageSaved();
   await expect
     .poll(async () => (await strands())[0])
     .toMatchObject({ label: 'now', startYear: 2045, endYear: 2047 });
 
   // Places: add one, see it on the page, remove it.
-  const first = inspector.locator('[data-strand="CH6-present"]');
+  const first = editor.locator('[data-strand="CH6-present"]');
   await first.getByLabel('Add a place to now').selectOption({ label: 'Portland > The Hale house' });
-  await saved();
+  await pageSaved();
   await expect.poll(async () => (await strands())[0]!.placeIds).toEqual(['PLC2']);
   await expect(first.getByTestId('chapter-places')).toHaveText('Places: Portland > The Hale house');
   await first.getByRole('button', { name: 'Remove Portland > The Hale house from now' }).click();
-  await saved();
+  await pageSaved();
   await expect.poll(async () => (await strands())[0]!.placeIds).toEqual([]);
   await expect(first.getByTestId('chapter-places')).toHaveCount(0);
 
-  // A new strand, made primary: the bar's story year follows it.
+  // A new strand, made primary: the chapter's story year follows it.
   await editor.getByRole('button', { name: 'Add a strand' }).click();
   await field(editor, 'strands.1.startYear').locator('input').fill('2030');
   await editor.getByTestId('chapter-strand').nth(1).getByLabel('Primary strand').check();
-  await saved();
+  await pageSaved();
   await expect
     .poll(async () => (await strands()).map((s) => [s.label, s.startYear, s.primary]))
     .toEqual([
       ['now', 2045, false],
       ['backstory', 2030, true],
     ]);
+  await rail(page, 'Outline').click();
   await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2030');
   // Removing it hands the primary choice back to the strand that is left.
-  await editor.getByRole('button', { name: 'Remove the strand backstory' }).click();
-  await saved();
+  const again = await openChapterPage('CH6');
+  await again.getByRole('button', { name: 'Remove the strand backstory' }).click();
+  await pageSaved();
   await expect
     .poll(async () => (await strands()).map((s) => [s.id, s.primary]))
     .toEqual([['CH6-present', true]]);
+  await rail(page, 'Outline').click();
   await expect(bar('CH6').getByTestId('chapter-year')).toHaveValue('2045');
-  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
-  await expect(inspector).toHaveCount(0);
 });
 
-test('KB-3 the chapter page edits a strand point of view and characters present', async () => {
-  await bar('CH4').getByLabel('Actions for chapter 4').click();
-  await bar('CH4').getByTestId('chapter-open').click();
-  const inspector = page.getByTestId('outline-inspector');
-  const strand = inspector.locator('[data-strand="CH4-present"]');
+test('KB-3 A40 the chapter page under More edits a strand point of view and characters present', async () => {
+  const editor = await openChapterPage('CH4');
+  const strand = editor.locator('[data-strand="CH4-present"]');
   await strand.getByLabel('Point of view').selectOption({ label: 'Iris Hale-Zhou' });
   await strand.getByLabel('Add a character to present').selectOption({ label: 'Iris Hale-Zhou' });
-  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
+  await pageSaved();
   await strand.getByRole('button', { name: 'Move Iris Hale-Zhou up in present' }).click();
-  await expect(inspector.getByTestId('autosave')).toHaveText('Saved');
+  await pageSaved();
   await expect
     .poll(async () => {
       const ch = await chapterOf('CH4');
@@ -705,8 +763,8 @@ test('KB-3 the chapter page edits a strand point of view and characters present'
     .toEqual(['H5', ['H1', 'H2', 'H3', 'H5', 'H4']]);
   // The chapter page shows her age in that strand year.
   await expect(strand.locator('[data-character="H5"]')).toContainText('alive, age 1');
-  await inspector.getByRole('button', { name: 'Close the chapter' }).click();
-  await expect(inspector).toHaveCount(0);
+  await rail(page, 'Outline').click();
+  await expect(view()).toBeVisible();
 });
 
 test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year and the Actions, part and More menus are reached and used from the keyboard', async () => {
@@ -784,17 +842,20 @@ test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on 
   await expect(foot.getByLabel('Part title')).toHaveCount(0);
 });
 
-test('CU-2 culture by year lists the entries that apply to a community and year', async () => {
+test('CU-2 A41 a community and a decade list the lines that apply', async () => {
   await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
-  await view.getByLabel('Community').selectOption({ label: 'Guangzhou' });
-  await view.getByLabel('Year').fill('2020');
-  await expect(view.getByTestId('culture-results')).toContainText('lotus seed mooncakes');
-  await view.getByLabel('Year').fill('2080');
-  await expect(view.getByTestId('culture-results')).toContainText('Printed mooncakes');
-  await expect(view.getByTestId('culture-results')).not.toContainText('lotus seed');
-  await view.getByLabel('Year').fill('1900');
-  await expect(view.getByTestId('culture-empty')).toBeVisible();
+  const line = (id: string) => view.locator(`.cu-line[data-id="${id}"]`);
+  await view.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
+  await view.getByLabel('Decade', { exact: true }).selectOption('2020');
+  await expect(line('CU1')).toContainText('Mid-Autumn mooncakes');
+  await expect(line('CU1').getByTestId('line-note')).toContainText('lotus seed mooncakes');
+  await expect(line('CU2')).toHaveCount(0);
+  await view.getByLabel('Decade', { exact: true }).selectOption('2080');
+  await expect(line('CU2').getByTestId('line-note')).toContainText('Printed mooncakes');
+  await expect(line('CU1')).toHaveCount(0);
+  await view.getByLabel('Decade', { exact: true }).selectOption('1970');
+  await expect(view.locator('.cu-line')).toHaveCount(0);
 });
 
 test('PC-1 the place tree nests places and shows each description for the year', async () => {
@@ -971,9 +1032,9 @@ test('GL-3 the glossary table and the culture view show the meaning of Chinese o
   });
   await rail(page, 'Cultural data').click();
   const culture = page.getByTestId('culture-view');
-  await culture.getByLabel('Community').selectOption({ label: 'Guangzhou' });
-  await culture.getByLabel('Year').fill('2020');
-  const results = culture.getByTestId('culture-results');
+  await culture.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
+  await culture.getByLabel('Decade', { exact: true }).selectOption('2020');
+  const results = culture.getByTestId('culture-groups');
   const moon = results.locator('[data-term="GL5"]').first();
   await moon.focus();
   await expect(moon.getByRole('tooltip')).toHaveText('yuèbǐng: mooncake');

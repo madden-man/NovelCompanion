@@ -102,6 +102,8 @@ export type BibleChannel =
   | 'romanization.get'
   | 'romanization.set'
   | 'romanization.check'
+  | 'community.notes.get'
+  | 'community.notes.set'
   | ImportChannel
   | SessionChannel
   | ContinuityChannel;
@@ -523,6 +525,10 @@ export function bibleHandlers(
           .sort((a, b) => a.title.localeCompare(b.title)),
       };
     },
+    'community.notes.get': () => ({ notes: session().repo.communityNotes() }),
+    'community.notes.set': async ({ communityId, text }) => ({
+      notes: await session().repo.setCommunityNote(communityId, text),
+    }),
     'romanization.get': () => romanization(),
     'romanization.set': async ({ languageId, systemId }) => {
       await session().repo.setRomanization(languageId, systemId);

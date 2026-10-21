@@ -1418,11 +1418,22 @@ export class Repository {
       : null;
   }
 
-  /** Save the tree positions. Layout is not an entry: no revision, no undo step. */
+  /**
+   * Save the tree positions. Layout is not an entry: no revision. Undo of a
+   * move is a renderer command that writes back through here (ED-3), and the
+   * tree reloads on the change event either way.
+   */
   async setTreePositions(
     positions: Record<string, { x: number; y: number; loose?: boolean }>,
   ): Promise<void> {
     await this.writeMeta({ _id: TREE_LAYOUT_ID, positions });
+    this.emitter.emit('tree');
+  }
+
+  /** The tree's stored positions changed (FT-11). */
+  onTreeChange(listener: () => void): () => void {
+    this.emitter.on('tree', listener);
+    return () => this.emitter.off('tree', listener);
   }
 
   // ---------- scene outline (PL-5, A36: meta for the current state, its own collection for versions) ----------
@@ -1616,6 +1627,37 @@ export class Repository {
     this.emitter.on('storyTime', listener);
     return () => this.emitter.off('storyTime', listener);
   }
+
+  // ---------- community descriptions (A41: meta, keyed by the community list item) ----------
+
+  /** What each community is like overall, by community ID; a community with no description is absent. */
+  communityNotes(): Record<string, string> {
+    const doc = this.model.get('meta', COMMUNITY_NOTES_ID);
+    const notes = doc?.notes;
+    const out: Record<string, string> = {};
+    if (notes && typeof notes === 'object') {
+      for (const [id, text] of Object.entries(notes as Record<string, unknown>)) {
+        if (typeof text === 'string' && text !== '') out[id] = text;
+      }
+    }
+    return out;
+  }
+
+  /** Set or clear a community's description. The lists event reloads the screens that show it. */
+  async setCommunityNote(communityId: string, text: string): Promise<Record<string, string>> {
+    const list = this.model.get('lists', 'communities') as ListDoc | undefined;
+    if (!list?.items.some((i) => i.id === communityId)) {
+      throw new RepositoryError('That community is not in the Communities list.');
+    }
+    const clean = text.trim();
+    const notes = Object.fromEntries(
+      Object.entries(this.communityNotes()).filter(([id]) => id !== communityId),
+    );
+    if (clean) notes[communityId] = clean;
+    await this.writeMeta({ _id: COMMUNITY_NOTES_ID, notes });
+    this.emitter.emit('lists');
+    return this.communityNotes();
+  }
 }
 
 const STORY_TIME_ID = 'storyTime';
@@ -1638,6 +1680,7 @@ interface SceneOutlineDoc {
   modifiedAt: string | null;
 }
 const BRIEF_SETTINGS_ID = 'briefSettings';
+const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';

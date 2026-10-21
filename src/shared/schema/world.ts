@@ -49,16 +49,32 @@ export const eraStateFields: FieldSpec[] = [
 ];
 
 /** Cultural entry (CU-1): a community list item ID and the years it applies to. */
+/** A41: who a cultural line is about: everyone in the community, or one age group. */
+export const DEMOGRAPHIC_IDS = ['all', '0-18', '18-30', '30-50', '50-70', '70+'] as const;
+export const Demographic = z.enum(DEMOGRAPHIC_IDS);
+export type Demographic = z.infer<typeof Demographic>;
+export const DEMOGRAPHIC_OPTIONS: { value: Demographic; label: string }[] = [
+  { value: 'all', label: 'Everyone' },
+  { value: '0-18', label: 'Ages 0 to 18' },
+  { value: '18-30', label: 'Ages 18 to 30' },
+  { value: '30-50', label: 'Ages 30 to 50' },
+  { value: '50-70', label: 'Ages 50 to 70' },
+  { value: '70+', label: 'Ages 70 and over' },
+];
+
 export const CulturalEntry = entry({
   communityId: z.string().min(1),
   startYear: Year.nullable(),
   endYear: Year.nullable(),
+  /** A41: the age group the line is about; an entry made before A41 is about everyone. */
+  demographic: Demographic.default('all'),
 });
 export type CulturalEntry = z.infer<typeof CulturalEntry>;
 
 export const culturalEntryFields: FieldSpec[] = [
   ...commonFields,
   f.listItem('communityId', 'Community', 'communities', { required: true }),
+  f.enum('demographic', 'Age group', DEMOGRAPHIC_OPTIONS),
   ...yearRange('startYear', 'endYear', ['Applies from', 'Applies to']).map((s) => ({
     ...s,
     required: true,

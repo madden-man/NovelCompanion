@@ -38,6 +38,7 @@ import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
 import { handle } from './handle';
 import { exportTree } from './exportTree';
+import { lookupWords } from '../words/datamuse';
 import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
 import type { Handler } from './validate';
@@ -192,6 +193,7 @@ async function adopt(
   const offTime = session.repo.onStoryTimeChange(() =>
     broadcast('storyTime.changed', { bible: slug }),
   );
+  const offTree = session.repo.onTreeChange(() => broadcast('tree.changed', { bible: slug }));
   const offReload = session.repo.onReload((message) =>
     broadcast('bible.reloaded', { bible: slug, message }),
   );
@@ -201,6 +203,7 @@ async function adopt(
     offLists();
     offProposals();
     offTime();
+    offTree();
   };
   current = { session, name, unsubscribe, ...(readOnly ? { readOnly: true as const } : {}) };
   conn().lastBible = slug;
@@ -380,6 +383,8 @@ export function registerHandlers(): void {
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
   handle('tree.export', (req) => exportTree(req));
+  // WT-1: the writing tools read Datamuse from main; nothing in the bible changes.
+  handle('words.lookup', (req) => lookupWords(req));
   handle('app.confirmClose', ({ proceed }) => {
     closeDecision?.(proceed);
     return { ok: true as const };

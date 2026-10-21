@@ -838,7 +838,7 @@ test('FT-10 adding a child to Ruth leaves every other node where it was, and sta
   expect(await domPositions()).toEqual(after);
 });
 
-test('FT-11 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, and a drop on someone can be just a move', async () => {
+test('FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, Cmd+Z takes each move back, and a drop on someone can be just a move', async () => {
   const at = async (name: string) => {
     const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(
       (await node(name).getAttribute('transform'))!,
@@ -876,6 +876,17 @@ test('FT-11 a person is dragged to a new place and stays there, Alt with an arro
   await page.keyboard.press('Alt+ArrowRight');
   await expect.poll(async () => (await at('Grace Hale')).x).toBe(moved.x + 194);
   await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x + 194, y: moved.y });
+  // ED-3: Cmd+Z takes the nudge back, then the drag; Shift+Cmd+Z brings both back.
+  await page.keyboard.press('Meta+z');
+  await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x, y: moved.y });
+  await expect.poll(async () => (await at('Grace Hale')).x).toBe(moved.x);
+  await page.keyboard.press('Meta+z');
+  await expect.poll(() => stored('Grace Hale')).toEqual(before);
+  await expect.poll(() => at('Grace Hale')).toEqual(before);
+  await page.keyboard.press('Shift+Meta+z');
+  await page.keyboard.press('Shift+Meta+z');
+  await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x + 194, y: moved.y });
+  await expect.poll(async () => (await at('Grace Hale')).x).toBe(moved.x + 194);
   // Dropped on someone, "Just move" puts her there without a link.
   const links = (await invoke('tree.get', {})).links.length;
   const menu = await dropOn('Grace Hale', 'Sam Hale');

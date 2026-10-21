@@ -25,6 +25,7 @@ import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
 import { ChapterAlignment } from './sessions/alignment';
+import { ChapterStrands } from './outline/ChapterPage';
 import { Zh } from './Zh';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
@@ -496,18 +497,29 @@ export function EntryPane(props: {
           <>
             <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
               <WriteFieldset>
-                {editableFields(manifest).map((spec) => (
-                  <Field
-                    key={spec.name}
-                    spec={spec}
-                    value={draft[spec.name]}
-                    path={spec.name}
-                    messages={messages}
-                    root={draft}
-                    onMention={onMention}
-                    onChange={(v) => ed.setField(spec.name, v)}
-                  />
-                ))}
+                {editableFields(manifest).map((spec) =>
+                  collection === 'chapters' && spec.name === 'strands' ? (
+                    // KB-3, A40: the strands with ages and places, as the outline's inspector had them.
+                    <ChapterStrands
+                      key={spec.name}
+                      id={id}
+                      draft={draft}
+                      messages={messages}
+                      onChange={(next) => ed.setField('strands', next)}
+                    />
+                  ) : (
+                    <Field
+                      key={spec.name}
+                      spec={spec}
+                      value={draft[spec.name]}
+                      path={spec.name}
+                      messages={messages}
+                      root={draft}
+                      onMention={onMention}
+                      onChange={(v) => ed.setField(spec.name, v)}
+                    />
+                  ),
+                )}
               </WriteFieldset>
             </form>
           </>

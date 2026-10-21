@@ -628,11 +628,21 @@ test('SM-7 the outline: drag the Chapter 2 bar above Chapter 1, see the order ch
   await expect.poll(() => readingOrder('CH2')).toBe(2);
 });
 
-test('KB-3 SM-7 the chapter page opens from its bar and shows strands, ages, and places', async () => {
+test('KB-3 SM-7 A40 the outline inspector opens from a bar with the title, year and scene count; the chapter page under More shows strands, ages, and places', async () => {
   await bar('CH2').getByLabel('Actions for chapter 2').click();
   await bar('CH2').getByTestId('chapter-open').click();
-  const chapter = outlineInspector().getByTestId('chapter-page');
-  await expect(chapter).toContainText('Two Kitchens');
+  const panel = outlineInspector().getByTestId('chapter-panel');
+  await expect(panel.getByTestId('panel-title')).toHaveValue('Two Kitchens');
+  await expect(panel.getByTestId('panel-year')).toHaveValue(/\d{4}/);
+  await expect(panel.getByTestId('panel-scenes')).toContainText('in the outline');
+  await panel.getByRole('button', { name: 'Close the chapter' }).click();
+  await sectionList(page, 'Chapters');
+  await page
+    .getByRole('button', { name: /Two Kitchens/ })
+    .first()
+    .click();
+  const chapter = page.getByTestId('editor');
+  await expect(chapter).toHaveAttribute('data-entry-id', 'CH2');
   await expect(chapter.locator('[data-strand="CH2-present"] [data-character="H5"]')).toContainText(
     'alive, age 14',
   );
@@ -641,14 +651,17 @@ test('KB-3 SM-7 the chapter page opens from its bar and shows strands, ages, and
   ).toContainText('Portland');
 });
 
-test('CU-2 culture by year lists what applies to Guangzhou in 2020', async () => {
+test('CU-2 A41 Cultural data lists what applies to Guangzhou in the 2020s, by age group', async () => {
   await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
-  await view.getByLabel('Community').selectOption({ label: 'Guangzhou' });
-  await view.getByLabel('Year').fill('2020');
-  await expect(view.getByTestId('culture-results')).toContainText('lotus seed mooncakes');
-  await view.getByLabel('Year').fill('1900');
-  await expect(view.getByTestId('culture-empty')).toBeVisible();
+  await view.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
+  await view.getByLabel('Decade', { exact: true }).selectOption('2020');
+  await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
+  await expect(view.locator('.cu-line[data-id="CU1"]').getByTestId('line-note')).toContainText(
+    'lotus seed mooncakes',
+  );
+  await view.getByLabel('Decade', { exact: true }).selectOption('1970');
+  await expect(view.locator('.cu-line')).toHaveCount(0);
 });
 
 test('PC-1 the place tree nests the Hale house inside Portland', async () => {

@@ -17,6 +17,7 @@ import { SnapshotManifest } from './domain/snapshots';
 import { driveContract } from './ipcDrive';
 import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
+import { wordsContract } from './ipcWords';
 import type { EntryCollection } from './schema';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
@@ -1168,6 +1169,18 @@ export const contract = {
     request: z.strictObject({ languageId: z.string().min(1), text: z.string().max(500) }),
     response: z.strictObject({ ok: z.boolean(), message: z.string() }),
   },
+  /** A41: what each community is like overall, by community ID (kept in meta, not an entry). */
+  'community.notes.get': {
+    request: z.strictObject({}),
+    response: z.strictObject({ notes: z.record(z.string(), z.string()) }),
+  },
+  'community.notes.set': {
+    request: z.strictObject({
+      communityId: z.string().min(1),
+      text: z.string().max(20_000),
+    }),
+    response: z.strictObject({ notes: z.record(z.string(), z.string()) }),
+  },
   /** IM-1: open the file picker for a workbook or a Word document. Null when cancelled. */
   'import.pickFile': {
     request: z.strictObject({ kind: z.enum(['workbook', 'document']) }),
@@ -1297,6 +1310,8 @@ export const contract = {
   /** Google Drive (M9): see `ipcDrive.ts`. */
   ...driveContract,
   ...appContract,
+  /** WT-1 writing tools over Datamuse (src/shared/ipcWords.ts). */
+  ...wordsContract,
   /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
@@ -1333,6 +1348,8 @@ export const events = {
   'lists.changed': z.strictObject({ bible: z.string() }),
   /** The story time was set or cleared (TM-3). */
   'storyTime.changed': z.strictObject({ bible: z.string() }),
+  /** The tree's stored positions changed: a move, a tidy, or an undo of one (FT-11, ED-3). */
+  'tree.changed': z.strictObject({ bible: z.string() }),
   /** The whole bible was replaced by a restore or a file import; views reload everything. */
   'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
   ...claudeEvents,

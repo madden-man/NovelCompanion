@@ -16,6 +16,7 @@ export default tseslint.config(
       'mockups',
       'test-results',
       'playwright-report',
+      '.claude',
     ],
   },
   js.configs.recommended,

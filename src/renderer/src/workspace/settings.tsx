@@ -10,6 +10,8 @@ import { APPEARANCES } from '../../../shared/ipcApp';
 import type { Appearance, MongoSettingsWire } from '../../../shared/ipcApp';
 import { applyAppearance } from '../appearance';
 import { WriteFieldset, useConnection } from '../connection';
+import { romanizationCommand } from '../../../shared/undoCommands';
+import { useUndo } from './undo';
 
 type Models = Response<'claude.models'>;
 type ClaudeStatus = Response<'claude.status'>;
@@ -66,6 +68,7 @@ function BibleSettings() {
 type Romanization = Response<'romanization.get'>;
 
 function RomanizationSettings() {
+  const undo = useUndo();
   const [data, setData] = useState<Romanization | null>(null);
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -83,8 +86,13 @@ function RomanizationSettings() {
   }, []);
   const set = async (languageId: string, label: string, systemId: string) => {
     setNote(null);
+    const from = data?.languages.find((l) => l.id === languageId)?.systemId ?? null;
+    const to = systemId || null;
     try {
-      setData(await call('romanization.set', { languageId, systemId: systemId || null }));
+      setData(await call('romanization.set', { languageId, systemId: to }));
+      if ((from ?? '') !== (to ?? '')) {
+        undo.record(romanizationCommand(call, label, languageId, from, to));
+      }
       setNote({ text: `Saved the romanization system for ${label}.`, bad: false });
     } catch (e) {
       setNote({ text: plainError(e), bad: true });

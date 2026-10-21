@@ -11,6 +11,15 @@ import {
   editCommand,
 } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
+import {
+  briefSettingsCommand,
+  communityNoteCommand,
+  listAddCommand,
+  listRemoveCommand,
+  romanizationCommand,
+  treeMoveCommand,
+  treeMoves,
+} from '../../src/shared/undoCommands';
 import type { EntryCollection } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
@@ -132,5 +141,204 @@ describe('ED-3 undo and redo of tree edits through the IPC layer', () => {
     expect((await stored('characters', c._id))!.content.backstory).toBe('Fresno');
     expect(undo.stack.canUndo).toBe(false);
     expect(undo.stack.canRedo).toBe(false);
+  });
+});
+
+describe('ED-3 undo and redo of the writes that are not entries: tree positions, list items, and settings', () => {
+  test('ED-3 FT-11 a move and a tidy of the tree undo to the start and redo to the end, and a move made since is left alone', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const grace = await bible.repo.create('characters', person('Grace Hale', 1970));
+    const sam = await bible.repo.create('characters', person('Sam Hale', 1972));
+    const names = new Map([
+      [grace._id, 'Grace Hale'],
+      [sam._id, 'Sam Hale'],
+    ]);
+    const nameOf = (id: string) => names.get(id) ?? id;
+    const positions = async () => (await invoke('tree.get', {})).positions ?? {};
+    const start = { [grace._id]: { x: 0, y: 0 }, [sam._id]: { x: 194, y: 0 } };
+    await invoke('tree.savePositions', { positions: start });
+
+    // A drag: Grace goes to a row below, loose.
+    const moved = { x: 40, y: 132, loose: true };
+    await invoke('tree.savePositions', { positions: { ...start, [grace._id]: moved } });
+    undo.record(
+      treeMoveCommand(
+        'Moved Grace Hale',
+        invoke,
+        [{ id: grace._id, before: start[grace._id]!, after: moved }],
+        nameOf,
+      ),
+    );
+    // A tidy: everyone back on the first row, further apart.
+    const tidy = { [grace._id]: { x: 0, y: 0 }, [sam._id]: { x: 400, y: 0 } };
+    const before = await positions();
+    await invoke('tree.savePositions', { positions: tidy });
+    const moves = treeMoves(before, tidy);
+    expect(moves.map((m) => m.id).sort()).toEqual([grace._id, sam._id].sort());
+    undo.record(treeMoveCommand('Tidied the tree layout', invoke, moves, nameOf));
+
+    expect((await undo.step('undo', io)).status).toBe('applied');
+    expect(await positions()).toEqual({ ...start, [grace._id]: moved });
+    expect(await undo.step('undo', io)).toEqual({ status: 'applied', label: 'Moved Grace Hale' });
+    expect(await positions()).toEqual(start);
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await positions()).toEqual({ ...start, [grace._id]: moved });
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await positions()).toEqual(tidy);
+
+    // Sam is moved by hand after the tidy: undoing the tidy would move him back, so it is skipped.
+    await invoke('tree.savePositions', { positions: { ...tidy, [sam._id]: { x: 600, y: 132 } } });
+    const r = await undo.step('undo', io);
+    expect(r).toEqual(
+      expect.objectContaining({ status: 'skipped', reason: 'Sam Hale was moved since' }),
+    );
+    expect(await positions()).toEqual({ ...tidy, [sam._id]: { x: 600, y: 132 } });
+    // The tidy moved Grace too, so the step before it no longer finds her where it left her.
+    expect(await undo.step('undo', io)).toEqual(
+      expect.objectContaining({ status: 'skipped', reason: 'Grace Hale was moved since' }),
+    );
+    expect(await positions()).toEqual({ ...tidy, [sam._id]: { x: 600, y: 132 } });
+    expect(undo.stack.canUndo).toBe(false);
+  });
+
+  test('ED-3 ED-8 adding and removing a list item undo and redo, and an item in use blocks the undo of its add', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const items = async () =>
+      (await invoke('lists.get', {})).lists
+        .find((l) => l._id === 'communities')!
+        .items.map((i) => i.label);
+
+    const { item } = await invoke('lists.addItem', {
+      listId: 'communities',
+      label: 'Portland',
+      parentId: null,
+    });
+    undo.record(listAddCommand(invoke, 'Communities', 'communities', item));
+    expect(await items()).toContain('Portland');
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Added Portland to Communities',
+    });
+    expect(await items()).not.toContain('Portland');
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await items()).toContain('Portland');
+
+    const portland = (await invoke('lists.get', {})).lists
+      .find((l) => l._id === 'communities')!
+      .items.find((i) => i.label === 'Portland')!;
+    await invoke('lists.removeItem', { listId: 'communities', itemId: portland.id });
+    undo.record(listRemoveCommand(invoke, 'Communities', 'communities', portland));
+    expect(await items()).not.toContain('Portland');
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Removed Portland from Communities',
+    });
+    expect(await items()).toContain('Portland');
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await items()).not.toContain('Portland');
+
+    // An item added, then used by an entry: the undo of its add is refused by the write path and the step stays.
+    const { item: oakland } = await invoke('lists.addItem', {
+      listId: 'communities',
+      label: 'Oakland',
+      parentId: null,
+    });
+    undo.record(listAddCommand(invoke, 'Communities', 'communities', oakland));
+    await bible.repo.create('culturalEntries', {
+      title: 'Harvest dinner',
+      status: 'idea',
+      communityId: oakland.id,
+      startYear: null,
+      endYear: null,
+    });
+    const r = await undo.step('undo', io);
+    expect(r.status).toBe('failed');
+    expect(r.status === 'failed' && r.error).toMatch(/1 entry uses Oakland/);
+    expect(await items()).toContain('Oakland');
+    expect(undo.stack.canUndo).toBe(true);
+  });
+
+  test('ED-3 GL-1 the romanization system for a language undoes and redoes, and a choice made since is left alone', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const systemOf = async () =>
+      (await invoke('romanization.get', {})).languages.find((l) => l.id === 'cantonese')!
+        .systemId ?? null;
+    const from = await systemOf();
+    await invoke('romanization.set', { languageId: 'cantonese', systemId: 'mandarin' });
+    undo.record(romanizationCommand(invoke, 'Cantonese', 'cantonese', from, 'mandarin'));
+    expect(await systemOf()).toBe('mandarin');
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Changed the romanization system for Cantonese',
+    });
+    expect(await systemOf()).toBe(from);
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await systemOf()).toBe('mandarin');
+    await invoke('romanization.set', { languageId: 'cantonese', systemId: null });
+    expect(await undo.step('undo', io)).toEqual(
+      expect.objectContaining({
+        status: 'skipped',
+        reason: 'the romanization system for Cantonese changed since',
+      }),
+    );
+    expect(await systemOf()).toBe(null);
+  });
+
+  test('ED-3 A41 a community description undoes and redoes, and a description written since is left alone', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const { item } = await invoke('lists.addItem', {
+      listId: 'communities',
+      label: 'San Francisco',
+      parentId: null,
+    });
+    const note = async () => (await invoke('community.notes.get', {})).notes[item.id] ?? '';
+    await invoke('community.notes.set', { communityId: item.id, text: 'Fog, hills, and rent.' });
+    undo.record(
+      communityNoteCommand(invoke, 'San Francisco', item.id, '', 'Fog, hills, and rent.'),
+    );
+    expect(await note()).toBe('Fog, hills, and rent.');
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Changed the description of San Francisco',
+    });
+    expect(await note()).toBe('');
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await note()).toBe('Fog, hills, and rent.');
+    await invoke('community.notes.set', { communityId: item.id, text: 'Rewritten.' });
+    expect(await undo.step('undo', io)).toEqual(
+      expect.objectContaining({
+        status: 'skipped',
+        reason: 'the description of San Francisco changed since',
+      }),
+    );
+    expect(await note()).toBe('Rewritten.');
+    // A community that is not in the list cannot be described.
+    await expect(
+      invoke('community.notes.set', { communityId: 'nowhere', text: 'x' }),
+    ).rejects.toThrow(/not in the Communities list/);
+  });
+
+  test('ED-3 SB-2 the brief settings undo and redo as one step per change', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const before = await invoke('brief.settings.get', {});
+    const after = await invoke('brief.settings.set', { window: before.window + 2 });
+    undo.record(briefSettingsCommand(invoke, before, after));
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Changed the world events window',
+    });
+    expect(await invoke('brief.settings.get', {})).toEqual(before);
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await invoke('brief.settings.get', {})).toEqual(after);
   });
 });

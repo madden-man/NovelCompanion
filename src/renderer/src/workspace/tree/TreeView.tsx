@@ -39,6 +39,7 @@ import type {
 } from '../../../../shared/domain/tree';
 import { createCommand, deleteCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import type { UndoCommand } from '../../../../shared/domain/undoRunner';
+import { treeMoveCommand, treeMoves } from '../../../../shared/undoCommands';
 import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { useGlossary } from '../Zh';
@@ -291,11 +292,16 @@ export function TreeView(props: {
 
   useEffect(() => {
     let live = true;
-    void call('tree.get', {}).then((r) => {
-      if (live) setData(r);
-    });
+    const load = () =>
+      void call('tree.get', {}).then((r) => {
+        if (live) setData(r);
+      });
+    load();
+    // A move written by an undo step (or another window) reaches the screen through this event.
+    const off = window.api.on('tree.changed', load);
     return () => {
       live = false;
+      off();
     };
   }, [version]);
 
@@ -312,6 +318,7 @@ export function TreeView(props: {
 
   const saveSeq = useRef(0);
   const ro = useWriteGuard();
+  const undo = useUndo();
   // Stored positions are kept; only new people are placed (FT-10).
   const placed = useMemo(
     () => (graph && data ? placeLayout(graph, data.positions) : null),
@@ -347,11 +354,14 @@ export function TreeView(props: {
   }, [layout, moving]);
 
   const [confirmTidy, setConfirmTidy] = useState(false);
+  const nameOf = useCallback((id: string) => graph?.byId.get(id)?.name ?? id, [graph]);
   const tidy = async () => {
     if (!graph) return;
     const { positions } = placeLayout(graph, null);
     saveSeq.current += 1;
     await call('tree.savePositions', { positions });
+    const moves = treeMoves(data?.positions ?? null, positions);
+    if (moves.length) undo.record(treeMoveCommand('Tidied the tree layout', call, moves, nameOf));
     setData((d) => (d ? { ...d, positions } : d));
     setConfirmTidy(false);
     fitted.current = false;
@@ -377,12 +387,17 @@ export function TreeView(props: {
         row === -ROW_H && ties === 0
           ? { x: Math.round(x), y: row, loose: true }
           : { x: Math.round(x), y: row };
+      const before = data.positions?.[id] ?? null;
       const positions = { ...(data.positions ?? {}), [id]: at };
       saveSeq.current += 1;
       setData((d) => (d ? { ...d, positions } : d));
       await call('tree.savePositions', { positions });
+      // One step per move (ED-3): undo puts the person back where they were.
+      undo.record(
+        treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
+      );
     },
-    [data, graph, ro.off],
+    [data, graph, ro.off, undo, nameOf],
   );
   const nudge = useCallback(
     (id: string, dx: number, dy: number) => {

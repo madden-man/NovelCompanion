@@ -39,3 +39,94 @@
   padding-bottom: 5rem;
   scrollbar-gutter: stable;
 }
+
+/* A41: one community, its description, and its lines by decade and age group. */
+.cu-toolbar {
+  align-items: flex-end;
+}
+.cu-new-community .row {
+  align-items: center;
+}
+.cu-about textarea {
+  width: 100%;
+  resize: vertical;
+}
+.cu-decade {
+  align-items: center;
+}
+.cu-decade-label {
+  color: var(--fg);
+}
+.cu-groups {
+  gap: 12px;
+}
+.cu-group h4 {
+  margin: 0;
+}
+.cu-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cu-line {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cu-line:last-child {
+  border-bottom: 0;
+}
+.cu-line-head {
+  align-items: center;
+}
+.cu-details {
+  position: relative;
+}
+.cu-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+.cu-details summary::-webkit-details-marker {
+  display: none;
+}
+.cu-details-body {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  min-width: min(100%, 420px);
+}
+.cu-details-body textarea {
+  width: 100%;
+  resize: vertical;
+}
+.cu-add input {
+  flex: 1 1 240px;
+  min-width: 160px;
+}
+@media (max-width: 520px) {
+  .cu-line-head,
+  .cu-add {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+.cu-line-text {
+  flex: 1 1 240px;
+  min-width: 160px;
+  text-align: left;
+  white-space: normal;
+}
+.cu-line .ol-rename {
+  flex: 1 1 240px;
+  min-width: 160px;
+}
+.cu-note {
+  margin: 2px 0 4px;
+  padding-left: 10px;
+  color: var(--fg-2);
+  white-space: pre-wrap;
+}

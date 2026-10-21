@@ -3,6 +3,8 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { Request, Response } from '../../../../shared/ipc';
 import { characterName } from '../../../../shared/domain/timeline';
 import { call, plainError } from '../../api';
+import { briefSettingsCommand } from '../../../../shared/undoCommands';
+import { useUndo } from '../undo';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { PovExtras } from './povPickers';
@@ -92,6 +94,7 @@ export function BriefSettings({
   onChanged?: () => void;
   variant?: 'details' | 'panel';
 }) {
+  const undo = useUndo();
   const [s, setS] = useState<Response<'brief.settings.get'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ids = { window: useId(), budget: useId() };
@@ -101,7 +104,12 @@ export function BriefSettings({
   if (!s) return null;
   const save = async (patch: { window?: number; budget?: number }) => {
     try {
-      setS(await call('brief.settings.set', patch));
+      const before = s;
+      const after = await call('brief.settings.set', patch);
+      setS(after);
+      if (before.window !== after.window || before.budget !== after.budget) {
+        undo.record(briefSettingsCommand(call, before, after));
+      }
       setError(null);
       onChanged?.();
     } catch (e) {

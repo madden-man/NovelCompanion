@@ -43,6 +43,7 @@ import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
 import { ChapterPanel } from './ChapterPage';
+import { NumberField } from './NumberField';
 import { InlineName, NameForm } from './InlineName';
 
 type Outline = Response<'outline.get'>;
@@ -781,8 +782,6 @@ export function SceneOutline(_props: { onOpen: Open }) {
   };
 
   const openRow = chapters.find((c) => c.id === openChapter) ?? null;
-  const openSiblings = openRow ? inPart(openRow.partId) : [];
-  const openIndex = openRow ? openSiblings.findIndex((c) => c.id === openRow.id) : -1;
   const guide = grab && grab.mode !== 'move' ? grab.guide : null;
   return (
     <div
@@ -1004,7 +1003,23 @@ export function SceneOutline(_props: { onOpen: Open }) {
             )}
           </div>
         )}
-        <Versions saves={scene.saves} onRestore={scene.replace} />
+        <Versions
+          saves={scene.saves}
+          onRestore={(r) => {
+            // ED-3: a restored version is one step; undo puts the outline back as it was.
+            const snap = scene.snapshot();
+            const before = snap ? composeFlow(snap.flow, snap.order) : null;
+            scene.replace(r);
+            const after = stateOf(r);
+            if (before && !sameState(before, after)) {
+              undo.record({
+                label: 'Restored an outline version',
+                undo: [outlineOp(after, before)],
+                redo: [outlineOp(before, after)],
+              });
+            }
+          }}
+        />
       </section>
       {openRow && outline && (
         <aside
@@ -1018,16 +1033,8 @@ export function SceneOutline(_props: { onOpen: Open }) {
             id={openRow.id}
             outline={outline}
             writes={writes}
+            scenes={flow ? sectionScenes(sectionOf(flow, openRow.id).lines) : 0}
             onClose={() => setOpenChapter(null)}
-            canMove={{
-              up: openIndex > 0,
-              down: openIndex >= 0 && openIndex < openSiblings.length - 1,
-            }}
-            onMove={(by) => {
-              const other = openSiblings[openIndex + by];
-              if (other) moveChapter(openRow.id, other.id);
-            }}
-            onToPart={(partId) => moveToPart(openRow.id, partId)}
           />
         </aside>
       )}
@@ -1828,60 +1835,3 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
 }
 
 /** A small whole-number field that commits on Enter or blur; empty clears. */
-function NumberField(props: {
-  label: string;
-  testId: string;
-  value: number | null;
-  min: number;
-  max: number;
-  width: string;
-  disabled: boolean;
-  tip: { title?: string; 'aria-describedby'?: string };
-  onCommit: (value: number | null) => Promise<boolean>;
-}) {
-  const shown = props.value === null ? '' : String(props.value);
-  const [draft, setDraft] = useState(shown);
-  const [editing, setEditing] = useState(false);
-  const [seen, setSeen] = useState(shown);
-  if (seen !== shown) {
-    setSeen(shown);
-    if (!editing) setDraft(shown);
-  }
-  const commit = async () => {
-    setEditing(false);
-    const t = draft.trim();
-    if (t === shown) return;
-    const n = t === '' ? null : Number(t);
-    const valid = n === null || (Number.isInteger(n) && n >= props.min && n <= props.max);
-    const ok = valid && (await props.onCommit(n));
-    if (!ok) setDraft(shown);
-  };
-  return (
-    <input
-      type="number"
-      inputMode="numeric"
-      className="ch-number"
-      style={{ width: props.width }}
-      value={draft}
-      min={props.min}
-      max={props.max}
-      step={1}
-      disabled={props.disabled}
-      {...props.tip}
-      aria-label={props.label}
-      data-testid={props.testId}
-      onFocus={() => setEditing(true)}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          void commit();
-        } else if (e.key === 'Escape') {
-          setDraft(shown);
-          setEditing(false);
-        }
-      }}
-    />
-  );
-}
