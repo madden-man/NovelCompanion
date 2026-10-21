@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
   EMPTY_OUTLINE,
   LEAD,
@@ -26,22 +26,27 @@ import {
   withSection,
 } from '../../../../shared/domain/sceneOutline';
 import type { Flow, SceneOutlineState, ShownYear } from '../../../../shared/domain/sceneOutline';
+import { nextNumber } from '../../../../shared/domain/outline';
 import { shiftStrand } from '../../../../shared/domain/strands';
+import { deleteCommand } from '../../../../shared/domain/undoRunner';
 import type { Response } from '../../../../shared/ipc';
-import { entryTitle } from '../../../../shared/schema';
+import { collectionInfo, entryTitle } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
+import { TrashControls } from '../editor';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { InlineName } from './InlineName';
+import { InlineName, NameForm } from './InlineName';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
+type HeadRow = Extract<Outline['rows'][number], { kind: 'book' | 'part' }>;
+type PartRow = Extract<Outline['rows'][number], { kind: 'part' }>;
 type VersionSummary = Response<'sceneOutline.versions'>['versions'][number];
 type Version = Response<'sceneOutline.version'>;
 type Open = (collection: EntryCollection, id: string) => void;
@@ -106,6 +111,12 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstPending = useRef<number | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
+  /**
+   * An undo step's outline that names a chapter not yet back in the reading
+   * order (a chapter restored from the trash): it is split again once the
+   * order next changes, so the chapter gets its lines back.
+   */
+  const pending = useRef<SceneOutlineState | null>(null);
   /** Lines waiting for a new chapter to reach the reading order (Cmd+Enter). */
   const split = useRef<{ id: string | null; change: (f: Flow, id: string) => Flow } | null>(null);
 
@@ -210,7 +221,10 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       setFlow(current.current);
       return;
     }
-    current.current = refitFlow(current.current, before, order);
+    current.current = pending.current
+      ? splitFlow(pending.current, order)
+      : refitFlow(current.current, before, order);
+    pending.current = null;
     setFlow(current.current);
     takeSplit();
     const target = stored();
@@ -236,6 +250,10 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       adopt: async (s) => {
         current.current = splitFlow(s, orderRef.current);
         setFlow(current.current);
+        if (Object.keys(s.breaks).some((id) => !orderRef.current.includes(id))) {
+          pending.current = s;
+          return;
+        }
         await save();
       },
     };
@@ -309,7 +327,11 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     };
   };
 
-  return { flow, status, error, saves, edit, step, save, replace, splitInto };
+  /** The flow and reading order as they are now, for a write that must know both. */
+  const snapshot = () =>
+    current.current === null ? null : { flow: current.current, order: orderRef.current };
+
+  return { flow, status, error, saves, edit, step, save, replace, splitInto, snapshot };
 }
 
 /** Series tokens the chapters cycle through, in reading order. */
@@ -344,6 +366,9 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [grab, setGrab] = useState<Grab | null>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
+  const [focusText, setFocusText] = useState<string | null>(null);
+  const [adding, setAdding] = useState<'part' | 'book' | null>(null);
+  const undo = useUndo();
   const areas = useRef(new Map<string, HTMLTextAreaElement>());
   const board = useRef<HTMLDivElement | null>(null);
   const jumpId = useId();
@@ -450,6 +475,91 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
       `Moved where ${row.title} ${edge === 'start' ? 'starts' : 'ends'}`,
       (f) => order && moveEdge(f, order, id, edge, by),
     );
+  };
+
+  // ---------- KB-3 on the track: books, parts and chapters made, moved and trashed ----------
+
+  const heads = (outline?.rows ?? []).filter((r): r is HeadRow => r.kind !== 'chapter');
+  const books = heads.filter((r) => r.kind === 'book' && !r.missing);
+  const parts = heads.filter((r): r is PartRow => r.kind === 'part' && !r.missing);
+  const inPart = (partId: string) => chapters.filter((c) => c.partId === partId);
+
+  // A new chapter's text takes the focus once it is on screen, with its first bullet.
+  useEffect(() => {
+    if (!focusText) return;
+    const el = areas.current.get(focusText);
+    if (!el) return;
+    setFocusText(null);
+    el.focus();
+    el.scrollIntoView({ block: 'center' });
+  }, [focusText, flow]);
+
+  /** New chapter: last in the last part, in the year of the chapter before it; one undo step. */
+  const addChapter = async () => {
+    const part = parts.at(-1);
+    if (!part) {
+      setNotice('Make a part first: More, then New part.');
+      return;
+    }
+    setNotice(null);
+    const year = (inPart(part.id).at(-1) ?? chapters.at(-1))?.storyYear ?? story.year;
+    const id = await writes.newChapter(part.id, 'New chapter', year);
+    if (id) setFocusText(id);
+  };
+  const addPart = async (title: string) => {
+    const book = books.at(-1);
+    if (!book) {
+      setNotice('Make a book first: More, then New book.');
+      return;
+    }
+    const siblings = parts.filter((p) => p.bookId === book.id).map((p) => ({ number: p.number }));
+    const id = await writes.create('parts', {
+      title,
+      bookId: book.id,
+      number: nextNumber(siblings),
+      status: 'idea',
+    });
+    if (id) setAdding(null);
+  };
+  const addBook = async (title: string) => {
+    const id = await writes.create('books', {
+      title,
+      number: nextNumber(books.map((b) => ({ number: b.number }))),
+      status: 'idea',
+    });
+    if (id) setAdding(null);
+  };
+  /** Move to part: the chapter goes last in that part, its scenes with it; one undo step. */
+  const moveToPart = (id: string, partId: string) => {
+    const row = chapters.find((c) => c.id === id);
+    const part = parts.find((p) => p.id === partId);
+    if (!row || !part || row.partId === partId) return;
+    setRefocus(id);
+    void writes.reorder(
+      { kind: 'chapters', groupId: partId, movedId: id, toIndex: inPart(partId).length },
+      `Moved ${row.title} to ${part.label}`,
+    );
+  };
+  /**
+   * Move to trash: the chapter's lines join the section above (A37), and one
+   * undo step brings back both the chapter and its lines.
+   */
+  const trashChapter = async (id: string): Promise<boolean> => {
+    const row = chapters.find((c) => c.id === id);
+    await scene.save();
+    const snap = scene.snapshot();
+    if (!row || !snap || ro.off) return false;
+    const without = snap.order.filter((c) => c !== id);
+    const before = composeFlow(snap.flow, snap.order);
+    const after = composeFlow(refitFlow(snap.flow, snap.order, without), without);
+    await call('entry.delete', { collection: 'chapters', id });
+    const del = deleteCommand('chapters', id, row.title);
+    undo.record({
+      label: del.label,
+      undo: [...del.undo, outlineOp(after, before)],
+      redo: [...del.redo, outlineOp(before, after)],
+    });
+    return true;
   };
 
   // ---------- pointer drags on the track ----------
@@ -631,7 +741,9 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
           year comes from the scene above or the chapter. Pull a bar&apos;s top or bottom edge to
           move where the chapter starts or ends, or drag the bar past another to swap them. On a
           focused bar, Up and Down swap it, Shift with the arrows moves its end, and Alt with the
-          arrows moves its start.
+          arrows moves its start. Each bar's Actions open the chapter, move it to another part, or
+          move it to the trash; New chapter and More at the foot of the chapters add a chapter, a
+          part or a book.
         </p>
         {(scene.error ?? writes.error ?? notice) && (
           <p className="callout crit" role="alert">
@@ -648,58 +760,139 @@ export function SceneOutline({ onOpen }: { onOpen: Open }) {
           >
             <div className="sb-colhead">Scenes</div>
             <div className="sb-colhead track">Chapters</div>
-            {keys.map((key) => {
-              const row = key === LEAD ? null : (chapters.find((c) => c.id === key) ?? null);
-              const sec = sectionOf(flow, key);
-              const years = shownYears(sec, row?.storyYear ?? null);
-              const tint = row ? tintOf(row.id) : 'lead';
-              const moving = grab?.mode === 'move' && grab.id === key ? grab : null;
-              const scenes = sectionScenes(sec.lines);
-              const limits = row && order ? edgeLimits(flow, order, row.id) : null;
-              return (
-                <div key={key} className={`sb-row ${tint}`} data-row={key}>
-                  <SectionText
-                    sectionKey={key}
-                    lines={sec.lines}
-                    years={years}
-                    firstScene={firstScene.get(key) ?? 1}
-                    disabled={ro.off}
-                    tip={ro.tip}
-                    handlers={handlers}
-                    chapter={row?.readingOrder}
-                    tall={chapters.length === 0}
-                  />
-                  <div className="sb-track">
-                    {row ? (
-                      <ChapterBar
-                        row={row}
-                        part={partLabel.get(row.partId) ?? ''}
-                        scenes={scenes}
-                        firstScene={firstScene.get(key) ?? 1}
-                        canSwap={{
-                          up: neighbourOf(placed, row.id, -1) !== null,
-                          down: neighbourOf(placed, row.id, 1) !== null,
-                        }}
-                        limits={limits}
-                        dy={moving?.dy ?? 0}
-                        moving={moving !== null}
-                        target={grab?.mode === 'move' && grab.target === row.id}
-                        pulling={
-                          grab && grab.mode !== 'move' && grab.id === row.id ? grab.mode : null
-                        }
-                        onGrab={(e, mode) => beginGrab(e, row.id, mode)}
-                        onSwap={(by) => swap(row.id, by)}
-                        onEdge={(edge, by) => pullEdge(row.id, edge, by)}
-                        onFocusBar={() => setRefocus(null)}
-                        onOpen={onOpen}
-                      />
-                    ) : (
-                      <div className="sb-none">Not in a chapter</div>
-                    )}
+            {[...(showLead ? [{ kind: 'lead' as const, id: LEAD }] : []), ...outline.rows].map(
+              (item) => {
+                if (item.kind === 'book' || item.kind === 'part') {
+                  return (
+                    <div
+                      key={`${item.kind}:${item.id}`}
+                      className={`sb-row sb-head-row ${item.kind}`}
+                      data-head-row={item.id}
+                    >
+                      <div className="sb-gap" aria-hidden="true" />
+                      <div className="sb-track head">
+                        <TrackHeading row={item} />
+                      </div>
+                    </div>
+                  );
+                }
+                const key = item.id;
+                const row = key === LEAD ? null : (chapters.find((c) => c.id === key) ?? null);
+                const sec = sectionOf(flow, key);
+                const years = shownYears(sec, row?.storyYear ?? null);
+                const tint = row ? tintOf(row.id) : 'lead';
+                const moving = grab?.mode === 'move' && grab.id === key ? grab : null;
+                const scenes = sectionScenes(sec.lines);
+                const limits = row && order ? edgeLimits(flow, order, row.id) : null;
+                return (
+                  <div key={key} className={`sb-row ${tint}`} data-row={key}>
+                    <SectionText
+                      sectionKey={key}
+                      lines={sec.lines}
+                      years={years}
+                      firstScene={firstScene.get(key) ?? 1}
+                      disabled={ro.off}
+                      tip={ro.tip}
+                      handlers={handlers}
+                      chapter={row?.readingOrder}
+                      tall={chapters.length === 0}
+                    />
+                    <div className="sb-track">
+                      {row ? (
+                        <ChapterBar
+                          row={row}
+                          part={partLabel.get(row.partId) ?? ''}
+                          scenes={scenes}
+                          firstScene={firstScene.get(key) ?? 1}
+                          canSwap={{
+                            up: neighbourOf(placed, row.id, -1) !== null,
+                            down: neighbourOf(placed, row.id, 1) !== null,
+                          }}
+                          limits={limits}
+                          dy={moving?.dy ?? 0}
+                          moving={moving !== null}
+                          target={grab?.mode === 'move' && grab.target === row.id}
+                          pulling={
+                            grab && grab.mode !== 'move' && grab.id === row.id ? grab.mode : null
+                          }
+                          onGrab={(e, mode) => beginGrab(e, row.id, mode)}
+                          onSwap={(by) => swap(row.id, by)}
+                          onEdge={(edge, by) => pullEdge(row.id, edge, by)}
+                          onFocusBar={() => setRefocus(null)}
+                          onOpen={onOpen}
+                          parts={parts}
+                          onMoveToPart={(partId) => moveToPart(row.id, partId)}
+                          onTrash={() => trashChapter(row.id)}
+                        />
+                      ) : (
+                        <div className="sb-none">Not in a chapter</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              },
+            )}
+            <div className="sb-row sb-foot-row">
+              <div className="sb-gap" aria-hidden="true" />
+              <div className="sb-track foot" data-testid="track-foot">
+                <span className="row tight">
+                  <button
+                    type="button"
+                    className="btn small"
+                    disabled={ro.off}
+                    {...ro.tip}
+                    data-testid="new-chapter"
+                    onClick={() => void addChapter()}
+                  >
+                    New chapter
+                  </button>
+                  <MenuDetails label="More" ariaLabel="More to add" testId="track-more">
+                    <>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={ro.off}
+                        onClick={(e) => {
+                          closeMenu(e.currentTarget);
+                          setAdding('part');
+                        }}
+                      >
+                        New part
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={ro.off}
+                        onClick={(e) => {
+                          closeMenu(e.currentTarget);
+                          setAdding('book');
+                        }}
+                      >
+                        New book
+                      </button>
+                    </>
+                  </MenuDetails>
+                </span>
+                {adding === 'part' && (
+                  <NameForm
+                    label="Part title"
+                    submit="Create part"
+                    testId="new-part"
+                    onSubmit={addPart}
+                    onCancel={() => setAdding(null)}
+                  />
+                )}
+                {adding === 'book' && (
+                  <NameForm
+                    label="Book title"
+                    submit="Create book"
+                    testId="new-book"
+                    onSubmit={addBook}
+                    onCancel={() => setAdding(null)}
+                  />
+                )}
+              </div>
+            </div>
             {guide !== null && (
               <div className="sb-guide" style={{ top: guide }} aria-hidden="true" />
             )}
@@ -754,6 +947,9 @@ interface BarProps {
   onEdge: (edge: 'start' | 'end', by: -1 | 1) => void;
   onFocusBar: () => void;
   onOpen: Open;
+  parts: readonly PartRow[];
+  onMoveToPart: (partId: string) => void;
+  onTrash: () => Promise<boolean>;
 }
 
 /**
@@ -816,7 +1012,7 @@ function ChapterBar(p: BarProps) {
         ? `scene ${p.firstScene}`
         : `scenes ${p.firstScene} to ${p.firstScene + p.scenes - 1}`;
   const grabBody = (e: ReactPointerEvent) => {
-    if ((e.target as HTMLElement).closest('input, button, select, a')) return;
+    if ((e.target as HTMLElement).closest('input, button, select, a, summary, details')) return;
     p.onGrab(e, 'move');
   };
   return (
@@ -879,14 +1075,51 @@ function ChapterBar(p: BarProps) {
               onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(y))}
             />
           </span>
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() => p.onOpen('chapters', row.id)}
-            data-testid="chapter-open"
+          <MenuDetails
+            label="Actions"
+            ariaLabel={`Actions for chapter ${row.readingOrder}`}
+            testId="chapter-actions"
           >
-            Open
-          </button>
+            <>
+              <button
+                type="button"
+                className="btn small"
+                data-testid="chapter-open"
+                onClick={(e) => {
+                  closeMenu(e.currentTarget);
+                  p.onOpen('chapters', row.id);
+                }}
+              >
+                Open
+              </button>
+              <details className="ol-submenu" data-testid="move-to-part">
+                <summary>Move to part</summary>
+                <div className="stack tight">
+                  {p.parts.filter((x) => x.id !== row.partId).length === 0 ? (
+                    <span className="example-note">There is no other part.</span>
+                  ) : (
+                    p.parts
+                      .filter((x) => x.id !== row.partId)
+                      .map((x) => (
+                        <button
+                          key={x.id}
+                          type="button"
+                          className="btn small"
+                          disabled={off}
+                          onClick={(e) => {
+                            closeMenu(e.currentTarget);
+                            p.onMoveToPart(x.id);
+                          }}
+                        >
+                          {x.label}
+                        </button>
+                      ))
+                  )}
+                </div>
+              </details>
+              <TrashChapter title={title} id={row.id} disabled={off} onTrash={p.onTrash} />
+            </>
+          </MenuDetails>
         </span>
       </span>
       <span
@@ -897,6 +1130,199 @@ function ChapterBar(p: BarProps) {
         onPointerDown={(e) => p.onGrab(e, 'end')}
       />
     </div>
+  );
+}
+
+/** Close the menu around an element and hand focus back to its button. */
+function closeMenu(from: Element) {
+  const menu = from.closest<HTMLDetailsElement>('details.ol-menu');
+  if (!menu) return;
+  menu.open = false;
+  menu.querySelector<HTMLElement>(':scope > summary')?.focus();
+}
+
+/** A small menu that opens under its button; Escape or a choice closes it and hands focus back. */
+function MenuDetails(props: {
+  label: string;
+  ariaLabel: string;
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      className="ol-menu"
+      data-testid={props.testId}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || !e.currentTarget.open) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu(e.currentTarget);
+      }}
+    >
+      <summary aria-label={props.ariaLabel}>{props.label}</summary>
+      <div className="ol-menu-body stack tight">{props.children}</div>
+    </details>
+  );
+}
+
+/**
+ * KB-3 on the track: a book or part heading, renamed in place, with Actions
+ * holding Rename and Move to trash (which lists what links to it first).
+ */
+function TrackHeading({ row }: { row: HeadRow }) {
+  const writes = useOutlineWrites();
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const collection = row.kind === 'book' ? 'books' : 'parts';
+  const ids = row.kind === 'book' ? { 'data-book': row.id } : { 'data-part': row.id };
+  if (row.missing) {
+    return (
+      <div className={`sb-heading ${row.kind} missing`} data-testid={`track-${row.kind}`} {...ids}>
+        {row.label}
+      </div>
+    );
+  }
+  return (
+    <div ref={wrap} className={`sb-heading ${row.kind}`} data-testid={`track-${row.kind}`} {...ids}>
+      <span className="row tight">
+        <InlineName
+          value={row.title}
+          label={`${row.kind === 'book' ? 'Book' : 'Part'} title`}
+          disabled={writes.ro.off}
+          testId={`${row.kind}-name`}
+          onSave={(t) => writes.edit(collection, row.id, { title: t }, `Renamed ${row.label}`)}
+        >
+          {row.label}
+        </InlineName>
+        <MenuDetails label="Actions" ariaLabel={`Actions for ${row.label}`}>
+          <>
+            <button
+              type="button"
+              className="btn small"
+              disabled={writes.ro.off}
+              onClick={(e) => {
+                closeMenu(e.currentTarget);
+                wrap.current?.querySelector<HTMLButtonElement>('.ol-name')?.click();
+              }}
+            >
+              Rename
+            </button>
+            <TrashControls
+              collection={collection}
+              id={row.id}
+              title={row.title}
+              inTrash={false}
+              beforeDelete={async () => undefined}
+              onChanged={() => undefined}
+            />
+          </>
+        </MenuDetails>
+      </span>
+      {writes.error && (
+        <p className="callout crit" role="alert">
+          {writes.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * KB-3: Move to trash on a chapter's bar. It lists what links to the chapter
+ * first (ED-5); confirmed, the chapter goes to the trash and its scene lines
+ * join the section above.
+ */
+function TrashChapter(props: {
+  id: string;
+  title: string;
+  disabled: boolean;
+  onTrash: () => Promise<boolean>;
+}) {
+  const [links, setLinks] = useState<Response<'entry.linkedFrom'> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const trashButton = useRef<HTMLButtonElement | null>(null);
+  const keepButton = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (links) keepButton.current?.focus();
+  }, [links]);
+  const keep = () => {
+    setLinks(null);
+    trashButton.current?.focus();
+  };
+  const ask = async () => {
+    setError(null);
+    try {
+      setLinks(await call('entry.linkedFrom', { id: props.id }));
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+  const confirm = async () => {
+    try {
+      if (await props.onTrash()) setLinks(null);
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+  return (
+    <>
+      <button
+        ref={trashButton}
+        type="button"
+        className="btn small danger"
+        disabled={props.disabled}
+        onClick={() => void ask()}
+      >
+        Move to trash
+      </button>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+      {links && (
+        <div
+          className="panel stack confirm"
+          role="dialog"
+          aria-label="Move to trash"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            keep();
+          }}
+        >
+          <strong>Move {props.title} to the trash?</strong>
+          <p>Its scenes join the chapter above. Undo brings both back.</p>
+          {links.count === 0 ? (
+            <p>Nothing links here.</p>
+          ) : (
+            <>
+              <p data-testid="linked-count">
+                {links.count === 1
+                  ? '1 entry links here. Its link is kept and works again if you restore this chapter.'
+                  : `${links.count} entries link here. Their links are kept and work again if you restore this chapter.`}
+              </p>
+              <ul className="backlink-list">
+                {links.entries.map((b, i) => (
+                  <li key={i}>
+                    {collectionInfo[b.collection].singular}: {b.title}{' '}
+                    <span className="example-note">({b.kind})</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="row">
+            <button type="button" className="btn danger" onClick={() => void confirm()}>
+              Move to trash
+            </button>
+            <button ref={keepButton} type="button" className="btn" onClick={keep}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

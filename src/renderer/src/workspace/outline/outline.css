@@ -168,6 +168,10 @@
 .ws-tree-area.scenes {
   grid-template-columns: minmax(0, 1fr);
 }
+/* What scrolls into view stops below the sticky head. */
+.ws-tree-area.scenes .tree-main {
+  scroll-padding-top: 64px;
+}
 .scene-head {
   position: sticky;
   top: -14px;
@@ -221,7 +225,9 @@
 }
 .sb-track {
   position: relative;
-  min-height: 7rem;
+  display: flex;
+  flex-direction: column;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--border);
 }
 .sb-none {
@@ -390,8 +396,9 @@
 }
 /* A chapter's bar: as tall as its section, in its colour; the edges pull, the body drags. */
 .cbar {
-  position: absolute;
-  inset: 3px 6px;
+  position: relative;
+  flex: 1 1 auto;
+  padding: 10px 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -420,14 +427,17 @@
   outline-offset: 2px;
 }
 .cbar-main {
-  position: sticky;
-  top: 52px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
   min-height: 0;
   padding: 2px 8px;
-  overflow: hidden;
+}
+/* An open menu on a bar or a heading sits above the bars below it. */
+.cbar-main:has(.ol-menu[open]),
+.sb-track:has(.ol-menu[open]) {
+  z-index: 7;
 }
 .cbar-line {
   display: flex;
@@ -462,12 +472,17 @@
   padding: 1px 4px;
 }
 .cbar-edge {
-  flex: 0 0 10px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10px;
   cursor: ns-resize;
-  position: relative;
+}
+.cbar-edge.top {
+  top: 0;
 }
 .cbar-edge.bottom {
-  margin-top: auto;
+  bottom: 0;
 }
 .cbar-edge::after {
   content: '';
@@ -497,6 +512,72 @@
   z-index: 4;
   border-top: 3px solid var(--accent);
   pointer-events: none;
+}
+/* KB-3 on the track: book and part headings above their chapters' bars, and what to add at the bottom. */
+.sb-gap {
+  background: var(--surface-2);
+  border-left: 6px solid var(--border-strong);
+  border-bottom: 1px solid var(--border);
+}
+.sb-track.head,
+.sb-track.foot {
+  min-height: 0;
+  padding: 6px 8px;
+}
+.sb-head-row.book .sb-track,
+.sb-head-row.book .sb-gap {
+  background: var(--surface-2);
+  border-top: 2px solid var(--border-strong);
+}
+.sb-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.sb-heading.book {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.sb-heading.missing {
+  font-style: italic;
+}
+.sb-track.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 0;
+}
+.sb-foot-row .sb-gap {
+  border-bottom: 0;
+}
+.sb-track.foot .ol-name-form input {
+  min-width: 0;
+  width: 100%;
+}
+.cbar .ol-menu > summary {
+  padding: 0 6px;
+  font-size: 0.8rem;
+}
+.ol-submenu > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--fg);
+  padding: 2px 0;
+}
+.ol-submenu > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ol-submenu > div {
+  padding: 4px 0 0 10px;
+}
+.ol-menu-body .confirm {
+  min-width: 16em;
+  max-width: 22em;
+  cursor: default;
 }
 .scene-versions {
   margin-top: 16px;
@@ -537,7 +618,12 @@
   .sl-year {
     width: 4em;
   }
-  .cbar {
-    inset: 3px 3px;
+  .sb-track {
+    padding: 3px;
   }
+}
+/* Menus on the track open towards the text, so they stay on screen. */
+.sb-track .ol-menu-body {
+  left: auto;
+  right: 0;
 }
