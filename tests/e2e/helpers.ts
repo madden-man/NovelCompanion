@@ -324,6 +324,14 @@ export async function setField(
       return;
     case 'refs':
       await clearChips(f);
+      // SM-1: the character page's families are added through Add family.
+      if ((await f.getAttribute('data-kind')) === 'familyChips') {
+        for (const id of value as string[]) {
+          await f.getByRole('button', { name: 'Add family' }).click();
+          await f.getByLabel('Family to add').selectOption(id);
+        }
+        return;
+      }
       for (const id of value as string[]) {
         if (anywhere(spec)) await pickBySearch(ctx, f, id, /^Add to/);
         else await f.locator(':scope > select').selectOption(id);

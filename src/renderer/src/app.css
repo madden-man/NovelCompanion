@@ -2073,3 +2073,28 @@ fieldset.write-group[disabled] {
 .char-line .date-box-input {
   width: 7.5em;
 }
+/* SM-1: on the Characters screen the page takes the inspector's column too. */
+.ws-editor.ws-editor-wide {
+  grid-column: editor-start / inspector-end;
+}
+.char-tools {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.fam-field .chips {
+  align-items: center;
+}
+/* SM-1: the five fit one row at the default window. */
+.char-line > fieldset.write-group {
+  gap: 10px 12px;
+}
+.char-line .date-box-input {
+  width: 6.4em;
+}
+.fam-field .chips {
+  gap: 4px;
+}
+.char-line .date-box-input {
+  width: 6.5em;
+  padding-inline: 4px;
+}

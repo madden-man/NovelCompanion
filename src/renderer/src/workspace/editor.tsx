@@ -1,6 +1,6 @@
 import { deleteCommand, editCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { WriteFieldset, useWriteGuard } from '../connection';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   collectionInfo,
@@ -232,7 +232,8 @@ export function TrashControls(props: {
   const keepButton = useRef<HTMLButtonElement | null>(null);
 
   // NF-2: the confirm takes focus on its safe choice, and Escape or Keep it hands focus back.
-  useEffect(() => {
+  // Before paint, so a key pressed as soon as the confirm shows lands in it.
+  useLayoutEffect(() => {
     if (confirmDelete) keepButton.current?.focus();
   }, [confirmDelete]);
   const keep = () => {
@@ -403,11 +404,49 @@ export function EntryPane(props: {
   }
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
+  // SM-1: the Characters screen is the list and the page; the page takes the inspector's width
+  // and keeps undo, links, history and trash at its foot.
+  const isCharacter = collection === 'characters';
+  const tools = (
+    <>
+      {ed.warnings.length > 0 && (
+        <p className="callout warn" data-testid="warning-count">
+          {ed.warnings.length === 1
+            ? '1 field has a warning. It still saved.'
+            : `${ed.warnings.length} fields have warnings. They still saved.`}
+        </p>
+      )}
+      <UndoPanel />
+      <div className="stack tight">
+        <span className="eyebrow">Linked from</span>
+        <Backlinks backlinks={ed.backlinks} onOpen={props.onOpen} />
+      </div>
+      <dl className="kv">
+        <dt>Created</dt>
+        <dd>{formatTime(draft.createdAt)}</dd>
+        <dt>Last changed</dt>
+        <dd>{formatTime(draft.modifiedAt)}</dd>
+      </dl>
+      <TrashControls
+        collection={collection}
+        id={id}
+        title={entryTitle(draft)}
+        inTrash={inTrash}
+        beforeDelete={ed.flush}
+        onChanged={ed.reload}
+        extra={
+          <button type="button" className="btn" onClick={() => setShowHistory(true)}>
+            History
+          </button>
+        }
+      />
+    </>
+  );
 
   return (
     <>
       <section
-        className="ws-editor"
+        className={isCharacter ? 'ws-editor ws-editor-wide' : 'ws-editor'}
         // SM-1: a character page's own heading is the only name on it.
         {...(collection === 'characters'
           ? { 'aria-label': entryTitle(draft) }
@@ -476,47 +515,28 @@ export function EntryPane(props: {
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
         )}
+        {isCharacter && (
+          <aside
+            className="char-tools stack"
+            aria-label="Undo, links, history and trash"
+            data-testid="inspector"
+          >
+            {tools}
+          </aside>
+        )}
       </section>
-      <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
-        <span className="eyebrow">Inspector</span>
-        <div className="stack">
-          <h3>
-            <Zh text={entryTitle(draft)} />
-          </h3>
-          <SaveState status={ed.status} error={ed.error} />
-          {ed.warnings.length > 0 && (
-            <p className="callout warn" data-testid="warning-count">
-              {ed.warnings.length === 1
-                ? '1 field has a warning. It still saved.'
-                : `${ed.warnings.length} fields have warnings. They still saved.`}
-            </p>
-          )}
-          <UndoPanel />
-          <div className="stack tight">
-            <span className="eyebrow">Linked from</span>
-            <Backlinks backlinks={ed.backlinks} onOpen={props.onOpen} />
+      {!isCharacter && (
+        <aside className="inspector ws-inspector" aria-label="Inspector" data-testid="inspector">
+          <span className="eyebrow">Inspector</span>
+          <div className="stack">
+            <h3>
+              <Zh text={entryTitle(draft)} />
+            </h3>
+            <SaveState status={ed.status} error={ed.error} />
+            {tools}
           </div>
-          <dl className="kv">
-            <dt>Created</dt>
-            <dd>{formatTime(draft.createdAt)}</dd>
-            <dt>Last changed</dt>
-            <dd>{formatTime(draft.modifiedAt)}</dd>
-          </dl>
-          <TrashControls
-            collection={collection}
-            id={id}
-            title={entryTitle(draft)}
-            inTrash={inTrash}
-            beforeDelete={ed.flush}
-            onChanged={ed.reload}
-            extra={
-              <button type="button" className="btn" onClick={() => setShowHistory(true)}>
-                History
-              </button>
-            }
-          />
-        </div>
-      </aside>
+        </aside>
+      )}
       {showHistory && (
         <HistoryDrawer
           collection={collection}

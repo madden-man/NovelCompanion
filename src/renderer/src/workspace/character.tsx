@@ -10,7 +10,7 @@ import type { DateBox } from '../../../shared/domain/dates';
 import type { StoryDate } from '../../../shared/schema';
 import { deepEqual } from '../../../shared/domain/paths';
 import { call } from '../api';
-import { useList, useStore } from './data';
+import { useEntries, useList, useStore } from './data';
 import { Field } from './fields';
 import type { Messages } from './fields';
 import { formatMoment, useStoryTime } from './storyTime';
@@ -145,34 +145,115 @@ function DateBoxField(props: {
   );
 }
 
-/** An age for the page line: the number, or the state in plain words. */
-function ageWords(s: NonNullable<Page['current']['state']>, year: number): string {
+/** The age for the page line (TL-2, TL-4): short, since the story year is in the top bar. */
+function ageWords(s: NonNullable<Page['current']['state']>): string {
   switch (s.state) {
     case 'alive':
-      return s.dyingThisYear
-        ? `Age ${s.age} in ${year}, dies that year`
-        : `Age ${s.age} in ${year}`;
+      return s.dyingThisYear ? `Dies this year, age ${s.age}` : `Age ${s.age}`;
     case 'dead':
       return `Dead since ${s.deathYear}`;
     case 'unborn':
-      return `Not born until ${s.birthYear}`;
+      return `Born ${s.birthYear}`;
     case 'unknown':
-      return 'Age unknown';
+      return 'Unknown age';
   }
 }
 
 /** The age at the story year (TM-3), else at the current position, else why there is none. */
 function ageLine(page: Page): string {
-  if (page.storyTime) {
-    const t = page.storyTime;
-    const at = t.month !== undefined ? formatMoment(t) : String(t.year);
-    const words = ageWords(t.state, t.year);
-    return t.month !== undefined ? `${words} (${at})` : words;
-  }
-  if (page.current.year !== null && page.current.state) {
-    return `${ageWords(page.current.state, page.current.year)} (current position)`;
-  }
+  if (page.storyTime) return ageWords(page.storyTime.state);
+  if (page.current.year !== null && page.current.state) return ageWords(page.current.state);
   return 'No story year set';
+}
+
+/**
+ * SM-1: the families as compact chips, each with a remove button, and one
+ * "Add family" button that shows the choice only when pressed.
+ */
+function FamiliesField(props: {
+  value: unknown;
+  messages: Messages;
+  onChange: (ids: string[]) => void;
+}) {
+  const families = useEntries('families');
+  const [adding, setAdding] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const ids = Array.isArray(props.value) ? props.value.map(String) : [];
+  const nameOf = (id: string) => {
+    const f = families.find((x) => x._id === id);
+    return f ? str(f.name) || str(f.title) || id : id;
+  };
+  const choices = families.filter((f) => f.deletedAt === undefined && !ids.includes(f._id));
+  const close = () => {
+    setAdding(false);
+    requestAnimationFrame(() => addButton.current?.focus());
+  };
+  const warnings = props.messages.warnings.filter((w) => w.path === 'familyIds');
+  return (
+    <fieldset
+      className={`ed-field ed-group fam-field${warnings.length ? ' has-warning' : ''}`}
+      data-field="familyIds"
+      data-kind="familyChips"
+    >
+      <legend className="ed-label">Families</legend>
+      <div className="chips">
+        {ids.length === 0 && <span className="example-note">None yet</span>}
+        {ids.map((id) => (
+          <span key={id} className="chip">
+            {nameOf(id)}
+            <button
+              type="button"
+              className="chip-remove"
+              aria-label={`Remove ${nameOf(id)} from Families`}
+              onClick={() => props.onChange(ids.filter((x) => x !== id))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {adding ? (
+          <select
+            aria-label="Family to add"
+            autoFocus
+            value=""
+            onChange={(e) => {
+              if (e.target.value) props.onChange([...ids, e.target.value]);
+              close();
+            }}
+            onBlur={() => setAdding(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                close();
+              }
+            }}
+          >
+            <option value="">Choose a family</option>
+            {choices.map((f) => (
+              <option key={f._id} value={f._id}>
+                {nameOf(f._id)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <button
+            ref={addButton}
+            type="button"
+            className="btn small"
+            disabled={choices.length === 0}
+            onClick={() => setAdding(true)}
+          >
+            Add family
+          </button>
+        )}
+      </div>
+      {warnings.map((w, i) => (
+        <p key={i} className="ed-warning" role="note" data-code={w.code}>
+          {w.message}
+        </p>
+      ))}
+    </fieldset>
+  );
 }
 
 /**
@@ -335,7 +416,11 @@ export function CharacterPage(props: {
             onChange={(v) => props.onChange('death', v)}
           />
           {field('status')}
-          {field('familyIds')}
+          <FamiliesField
+            value={draft.familyIds}
+            messages={props.messages}
+            onChange={(v) => props.onChange('familyIds', v)}
+          />
           <p className="char-age" data-testid="char-age">
             {ageLine(page)}
           </p>

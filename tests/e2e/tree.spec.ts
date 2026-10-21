@@ -970,9 +970,8 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   }
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
-  await expect(p.getByTestId('char-age')).toHaveText('Age 9 in 2040 (current position)');
-  // SM-1 "on one line": at the default window Birth and Death share a row and the five read in
-  // order, the age last. The pane is 343px wide here, too narrow for all five on one row.
+  await expect(p.getByTestId('char-age')).toHaveText('Age 9');
+  // SM-1 "on one line": at the default window the five sit side by side, the age last.
   expect(
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()),
   ).toEqual([1200, 800]);
@@ -985,16 +984,27 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
       p.getByTestId('char-age'),
     ].map(async (l) => (await l.boundingBox())!),
   );
-  expect(Math.abs(lineBoxes[0]!.y - lineBoxes[1]!.y)).toBeLessThanOrEqual(4);
-  expect(lineBoxes[1]!.x).toBeGreaterThan(lineBoxes[0]!.x);
-  for (let i = 1; i < lineBoxes.length; i++) {
-    const [a, b] = [lineBoxes[i - 1]!, lineBoxes[i]!];
-    expect(b.y > a.y + 4 || (Math.abs(b.y - a.y) <= 4 && b.x > a.x), `item ${i}`).toBe(true);
-  }
+  const tops = lineBoxes.map((b) => b.y);
+  expect(Math.max(...tops) - Math.min(...tops), `tops ${tops.join(', ')}`).toBeLessThanOrEqual(4);
+  const lefts = lineBoxes.map((b) => b.x);
+  expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
+  // Families are compact chips; the choice of a family to add shows only when Add family is pressed.
+  const fam = field(line, 'familyIds');
+  await expect(fam.locator('.chip')).toHaveText(['Hale×', 'Zhou×']);
+  await expect(fam.getByLabel('Family to add')).toHaveCount(0);
+  // The Characters screen is the list and the page: no inspector column beside it.
+  await expect(page.locator('aside.ws-inspector')).toHaveCount(0);
   // Birth and Death are one box each; Iris's birth is a full date.
   await expect(line.getByLabel('Birth', { exact: true })).toHaveValue('2031-03-14');
   await expect(line.getByLabel('Death', { exact: true })).toHaveValue('');
-  await expect(line.locator('select')).toHaveCount(2);
+  // A full date shows whole in its box.
+  expect(
+    await line
+      .getByLabel('Birth', { exact: true })
+      .evaluate((el) => el.scrollWidth - el.clientWidth),
+  ).toBeLessThanOrEqual(0);
+  // Status is the only select until Add family is pressed.
+  await expect(line.locator('select')).toHaveCount(1);
   // The relatives, read only: parents, partners with the union years, children.
   const rel = p.getByTestId('char-relatives');
   await expect(rel).toContainText('Parents: ');
@@ -1139,7 +1149,7 @@ test('CH-4 a character with an unknown birth year is reported as age unknown on 
   // A blank Birth box is an unknown birth.
   await expect(p.getByLabel('Birth', { exact: true })).toHaveValue('');
   await expect(p.getByLabel('Birth', { exact: true })).toHaveAttribute('placeholder', 'Unknown');
-  await expect(p.getByTestId('char-age')).toHaveText('Age unknown (current position)');
+  await expect(p.getByTestId('char-age')).toHaveText('Unknown age');
   await openTree();
   for (const y of ['1900', '2040', '2100']) {
     await page.getByTestId('tree-year').fill(y);
@@ -1154,7 +1164,9 @@ test('CH-3 SM-1 the story time drives the age on character pages', async () => {
   await page.getByTestId('tree-year').press('Enter');
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2041);
   const p = await openCharacter('Margaret Hale');
-  await expect(p.getByTestId('char-age')).toHaveText('Age 83 in 2041, dies that year');
+  await expect(p.getByTestId('char-age')).toHaveText('Dies this year, age 83');
+  const noor = await openCharacter('Noor Zhou');
+  await expect(noor.getByTestId('char-age')).toHaveText('Born 2058');
   await expect(byId('H1')).toHaveCount(0);
   await openTree();
   await expect(byId('H1')).toHaveAttribute('data-state', 'dying');
@@ -1163,7 +1175,7 @@ test('CH-3 SM-1 the story time drives the age on character pages', async () => {
   await openCharacter('Margaret Hale');
   await expect(page.getByTestId('char-age')).toHaveText('Dead since 2041');
   await openCharacter('Noor Zhou');
-  await expect(page.getByTestId('char-age')).toHaveText('Age 17 in 2075');
+  await expect(page.getByTestId('char-age')).toHaveText('Age 17');
 });
 
 test('CH-1 SM-1 a character is created from the full name, edited with zero, one, and several families, and deleted and restored', async () => {
@@ -1183,10 +1195,29 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
       (e) => e.entry.title === 'Ada Lin',
     )!.entry;
   expect(await ada()).toMatchObject({ status: 'idea', familyIds: [], birth: { unknown: true } });
-  await field(ed, 'familyIds').locator(':scope > select').selectOption('FAM-ZHOU');
+  const fam = field(ed, 'familyIds');
+  await fam.getByRole('button', { name: 'Add family' }).click();
+  await fam.getByLabel('Family to add').selectOption('FAM-ZHOU');
   await waitSaved(page);
   expect((await ada()).familyIds).toEqual(['FAM-ZHOU']);
-  await field(ed, 'familyIds').locator(':scope > select').selectOption('FAM-HALE');
+  await expect(fam.getByLabel('Family to add')).toHaveCount(0);
+  // NF-2: Add family from the keyboard: Enter shows the choice, arrows pick, Escape puts it away.
+  await fam.getByRole('button', { name: 'Add family' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(fam.getByLabel('Family to add')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(fam.getByLabel('Family to add')).toHaveCount(0);
+  await expect(fam.getByRole('button', { name: 'Add family' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await fam.getByLabel('Family to add').selectOption('FAM-HALE');
+  await waitSaved(page);
+  expect((await ada()).familyIds).toEqual(['FAM-ZHOU', 'FAM-HALE']);
+  await expect(fam.getByRole('button', { name: 'Add family' })).toBeDisabled();
+  await fam.getByRole('button', { name: 'Remove Hale from Families' }).click();
+  await waitSaved(page);
+  expect((await ada()).familyIds).toEqual(['FAM-ZHOU']);
+  await fam.getByRole('button', { name: 'Add family' }).click();
+  await fam.getByLabel('Family to add').selectOption('FAM-HALE');
   await waitSaved(page);
   expect((await ada()).familyIds).toEqual(['FAM-ZHOU', 'FAM-HALE']);
   await fillDateBox(field(ed, 'birth'), '2040');
