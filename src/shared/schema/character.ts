@@ -1,40 +1,15 @@
 import { z } from 'zod';
-import { Id, StoryDate, Year, entry } from './common';
-import { commonFields, f, yearRange } from './manifest';
+import { Id, StoryDate, entry } from './common';
+import { commonFields, f } from './manifest';
 import type { FieldSpec } from './manifest';
 
-/** CH-2 names. */
+/** SM-1 names: the full name, and the name in Chinese characters where there is one. */
 export const Names = z.strictObject({
   full: z.string().min(1),
   chinese: z.string().optional(),
-  romanization: z.string().optional(),
-  order: z.enum(['family-first', 'family-last']).default('family-last'),
-  birthName: z.string().optional(),
-  marriedName: z.string().optional(),
-  nicknames: z.array(z.string()).default([]),
-  /** What each other character calls this one. */
-  calledBy: z.array(z.strictObject({ characterId: Id, name: z.string().min(1) })).default([]),
 });
 
-/** A voice note stamped with a story year or an age (A9). */
-export const VoiceNote = z.strictObject({
-  at: z.union([z.strictObject({ year: Year }), z.strictObject({ age: z.int().min(0).max(200) })]),
-  text: z.string(),
-});
-
-export const PlaceLived = z.strictObject({
-  place: z.string().min(1),
-  startYear: Year.nullable(),
-  endYear: Year.nullable(),
-});
-
-/** A35: a backstory passage's year set by hand, or a pin that keeps it in every session. */
-export const BackstoryMark = z.strictObject({
-  key: z.string().min(1).max(200),
-  year: Year.nullable().optional(),
-  pinned: z.boolean().optional(),
-});
-
+/** SM-1: the character as the writer fills it by hand. */
 export const Character = entry({
   /** A38: one or two sentences on what they are to the story, shown first on their page. */
   role: z.string().default(''),
@@ -42,18 +17,14 @@ export const Character = entry({
   birth: StoryDate,
   /** Null means the character is not recorded as dead. */
   death: StoryDate.nullable().default(null),
-  birthplace: z.string().default(''),
   familyIds: z.array(Id).default([]),
   backstory: z.string().default(''),
-  voiceNotes: z.array(VoiceNote).default([]),
-  placesLived: z.array(PlaceLived).default([]),
-  backstoryMarks: z.array(BackstoryMark).max(2000).default([]),
 });
 export type Character = z.infer<typeof Character>;
 
 export const characterFields: FieldSpec[] = [
   ...commonFields,
-  f.text('role', 'In the story', {
+  f.longText('role', 'In the story', {
     hint: 'One or two sentences: what they are to the story.',
   }),
   f.object(
@@ -62,28 +33,6 @@ export const characterFields: FieldSpec[] = [
     [
       f.text('full', 'Full name', { required: true }),
       f.text('chinese', 'Name in Chinese characters'),
-      f.text('romanization', 'Romanization'),
-      f.enum(
-        'order',
-        'Name order',
-        [
-          { value: 'family-last', label: 'Family name last' },
-          { value: 'family-first', label: 'Family name first' },
-        ],
-        { hint: 'Chinese names usually put the family name first.' },
-      ),
-      f.text('birthName', 'Birth name'),
-      f.text('marriedName', 'Married name'),
-      f.strings('nicknames', 'Nicknames'),
-      f.objectList(
-        'calledBy',
-        'What others call them',
-        [
-          f.ref('characterId', 'Character', ['characters'], { required: true }),
-          f.text('name', 'Calls them', { required: true }),
-        ],
-        { itemLabel: 'name' },
-      ),
     ],
     { required: true },
   ),
@@ -97,45 +46,6 @@ export const characterFields: FieldSpec[] = [
     warnings: ['death-before-birth', 'impossible-date'],
     hint: 'Leave blank if the character is not recorded as dead.',
   }),
-  f.text('birthplace', 'Birthplace'),
   f.refs('familyIds', 'Families', ['families']),
   f.longText('backstory', 'Backstory'),
-  f.objectList(
-    'voiceNotes',
-    'Voice notes',
-    [
-      f.yearOrAge('at', 'At year or age', {
-        required: true,
-        warnings: ['outside-lifetime'],
-      }),
-      f.longText('text', 'Note', { required: true }),
-    ],
-    { itemLabel: 'text' },
-  ),
-  f.objectList(
-    'placesLived',
-    'Places lived',
-    [
-      f.text('place', 'Place', { required: true }),
-      ...yearRange('startYear', 'endYear', ['From', 'To']).map((s) => ({
-        ...s,
-        required: true,
-        warnings: [...s.warnings, 'outside-lifetime'],
-      })),
-    ],
-    { itemLabel: 'place' },
-  ),
-  f.objectList(
-    'backstoryMarks',
-    'Backstory dates and pins',
-    [
-      f.text('key', 'Passage (its first words)', { required: true }),
-      f.year('year', 'Year set by hand', { nullable: true }),
-      f.boolean('pinned', 'Pinned to every session'),
-    ],
-    {
-      itemLabel: 'key',
-      hint: 'Set from Relevant to Session: a year chip you corrected, or a passage you pinned.',
-    },
-  ),
 ];

@@ -1,4 +1,3 @@
-import type { CustomSection } from '../../schema';
 import { importableFields } from './fields';
 import type { ImportField } from './fields';
 import { findYearHeader } from './grid';
@@ -12,19 +11,16 @@ const SYNONYMS: Record<string, string[]> = {
   title: ['name', 'title', 'event', 'entry'],
   'names.full': ['fullname', 'name'],
   'names.chinese': ['chinesename', 'chinese', 'characters', 'hanzi'],
-  'names.romanization': ['pinyin', 'romanization'],
   birth: ['born', 'birth', 'birthday', 'birthdate', 'dateofbirth'],
   death: ['died', 'death', 'dateofdeath'],
   familyIds: ['family', 'families'],
   sourceNote: ['notes', 'note', 'source'],
   body: ['body', 'text', 'details', 'description', 'summary'],
-  description: ['description', 'summary', 'event', 'what happens', 'plot'],
   year: ['year', 'storyyear', 'when'],
   'strand.startYear': ['year', 'storyyear', 'when'],
-  povCharacterId: ['pov', 'pointofview', 'narrator', 'character'],
+  characterId: ['pov', 'pointofview', 'narrator', 'character'],
   'strand.povCharacterId': ['pov', 'pointofview', 'narrator'],
   worldContext: ['worldcontext', 'world', 'context', 'background'],
-  experienceNote: ['experience', 'experiencenote', 'howtheyexperienceit'],
   startYear: ['start', 'from', 'startyear'],
   endYear: ['end', 'to', 'endyear'],
   status: ['status'],
@@ -75,7 +71,6 @@ export function guessMapping(
   sheet: ParsedSheet,
   shape: 'table' | 'grid',
   target: Target,
-  section?: Pick<CustomSection, 'fields'>,
   status: 'canon' | 'planned' | 'idea' = 'planned',
 ): Mapping {
   const base = {
@@ -102,7 +97,7 @@ export function guessMapping(
     } satisfies GridMapping;
   }
   const headerRow = guessHeaderRow(sheet);
-  const fields = importableFields(target, section);
+  const fields = importableFields(target);
   const taken = new Set<string>();
   const columns: TableMapping['columns'] = [];
   (sheet.cells[headerRow - 1] ?? []).forEach((c, index) => {

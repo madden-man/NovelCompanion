@@ -9,7 +9,6 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2008, "month": 8, "day": 8 },
     "end": { "year": 2008, "month": 8, "day": 24 },
-    "reality": "real",
     "categoryId": "culture",
     "regions": ["China"],
     "characterIds": ["Z3"],
@@ -23,7 +22,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2027 },
-    "reality": "invented",
     "categoryId": "robotics",
     "regions": ["Oregon"]
   },
@@ -35,7 +33,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2034, "month": 1 },
-    "reality": "invented",
     "categoryId": "climate",
     "regions": ["Oregon"],
     "characterIds": ["H3", "Z3", "H5"],
@@ -49,7 +46,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2036 },
-    "reality": "invented",
     "categoryId": "geopolitics",
     "regions": ["Pacific"]
   },
@@ -61,7 +57,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2042 },
-    "reality": "invented",
     "categoryId": "energy",
     "regions": ["Guangdong"]
   },
@@ -74,7 +69,6 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2048 },
     "end": { "year": 2051 },
-    "reality": "invented",
     "categoryId": "climate",
     "regions": ["Guangdong"]
   },
@@ -86,7 +80,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2057 },
-    "reality": "invented",
     "categoryId": "geopolitics",
     "regions": ["China", "United States"],
     "characterIds": ["H5"]
@@ -99,7 +92,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2063 },
-    "reality": "invented",
     "categoryId": "economy",
     "regions": ["Oregon", "Washington"]
   },
@@ -111,7 +103,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2072 },
-    "reality": "invented",
     "categoryId": "robotics",
     "regions": ["Oregon"]
   },
@@ -123,7 +114,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2090 },
-    "reality": "invented",
     "categoryId": "climate",
     "regions": ["Arctic"],
     "formative": true
@@ -136,7 +126,6 @@
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2081 },
-    "reality": "invented",
     "categoryId": "technology",
     "regions": ["Guangdong"]
   }

@@ -7,7 +7,6 @@ import type { FieldSpec } from '../schema/manifest';
 import type { ListDoc, ListItem } from '../schema/lists';
 import { deepEqual, isPlainObject } from './paths';
 import type { Doc } from './paths';
-import type { CustomSpecs } from './refs';
 
 export interface EntryPatch {
   collection: string;
@@ -18,29 +17,18 @@ export interface EntryPatch {
 type Visit = (spec: FieldSpec, value: unknown) => unknown;
 
 /** Rebuild a value with `visit` applied to every field; untouched parts keep their identity. */
-function mapFields(
-  specs: readonly FieldSpec[],
-  value: Doc,
-  visit: Visit,
-  custom: CustomSpecs | undefined,
-  root: Doc,
-): Doc {
+function mapFields(specs: readonly FieldSpec[], value: Doc, visit: Visit): Doc {
   let out: Doc | null = null;
   for (const s of specs) {
     if (!(s.name in value)) continue;
     const v = value[s.name];
     let next: unknown = visit(s, v);
     if (s.kind === 'object' && s.fields && isPlainObject(v)) {
-      next = mapFields(s.fields, v, visit, custom, root);
+      next = mapFields(s.fields, v, visit);
     } else if (s.kind === 'objectList' && s.fields && Array.isArray(v)) {
       const fields = s.fields;
-      const mapped = v.map((item) =>
-        isPlainObject(item) ? mapFields(fields, item, visit, custom, root) : item,
-      );
+      const mapped = v.map((item) => (isPlainObject(item) ? mapFields(fields, item, visit) : item));
       next = mapped.some((m, i) => m !== v[i]) ? mapped : v;
-    } else if (s.kind === 'customValues' && isPlainObject(v)) {
-      const sub = typeof root.sectionId === 'string' ? custom?.(root.sectionId) : undefined;
-      if (sub) next = mapFields(sub, v, visit, custom, root);
     }
     if (next !== v) {
       out ??= { ...value };
@@ -54,18 +42,11 @@ function visitAll(
   specs: readonly FieldSpec[],
   doc: Doc,
   fn: (spec: FieldSpec, value: unknown) => void,
-  custom?: CustomSpecs,
 ): void {
-  mapFields(
-    specs,
-    doc,
-    (s, v) => {
-      fn(s, v);
-      return v;
-    },
-    custom,
-    doc,
-  );
+  mapFields(specs, doc, (s, v) => {
+    fn(s, v);
+    return v;
+  });
 }
 
 /** True when the field holds an item of this list: by ID for list fields, by label for tags. */
@@ -87,20 +68,14 @@ export function countListUsage(
   listId: string,
   item: ListItem,
   all: readonly CollectionDocs[],
-  custom?: CustomSpecs,
 ): number {
   let n = 0;
   for (const { manifest, docs } of all) {
     for (const doc of docs) {
       let used = false;
-      visitAll(
-        manifest,
-        doc,
-        (s, v) => {
-          if (usesItem(s, v, listId, item)) used = true;
-        },
-        custom,
-      );
+      visitAll(manifest, doc, (s, v) => {
+        if (usesItem(s, v, listId, item)) used = true;
+      });
       if (used) n++;
     }
   }
@@ -127,18 +102,13 @@ export function renameCascade(
   from: string,
   to: string,
   all: readonly CollectionDocs[],
-  custom?: CustomSpecs,
 ): EntryPatch[] {
   if (from === to) return [];
   const out: EntryPatch[] = [];
   for (const { collection, manifest, docs } of all) {
     for (const doc of docs) {
-      const next = mapFields(
-        manifest,
-        doc,
-        (s, v) => (s.kind === 'tags' && s.listId === listId ? replaceTag(v, from, to) : v),
-        custom,
-        doc,
+      const next = mapFields(manifest, doc, (s, v) =>
+        s.kind === 'tags' && s.listId === listId ? replaceTag(v, from, to) : v,
       );
       if (next === doc) continue;
       const patch: Doc = {};
@@ -151,19 +121,14 @@ export function renameCascade(
   return out;
 }
 
-/** Every tag label an entry carries, in its own tags and in custom tag fields. */
-export function tagsUsed(manifest: readonly FieldSpec[], doc: Doc, custom?: CustomSpecs): string[] {
+/** Every tag label an entry carries. */
+export function tagsUsed(manifest: readonly FieldSpec[], doc: Doc): string[] {
   const out = new Set<string>();
-  visitAll(
-    manifest,
-    doc,
-    (s, v) => {
-      if (s.kind === 'tags' && Array.isArray(v)) {
-        for (const t of v) if (typeof t === 'string' && t) out.add(t);
-      }
-    },
-    custom,
-  );
+  visitAll(manifest, doc, (s, v) => {
+    if (s.kind === 'tags' && Array.isArray(v)) {
+      for (const t of v) if (typeof t === 'string' && t) out.add(t);
+    }
+  });
   return [...out];
 }
 
@@ -198,16 +163,15 @@ export function newItemId(list: ListDoc, label: string): string {
 
 /**
  * The entry change for renaming an item of a list whose items are entries:
- * a family's name, a custom section's name, or an era's name (ED-8). A title
- * that contains the old name follows it.
+ * a family's name or an era's name (ED-8). A title that contains the old
+ * name follows it.
  */
 export function derivedRename(
-  listId: 'families' | 'sectionNames' | 'eraRanges',
+  listId: 'families' | 'eraRanges',
   doc: Doc,
   label: string,
 ): EntryPatch {
-  const collection =
-    listId === 'families' ? 'families' : listId === 'sectionNames' ? 'customSections' : 'eraStates';
+  const collection = listId === 'families' ? 'families' : 'eraStates';
   const oldName = typeof doc.name === 'string' ? doc.name : '';
   const patch: Doc = { name: label };
   if (typeof doc.title === 'string' && oldName && doc.title.includes(oldName)) {

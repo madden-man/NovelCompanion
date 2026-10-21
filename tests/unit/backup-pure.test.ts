@@ -8,8 +8,6 @@ import {
   needsDailySnapshot,
   snapshotsToPrune,
 } from '../../src/shared/domain/snapshots';
-import { knownBy } from '../../src/shared/domain/knowledge';
-import { fromCollections } from '../../src/shared/domain/timeline';
 import { resetOnNavigation } from '../../src/main/promptReset';
 import { CHANNELS, parseRequest, parseResponse } from '../../src/shared/ipc';
 import { IpcValidationError } from '../../src/shared/ipc';
@@ -125,25 +123,6 @@ const tableMapping = {
   target: { collection: 'characters' },
   columns: [{ header: 'Name', index: 0, field: 'title' }],
 };
-
-describe('KN-1 a character who learns one fact twice knows it once, from the earliest record', () => {
-  test('KN-1 knownBy keeps the earliest of two records of the same fact', () => {
-    const data = fromCollections({
-      characters: [{ _id: 'C', title: 'Ada', names: { full: 'Ada' }, birth: { year: 1990 } }],
-      facts: [{ _id: 'F', title: 'The letter' }],
-      knowledgeRecords: [
-        { _id: 'K2', factId: 'F', characterId: 'C', yearLearned: 2050, how: 'later' },
-        { _id: 'K1', factId: 'F', characterId: 'C', yearLearned: 2040, how: 'first' },
-        { _id: 'K3', factId: 'F', characterId: 'C', yearLearned: 2060, how: 'last' },
-      ],
-    });
-    const known = knownBy(data, 'C', 2070).known;
-    expect(known.map((k) => [k.factId, k.yearLearned, k.how])).toEqual([['F', 2040, 'first']]);
-    // Before the earliest year the fact is not yet known; between records it is known once.
-    expect(knownBy(data, 'C', 2039).known).toEqual([]);
-    expect(knownBy(data, 'C', 2045).known.map((k) => k.yearLearned)).toEqual([2040]);
-  });
-});
 
 describe('SL-1 the stop prompt flag resets when the page reloads or navigates', () => {
   test('SL-1 a main frame navigation to a new document resets the flag; same-page and frame changes do not', () => {

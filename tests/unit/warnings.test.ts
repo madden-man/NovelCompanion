@@ -25,11 +25,9 @@ const person = (id: string, birth: unknown, death: unknown = null, title = id): 
   title,
   status: 'canon',
   links: [],
-  names: { full: title, nicknames: [], calledBy: [] },
+  names: { full: title },
   birth,
   death,
-  voiceNotes: [],
-  placesLived: [],
   familyIds: [],
 });
 
@@ -100,53 +98,30 @@ describe('ED-10 field warnings', () => {
           placeIds: [],
         },
       ],
-      factsInPlay: [],
     };
     expect(codes('chapters', chapter)).toEqual(['strands.0.endYear:range-end-before-start']);
   });
 
-  test('ED-10 a year outside the character lifetime is flagged on voice notes and places lived', () => {
-    const c = person('A', { year: 1950 }, { year: 2000 });
-    c.voiceNotes = [
-      { at: { year: 1940 }, text: 'too early' },
-      { at: { year: 2010 }, text: 'too late' },
-      { at: { age: 60 }, text: 'too old' },
-      { at: { age: 30 }, text: 'fine' },
-    ];
-    c.placesLived = [{ place: 'Portland', startYear: 1945, endYear: 2005 }];
-    expect(codes('characters', c)).toEqual([
-      'voiceNotes.0.at:outside-lifetime',
-      'voiceNotes.1.at:outside-lifetime',
-      'voiceNotes.2.at:outside-lifetime',
-      'placesLived.0.startYear:outside-lifetime',
-      'placesLived.0.endYear:outside-lifetime',
-    ]);
-  });
-
-  test('ED-10 KN-2 learning a fact before birth is a warning on the year learned', () => {
-    const ctx = context({
-      characters: [person('Z', { year: 2010 }, { year: 2080 }, 'Lan')],
-      facts: [{ _id: 'F', links: [] }],
-    });
-    const record = (yearLearned: number): Doc => ({
-      _id: 'K',
+  test('ED-10 SM-3 a moment outside its character lifetime is flagged on its year, never blocked', () => {
+    const ctx = context({ characters: [person('A', { year: 1950 }, { year: 2000 }, 'Ada')] });
+    const moment = (year: number, endYear: number | null = null): Doc => ({
+      _id: 'M',
       links: [],
-      factId: 'F',
-      characterId: 'Z',
-      yearLearned,
-      chapterLearnedId: null,
+      characterId: 'A',
+      year,
+      endYear,
     });
-    expect(warn('knowledgeRecords', record(2005), ctx)).toEqual([
-      {
-        path: 'yearLearned',
-        code: 'learned-before-birth',
-        message: 'Lan is born in 2010, so they cannot learn this in 2005.',
-      },
+    expect(warn('moments', moment(1940), ctx)).toEqual([
+      { path: 'year', code: 'outside-lifetime', message: '1940 is before Ada is born in 1950.' },
     ]);
-    expect(codes('knowledgeRecords', record(2010), ctx)).toEqual([]);
-    expect(codes('knowledgeRecords', record(2081), ctx)).toEqual([
-      'yearLearned:learned-after-death',
+    expect(warn('moments', moment(2010), ctx)).toEqual([
+      { path: 'year', code: 'outside-lifetime', message: '2010 is after Ada dies in 2000.' },
     ]);
+    expect(codes('moments', moment(1990, 2005), ctx)).toEqual(['endYear:outside-lifetime']);
+    expect(codes('moments', moment(1950, 2000), ctx)).toEqual([]);
+    // A moment for a character with an unknown birth is never flagged.
+    const unknown = context({ characters: [person('A', { unknown: true })] });
+    expect(codes('moments', moment(1800), unknown)).toEqual([]);
   });
 
   test('ED-10 FT-6 a parent under 12 or over 60 at the child birth is flagged; 12 and 60 are not', () => {
@@ -346,19 +321,11 @@ describe('ED-10 field warnings', () => {
       return specAt(s.fields, rest.join('.'));
     };
     const samples: [EntryCollection, Doc, WarningContext][] = [
+      ['characters', person('A', { year: 2000, month: 2, day: 30 }, { year: 1990 }), context({})],
       [
-        'characters',
-        {
-          ...person('A', { year: 2000, month: 2, day: 30 }, { year: 1990 }),
-          voiceNotes: [{ at: { year: 1900 }, text: '' }],
-          placesLived: [{ place: 'x', startYear: 1990, endYear: 1980 }],
-        },
-        context({}),
-      ],
-      [
-        'knowledgeRecords',
-        { _id: 'K', links: [], factId: 'F', characterId: 'Z', yearLearned: 1 },
-        context({ characters: [person('Z', { year: 2000 })] }),
+        'moments',
+        { _id: 'M', links: [], characterId: 'Z', year: 1, endYear: 0 },
+        context({ characters: [person('Z', { year: 2000 }, { year: 2001 })] }),
       ],
       [
         'parentLinks',

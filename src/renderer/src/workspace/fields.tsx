@@ -1,12 +1,7 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import {
-  collectionInfo,
-  customFieldSpecs,
-  entryTitle,
-  isEntryCollection,
-} from '../../../shared/schema';
-import type { CustomSection, EntryCollection, FieldSpec } from '../../../shared/schema';
+import { collectionInfo, entryTitle, isEntryCollection } from '../../../shared/schema';
+import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { blankItem } from '../../../shared/domain/blank';
 import { itemPath } from '../../../shared/domain/lists';
 import { isPlainObject, joinPath } from '../../../shared/domain/paths';
@@ -33,18 +28,12 @@ export interface FieldProps {
   root: Doc;
   /** Add a cross-link to the entry, used by `@` in long text (ED-9). */
   onMention: (targetId: string) => void;
+  /** SM-1: a long text box that grows with its text instead of scrolling. */
+  grow?: boolean;
 }
 
 /** Kinds whose parts are not separate fields, so their messages show on them. */
-const OWNS_CHILD_MESSAGES = new Set([
-  'refs',
-  'refPair',
-  'links',
-  'tags',
-  'strings',
-  'storyDate',
-  'yearOrAge',
-]);
+const OWNS_CHILD_MESSAGES = new Set(['refs', 'refPair', 'links', 'tags', 'strings', 'storyDate']);
 
 function messagesFor(spec: FieldSpec, path: string, m: Messages) {
   const deep = OWNS_CHILD_MESSAGES.has(spec.kind);
@@ -154,10 +143,6 @@ export function Field(props: FieldProps) {
       return <ObjectField {...props} />;
     case 'objectList':
       return <ObjectListField {...props} />;
-    case 'yearOrAge':
-      return <YearOrAgeField {...props} />;
-    case 'customValues':
-      return <CustomValuesField {...props} />;
     case 'system':
       return null;
   }
@@ -178,7 +163,7 @@ function TextField({ spec, value, onChange, path, messages }: FieldProps) {
 }
 
 /** Long text with an `@` link picker (ED-9). */
-function LongTextField({ spec, value, onChange, path, messages, onMention }: FieldProps) {
+function LongTextField({ spec, value, onChange, path, messages, onMention, grow }: FieldProps) {
   const id = useId();
   const listId = useId();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -186,6 +171,12 @@ function LongTextField({ spec, value, onChange, path, messages, onMention }: Fie
   const [active, setActive] = useState(0);
   const hits = useSearch(mention ? mention.query : null);
   const text = asString(value);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!grow || !el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [grow, text]);
 
   const detect = (el: HTMLTextAreaElement) => {
     const before = el.value.slice(0, el.selectionStart);
@@ -219,7 +210,8 @@ function LongTextField({ spec, value, onChange, path, messages, onMention }: Fie
       <textarea
         id={id}
         ref={ref}
-        rows={Math.min(10, Math.max(3, text.split('\n').length + 1))}
+        rows={grow ? 2 : Math.min(10, Math.max(3, text.split('\n').length + 1))}
+        className={grow ? 'grow' : undefined}
         value={text}
         aria-controls={mention ? listId : undefined}
         onChange={(e) => {
@@ -814,65 +806,6 @@ function ObjectListField(props: FieldProps) {
       >
         Add to {spec.label}
       </button>
-    </FieldShell>
-  );
-}
-
-function YearOrAgeField({ spec, value, onChange, path, messages }: FieldProps) {
-  const id = useId();
-  const d = isPlainObject(value) ? value : {};
-  const mode = 'age' in d ? 'age' : 'year';
-  const n = mode === 'age' ? d.age : d.year;
-  return (
-    <FieldShell spec={spec} path={path} messages={messages} group>
-      <div className="row date-row">
-        <label className="sub-label" htmlFor={id}>
-          Stamped by
-          <select
-            id={id}
-            value={mode}
-            onChange={(e) => onChange({ [e.target.value]: typeof n === 'number' ? n : null })}
-          >
-            <option value="year">Story year</option>
-            <option value="age">Age</option>
-          </select>
-        </label>
-        <label className="sub-label">
-          {mode === 'age' ? 'Age' : 'Year'}
-          <input
-            type="number"
-            className="num year-input"
-            value={numText(n)}
-            onChange={(e) => onChange({ [mode]: parseNumber(e.target.value, true) })}
-          />
-        </label>
-      </div>
-    </FieldShell>
-  );
-}
-
-/** The fields of a custom entry, laid out from its section's definition (CS-1). */
-function CustomValuesField(props: FieldProps) {
-  const { spec, value, onChange, path, messages, root } = props;
-  const sections = useEntries('customSections');
-  const section = sections.find((s) => s._id === root.sectionId) as unknown as
-    CustomSection | undefined;
-  const doc = isPlainObject(value) ? value : {};
-  return (
-    <FieldShell spec={spec} path={path} messages={messages} group>
-      {section ? (
-        <SubFields
-          fields={customFieldSpecs(section)}
-          value={doc}
-          onChange={onChange}
-          path={path}
-          messages={messages}
-          root={root}
-          onMention={props.onMention}
-        />
-      ) : (
-        <p className="example-note">Pick a section to see its fields.</p>
-      )}
     </FieldShell>
   );
 }

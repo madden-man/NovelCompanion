@@ -1,5 +1,5 @@
 import { entrySchemas, entryTitle } from '../../schema';
-import type { CustomSection, EntryCollection } from '../../schema';
+import type { EntryCollection } from '../../schema';
 import { deepEqual, isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { importableFields, isVirtual, readField, writeField } from './fields';
@@ -50,7 +50,6 @@ export interface ChangeItem {
   id: string;
   kind: 'new' | 'changed';
   collection: EntryCollection;
-  sectionId?: string;
   entryId: string;
   title: string;
   ref: string;
@@ -91,7 +90,6 @@ export interface PlanInput {
   existing: (collection: EntryCollection) => Doc[];
   /** Source records of an entry, from earlier imports. */
   sources: (entryId: string) => SourceRecord[];
-  section?: (id: string) => Pick<CustomSection, 'fields'> | undefined;
   list: (id: string) =>
     | {
         _id: string;
@@ -128,11 +126,10 @@ function recordedView(doc: Doc, records: SourceRecord[]): Doc {
 function candidates(
   mapping: Mapping,
   collection: EntryCollection,
-  sectionId: string | undefined,
   input: PlanInput,
   prefix: string,
 ): Doc[] {
-  const docs = input.existing(collection).filter((d) => !sectionId || d.sectionId === sectionId);
+  const docs = input.existing(collection);
   if (mapping.matchIn === 'section') return docs;
   // An entry counts as from this source when its `sourceRef` says so, or when an earlier import recorded a field from it
   // (a later source may have taken over the `sourceRef`).
@@ -170,10 +167,10 @@ export function planChanges(input: PlanInput): ChangeSet {
 
   const identityMaps = new Map<string, Map<string, Doc>>();
   const identityFor = (row: MappedRow, recorded: boolean): Map<string, Doc> => {
-    const key = `${recorded ? 'r' : 'c'}:${row.collection}:${row.sectionId ?? ''}:${row.kind}`;
+    const key = `${recorded ? 'r' : 'c'}:${row.collection}:${row.kind}`;
     let map = identityMaps.get(key);
     if (!map) {
-      const docs = candidates(mapping, row.collection, row.sectionId, input, prefix);
+      const docs = candidates(mapping, row.collection, input, prefix);
       // The recorded view reads each entry as the import last left it, so a hand edit to an identity field does not hide it.
       const view = recorded
         ? (d: Doc) => recordedView(d, input.sources(String(d._id)))
@@ -232,11 +229,7 @@ export function planChanges(input: PlanInput): ChangeSet {
     });
   }
 
-  const catalogFor = (row: MappedRow) =>
-    importableFields(
-      { collection: row.collection, sectionId: row.sectionId },
-      row.sectionId ? input.section?.(row.sectionId) : undefined,
-    );
+  const catalogFor = (row: MappedRow) => importableFields({ collection: row.collection });
 
   for (const row of ordered) {
     const existing = matches.get(row);
@@ -246,7 +239,6 @@ export function planChanges(input: PlanInput): ChangeSet {
         id: nextId(),
         kind: 'new',
         collection: row.collection,
-        ...(row.sectionId ? { sectionId: row.sectionId } : {}),
         entryId: row.newId,
         title: entryTitle(data),
         ref: row.ref,
@@ -269,7 +261,6 @@ export function planChanges(input: PlanInput): ChangeSet {
     const result = changedItem({
       id: nextId(),
       collection: row.collection,
-      sectionId: row.sectionId,
       existing,
       fields: replaceIds(row.fields, idMap) as Record<string, unknown>,
       ref: row.ref,
@@ -288,7 +279,6 @@ export function planChanges(input: PlanInput): ChangeSet {
 export interface ChangedArgs {
   id: string;
   collection: EntryCollection;
-  sectionId?: string | undefined;
   existing: Doc;
   /** The values the source supplies, by field path. */
   fields: Record<string, unknown>;
@@ -383,7 +373,6 @@ export function changedItem(
       id: a.id,
       kind: 'changed',
       collection: a.collection,
-      ...(a.sectionId ? { sectionId: a.sectionId } : {}),
       entryId: String(existing._id),
       title: entryTitle(existing),
       ref: a.ref,

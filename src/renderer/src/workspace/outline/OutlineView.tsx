@@ -11,7 +11,6 @@ import { useStoryTime } from '../storyTime';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
 import type { OutlineWrites } from './actions';
-import { ArcPanel, ArcsList } from './Arcs';
 import { ChapterPanel } from './ChapterPage';
 import { InlineName, NameForm } from './InlineName';
 import { SceneOutline } from './Scenes';
@@ -30,10 +29,8 @@ type PartRow = Extract<Row, { kind: 'part' }>;
 /** What the inspector shows. A beat remembers where it was opened from. */
 type Focus =
   | { kind: 'chapter'; id: string }
-  | { kind: 'arc'; id: string }
   | { kind: 'book' | 'part'; id: string }
-  | { kind: 'year'; year: number }
-  | { kind: 'beat'; id: string; back: Focus | null };
+  | { kind: 'year'; year: number };
 
 type Adding =
   { kind: 'book' } | { kind: 'part'; bookId: string } | { kind: 'chapter'; partId: string };
@@ -178,7 +175,6 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
     rows.filter((r): r is PartRow => r.kind === 'part' && !r.missing && r.bookId === bookId);
   const inPart = (partId: string) => chapters.filter((c) => c.partId === partId);
   const reading = outline?.order === 'reading';
-  const arcFocus = focus?.kind === 'arc' ? focus.id : null;
 
   const moveChapter = (c: ChapterRow, by: -1 | 1) => {
     if (!reading) return;
@@ -520,19 +516,6 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
                           aria-hidden="true"
                         />
                       )}
-                      {row.arcSpans.map((a, i) => (
-                        <span
-                          key={a.arcId}
-                          className={`ol-arc ${a.color}${arcFocus ? (a.arcId === arcFocus ? ' hl' : ' dim') : ''}`}
-                          style={{
-                            left: x(a.from),
-                            width: (a.to - a.from + 1) * COL,
-                            top: 3 + i * 6,
-                          }}
-                          title={`${a.name}, ${a.from} to ${a.to}`}
-                          data-arc={a.arcId}
-                        />
-                      ))}
                       {row.strands.map((s) => {
                         const years = `${s.startYear}${s.endYear > s.startYear ? ` to ${s.endYear}` : ''}`;
                         const pov = s.pov ? `, point of view ${s.pov}` : '';
@@ -566,10 +549,6 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
             <span className="ol-mark backstory swatch" aria-hidden="true" /> Backstory strand
           </span>
           <span>
-            <span className="ol-arc series-1 swatch" aria-hidden="true" /> Arc, in the owner&apos;s
-            family color
-          </span>
-          <span>
             <span className="ol-cursor swatch" aria-hidden="true" /> Story time
           </span>
           <span>
@@ -580,11 +559,6 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
           </span>
           <span>Pick a year in the header to see what happens in it.</span>
         </div>
-        <ArcsList
-          selected={arcFocus}
-          writes={writes}
-          onOpen={(id) => setFocus({ kind: 'arc', id })}
-        />
       </section>
       <aside
         className="inspector tree-inspector"
@@ -605,29 +579,7 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
             }}
             onMove={(by) => moveChapter(sel, by)}
             onToPart={(partId) => toPart(sel, partId)}
-            onOpenBeat={(id) => setFocus({ kind: 'beat', id, back: focus })}
           />
-        ) : focus?.kind === 'arc' ? (
-          <ArcPanel
-            key={`a:${focus.id}`}
-            id={focus.id}
-            writes={writes}
-            onClose={() => setFocus(null)}
-            onOpenBeat={(id) => setFocus({ kind: 'beat', id, back: focus })}
-          />
-        ) : focus?.kind === 'beat' ? (
-          <div className="stack">
-            <div className="row tight">
-              <button type="button" className="btn small" onClick={() => setFocus(focus.back)}>
-                {focus.back?.kind === 'arc'
-                  ? 'Back to the arc'
-                  : focus.back?.kind === 'chapter'
-                    ? 'Back to the chapter'
-                    : 'Close the beat'}
-              </button>
-            </div>
-            <EmbeddedEditor key={`b:${focus.id}`} collection="plotBeats" id={focus.id} />
-          </div>
         ) : focus?.kind === 'year' && outline ? (
           <YearPanel
             year={focus.year}
@@ -654,9 +606,8 @@ function GridOutline({ toggle, onOpen }: { toggle: ReactNode; onOpen: Open }) {
           </div>
         ) : (
           <p className="example-note">
-            Pick a chapter row to see its beats and who is present, and to edit its strands. Pick a
-            year in the header to see its era, its world events and the chapters set in it. Pick an
-            arc under Arcs to see its beats.
+            Pick a chapter row to see who is present, and to edit its strands. Pick a year in the
+            header to see its era, its world events and the chapters set in it.
           </p>
         )}
         <UndoPanel />

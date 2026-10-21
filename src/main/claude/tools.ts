@@ -207,7 +207,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
     {
       name: 'get_chapter',
       description:
-        'Read one chapter by ID: its strands and years, point of view, characters present with ages, beats, places, themes, facts in play, and its manuscript text.',
+        'Read one chapter by ID: its strands and years, point of view, characters present with ages, places, and its manuscript text.',
       shape: { id: EntryIdArg },
       readOnly: true,
       handler: safely((a) => {

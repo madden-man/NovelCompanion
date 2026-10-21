@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
-import { DataProvider, useEntries } from './data';
+import { DataProvider } from './data';
 import { EntryPane, UndoPanel } from './editor';
 import { StopPrompt } from './session';
 import { DashboardView } from './sessions/dashboard';
@@ -38,11 +38,9 @@ type View =
       collection: EntryCollection;
       selected: string | null;
       creating: boolean;
-      /** CS-2: a custom section whose entries are listed and created here. */
-      sectionId?: string;
     }
   | { kind: 'search' }
-  | { kind: 'tree' }
+  | { kind: 'tree'; focus?: string }
   | { kind: 'timeline' }
   | { kind: 'outline' }
   /** KB-5: the Entries screen. */
@@ -75,10 +73,10 @@ type View =
  */
 const MORE_SECTIONS = {
   Sessions: ['sessionLogs', 'briefs', 'findings'],
-  People: ['families', 'unions', 'parentLinks', 'relationships'],
-  Story: ['books', 'parts', 'arcs', 'chapters', 'plotBeats'],
+  People: ['moments', 'families', 'unions', 'parentLinks'],
+  Story: ['books', 'parts', 'chapters'],
   World: ['worldEvents', 'eraStates', 'culturalEntries', 'places', 'glossaryTerms'],
-  Knowledge: ['facts', 'knowledgeRecords', 'themes', 'openQuestions'],
+  Knowledge: ['openQuestions'],
 } as const satisfies Record<string, readonly EntryCollection[]>;
 
 /** More's open state, kept per bible (KB-1). Storage can be missing; the rail works without it. */
@@ -122,7 +120,6 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
   };
 
   const [query, setQuery] = useState('');
-  const customSections = useEntries('customSections');
 
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
@@ -138,10 +135,8 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
     </button>
   );
   const sectionButton = (c: EntryCollection) =>
-    railButton(
-      collectionInfo[c].plural,
-      view.kind === 'section' && view.collection === c && !view.sectionId,
-      () => setView({ kind: 'section', collection: c, selected: null, creating: false }),
+    railButton(collectionInfo[c].plural, view.kind === 'section' && view.collection === c, () =>
+      setView({ kind: 'section', collection: c, selected: null, creating: false }),
     );
   const entriesActive = view.kind === 'entries';
 
@@ -210,27 +205,6 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
               </div>
             ))}
             <div className="rail-group">
-              <span className="eyebrow">Custom</span>
-              {sectionButton('customSections')}
-              {customSections
-                .filter((sec) => sec.deletedAt === undefined)
-                .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                .map((sec) =>
-                  railButton(
-                    String(sec.name),
-                    view.kind === 'section' && view.sectionId === sec._id,
-                    () =>
-                      setView({
-                        kind: 'section',
-                        collection: 'customEntries',
-                        selected: null,
-                        creating: false,
-                        sectionId: sec._id,
-                      }),
-                  ),
-                )}
-            </div>
-            <div className="rail-group">
               <span className="eyebrow">Manage</span>
               {railButton('Search and filters', view.kind === 'search', () =>
                 setView({ kind: 'search' }),
@@ -254,7 +228,6 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
           <>
             <EntryList
               collection={view.collection}
-              sectionId={view.sectionId}
               selected={view.selected}
               onSelect={(id) => setView({ ...view, selected: id, creating: false })}
               onNew={() => setView({ ...view, selected: null, creating: true })}
@@ -262,9 +235,8 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
             {view.creating ? (
               <>
                 <NewEntryForm
-                  key={`${view.collection}:${view.sectionId ?? ''}`}
+                  key={view.collection}
                   collection={view.collection}
-                  preset={view.sectionId ? { sectionId: view.sectionId } : undefined}
                   onCreated={(id) => setView({ ...view, selected: id, creating: false })}
                   onCancel={() => setView({ ...view, creating: false })}
                 />
@@ -280,6 +252,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
                 onWritten={(chapterId) =>
                   setView({ kind: 'manuscript', chapterId, openFlow: true })
                 }
+                onOpenTree={(focus) => setView({ kind: 'tree', focus })}
               />
             ) : (
               <>
@@ -301,7 +274,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
             <SideInspector />
           </>
         ) : view.kind === 'tree' ? (
-          <TreeView onOpen={open} />
+          <TreeView onOpen={open} focus={view.focus} />
         ) : view.kind === 'timeline' ? (
           <TimelineView />
         ) : view.kind === 'entries' ? (

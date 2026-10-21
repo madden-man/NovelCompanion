@@ -117,19 +117,19 @@ describe('ED-3 undo and redo of tree edits through the IPC layer', () => {
       await invoke('entry.update', {
         collection: 'characters',
         id: c._id,
-        patch: { birthplace: 'Oakland' },
+        patch: { backstory: 'Oakland' },
       })
     ).entry;
     undo.record(
-      editCommand('Changed Birthplace on Ada Sullivan', 'characters', c._id, before, after),
+      editCommand('Changed Backstory on Ada Sullivan', 'characters', c._id, before, after),
     );
     // Something else changes the same field after the step was recorded.
-    await bible.repo.update('characters', c._id, { birthplace: 'Fresno' });
+    await bible.repo.update('characters', c._id, { backstory: 'Fresno' });
     const r = await undo.step('undo', io);
     expect(r).toEqual(
-      expect.objectContaining({ status: 'skipped', reason: 'Birthplace on Ada Sullivan' }),
+      expect.objectContaining({ status: 'skipped', reason: 'Backstory on Ada Sullivan' }),
     );
-    expect((await stored('characters', c._id))!.content.birthplace).toBe('Fresno');
+    expect((await stored('characters', c._id))!.content.backstory).toBe('Fresno');
     expect(undo.stack.canUndo).toBe(false);
     expect(undo.stack.canRedo).toBe(false);
   });

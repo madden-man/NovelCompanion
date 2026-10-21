@@ -1,15 +1,13 @@
 /**
- * The character page (CH-1 to CH-4) as one pure function over the bible's
- * entries: names, families, the age at the current position, a personal
- * timeline, relatives, and what the character knows. Ages come from the same
- * functions as the tree and the timeline (TL-1).
+ * The character page (CH-1, CH-4, SM-1) as one pure function over the bible's
+ * entries: names, families, the age at the current position and at the story
+ * time, and relatives. Ages come from the same functions as the tree and the
+ * timeline (TL-1). The personal timeline and what they know went with A39.
  */
 import type { StoryDate } from '../schema/common';
-import { ageAt, lifeState, lifeYears } from './ages';
+import { lifeState, lifeYears } from './ages';
 import type { LifeState } from './ages';
-import { isKnown, yearOf } from './dates';
-import { isKnownBy, knownBy } from './knowledge';
-import type { UnknownFact } from './knowledge';
+import { isKnown } from './dates';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import type { Position } from './position';
@@ -19,34 +17,12 @@ export interface PageData {
   all(collection: string): Doc[];
 }
 
-export type TimelineKind =
-  'birth' | 'death' | 'union' | 'union-end' | 'child' | 'beat' | 'event' | 'chapter';
-
-export interface TimelineItem {
-  kind: TimelineKind;
-  year: number | null;
-  /** Age in that year, or null when the birth is unknown (CH-4), or they are dead or unborn. */
-  age: number | null;
-  /** Their state in that year: dead after death, not yet born before birth, unknown only for an unknown birth. */
-  state: LifeState['state'] | null;
-  collection: string;
-  id: string;
-  title: string;
-  detail: string;
-}
-
 export interface CharacterPage {
   id: string;
   name: string;
   names: {
     full: string;
     chinese: string;
-    romanization: string;
-    order: string;
-    birthName: string;
-    marriedName: string;
-    nicknames: string[];
-    calledBy: { characterId: string; characterName: string; name: string }[];
   };
   families: { id: string; name: string; color: string }[];
   years: string;
@@ -61,9 +37,6 @@ export interface CharacterPage {
   };
   /** The story time, when one is set (TM-3): a year, or a full date judged exactly. */
   storyTime: { year: number; month?: number; day?: number; state: LifeState } | null;
-  /** The year "what they know" is judged at: the story time, else the current position. */
-  knowledgeYear: number | null;
-  timeline: TimelineItem[];
   relatives: {
     parents: { id: string; name: string; type: string; startYear: number | null }[];
     children: { id: string; name: string; type: string; startYear: number | null }[];
@@ -78,19 +51,6 @@ export interface CharacterPage {
       endReason: string;
     }[];
   };
-  knowledge: {
-    recordId: string;
-    factId: string;
-    fact: string;
-    yearLearned: number | null;
-    chapterId: string | null;
-    chapter: string | null;
-    how: string;
-    /** Whether they know it at the current position, or null when either year is missing. */
-    knownAtPosition: boolean | null;
-  }[];
-  /** KN-1: every other fact in the bible, as one they do not know at the knowledge year. Empty when there is no year. */
-  doesNotKnow: UnknownFact[];
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -100,14 +60,6 @@ const title = (d: Doc | undefined, fallback: string) => {
   return t || fallback;
 };
 const asDate = (v: unknown): StoryDate | null => (isPlainObject(v) ? (v as StoryDate) : null);
-
-/** Events overlap a lifetime when any of their years fall between birth and death. */
-function eventYears(e: Doc): [number, number] | null {
-  const s = yearOf(asDate(e.start));
-  if (s === null) return null;
-  const end = yearOf(asDate(e.end));
-  return [s, end ?? s];
-}
 
 /**
  * The state at the story time. A full date (month and day) is judged exactly,
@@ -131,7 +83,6 @@ export function characterPage(
   current: Position,
   storyTime: { year: number; month?: number; day?: number } | null = null,
 ): CharacterPage | null {
-  const knowledgeYear = storyTime?.year ?? current.year;
   const chars = data.all('characters');
   const me = chars.find((c) => c._id === id);
   if (!me) return null;
@@ -144,164 +95,13 @@ export function characterPage(
   const birth = asDate(me.birth);
   const death = asDate(me.death);
   const life = { birth, death };
-  const born = yearOf(birth);
-  const died = yearOf(death);
-  const ageIn = (y: number | null) => (y === null ? null : ageAt(life, y));
   const byId = (c: string) => new Map(data.all(c).map((d) => [String(d._id), d]));
   const families = byId('families');
-  const facts = byId('facts');
   const chapters = data.all('chapters').filter(live);
   const chapterById = new Map(chapters.map((c) => [String(c._id), c]));
 
   const graph = buildGraph(chars, data.all('unions'), data.all('parentLinks'));
   const rel = relativesOf(graph, id);
-
-  const timeline: TimelineItem[] = [];
-  const item = (t: Omit<TimelineItem, 'age' | 'state'> & { age?: number | null }) =>
-    timeline.push({
-      ...t,
-      age: t.age === undefined ? ageIn(t.year) : t.age,
-      state: t.year === null ? null : lifeState(life, t.year).state,
-    });
-  if (born !== null) {
-    item({
-      kind: 'birth',
-      year: born,
-      age: 0,
-      collection: 'characters',
-      id,
-      title: 'Born',
-      detail: str(me.birthplace),
-    });
-  }
-  if (died !== null) {
-    item({ kind: 'death', year: died, collection: 'characters', id, title: 'Dies', detail: '' });
-  }
-  for (const p of rel.partners) {
-    const with_ = nameOf(p.id);
-    if (p.startYear !== null) {
-      item({
-        kind: 'union',
-        year: p.startYear,
-        collection: 'unions',
-        id: p.unionId,
-        title: `Union with ${with_} begins`,
-        detail: p.type,
-      });
-    }
-    if (p.endYear !== null) {
-      item({
-        kind: 'union-end',
-        year: p.endYear,
-        collection: 'unions',
-        id: p.unionId,
-        title: `Union with ${with_} ends`,
-        detail: p.endReason,
-      });
-    }
-  }
-  for (const c of rel.children) {
-    const child = chars.find((x) => x._id === c.id);
-    const childBorn = yearOf(asDate(child?.birth));
-    const y = c.type === 'biological' ? childBorn : (c.startYear ?? childBorn);
-    const verb = c.type === 'biological' ? 'is born' : `joins the family (${c.type})`;
-    item({
-      kind: 'child',
-      year: y,
-      collection: 'parentLinks',
-      id: c.linkId,
-      title: `${nameOf(c.id)} ${verb}`,
-      detail: '',
-    });
-  }
-  for (const b of data.all('plotBeats').filter(live)) {
-    if (b.povCharacterId !== id) continue;
-    const y = typeof b.year === 'number' ? b.year : null;
-    item({
-      kind: 'beat',
-      year: y,
-      collection: 'plotBeats',
-      id: String(b._id),
-      title: title(b, 'Plot beat'),
-      detail: str(b.description),
-    });
-  }
-  if (born !== null) {
-    for (const e of data.all('worldEvents').filter(live)) {
-      const ys = eventYears(e);
-      if (!ys) continue;
-      const [s, end] = ys;
-      if (end < born || (died !== null && s > died)) continue;
-      const y = Math.max(s, born);
-      item({
-        kind: 'event',
-        year: y,
-        collection: 'worldEvents',
-        id: String(e._id),
-        title: title(e, 'World event'),
-        detail: e.formative === true ? 'formative' : '',
-      });
-    }
-  }
-  for (const c of chapters) {
-    const strands = Array.isArray(c.strands) ? c.strands.filter(isPlainObject) : [];
-    for (const s of strands) {
-      const present = Array.isArray(s.characterIds) && s.characterIds.includes(id);
-      const pov = s.povCharacterId === id;
-      if (!present && !pov) continue;
-      const y = typeof s.startYear === 'number' ? s.startYear : null;
-      item({
-        kind: 'chapter',
-        year: y,
-        collection: 'chapters',
-        id: String(c._id),
-        title: `Chapter ${String(c.readingOrder)}: ${title(c, 'Untitled')}`,
-        detail: `${str(s.label)}${pov ? ', point of view' : ''}`,
-      });
-    }
-  }
-  const order: TimelineKind[] = [
-    'birth',
-    'event',
-    'union',
-    'child',
-    'beat',
-    'chapter',
-    'union-end',
-    'death',
-  ];
-  timeline.sort((a, b) => {
-    if (a.year === null || b.year === null) return a.year === null ? (b.year === null ? 0 : 1) : -1;
-    return a.year - b.year || order.indexOf(a.kind) - order.indexOf(b.kind);
-  });
-
-  const knowledge = data
-    .all('knowledgeRecords')
-    .filter(live)
-    .filter((k) => k.characterId === id)
-    .map((k) => {
-      const y = typeof k.yearLearned === 'number' ? k.yearLearned : null;
-      const chId = typeof k.chapterLearnedId === 'string' ? k.chapterLearnedId : null;
-      return {
-        recordId: String(k._id),
-        factId: str(k.factId),
-        fact: title(facts.get(str(k.factId)), str(k.factId)),
-        yearLearned: y,
-        chapterId: chId,
-        chapter: chId ? title(chapterById.get(chId), chId) : null,
-        how: str(k.how),
-        knownAtPosition: isKnownBy(y, knowledgeYear),
-      };
-    })
-    .sort((a, b) => (a.yearLearned ?? Infinity) - (b.yearLearned ?? Infinity));
-
-  const calledBy = (Array.isArray(names.calledBy) ? names.calledBy : [])
-    .filter(isPlainObject)
-    .map((c) => ({
-      characterId: str(c.characterId),
-      characterName: nameOf(str(c.characterId)),
-      name: str(c.name),
-    }));
 
   return {
     id,
@@ -309,12 +109,6 @@ export function characterPage(
     names: {
       full: str(names.full),
       chinese: str(names.chinese),
-      romanization: str(names.romanization),
-      order: str(names.order) || 'family-last',
-      birthName: str(names.birthName),
-      marriedName: str(names.marriedName),
-      nicknames: Array.isArray(names.nicknames) ? names.nicknames.map(String) : [],
-      calledBy,
     },
     families: (Array.isArray(me.familyIds) ? me.familyIds.map(String) : []).map((fid) => {
       const f = families.get(fid);
@@ -334,8 +128,6 @@ export function characterPage(
       state: current.year === null ? null : lifeState(life, current.year),
     },
     storyTime: storyTime ? storyTimeState(life, storyTime) : null,
-    knowledgeYear,
-    timeline,
     relatives: {
       parents: rel.parents.map((p) => ({
         id: p.id,
@@ -352,7 +144,5 @@ export function characterPage(
       siblings: rel.siblings.map((s) => ({ id: s.id, name: nameOf(s.id), kind: s.kind })),
       partners: rel.partners.map((p) => ({ ...p, name: nameOf(p.id) })),
     },
-    knowledge,
-    doesNotKnow: knowledgeYear === null ? [] : knownBy(data, id, knowledgeYear).unknown,
   };
 }

@@ -1,32 +1,27 @@
 /**
- * KB-5: the Entries screen lists facts, cultural entries, places, glossary
- * terms, themes, open questions, and custom entries together. Pure helpers
- * for its kinds, rows, filters, and order.
+ * KB-5: the Entries screen lists cultural entries, places, glossary terms, and
+ * open questions together (facts, themes, and custom entries went with A39).
+ * Pure helpers for its kinds, rows, filters, and order.
  */
 import type { EntryCollection } from '../schema';
 import { collectionInfo } from '../schema';
 import { plain } from './brief/selection';
 import type { Doc } from './paths';
 
-/** The built-in collections the Entries screen lists, in the order of their chips. */
+/** The collections the Entries screen lists, in the order of their chips. */
 export const ENTRY_KIND_COLLECTIONS = [
-  'facts',
   'culturalEntries',
   'places',
   'glossaryTerms',
-  'themes',
   'openQuestions',
 ] as const satisfies readonly EntryCollection[];
 
-export type EntriesCollection = (typeof ENTRY_KIND_COLLECTIONS)[number] | 'customEntries';
+export type EntriesCollection = (typeof ENTRY_KIND_COLLECTIONS)[number];
 
-/** Every collection the screen reads, custom entries included. */
-export const ENTRIES_COLLECTIONS: readonly EntriesCollection[] = [
-  ...ENTRY_KIND_COLLECTIONS,
-  'customEntries',
-];
+/** Every collection the screen reads. */
+export const ENTRIES_COLLECTIONS: readonly EntriesCollection[] = ENTRY_KIND_COLLECTIONS;
 
-/** One kind: a built-in collection, or one custom section (`custom:<sectionId>`). */
+/** One kind: a collection, with its names. */
 export interface EntryKind {
   key: string;
   collection: EntriesCollection;
@@ -34,59 +29,32 @@ export interface EntryKind {
   label: string;
   /** Plural, for the chip. */
   plural: string;
-  sectionId?: string;
 }
 
-/** The kinds in chip order: the built-in ones, then each live custom section by name. */
-export function entryKinds(customSections: readonly Doc[]): EntryKind[] {
-  const builtIn: EntryKind[] = ENTRY_KIND_COLLECTIONS.map((c) => ({
+/** The kinds in chip order. */
+export function entryKinds(): EntryKind[] {
+  return ENTRY_KIND_COLLECTIONS.map((c) => ({
     key: c,
     collection: c,
     label: collectionInfo[c].singular,
     plural: collectionInfo[c].plural,
   }));
-  const custom = customSections
-    .filter((s) => !s.deletedAt)
-    .map((s) => {
-      const name = sectionName(s);
-      return {
-        key: customKindKey(String(s._id)),
-        collection: 'customEntries' as const,
-        label: name,
-        plural: name,
-        sectionId: String(s._id),
-      };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
-  return [...builtIn, ...custom];
-}
-
-export const customKindKey = (sectionId: string) => `custom:${sectionId}`;
-
-function sectionName(s: Doc): string {
-  const n = typeof s.name === 'string' && s.name.trim() ? s.name : s.title;
-  return typeof n === 'string' && n.trim() ? n.trim() : 'Custom section';
 }
 
 /** The kind key of one entry. */
-export function kindKeyOf(collection: EntriesCollection, entry: Doc): string {
-  return collection === 'customEntries' ? customKindKey(String(entry.sectionId ?? '')) : collection;
+export function kindKeyOf(collection: EntriesCollection, _entry?: Doc): string {
+  return collection;
 }
 
 /** The fields that hold an entry's text, in the order the first line is read from. */
-const TEXT_FIELDS = ['body', 'description', 'meaning', 'generationNotes', 'usageNote', 'decision'];
+const TEXT_FIELDS = ['body', 'meaning', 'usageNote', 'decision'];
 
-/** All of an entry's text, plain, for matching. Place descriptions and custom values count. */
+/** All of an entry's text, plain, for matching. Place descriptions count. */
 export function entryText(entry: Doc): string {
   const parts: string[] = TEXT_FIELDS.map((f) => plain(entry[f]));
   if (Array.isArray(entry.descriptions)) {
     for (const d of entry.descriptions) {
       if (d && typeof d === 'object') parts.push(plain((d as Doc).text));
-    }
-  }
-  if (entry.values && typeof entry.values === 'object') {
-    for (const v of Object.values(entry.values as Doc)) {
-      if (typeof v === 'string') parts.push(plain(v));
     }
   }
   return parts.filter(Boolean).join('\n');

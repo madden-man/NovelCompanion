@@ -236,7 +236,10 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
  * bound to the story time, filters, pan and zoom, collapse, export, in-tree
  * editing, and the FT-6 warnings. The layout and every age are pure code.
  */
-export function TreeView(props: { onOpen: (collection: EntryCollection, id: string) => void }) {
+export function TreeView(props: {
+  onOpen: (collection: EntryCollection, id: string) => void;
+  focus?: string;
+}) {
   const { version } = useStore();
   const story = useStoryTime();
   const year = story.year;
@@ -246,7 +249,7 @@ export function TreeView(props: { onOpen: (collection: EntryCollection, id: stri
   const [filterKey, setFilterKey] = useState('all');
   const [lineage, setLineage] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(props.focus ?? null);
   const [view, setView] = useState<View | null>(null);
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
   /** FT-11: the person being dragged and where they are right now, drawn live. */

@@ -4,8 +4,8 @@ import { generatedTree } from './generatedTree';
 
 /**
  * NF-1 and T-6: the data volume the spec names, 5,000 entries and 100
- * chapters, with chapter text, strands, beats, facts, knowledge records,
- * world events, era states, and places. Its 1,200 characters are the
+ * chapters, with chapter text, strands, moments (SM-3: a "Lives in" for
+ * every person and the beats that were), world events, era states, and places. Its 1,200 characters are the
  * 200-person, six-generation tree from `generatedTree` plus 1,000 people with
  * no known parents, all in the five families, so the tree redraw in
  * tests/e2e/perf.spec.ts is measured inside this bible with every one of
@@ -86,43 +86,36 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
     put('characters', {
       ...base(`C${i}`, `Person ${i} ${ZH[i % ZH.length]}`, i),
       body: sentence(i, 15),
-      names: { full: `Person ${i}`, nicknames: [word(i)] },
+      names: { full: `Person ${i}` },
       birth:
         i % 97 === 0 ? { unknown: true } : { year: born, month: 1 + (i % 12), day: 1 + (i % 28) },
       death: i % 3 === 0 ? { year: born + 60 + (i % 30) } : null,
       familyIds: [`FAM${i % 5}`],
-      placesLived: [{ place: `Place ${i % 60} ${word(i % 60)}`, startYear: born, endYear: null }],
       tags: i % 10 === 0 ? ['keeper'] : [],
     });
   }
   const people = out.characters.map((c) => c._id);
-
-  for (let i = 0; i < 10; i++) {
-    put('arcs', {
-      ...base(`ARC${i}`, `Arc ${i}`, i),
-      name: `Arc ${i}`,
-      scope: 'family',
-      familyId: `FAM${i % 5}`,
-      startYear: 2025 + i * 5,
-      endYear: 2060 + i * 4,
+  // SM-3: where each person lives, as a "Lives in" moment.
+  for (let i = 0; i < 1000; i++) {
+    put('moments', {
+      ...base(`LV${i}`, `Lives in Place ${i % 60} ${word(i % 60)}`, i),
+      characterId: people[i]!,
+      year: 1900 + (i % 180),
+      endYear: null,
     });
   }
-  for (let i = 0; i < 400; i++) {
-    put('facts', { ...base(`F${i}`, `Fact ${i} ${word(i)}`, i), body: sentence(i, 20) });
-  }
+
   for (let i = 0; i < BIG.chapters; i++) {
     put('chapters', {
       ...base(`CH${i}`, `Chapter ${i + 1}`, i),
       partId: `PT${i % 4}`,
       readingOrder: i + 1,
       written: i < 40,
-      arcIds: [`ARC${i % 10}`],
       manuscriptText: Array.from(
         { length: 8 },
         (_, p) => `<p>${sentence(i * 8 + p, 75)} ${ZH[(i + p) % ZH.length]}</p>`,
       ).join(''),
       summary: sentence(i, 30),
-      factsInPlay: [{ factId: `F${i}`, characterId: people[i % people.length]!, note: '' }],
       strands: [
         {
           id: `CH${i}-present`,
@@ -146,24 +139,15 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       ],
     });
   }
+  // SM-3: the moments of the characters' lives, as the plot beats were.
   for (let i = 0; i < 400; i++) {
-    put('plotBeats', {
+    put('moments', {
       ...base(`BT${i}`, `Beat ${i} ${word(i)}`, i),
-      arcIds: [`ARC${i % 10}`],
-      arcOrders: [{ arcId: `ARC${i % 10}`, order: Math.floor(i / 10) + 1 }],
-      chapterId: i % 2 ? `CH${i % BIG.chapters}` : null,
+      characterId: people[(i * 13) % people.length]!,
       year: 2025 + (i % 75),
-      description: sentence(i, 18),
-    });
-  }
-  for (let i = 0; i < 800; i++) {
-    put('knowledgeRecords', {
-      ...base(`K${i}`, `Who knows fact ${i % 400}`, i),
-      factId: `F${i % 400}`,
-      characterId: people[(i * 7) % people.length]!,
-      yearLearned: 2000 + (i % 90),
-      chapterLearnedId: i % 4 === 0 ? `CH${i % BIG.chapters}` : null,
-      how: sentence(i, 8),
+      endYear: null,
+      body: sentence(i, 18),
+      worldContext: sentence(i + 3, 8),
     });
   }
   for (let i = 0; i < 16; i++) {
@@ -172,8 +156,7 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       name: `Era ${2025 + i * 5}`,
       startYear: 2025 + i * 5,
       endYear: 2029 + i * 5,
-      technology: sentence(i, 10),
-      dailyLife: sentence(i + 1, 10),
+      body: `${sentence(i, 10)} ${sentence(i + 1, 10)}`,
     });
   }
   for (let i = 0; i < 150; i++) {
@@ -183,16 +166,6 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       romanization: 'xiǎoxī',
       language: 'mandarin',
       meaning: sentence(i, 4),
-    });
-  }
-  for (let i = 0; i < 40; i++) {
-    put('themes', {
-      ...base(`TH${i}`, `Theme ${i} ${word(i)}`, i),
-      description: sentence(i, 15),
-      appearances: [0, 1, 2].map((k) => ({
-        chapterId: `CH${(i * 3 + k) % BIG.chapters}`,
-        note: '',
-      })),
     });
   }
   for (let i = 0; i < 60; i++) {
@@ -212,10 +185,8 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       body: sentence(i, 20),
       start: i % 5 === 0 ? { year, month: 1 + (i % 12), day: 1 + (i % 28) } : { year },
       end: i % 4 === 0 ? { year: year + 1 + (i % 6) } : null,
-      reality: i % 7 ? 'invented' : 'real',
       categoryId: CATEGORIES[i % CATEGORIES.length]!,
       regions: [],
-      placeIds: [`PLC${i % 60}`],
       characterIds: [people[i % people.length]!],
       formative: i % 10 === 0,
     });

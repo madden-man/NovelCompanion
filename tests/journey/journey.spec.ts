@@ -9,12 +9,11 @@ import type { TreeGraph } from '../../src/shared/domain/tree';
 import {
   ENTRY_COLLECTIONS,
   collectionInfo,
-  customFieldSpecs,
   editableFields,
   entryTitle,
   manifests,
 } from '../../src/shared/schema';
-import type { CustomSection, EntryCollection } from '../../src/shared/schema';
+import type { EntryCollection } from '../../src/shared/schema';
 import { build } from '../helpers/t5';
 import type { GenContext, Invoke } from '../helpers/t5';
 import { startFakeGoogle } from '../helpers/fakeGoogle';
@@ -608,7 +607,7 @@ test('PL-2 PL-3 the plot outline: drag Chapter 2 above Chapter 1, see the order 
   await expect.poll(() => readingOrder('CH2')).toBe(2);
 });
 
-test('PL-4 the chapter page shows strands, ages, beats, and places', async () => {
+test('PL-4 the chapter page shows strands, ages, and places', async () => {
   await grid().locator('[data-chapter="CH2"]').getByTestId('outline-label').click();
   const chapter = outlineInspector().getByTestId('chapter-page');
   await expect(chapter).toContainText('Two Kitchens');
@@ -666,35 +665,6 @@ test('GL-1 GL-3 a glossary term that breaks Pinyin is flagged, and a Chinese nam
   await page.mouse.move(0, 0);
 });
 
-test("KN-1 Iris does not know about Peter's letter in 2045 and knows it from 2060", async () => {
-  await openEntry('Characters', /^Iris Hale-Zhou/);
-  await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2045.');
-  await setTopYear('2060');
-  await expect(page.getByTestId('knowledge-year')).toHaveText('As of 2060.');
-  await expect(page.getByTestId('knowledge')).toContainText("Peter's letter");
-  await setTopYear('2045');
-});
-
-test('TH-1 a theme gets an appearance in a chapter', async () => {
-  await rail(page, 'Themes and motifs').click();
-  await page.getByRole('button', { name: 'New theme', exact: true }).click();
-  const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator(':scope > input').fill('Harbors');
-  await form.getByRole('button', { name: 'Create theme' }).click();
-  const editor = page.getByTestId('editor');
-  await expect(editor.getByRole('heading', { name: 'Harbors' })).toBeVisible();
-  await waitSaved(page);
-  await field(editor, 'appearances')
-    .getByRole('button', { name: 'Add to Appearances', exact: true })
-    .click();
-  await field(editor, 'appearances.0.chapterId').locator(':scope > select').selectOption('CH3');
-  await field(editor, 'appearances.0.note')
-    .locator(':scope > input')
-    .fill('The wedding by the river');
-  await waitSaved(page);
-  await expect(pick(/Harbors/)).toBeVisible();
-});
-
 test('OQ-1 an open question is marked decided with a decision', async () => {
   await openEntry('Open questions', /Where does Jun live/);
   const editor = page.getByTestId('editor');
@@ -746,19 +716,12 @@ async function walkContext(): Promise<{
     pools.set(c, entries.map((e) => e.entry._id).slice(0, 8));
   }
   pools.set('characters', ['X1', 'U1', 'H6']);
-  const sections = (await invoke('entry.list', { collection: 'customSections', trash: 'exclude' }))
-    .entries;
   const { lists } = await invoke('lists.get', {});
   const titles = new Map<string, string>();
   const ctx: GenContext & UiContext = {
     page,
     pool: (c) => pools.get(c === '*' ? 'characters' : c) ?? [],
     listItems: (id) => lists.find((l) => l._id === id)?.items.map((i) => i.id) ?? [],
-    customSpecs: (id) => {
-      const s = sections.find((x) => x.entry._id === id)?.entry as unknown as
-        CustomSection | undefined;
-      return s ? customFieldSpecs(s) : undefined;
-    },
     titleOf: async (id) => {
       if (!titles.has(id)) {
         const { entries } = await invoke('entry.lookup', { ids: [id] });
@@ -769,6 +732,18 @@ async function walkContext(): Promise<{
   };
   return { ctx, pools };
 }
+
+/** SM-1: the fields the character page edits; the app sets the rest (T-5 covers them). */
+const CHARACTER_PAGE = [
+  'names',
+  'birth',
+  'death',
+  'status',
+  'familyIds',
+  'role',
+  'body',
+  'backstory',
+];
 
 test('ED-1 one entry of every section is created from its form, every field is changed in the editor, and the saved values read back', async () => {
   test.setTimeout(600_000);
@@ -787,16 +762,34 @@ test('ED-1 one entry of every section is created from its form, every field is c
     const { newButton, preset } = await openListFor(page, ctx, c, a);
     await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
-    for (const spec of manifest.filter(
-      (s) => s.required && s.kind !== 'system' && !(s.name in preset),
-    )) {
-      await setField(ctx, form, spec, spec.name, a[spec.name], a);
+    if (c === 'characters') {
+      // SM-1: a new character asks for the full name only.
+      await field(form, 'names.full')
+        .locator('input')
+        .fill((a.names as { full: string }).full);
+    } else {
+      for (const spec of manifest.filter(
+        (s) => s.required && s.kind !== 'system' && !(s.name in preset),
+      )) {
+        await setField(ctx, form, spec, spec.name, a[spec.name], a);
+      }
     }
     await form.getByRole('button', { name: `Create ${info.singular.toLowerCase()}` }).click();
     const editor = page.getByTestId('editor');
     await expect(editor).toBeVisible();
     await waitSaved(page);
-    for (const spec of editableFields(manifest)) {
+    const fields =
+      c === 'characters'
+        ? editableFields(manifest).filter((s) => CHARACTER_PAGE.includes(s.name))
+        : editableFields(manifest);
+    if (c === 'characters') {
+      const names = b.names as { full: string; chinese: string };
+      await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await field(editor, 'names.full').locator('input').fill(names.full);
+      await field(editor, 'names.chinese').locator('input').fill(names.chinese);
+      await editor.getByRole('button', { name: 'Done', exact: true }).click();
+    }
+    for (const spec of fields.filter((s) => s.name !== 'names')) {
       await setField(ctx, editor, spec, spec.name, b[spec.name], b);
     }
     await waitSaved(page);
@@ -805,7 +798,7 @@ test('ED-1 one entry of every section is created from its form, every field is c
     const { entry: saved } = await invoke('entry.get', { collection: c, id });
     const got = withoutSystem(manifest, saved) as Record<string, unknown>;
     const want = withoutSystem(manifest, b) as Record<string, unknown>;
-    for (const spec of editableFields(manifest)) {
+    for (const spec of fields) {
       const g = JSON.stringify(got[spec.name] ?? null);
       const w = JSON.stringify(want[spec.name] ?? null);
       if (g !== w) failures.push(`${c}.${spec.name}: expected ${w}, found ${g}`);
@@ -814,7 +807,7 @@ test('ED-1 one entry of every section is created from its form, every field is c
       collection: c,
       id,
       title: entryTitle(saved),
-      rail: c === 'customEntries' ? await ctx.titleOf(String(saved.sectionId)) : info.plural,
+      rail: info.plural,
     });
     if (pools.get(c)!.length === 0) pools.get(c)!.push(id);
   }
@@ -865,12 +858,12 @@ test('SR-1 SR-2 search finds English and Chinese, and the filters narrow it', as
   const box = page.getByRole('searchbox', { name: 'Search the bible' });
   const results = page.getByTestId('search-results');
   await box.fill('letter');
-  await expect(results).toContainText("Peter's letter");
+  await expect(results.locator('[data-hit="H5-voice-0"]')).toHaveCount(1);
   await expect(results).toContainText('The Letter');
   const view = page.getByTestId('search-view');
-  await view.getByLabel('Section').selectOption('facts');
+  await view.getByLabel('Section').selectOption('moments');
   await expect(results).not.toContainText('The Letter');
-  await expect(results).toContainText("Peter's letter");
+  await expect(results.locator('[data-hit="H5-voice-0"]')).toHaveCount(1);
   await view.getByLabel('Section').selectOption('');
   await box.fill('晓曦');
   await expect(results).toContainText('晓曦');
@@ -905,7 +898,7 @@ test('ED-8 renaming a tag on the Lists screen updates every entry that uses it',
 
 test('ED-4 the history drawer compares a revision with the current entry and restores it', async () => {
   await openEntry('Characters', /^Ruth Hale/);
-  const input = field(page.getByTestId('editor'), 'birthplace').locator('input');
+  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
   await input.fill('Astoria');
   await waitSaved(page);
   await input.fill('Seaside');
@@ -946,7 +939,7 @@ test('ED-5 a character moves to the trash with what links to it, and is restored
 
 test('ED-3 a change is undone with Cmd+Z and redone with Shift+Cmd+Z', async () => {
   await openEntry('Characters', /^Sam Hale/);
-  const input = field(page.getByTestId('editor'), 'birthplace').locator('input');
+  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
   const before = await input.inputValue();
   await input.fill('Cannon Beach');
   await waitSaved(page);
@@ -1198,7 +1191,7 @@ test('SB-8 the brief exports as Markdown', async () => {
   expect(readFileSync(path, 'utf8')).toContain('Iris Hale-Zhou is 14');
 });
 
-test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary approved, and a beat promoted to canon', async () => {
+test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary approved, and a moment promoted to canon', async () => {
   await nextDocument(files.letter);
   await rail(page, 'Manuscript').click();
   const view = page.getByTestId('manuscript-view');
@@ -1218,10 +1211,12 @@ test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary
   await flow.getByRole('button', { name: 'Approve summary' }).click();
   await expect(flow.getByTestId('summary-done')).toHaveText('Summary saved.');
   const list = flow.getByTestId('promote-list');
-  await list.getByLabel('Iris finds the letter (a beat of this chapter)').check();
+  await list
+    .getByLabel('Iris finds the letter (a moment of the point of view in these years)')
+    .check();
   await flow.getByRole('button', { name: 'Promote checked to canon' }).click();
-  await expect(list.locator('label')).toHaveText(["Peter's letter (a fact in play)"]);
-  expect((await invoke('entry.get', { collection: 'plotBeats', id: 'B4' })).entry.status).toBe(
+  await expect(list.locator('label')).toHaveCount(0);
+  expect((await invoke('entry.get', { collection: 'moments', id: 'B4' })).entry.status).toBe(
     'canon',
   );
 });
@@ -1389,7 +1384,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   const id = (await manual.getAttribute('data-id'))!;
 
   await openEntry('Characters', /^Zhou Jun/);
-  const input = field(page.getByTestId('editor'), 'birthplace').locator('input');
+  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
   await input.fill('Shenzhen after the snapshot');
   await waitSaved(page);
 
@@ -1400,12 +1395,11 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   await expect(page.getByTestId('reload-notice')).toContainText('Restored the snapshot from');
   await expect
     .poll(
-      async () =>
-        (await invoke('entry.get', { collection: 'characters', id: 'Z4' })).entry.birthplace,
+      async () => (await invoke('entry.get', { collection: 'characters', id: 'Z4' })).entry.role,
     )
     .not.toBe('Shenzhen after the snapshot');
   await openEntry('Characters', /^Zhou Jun/);
-  await expect(field(page.getByTestId('editor'), 'birthplace').locator('input')).not.toHaveValue(
+  await expect(field(page.getByTestId('editor'), 'role').locator('textarea')).not.toHaveValue(
     'Shenzhen after the snapshot',
   );
 });

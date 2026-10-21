@@ -111,9 +111,9 @@ export interface Establishment {
 /**
  * MS-3: the planned entries a written chapter establishes, for promotion to
  * canon one by one. They are the chapter's planned point-of-view characters,
- * characters present, and places; beats assigned to it; facts in play and the
- * knowledge records learned in it; themes that appear in it; and entries it
- * links to. World events dated after the chapter's latest strand year are
+ * characters present, and places; the point of view's moments in each
+ * strand's years (SM-3: beats became moments, found by year and strand); and
+ * entries it links to. World events dated after the chapter's latest strand year are
  * left out: a chapter cannot establish something that has not happened yet.
  */
 export function establishedPlanned(data: TimelineData, chapterId: string): Establishment[] {
@@ -128,18 +128,12 @@ export function establishedPlanned(data: TimelineData, chapterId: string): Estab
   for (const c of [
     'characters',
     'places',
-    'plotBeats',
-    'facts',
-    'knowledgeRecords',
-    'themes',
+    'moments',
     'worldEvents',
     'culturalEntries',
     'glossaryTerms',
     'eraStates',
-    'arcs',
-    'customEntries',
     'openQuestions',
-    'relationships',
     'unions',
     'parentLinks',
     'families',
@@ -170,25 +164,23 @@ export function establishedPlanned(data: TimelineData, chapterId: string): Estab
     for (const c of idList(s.characterIds)) add(c, 'present');
     for (const p of idList(s.placeIds)) add(p, 'a place in the chapter');
   }
-  for (const b of data.all('plotBeats').filter(live)) {
-    if (b.chapterId === chapterId) add(str(b._id), 'a beat of this chapter');
-  }
-  for (const f of (Array.isArray(chapter.factsInPlay) ? chapter.factsInPlay : []).filter(
-    isPlainObject,
-  )) {
-    add(str(f.factId), 'a fact in play');
-  }
-  for (const k of data.all('knowledgeRecords').filter(live)) {
-    if (k.chapterLearnedId === chapterId) add(str(k._id), 'learned in this chapter');
-  }
-  for (const t of data.all('themes').filter(live)) {
-    const apps = (Array.isArray(t.appearances) ? t.appearances : []).filter(isPlainObject);
-    if (apps.some((a) => a.chapterId === chapterId)) add(str(t._id), 'appears in this chapter');
+  const moments = data.all('moments').filter(live);
+  for (const s of strands) {
+    const pov = str(s.povCharacterId);
+    const from = num(s.startYear);
+    if (!pov || from === null) continue;
+    const to = Math.max(from, num(s.endYear) ?? from);
+    for (const m of moments) {
+      const y = num(m.year);
+      if (m.characterId === pov && y !== null && y >= from && y <= to) {
+        add(str(m._id), 'a moment of the point of view in these years');
+      }
+    }
   }
   for (const l of (Array.isArray(chapter.links) ? chapter.links : []).filter(isPlainObject)) {
     add(str(l.targetId), `linked as ${str(l.kind) || 'a link'}`);
   }
-  const order = ['characters', 'places', 'plotBeats', 'facts', 'knowledgeRecords', 'themes'];
+  const order = ['characters', 'places', 'moments'];
   const rank = (c: string) => (order.includes(c) ? order.indexOf(c) : order.length);
   return [...found.values()].sort(
     (a, b) =>

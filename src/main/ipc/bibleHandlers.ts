@@ -32,20 +32,15 @@ import {
   yearForAge,
 } from '../../shared/domain/timeline';
 import {
-  beatsOfArc,
   chapterPage,
-  moveBeatInChapter,
   moveChapter,
   moveNumbered,
   newChapterPlace,
   outlineGrid,
-  reorderBeatsInArc,
 } from '../../shared/domain/outline';
-import type { BeatPatch } from '../../shared/domain/outline';
 import { newNestedId } from '../../shared/domain/blank';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
-import { factPage, knownBy, whoKnows } from '../../shared/domain/knowledge';
 import { latestLog } from '../../shared/domain/sessionLog';
 import { compileFilters } from '../../shared/domain/searchFilters';
 import { entrySnippet } from '../search';
@@ -72,9 +67,6 @@ export type BibleChannel =
   | 'lists.addItem'
   | 'lists.removeItem'
   | 'search.query'
-  | 'fact.page'
-  | 'knowledge.whoKnows'
-  | 'knowledge.knownBy'
   | 'sessionLog.latest'
   | 'proposal.list'
   | 'proposal.diff'
@@ -146,24 +138,8 @@ export function bibleHandlers(
   };
   // Stored entries carry modifiedAt; the response schema checks it on the way out.
   const wire = (d: StoredDoc) => d as unknown as WireEntry;
-  // TH-1: a chapter's Themes are read from the themes that list it as an appearance.
-  const derived = (c: EntryCollection, entry: StoredDoc): StoredDoc =>
-    c === 'chapters'
-      ? {
-          ...entry,
-          themeIds: session()
-            .model.all('themes')
-            .filter(
-              (t) =>
-                !t.deletedAt &&
-                Array.isArray(t.appearances) &&
-                t.appearances.some((a: { chapterId?: string }) => a.chapterId === entry._id),
-            )
-            .map((t) => t._id),
-        }
-      : entry;
   const withWarnings = (c: EntryCollection, entry: StoredDoc) => ({
-    entry: wire(derived(c, entry)),
+    entry: wire(entry),
     warnings: session().repo.warnings(c, entry),
   });
   const titled = (links: { collection: string; id: string; kind: string }[]) =>
@@ -476,43 +452,7 @@ export function bibleHandlers(
           })),
         };
       }
-      let patches: BeatPatch[];
-      let group: StoredDoc[];
-      if (req.kind === 'chapterBeats') {
-        const chapter = model.get('chapters', req.groupId);
-        if (!chapter || chapter.deletedAt) throw new Error('That chapter does not exist.');
-        const beat = model.get('plotBeats', req.movedId);
-        if (!beat || beat.deletedAt || beat.chapterId !== req.groupId) {
-          throw new Error('That item is not in this group.');
-        }
-        const move = moveBeatInChapter(model.all('plotBeats'), chapter, req.movedId, req.by);
-        if (!move) {
-          throw new Error(
-            'No beat that way is in the arc that orders this one. Put the beats in the same arc to order them here.',
-          );
-        }
-        patches = move.patches;
-        group = beatsOfArc(model.all('plotBeats'), move.arcId);
-      } else {
-        group = beatsOfArc(model.all('plotBeats'), req.groupId);
-        if (!group.some((d) => d._id === req.movedId)) {
-          throw new Error('That item is not in this group.');
-        }
-        patches = reorderBeatsInArc(model.all('plotBeats'), req.groupId, req.movedId, req.toIndex);
-      }
-      const before = new Map(group.map((b) => [b._id, b]));
-      await repo.reorder(
-        'plotBeats',
-        patches.map((p) => ({ id: p.id, patch: { arcOrders: p.arcOrders } })),
-      );
-      return {
-        collection: 'plotBeats' as const,
-        changes: patches.map((p) => ({
-          id: p.id,
-          before: { arcOrders: (before.get(p.id)?.arcOrders ?? []) as unknown },
-          after: { arcOrders: p.arcOrders },
-        })),
-      };
+      throw new Error('That cannot be reordered.');
     },
     'outline.newChapter': async ({ partId, title, year, afterId }) => {
       const { model, repo } = session();
@@ -682,7 +622,6 @@ export function bibleHandlers(
         {
           get: (c, id) => model.get(c, id),
           places: model.all('places').filter((p) => !p.deletedAt),
-          customSpecs: (id) => model.customSpecs(id),
         },
       );
       const matched = search
@@ -705,18 +644,6 @@ export function bibleHandlers(
         };
       });
       return { hits, total: matched.length };
-    },
-    'fact.page': ({ id }) => {
-      const page = factPage(session().model, id);
-      if (!page) throw new Error(`No fact has the ID ${id}.`);
-      return { page };
-    },
-    'knowledge.whoKnows': ({ factId, year }) => ({
-      knowers: whoKnows(session().model, factId, year),
-    }),
-    'knowledge.knownBy': ({ characterId, year }) => {
-      const { known, unknown } = knownBy(session().model, characterId, year);
-      return { facts: known, unknown };
     },
     'sessionLog.latest': () => {
       const { model } = session();

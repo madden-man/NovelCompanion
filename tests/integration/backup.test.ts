@@ -121,25 +121,30 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     const snap = await open.snapshots!.take('manual', 'before edits');
     await open.repo.update('characters', 'H1', { tags: ['edited'] });
     await open.repo.softDelete('characters', 'H2');
-    const made = await open.repo.create('facts', { title: 'A new fact', status: 'idea' });
+    const made = await open.repo.create('moments', {
+      title: 'A new moment',
+      status: 'idea',
+      characterId: 'H1',
+      year: 2040,
+    });
     const reloads: string[] = [];
     open.repo.onReload((m) => reloads.push(m));
 
     const out = await restoreSnapshot(open, snap.id);
     expect(out.restored.id).toBe(snap.id);
     expect(out.safety.reason).toBe('restore');
-    expect(out.safety.counts.facts).toBe(before.collections.facts!.length + 1);
+    expect(out.safety.counts.moments).toBe(before.collections.moments!.length + 1);
     const after = await dumpBible(open.handle);
     expect(after.collections).toEqual(before.collections);
     expect(open.repo.get('characters', 'H2')).toBeDefined();
     expect(open.repo.get('characters', 'H1')!.tags).toEqual([]);
-    expect(open.repo.get('facts', made._id)).toBeUndefined();
-    expect(open.search.search('A new fact').map((h) => h.id)).not.toContain(made._id);
+    expect(open.repo.get('moments', made._id)).toBeUndefined();
+    expect(open.search.search('A new moment').map((h) => h.id)).not.toContain(made._id);
     expect(reloads).toHaveLength(1);
     expect(reloads[0]).toContain('Restored the snapshot from');
     // The safety snapshot can bring the edits back.
     await restoreSnapshot(open, out.safety.id);
-    expect(open.repo.get('facts', made._id)).toBeDefined();
+    expect(open.repo.get('moments', made._id)).toBeDefined();
     expect(open.repo.get('characters', 'H2')).toBeUndefined();
   });
 
@@ -246,7 +251,7 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     const a = await fixtureSession('bk-export');
     // Give it history and settings so the round trip has something to lose.
     await a.repo.update('characters', 'H1', { tags: ['kept', 'second'] });
-    await a.repo.softDelete('facts', 'F2');
+    await a.repo.softDelete('moments', 'H5-voice-0');
     await a.repo.setStoryTime({ year: 2045 });
     await a.repo.setTreePositions({ H1: { x: 10, y: 20 } });
     await a.repo.setRomanization('mandarin', 'mandarin');
@@ -274,35 +279,17 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     const fixture = readFixture();
     const b = await openBibleSession(store, handle.id);
     for (const c of ENTRY_COLLECTIONS) {
-      if (c === 'characters' || c === 'facts') continue;
+      if (c === 'characters' || c === 'moments') continue;
       expect(b.repo.list(c, { includeDeleted: true }).length, c).toBe(fixture[c]?.length ?? 0);
     }
     expect(b.repo.storyTime()).toEqual({ year: 2045 });
     expect(b.repo.treePositions()).toEqual({ H1: { x: 10, y: 20 } });
     expect(b.repo.snapshotKeep()).toBe(12);
     expect(b.repo.savedMappings()).toEqual({ 'book.xlsx#Sheet 1': { shape: 'table' } });
-    expect(b.repo.get('facts', 'F2')).toBeUndefined();
-    expect(b.repo.get('facts', 'F2', { includeDeleted: true })).toBeDefined();
+    expect(b.repo.get('moments', 'H5-voice-0')).toBeUndefined();
+    expect(b.repo.get('moments', 'H5-voice-0', { includeDeleted: true })).toBeDefined();
     expect((await b.repo.revisions('characters', 'H1')).map((r) => r.op)).toEqual(['update']);
     expect(b.search.search('周美玲').map((h) => h.id)).toContain('Z1');
-  });
-
-  test('CS-2 BK-3 custom sections and custom entries survive the export and import round trip', async () => {
-    const a = await fixtureSession('bk-custom');
-    const exported = await exportBibleJson(a.handle);
-    const file = JSON.parse(exported.text) as {
-      collections: Record<string, { _id: string; values?: unknown }[]>;
-    };
-    expect(file.collections.customSections!.map((d) => d._id)).toEqual(['CS-RECIPES']);
-    expect(file.collections.customEntries!.map((d) => d._id).sort()).toEqual(['CE1', 'CE2']);
-    const handle = await createBible(store, freshSlug('bk-custom-in'), 'Imported');
-    await importBibleJson(handle, exported.text);
-    const b = await openBibleSession(store, handle.id);
-    expect(b.repo.get('customEntries', 'CE1')).toEqual(a.repo.get('customEntries', 'CE1'));
-    expect(b.repo.get('customSections', 'CS-RECIPES')).toEqual(
-      a.repo.get('customSections', 'CS-RECIPES'),
-    );
-    expect(b.search.search('mooncakes').map((h) => h.id)).toContain('CE1');
   });
 
   test('BK-3 a file that is not a bible, is invalid, or targets a bible with entries changes nothing', async () => {
@@ -410,13 +397,13 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
     // A multi-document write is all or nothing too.
     await expect(
       open.repo.createMany([
-        { collection: 'facts', data: { _id: 'KILL1', title: 'One', status: 'idea' } },
-        { collection: 'facts', data: { _id: 'KILL2', title: 'Two', status: 'idea' } },
+        { collection: 'places', data: { _id: 'KILL1', title: 'One', status: 'idea' } },
+        { collection: 'places', data: { _id: 'KILL2', title: 'Two', status: 'idea' } },
       ]),
     ).rejects.toThrow(/cancelled before it finished/);
     expect(
       await open.handle
-        .collection('facts')
+        .collection('places')
         .countDocuments({ _id: { $in: ['KILL1', 'KILL2'] } as never }),
     ).toBe(0);
     kill = false;
@@ -433,28 +420,6 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
     expect(
       (await open.handle.collection('characters').findOne({ _id: 'H1' as never }))!.tags,
     ).toEqual(['stale']);
-  });
-});
-
-describe('M4 review: a trashed theme keeps its appearances when a chapter field changes', () => {
-  test('TH-1 setting a chapter Themes field skips themes in the trash', async () => {
-    const open = await fixtureSession('m4-theme');
-    const theme = await open.repo.create('themes', { title: 'Water', status: 'idea' });
-    const chapter = open.repo.list('chapters')[0]!;
-    await open.repo.update('chapters', chapter._id, { themeIds: [theme._id] } as never);
-    expect(
-      open.repo.get('themes', theme._id)!.appearances.some((a) => a.chapterId === chapter._id),
-    ).toBe(true);
-    await open.repo.softDelete('themes', theme._id);
-    const trashed = open.repo.get('themes', theme._id, { includeDeleted: true })!;
-    // Clearing the chapter's themes would have removed the appearance from the trashed theme before.
-    await open.repo.update('chapters', chapter._id, { themeIds: [] } as never);
-    expect(open.repo.get('themes', theme._id, { includeDeleted: true })).toEqual(trashed);
-    expect((await open.repo.revisions('themes', theme._id)).map((r) => r.op)).toEqual([
-      'create',
-      'update',
-      'softDelete',
-    ]);
   });
 });
 

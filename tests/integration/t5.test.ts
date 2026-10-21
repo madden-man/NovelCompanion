@@ -6,7 +6,7 @@ import type { OpenBible } from '../../src/main/db/session';
 import { ENTRY_COLLECTIONS, editableFields, manifests } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
-import { ALL_KINDS_SECTION, t5Verify, t5Write } from '../helpers/t5';
+import { t5Verify, t5Write } from '../helpers/t5';
 import type { T5Plan } from '../helpers/t5';
 
 let store: Store;
@@ -58,15 +58,12 @@ describe('T-5 editing coverage through the IPC layer', () => {
       expect(item!.fields.length).toBeGreaterThan(0);
       for (const name of item!.fields) expect(item!.expected).toHaveProperty(name);
     }
-    // Nested fields are walked too: theme appearances, facts in play, place descriptions.
+    // Nested fields are walked too: chapter strands and place descriptions.
     const expected = (c: string) => plan.items.find((i) => i.collection === c)!.expected;
-    expect(expected('themes').appearances).toHaveLength(1);
-    expect(expected('chapters').factsInPlay).toHaveLength(1);
+    expect(expected('chapters').strands).toHaveLength(1);
     expect(expected('places').descriptions).toHaveLength(1);
-    // A custom entry is written with a value for every field kind of its section.
-    expect(Object.keys(expected('customEntries').values as object).sort()).toEqual(
-      ALL_KINDS_SECTION.map((f) => f.id).sort(),
-    );
+    // SM-3: a moment is written with every field, its character and years included.
+    expect(expected('moments')).toMatchObject({ year: 2061, endYear: 2071 });
   });
 
   test('T-5 every value persists when the bible is reopened on a fresh connection', async () => {
@@ -85,7 +82,7 @@ describe('T-5 editing coverage through the IPC layer', () => {
         ...plan,
         items: plan.items.map((i) =>
           i.collection === 'characters'
-            ? { ...i, expected: { ...i.expected, birthplace: 'Elsewhere' } }
+            ? { ...i, expected: { ...i.expected, backstory: 'Elsewhere' } }
             : i,
         ),
       };
@@ -94,7 +91,7 @@ describe('T-5 editing coverage through the IPC layer', () => {
           ipcFor(() => reopened),
           tampered,
         ),
-      ).toEqual([expect.stringMatching(/^characters\.birthplace: expected "Elsewhere"/)]);
+      ).toEqual([expect.stringMatching(/^characters\.backstory: expected "Elsewhere"/)]);
     } finally {
       await fresh.close();
     }

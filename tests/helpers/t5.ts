@@ -5,13 +5,8 @@
  * All writes go through the IPC layer: the caller passes `invoke`, which is
  * `runHandler` in integration and `window.api.invoke` end to end.
  */
-import {
-  ENTRY_COLLECTIONS,
-  customFieldSpecs,
-  editableFields,
-  manifests,
-} from '../../src/shared/schema';
-import type { CustomField, EntryCollection, FieldSpec } from '../../src/shared/schema';
+import { ENTRY_COLLECTIONS, editableFields, manifests } from '../../src/shared/schema';
+import type { EntryCollection, FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { deepEqual, isPlainObject } from '../../src/shared/domain/paths';
 
@@ -22,23 +17,10 @@ type Variant = 0 | 1;
 
 const POOL = 8;
 
-/** A section with one field of every CS-1 kind, used by the T-5 custom entries. */
-export const ALL_KINDS_SECTION: CustomField[] = [
-  { id: 'f_text', label: 'Origin', type: 'text', options: [] },
-  { id: 'f_long', label: 'Method', type: 'longText', options: [] },
-  { id: 'f_number', label: 'Servings', type: 'number', options: [] },
-  { id: 'f_year', label: 'First cooked', type: 'year', options: [] },
-  { id: 'f_range', label: 'Made between', type: 'yearRange', options: [] },
-  { id: 'f_choice', label: 'Occasion', type: 'singleChoice', options: ['Everyday', 'Holiday'] },
-  { id: 'f_tags', label: 'Flavors', type: 'tags', options: [] },
-  { id: 'f_link', label: 'Cook', type: 'link', options: [] },
-];
-
 export interface GenContext {
   /** Pool of live entry IDs for a collection, `*` meaning any entry. */
   pool(collection: string): string[];
   listItems(listId: string): string[];
-  customSpecs(sectionId: string): FieldSpec[] | undefined;
 }
 
 function pick(ctx: GenContext, spec: FieldSpec, offset: number, v: number): string {
@@ -107,14 +89,6 @@ export function valueFor(
       return build(spec.fields!, v, ctx, mode);
     case 'objectList':
       return [build(spec.fields!, v, ctx, mode)];
-    case 'yearOrAge':
-      return v === 0 ? { year: 2030 } : { age: 41 };
-    case 'customValues': {
-      const sectionId = parent.sectionId;
-      const specs = typeof sectionId === 'string' ? ctx.customSpecs(sectionId) : undefined;
-      if (!specs) throw new Error('T-5 custom values need a section');
-      return build(specs, v, ctx, mode);
-    }
     case 'system':
       return `${spec.name}-${v}`;
   }
@@ -214,7 +188,6 @@ function errorText(e: unknown): string {
 export async function t5Write(invoke: Invoke): Promise<T5Plan> {
   const problems: string[] = [];
   const pools = new Map<string, string[]>();
-  const sections = new Map<string, FieldSpec[]>();
 
   // Lists the generator needs at least two items in.
   const listIds = new Set<string>();
@@ -242,20 +215,14 @@ export async function t5Write(invoke: Invoke): Promise<T5Plan> {
   const ctx: GenContext = {
     pool: (c) => pools.get(c === '*' ? 'characters' : c) ?? [],
     listItems: (id) => items.get(id) ?? [],
-    customSpecs: (id) => sections.get(id),
   };
 
   for (const c of poolOrder() as EntryCollection[]) {
     const ids: string[] = [];
     for (let i = 0; i < POOL; i++) {
-      const data =
-        c === 'customSections'
-          ? { name: `Recipes ${i + 1}`, fields: ALL_KINDS_SECTION }
-          : { ...build(manifests[c], 0, ctx, 'minimal', true), title: `Pool ${c} ${i + 1}` };
+      const data = { ...build(manifests[c], 0, ctx, 'minimal', true), title: `Pool ${c} ${i + 1}` };
       const { entry } = await invoke('entry.create', { collection: c, data });
       ids.push(entry._id);
-      if (c === 'customSections')
-        sections.set(entry._id, customFieldSpecs({ fields: ALL_KINDS_SECTION }));
     }
     pools.set(c, ids);
   }

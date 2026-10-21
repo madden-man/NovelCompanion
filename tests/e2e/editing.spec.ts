@@ -4,12 +4,12 @@ import { MongoClient } from 'mongodb';
 import {
   ENTRY_COLLECTIONS,
   collectionInfo,
-  customFieldSpecs,
   editableFields,
+  fieldByName,
   manifests,
 } from '../../src/shared/schema';
-import type { CustomSection, EntryCollection } from '../../src/shared/schema';
-import { ALL_KINDS_SECTION, build, t5Verify, t5Write } from '../helpers/t5';
+import type { EntryCollection } from '../../src/shared/schema';
+import { build, t5Verify, t5Write } from '../helpers/t5';
 import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
 import {
   field,
@@ -73,27 +73,12 @@ async function genContext(): Promise<GenContext & UiContext> {
         .slice(0, 8),
     );
   }
-  const sections = (await invoke('entry.list', { collection: 'customSections', trash: 'exclude' }))
-    .entries;
-  const recipeSections = sections
-    .filter((s) => String(s.entry.name).startsWith('Recipes'))
-    .map((s) => s.entry._id);
-  pools.set('customSections', recipeSections);
   const { lists } = await invoke('lists.get', {});
   const titles = new Map<string, string>();
   return {
     page,
     pool: (c) => pools.get(c === '*' ? 'characters' : c) ?? [],
     listItems: (id) => lists.find((l) => l._id === id)?.items.map((i) => i.id) ?? [],
-    customSpecs: (id) => {
-      const s = sections.find((x) => x.entry._id === id)?.entry as unknown as
-        CustomSection | undefined;
-      return s
-        ? customFieldSpecs(s)
-        : recipeSections.includes(id)
-          ? customFieldSpecs({ fields: ALL_KINDS_SECTION })
-          : undefined;
-    },
     titleOf: async (id) => {
       if (!titles.has(id)) {
         const { entries } = await invoke('entry.lookup', { ids: [id] });
@@ -129,16 +114,31 @@ test('ED-1 every field of every entity can be created and changed through the ed
     const { newButton, preset } = await openListFor(page, ctx, c, a);
     await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
-    for (const spec of manifest.filter(
-      (s) => s.required && s.kind !== 'system' && !(s.name in preset),
-    )) {
-      await setField(ctx, form, spec, spec.name, a[spec.name], a);
+    if (c === 'characters') {
+      // SM-1: a new character asks for the full name only.
+      const names = a.names as { full: string };
+      await field(form, 'names.full').locator('input').fill(names.full);
+    } else {
+      for (const spec of manifest.filter(
+        (s) => s.required && s.kind !== 'system' && !(s.name in preset),
+      )) {
+        await setField(ctx, form, spec, spec.name, a[spec.name], a);
+      }
     }
     await form.getByRole('button', { name: `Create ${info.singular.toLowerCase()}` }).click();
     const editor = page.getByTestId('editor');
     await expect(editor).toBeVisible();
     await waitSaved(page);
-    for (const spec of editableFields(manifest)) {
+    const fields = c === 'characters' ? CHARACTER_PAGE_FIELDS : editableFields(manifest);
+    if (c === 'characters') {
+      // SM-1: the name and the Chinese name are edited from the heading.
+      const names = b.names as { full: string; chinese: string };
+      await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
+      await field(editor, 'names.full').locator('input').fill(names.full);
+      await field(editor, 'names.chinese').locator('input').fill(names.chinese);
+      await editor.getByRole('button', { name: 'Done', exact: true }).click();
+    }
+    for (const spec of fields.filter((s) => s.name !== 'names')) {
       await setField(ctx, editor, spec, spec.name, b[spec.name], b);
     }
     await waitSaved(page);
@@ -147,7 +147,7 @@ test('ED-1 every field of every entity can be created and changed through the ed
     const { entry: saved } = await invoke('entry.get', { collection: c, id });
     const got = withoutSystem(manifest, saved) as Record<string, unknown>;
     const want = withoutSystem(manifest, b) as Record<string, unknown>;
-    for (const spec of editableFields(manifest)) {
+    for (const spec of fields) {
       const g = JSON.stringify(got[spec.name] ?? null);
       const w = JSON.stringify(want[spec.name] ?? null);
       if (g !== w) failures.push(`${c}.${spec.name}: expected ${w}, found ${g}`);
@@ -155,6 +155,22 @@ test('ED-1 every field of every entity can be created and changed through the ed
   }
   expect(failures).toEqual([]);
 });
+
+/**
+ * SM-1: the fields the character page edits. The rest (provenance, source
+ * note and location, tags, links) are set by the app and edited through the
+ * IPC layer, which the T-5 test above covers. The title follows the full name.
+ */
+const CHARACTER_PAGE_FIELDS = [
+  'names',
+  'birth',
+  'death',
+  'status',
+  'familyIds',
+  'role',
+  'body',
+  'backstory',
+].map((name) => fieldByName(manifests.characters, name)!);
 
 async function openSection(collection: EntryCollection) {
   await rail(page, collectionInfo[collection].plural).click();
@@ -164,12 +180,13 @@ async function newCharacter(name: string, birthYear = 1958) {
   await openSection('characters');
   await page.getByRole('button', { name: 'New character', exact: true }).click();
   const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator('input').fill(name);
   await field(form, 'names.full').locator('input').fill(name);
-  await field(form, 'birth').getByLabel('Kind of date').selectOption('year');
-  await field(form, 'birth').getByLabel('Year', { exact: true }).fill(String(birthYear));
   await form.getByRole('button', { name: 'Create character' }).click();
-  await expect(page.getByTestId('editor').getByRole('heading', { name })).toBeVisible();
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { name })).toBeVisible();
+  await waitSaved(page);
+  await field(editor, 'birth').getByLabel('Kind of date').selectOption('year');
+  await field(editor, 'birth').getByLabel('Year', { exact: true }).fill(String(birthYear));
   await waitSaved(page);
 }
 
@@ -184,14 +201,14 @@ test('ED-2 a change saves on its own within one second, with no save button, and
   await newCharacter('Ada Sullivan', 1990);
   const editor = page.getByTestId('editor');
   await expect(editor.getByRole('button', { name: /^Save$/ })).toHaveCount(0);
-  const input = field(editor, 'birthplace').locator('input');
+  const input = field(editor, 'role').locator('textarea');
   await input.fill('San Francisco');
   const typed = Date.now();
   await expect(editor.getByTestId('autosave')).toHaveText('Saving soon');
   await expect(editor.getByTestId('autosave')).toHaveText('Saved', { timeout: 1000 });
   const elapsed = Date.now() - typed;
   expect(elapsed).toBeLessThan(1000);
-  expect((await currentEntry('characters', 'Ada Sullivan')).birthplace).toBe('San Francisco');
+  expect((await currentEntry('characters', 'Ada Sullivan')).role).toBe('San Francisco');
 });
 
 test('ED-2 continuous typing still saves within one second of the first change', async () => {
@@ -219,34 +236,32 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   test.setTimeout(240_000);
   await newCharacter('Undo Hale', 1960);
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'birthplace').locator('input');
+  const input = field(editor, 'role').locator('textarea');
   const top = page.getByTestId('inspector').getByTestId('undo-history').locator('li').first();
   for (let n = 1; n <= 51; n++) {
     await input.fill(`Place ${n}`);
     await waitSaved(page);
     await expect(top).toHaveText('Changed Birthplace on Undo Hale');
     await expect
-      .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
+      .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
       .toBe(`Place ${n}`);
   }
-  expect((await currentEntry('characters', 'Undo Hale')).birthplace).toBe('Place 51');
+  expect((await currentEntry('characters', 'Undo Hale')).role).toBe('Place 51');
   await page.locator('body').click();
   for (let n = 0; n < 50; n++) await page.keyboard.press('Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
     /^Undid: Changed Birthplace on Undo Hale$/,
   );
   await expect
-    .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
+    .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 1');
   await expect(input).toHaveValue('Place 1');
   await page.keyboard.press('Meta+z');
-  await expect
-    .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
-    .toBe('');
+  await expect.poll(async () => (await currentEntry('characters', 'Undo Hale')).role).toBe('');
   await page.keyboard.press('Shift+Meta+z');
   await page.keyboard.press('Shift+Meta+z');
   await expect
-    .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
+    .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 2');
   await expect(input).toHaveValue('Place 2');
   // Redo walks every remaining step forward to the last change.
@@ -255,12 +270,12 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
     'Redid: Changed Birthplace on Undo Hale',
   );
   await expect
-    .poll(async () => (await currentEntry('characters', 'Undo Hale')).birthplace)
+    .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
     .toBe('Place 51');
   await expect(input).toHaveValue('Place 51');
   await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText('Nothing to redo.');
-  expect((await currentEntry('characters', 'Undo Hale')).birthplace).toBe('Place 51');
+  expect((await currentEntry('characters', 'Undo Hale')).role).toBe('Place 51');
 });
 
 test('ED-3 undo and redo cover creating, deleting, restoring, and editing links', async () => {
@@ -318,7 +333,7 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
 test('ED-4 the history drawer compares any revision with the current entry and restores it', async () => {
   await newCharacter('Revision Doyle', 1950);
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'birthplace').locator('input');
+  const input = field(editor, 'role').locator('textarea');
   await input.fill('Cork');
   await waitSaved(page);
   await input.fill('Boston');
@@ -341,11 +356,11 @@ test('ED-4 the history drawer compares any revision with the current entry and r
   await expect(revisions.nth(0)).toContainText('Restored the version from');
   await drawer.getByRole('button', { name: 'Close' }).click();
   await expect(input).toHaveValue('Cork');
-  expect((await currentEntry('characters', 'Revision Doyle')).birthplace).toBe('Cork');
+  expect((await currentEntry('characters', 'Revision Doyle')).role).toBe('Cork');
   // The restore is undoable like any change.
   await page.keyboard.press('Meta+z');
   await expect
-    .poll(async () => (await currentEntry('characters', 'Revision Doyle')).birthplace)
+    .poll(async () => (await currentEntry('characters', 'Revision Doyle')).role)
     .toBe('Boston');
 });
 
@@ -443,6 +458,7 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
 
 test('ED-10 a value the schema cannot store is marked at the field and not sent', async () => {
   const editor = page.getByTestId('editor');
+  await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
   await field(editor, 'names.full').locator('input').fill('');
   await expect(editor.getByTestId('autosave')).toHaveText(/^Not saved/);
   await expect(field(editor, 'names.full').getByRole('alert')).toHaveText(
@@ -639,7 +655,7 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
     .getByRole('button', { name: /Ada Sullivan/ })
     .click();
   const editor = page.getByTestId('editor');
-  const input = field(editor, 'birthplace').locator('input');
+  const input = field(editor, 'role').locator('textarea');
   const history = page.getByTestId('inspector').getByTestId('undo-history').locator('li');
   await input.fill('Saved city');
   await waitSaved(page);
@@ -649,12 +665,12 @@ test('ED-3 Cmd+Z in a text field with unsaved typing undoes the typing, not the 
   await page.keyboard.press('Meta+z');
   await expect(input).toHaveValue('Saved city');
   await waitSaved(page);
-  expect((await currentEntry('characters', 'Ada Sullivan')).birthplace).toBe('Saved city');
+  expect((await currentEntry('characters', 'Ada Sullivan')).role).toBe('Saved city');
   expect(await history.allTextContents()).toEqual(historyBefore);
   // With nothing unsaved in the field, Cmd+Z steps back through saved changes again.
   await page.keyboard.press('Meta+z');
   await expect
-    .poll(async () => (await currentEntry('characters', 'Ada Sullivan')).birthplace)
+    .poll(async () => (await currentEntry('characters', 'Ada Sullivan')).role)
     .not.toBe('Saved city');
 });
 
@@ -674,7 +690,7 @@ test('ED-7 a proposal waits in the review queue with its diff; approve writes it
         }),
       [ada._id, data, reason] as const,
     );
-  const approveMe = await propose({ birthplace: 'Sacramento' }, 'The workbook says Sacramento.');
+  const approveMe = await propose({ role: 'Sacramento' }, 'The workbook says Sacramento.');
   const rejectMe = await propose(
     { backstory: 'A proposed backstory.' },
     'The workbook has a backstory.',
@@ -689,20 +705,20 @@ test('ED-7 a proposal waits in the review queue with its diff; approve writes it
       .getByTestId('proposal-diff')
       .getByRole('row', { name: /Birthplace/ })
       .getByRole('cell');
-  await expect(cells(card).nth(0)).toHaveText(String(before!.birthplace || 'Blank'));
+  await expect(cells(card).nth(0)).toHaveText(String(before!.role || 'Blank'));
   await expect(cells(card).nth(1)).toHaveText('Sacramento');
   // Nothing is written before approval: MongoDB still holds the old document.
   expect(await fromMongo('characters', ada._id)).toEqual(before);
 
   // Edit the proposed value, then approve.
   await card.getByRole('button', { name: 'Edit' }).click();
-  await field(card, 'birthplace').locator('input').fill('Davis');
+  await field(card, 'role').locator('textarea').fill('Davis');
   await card.getByRole('button', { name: 'Save proposed values' }).click();
   await expect(cells(card).nth(1)).toHaveText('Davis');
-  expect((await fromMongo('characters', ada._id))!.birthplace).toBe(before!.birthplace);
+  expect((await fromMongo('characters', ada._id))!.role).toBe(before!.role);
   await card.getByRole('button', { name: 'Approve' }).click();
   await expect(card).toHaveCount(0);
-  expect((await fromMongo('characters', ada._id))!.birthplace).toBe('Davis');
+  expect((await fromMongo('characters', ada._id))!.role).toBe('Davis');
   await expect(queue).toContainText('Approved after editing');
 
   const rejectCard = queue.locator(`[data-proposal="${rejectMe.proposal._id}"]`);
@@ -723,14 +739,14 @@ test('ED-7 a proposal whose entry changed since is refused until compared again'
         op: 'update',
         collection: 'characters',
         targetId: id,
-        data: { birthplace: 'Modesto' },
+        data: { role: 'Modesto' },
       }),
     ada._id,
   );
   await invoke('entry.update', {
     collection: 'characters',
     id: ada._id,
-    patch: { birthplace: 'Stockton' },
+    patch: { role: 'Stockton' },
   });
   await rail(page, 'Lists').click();
   await rail(page, 'Review queue').click();
@@ -749,5 +765,5 @@ test('ED-7 a proposal whose entry changed since is refused until compared again'
   ).toHaveText('Stockton');
   await card.getByRole('button', { name: 'Approve' }).click();
   await expect(card).toHaveCount(0);
-  expect((await fromMongo('characters', ada._id))!.birthplace).toBe('Modesto');
+  expect((await fromMongo('characters', ada._id))!.role).toBe('Modesto');
 });

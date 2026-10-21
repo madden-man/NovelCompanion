@@ -224,28 +224,12 @@ const StoryTimeResponse = z.strictObject({
   position: PositionWire,
 });
 
-const UnknownFactWire = z.strictObject({
-  factId: z.string(),
-  fact: z.string(),
-  reason: z.enum(['not-yet', 'never']),
-  yearLearned: z.number().nullable(),
-  label: z.string(),
-});
-
 const CharacterPageWire = z.strictObject({
   id: z.string(),
   name: z.string(),
   names: z.strictObject({
     full: z.string(),
     chinese: z.string(),
-    romanization: z.string(),
-    order: z.string(),
-    birthName: z.string(),
-    marriedName: z.string(),
-    nicknames: z.array(z.string()),
-    calledBy: z.array(
-      z.strictObject({ characterId: z.string(), characterName: z.string(), name: z.string() }),
-    ),
   }),
   families: z.array(z.strictObject({ id: z.string(), name: z.string(), color: z.string() })),
   years: z.string(),
@@ -265,19 +249,6 @@ const CharacterPageWire = z.strictObject({
       state: LifeStateWire,
     })
     .nullable(),
-  knowledgeYear: z.number().nullable(),
-  timeline: z.array(
-    z.strictObject({
-      kind: z.enum(['birth', 'death', 'union', 'union-end', 'child', 'beat', 'event', 'chapter']),
-      year: z.number().nullable(),
-      age: z.number().nullable(),
-      state: z.enum(['alive', 'dead', 'unborn', 'unknown']).nullable(),
-      collection: z.string(),
-      id: z.string(),
-      title: z.string(),
-      detail: z.string(),
-    }),
-  ),
   relatives: z.strictObject({
     parents: z.array(
       z.strictObject({
@@ -314,19 +285,6 @@ const CharacterPageWire = z.strictObject({
       }),
     ),
   }),
-  knowledge: z.array(
-    z.strictObject({
-      recordId: z.string(),
-      factId: z.string(),
-      fact: z.string(),
-      yearLearned: z.number().nullable(),
-      chapterId: z.string().nullable(),
-      chapter: z.string().nullable(),
-      how: z.string(),
-      knownAtPosition: z.boolean().nullable(),
-    }),
-  ),
-  doesNotKnow: z.array(UnknownFactWire),
 });
 
 const Moment = z.strictObject({
@@ -340,11 +298,6 @@ const EraWire = z.strictObject({
   name: z.string(),
   startYear: z.number(),
   endYear: z.number(),
-  technology: z.string(),
-  climate: z.string(),
-  economy: z.string(),
-  politics: z.string(),
-  dailyLife: z.string(),
 });
 
 const EventWire = z.strictObject({
@@ -354,10 +307,8 @@ const EventWire = z.strictObject({
   end: StoryDateWire.nullable(),
   startYear: z.number(),
   endYear: z.number(),
-  reality: z.string(),
   categoryId: z.string(),
   regions: z.array(z.string()),
-  placeIds: z.array(z.string()),
   characterIds: z.array(z.string()),
   formative: z.boolean(),
   status: z.string(),
@@ -493,16 +444,6 @@ const OutlineWire = z.strictObject({
         storyYear: z.number().nullable(),
         written: z.boolean(),
         strands: z.array(OutlineStrandWire),
-        arcSpans: z.array(
-          z.strictObject({
-            arcId: z.string(),
-            name: z.string(),
-            scope: z.string(),
-            color: z.string(),
-            from: z.number(),
-            to: z.number(),
-          }),
-        ),
       }),
     ]),
   ),
@@ -521,47 +462,12 @@ const SearchFiltersWire = z.strictObject({
   yearTo: Year.nullable().optional(),
 });
 
-const KnowerWire = z.strictObject({
-  recordId: z.string(),
-  characterId: z.string(),
-  name: z.string(),
-  yearLearned: z.number().nullable(),
-  chapterLearnedId: z.string().nullable(),
-  how: z.string(),
-});
-
-const KnownFactWire = z.strictObject({
-  recordId: z.string(),
-  factId: z.string(),
-  fact: z.string(),
-  yearLearned: z.number(),
-  chapterLearnedId: z.string().nullable(),
-  how: z.string(),
-});
-
-const FactPageWire = z.strictObject({
-  id: z.string(),
-  title: z.string(),
-  body: z.string(),
-  knowers: z.array(KnowerWire.extend({ chapter: z.string().nullable() })),
-  inPlay: z.array(
-    z.strictObject({
-      chapterId: z.string(),
-      chapter: z.string(),
-      characterId: z.string(),
-      character: z.string(),
-      note: z.string(),
-    }),
-  ),
-});
-
 const ChapterPageWire = z.strictObject({
   id: z.string(),
   title: z.string(),
   readingOrder: z.number(),
   storyYear: z.number().nullable(),
   written: z.boolean(),
-  arcs: z.array(z.strictObject({ id: z.string(), name: z.string() })),
   strands: z.array(
     z.strictObject({
       id: z.string(),
@@ -574,28 +480,6 @@ const ChapterPageWire = z.strictObject({
         z.strictObject({ id: z.string(), name: z.string(), state: LifeStateWire }),
       ),
       places: z.array(z.strictObject({ id: z.string(), name: z.string() })),
-    }),
-  ),
-  beats: z.array(
-    z.strictObject({
-      id: z.string(),
-      title: z.string(),
-      year: z.number().nullable(),
-      description: z.string(),
-      arcs: z.array(z.string()),
-      canMoveUp: z.boolean(),
-      canMoveDown: z.boolean(),
-      orderArcId: z.string().nullable(),
-    }),
-  ),
-  themes: z.array(z.strictObject({ id: z.string(), title: z.string(), note: z.string() })),
-  factsInPlay: z.array(
-    z.strictObject({
-      factId: z.string(),
-      fact: z.string(),
-      characterId: z.string(),
-      character: z.string(),
-      note: z.string(),
     }),
   ),
 });
@@ -900,22 +784,6 @@ export const contract = {
       total: z.int().min(0).default(0),
     }),
   },
-  /** KN-1, KN-3: a fact with who learns it and when, and the chapters that act on it. */
-  'fact.page': {
-    request: z.strictObject({ id: EntryId }),
-    response: z.strictObject({ page: FactPageWire }),
-  },
-  /** KN-1: who has learned a fact, optionally by a year. */
-  'knowledge.whoKnows': {
-    request: z.strictObject({ factId: EntryId, year: Year.optional() }),
-    response: z.strictObject({ knowers: z.array(KnowerWire) }),
-  },
-  /** KN-1: the facts a character has learned by a year. */
-  'knowledge.knownBy': {
-    request: z.strictObject({ characterId: EntryId, year: Year }),
-    /** `facts` are the facts they know by the year; `unknown` is every other fact, as "not yet in Y" or "never". */
-    response: z.strictObject({ facts: z.array(KnownFactWire), unknown: z.array(UnknownFactWire) }),
-  },
   /** SL-1: the newest session log with a note, for the launch panel. */
   'sessionLog.latest': {
     request: z.strictObject({}),
@@ -1029,7 +897,7 @@ export const contract = {
     }),
     response: z.strictObject({ saved: z.boolean(), path: z.string().nullable() }),
   },
-  /** Everything the character page shows (CH-1 to CH-4), computed in main from the read model. */
+  /** Everything the character page shows (SM-1, CH-4), computed in main from the read model. */
   'character.page': {
     request: z.strictObject({ id: EntryId }),
     response: z.strictObject({ page: CharacterPageWire }),
@@ -1192,17 +1060,16 @@ export const contract = {
     }),
     response: OutlineWire,
   },
-  /** PL-4: one chapter with its beats, characters and ages, places, themes, and facts in play. */
+  /** One chapter with its strands, the characters present and their ages, and its places. */
   'chapter.page': {
     request: z.strictObject({ id: EntryId }),
     response: z.strictObject({ page: ChapterPageWire }),
   },
   /**
    * PL-3: move a chapter to a place in a part (its own or another, where it
-   * takes the target part), or a beat within one arc (only that arc's
-   * position changes). Story years never change. Returns what changed, for undo.
-   * KB-3: also a part among the parts of its book, a book among the books, and
-   * a beat to another place on its chapter page (a move in the arc that orders it).
+   * takes the target part). Story years never change. Returns what changed,
+   * for undo. KB-3: also a part among the parts of its book, and a book among
+   * the books.
    */
   'plot.reorder': {
     request: z.union([
@@ -1211,20 +1078,6 @@ export const contract = {
         groupId: EntryId,
         movedId: EntryId,
         toIndex: z.int().min(0).max(5000),
-      }),
-      z.strictObject({
-        kind: z.literal('beats'),
-        groupId: EntryId,
-        movedId: EntryId,
-        toIndex: z.int().min(0).max(5000),
-      }),
-      z.strictObject({
-        kind: z.literal('chapterBeats'),
-        /** The chapter. */
-        groupId: EntryId,
-        movedId: EntryId,
-        /** Earlier (-1) or later (1), past the nearest beat the same arc orders. */
-        by: z.union([z.literal(-1), z.literal(1)]),
       }),
       z.strictObject({
         kind: z.literal('parts'),
@@ -1240,8 +1093,8 @@ export const contract = {
       }),
     ]),
     response: z.strictObject({
-      collection: z.enum(['chapters', 'plotBeats', 'parts', 'books']),
-      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a beat's per-arc positions, a part's or book's number). */
+      collection: z.enum(['chapters', 'parts', 'books']),
+      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a part's or book's number). */
       changes: z.array(
         z.strictObject({
           id: z.string(),
@@ -1335,13 +1188,12 @@ export const contract = {
       sheet: z.string().min(1),
       shape: z.enum(['table', 'grid']),
       collection: CollectionName,
-      sectionId: EntryId.optional(),
     }),
     response: z.strictObject({ mapping: Mapping }),
   },
   /** IM-1: the fields a column can fill in a section. */
   'import.fields': {
-    request: z.strictObject({ collection: CollectionName, sectionId: EntryId.optional() }),
+    request: z.strictObject({ collection: CollectionName }),
     response: z.strictObject({
       fields: z.array(z.strictObject({ path: z.string(), label: z.string() })),
     }),

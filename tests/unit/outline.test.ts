@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import {
-  chapterPage,
-  moveBeatInChapter,
   moveNumbered,
   newChapterPlace,
   nextNumber,
@@ -206,44 +204,5 @@ describe('KB-3 a new chapter goes last in its part', () => {
 
   test('KB-3 the first chapter of an empty outline is number 1', () => {
     expect(newChapterPlace([], parts, books, 'P1')).toEqual({ readingOrder: 1, shifts: [] });
-  });
-});
-
-describe('KB-3 beats move on the chapter page through the arc that orders them', () => {
-  const chapter = { ...chapters[0], arcIds: ['A1'] } as Record<string, unknown>;
-  const beat = (id: string, arcs: [string, number][]) => ({
-    _id: id,
-    title: id,
-    chapterId: 'C1',
-    arcIds: arcs.map(([a]) => a),
-    arcOrders: arcs.map(([arcId, order]) => ({ arcId, order })),
-    ...base,
-  });
-  const beats = [
-    beat('b1', [['A1', 1]]),
-    beat('b2', [['A1', 2]]),
-    beat('b3', [['A2', 1]]),
-    { ...beat('x', [['A1', 3]]), chapterId: 'C2' },
-  ];
-
-  test('KB-3 moving a beat down passes a beat another arc orders and trades places with the next one in its own arc', () => {
-    const r = moveBeatInChapter(beats, chapter, 'b1', 1);
-    expect(r?.arcId).toBe('A1');
-    expect(r?.patches).toEqual([
-      { id: 'b2', arcOrders: [{ arcId: 'A1', order: 1 }] },
-      { id: 'b1', arcOrders: [{ arcId: 'A1', order: 2 }] },
-    ]);
-  });
-
-  test('KB-3 a beat alone in its arc on the page cannot move, and the page says which can', () => {
-    expect(moveBeatInChapter(beats, chapter, 'b3', 1)).toBeNull();
-    expect(moveBeatInChapter(beats, chapter, 'b1', -1)).toBeNull();
-    const page = chapterPage(data({ plotBeats: beats, chapters: [chapter] }), 'C1');
-    expect(page?.beats.map((b) => [b.id, b.canMoveUp, b.canMoveDown])).toEqual([
-      ['b1', false, true],
-      ['b3', false, false],
-      ['b2', true, false],
-    ]);
-    expect(page?.beats.map((b) => b.orderArcId)).toEqual(['A1', 'A2', 'A1']);
   });
 });

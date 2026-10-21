@@ -28,24 +28,16 @@ const BODY_FIELDS = [
   'backstory',
   'meaning',
   'usageNote',
-  'generationNotes',
   'notes',
   'sourceNote',
-  'description',
   'worldContext',
-  'experienceNote',
-  'technology',
-  'climate',
-  'economy',
-  'politics',
-  'dailyLife',
   'question',
   'decision',
   'stoppedAt',
   'content',
   'text',
   'quote',
-  'how',
+  'sceneNote',
 ];
 
 function stripTags(html: string): string {
@@ -61,10 +53,10 @@ function collectStrings(value: unknown, out: string[]): void {
 }
 
 /** Keys that hold IDs or system values, never words a person typed. */
-const NOT_TEXT_KEY = /^(_?id|kind|type|scope|state|sectionId|.*Ids?)$/;
+const NOT_TEXT_KEY = /^(_?id|kind|type|scope|state|.*Ids?)$/;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
-/** Text inside nested fields: place descriptions, theme notes, strand labels, custom values. */
+/** Text inside nested fields: place descriptions and strand labels. */
 function collectText(value: unknown, out: string[]): void {
   if (typeof value === 'string') {
     if (!ULID.test(value)) out.push(stripTags(value));
@@ -76,7 +68,7 @@ function collectText(value: unknown, out: string[]): void {
   }
 }
 
-const NESTED_TEXT_FIELDS = ['descriptions', 'appearances', 'factsInPlay', 'strands', 'values'];
+const NESTED_TEXT_FIELDS = ['descriptions', 'strands'];
 
 /** The first words of an entry's text, for a result row. */
 export function entrySnippet(doc: StoredDoc, max = 140): string {

@@ -453,29 +453,23 @@ describe('TL-6 timeline chart and filters', () => {
     expect(f.events.every((e) => e.status === 'planned')).toBe(true);
   });
 
-  test('TL-6 the place filter keeps what is tied to the place or a place inside it', () => {
+  test('TL-6 SM-3 SM-4 the place filter keeps strands and lives tied to the place or a place inside it; world events have no places', () => {
     const places: Doc[] = [
       { _id: 'P-OR', title: 'Oregon', parentId: null },
       { _id: 'P-PDX', title: 'Portland, Oregon', parentId: 'P-OR' },
       { _id: 'P-GZ', title: 'Guangzhou', parentId: null },
     ];
-    const events = fixture.worldEvents!.map((e) =>
-      e._id === 'E3'
-        ? { ...e, placeIds: ['P-PDX'] }
-        : e._id === 'E5'
-          ? { ...e, placeIds: ['P-GZ'] }
-          : e,
-    );
     const chapters = fixture.chapters!.map((c) =>
       c._id === 'CH5'
         ? { ...c, strands: (c.strands as Doc[]).map((s) => ({ ...s, placeIds: ['P-PDX'] })) }
         : c,
     );
-    const d = fromCollections({ ...fixture, worldEvents: events, chapters, places });
+    const d = fromCollections({ ...fixture, chapters, places });
     const f = filterChart(timelineChart(d), { ...NO_FILTERS, placeId: 'P-OR' }, { places });
-    expect(f.events.map((e) => e.id)).toEqual(['E3']);
+    // A39 dropped the places of world events, so a place filter leaves them all.
+    expect(f.events).toHaveLength(timelineChart(d).events.length);
     expect(f.strands.map((s) => s.chapterId)).toEqual(['CH5']);
-    // Margaret Hale was born in Portland, Oregon; Zhou Lan moved there in 2027.
-    expect(f.lifespans.map((l) => l.id).sort()).toEqual(['H1', 'H2', 'H3', 'H4', 'H5', 'Z3']);
+    // Zhou Lan's "Lives in Portland, Oregon" moment ties her to it.
+    expect(f.lifespans.map((l) => l.id).sort()).toEqual(['Z3']);
   });
 });

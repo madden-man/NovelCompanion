@@ -426,16 +426,16 @@ describe('MS-2 MS-3 marking a chapter as written', () => {
     claude = { briefs: null, summaries: null };
   });
 
-  test('MS-3 the planned entries the chapter establishes are listed, and promote one at a time', async () => {
+  test('MS-3 SM-3 the planned entries the chapter establishes are listed, and promote one at a time', async () => {
     const r = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    // Hand-checked: B4 is CH6's beat and F2 its fact in play, both planned. E10 (2090) is after the chapter.
+    // Hand-checked: B4 is Iris's planned moment of 2045, CH6's year and point of view (SM-3: beats
+    // became moments, found by year and strand). E10 (2090) is after the chapter.
     expect(r.items.map((i) => [i.id, i.why])).toEqual([
-      ['B4', 'a beat of this chapter'],
-      ['F2', 'a fact in play'],
+      ['B4', 'a moment of the point of view in these years'],
     ]);
-    await invoke('entry.update', { collection: 'plotBeats', id: 'B4', patch: { status: 'canon' } });
+    await invoke('entry.update', { collection: 'moments', id: 'B4', patch: { status: 'canon' } });
     const again = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    expect(again.items.map((i) => i.id)).toEqual(['F2']);
+    expect(again.items.map((i) => i.id)).toEqual([]);
   });
 });
 

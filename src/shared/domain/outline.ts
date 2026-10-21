@@ -1,6 +1,6 @@
 /**
- * The plot outline (PL-1 to PL-4): the chapter-by-year grid, reorder logic,
- * and the chapter page. Pure functions over plain entries. Reading order and
+ * The plot outline: the chapter-by-year grid, reorder logic, and the chapter
+ * page (arcs, beats, themes, and facts in play went with A39). Pure functions over plain entries. Reading order and
  * story year are separate fields (PL-3): the grid can show either order and
  * reordering changes only the reading order.
  */
@@ -21,8 +21,6 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : n
 const live = (d: Doc) => !d.deletedAt;
 const title = (d: Doc | undefined, fallback = '') =>
   str(d?.title).trim() || str(d?.name).trim() || fallback;
-/** An arc is shown by its name; its title is only the entry label. */
-const arcName = (a: Doc | undefined, fallback: string) => str(a?.name).trim() || title(a, fallback);
 const idList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 
 export interface OutlineStrand {
@@ -37,16 +35,6 @@ export interface OutlineStrand {
   present: string[];
 }
 
-export interface OutlineArcSpan {
-  arcId: string;
-  name: string;
-  scope: string;
-  /** A series token such as `series-1`, from the owner's family. */
-  color: string;
-  from: number;
-  to: number;
-}
-
 export interface OutlineChapter {
   kind: 'chapter';
   id: string;
@@ -56,7 +44,6 @@ export interface OutlineChapter {
   storyYear: number | null;
   written: boolean;
   strands: OutlineStrand[];
-  arcSpans: OutlineArcSpan[];
 }
 
 /**
@@ -115,18 +102,6 @@ function strandsOf(chapter: Doc, characters: Map<string, Doc>): OutlineStrand[] 
     });
   }
   return out;
-}
-
-/** The series token for an arc: its family, else its owner's first family, else the fourth series. */
-function arcColor(arc: Doc, families: Map<string, Doc>, characters: Map<string, Doc>): string {
-  const own = families.get(str(arc.familyId));
-  if (own) return str(own.color) || 'series-4';
-  const owner = characters.get(str(arc.ownerCharacterId));
-  for (const fid of idList(owner?.familyIds)) {
-    const f = families.get(fid);
-    if (f) return str(f.color) || 'series-4';
-  }
-  return 'series-4';
 }
 
 /**
@@ -216,13 +191,6 @@ export function outlineGrid(
 ): Outline {
   const books = data.all('books').filter(live);
   const parts = data.all('parts').filter(live);
-  const arcs = new Map(
-    data
-      .all('arcs')
-      .filter(live)
-      .map((a) => [str(a._id), a]),
-  );
-  const families = new Map(data.all('families').map((f) => [str(f._id), f]));
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
 
   const chapters: OutlineChapter[] = data
@@ -230,24 +198,6 @@ export function outlineGrid(
     .filter(live)
     .map((c) => {
       const strands = strandsOf(c, characters);
-      const lo = strands.length ? Math.min(...strands.map((s) => s.startYear)) : null;
-      const hi = strands.length ? Math.max(...strands.map((s) => s.endYear)) : null;
-      const spans: OutlineArcSpan[] = [];
-      for (const id of idList(c.arcIds)) {
-        const arc = arcs.get(id);
-        if (!arc) continue;
-        const from = num(arc.startYear) ?? lo;
-        const to = num(arc.endYear) ?? hi;
-        if (from === null || to === null) continue;
-        spans.push({
-          arcId: id,
-          name: str(arc.name) || title(arc),
-          scope: str(arc.scope),
-          color: arcColor(arc, families, characters),
-          from: Math.min(from, to),
-          to: Math.max(from, to),
-        });
-      }
       return {
         kind: 'chapter' as const,
         id: str(c._id),
@@ -257,7 +207,6 @@ export function outlineGrid(
         storyYear: chapterYear(c),
         written: c.written === true,
         strands,
-        arcSpans: spans,
       };
     });
 
@@ -277,10 +226,6 @@ export function outlineGrid(
       years.add(s.startYear);
       years.add(s.endYear);
     }
-    for (const a of c.arcSpans) {
-      years.add(a.from);
-      years.add(a.to);
-    }
   }
   const cursor = opts.cursorYear ?? null;
   if (cursor !== null) years.add(cursor);
@@ -299,8 +244,8 @@ export interface Reorder {
 /**
  * PL-3: move one item to a new position among its siblings. `reuse` hands the
  * existing numbers back out in the new order, so siblings in other groups keep
- * theirs (reading order runs across a whole book); `sequence` numbers 1 to n
- * (beats within an arc). Returns only the items whose number changes.
+ * theirs (reading order runs across a whole book); `sequence` numbers 1 to n.
+ * Returns only the items whose number changes.
  */
 export function reorder(
   items: readonly { id: string; value: number }[],
@@ -321,57 +266,6 @@ export function reorder(
   return ids
     .map((id, i) => ({ id, value: values[i] as number }))
     .filter((r) => before.get(r.id) !== r.value);
-}
-
-/** PL-3: where a beat sits in one arc. A beat with no position there counts as 0. */
-export function beatOrderIn(beat: Doc, arcId: string): number {
-  const entry = (Array.isArray(beat.arcOrders) ? beat.arcOrders.filter(isPlainObject) : []).find(
-    (o) => o.arcId === arcId,
-  );
-  return num(entry?.order) ?? 0;
-}
-
-/** The live beats of one arc, in that arc's order, then by title. */
-export function beatsOfArc<T extends Doc>(beats: readonly T[], arcId: string): T[] {
-  return beats
-    .filter((b) => live(b) && idList(b.arcIds).includes(arcId))
-    .sort(
-      (a, b) => beatOrderIn(a, arcId) - beatOrderIn(b, arcId) || title(a).localeCompare(title(b)),
-    );
-}
-
-export interface BeatPatch {
-  id: string;
-  /** The beat's whole new `arcOrders`. Other arcs keep the position they had. */
-  arcOrders: { arcId: string; order: number }[];
-}
-
-/**
- * PL-3: move one beat within one arc. Only that arc is renumbered 1 to n; a
- * beat that also sits in another arc keeps its position there. Returns the new
- * `arcOrders` of each beat whose position in this arc changes.
- */
-export function reorderBeatsInArc(
-  beats: readonly Doc[],
-  arcId: string,
-  movedId: string,
-  toIndex: number,
-): BeatPatch[] {
-  const group = beatsOfArc(beats, arcId);
-  const moves = reorder(
-    group.map((b) => ({ id: str(b._id), value: beatOrderIn(b, arcId) })),
-    movedId,
-    toIndex,
-    'sequence',
-  );
-  const byId = new Map(group.map((b) => [str(b._id), b]));
-  return moves.map((m) => {
-    const beat = byId.get(m.id) as Doc;
-    const others = (Array.isArray(beat.arcOrders) ? beat.arcOrders.filter(isPlainObject) : [])
-      .filter((o) => o.arcId !== arcId && idList(beat.arcIds).includes(str(o.arcId)))
-      .map((o) => ({ arcId: str(o.arcId), order: num(o.order) ?? 0 }));
-    return { id: m.id, arcOrders: [...others, { arcId, order: m.value }] };
-  });
 }
 
 export interface ChapterPatch {
@@ -465,7 +359,6 @@ export interface ChapterPage {
   readingOrder: number;
   storyYear: number | null;
   written: boolean;
-  arcs: { id: string; name: string }[];
   strands: {
     id: string;
     label: string;
@@ -476,109 +369,14 @@ export interface ChapterPage {
     characters: { id: string; name: string; state: LifeState }[];
     places: { id: string; name: string }[];
   }[];
-  beats: {
-    id: string;
-    title: string;
-    year: number | null;
-    description: string;
-    arcs: string[];
-    /** KB-3: whether an earlier or later beat on the page is ordered by the same arc, so the beat can trade places with it. */
-    canMoveUp: boolean;
-    canMoveDown: boolean;
-    /** The arc whose order places this beat on the page (PL-3), or null when it is in none. */
-    orderArcId: string | null;
-  }[];
-  themes: { id: string; title: string; note: string }[];
-  factsInPlay: {
-    factId: string;
-    fact: string;
-    characterId: string;
-    character: string;
-    note: string;
-  }[];
 }
 
-/**
- * A beat on a chapter page is placed by its position in the first of the
- * chapter's arcs that it belongs to, else in its own first arc, else 0.
- */
-function chapterBeatOrder(beat: Doc, chapterArcs: readonly string[]): number {
-  const arcs = idList(beat.arcIds);
-  const arc = chapterArcs.find((a) => arcs.includes(a)) ?? arcs[0];
-  return arc === undefined ? 0 : beatOrderIn(beat, arc);
-}
-
-/** The arc whose order places a beat on a chapter page, or null when it is in none. */
-function orderArcOf(beat: Doc, chapterArcs: readonly string[]): string | null {
-  const arcs = idList(beat.arcIds);
-  return chapterArcs.find((a) => arcs.includes(a)) ?? arcs[0] ?? null;
-}
-
-/** The live beats of one chapter in the order the chapter page shows them. */
-export function beatsOfChapter<T extends Doc>(
-  beats: readonly T[],
-  chapterId: string,
-  chapterArcs: readonly string[],
-): T[] {
-  return beats
-    .filter((b) => live(b) && b.chapterId === chapterId)
-    .sort(
-      (a, b) =>
-        chapterBeatOrder(a, chapterArcs) - chapterBeatOrder(b, chapterArcs) ||
-        title(a).localeCompare(title(b)),
-    );
-}
-
-/**
- * The nearest beat before (-1) or after (1) a place on a chapter page that the
- * same arc orders, or -1 when there is none.
- */
-function neighbourIndex(
-  list: readonly Doc[],
-  at: number,
-  by: -1 | 1,
-  chapterArcs: readonly string[],
-): number {
-  const arc = orderArcOf(list[at] as Doc, chapterArcs);
-  if (arc === null) return -1;
-  for (let i = at + by; i >= 0 && i < list.length; i += by) {
-    if (orderArcOf(list[i] as Doc, chapterArcs) === arc) return i;
-  }
-  return -1;
-}
-
-/**
- * KB-3: move a beat earlier or later on its chapter page. A chapter keeps no
- * beat order of its own; the order comes from the arc that orders the beat
- * (the first of the chapter's arcs it is in), so the beat trades places with
- * the nearest beat that arc also orders, and only that arc's positions
- * change (PL-3). Returns null when no such beat lies that way.
- */
-export function moveBeatInChapter(
-  beats: readonly Doc[],
-  chapter: Doc,
-  movedId: string,
-  by: -1 | 1,
-): { arcId: string; patches: BeatPatch[] } | null {
-  const chapterArcs = idList(chapter.arcIds);
-  const list = beatsOfChapter(beats, str(chapter._id), chapterArcs);
-  const at = list.findIndex((b) => str(b._id) === movedId);
-  if (at < 0) return null;
-  const other = neighbourIndex(list, at, by, chapterArcs);
-  const arcId = orderArcOf(list[at] as Doc, chapterArcs);
-  if (other < 0 || arcId === null) return null;
-  const inArc = beatsOfArc(beats, arcId);
-  const to = inArc.findIndex((b) => b._id === (list[other] as Doc)._id);
-  return { arcId, patches: reorderBeatsInArc(beats, arcId, movedId, to) };
-}
-
-/** PL-4: a chapter with its beats, who is present and how old, places, themes, and facts in play. */
+/** A chapter with who is present and how old in each strand, and its places. */
 export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
   const chapter = data.all('chapters').find((c) => str(c._id) === id);
   if (!chapter) return null;
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
   const places = data.all('places');
-  const arcs = new Map(data.all('arcs').map((a) => [str(a._id), a]));
   const nameOf = (cid: string) => characterName(characters.get(cid), cid);
 
   const strands = (Array.isArray(chapter.strands) ? chapter.strands.filter(isPlainObject) : []).map(
@@ -602,56 +400,13 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
     },
   );
 
-  const chapterArcs = idList(chapter.arcIds);
-  const ordered = beatsOfChapter(data.all('plotBeats'), id, chapterArcs);
-  const beats = ordered.map((b, i) => ({
-    id: str(b._id),
-    title: title(b, 'Untitled beat'),
-    year: num(b.year),
-    description: str(b.description),
-    arcs: idList(b.arcIds).map((a) => arcName(arcs.get(a), a)),
-    canMoveUp: neighbourIndex(ordered, i, -1, chapterArcs) >= 0,
-    canMoveDown: neighbourIndex(ordered, i, 1, chapterArcs) >= 0,
-    orderArcId: orderArcOf(b, chapterArcs),
-  }));
-
-  // A theme's appearances are the one record of which chapters it is in (TH-1).
-  const themeNotes = new Map<string, string>();
-  for (const t of data.all('themes').filter(live)) {
-    const app = (Array.isArray(t.appearances) ? t.appearances.filter(isPlainObject) : []).find(
-      (a) => a.chapterId === id,
-    );
-    if (app) themeNotes.set(str(t._id), str(app.note));
-  }
-  const themeDocs = new Map(data.all('themes').map((t) => [str(t._id), t]));
-  const themes = [...themeNotes].map(([tid, note]) => ({
-    id: tid,
-    title: title(themeDocs.get(tid), tid),
-    note,
-  }));
-
-  const facts = new Map(data.all('facts').map((f) => [str(f._id), f]));
-  const factsInPlay = (
-    Array.isArray(chapter.factsInPlay) ? chapter.factsInPlay.filter(isPlainObject) : []
-  ).map((f) => ({
-    factId: str(f.factId),
-    fact: title(facts.get(str(f.factId)), str(f.factId)),
-    characterId: str(f.characterId),
-    character: nameOf(str(f.characterId)),
-    note: str(f.note),
-  }));
-
   return {
     id,
     title: title(chapter, 'Untitled chapter'),
     readingOrder: num(chapter.readingOrder) ?? 0,
     storyYear: chapterYear(chapter),
     written: chapter.written === true,
-    arcs: idList(chapter.arcIds).map((a) => ({ id: a, name: arcName(arcs.get(a), a) })),
     strands,
-    beats,
-    themes,
-    factsInPlay,
   };
 }
 

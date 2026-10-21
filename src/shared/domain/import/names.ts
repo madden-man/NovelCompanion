@@ -8,25 +8,19 @@ const STUBBABLE: Partial<Record<EntryCollection, (name: string) => Doc>> = {
   characters: (name) => ({ title: name, names: { full: name }, birth: { unknown: true } }),
   families: (name) => ({ title: name, name }),
   places: (name) => ({ title: name }),
-  facts: (name) => ({ title: name }),
-  themes: (name) => ({ title: name }),
 };
 
 const ALL_COLLECTIONS: EntryCollection[] = [
   'characters',
   'families',
   'places',
-  'facts',
-  'themes',
   'chapters',
   'parts',
   'books',
-  'arcs',
   'worldEvents',
   'eraStates',
   'culturalEntries',
   'glossaryTerms',
-  'customEntries',
 ];
 
 /** The names an entry answers to: its title, and for people their full and Chinese names. */
@@ -34,11 +28,8 @@ function namesOf(doc: Doc): string[] {
   const out = [entryTitle(doc)];
   const names = doc.names;
   if (isPlainObject(names)) {
-    for (const key of ['full', 'chinese', 'romanization']) {
+    for (const key of ['full', 'chinese']) {
       if (typeof names[key] === 'string') out.push(names[key]);
-    }
-    if (Array.isArray(names.nicknames)) {
-      out.push(...names.nicknames.filter((n): n is string => typeof n === 'string'));
     }
   }
   return out.map((n) => n.trim().toLowerCase()).filter(Boolean);

@@ -243,7 +243,7 @@ describe('GD-4 Markdown export', () => {
     expect(htmlToMarkdown('')).toBe('');
   });
 
-  test('GD-4 one file per entry, a folder per section, custom sections by their own name, trash left out', () => {
+  test('GD-4 SM-3 one file per entry, a folder per section, moments with their own labels, trash left out', () => {
     const folders = bibleMarkdown({
       bibleName: 'East Winds',
       lists: [{ _id: 'unionTypes', items: [{ id: 'married', label: 'Married' }] }],
@@ -262,21 +262,21 @@ describe('GD-4 Markdown export', () => {
           { _id: 'H2', title: 'Peter Hale', status: 'canon', birth: { unknown: true } },
           { _id: 'H9', title: 'Trashed', status: 'idea', deletedAt: '2026-01-01T00:00:00Z' },
         ],
-        customSections: [
-          { _id: 'S1', title: '', name: 'Recipes', fields: [{ id: 'f1', label: 'Dish' }] },
-        ],
-        customEntries: [
+        moments: [
           {
-            _id: 'C1',
-            title: 'Dumplings',
-            status: 'idea',
-            sectionId: 'S1',
-            values: { f1: 'Jiaozi' },
+            _id: 'M1',
+            title: 'Moves to Portland',
+            status: 'canon',
+            characterId: 'H1',
+            year: 1980,
+            endYear: null,
+            body: 'Glad of the rain.',
+            worldContext: 'The ferries still run.',
           },
         ],
       },
     });
-    expect(folders.map((f) => f.folder)).toEqual(['Characters', 'Custom sections', 'Recipes']);
+    expect(folders.map((f) => f.folder)).toEqual(['Characters', 'Moments']);
     const people = folders[0]!.files;
     expect(people.map((f) => f.name)).toEqual(['Margaret Hale (H1).md', 'Peter Hale (H2).md']);
     const m = people[0]!.content;
@@ -287,9 +287,12 @@ describe('GD-4 Markdown export', () => {
     expect(m).toContain('A *teacher*.');
     expect(m).toContain('## Links\n\n- spouse: Peter Hale (Character)');
     expect(people[1]!.content).toContain('unknown');
-    const recipe = folders[2]!.files[0]!.content;
-    expect(recipe).toContain('- **Dish**: Jiaozi');
-    expect(recipe).toContain('- **Section**: Recipes');
+    const moment = folders[1]!.files[0]!.content;
+    expect(moment).toContain('# Moves to Portland\n');
+    expect(moment).toContain('- **Character**: Margaret Hale');
+    expect(moment).toContain('- **Year**: 1980');
+    expect(moment).toContain('- **Relevant world events**: The ferries still run.');
+    expect(moment).toContain('Glad of the rain.');
   });
 
   test('GD-4 names are safe for Drive and every desktop system; export folders are dated', () => {

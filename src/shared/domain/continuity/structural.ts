@@ -8,11 +8,10 @@
  * The checks, per chapter strand (A5) or per chapter at its story year:
  * - a character present in a strand while dead or unborn in that strand's
  *   year (for a year range: dead before it starts, or born after it ends);
- * - a character acting on a fact in play (KN-3) before the year their
- *   knowledge record says they learn it;
  * - an event linked to the chapter as having happened, dated after its story year;
  * - a strand year outside its point of view character's lifetime;
- * and, for the whole manuscript, the FT-6 tree warnings.
+ * and, for the whole manuscript, the FT-6 tree warnings. The facts step
+ * (KN-3) went with A39.
  */
 import { lifeState } from '../ages';
 import type { LifeState } from '../ages';
@@ -26,7 +25,6 @@ import type { StoryDate } from '../../schema/common';
 export const STRUCTURAL_CHECKS = [
   'character-present-while-dead',
   'character-present-while-unborn',
-  'fact-acted-on-before-learned',
   'event-linked-as-happened-after-story-year',
   'strand-year-outside-pov-lifetime',
   'tree-warning',
@@ -37,7 +35,6 @@ export type StructuralCheck = (typeof STRUCTURAL_CHECKS)[number];
 export const CHECK_LABELS: Record<StructuralCheck, string> = {
   'character-present-while-dead': 'Present while dead',
   'character-present-while-unborn': 'Present before birth',
-  'fact-acted-on-before-learned': 'Acts on a fact before learning it',
   'event-linked-as-happened-after-story-year': 'Event linked before it happens',
   'strand-year-outside-pov-lifetime': 'Point of view outside their lifetime',
   'tree-warning': 'Family tree warning',
@@ -206,37 +203,10 @@ function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] 
     }
   }
 
-  // Facts in play and linked events belong to the chapter, so they use its story year.
+  // Linked events belong to the chapter, so they use its story year.
   const primary = primaryOf(strands);
   if (!primary) return out;
   const year = primary.startYear;
-  const records = data.all('knowledgeRecords').filter(live);
-  const facts = Array.isArray(chapter.factsInPlay) ? chapter.factsInPlay.filter(isPlainObject) : [];
-  for (const fip of facts) {
-    const factId = str(fip.factId);
-    const cid = str(fip.characterId);
-    if (!factId || !cid) continue;
-    const mine = records.filter(
-      (r) => str(r.factId) === factId && str(r.characterId) === cid && num(r.yearLearned) !== null,
-    );
-    // The earliest record decides; no record with a year means the bible does not say.
-    const first = mine.sort(
-      (a, b) =>
-        (num(a.yearLearned) as number) - (num(b.yearLearned) as number) ||
-        str(a._id).localeCompare(str(b._id)),
-    )[0];
-    if (!first || (num(first.yearLearned) as number) <= year) continue;
-    const name = characterName(characters.get(cid), cid);
-    const recordId = str(first._id);
-    add(
-      'fact-acted-on-before-learned',
-      primary,
-      [cid, factId, recordId],
-      `${name} acts on a fact before learning it`,
-      `${setIn(chapter, primary)} and has ${name} (${cid}) acting on fact ${factId}. Knowledge record ${recordId} says ${name} learns it in ${num(first.yearLearned)}.`,
-    );
-  }
-
   const events = new Map(eventSpans(data).map((e) => [e.id, e]));
   const links = Array.isArray(chapter.links) ? chapter.links.filter(isPlainObject) : [];
   for (const l of links) {

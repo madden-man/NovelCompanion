@@ -274,12 +274,12 @@ test('NF-2 ED-1 a new character is made, edited, and saved from the keyboard', a
   await press(page.getByRole('button', { name: 'Create character' }));
   await expect(editor()).toBeVisible();
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');
-  const birthplace = editor().locator('[data-field="birthplace"] input');
-  await tabTo(birthplace);
+  const role = editor().locator('[data-field="role"] textarea');
+  await tabTo(role);
   await page.keyboard.type('Tacoma');
   await expect(editor().getByTestId('autosave')).toHaveText('Saved');
   const saved = await invoke('entry.list', { collection: 'characters', trash: 'exclude' });
-  expect(saved.entries.some((e) => e.entry.birthplace === 'Tacoma')).toBe(true);
+  expect(saved.entries.some((e) => e.entry.role === 'Tacoma')).toBe(true);
 });
 
 test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to Session, and Start session', async () => {
@@ -474,14 +474,14 @@ test('NF-2 ED-7 the review queue: a proposal is approved with the keyboard', asy
     op: 'update',
     collection: 'characters',
     targetId: 'H3',
-    data: { birthplace: 'Salem, Oregon' },
+    data: { role: 'Salem, Oregon' },
   });
   await go('Review queue');
   const queue = page.getByTestId('review-queue');
   await press(queue.getByRole('button', { name: 'Approve' }).first());
   await expect(queue.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   const h3 = await invoke('entry.get', { collection: 'characters', id: 'H3' });
-  expect(h3.entry.birthplace).toBe('Salem, Oregon');
+  expect(h3.entry.role).toBe('Salem, Oregon');
 });
 
 test('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, and linking a file, all by keyboard', async () => {
@@ -590,7 +590,7 @@ test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every c
   await invoke('entry.update', {
     collection: 'characters',
     id: 'H3',
-    patch: { birthplace: 'Hood River, Oregon' },
+    patch: { role: 'Hood River, Oregon' },
   });
   await go('Characters');
   await press(
@@ -619,7 +619,7 @@ test('NF-2 ED-7 the review queue with a proposal diff open: every control takes 
     op: 'update',
     collection: 'characters',
     targetId: 'H1',
-    data: { birthplace: 'Astoria, Oregon' },
+    data: { role: 'Astoria, Oregon' },
   });
   await go('Review queue');
   const queue = page.getByTestId('review-queue');

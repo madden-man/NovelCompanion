@@ -769,7 +769,7 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
 test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved typing undoes that typing', async () => {
   await select('Ruth Hale');
   const history = inspector().getByTestId('undo-history').locator('li');
-  const place = field(editor(), 'birthplace').locator('input');
+  const place = field(editor(), 'role').locator('textarea');
   await place.fill('Astoria, Oregon');
   // Straight into another field before the save of the first one lands.
   await page.getByRole('button', { name: 'Add person', exact: true }).click();
@@ -785,9 +785,9 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   expect(await history.allTextContents()).toEqual(before);
   const t = await invoke('tree.get', {});
   const ruth = t.people.find((p) => p.name === 'Ruth Hale')!;
-  expect(
-    (await invoke('entry.get', { collection: 'characters', id: ruth.id })).entry.birthplace,
-  ).toBe('Astoria, Oregon');
+  expect((await invoke('entry.get', { collection: 'characters', id: ruth.id })).entry.role).toBe(
+    'Astoria, Oregon',
+  );
   await inspector().getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
 });
 

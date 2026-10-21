@@ -266,9 +266,7 @@ describe('CH-3 the character page and the story time', () => {
     });
     expect(page.storyTime).toBeNull();
     expect(page.relatives.children.map((c) => c.name)).toEqual(['Daniel Hale', 'Ruth Hale']);
-    expect(page.names.calledBy).toEqual([
-      { characterId: 'H5', characterName: 'Iris Hale-Zhou', name: 'Gran' },
-    ]);
+    expect(page.names).toEqual({ full: 'Margaret Hale', chinese: '' });
   });
 
   test('CH-3 the story time drives the page age, persists in meta, and writes no entry', async () => {

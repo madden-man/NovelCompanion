@@ -13,17 +13,12 @@ export interface OutgoingRef {
   target: string[];
 }
 
-/** Resolves a custom entry's section to the specs of its own fields. */
-export type CustomSpecs = (sectionId: string) => FieldSpec[] | undefined;
-
 function walk(
   specs: readonly FieldSpec[],
   value: Doc,
   base: string,
   labelBase: string,
   out: OutgoingRef[],
-  custom: CustomSpecs | undefined,
-  root: Doc,
 ): void {
   for (const s of specs) {
     const v = value[s.name];
@@ -59,24 +54,18 @@ function walk(
         }
         break;
       case 'object':
-        if (isPlainObject(v) && s.fields) walk(s.fields, v, path, label, out, custom, root);
+        if (isPlainObject(v) && s.fields) walk(s.fields, v, path, label, out);
         break;
       case 'objectList':
         if (Array.isArray(v) && s.fields) {
           const fields = s.fields;
           v.forEach((item, i) => {
             if (isPlainObject(item)) {
-              walk(fields, item, joinPath(path, i), label, out, custom, root);
+              walk(fields, item, joinPath(path, i), label, out);
             }
           });
         }
         break;
-      case 'customValues': {
-        const sectionId = root.sectionId;
-        const sub = typeof sectionId === 'string' ? custom?.(sectionId) : undefined;
-        if (sub && isPlainObject(v)) walk(sub, v, path, labelBase, out, custom, root);
-        break;
-      }
       default:
         break;
     }
@@ -84,12 +73,8 @@ function walk(
 }
 
 /** Every reference an entry makes: its links and every reference field (ED-9). */
-export function outgoingRefs(
-  manifest: readonly FieldSpec[],
-  doc: Doc,
-  custom?: CustomSpecs,
-): OutgoingRef[] {
+export function outgoingRefs(manifest: readonly FieldSpec[], doc: Doc): OutgoingRef[] {
   const out: OutgoingRef[] = [];
-  walk(manifest, doc, '', '', out, custom, doc);
+  walk(manifest, doc, '', '', out);
   return out;
 }

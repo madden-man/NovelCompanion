@@ -22,25 +22,25 @@ import type { Channel, Request, Response } from '../../src/shared/ipc';
 const ROOT = join(import.meta.dirname, '../..');
 
 describe('KB-6 the capture feature', () => {
-  test('KB-6 AI-4 AI-5 the capture system prompt carries the prose prohibition, the refusal, the material rule, and the filing rules', () => {
+  test('KB-6 SM-3 AI-4 AI-5 the capture system prompt carries the prose prohibition, the refusal, the material rule, and the filing rules', () => {
     const system = featureSystemPrompt(FEATURES.capture);
     expect(system).toContain(PROSE_PROHIBITION);
     expect(system).toContain(PROSE_REFUSAL_RULE);
     expect(system).toContain(MATERIAL_RULE);
     // Look up every name before proposing.
     expect(CAPTURE_INSTRUCTIONS).toMatch(/Look up every name in the text with the tools/);
-    // Each fact on the entry it belongs to: places lived, voice notes, backstory, world events, places,
-    // cultural entries, glossary terms, facts linked to the characters, relationships.
+    // SM-3: each fact on the entry it belongs to: a moment (where they live, how they speak, what
+    // happens to them), backstory, world events, places, cultural entries, glossary terms.
     for (const where of [
-      'placesLived',
-      'voiceNotes',
+      'new moments entry',
+      'moment titled "Lives in"',
+      'moment titled "Voice"',
+      'one moment for each of them',
       'backstory',
       'world event',
       'places entry',
       'cultural entry',
       'glossary term',
-      'facts entry linked to each of them',
-      'relationship',
     ]) {
       expect(CAPTURE_INSTRUCTIONS, where).toContain(where);
     }
@@ -100,7 +100,7 @@ describe('KB-6 the capture feature', () => {
 
   test('KB-6 a new entry from a capture is an idea and its source note names the capture and its date', () => {
     const created = prepareCaptureDraft(
-      { op: 'create', collection: 'facts', data: { title: 'A fact' }, reason: 'r' },
+      { op: 'create', collection: 'moments', data: { title: 'A moment' }, reason: 'r' },
       '2026-10-12',
     );
     expect(created.data).toMatchObject({
@@ -111,7 +111,7 @@ describe('KB-6 the capture feature', () => {
     const canon = prepareCaptureDraft(
       {
         op: 'create',
-        collection: 'facts',
+        collection: 'moments',
         data: {
           title: 'B',
           status: 'canon',
@@ -173,14 +173,14 @@ describe('KB-6 ED-3 filing', () => {
   test('KB-6 ED-3 File it approves the ticked proposals in order, rejects the rest, and makes one undo step', async () => {
     const calls: string[] = [];
     const docs: Record<string, Record<string, unknown>> = {
-      Z3: { _id: 'Z3', title: 'Zhou Lan', placesLived: [] },
+      Z3: { _id: 'Z3', title: 'Zhou Lan', backstory: '' },
       NEW1: { _id: 'NEW1', title: 'Portland rations water' },
     };
     const invoke = (async (channel: Channel, req: Record<string, unknown>) => {
       calls.push(`${channel} ${String(req.id)}`);
       if (channel === 'entry.get') return { entry: docs[String(req.id)] };
       if (channel === 'proposal.approve') {
-        if (req.id === 'P1') docs.Z3 = { ...docs.Z3, placesLived: [{ place: 'Seattle' }] };
+        if (req.id === 'P1') docs.Z3 = { ...docs.Z3, backstory: 'Moved to Seattle.' };
         return { proposal: { appliedEntryId: req.id === 'P1' ? 'Z3' : 'NEW1' } };
       }
       return { proposal: {} };

@@ -165,35 +165,13 @@ export function bibleMarkdown(input: MarkdownInput): MarkdownFolder[] {
     }
   };
 
-  const sectionNames = new Map(
-    (input.collections.customSections ?? []).map((s) => [s._id, String(s.name ?? 'Custom')]),
-  );
-  const fieldLabels = new Map(
-    (input.collections.customSections ?? []).map((s) => [
-      s._id,
-      new Map(((s.fields ?? []) as { id: string; label: string }[]).map((f) => [f.id, f.label])),
-    ]),
-  );
-
   const entryFile = (c: EntryCollection, d: Doc): { name: string; content: string } => {
     const manifest = manifests[c];
     const lines = [`# ${entryTitle(d)}`, ''];
     for (const spec of manifest) {
-      if (SKIP.has(spec.name) || spec.kind === 'system' || spec.derived) continue;
+      if (SKIP.has(spec.name) || spec.kind === 'system') continue;
       const v = d[spec.name];
       if (isEmpty(v)) continue;
-      if (spec.kind === 'customValues') {
-        const values = v as Record<string, unknown>;
-        const labels = fieldLabels.get(String(d.sectionId));
-        for (const [k, cv] of Object.entries(values)) {
-          if (!isEmpty(cv)) lines.push(`- **${labels?.get(k) ?? k}**: ${value(undefined, cv)}`);
-        }
-        continue;
-      }
-      if (spec.name === 'sectionId') {
-        lines.push(`- **${spec.label}**: ${sectionNames.get(String(v)) ?? String(v)}`);
-        continue;
-      }
       lines.push(`- **${spec.label}**: ${value(spec, v)}`);
     }
     lines.push(`- **ID**: ${d._id}`);
@@ -215,32 +193,11 @@ export function bibleMarkdown(input: MarkdownInput): MarkdownFolder[] {
   const folders: MarkdownFolder[] = [];
   for (const c of Object.keys(collectionInfo) as EntryCollection[]) {
     const docs = (input.collections[c] ?? []).filter((d) => !d.deletedAt);
-    if (c === 'customEntries') {
-      const bySection = new Map<string, Doc[]>();
-      for (const d of docs) {
-        const key = String(d.sectionId ?? '');
-        bySection.set(key, [...(bySection.get(key) ?? []), d]);
-      }
-      for (const [sectionId, list] of bySection) {
-        folders.push({
-          folder: safeName(sectionNames.get(sectionId) ?? `Custom ${sectionId}`),
-          files: sorted(list).map((d) => entryFile(c, d)),
-        });
-      }
-      continue;
-    }
     if (!docs.length) continue;
     folders.push({
       folder: safeName(collectionInfo[c].plural),
       files: sorted(docs).map((d) => entryFile(c, d)),
     });
-  }
-  // Two custom sections may share a name with a built-in section: keep folders apart.
-  const used = new Map<string, number>();
-  for (const f of folders) {
-    const n = used.get(f.folder) ?? 0;
-    used.set(f.folder, n + 1);
-    if (n > 0) f.folder = `${f.folder} ${n + 1}`;
   }
   return folders;
 }

@@ -2,9 +2,9 @@
  * What the alignment check gives Claude for one chapter (CC-3, A20), built
  * deterministically from the read model: the chapter's numbered lines, the
  * entries the M7 selection picks for the chapter (SB-2), and the plot as
- * stored: the chapter's strands and years, its beats, the beats in its arcs
- * dated at or before its story year, the chapter order, and the facts in play
- * with what each character is recorded to know.
+ * stored: the chapter's strands and years, and the chapter order. The
+ * characters' moments up to the story year come with the selected entries
+ * (SM-3); beats, arcs, and facts in play went with A39.
  */
 import { lifeState } from '../ages';
 import { selectForSession } from '../brief/selection';
@@ -82,7 +82,6 @@ export function alignmentMaterial(
   if (!chapter) throw new Error('That chapter is not in the bible.');
   const chars = byId(data, 'characters');
   const places = byId(data, 'places');
-  const facts = byId(data, 'facts');
   const year = chapterYear(chapter);
   const title = entryTitle(chapter);
   const order = num(chapter.readingOrder);
@@ -110,57 +109,6 @@ export function alignmentMaterial(
           .join(', ') || 'none'
       }.`,
     );
-  }
-
-  const fip = (Array.isArray(chapter.factsInPlay) ? chapter.factsInPlay : []).filter(isPlainObject);
-  if (fip.length) {
-    plot.push('Facts in play (which characters act on which facts):');
-    const records = data.all('knowledgeRecords').filter(live);
-    for (const f of fip) {
-      const fact = facts.get(str(f.factId));
-      if (fact) give('facts', fact);
-      const knows = records
-        .filter((r) => str(r.factId) === str(f.factId) && str(r.characterId) === str(f.characterId))
-        .map((r) => {
-          give('knowledgeRecords', r);
-          return `knowledge record [${str(r._id)}] says they learn it in ${num(r.yearLearned) ?? 'an unknown year'}`;
-        });
-      plot.push(
-        `- ${person(chars, str(f.characterId), year)} acts on fact [${str(f.factId)}] ${entryTitle(fact)}${f.note ? ` (${one(str(f.note))})` : ''}; ${knows.join('; ') || 'no knowledge record'}.`,
-      );
-    }
-  }
-
-  const beats = data.all('plotBeats').filter(live);
-  const arcIds = ids(chapter.arcIds);
-  const beatLine = (b: Doc) => {
-    give('plotBeats', b);
-    return `- Beat [${str(b._id)}] (${num(b.year) ?? 'no year'}${str(b.chapterId) ? `, chapter ${str(b.chapterId)}` : ''}): ${one(str(b.description) || entryTitle(b))}`;
-  };
-  const own = beats.filter((b) => str(b.chapterId) === chapterId);
-  plot.push(
-    own.length ? 'Beats planned for this chapter:' : 'No beats are planned for this chapter.',
-  );
-  for (const b of own) plot.push(beatLine(b));
-  if (arcIds.length && year !== null) {
-    const arcs = byId(data, 'arcs');
-    const earlier = beats
-      .filter(
-        (b) =>
-          str(b.chapterId) !== chapterId &&
-          num(b.year) !== null &&
-          (num(b.year) as number) <= year &&
-          ids(b.arcIds).some((a) => arcIds.includes(a)),
-      )
-      .sort(
-        (a, b) =>
-          (num(a.year) as number) - (num(b.year) as number) || str(a._id).localeCompare(str(b._id)),
-      );
-    plot.push(
-      `Beats in its arcs (${arcIds.map((a) => `${entryTitle(arcs.get(a))} [${a}]`).join(', ')}) dated at or before ${year}:`,
-    );
-    for (const b of earlier) plot.push(beatLine(b));
-    if (!earlier.length) plot.push('- none');
   }
 
   plot.push('Chapter order (reading order, story year):');

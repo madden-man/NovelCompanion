@@ -203,21 +203,14 @@ export function withoutSystem(specs: readonly FieldSpec[], value: unknown): unkn
 /**
  * Open the list an entry of `collection` is made on, and return the name of
  * its New button and the fields its form presets there and does not show.
- * Every section has a rail item named for it, except custom entries (KB-4):
- * those are listed per custom section, each its own rail item named for the
- * section, and the form on it presets the section.
+ * Every section has a rail item named for it.
  */
 export async function openListFor(
   page: Page,
-  ctx: UiContext,
+  _ctx: UiContext,
   collection: EntryCollection,
-  entry: Record<string, unknown>,
+  _entry: Record<string, unknown>,
 ): Promise<{ newButton: string; preset: Record<string, unknown> }> {
-  if (collection === 'customEntries') {
-    const section = await ctx.titleOf(String(entry.sectionId));
-    await rail(page, section).click();
-    return { newButton: `New entry in ${section}`, preset: { sectionId: entry.sectionId } };
-  }
   await rail(page, collectionInfo[collection].plural).click();
   return { newButton: `New ${collectionInfo[collection].singular.toLowerCase()}`, preset: {} };
 }
@@ -226,7 +219,6 @@ export interface UiContext {
   page: Page;
   /** The title of an entry, for typing into a search picker. */
   titleOf(id: string): Promise<string>;
-  customSpecs(sectionId: string): FieldSpec[] | undefined;
 }
 
 async function pickBySearch(ctx: UiContext, scope: Locator, id: string, placeholder: RegExp) {
@@ -302,13 +294,6 @@ export async function setField(
       if (d.day !== undefined) await f.getByLabel('Day').fill(String(d.day));
       return;
     }
-    case 'yearOrAge': {
-      const v = value as Record<string, number>;
-      const mode = 'age' in v ? 'age' : 'year';
-      await f.getByLabel('Stamped by').selectOption(mode);
-      await f.getByLabel(mode === 'age' ? 'Age' : 'Year', { exact: true }).fill(String(v[mode]));
-      return;
-    }
     case 'tags':
     case 'strings': {
       await clearChips(f);
@@ -374,16 +359,6 @@ export async function setField(
           .locator(':scope > .item-head')
           .getByRole('button', { name: /^Remove/ })
           .click();
-      }
-      return;
-    }
-    case 'customValues': {
-      const specs = ctx.customSpecs(String(root.sectionId));
-      if (!specs) throw new Error('No section for custom values');
-      const v = value as Record<string, unknown>;
-      for (const sub of specs) {
-        if (!(sub.name in v)) continue;
-        await setField(ctx, f, sub, `${path}.${sub.name}`, v[sub.name], root);
       }
       return;
     }

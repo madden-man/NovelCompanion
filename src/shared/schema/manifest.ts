@@ -40,10 +40,6 @@ export type FieldKind =
   | 'object'
   /** A list of nested groups. */
   | 'objectList'
-  /** A voice note stamp: a story year or an age (A9). */
-  | 'yearOrAge'
-  /** Custom section values, keyed by the section's field IDs (CS-1). */
-  | 'customValues'
   /** Set by the app, shown but never edited directly. */
   | 'system';
 
@@ -127,9 +123,6 @@ export const f = {
     spec('object', name, label, { fields, ...extra }),
   objectList: (name: string, label: string, fields: FieldSpec[], extra?: Extra) =>
     spec('objectList', name, label, { fields, ...extra }),
-  yearOrAge: (name: string, label: string, extra?: Extra) => spec('yearOrAge', name, label, extra),
-  customValues: (name: string, label: string, extra?: Extra) =>
-    spec('customValues', name, label, extra),
   system: (name: string, label: string) => spec('system', name, label),
 };
 

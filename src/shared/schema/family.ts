@@ -74,19 +74,3 @@ export const parentLinkFields: FieldSpec[] = [
     hint: 'For adoptive, step, and guardian links: the year it began.',
   }),
 ];
-
-/** Relationship (section 4): two characters, a free-text type, and a year range. */
-export const Relationship = entry({
-  characterIds: z.tuple([Id, Id]),
-  type: z.string().default(''),
-  startYear: Year.nullable().default(null),
-  endYear: Year.nullable().default(null),
-});
-export type Relationship = z.infer<typeof Relationship>;
-
-export const relationshipFields: FieldSpec[] = [
-  ...commonFields,
-  f.refPair('characterIds', 'Characters', ['characters']),
-  f.text('type', 'Relationship', { hint: 'For example friend, rival, or employer.' }),
-  ...yearRange('startYear', 'endYear'),
-];

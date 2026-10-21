@@ -35,54 +35,54 @@ function fakeIO() {
 describe('ED-3 undo steps check what they overwrite', () => {
   test('ED-3 a step applies when the fields still hold what it expects', async () => {
     const f = fakeIO();
-    f.docs.set('A', { _id: 'A', title: 'Ada', birthplace: 'Oakland' });
+    f.docs.set('A', { _id: 'A', title: 'Ada', backstory: 'Oakland' });
     const m = new UndoManager();
     m.record(
       editCommand(
-        'Changed Birthplace on Ada',
+        'Changed Backstory on Ada',
         'characters',
         'A',
-        { birthplace: '' },
-        { birthplace: 'Oakland' },
+        { backstory: '' },
+        { backstory: 'Oakland' },
       ),
     );
     expect(await m.step('undo', f.io)).toEqual({
       status: 'applied',
-      label: 'Changed Birthplace on Ada',
+      label: 'Changed Backstory on Ada',
     });
-    expect(f.docs.get('A')!.birthplace).toBe('');
+    expect(f.docs.get('A')!.backstory).toBe('');
     expect(await m.step('redo', f.io)).toEqual({
       status: 'applied',
-      label: 'Changed Birthplace on Ada',
+      label: 'Changed Backstory on Ada',
     });
-    expect(f.docs.get('A')!.birthplace).toBe('Oakland');
+    expect(f.docs.get('A')!.backstory).toBe('Oakland');
   });
 
   test('ED-3 an undo whose field changed since is skipped, writes nothing, and is dropped from both stacks', async () => {
     const f = fakeIO();
-    f.docs.set('A', { _id: 'A', title: 'Ada', birthplace: 'Fresno' });
+    f.docs.set('A', { _id: 'A', title: 'Ada', backstory: 'Fresno' });
     const m = new UndoManager();
     m.record(createCommand('characters', 'A', 'Ada'));
     m.record(
       editCommand(
-        'Changed Birthplace on Ada',
+        'Changed Backstory on Ada',
         'characters',
         'A',
-        { birthplace: '' },
-        { birthplace: 'Oakland' },
+        { backstory: '' },
+        { backstory: 'Oakland' },
       ),
     );
     const r = await m.step('undo', f.io);
     expect(r).toEqual({
       status: 'skipped',
-      label: 'Changed Birthplace on Ada',
-      reason: 'Birthplace on Ada',
+      label: 'Changed Backstory on Ada',
+      reason: 'Backstory on Ada',
     });
     expect(stepNotice('undo', r)).toBe(
-      'Undo skipped: this field changed since that step, so nothing was overwritten (Birthplace on Ada).',
+      'Undo skipped: this field changed since that step, so nothing was overwritten (Backstory on Ada).',
     );
     expect(f.applied).toEqual([]);
-    expect(f.docs.get('A')!.birthplace).toBe('Fresno');
+    expect(f.docs.get('A')!.backstory).toBe('Fresno');
     expect(m.stack.canRedo).toBe(false);
     // The older step is still there and still works.
     expect(m.stack.history().undo.map((c) => c.label)).toEqual(['Created Ada']);
@@ -91,23 +91,23 @@ describe('ED-3 undo steps check what they overwrite', () => {
 
   test('ED-3 a redo whose field changed since is skipped the same way', async () => {
     const f = fakeIO();
-    f.docs.set('A', { _id: 'A', title: 'Ada', birthplace: 'Oakland' });
+    f.docs.set('A', { _id: 'A', title: 'Ada', backstory: 'Oakland' });
     const m = new UndoManager();
     m.record(
       editCommand(
-        'Changed Birthplace on Ada',
+        'Changed Backstory on Ada',
         'characters',
         'A',
-        { birthplace: '' },
-        { birthplace: 'Oakland' },
+        { backstory: '' },
+        { backstory: 'Oakland' },
       ),
     );
     await m.step('undo', f.io);
-    f.docs.set('A', { ...f.docs.get('A'), birthplace: 'Reno' });
+    f.docs.set('A', { ...f.docs.get('A'), backstory: 'Reno' });
     const r = await m.step('redo', f.io);
     expect(r.status).toBe('skipped');
     expect(stepNotice('redo', r)).toMatch(/^Redo skipped: this field changed since/);
-    expect(f.docs.get('A')!.birthplace).toBe('Reno');
+    expect(f.docs.get('A')!.backstory).toBe('Reno');
     expect(m.stack.canUndo).toBe(false);
     expect(m.stack.canRedo).toBe(false);
   });
@@ -130,15 +130,15 @@ describe('ED-3 undo steps check what they overwrite', () => {
 
   test('ED-3 a step that fails to write stays where it was', async () => {
     const f = fakeIO();
-    f.docs.set('A', { _id: 'A', title: 'Ada', birthplace: 'Oakland' });
+    f.docs.set('A', { _id: 'A', title: 'Ada', backstory: 'Oakland' });
     const m = new UndoManager();
     m.record(
       editCommand(
-        'Changed Birthplace on Ada',
+        'Changed Backstory on Ada',
         'characters',
         'A',
-        { birthplace: '' },
-        { birthplace: 'Oakland' },
+        { backstory: '' },
+        { backstory: 'Oakland' },
       ),
     );
     f.setFail(true);

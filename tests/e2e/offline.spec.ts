@@ -103,7 +103,7 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   // Reading works: an entry, search, and the deterministic views.
   await openMargaret();
   const editor = page.getByTestId('editor');
-  await expect(field(editor, 'birthplace').locator('input').first()).toBeDisabled();
+  await expect(field(editor, 'role').locator('textarea').first()).toBeDisabled();
   // A38: the character page is several write groups, one per section; every one carries the reason.
   const groups = editor.locator('fieldset.write-group');
   await expect(groups.first()).toHaveAttribute('title', READ_ONLY_REASON);
@@ -136,10 +136,10 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await expect(page.getByTestId('alignment-run')).toBeDisabled();
   await expect(page.getByTestId('alignment-run')).toHaveAttribute('title', READ_ONLY_REASON);
   await expect(
-    invoke('entry.update', { collection: 'characters', id: 'H1', patch: { birthplace: 'X' } }),
+    invoke('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'X' } }),
   ).rejects.toThrow(/read-only snapshot/);
   const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
-  expect(h1.entry.birthplace).not.toBe('X');
+  expect(h1.entry.role).not.toBe('X');
   await stop();
 });
 
@@ -151,7 +151,7 @@ test('ARCH-6 when MongoDB goes away mid-session, an edit shows Not saved, never 
   await expect(autosave).toHaveText('Saved');
   await server.stop({ doCleanup: false, force: true });
 
-  await field(page.getByTestId('editor'), 'birthplace').locator('input').first().fill('Lost town');
+  await field(page.getByTestId('editor'), 'role').locator('textarea').first().fill('Lost town');
   await expect(autosave).toContainText('Not saved', { timeout: 60_000 });
   await expect(autosave).toContainText('lost its connection to MongoDB');
   await expect(autosave).not.toHaveText('Saved');
@@ -159,9 +159,9 @@ test('ARCH-6 when MongoDB goes away mid-session, an edit shows Not saved, never 
   await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
   await expect(banner.getByTestId('open-snapshot')).toBeVisible();
   // The typed text is still in the field, so nothing is lost on screen either.
-  await expect(
-    field(page.getByTestId('editor'), 'birthplace').locator('input').first(),
-  ).toHaveValue('Lost town');
+  await expect(field(page.getByTestId('editor'), 'role').locator('textarea').first()).toHaveValue(
+    'Lost town',
+  );
   await stop();
 });
 
@@ -178,12 +178,12 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await invoke('bible.open', { slug: SLUG });
   await openMargaret();
   const editor = page.getByTestId('editor');
-  const birthplace = () => field(page.getByTestId('editor'), 'birthplace').locator('input').first();
+  const role = () => field(page.getByTestId('editor'), 'role').locator('textarea').first();
   await expect(editor.getByTestId('autosave').first()).toHaveText('Saved');
   await member.stop({ doCleanup: false, force: true });
 
   // The lost connection shows on the next write, and the snapshot opens read-only mid-session.
-  await birthplace().fill('Offline town');
+  await role().fill('Offline town');
   await expect(editor.getByTestId('autosave').first()).toContainText('Not saved', {
     timeout: 60_000,
   });
@@ -196,8 +196,8 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   );
   await expect(page.getByTestId('current-bible')).toHaveText(NAME);
   await openMargaret();
-  await expect(birthplace()).toBeDisabled();
-  await expect(birthplace()).not.toHaveValue('Offline town');
+  await expect(role()).toBeDisabled();
+  await expect(role()).not.toHaveValue('Offline town');
 
   // MongoDB is back: Try again closes the snapshot and opens the live bible, writable again.
   await member.start(true);
@@ -206,13 +206,13 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   expect((await invoke('connection.status', {})).state).toBe('connected');
   await expect(page.getByTestId('current-bible')).toHaveText(NAME);
   await openMargaret();
-  await expect(birthplace()).toBeEnabled();
-  await birthplace().fill('Back online');
+  await expect(role()).toBeEnabled();
+  await role().fill('Back online');
   await expect(page.getByTestId('editor').getByTestId('autosave').first()).toHaveText('Saved', {
     timeout: 30_000,
   });
   const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
-  expect(h1.entry.birthplace).toBe('Back online');
+  expect(h1.entry.role).toBe('Back online');
   await stop();
   await own.stop();
 });

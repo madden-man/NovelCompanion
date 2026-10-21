@@ -13,7 +13,7 @@ const page = (id: string, storyYear: number | null = null) =>
     storyYear === null ? null : { year: storyYear },
   )!;
 
-describe('CH-2 CH-3 the character page', () => {
+describe('SM-1 CH-3 the character page', () => {
   test('CH-3 with no story time, ages show at the last written chapter: chapter 5 in 2040', () => {
     const p = page('H1');
     expect(p.current).toEqual({
@@ -38,49 +38,9 @@ describe('CH-2 CH-3 the character page', () => {
     expect(page('Z5').current.state).toEqual({ state: 'unborn', birthYear: 2058 });
   });
 
-  test('CH-3 a timeline row after a death reads dead and one before birth not yet born; never age unknown', () => {
-    const ch4 = page('H2').timeline.find((i) => i.kind === 'chapter' && i.id === 'CH4')!;
-    expect(ch4).toMatchObject({ year: 2032, age: null, state: 'dead' });
-    const ch3 = page('H2').timeline.find((i) => i.kind === 'chapter' && i.id === 'CH3')!;
-    expect(ch3).toMatchObject({ year: 2029, age: 73, state: 'alive' });
-    // Put Iris (born 2031) in chapter 3 (2029): that row reads not yet born.
-    const chapters = fixture.chapters!.map((c) =>
-      c._id === 'CH3'
-        ? {
-            ...c,
-            strands: (c.strands as { characterIds: string[] }[]).map((st) => ({
-              ...st,
-              characterIds: [...st.characterIds, 'H5'],
-            })),
-          }
-        : c,
-    );
-    const moved = { all: (c: string) => (c === 'chapters' ? chapters : (fixture[c] ?? [])) };
-    const iris = characterPage(moved, 'H5', positionYear(null, chapters))!;
-    expect(iris.timeline.find((i) => i.id === 'CH3')).toMatchObject({
-      year: 2029,
-      age: null,
-      state: 'unborn',
-    });
-  });
-
-  test('CH-2 every name field, with what each other character calls them', () => {
-    const p = page('H1');
-    expect(p.names).toEqual({
-      full: 'Margaret Hale',
-      chinese: '',
-      romanization: '',
-      order: 'family-last',
-      birthName: 'Margaret Doyle',
-      marriedName: 'Margaret Hale',
-      nicknames: ['Maggie'],
-      calledBy: [{ characterId: 'H5', characterName: 'Iris Hale-Zhou', name: 'Gran' }],
-    });
-    expect(page('Z1').names).toMatchObject({
-      chinese: '周美玲',
-      romanization: 'Zhōu Měilíng',
-      order: 'family-first',
-    });
+  test('SM-1 the page carries the full name and the Chinese name, nothing else', () => {
+    expect(page('H1').names).toEqual({ full: 'Margaret Hale', chinese: '' });
+    expect(page('Z1').names).toEqual({ full: 'Zhou Meiling', chinese: '周美玲' });
   });
 
   test('CH-1 families: one, two, or none', () => {
@@ -113,59 +73,11 @@ describe('CH-2 CH-3 the character page', () => {
     ]);
   });
 
-  test('CH-3 the personal timeline: own events, world events in their lifetime with ages, chapters', () => {
-    const t = page('H1').timeline;
-    expect(t[0]).toMatchObject({ kind: 'birth', year: 1958, age: 0 });
-    expect(t[t.length - 1]).toMatchObject({ kind: 'death', year: 2041, age: 83 });
-    const events = t.filter((i) => i.kind === 'event').map((i) => [i.id, i.year, i.age]);
-    // Margaret lives 1958 to 2041: the events from 2008 to 2036 fall in her lifetime.
-    expect(events).toEqual([
-      ['E1', 2008, 50],
-      ['E2', 2027, 69],
-      ['E3', 2034, 76],
-      ['E4', 2036, 78],
-    ]);
-    const chapters = t.filter((i) => i.kind === 'chapter').map((i) => [i.id, i.year, i.age]);
-    expect(chapters).toEqual([
-      ['CH3', 2029, 71],
-      ['CH4', 2032, 74],
-      ['CH5', 2040, 82],
-    ]);
-    expect(t.filter((i) => i.kind === 'union').map((i) => i.title)).toEqual([
-      'Union with Peter Hale begins',
-    ]);
-    expect(t.filter((i) => i.kind === 'child').map((i) => [i.title, i.year])).toEqual([
-      ['Daniel Hale is born', 1985],
-      ['Ruth Hale is born', 1990],
-    ]);
-  });
-
-  test('CH-3 what they know, and whether they know it yet', () => {
-    expect(page('H5', 2045).knowledge).toEqual([
-      {
-        recordId: 'K2',
-        factId: 'F2',
-        fact: "Peter's letter",
-        yearLearned: 2060,
-        chapterId: 'CH7',
-        chapter: expect.any(String),
-        how: "She finds it in Margaret's boxes.",
-        knownAtPosition: false,
-      },
-    ]);
-    expect(page('H5', 2061).knowledge[0]!.knownAtPosition).toBe(true);
-  });
-
-  test('CH-4 unknown birth: age unknown at every position and no lifetime events', () => {
+  test('CH-4 unknown birth: age unknown at every position', () => {
     const p = page('U1', 2040);
     expect(p.birthKnown).toBe(false);
     expect(p.years).toBe('unknown');
     expect(p.current.state).toEqual({ state: 'unknown' });
     expect(p.storyTime!.state).toEqual({ state: 'unknown' });
-    expect(p.timeline.filter((i) => i.kind === 'event')).toEqual([]);
-    for (const i of p.timeline) {
-      expect(i.age).toBeNull();
-      expect(i.state).toBe('unknown');
-    }
   });
 });

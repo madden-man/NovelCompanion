@@ -65,7 +65,6 @@ export class SimBible {
       newId: this.newId,
       list: (id) => this.lists.get(id),
       entries: this.entries,
-      section: () => undefined,
     };
   }
 

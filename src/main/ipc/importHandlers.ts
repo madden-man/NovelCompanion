@@ -5,13 +5,13 @@ import {
   guessMapping,
   guessShape,
   importableFields,
+  Mapping,
   mappingKey,
   shownValue,
 } from '../../shared/domain/import';
 import type {
   ChangeSet,
   DocumentTarget,
-  Mapping,
   ParsedWorkbook,
   SourceFile,
 } from '../../shared/domain/import';
@@ -25,10 +25,8 @@ import type { ParsedDocument } from '../import/docx';
 import { parseWorkbookFile } from '../import/xlsx';
 import { rememberDocument } from '../import/pickedDocuments';
 import { applyPlan, planDocumentImport, planSheet, planView } from '../import/run';
-import type { DocumentPlan } from '../import/run';
 import type { Channel } from '../../shared/ipc';
 import { entryTitle } from '../../shared/schema';
-import type { CustomSection } from '../../shared/schema';
 import type { Handler } from './validate';
 
 /** What the import and backup channels need from the host, so tests can supply their own. */
@@ -91,7 +89,6 @@ type StoredPlan = {
   set: ChangeSet;
   file: SourceFile;
   mapping: Mapping | null;
-  createSection: DocumentPlan['createSection'];
   /** Where the file came from, when not a local pick (GD-3). */
   origin?: string;
 };
@@ -146,12 +143,6 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       return wireFile(p);
     },
   });
-  const sectionOf = (collection: string, sectionId?: string) =>
-    collection === 'customEntries' && sectionId
-      ? (session().model.get('customSections', sectionId) as unknown as
-          Pick<CustomSection, 'fields'> | undefined)
-      : undefined;
-
   return {
     'import.pickFile': async ({ kind }) => {
       session();
@@ -181,31 +172,24 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
           preview: sheet.cells.slice(0, 12).map((r) => r.slice(0, 12)),
         })),
         saved: wb.sheets.flatMap((sheet) => {
-          const m = saved[mappingKey(wb.fileName, sheet.name)];
-          return m ? [{ sheet: sheet.name, mapping: m as Mapping }] : [];
+          // A mapping saved for a section the bible no longer has (A39) is left out.
+          const m = Mapping.safeParse(saved[mappingKey(wb.fileName, sheet.name)]);
+          return m.success ? [{ sheet: sheet.name, mapping: m.data }] : [];
         }),
       };
     },
 
-    'import.guess': ({ fileId, sheet, shape, collection, sectionId }) => {
+    'import.guess': ({ fileId, sheet, shape, collection }) => {
       const wb = workbook(fileId);
       const found = wb.sheets.find((x) => x.name === sheet);
       if (!found) throw new Error(`The workbook has no sheet called ${sheet}.`);
       return {
-        mapping: guessMapping(
-          found,
-          shape,
-          { collection, ...(sectionId ? { sectionId } : {}) },
-          sectionOf(collection, sectionId),
-        ),
+        mapping: guessMapping(found, shape, { collection }),
       };
     },
 
-    'import.fields': ({ collection, sectionId }) => ({
-      fields: importableFields(
-        { collection, ...(sectionId ? { sectionId } : {}) },
-        sectionOf(collection, sectionId),
-      ).map((f) => ({ path: f.path, label: f.label })),
+    'import.fields': ({ collection }) => ({
+      fields: importableFields({ collection }).map((f) => ({ path: f.path, label: f.label })),
     }),
 
     'import.preview': ({ fileId, mapping, limit }) => {
@@ -214,10 +198,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       const sheet = wb.sheets.find((x) => x.name === mapping.sheet);
       if (!sheet) throw new Error(`The workbook has no sheet called ${mapping.sheet}.`);
       const { output } = planSheet(s, sheet, wb, mapping);
-      const catalog = importableFields(
-        mapping.target,
-        sectionOf(mapping.target.collection, mapping.target.sectionId),
-      );
+      const catalog = importableFields(mapping.target);
       const labels = new Map(catalog.map((f) => [f.path, f.label]));
       const rows = output.rows.filter((r) => r.kind === 'entry');
       return {
@@ -244,7 +225,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       const sheet = wb.sheets.find((x) => x.name === mapping.sheet);
       if (!sheet) throw new Error(`The workbook has no sheet called ${mapping.sheet}.`);
       const { set, file } = planSheet(s, sheet, wb, mapping);
-      const id = remember({ set, file, mapping, createSection: null, ...originOf(fileId) });
+      const id = remember({ set, file, mapping, ...originOf(fileId) });
       return planView(s, id, wb.fileName, set);
     },
 
@@ -252,7 +233,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       const s = session();
       const plan = plans.get(planId);
       if (!plan) throw new Error('That comparison is out of date. Compare again.');
-      const result = await applyPlan(s, plan.set, plan.file, new Set(approved), plan.createSection);
+      const result = await applyPlan(s, plan.set, plan.file, new Set(approved));
       if (saveMapping && plan.mapping) {
         await s.repo.saveMapping(mappingKey(plan.file.fileName, plan.mapping.sheet), plan.mapping);
       }
@@ -283,7 +264,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
       const doc = document(fileId);
       let t: DocumentTarget;
       if (target.kind === 'backstory') t = target;
-      else if (target.kind === 'note') t = { kind: 'note', sectionId: '', title: target.title };
+      else if (target.kind === 'note') t = { kind: 'note', title: target.title };
       else if (target.chapterId) t = { kind: 'chapter', chapterId: target.chapterId };
       else if (target.title && target.partId && target.year !== undefined) {
         t = {
@@ -297,13 +278,7 @@ export function importHandlers(current: () => OpenBible | null, deps: ImportDeps
         throw new Error('A new chapter needs a title, a part, and a story year.');
       }
       const plan = planDocumentImport(s, doc, t);
-      const id = remember({
-        set: plan.set,
-        file: plan.file,
-        mapping: null,
-        createSection: plan.createSection,
-        ...originOf(fileId),
-      });
+      const id = remember({ set: plan.set, file: plan.file, mapping: null, ...originOf(fileId) });
       return planView(s, id, doc.fileName, plan.set);
     },
 

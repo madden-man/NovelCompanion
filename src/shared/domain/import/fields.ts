@@ -1,5 +1,5 @@
-import { customFieldSpecs, f, manifests } from '../../schema';
-import type { CustomSection, FieldSpec } from '../../schema';
+import { f, manifests } from '../../schema';
+import type { FieldSpec } from '../../schema';
 import { getPath, isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import type { Target } from './types';
@@ -79,19 +79,10 @@ const STRAND_FIELDS: ImportField[] = [
   },
 ];
 
-/** Every field a mapping may assign for a target (IM-1). Custom sections list their own fields. */
-export function importableFields(
-  target: Target,
-  section?: Pick<CustomSection, 'fields'> | undefined,
-): ImportField[] {
+/** Every field a mapping may assign for a target (IM-1). */
+export function importableFields(target: Target): ImportField[] {
   const out: ImportField[] = [];
-  const base = manifests[target.collection].filter(
-    (s) => target.collection !== 'customEntries' || (s.name !== 'sectionId' && s.name !== 'values'),
-  );
-  collect(base, '', '', out, 0);
-  if (target.collection === 'customEntries' && section) {
-    collect(customFieldSpecs(section), 'values.', '', out, 0);
-  }
+  collect(manifests[target.collection], '', '', out, 0);
   if (target.collection === 'chapters') out.push(...STRAND_FIELDS);
   return out;
 }

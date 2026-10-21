@@ -290,71 +290,6 @@ describe('IM-7 third versions and stale plans', () => {
   });
 });
 
-describe('CS-2 custom entries import like built-in ones', () => {
-  test('CS-2 a table sheet fills a custom section: choices, years, history, and source location', async () => {
-    const open = await openBibleSession(
-      store,
-      (await loadFixture(store, freshSlug('im-custom'))).id,
-      { snapshotRoot: root },
-    );
-    const wb: ParsedWorkbook = {
-      fileName: 'recipes.xlsx',
-      modifiedAt: '2026-04-01T09:00:00.000Z',
-      sheets: [
-        {
-          name: 'Recipes',
-          merges: [],
-          cells: [
-            ['Dish', 'Where from', 'First cooked', 'Occasion'],
-            ['Tomato soup', 'Portland, Oregon', 1990.0, 'Everyday'],
-            ['Funeral rice', 'Guangzhou', 'about 1950', 'Funeral'],
-            ['Pancakes', 'Home', 2001, 'Brunch'],
-          ],
-        },
-      ],
-    };
-    const mapping: TableMapping = {
-      shape: 'table',
-      sheet: 'Recipes',
-      target: { collection: 'customEntries', sectionId: 'CS-RECIPES' },
-      headerRow: 1,
-      columns: [
-        { header: 'Dish', index: 0, field: 'title' },
-        { header: 'Where from', index: 1, field: 'values.origin' },
-        { header: 'First cooked', index: 2, field: 'values.firstCooked' },
-        { header: 'Occasion', index: 3, field: 'values.occasion' },
-      ],
-      identity: ['title'],
-      fixed: { status: 'planned' },
-      addMissingListItems: false,
-      createMissing: false,
-      matchIn: 'sheet',
-      headings: [],
-    };
-    const { set } = planSheet(open, wb.sheets[0]!, wb, mapping);
-    expect(set.failed.map((f) => [f.where, f.reason])).toEqual([
-      ['Recipes row 3', 'First cooked: "about 1950" is not a whole number year'],
-      ['Recipes row 4', 'Occasion: "Brunch" is not one of Everyday, Holiday, Funeral'],
-    ]);
-    await applyPlan(open, set, wb, 'all');
-    const soup = open.repo.list('customEntries').find((e) => e.title === 'Tomato soup')!;
-    expect(soup).toMatchObject({
-      sectionId: 'CS-RECIPES',
-      values: { origin: 'Portland, Oregon', firstCooked: 1990, occasion: 'Everyday' },
-      sourceRef: 'recipes.xlsx#Recipes!A2',
-      status: 'planned',
-    });
-    expect((await open.repo.revisions('customEntries', soup._id)).map((r) => r.op)).toEqual([
-      'create',
-    ]);
-    // Search finds it, and a second import changes nothing.
-    expect(open.search.search('Tomato soup').map((h) => h.id)).toContain(soup._id);
-    expect(planSheet(open, wb.sheets[0]!, wb, mapping).set.items).toEqual([]);
-    // Existing hand-made recipes were left alone.
-    expect(open.repo.list('customEntries')).toHaveLength(3);
-  });
-});
-
 describe('IM-4 a Word document imports as a backstory, a chapter, or a note, keeping its formatting', () => {
   async function fixtureSession(label: string): Promise<OpenBible> {
     return openBibleSession(store, (await loadFixture(store, freshSlug(label))).id, {
@@ -412,24 +347,14 @@ describe('IM-4 a Word document imports as a backstory, a chapter, or a note, kee
     expect(open.repo.get('characters', 'H1')!.backstory).toContain('<em>lucky</em>');
     expect(open.repo.get('characters', 'H1')!.sourceRef).toBe('chapter-03.docx#p1-p4');
 
-    const note = planDocumentImport(open, doc, {
-      kind: 'note',
-      sectionId: '',
-      title: 'Wedding notes',
-    });
-    expect(note.createSection).toMatchObject({ name: 'Notes' });
-    await applyPlan(open, note.set, note.file, 'all', note.createSection);
-    const section = open.repo.list('customSections').find((s) => s.name === 'Notes')!;
-    const entry = open.repo.list('customEntries').find((e) => e.title === 'Wedding notes')!;
-    expect(entry).toMatchObject({ sectionId: section._id, sourceRef: 'chapter-03.docx#p1-p4' });
+    // A39: a general note is an open question, where the capture box files loose notes too.
+    const note = planDocumentImport(open, doc, { kind: 'note', title: 'Wedding notes' });
+    await applyPlan(open, note.set, note.file, 'all');
+    const entry = open.repo.list('openQuestions').find((e) => e.title === 'Wedding notes')!;
+    expect(entry).toMatchObject({ sourceRef: 'chapter-03.docx#p1-p4', state: 'open' });
     expect(entry.body).toContain('<hr>');
-    // The second import reuses the section and finds the note unchanged.
-    const second = planDocumentImport(open, doc, {
-      kind: 'note',
-      sectionId: '',
-      title: 'Wedding notes',
-    });
-    expect(second.createSection).toBeNull();
+    // The second import finds the note unchanged.
+    const second = planDocumentImport(open, doc, { kind: 'note', title: 'Wedding notes' });
     expect(second.set.unchanged).toBe(1);
   });
 });
@@ -667,16 +592,16 @@ describe('IM-3 ED-7 approving an item brings along the new items it points at', 
     expect(open.repo.list('chapters')).toHaveLength(1);
   });
 
-  test('IM-3 ED-7 approving a beat also creates the point of view character stub it names', async () => {
+  test('IM-3 ED-7 SM-3 approving a moment also creates the character stub it names', async () => {
     const open = await emptyBible('im-deps-pov');
     const beats: TableMapping = {
       shape: 'table',
       sheet: 'Beats',
-      target: { collection: 'plotBeats' },
+      target: { collection: 'moments' },
       headerRow: 1,
       columns: [
         { header: 'Beat', index: 0, field: 'title' },
-        { header: 'POV', index: 1, field: 'povCharacterId' },
+        { header: 'POV', index: 1, field: 'characterId' },
         { header: 'Year', index: 2, field: 'year' },
       ],
       identity: ['title'],
@@ -701,10 +626,10 @@ describe('IM-3 ED-7 approving an item brings along the new items it points at', 
       ],
     };
     const { set } = planSheet(open, wb.sheets[0]!, wb, beats);
-    const beat = set.items.find((i) => i.collection === 'plotBeats')!;
+    const beat = set.items.find((i) => i.collection === 'moments')!;
     await applyPlan(open, set, wb, new Set([beat.id]));
-    const written = open.repo.list('plotBeats')[0]!;
-    expect(open.repo.get('characters', written.povCharacterId!)?.title).toBe('Ann');
+    const written = open.repo.list('moments')[0]!;
+    expect(open.repo.get('characters', written.characterId)?.title).toBe('Ann');
   });
 });
 
@@ -759,31 +684,27 @@ describe('IM-1 IM-3 list choices follow the approved items that point at them', 
   });
 });
 
-describe('IM-4 BK-1 a general note makes its section inside the import, after the snapshot', () => {
+describe('IM-4 BK-1 a general note is written inside the import, after the snapshot', () => {
   async function planNote(label: string, options: Parameters<typeof openBibleSession>[2]) {
     const handle = await createBibleWithDefaults(store, freshSlug(label), label);
     const open = await openBibleSession(store, handle.handle.id, options);
     const doc = await parseDocxFile(DOCX);
-    const plan = planDocumentImport(open, doc, { kind: 'note', sectionId: '', title: 'A note' });
-    expect(plan.createSection).not.toBeNull();
+    const plan = planDocumentImport(open, doc, { kind: 'note', title: 'A note' });
     return { open, plan };
   }
-  const sections = (open: OpenBible) =>
-    open.repo.list('customSections').filter((s) => s.name === 'Notes');
+  const notes = (open: OpenBible) =>
+    open.repo.list('openQuestions').filter((q) => q.title === 'A note');
 
-  test('IM-4 a failed snapshot leaves no empty Notes section', async () => {
+  test('IM-4 a failed snapshot leaves no note', async () => {
     const { open, plan } = await planNote('im-note-snap', { snapshotRoot: root });
     open.repo.beforeBulk = async () => {
       throw new Error('The disk is full');
     };
-    await expect(applyPlan(open, plan.set, plan.file, 'all', plan.createSection)).rejects.toThrow(
-      /disk is full/,
-    );
-    expect(sections(open)).toEqual([]);
-    expect(open.repo.list('customEntries')).toEqual([]);
+    await expect(applyPlan(open, plan.set, plan.file, 'all')).rejects.toThrow(/disk is full/);
+    expect(notes(open)).toEqual([]);
   });
 
-  test('IM-4 a write that fails part way leaves no Notes section either', async () => {
+  test('IM-4 a write that fails part way leaves no note either', async () => {
     const { open, plan } = await planNote('im-note-tx', {
       snapshotRoot: root,
       repository: {
@@ -792,22 +713,17 @@ describe('IM-4 BK-1 a general note makes its section inside the import, after th
         },
       },
     });
-    await expect(applyPlan(open, plan.set, plan.file, 'all', plan.createSection)).rejects.toThrow(
-      /connection dropped/,
-    );
-    expect(sections(open)).toEqual([]);
+    await expect(applyPlan(open, plan.set, plan.file, 'all')).rejects.toThrow(/connection dropped/);
+    expect(notes(open)).toEqual([]);
     const fresh = await openBibleSession(store, open.handle.id);
-    expect(fresh.repo.list('customSections')).toEqual([]);
-    expect(fresh.repo.list('customEntries')).toEqual([]);
+    expect(fresh.repo.list('openQuestions')).toEqual([]);
   });
 
-  test('IM-4 a good import makes the section and the note together', async () => {
+  test('IM-4 a good import writes the note as an open question', async () => {
     const { open, plan } = await planNote('im-note-ok', { snapshotRoot: root });
-    const done = await applyPlan(open, plan.set, plan.file, 'all', plan.createSection);
+    const done = await applyPlan(open, plan.set, plan.file, 'all');
     expect(done.created).toBe(1);
-    expect(sections(open)).toHaveLength(1);
-    const note = open.repo.list('customEntries')[0]!;
-    expect(note.sectionId).toBe(sections(open)[0]!._id);
-    expect(note.title).toBe('A note');
+    expect(notes(open)).toHaveLength(1);
+    expect(notes(open)[0]!.state).toBe('open');
   });
 });

@@ -171,7 +171,7 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
       const built = buildEntry({
         target: mapping.target,
         fields,
-        fixed: { reality: 'invented', ...mapping.fixed },
+        fixed: mapping.fixed,
         newId: id,
         ref,
         ordinal,

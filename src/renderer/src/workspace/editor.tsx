@@ -24,7 +24,6 @@ import { formatTime } from './format';
 import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
-import { FactSummary } from './knowledge';
 import { ChapterAlignment } from './sessions/alignment';
 import { Zh } from './Zh';
 
@@ -358,6 +357,8 @@ export function EntryPane(props: {
   onClosed: () => void;
   /** MS-2: a chapter was ticked Written here; open its summary and promotions. */
   onWritten?: (chapterId: string) => void;
+  /** SM-1: the relatives line opens the family tree on this person. */
+  onOpenTree?: (characterId: string) => void;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
@@ -445,10 +446,10 @@ export function EntryPane(props: {
             onChange={ed.setField}
             onMention={onMention}
             onOpen={props.onOpen}
+            onOpenTree={props.onOpenTree}
           />
         ) : (
           <>
-            {collection === 'facts' && <FactSummary id={id} onOpen={props.onOpen} />}
             <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
               <WriteFieldset>
                 {editableFields(manifest).map((spec) => (

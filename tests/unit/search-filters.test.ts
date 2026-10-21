@@ -6,8 +6,6 @@ import {
   placeAndDescendants,
 } from '../../src/shared/domain/searchFilters';
 import type { SearchFilters } from '../../src/shared/domain/searchFilters';
-import { customFieldSpecs } from '../../src/shared/schema';
-import type { CustomSection } from '../../src/shared/schema';
 import { SearchIndex } from '../../src/main/search';
 import { ReadModel } from '../../src/main/readmodel';
 import { readFixture } from '../helpers/loadFixture';
@@ -24,13 +22,40 @@ const places = [
 ];
 const extra = {
   places,
-  themes: [
+  moments: [
     {
-      _id: 'T1',
+      _id: 'M1',
+      title: "Meiling's lotus seed mooncakes",
+      ...base,
+      characterId: 'Z1',
+      year: 1980,
+      endYear: null,
+      body: 'Soak the seeds overnight, then cook the paste slowly for three hours.',
+      worldContext: '',
+    },
+    {
+      _id: 'M2',
+      title: "Peter's ferry chowder",
+      ...base,
+      status: 'planned',
+      characterId: 'H2',
+      year: 1985,
+      endYear: null,
+      body: 'Clams, potatoes, and too much pepper.',
+      worldContext: '',
+    },
+    {
+      _id: 'M3',
       title: 'Inheritance',
       ...base,
+      status: 'planned',
+      provenance: 'invented',
       tags: ['motif'],
-      appearances: [{ chapterId: 'CH3', note: 'The letters pass down' }],
+      characterId: 'H5',
+      year: 2060,
+      endYear: 2065,
+      body: 'Iris reads the letter.',
+      worldContext: 'The letters pass down',
     },
   ],
   openQuestions: [
@@ -66,9 +91,11 @@ const extra = {
     },
   ],
 };
-const all: Record<string, Record<string, unknown>[]> = { ...fx, ...extra };
-const section = fx.customSections![0] as unknown as CustomSection;
-const customSpecs = (id: string) => (id === section._id ? customFieldSpecs(section) : undefined);
+const all: Record<string, Record<string, unknown>[]> = {
+  ...fx,
+  ...extra,
+  moments: [...(fx.moments ?? []), ...extra.moments],
+};
 
 const model = new ReadModel();
 for (const [c, docs] of Object.entries(all)) {
@@ -81,7 +108,6 @@ function run(query: string, filters: SearchFilters = {}): string[] {
   const accepts = compileFilters(filters, {
     get: (c, id) => model.get(c, id),
     places,
-    customSpecs,
   });
   return index
     .search(query, ({ collection, id }) => {
@@ -94,7 +120,7 @@ function run(query: string, filters: SearchFilters = {}): string[] {
 describe('SR-1 one search box over entries, chapter text, and briefs', () => {
   test('SR-1 finds entries from every section with one query', () => {
     const ids = run('letter');
-    expect(ids).toEqual(expect.arrayContaining(['F2', 'Q1', 'T1']));
+    expect(ids).toEqual(expect.arrayContaining(['M3', 'Q1', 'H5-voice-0']));
   });
 
   test('SR-1 finds words inside chapter text and inside a saved brief', () => {
@@ -112,36 +138,36 @@ describe('SR-1 one search box over entries, chapter text, and briefs', () => {
     expect(run('family reunion')).toEqual(['GL3']);
   });
 
-  test('SR-1 finds text in nested fields: custom values, theme notes, and tags', () => {
-    expect(run('soak seeds overnight')).toContain('CE1');
-    expect(run('chowder')).toContain('CE2');
-    expect(run('letters pass down')).toContain('T1');
-    expect(run('motif')).toContain('T1');
+  test('SR-1 SM-3 finds text in moments: what happens, how they experience it, world events, and tags', () => {
+    expect(run('soak seeds overnight')).toContain('M1');
+    expect(run('chowder')).toContain('M2');
+    expect(run('letters pass down')).toContain('M3');
+    expect(run('motif')).toContain('M3');
   });
 
   test('SR-1 a query with several words wants all of them, and falls back to any when none has all', () => {
-    expect(run('clams potatoes')).toEqual(['CE2']);
+    expect(run('clams potatoes')).toEqual(['M2']);
     const loose = run('clams mooncake');
-    expect(loose).toEqual(expect.arrayContaining(['CE1', 'CE2']));
+    expect(loose).toEqual(expect.arrayContaining(['M1', 'M2']));
   });
 });
 
 describe('SR-2 search filters', () => {
   test('SR-2 section filter keeps only the chosen sections', () => {
-    const ids = run('letter', { sections: ['facts'] });
-    expect(ids.sort()).toEqual(['F1', 'F2']);
-    expect(run('letter', { sections: ['facts', 'openQuestions'] }).sort()).toEqual([
-      'F1',
-      'F2',
+    const ids = run('letter', { sections: ['moments'] });
+    expect(ids.sort()).toEqual(['H5-voice-0', 'M3']);
+    expect(run('letter', { sections: ['moments', 'openQuestions'] }).sort()).toEqual([
+      'H5-voice-0',
+      'M3',
       'Q1',
     ]);
   });
 
   test('SR-2 status and provenance filters', () => {
     expect(run('letter', { status: ['idea'] })).toEqual(['Q1']);
-    expect(run('letter', { status: ['planned'] })).toContain('F2');
+    expect(run('letter', { status: ['planned'] })).toContain('M3');
     expect(run('letter', { provenance: ['invented'] })).toEqual(
-      expect.arrayContaining(['F2', 'Q1']),
+      expect.arrayContaining(['M3', 'Q1']),
     );
     expect(run('letter', { provenance: ['researched'] })).toEqual([]);
   });
@@ -166,18 +192,18 @@ describe('SR-2 search filters', () => {
   });
 
   test('SR-2 tag filter matches entries that carry the tag', () => {
-    expect(run('inheritance', { tag: 'motif' })).toEqual(['T1']);
+    expect(run('inheritance', { tag: 'motif' })).toEqual(['M3']);
     expect(run('inheritance', { tag: 'other' })).toEqual([]);
   });
 
   test('SR-2 year range filter applies to any entry with a year or range field', () => {
-    // Custom entries: First cooked 1980 and 1985.
-    expect(run('cooked method seeds clams', { yearFrom: 1984, yearTo: 1990 })).toEqual(['CE2']);
-    // A brief has a story year, a knowledge record a year learned, a world event a date range.
+    // Moments: 1980 and 1985.
+    expect(run('seeds clams', { yearFrom: 1984, yearTo: 1990 })).toEqual(['M2']);
+    // A brief has a story year, a moment a year range, a world event a date range.
     expect(run('wedding', { yearFrom: 2029, yearTo: 2029 })).toContain('B1');
     expect(run('wedding', { yearFrom: 2030, yearTo: 2040 })).not.toContain('B1');
-    expect(run('letter', { yearFrom: 2060, yearTo: 2060 })).toContain('K2');
-    expect(run('letter', { yearFrom: 2061 })).not.toContain('K2');
+    expect(run('letter', { yearFrom: 2063, yearTo: 2063 })).toContain('M3');
+    expect(run('letter', { yearFrom: 2066 })).not.toContain('M3');
     // An entry with no year is left out once a year filter is set.
     expect(run('letter', { yearFrom: 1000, yearTo: 3000 })).not.toContain('Q1');
     // Chapters use their strands; characters use birth and death.
@@ -187,21 +213,19 @@ describe('SR-2 search filters', () => {
 
   test('SR-2 filters combine, and an empty filter set keeps every match', () => {
     expect(run('letter', {})).toEqual(run('letter'));
-    expect(run('letter', { sections: ['facts'], status: ['idea'] })).toEqual([]);
+    expect(run('letter', { sections: ['moments'], status: ['idea'] })).toEqual([]);
     expect(
       run('letter', { sections: ['openQuestions'], status: ['idea'], tag: undefined }),
     ).toEqual(['Q1']);
   });
 
-  test('SR-2 entrySpans reads points, pairs, dates, and custom values from the manifests', () => {
+  test('SR-2 entrySpans reads points, pairs, and dates from the manifests', () => {
     const doc = (c: string, id: string) => fx[c]!.find((d) => d._id === id)!;
-    expect(entrySpans('knowledgeRecords', doc('knowledgeRecords', 'K2'))).toEqual([[2060, 2060]]);
+    expect(entrySpans('moments', doc('moments', 'H5-voice-0'))).toEqual([[2060, 2060]]);
+    expect(entrySpans('moments', doc('moments', 'Z3-lives-0'))).toEqual([[1988, 2027]]);
     expect(entrySpans('chapters', doc('chapters', 'CH2')).sort()).toEqual([
       [2032, 2032],
       [2045, 2045],
-    ]);
-    expect(entrySpans('customEntries', doc('customEntries', 'CE1'), customSpecs)).toEqual([
-      [1980, 1980],
     ]);
     const event = fx.worldEvents!.find((e) => e.end)!;
     const [lo, hi] = entrySpans('worldEvents', event)[0]!;
