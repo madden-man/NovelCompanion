@@ -24,6 +24,7 @@ import type {
 } from '../../shared/schema';
 import { contentOf, diffEntries } from '../../shared/domain/diff';
 import type { FieldChange } from '../../shared/domain/diff';
+import { unknownPaths } from '../../shared/domain/schemaPaths';
 import { StoryTimeValue } from '../../shared/storyTime';
 import {
   countListUsage,
@@ -855,18 +856,29 @@ export class Repository {
     if (input.op !== 'create' && !target) {
       throw new RepositoryError(`No ${input.collection} entry has the ID ${input.targetId}.`);
     }
-    // A proposal names only fields its kind has, so a dropped field (SM-1, SM-4) is refused now,
-    // not when it is approved.
+    // ED-7: a proposal is checked against its kind's schema when it is made, as a deep partial:
+    // a field the kind does not have (SM-1, SM-4), top level or nested, is refused now, and so is
+    // a value of the wrong shape, not when the proposal is approved.
     if (input.op !== 'delete' && input.data) {
-      const shape = (
-        entrySchemas[input.collection] as unknown as { shape: Record<string, unknown> }
-      ).shape;
-      const unknown = Object.keys(this.stripSystem(input.data)).filter((k) => !(k in shape));
+      const schema = entrySchemas[input.collection];
+      const data = this.stripSystem(input.data);
+      const plural = collectionInfo[input.collection].plural;
+      const unknown = unknownPaths(schema, data);
       if (unknown.length) {
-        const plural = collectionInfo[input.collection].plural;
         throw new RepositoryError(
           `${plural} have no ${unknown.length === 1 ? 'field' : 'fields'} named ${unknown.join(', ')}, so this change cannot be proposed.`,
         );
+      }
+      const shape = (schema as unknown as { shape: Record<string, z.ZodType> }).shape;
+      for (const [k, v] of Object.entries(data)) {
+        const r = shape[k]?.safeParse(v);
+        const issue = r && !r.success ? r.error.issues[0] : undefined;
+        if (issue) {
+          const at = [k, ...issue.path.map(String)].join('.');
+          throw new RepositoryError(
+            `The proposed ${at} is not valid: ${issue.message}. This change cannot be proposed.`,
+          );
+        }
       }
     }
     const proposal = Proposal.parse({
