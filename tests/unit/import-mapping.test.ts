@@ -985,17 +985,23 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     expect(chapters.map((c) => c.title)).not.toContain('Mark');
   });
 
-  test('A29 the primary strand is the arc span: in Part Four Siyuan is primary and Forestory keeps its label, a strand before the arc is labelled backstory', () => {
-    // The real Part Four rows: two chapters of Siyuan's arc with a later Forestory strand.
-    const ys = [9, 10, 74, 75, 76, 96, 97];
+  test('A29 the present strand is the later span: in Part Four Forestory is primary and Siyuan is labelled backstory, in Part One the College Arc is primary', () => {
+    // Real rows: Part One's first chapter and two Part Four chapters.
+    const ys = [9, 10, 51, 54, 55, 58, 74, 75, 76, 96, 97];
     const at = (from: number, to: number, label: string) =>
       ys.map((y) => (y + 2000 >= from && y + 2000 <= to ? label : null));
     const both = (x: (string | null)[], y: (string | null)[]) => x.map((v, i) => v ?? y[i] ?? null);
+    const blank = ys.map(() => null);
     const sheet = {
       name: 'High Level',
       cells: [
         ['East Winds: World', ...ys],
-        ['Part Four: Circulation', ...ys.map(() => null)],
+        ['Part One: Sins of the Father', ...blank],
+        [
+          'Ch. 1: Mark Feels Free',
+          ...both(at(2051, 2054, 'Backstory: High School'), at(2055, 2058, 'Mark: College Arc')),
+        ],
+        ['Part Four: Circulation', ...blank],
         [
           'Ch. 1: Attachments',
           ...both(at(2009, 2010, 'Siyuan: Early Buddhism'), at(2076, 2076, 'Forestory: Kids')),
@@ -1004,14 +1010,9 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
           'Ch. 10: O Death',
           ...both(at(2074, 2075, 'Siyuan: Lost Years'), at(2096, 2097, 'Forestory: John')),
         ],
-        // Two arc spans: the one named for the part's arc character (Siyuan) is primary, the earlier other is backstory.
-        [
-          'Ch. 11: Wheel of Life',
-          ...both(at(2009, 2010, 'Qin: Factory Years'), at(2074, 2075, 'Siyuan: Lost Years')),
-        ],
       ],
       merges: [],
-      boldRows: [1, 2],
+      boldRows: [1, 2, 4],
     };
     const wb = workbook([sheet]);
     const { set } = SimBible.empty().plan(wb, mappingFor(wb, 'chapters'));
@@ -1019,35 +1020,25 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
       (set.items.find((i) => i.title === t)!.data!.strands as Record<string, unknown>[]).map(
         (x) => [x.label, x.startYear, x.endYear, x.primary],
       );
+    expect(strandsOf('Mark Feels Free')).toEqual([
+      ['Mark: College Arc', 2055, 2058, true],
+      ['Backstory: High School', 2051, 2054, false],
+    ]);
     expect(strandsOf('Attachments')).toEqual([
-      ['Siyuan: Early Buddhism', 2009, 2010, true],
-      ['Forestory: Kids', 2076, null, false],
+      ['Forestory: Kids', 2076, null, true],
+      ['Backstory: Siyuan: Early Buddhism', 2009, 2010, false],
     ]);
     expect(strandsOf('O Death')).toEqual([
-      ['Siyuan: Lost Years', 2074, 2075, true],
-      ['Forestory: John', 2096, 2097, false],
+      ['Forestory: John', 2096, 2097, true],
+      ['Backstory: Siyuan: Lost Years', 2074, 2075, false],
     ]);
-    expect(strandsOf('Wheel of Life')).toEqual([
-      ['Siyuan: Lost Years', 2074, 2075, true],
-      ['Backstory: Qin: Factory Years', 2009, 2010, false],
-    ]);
-    // With no arc character to go by, the earlier of two arc spans is primary.
+    // An earlier span already labelled backstory keeps its label; two plain spans: the later is present.
     expect(
       chapterStrands([
         { label: 'Ann: Arc', start: 2010, end: 2011 },
         { label: 'Ben: Arc', start: 2020, end: 2021 },
       ]),
-    ).toMatchObject({ primary: { label: 'Ann: Arc' }, other: { label: 'Ben: Arc' } });
-    // A strand already labelled backstory is never primary while an arc span is there.
-    expect(
-      chapterStrands([
-        { label: 'Backstory: High School', start: 2051, end: 2054 },
-        { label: 'Mark: College Arc', start: 2055, end: 2058 },
-      ]),
-    ).toMatchObject({
-      primary: { label: 'Mark: College Arc' },
-      other: { label: 'Backstory: High School' },
-    });
+    ).toMatchObject({ primary: { label: 'Ben: Arc' }, other: { label: 'Backstory: Ann: Arc' } });
     expect(chapterStrands([])).toEqual({ problem: 'The row has no strand labels under its years' });
     expect(
       chapterStrands([
@@ -1106,8 +1097,8 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
         status: 'planned',
         modifiedAt: edited,
         strands: [
-          strand('S3', 'Siyuan: Early Years', 2049, 2050, true),
-          strand('S4', 'Forestory: Kids', 2056, 2057, false),
+          strand('S3', 'Forestory: Kids', 2056, 2057, true),
+          strand('S4', 'Backstory: Siyuan: Early Years', 2049, 2050, false),
         ],
       },
     ]);
@@ -1276,6 +1267,87 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
         reason: 'There is no value for Character',
       }),
     ]);
+  });
+
+  /** Book One with Part Two, Lost Spirits, empty: the writer moved Dawn's chapter into Part One by hand. */
+  const movedDawn = (dawn: Record<string, unknown>) => {
+    const sim = SimBible.empty();
+    sim.docs.set('books', [{ _id: 'B1', title: 'Book One', number: 1, status: 'planned' }]);
+    sim.docs.set('parts', [
+      { _id: 'P1', title: 'Sins of the Father', bookId: 'B1', number: 1, status: 'planned' },
+      { _id: 'P2', title: 'Lost Spirits', bookId: 'B1', number: 2, status: 'planned' },
+    ]);
+    sim.docs.set('chapters', [
+      {
+        _id: 'D1',
+        partId: 'P1',
+        readingOrder: 3,
+        status: 'planned',
+        createdAt: '2026-10-11T21:37:08.162Z',
+        modifiedAt: '2026-10-12T09:00:00.000Z',
+        strands: [
+          {
+            id: 'S1',
+            label: 'Dawn: College Arc',
+            startYear: 2052,
+            endYear: 2053,
+            primary: true,
+            povCharacterId: null,
+            characterIds: [],
+            placeIds: [],
+          },
+        ],
+        ...dawn,
+      },
+    ]);
+    return sim;
+  };
+  const dawnPlan = (sim: SimBible) => {
+    const wb = workbook([highLevel()]);
+    return sim.plan(wb, mappingFor(wb, 'chapters'));
+  };
+
+  test('A29 IM-3 a chapter the writer moved to another part is found by its title in the book and keeps its part and reading order, with no question', () => {
+    const sim = movedDawn({ title: 'Dawn is Shy' });
+    const { set } = dawnPlan(sim);
+    expect(set.items.filter((i) => i.title === 'Dawn is Shy')).toEqual([]);
+    expect(set.items.filter((i) => i.entryId === 'D1')).toEqual([]);
+    expect(set.notes.join(' ')).toContain(
+      '"Dawn is Shy" matched the chapter of that title in Sins of the Father; it stays where it is.',
+    );
+    sim.apply(set);
+    expect(sim.entries('chapters').find((c) => c._id === 'D1')).toMatchObject({
+      partId: 'P1',
+      readingOrder: 3,
+    });
+  });
+
+  test('A29 IM-3 a chapter in the trash that the sheet row names is reported and left in the trash, never made again', () => {
+    const sim = movedDawn({
+      title: 'Dawn is Shy',
+      deletedAt: '2026-10-12T10:00:00.000Z',
+      // Row 6 of the sheet, as the hand-made chapters name their strand cells.
+      sourceRef: 'East_Winds_World.xlsx#High Level!E6:F6',
+    });
+    const { set } = dawnPlan(sim);
+    expect(set.items.filter((i) => i.title === 'Dawn is Shy' || i.entryId === 'D1')).toEqual([]);
+    expect(set.notes.join(' ')).toContain(
+      '"Dawn is Shy" is "Dawn is Shy", in the trash, left alone.',
+    );
+    sim.apply(set);
+    expect(sim.docs.get('chapters')!.find((c) => c._id === 'D1')!.deletedAt).toBeTruthy();
+    expect(sim.docs.get('chapters')!.filter((c) => c.title === 'Dawn is Shy')).toHaveLength(1);
+  });
+
+  test('A29 IM-3 IM-7 a chapter whose title was changed is found by the sheet row its sourceRef names, and the title is filed, not written', () => {
+    const sim = movedDawn({ title: 'Shy Dawn', sourceRef: 'East_Winds_World.xlsx#High Level!A6' });
+    const { set } = dawnPlan(sim);
+    const item = set.items.find((i) => i.entryId === 'D1')!;
+    expect(item.deltas.map((d) => [d.path, d.before, d.after, d.outcome])).toEqual([
+      ['title', 'Shy Dawn', 'Dawn is Shy', 'keep'],
+    ]);
+    expect(set.items.filter((i) => i.kind === 'new' && i.title === 'Dawn is Shy')).toEqual([]);
+    expect(set.notes.join(' ')).toContain('"Dawn is Shy" matched "Shy Dawn" by its source row.');
   });
 
   test('IM-7 A13 a value cleared by hand after the entry was made is kept and filed when newer; a blank on an entry never edited is filled quietly', () => {

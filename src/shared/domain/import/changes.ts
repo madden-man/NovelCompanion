@@ -6,7 +6,13 @@ import { importableFields, isVirtual, readField, writeField } from './fields';
 import { existingGridIdentities } from './grid';
 import { chapterIdentity } from './gridEntries';
 import { sheetPrefix } from './source';
-import { existingIdentities, identityPaths, ordinalKey } from './table';
+import {
+  existingIdentities,
+  identityPaths,
+  identityTitle,
+  normalizeIdentity,
+  ordinalKey,
+} from './table';
 import type { ListAdd, MapOutput, MappedRow, Mapping, SourceFile } from './types';
 
 /** Who supplied a field's value and when that source was last modified (IM-7). */
@@ -91,6 +97,8 @@ export interface PlanInput {
   existing: (collection: EntryCollection) => Doc[];
   /** Source records of an entry, from earlier imports. */
   sources: (entryId: string) => SourceRecord[];
+  /** Entries of a collection in the trash, so a match there is left alone rather than made again. */
+  trashed?: (collection: EntryCollection) => Doc[];
   list: (id: string) =>
     | {
         _id: string;
@@ -269,19 +277,89 @@ export function planChanges(input: PlanInput): ChangeSet {
     if (hit && !taken.has(String(hit._id))) claim(row, hit);
   }
 
-  // A chapter whose title matches nothing in its part may have been renamed by hand: the chapter at the same
-  // place in that part is the same chapter, and the title shows as a change (IM-3, IM-7). The Introduction
-  // is not counted, as in the title cleanup.
+  // A High Level chapter that matches nothing by part and title (A29, IM-3) is looked for, in order: by its
+  // title anywhere in the same book (the writer moves chapters between parts), by the sheet row its
+  // sourceRef names (live or in the trash), then by its place in the part (a title renamed by hand; the
+  // Introduction is not counted, as in the title cleanup). A match in the trash is left there.
   const notes: string[] = [];
+  const leftInTrash = new Set<MappedRow>();
   if (mapping.shape === 'grid' && mapping.target.collection === 'chapters') {
     const chapters = input.existing('chapters');
-    for (const row of ordered) {
-      if (matches.has(row) || row.kind !== 'entry' || row.position === undefined) continue;
+    const parts = new Map(input.existing('parts').map((p) => [String(p._id), p]));
+    const headingRows = new Map(output.rows.map((r) => [r.newId, r]));
+    const waiting = () =>
+      ordered.filter(
+        (r) =>
+          !matches.has(r) &&
+          !leftInTrash.has(r) &&
+          r.kind === 'entry' &&
+          r.collection === 'chapters',
+      );
+    const bareKey = (t: unknown) => normalizeIdentity(identityTitle('chapters', t));
+    // The book a row's part belongs to, as an existing book's ID.
+    const bookOf = (row: MappedRow): string | undefined => {
+      const partId = idMap.get(String(row.fields.partId));
+      if (partId) return parts.get(partId)?.bookId as string | undefined;
+      const part = headingRows.get(String(row.fields.partId));
+      return part ? idMap.get(String(part.fields.bookId)) : undefined;
+    };
+    for (const row of waiting()) {
+      const book = bookOf(row);
+      if (!book) continue;
+      const hits = chapters.filter(
+        (c) =>
+          !taken.has(String(c._id)) &&
+          parts.get(String(c.partId))?.bookId === book &&
+          bareKey(c.title) === bareKey(row.fields.title),
+      );
+      const hit = hits.length === 1 ? hits[0] : undefined;
+      if (!hit) continue;
+      claim(row, hit);
+      notes.push(
+        `${row.where}: "${String(row.fields.title)}" matched the chapter of that title in ${String(parts.get(String(hit.partId))?.title ?? 'another part')}; it stays where it is.`,
+      );
+    }
+    // The sheet row a sourceRef names: "...#High Level!A19" or a range such as "...#High Level!AS19:AV19".
+    const rowOf = (ref: unknown): string | null => {
+      if (typeof ref !== 'string' || !ref.startsWith(prefix)) return null;
+      const m = /^[A-Z]+(\d+)/.exec(ref.slice(prefix.length));
+      return m ? (m[1] ?? null) : null;
+    };
+    const trashed = input.trashed?.('chapters') ?? [];
+    for (const row of waiting()) {
+      const want = rowOf(row.ref);
+      if (!want) continue;
+      const live = chapters.find((c) => !taken.has(String(c._id)) && rowOf(c.sourceRef) === want);
+      if (live) {
+        claim(row, live);
+        notes.push(
+          `${row.where}: "${String(row.fields.title)}" matched "${String(live.title)}" by its source row.`,
+        );
+        continue;
+      }
+      const gone = trashed.find((c) => rowOf(c.sourceRef) === want);
+      if (gone) {
+        leftInTrash.add(row);
+        notes.push(
+          `${row.where}: "${String(row.fields.title)}" is "${String(gone.title)}", in the trash, left alone.`,
+        );
+      }
+    }
+    for (const row of waiting()) {
+      if (row.position === undefined) continue;
       const partId = idMap.get(String(row.fields.partId));
       if (!partId) continue;
+      // A chapter moved into this part from another part's row is not counted in this part's places.
+      const movedIn = (c: Doc) =>
+        [...matches].some(
+          ([r, d]) => d._id === c._id && String(r.fields.partId) !== String(row.fields.partId),
+        );
       const inPart = chapters
         .filter(
-          (c) => c.partId === partId && String(c.title).trim().toLowerCase() !== 'introduction',
+          (c) =>
+            c.partId === partId &&
+            String(c.title).trim().toLowerCase() !== 'introduction' &&
+            !movedIn(c),
         )
         .sort(
           (x, y) =>
@@ -315,6 +393,10 @@ export function planChanges(input: PlanInput): ChangeSet {
   const catalogFor = (row: MappedRow) => importableFields({ collection: row.collection });
 
   for (const row of ordered) {
+    if (leftInTrash.has(row)) {
+      unchanged += 1;
+      continue;
+    }
     const existing = matches.get(row);
     if (!existing) {
       const data = replaceIds(row.data, idMap) as Doc;
@@ -341,11 +423,14 @@ export function planChanges(input: PlanInput): ChangeSet {
       unchanged += 1;
       continue;
     }
+    const fields = replaceIds(row.fields, idMap) as Record<string, unknown>;
+    // A chapter that exists keeps its part and reading order: they are the writer's structure (A29).
+    if (row.collection === 'chapters') delete fields.partId;
     const result = changedItem({
       id: nextId(),
       collection: row.collection,
       existing,
-      fields: replaceIds(row.fields, idMap) as Record<string, unknown>,
+      fields,
       ref: row.ref,
       where: row.where,
       file,

@@ -65,6 +65,7 @@ export function planSheet(
     file,
     existing: ctx.entries,
     sources: (id) => open.repo.sourceRecords(id),
+    trashed: (c) => open.model.all(c).filter((d) => d.deletedAt),
     list: (id) => open.model.get('lists', id) as never,
   });
   return { set, output, file };

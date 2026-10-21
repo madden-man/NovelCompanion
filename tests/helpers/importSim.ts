@@ -81,6 +81,7 @@ export class SimBible {
       file,
       existing: this.entries,
       sources: (id) => this.sources.get(id) ?? [],
+      trashed: (c) => (this.docs.get(c) ?? []).filter((d) => d.deletedAt),
       list: (id) => this.lists.get(id),
     });
     return { set, rows };

@@ -264,10 +264,10 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
       ['Ann: Arc', 2011, 2012, true],
       ['Backstory: School', 2010, null, false],
     ]);
-    // The arc span is primary; a later Forestory strand keeps its label (A29).
+    // The later span is the present strand, its Forestory label kept; the earlier is labelled backstory (A29).
     expect(strands('Branching')).toEqual([
-      ['Old days', 2009, null, true],
-      ['Forestory: Ben', 2012, null, false],
+      ['Forestory: Ben', 2012, null, true],
+      ['Backstory: Old days', 2009, null, false],
     ]);
     expect(byTitle('Branching').partId).toBe(partOf('Branches')._id);
     expect(byTitle('A second chapter').sourceRef).toBe('East_Winds_World.xlsx#High Level!A4');
@@ -585,6 +585,8 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
   });
 
   test('IM-3 A29 the Book One chapters already in the bible, made by hand without the number, are updated by part and title, never duplicated', async () => {
+    // The workbook is saved before the writer's edits below, so those edits are the newer values.
+    const where = await sources({ chapterOne: 'Deep roots' });
     const open = await bible();
     const book = await open.repo.create('books', {
       title: 'Book One',
@@ -639,7 +641,27 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
       status: 'canon',
       strands: [{ id: 'S5', label: 'Ann: Arc', startYear: 2011, endYear: 2012, primary: true }],
     } as never);
-    const report = await importEastWinds(open, dir, { yes: true });
+    // A chapter the writer moved into Roots from Branches, and one the writer put in the trash.
+    const branching = await open.repo.create('chapters', {
+      title: 'Branching',
+      partId: roots._id,
+      readingOrder: 2,
+      status: 'canon',
+      strands: [
+        { id: 'S7', label: 'Forestory: Ben', startYear: 2012, primary: true },
+        { id: 'S8', label: 'Backstory: Old days', startYear: 2009, primary: false },
+      ],
+    } as never);
+    const deep = await open.repo.create('chapters', {
+      title: 'Deep roots',
+      partId: roots._id,
+      readingOrder: 6,
+      status: 'canon',
+      sourceRef: 'East_Winds_World.xlsx#High Level!B6:D6',
+      strands: [{ id: 'S9', label: 'Ben: Arc', startYear: 2011, primary: true }],
+    } as never);
+    await open.repo.softDelete('chapters', deep._id);
+    const report = await importEastWinds(open, where, { yes: true });
     const step = report.steps.find((st) => st.step.endsWith('sheet High Level, chapters'))!;
     expect(step.failed).toEqual([]);
     expect(step.notes.join(' ')).toContain(
@@ -671,7 +693,23 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
       'says A second chapter',
     );
     // A second run has nothing new to say.
-    const again = await importEastWinds(open, dir, { yes: true });
+    // The moved chapter stays in Roots at its place, is not made again in Branches, and raises no question.
+    expect(open.repo.get('chapters', branching._id)).toMatchObject({
+      partId: roots._id,
+      readingOrder: 2,
+    });
+    expect(open.repo.list('chapters').filter((c) => c.title === 'Branching')).toHaveLength(1);
+    expect(questions.filter((q) => q.includes('Branching'))).toEqual([]);
+    expect(step.notes.join(' ')).toContain(
+      '"Branching" matched the chapter of that title in Roots',
+    );
+    // The trashed chapter is left in the trash and not made again.
+    expect(step.notes.join(' ')).toContain(
+      '"Deep roots" is "Deep roots", in the trash, left alone.',
+    );
+    expect(open.repo.list('chapters').filter((c) => c.title === 'Deep roots')).toEqual([]);
+    expect(open.model.get('chapters', deep._id)!.deletedAt).toBeTruthy();
+    const again = await importEastWinds(open, where, { yes: true });
     const second = again.steps.find((st) => st.step.endsWith('sheet High Level, chapters'))!;
     expect([second.created, second.updated, second.questions]).toEqual([0, 0, 0]);
   });
@@ -868,7 +906,7 @@ describe('IM-3 PL-3 a re-import after the title cleanup finds the same entries',
 });
 
 describe('A29 the real High Level sheet plans Book One', () => {
-  test('A29 IM-1 the real workbook makes one Book One with 4 parts of 12 chapters in sheet order, each with a primary strand and a second one, the Introduction in 2078, and Siyuan primary in Part Four', async () => {
+  test('A29 IM-1 the real workbook makes one Book One with 4 parts of 12 chapters in sheet order, each with a primary strand and a second one, the Introduction in 2078, and in Part Four a Forestory present strand with Siyuan as backstory', async () => {
     const real = join(import.meta.dirname, '../../source-material');
     const open = await bible();
     await importEastWinds(open, real, { yes: true });
@@ -911,17 +949,18 @@ describe('A29 the real High Level sheet plans Book One', () => {
     const intro = chapters.find((c) => c.title === 'Introduction')!;
     expect(intro.partId).toBe(parts[0]!._id);
     expect(intro.strands.find((st) => st.primary)!.startYear).toBe(2078);
-    // Part Four: Siyuan's arc is the primary strand and Forestory keeps its label (A29).
+    // Part Four: the later Forestory span is the present strand and Siyuan's earlier span is backstory (A29),
+    // as the chapters were made by hand on 2026-10-11.
     for (const c of inPart(parts[3]!._id)) {
       const primary = c.strands.find((st) => st.primary)!;
       const other = c.strands.find((st) => !st.primary)!;
-      expect([c.title, primary.label.startsWith('Siyuan:')]).toEqual([c.title, true]);
-      expect([c.title, other.label.startsWith('Forestory:')]).toEqual([c.title, true]);
+      expect([c.title, primary.label.startsWith('Forestory:')]).toEqual([c.title, true]);
+      expect([c.title, other.label.startsWith('Backstory: Siyuan:')]).toEqual([c.title, true]);
     }
     const death = inPart(parts[3]!._id).find((c) => c.title === 'O Death')!;
     expect(death.strands.map((st) => [st.label, st.startYear, st.primary])).toEqual([
-      ['Siyuan: Lost Years', 2074, true],
-      ['Forestory: John', 2096, false],
+      ['Forestory: John', 2096, true],
+      ['Backstory: Siyuan: Lost Years', 2074, false],
     ]);
   }, 120_000);
 });

@@ -162,28 +162,17 @@ interface StrandSpan {
 }
 
 const BACKSTORY = /^backstory\b/i;
-const FORESTORY = /^forestory\b/i;
-
-/** True for an arc span's label: one that is neither "Backstory: ..." nor "Forestory: ...". */
-const isArc = (label: string) => !BACKSTORY.test(label) && !FORESTORY.test(label);
-
-/** The character an arc label is named for: "Siyuan" in "Siyuan: Lost Years". */
-export function arcCharacterOf(label: string): string | null {
-  const at = label.indexOf(':');
-  return at > 0 && isArc(label) ? label.slice(0, at).trim().toLowerCase() : null;
-}
 
 /**
  * A chapter's strands from its row (A29): each label written under the years
- * it spans. The primary strand is the arc span, the one labelled neither
- * "Backstory" nor "Forestory"; when both are arc spans, the one named for the
- * part's arc character wins, else the earlier. The other strand keeps its
- * label when it is later than the primary ("Forestory: John"); when it is
- * earlier it jumps back in story time and is labelled "Backstory: ...".
+ * it spans. The present (primary) strand is the span that is later in story
+ * time, with its label as the sheet gives it ("Forestory: John" stays
+ * "Forestory: John"). The earlier span jumps back in story time, so it is
+ * labelled "Backstory: <its label>" unless it already starts with "Backstory".
+ * This is how the 48 Book One chapters were made by hand on 2026-10-11.
  */
 export function chapterStrands(
   spans: StrandSpan[],
-  arcCharacter: string | null = null,
 ): { primary: StrandSpan; other: StrandSpan | null } | { problem: string } {
   if (spans.length === 0) return { problem: 'The row has no strand labels under its years' };
   if (spans.length > 2) {
@@ -194,24 +183,9 @@ export function chapterStrands(
   const [a, b] = [...spans].sort((x, y) => x.start - y.start || x.end - y.end);
   if (!a) return { problem: 'The row has no strand labels under its years' };
   if (!b) return { primary: a, other: null };
-  const arcs = [a, b].filter((x) => isArc(x.label));
-  let primary: StrandSpan;
-  if (arcs.length === 1) primary = arcs[0] ?? a;
-  else if (arcs.length === 2) {
-    const named = arcs.filter(
-      (x) => arcCharacter !== null && arcCharacterOf(x.label) === arcCharacter,
-    );
-    primary = named.length === 1 ? (named[0] ?? a) : a;
-  } else {
-    // Neither is an arc span: a forward strand is closer to the present than a backstory one.
-    primary = FORESTORY.test(a.label) || !FORESTORY.test(b.label) ? a : b;
-    if (BACKSTORY.test(primary.label) && !BACKSTORY.test(b.label)) primary = b;
-  }
-  const rest = primary === a ? b : a;
-  const jumpsBack = rest.start < primary.start && !BACKSTORY.test(rest.label);
   return {
-    primary,
-    other: jumpsBack ? { ...rest, label: `Backstory: ${rest.label}` } : rest,
+    primary: b,
+    other: BACKSTORY.test(a.label) ? a : { ...a, label: `Backstory: ${a.label}` },
   };
 }
 
@@ -306,35 +280,6 @@ export function mapChapterGrid(
     }
     return spans;
   };
-  // A part's arc character is the one most of its arc labels are named for ("Siyuan" in Part Four).
-  const arcByPart = new Map<number, string | null>();
-  {
-    let n = 0;
-    let tally = new Map<string, number>();
-    const close = () => {
-      const best = [...tally].sort((x, y) => y[1] - x[1])[0];
-      if (n > 0) arcByPart.set(n, best ? best[0] : null);
-    };
-    for (let r = Math.max(header.row, startAt - 1); r < sheet.cells.length && r + 1 < endAt; r++) {
-      const label = cellText(sheet.cells[r]?.[mapping.labelColumn]);
-      const years = yearsAt(r);
-      if (!label) continue;
-      if (years.length === 0) {
-        if (partRe?.test(label.trim())) {
-          close();
-          n += 1;
-          tally = new Map();
-        }
-        continue;
-      }
-      for (const span of spansOf(years)) {
-        const who = arcCharacterOf(span.label);
-        if (who) tally.set(who, (tally.get(who) ?? 0) + 1);
-      }
-    }
-    close();
-  }
-
   for (let r = header.row; r < sheet.cells.length && r + 1 < endAt; r++) {
     const row = r + 1;
     const cells = sheet.cells[r] ?? [];
@@ -406,7 +351,7 @@ export function mapChapterGrid(
       fail('There is no part row above this chapter');
       continue;
     }
-    const strands = chapterStrands(spansOf(years), arcByPart.get(partNumber) ?? null);
+    const strands = chapterStrands(spansOf(years));
     if ('problem' in strands) {
       fail(strands.problem);
       continue;
