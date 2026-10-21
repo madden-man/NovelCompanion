@@ -236,15 +236,19 @@ function Cell(props: {
   const errorId = useId();
 
   // A stored change (a save, an undo, another screen) shows unless the cell is being edited.
+  // The value this cell last wrote, or the stored one when that changed since: a save is
+  // skipped only when the draft equals it, never against a stored value not yet reloaded.
+  const [committed, setCommitted] = useState(props.value);
   const [shown, setShown] = useState(props.value);
   if (props.value !== shown) {
     setShown(props.value);
+    setCommitted(props.value);
     if (!focused) setDraft(props.value);
   }
 
   const commit = async () => {
     const value = props.kind === 'year' ? draft.trim() : draft;
-    if (value === props.value) return;
+    if (value === committed) return;
     if (props.kind === 'year' && !(props.blank && value === '') && !/^-?\d+$/.test(value)) {
       setError(
         props.blank
@@ -254,9 +258,11 @@ function Cell(props: {
       return;
     }
     setError(null);
+    setCommitted(value);
     try {
       await props.onSave(value);
     } catch {
+      setCommitted(props.value);
       // The screen shows why in plain words; the typed value stays here to try again.
     }
   };

@@ -17,10 +17,9 @@ import {
   momentItems,
   momentsOf,
   treeOrder,
-  writingBand,
 } from '../../src/shared/domain/backstoryGrid';
 import { eventSpans, fromCollections, strandSpans } from '../../src/shared/domain/timeline';
-import { makeScale, yearMid, yearX } from '../../src/shared/domain/worldGrid';
+import { makeScale, writingBand, yearMid, yearX } from '../../src/shared/domain/worldGrid';
 import type { Doc } from '../../src/shared/domain/paths';
 
 const fixture = readFixture();

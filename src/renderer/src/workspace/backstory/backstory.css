@@ -202,12 +202,6 @@
   font-size: 0.8rem;
   color: var(--critical-ink);
 }
-.bs-to {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.8rem;
-  color: var(--fg);
-}
 .bs-world {
   display: flex;
   gap: 6px;

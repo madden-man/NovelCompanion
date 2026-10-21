@@ -17,6 +17,7 @@ import {
   zoomPpy,
 } from '../../../../shared/domain/worldGrid';
 import type {
+  WritingBand,
   GridLayout,
   GridLine,
   PlacedMarker,
@@ -45,12 +46,8 @@ export interface GridEra {
   endYear: number;
 }
 
-/** The chapter being written, as a band on the grid. */
-export interface GridBand {
-  from: number;
-  to: number;
-  label: string;
-}
+/** The chapter being written, as a band on the grid (`writingBand` in `worldGrid.ts`). */
+export type GridBand = WritingBand;
 
 /** A move from a drag or an arrow key: the whole span, or only its end (Shift). */
 export type MovePart = 'span' | 'end';

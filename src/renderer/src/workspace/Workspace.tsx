@@ -48,10 +48,9 @@ type View =
   | { kind: 'tree'; focus?: string }
   /** SM-8: the World events grid. */
   | { kind: 'timeline' }
-  | { kind: 'backstory'; characterId?: string }
+  | { kind: 'backstory'; characterId?: string; at?: number }
   | { kind: 'outline' }
   /** SM-9: one row per character; SM-10's Their backstory picks the person. */
-  | { kind: 'backstory'; characterId?: string }
   /** SM-11: the alignment check (CC-1 to CC-5) with the manuscript (MS-1 to MS-5) as a second tab. */
   | { kind: 'continuity'; tab: ContinuityTab; chapterId?: string; openFlow?: boolean }
   /** SM-11: the screen the app opens on (DB-1), Start session, the log, briefs and questions. */
@@ -142,7 +141,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
     setView({ kind: 'section', collection, selected: id, creating: false });
   const openSection = (collection: EntryCollection) =>
     setView({ kind: 'section', collection, selected: null, creating: false });
-  useOpenBackstory((characterId) => setView({ kind: 'backstory', characterId }));
+  useOpenBackstory((characterId, at) => setView({ kind: 'backstory', characterId, at }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
     review: () => setView({ kind: 'review' }),
@@ -277,7 +276,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         ) : view.kind === 'timeline' ? (
           <TimelineView />
         ) : view.kind === 'backstory' ? (
-          <BackstoryView characterId={view.characterId} onOpen={open} />
+          <BackstoryView characterId={view.characterId} openedAt={view.at} onOpen={open} />
         ) : view.kind === 'outline' ? (
           <OutlineView onOpen={open} />
         ) : view.kind === 'sessions' ? (
