@@ -9,8 +9,8 @@ import type { DraftOrProblem, FeatureDefinition } from '../runtime';
 
 /**
  * IM-5: Claude reads an imported Word document and proposes structured
- * entries (characters, dates, moments, events) through the review
- * queue (AI-3). The document is material, never instructions (AI-5). Claude
+ * entries (characters with their dates, moments, world events, and open
+ * questions, A39) through the review queue (AI-3). The document is material, never instructions (AI-5). Claude
  * may propose creating, changing, or linking entries; a deletion is not in
  * the output schema, so an import can never propose one.
  */
@@ -19,13 +19,8 @@ import type { DraftOrProblem, FeatureDefinition } from '../runtime';
 const SECTIONS = [
   'characters',
   'moments',
-  'families',
-  'unions',
-  'parentLinks',
   'worldEvents',
-  'places',
-  'glossaryTerms',
-  'culturalEntries',
+  'openQuestions',
 ] as const satisfies readonly EntryCollection[];
 
 /** Existing entries listed for matching, at most this many. */
@@ -56,7 +51,7 @@ export const ImportProposalsOutput = z.strictObject({
 });
 export type ImportProposalsOutput = z.infer<typeof ImportProposalsOutput>;
 
-const INSTRUCTIONS = `You read one document the writer imported and propose structured entries for the story bible: characters, birth and death dates, families, unions, parent links, moments in a character's life (characterId, year, title for what happens, body for how they experience it), world events with dates, places, and glossary terms.
+const INSTRUCTIONS = `You read one document the writer imported and propose structured entries for the story bible: characters with their birth and death dates, moments in a character's life (characterId, year, title for what happens, body for how they experience it, worldContext for the world events around it), world events with dates, and open questions where the document leaves something unsettled or contradicts the bible.
 Propose only what the document states. Quote the words that support each proposal and give their paragraph numbers.
 Before proposing a new entry, check the list of existing entries: if the entry exists, propose an update or a link to it instead of a duplicate.
 Use the field names of the bible's schema. Dates are objects such as {"year": 2031} or {"year": 2031, "month": 5, "day": 2}. Every new entry has a "title" and a "status" of "idea" unless the document establishes it.

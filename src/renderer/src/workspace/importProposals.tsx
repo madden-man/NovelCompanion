@@ -61,9 +61,9 @@ export function ImportProposals(props: { fileId: string; fileName: string }) {
     >
       <h3 id={headingId}>Ask Claude to propose entries</h3>
       <p>
-        Optional. Claude reads {props.fileName} and suggests characters, dates, relationships, and
-        events it states. Each suggestion goes to the review queue, where you see the exact change
-        and approve, edit, or reject it.
+        Optional. Claude reads {props.fileName} and suggests the characters, moments, world events,
+        and open questions it states. Each suggestion goes to the review queue, where you see the
+        exact change and approve, edit, or reject it.
       </p>
       {asking && (
         <Disclosure

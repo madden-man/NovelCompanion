@@ -168,13 +168,13 @@
             "proposals": [
               {
                 "op": "create",
-                "collection": "places",
+                "collection": "moments",
                 "targetId": null,
-                "fields": "{\"title\": \"The porch by the river\", \"parentId\": \"PLC2\"}",
+                "fields": "{\"title\": \"Finds her on the porch after the wedding, watching the river rise\", \"characterId\": \"H3\", \"year\": 2029}",
                 "link": null,
                 "paragraphs": [4],
                 "quote": "Daniel found her later on the porch, watching the river rise.",
-                "reason": "The chapter names a porch over a river."
+                "reason": "Daniel finds her on the porch after his wedding."
               },
               {
                 "op": "link",

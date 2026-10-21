@@ -538,12 +538,18 @@ export async function importEastWinds(
       continue;
     }
     const plan = planDocumentImport(open, doc, { kind: 'backstory', characterId: id });
-    await record(
+    const step = await record(
       `${file}, backstory of ${entryTitle(open.model.get('characters', id) ?? { title: name })}`,
       plan.set,
       plan.file,
       found ? [] : [`Made a character called ${name}; it had no entry.`],
     );
+    // The character made just above counts as new, not as a changed one.
+    const people = step.touched.characters;
+    if (!found && people && people.updated > 0) {
+      people.updated -= 1;
+      people.created += 1;
+    }
   }
 
   // The manuscript.

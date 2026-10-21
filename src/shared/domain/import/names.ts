@@ -51,9 +51,13 @@ function chineseGiven(doc: Doc): string {
   return [...chinese].length > 1 ? [...chinese].slice(1).join('') : '';
 }
 
-/** Every name and word an entry answers to, lower case, for checking a hint. */
-function hintText(doc: Doc): string {
-  return [...namesOf(doc), ...wordsOf(doc)].join(' ');
+/** True when a hint names this person: one word of their names, or Chinese characters within their Chinese name. */
+function hinted(doc: Doc, hint: string): boolean {
+  const h = hint.trim().toLowerCase();
+  if (wordsOf(doc).includes(h)) return true;
+  const names = doc.names;
+  const chinese = isPlainObject(names) && typeof names.chinese === 'string' ? names.chinese : '';
+  return /\p{Script=Han}/u.test(h) && chinese.includes(h);
 }
 
 /**
@@ -66,8 +70,8 @@ function personByPart(people: Doc[], want: string, hints: string[]): string | nu
   const hits = people.filter((d) => wordsOf(d).includes(want) || chineseGiven(d) === want);
   if (hits.length === 0) return null;
   if (hits.length === 1) return String(hits[0]?._id);
-  const hinted = hits.filter((d) => hints.some((h) => hintText(d).includes(h.toLowerCase())));
-  return hinted.length === 1 ? String(hinted[0]?._id) : 'ambiguous';
+  const narrowed = hits.filter((d) => hints.some((h) => hinted(d, h)));
+  return narrowed.length === 1 ? String(narrowed[0]?._id) : 'ambiguous';
 }
 
 export interface NameResolver {

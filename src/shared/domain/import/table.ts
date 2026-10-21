@@ -307,7 +307,8 @@ export function mapTable(sheet: ParsedSheet, mapping: TableMapping, ctx: MapCont
       fixed: mapping.fixed,
       newId: id,
       ref,
-      ordinal,
+      // A new chapter reads after the chapters a run already planned (see `orderFrom`).
+      ordinal: (mapping.orderFrom ?? 1) + ordinal - 1,
     });
     if (!built.ok) {
       failRow(built.reason);

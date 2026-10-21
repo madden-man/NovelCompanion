@@ -300,7 +300,7 @@ test('IM-5 AI-6 a Word document in Import can be read by Claude, and its proposa
     (p) => p.proposal.source === 'claude',
   );
   expect(pending.map((p) => [p.proposal.op, p.proposal.collection])).toEqual([
-    ['create', 'places'],
+    ['create', 'moments'],
     ['update', 'characters'],
   ]);
   // A second bible: the disclosure comes back before anything is sent.

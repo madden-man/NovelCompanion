@@ -6,6 +6,7 @@ import type { Request, Response } from '../../../shared/ipc';
 import { groupLabel } from '../../../shared/domain/numbering';
 import { DOCUMENT_KIND_LABELS } from '../../../shared/domain/import/documents';
 import type { DocumentKind } from '../../../shared/domain/import/documents';
+import { GRID_TARGETS } from '../../../shared/domain/import/guess';
 import type { GridMapping, Mapping, TableMapping } from '../../../shared/domain/import/types';
 import { call, plainError } from '../api';
 import { useEntries } from './data';
@@ -246,7 +247,7 @@ function WorkbookMapper(props: {
           fileId,
           sheet,
           shape: nextShape,
-          collection: nextShape === 'grid' ? 'worldEvents' : collection,
+          collection,
         });
         setMapping(r.mapping);
         setUsedSaved(false);
@@ -267,10 +268,12 @@ function WorkbookMapper(props: {
       setMapping(saved);
       setUsedSaved(true);
     } else if (picked) {
+      const next = picked.shape === 'grid' ? 'worldEvents' : target;
       setShape(picked.shape);
+      setTarget(next);
       setMapping(null);
       setUsedSaved(false);
-      void guess(name, picked.shape, picked.shape === 'grid' ? 'worldEvents' : target);
+      void guess(name, picked.shape, next);
     }
   };
 
@@ -306,7 +309,8 @@ function WorkbookMapper(props: {
     }
   };
 
-  const sectionOptions = ENTRY_COLLECTIONS.map(
+  // A grid fills world events, moments, or chapters (A12, SM-12); a table any section.
+  const sectionOptions = (shape === 'grid' ? GRID_TARGETS : ENTRY_COLLECTIONS).map(
     (c) => [c as string, collectionInfo[c].plural] as const,
   );
 
@@ -340,7 +344,8 @@ function WorkbookMapper(props: {
                 checked={shape === 'table'}
                 onChange={() => {
                   setShape('table');
-                  void guess(sheetName, 'table', target);
+                  setTarget('characters');
+                  void guess(sheetName, 'table', 'characters');
                 }}
               />{' '}
               Table: one row per entry
@@ -352,32 +357,31 @@ function WorkbookMapper(props: {
                 checked={shape === 'grid'}
                 onChange={() => {
                   setShape('grid');
+                  setTarget('worldEvents');
                   void guess(sheetName, 'grid', 'worldEvents');
                 }}
               />{' '}
               Grid: row label by year column
             </label>
           </fieldset>
-          {shape === 'table' && (
-            <label className="field" htmlFor={sectionId}>
-              Section
-              <select
-                id={sectionId}
-                data-testid="import-section"
-                value={target}
-                onChange={(e) => {
-                  setTarget(e.target.value);
-                  void guess(sheetName, 'table', e.target.value);
-                }}
-              >
-                {sectionOptions.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="field" htmlFor={sectionId}>
+            Section
+            <select
+              id={sectionId}
+              data-testid="import-section"
+              value={target}
+              onChange={(e) => {
+                setTarget(e.target.value);
+                void guess(sheetName, shape, e.target.value);
+              }}
+            >
+              {sectionOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {usedSaved && (
           <p className="callout" role="status" data-testid="import-saved-note">
@@ -537,12 +541,17 @@ function GridMappingEditor(props: {
   onChange: (patch: Partial<GridMapping>) => void;
 }) {
   const { mapping, onChange } = props;
+  const target = mapping.target.collection;
+  const pattern = (v: string) => (v.trim() ? v : undefined);
   return (
     <div className="panel stack" data-testid="import-grid-options">
       <h3>How the grid reads</h3>
-      <p className="example-note">
-        Each filled cell becomes a world event. Its column gives the year. Its row label and the
-        heading row above it give the category.
+      <p className="example-note" data-testid="import-grid-explain">
+        {target === 'moments'
+          ? 'Each filled cell becomes a moment. Its column gives the year. Its row label names the character. A row with a label and no cells is skipped.'
+          : target === 'chapters'
+            ? 'A part row starts a part. Each labelled row below it becomes a chapter, and the labels written under the years become its strands: the present strand and a backstory strand.'
+            : 'Each filled cell becomes a world event. Its column gives the year. Its row label and the heading row above it give the category.'}
       </p>
       <div className="row">
         <label className="field narrow">
@@ -576,18 +585,51 @@ function GridMappingEditor(props: {
             onChange={(e) => onChange({ yearOffset: Math.max(0, Number(e.target.value) || 0) })}
           />
         </label>
+        {target === 'worldEvents' && (
+          <label className="field">
+            Put every category under
+            <input
+              value={mapping.categoryRoot ?? ''}
+              placeholder="Optional"
+              onChange={(e) =>
+                onChange({ categoryRoot: e.target.value.trim() ? e.target.value : null })
+              }
+            />
+          </label>
+        )}
+      </div>
+      <div className="row">
         <label className="field">
-          Put every category under
+          Start at the row whose label matches
           <input
-            value={mapping.categoryRoot ?? ''}
-            placeholder="Optional"
-            onChange={(e) =>
-              onChange({ categoryRoot: e.target.value.trim() ? e.target.value : null })
-            }
+            data-testid="import-grid-start"
+            value={mapping.startLabel ?? ''}
+            placeholder="Optional, for example ^Characters$"
+            onChange={(e) => onChange({ startLabel: pattern(e.target.value) })}
+          />
+        </label>
+        <label className="field">
+          Stop at the row whose label matches
+          <input
+            data-testid="import-grid-end"
+            value={mapping.endLabel ?? ''}
+            placeholder="Optional, for example ^Foundational Drivers$"
+            onChange={(e) => onChange({ endLabel: pattern(e.target.value) })}
           />
         </label>
       </div>
-      <div className="row">
+      {target === 'worldEvents' && (
+        <label className="check">
+          <input
+            type="checkbox"
+            data-testid="import-grid-regions"
+            checked={mapping.regionsFromLabels === true}
+            onChange={(e) => onChange({ regionsFromLabels: e.target.checked })}
+          />{' '}
+          Read regions from the row labels, such as US or China
+        </label>
+      )}
+      <div className="row" hidden={target !== 'worldEvents'}>
         <label className="field">
           Which rows are headings
           <select
@@ -670,9 +712,9 @@ function CommonOptions(props: {
           </select>
         </label>
       </div>
-      {mapping.shape === 'table' && (
+      {(mapping.shape === 'table' || mapping.target.collection === 'moments') && (
         <>
-          <label className="check">
+          <label className="check" hidden={mapping.shape !== 'table'}>
             <input
               type="checkbox"
               checked={mapping.addMissingListItems}
