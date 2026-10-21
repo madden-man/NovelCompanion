@@ -868,7 +868,7 @@ test('GL-3 a name with a term links to it; a run with no term offers Add to glos
     collection: 'characters',
     data: {
       title: 'Wen Test',
-      names: { full: 'Wen Test', chinese: '文测', romanization: '' },
+      names: { full: 'Wen Test', chinese: '文测' },
       birth: { year: 1990 },
       status: 'idea',
     },
@@ -965,7 +965,7 @@ test('GL-3 the glossary table and the culture view show the meaning of Chinese o
       communityId: 'guangzhou',
       startYear: 1980,
       endYear: 2100,
-      generationNotes: '外婆 bakes them.',
+      body: '外婆 bakes them.',
       status: 'canon',
     },
   });

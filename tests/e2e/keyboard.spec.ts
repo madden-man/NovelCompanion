@@ -173,8 +173,11 @@ async function walk(scope?: string): Promise<string[]> {
         if ((el as HTMLButtonElement).disabled || el.closest('[inert], fieldset:disabled'))
           return false;
         if (el.getAttribute('tabindex') === '-1') return false;
-        const details = el.closest('details');
-        if (details && !details.open && el.tagName !== 'SUMMARY') return false;
+        // Inside a closed details nothing is reachable but that details' own summary;
+        // a menu nested in a closed menu is hidden with it (SM-7's Move to part).
+        for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) {
+          if (!d.open && !(el.tagName === 'SUMMARY' && el.parentElement === d)) return false;
+        }
         // A radio group is one Tab stop; arrow keys move inside it.
         if (el instanceof HTMLInputElement && el.type === 'radio') {
           const group = document.querySelectorAll(`input[type=radio][name="${el.name}"]`);

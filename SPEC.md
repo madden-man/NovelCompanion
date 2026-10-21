@@ -183,7 +183,7 @@ Dates may be a full date, a year, or unknown. Lists of types (union types, paren
 ### 5.12 Continuity check
 
 - **CC-1** Runs on one chapter or the whole manuscript, on demand.
-- **CC-2** Structural checks, in code: a character present in a chapter while dead or unborn in its story year; a character acting on a fact before the year they learn it; an event linked to a chapter as having happened but dated after its story year; tree warnings from `FT-6`; a chapter's story year outside its point-of-view character's lifetime.
+- **CC-2** Structural checks, in code: a character present in a chapter while dead or unborn in its story year; a character acting on a fact before the year they learn it (withdrawn by `SM-2` `[A39]`, facts no longer exist); an event linked to a chapter as having happened but dated after its story year; tree warnings from `FT-6`; a chapter's story year outside its point-of-view character's lifetime.
 - **CC-3** `[A20]` Alignment checks, by Claude: the chapter text is compared with the entries selected for it and with the plot as stored: the chapter's strands and years, its beats, beats in its arcs dated before its story year, chapter order, and the facts in play. Each finding quotes the chapter passage with its line numbers, cites the conflicting entry or beat, and explains the conflict. The check runs on one chapter or the whole manuscript at any time (`CC-1`) and uses the model configured for continuity, default `claude-opus-5-5`.
 - **CC-4** `[A20]` Each finding offers three resolutions. **Manuscript wins:** the finding carries a prepared change set to the bible (the entries, beats, or strands that would make the bible match the chapter); the change set is shown as a diff, and one click applies all of it through the normal write path, recorded in revision history and undoable. **Rewrite recommended:** the finding becomes a rewrite task listing the exact manuscript lines (chapter, line numbers, quoted text) and a plain description of what must change to match the bible; it never contains replacement prose (`AI-4`). Open rewrite tasks are listed on the dashboard (`DB-1`) and on the chapter. **Dismiss.** Dismissed findings do not reappear unless the text or the entry changes.
 - **CC-5** Structural checks produce no findings on the fixture novel's clean chapters and find every planted structural error (section 7).
@@ -322,14 +322,14 @@ Tests run against a small invented novel, never my real material. Expected answe
 - Year 2041. H1 is alive at 83 and flagged as dying that year.
 - Year 2075. Alive: H3 90, H5 44, H6 63, Z3 87, X1 45, Z5 17. Dead: H1, H2, H4, Z1, Z2, Z4. Unknown: U1.
 
-**The fixture also contains** at least 10 world events (one dated 2090) filed under at least three categories, an era state for each decade, cultural entries for two communities with year ranges, 5 glossary terms with Chinese characters, 2 facts with knowledge records (one learned by H5 in 2060), 8 chapters out of chronological order grouped in two parts, one of which has two strands (a present strand in 2045 and a backstory strand in 2032) `[A5]`, an Excel workbook with one table sheet and one grid sheet `[A12]`, and one custom section.
+**The fixture also contains** at least 10 world events (one dated 2090) filed under at least three categories, an era state for each decade, cultural entries for two communities with year ranges, 5 glossary terms with Chinese characters, 8 chapters out of chronological order grouped in two parts, one of which has two strands (a present strand in 2045 and a backstory strand in 2032) `[A5]`, an Excel workbook with one table sheet and one grid sheet `[A12]`, and at least 6 moments across three characters, one voice moment and two "Lives in" moments among them `[A39]`. The 2 facts with knowledge records, the custom section and planted error S2 were withdrawn by `SM-2` (facts, knowledge records and custom sections no longer exist; `CC-2` loses its fact check).
 
 **Planted errors**
 
 | ID | Type | Error |
 |---|---|---|
 | S1 | Structural | Chapter 4 (story year 2032) lists H2 as present; H2 died in 2030 |
-| S2 | Structural | Chapter 6 (2045) has H5 acting on a fact H5 learns in 2060 |
+| S2 | Structural | Withdrawn by `SM-2` `[A39]`: it needed a fact and a knowledge record |
 | S3 | Structural | Chapter 6 (2045) links the 2090 event as having happened |
 | P1 | Prose | Chapter 5 (2040) text calls Margaret "seventy"; she is 82 |
 | P2 | Prose | Chapter 7 text says Lan grew up in Shanghai; the bible says Guangzhou |
