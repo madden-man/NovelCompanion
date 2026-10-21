@@ -100,11 +100,10 @@ test('TM-1 TM-3 Cmd+T opens Story Time from every screen; setting 2040 updates t
   await openDialog();
   await dialog().getByTestId('time-year').fill('2039');
   await expect(dialog().getByTestId('time-now')).toHaveText('2039');
-  await expect(page.getByTestId('tree-year')).toHaveValue('2039');
+  await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2039');
   await dialog().getByTestId('time-year').fill('2040');
   await expect(dialog().getByTestId('time-now')).toHaveText('2040');
   await closeDialog();
-  await expect(page.getByTestId('tree-year')).toHaveValue('2040');
   await expect(page.getByTestId('tree-svg')).toHaveAttribute('data-year', '2040');
   await expect(page.locator('g.tnode[data-person="H5"]')).toHaveAttribute('data-age', '9');
   await expect(page.locator('g.tnode[data-person="H1"]')).toHaveAttribute('data-age', '82');
@@ -255,7 +254,10 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
   await expect(page.getByTestId('tree-inspector').getByTestId('inspector-name')).toHaveText(
     'Noor Zhou',
   );
+  // A45: the key hints sit in the legend overlay, which opens on request.
+  await page.getByRole('button', { name: 'Legend', exact: true }).click();
   await expect(page.getByTestId('tree-keys')).toContainText('I opens the inspector for anyone');
+  await page.getByRole('button', { name: 'Hide legend' }).click();
 });
 
 // ---------- SM-8: the World events grid ----------

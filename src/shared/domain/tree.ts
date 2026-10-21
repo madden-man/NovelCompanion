@@ -260,27 +260,7 @@ export function generations(g: TreeGraph, ids?: ReadonlySet<string>): Map<string
   return gen;
 }
 
-// ---------- filters and collapse (FT-1, FT-8) ----------
-
-export type TreeFilter =
-  { kind: 'all' } | { kind: 'family'; familyId: string } | { kind: 'lineage'; personId: string };
-
-/** The people a filter shows, before collapsed branches are hidden. */
-export function filterPeople(g: TreeGraph, filter: TreeFilter): Set<string> {
-  if (filter.kind === 'family') {
-    return new Set(g.people.filter((p) => p.familyIds.includes(filter.familyId)).map((p) => p.id));
-  }
-  if (filter.kind === 'lineage') {
-    if (!g.byId.has(filter.personId)) return new Set();
-    const id = filter.personId;
-    const down = descendantsOf(g, id);
-    const keep = new Set([id, ...ancestorsOf(g, id), ...down]);
-    // Partners of the person and of their descendants, so every child shows both parents.
-    for (const k of [id, ...down]) for (const p of partnersOf(g, k)) keep.add(p);
-    return keep;
-  }
-  return new Set(g.people.map((p) => p.id));
-}
+// ---------- collapse (FT-8) ----------
 
 /**
  * Hide the branches under collapsed people: their descendants, and anyone

@@ -59,32 +59,3 @@ export function decodePng(buf: Buffer): {
     },
   };
 }
-
-/** Fill colours (`r g b rg`) used in a PDF's content streams, each 0 to 255. */
-export function pdfFillColors(pdf: Buffer): [number, number, number][] {
-  const text = pdf.toString('latin1');
-  const out: [number, number, number][] = [];
-  const re = /stream\r?\n/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const start = m.index + m[0].length;
-    const end = text.indexOf('endstream', start);
-    if (end < 0) break;
-    let body: string;
-    try {
-      body = inflateSync(pdf.subarray(start, end)).toString('latin1');
-    } catch {
-      continue;
-    }
-    for (const c of body.matchAll(/(\d*\.?\d+) (\d*\.?\d+) (\d*\.?\d+) rg/g)) {
-      out.push(
-        [Number(c[1]) * 255, Number(c[2]) * 255, Number(c[3]) * 255].map(Math.round) as [
-          number,
-          number,
-          number,
-        ],
-      );
-    }
-  }
-  return out;
-}

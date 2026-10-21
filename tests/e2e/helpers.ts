@@ -210,6 +210,24 @@ export async function screenTab(page: Page, screen: string, tab: string): Promis
   );
 }
 
+/**
+ * TM-1: set the story year as a person does since A45 took the tree's own year
+ * box away. The status bar's Story time button opens the dialog, the year box
+ * there sets the year as it is typed, and Escape closes the dialog.
+ */
+export async function setStoryYear(page: Page, year: number | string): Promise<void> {
+  await page
+    .getByTestId('status-bar')
+    .getByRole('button', { name: /^Story time/ })
+    .click();
+  const dialog = page.getByTestId('story-time-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('time-year').fill(String(year));
+  await expect(dialog.getByTestId('time-now')).toContainText(String(year));
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+}
+
 export function field(scope: Locator, path: string): Locator {
   return scope.locator(`[data-field="${path}"]`);
 }

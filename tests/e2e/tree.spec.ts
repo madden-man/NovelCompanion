@@ -10,8 +10,17 @@ import type { TreeGraph } from '../../src/shared/domain/tree';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { generatedTree } from '../helpers/generatedTree';
-import { decodePng, pdfFillColors } from '../helpers/png';
-import { field, fileDb, fillDateBox, invokeVia, launch, rail, waitSaved } from './helpers';
+import { decodePng } from '../helpers/png';
+import {
+  field,
+  fileDb,
+  fillDateBox,
+  invokeVia,
+  launch,
+  rail,
+  setStoryYear,
+  waitSaved,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -338,11 +347,12 @@ test('FT-4 links and unions are drawn by type, ended unions carry their end year
   await expect(node('Iris Hale-Zhou').locator('rect.tnode-fam')).toHaveCount(2);
 });
 
-test('FT-5 the year control redraws every node for 2040, 2041, and 2075 as in the TL-2 answers, and marks unions', async () => {
-  const yearInput = page.getByTestId('tree-year');
+test('FT-5 A45 the tree follows the story year: every node for 2040, 2041, and 2075 as in the TL-2 answers, and the unions', async () => {
+  // A45: the tree has no year control of its own; the story year is set from the status bar.
+  await expect(page.getByTestId('tree-year')).toHaveCount(0);
+  await expect(page.getByLabel('Year slider')).toHaveCount(0);
   for (const y of tl2.years) {
-    await yearInput.fill(String(y.year));
-    await yearInput.press('Enter');
+    await setStoryYear(page, y.year);
     await expect(svgEl()).toHaveAttribute('data-year', String(y.year));
     for (const a of y.alive) {
       const n = node(fixtureName(a.id));
@@ -370,18 +380,17 @@ test('FT-5 the year control redraws every node for 2040, 2041, and 2075 as in th
     }
   }
   // Unions: in 2040 Margaret and Peter's has ended and Iris and Tomas's has not begun; in 2060 it is active.
-  await yearInput.fill('2040');
-  await yearInput.press('Enter');
+  await setStoryYear(page, 2040);
   await expect(page.locator('g[data-union][data-state="ended"]')).toHaveCount(1);
   await expect(page.locator('g[data-union][data-state="future"]')).toHaveCount(1);
-  await page.getByLabel('Year slider').fill('2060');
+  await setStoryYear(page, 2060);
   await expect(svgEl()).toHaveAttribute('data-year', '2060');
   await expect(page.locator('g[data-union][data-state="future"]')).toHaveCount(0);
   await expect(page.locator('g[data-union][data-state="active"]')).toHaveCount(3);
-  // The year control is bound to the story time, which persists.
+  // The tree's year is the story time, which persists.
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2060);
-  await yearInput.fill('2040');
-  await yearInput.press('Enter');
+  await setStoryYear(page, 2040);
+  await expect(svgEl()).toHaveAttribute('data-year', '2040');
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2040);
 });
 
@@ -417,7 +426,8 @@ test('FT-7 FT-3 a click opens the character in the inspector without leaving the
 
 test('FT-2 change a link type, remove a link and undo it, and delete and restore a person through the trash', async () => {
   await select('Sam Hale');
-  const row = inspector().getByTestId('link-list').locator('li', { hasText: 'Ruth Hale' });
+  const group = (kind: string) => inspector().locator(`[data-group="${kind}"]`);
+  const row = group('parent').getByTestId('link-list').locator('li', { hasText: 'Ruth Hale' });
   await row.getByRole('combobox').selectOption('guardian');
   await expect(page.locator('path.tlink.guardian')).toHaveCount(1);
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(0);
@@ -425,9 +435,7 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
   // Change a union type.
   await select('Iris Hale-Zhou');
-  const urow = inspector()
-    .getByTestId('link-list')
-    .locator('li', { hasText: 'Partner: Tomas Reyes' });
+  const urow = group('partner').getByTestId('link-list').locator('li', { hasText: 'Tomas Reyes' });
   await urow.getByRole('combobox').selectOption('married');
   await expect(page.locator('path.tunion.married')).toHaveCount(3);
   await urow.getByRole('combobox').selectOption('partnered');
@@ -437,6 +445,7 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   await inspector().getByRole('button', { name: 'Remove the link with Ruth Hale' }).click();
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(0);
   await expect(inspector().getByTestId('link-list')).toHaveCount(0);
+  await expect(group('parent')).toContainText('None yet.');
   await page.locator('body').click({ position: { x: 2, y: 2 } });
   await page.keyboard.press('Meta+z');
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
@@ -465,19 +474,37 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   expect(t.links.filter((l) => l.childId === noor.id)).toHaveLength(2);
 });
 
-test('FT-6 warnings show beside the tree and never block; a person cannot become their own ancestor', async () => {
+test('FT-6 A45 warnings show in the inspector behind the toolbar count and never block; a person cannot become their own ancestor', async () => {
+  const count = page.getByTestId('tree-warn-count');
+  await expect(count).toHaveText('No warnings');
   await select('Noor Zhou');
   await setYearDate('birth', 2040);
-  const warnings = page.getByTestId('tree-warnings');
+  // The count clears the selection, so the inspector shows the warnings.
+  const warnings = inspector().getByTestId('tree-warnings');
+  await expect(count).toHaveText(/^\d+ warnings$/);
+  await expect(warnings).toHaveCount(0);
+  await count.click();
+  await expect(inspector().getByTestId('inspector-name')).toHaveCount(0);
   await expect(warnings).toContainText(
     'Iris Hale-Zhou would be 9 when Noor Zhou is born, under 12.',
   );
   await expect(warnings).toContainText('Tomas Reyes would be 10 when Noor Zhou is born, under 12.');
+  const shown = Number((await count.textContent())!.split(' ')[0]);
+  await expect(warnings.locator('li')).toHaveCount(shown);
   // It saved anyway.
   const t = await invoke('tree.get', {});
   expect(t.people.find((p) => p.name === 'Noor Zhou')!.birth).toEqual({ year: 2040 });
+  // Show <name> on a warning selects that person.
+  await warnings
+    .getByRole('button', { name: /^Show / })
+    .first()
+    .click();
+  await expect(inspector().getByTestId('inspector-name')).toHaveCount(1);
+  await select('Noor Zhou');
   await setYearDate('birth', 2058);
-  await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
+  await expect(count).toHaveText('No warnings');
+  await count.click();
+  await expect(inspector().getByTestId('no-tree-warnings')).toBeVisible();
 
   // Self-ancestry is refused in plain words, and nothing is written.
   const before = (await invoke('tree.get', {})).links.length;
@@ -505,54 +532,95 @@ test('FT-6 warnings show beside the tree and never block; a person cannot become
   expect((await invoke('tree.get', {})).links.length).toBe(before);
 });
 
-test('FT-1 one tree for every family, a filter to one family, and to the ancestors and descendants of one person', async () => {
-  const shownNames = async () =>
-    (
-      await page
-        .locator('g.tnode')
-        .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!.split(',')[0]))
-    ).sort();
-  const show = page.getByLabel('Show');
-  await show.selectOption({ label: 'All families' });
+test('FT-1 A45 one tree shows every family together, with no family or lineage filter', async () => {
+  await expect(page.getByLabel('Show', { exact: true })).toHaveCount(0);
   await expect(page.locator('g.tnode')).toHaveCount(13);
-  await show.selectOption({ label: 'Zhou only' });
-  await expect(page.locator('g.tnode')).toHaveCount(6);
-  expect(await shownNames()).toEqual([
-    'Iris Hale-Zhou',
-    'Noor Zhou',
-    'Zhou Jun',
-    'Zhou Lan',
-    'Zhou Meiling',
-    'Zhou Wei',
+  const names = (
+    await page
+      .locator('g.tnode')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!.split(',')[0]))
+  ).sort();
+  // Both families and the people who join them, Iris Hale-Zhou among them.
+  for (const n of ['Margaret Hale', 'Zhou Wei', 'Iris Hale-Zhou', 'Tomas Reyes'])
+    expect(names).toContain(n);
+});
+
+test('FT-7 FT-2 A45 the inspector edits Name, In the story, Description, Birth, Death and Families, links to Backstory, and lists the family from the top down', async () => {
+  await select('Daniel Hale');
+  const ed = editor();
+  // The fields, in order; status, provenance, source, tags, links and the backstory box are gone.
+  const fields = await ed
+    .locator('form.editor-fields > fieldset > [data-field]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-field')));
+  expect(fields).toEqual([
+    'names.full',
+    'names.chinese',
+    'role',
+    'body',
+    'birth',
+    'death',
+    'familyIds',
   ]);
-  await show.selectOption({ label: 'Hale only' });
-  expect(await shownNames()).toEqual([
+  await expect(field(ed, 'names.full').locator('label')).toHaveText('Name');
+  await expect(field(ed, 'body').locator('label')).toHaveText('Description');
+  await expect(field(ed, 'role').locator('label')).toHaveText('In the story');
+  for (const gone of ['title', 'status', 'provenance', 'sourceNote', 'sourceRef', 'tags', 'links'])
+    await expect(field(ed, gone)).toHaveCount(0);
+  await expect(field(ed, 'backstory')).toHaveCount(0);
+  // Name sets the title too, so the node follows it.
+  await field(ed, 'names.full').locator('input').fill('Daniel J. Hale');
+  await waitSaved(page);
+  await expect(node('Daniel J. Hale')).toHaveCount(1);
+  const t = await invoke('tree.get', {});
+  const dan = t.people.find((p) => p.name === 'Daniel J. Hale')!;
+  const stored = (await invoke('entry.get', { collection: 'characters', id: dan.id })).entry;
+  expect(stored.title).toBe('Daniel J. Hale');
+  expect((stored.names as { full: string }).full).toBe('Daniel J. Hale');
+  await field(ed, 'names.full').locator('input').fill('Daniel Hale');
+  await waitSaved(page);
+  await expect(node('Daniel Hale')).toHaveCount(1);
+
+  // The family sits below the fields, from the top down, each group with its own Add.
+  const groups = inspector().locator('[data-group]');
+  expect(await groups.evaluateAll((els) => els.map((e) => e.getAttribute('data-group')))).toEqual([
+    'parent',
+    'partner',
+    'sibling',
+    'child',
+  ]);
+  const group = (kind: string) => inspector().locator(`[data-group="${kind}"]`);
+  await expect(group('parent').getByTestId('link-list').locator('li')).toHaveText([
+    /Peter Hale|Margaret Hale/,
+    /Peter Hale|Margaret Hale/,
+  ]);
+  await expect(group('partner')).toContainText('Zhou Lan');
+  await expect(group('sibling')).toContainText('Ruth Hale');
+  await expect(group('child')).toContainText('Iris Hale-Zhou');
+  for (const kind of ['parent', 'partner', 'sibling', 'child'])
+    await expect(
+      group(kind).getByRole('button', { name: `Add ${kind}`, exact: true }),
+    ).toBeVisible();
+  // A sibling follows from the shared parents: it selects, and has no type or Remove.
+  await expect(group('sibling').getByRole('combobox')).toHaveCount(0);
+  await expect(group('sibling').getByRole('button', { name: /^Remove/ })).toHaveCount(0);
+  const edBox = (await ed.boundingBox())!;
+  const famBox = (await inspector().getByRole('heading', { name: 'Family' }).boundingBox())!;
+  expect(famBox.y).toBeGreaterThan(edBox.y + edBox.height - 1);
+  // The add form opens under its own group.
+  await group('child').getByRole('button', { name: 'Add child', exact: true }).click();
+  await expect(group('child').getByTestId('add-form')).toBeVisible();
+  await group('child').getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
+  await group('sibling').getByRole('button', { name: 'Ruth Hale' }).click();
+  await expect(inspector().getByTestId('inspector-name')).toHaveText('Ruth Hale');
+
+  // Backstory is a link to the Backstory screen on this person.
+  await select('Daniel Hale');
+  await editor().getByRole('button', { name: 'Open in Backstory' }).click();
+  await expect(page.getByTestId('backstory-view')).toBeVisible();
+  await expect(page.getByTestId('backstory-view').getByTestId('moments-heading')).toContainText(
     'Daniel Hale',
-    'Iris Hale-Zhou',
-    'Margaret Hale',
-    'Peter Hale',
-    'Ruth Hale',
-    'Sam Hale',
-  ]);
-  await show.selectOption({ label: 'Ancestors and descendants of a person' });
-  await page
-    .getByLabel('Person', { exact: true })
-    .first()
-    .selectOption({ label: 'Iris Hale-Zhou' });
-  await expect(page.locator('g.tnode')).toHaveCount(9);
-  expect(await shownNames()).toEqual([
-    'Daniel Hale',
-    'Iris Hale-Zhou',
-    'Margaret Hale',
-    'Noor Zhou',
-    'Peter Hale',
-    'Tomas Reyes',
-    'Zhou Lan',
-    'Zhou Meiling',
-    'Zhou Wei',
-  ]);
-  await show.selectOption({ label: 'All families' });
-  await expect(page.locator('g.tnode')).toHaveCount(13);
+  );
+  await openTree();
 });
 
 test('FT-8 pan by drag, zoom with the buttons and the wheel, collapse and expand a branch, and fit to window', async () => {
@@ -594,45 +662,66 @@ test('FT-8 pan by drag, zoom with the buttons and the wheel, collapse and expand
   await expect(node('Sam Hale')).toHaveCount(1);
 });
 
-test('TM-3 the tree year box sets the story year on Enter or blur, not on every keystroke', async () => {
-  const box = page.getByTestId('tree-year');
-  await box.fill('');
-  await box.pressSequentially('2041', { delay: 20 });
-  // Typed but not committed: the tree and the story year are still where they were.
-  await expect(svgEl()).not.toHaveAttribute('data-year', '2041');
-  await expect(svgEl()).not.toHaveAttribute('data-year', '2');
-  await expect(svgEl()).not.toHaveAttribute('data-year', '204');
-  expect((await invoke('storyTime.get', {})).time?.year).not.toBe(204);
-  await box.press('Enter');
-  await expect(svgEl()).toHaveAttribute('data-year', '2041');
-  await box.fill('2042');
-  await expect(svgEl()).toHaveAttribute('data-year', '2041');
-  await box.blur();
-  await expect(svgEl()).toHaveAttribute('data-year', '2042');
-  await box.fill('2045');
-  await box.press('Enter');
-  await expect(svgEl()).toHaveAttribute('data-year', '2045');
-});
-
-test('FT-8 A26 the tree fills the panel height, Full screen sets document.fullscreenElement, Escape leaves it, and every permission but full screen is refused', async () => {
+test('FT-8 A26 A45 the tree fills the middle column with no page scroll, Full screen sets document.fullscreenElement, Escape leaves it, and every permission but full screen is refused', async () => {
   const sizes = () =>
     page.evaluate(() => {
-      const main = document.querySelector<HTMLElement>('.tree-main')!;
-      const stage = document.querySelector<HTMLElement>('.tree-stage')!;
+      const view = document.querySelector<HTMLElement>('[data-testid="tree-view"]')!;
+      const main = view.querySelector<HTMLElement>('.tree-main')!;
+      const wrap = view.querySelector<HTMLElement>('.tree-wrap')!;
+      const inspector = view.querySelector<HTMLElement>('[data-testid="tree-inspector"]')!;
       const pad = getComputedStyle(main);
-      const chrome = parseFloat(getComputedStyle(main).getPropertyValue('--ws-chrome'));
+      const m = main.getBoundingClientRect();
+      const w = wrap.getBoundingClientRect();
       return {
-        stage: stage.getBoundingClientRect().height,
         inner: window.innerHeight,
-        chrome,
-        padding: parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom),
-        main: main.getBoundingClientRect().height,
+        chrome: parseFloat(pad.getPropertyValue('--ws-chrome')),
+        main: m.height,
+        // What is left below the tree inside the panel, and beside it.
+        below: m.bottom - parseFloat(pad.paddingBottom) - w.bottom,
+        side: m.right - parseFloat(pad.paddingRight) - w.right,
+        mainRight: m.right,
+        inspectorLeft: inspector.getBoundingClientRect().left,
+        scroll: document.documentElement.scrollHeight - window.innerHeight,
       };
     });
   const z = await sizes();
-  // The panel is the window minus the chrome; the stage is that, less the panel's own padding.
+  // The panel is the window minus the chrome, and the tree takes all of it below the toolbar.
   expect(Math.abs(z.main - (z.inner - z.chrome))).toBeLessThanOrEqual(2);
-  expect(Math.abs(z.stage - (z.main - z.padding))).toBeLessThanOrEqual(2);
+  expect(Math.abs(z.below)).toBeLessThanOrEqual(1);
+  expect(Math.abs(z.side)).toBeLessThanOrEqual(1);
+  // The inspector keeps the right column, and the page itself does not scroll.
+  expect(Math.abs(z.inspectorLeft - z.mainRight)).toBeLessThanOrEqual(2);
+  expect(z.scroll).toBeLessThanOrEqual(0);
+  // The toolbar is one row: Add person, Fit, Tidy, Export, Full screen, and the warning count.
+  const bar = page.getByRole('toolbar', { name: 'Family tree tools' });
+  await expect(bar.getByRole('button')).toHaveText([
+    'Add person',
+    'Fit to window',
+    'Tidy layout',
+    'Export',
+    'Full screen',
+    /warning/,
+  ]);
+  const tops = await bar
+    .getByRole('button')
+    .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  // No heading, no people count, no legend or warnings under the tree.
+  await expect(page.getByTestId('tree-view').getByRole('heading', { level: 2 })).toHaveCount(0);
+  await expect(page.getByText(/people shown/)).toHaveCount(0);
+  // The legend opens over the tree's bottom left corner and closes again.
+  const legend = page.getByRole('region', { name: 'Tree legend' });
+  await expect(legend).toHaveCount(0);
+  await page.getByRole('button', { name: 'Legend', exact: true }).click();
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText('Married');
+  const lb = (await legend.boundingBox())!;
+  const tb = (await page.locator('.tree-wrap').boundingBox())!;
+  expect(lb.x - tb.x).toBeLessThan(20);
+  expect(tb.y + tb.height - (lb.y + lb.height)).toBeLessThan(60);
+  expect((await sizes()).scroll).toBeLessThanOrEqual(0);
+  await page.getByRole('button', { name: 'Hide legend' }).click();
+  await expect(legend).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Full screen' }).click();
   await expect
@@ -697,7 +786,7 @@ test('FT-8 NF-2 the tree works from the keyboard: arrows pan, Shift for larger s
   await expect(node('Iris Hale-Zhou')).toHaveCount(1);
 });
 
-test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', async () => {
+test('FT-9 A45 one Export saves the tree as a PNG image through a save dialog, in the light theme', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tree-export-'));
   const stubDialog = (file: string) =>
     app.evaluate(({ dialog }, f) => {
@@ -712,9 +801,11 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
     .toBe('rgb(15, 21, 28)');
+  // A45: one Export button, and no PDF.
+  await expect(page.getByRole('button', { name: /^Export (PNG|PDF)$/ })).toHaveCount(0);
   const png = join(dir, 'tree.png');
   await stubDialog(png);
-  await page.getByRole('button', { name: 'Export PNG' }).click();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
   await expect(page.getByTestId('export-note')).toHaveText(`Saved ${png}.`);
   const bytes = await readFile(png);
   expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -742,18 +833,6 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
   expect(colors.size).toBeGreaterThan(50);
   expect(ink / sampled).toBeGreaterThan(0.01);
   expect(dark).toBeGreaterThan(500);
-  const pdf = join(dir, 'tree.pdf');
-  await stubDialog(pdf);
-  await page.getByRole('button', { name: 'Export PDF' }).click();
-  await expect(page.getByTestId('export-note')).toHaveText(`Saved ${pdf}.`);
-  const head = (await readFile(pdf)).subarray(0, 5).toString('latin1');
-  expect(head).toBe('%PDF-');
-  expect((await stat(pdf)).size).toBeGreaterThan(5_000);
-  // The PDF paints with the light theme: light node boxes, never the dark surfaces.
-  const fills = pdfFillColors(await readFile(pdf)).map((c) => c.join(','));
-  expect(fills).toContain('255,255,255');
-  expect(fills).not.toContain('23,31,40');
-  expect(fills).not.toContain('26,26,25');
   await page.emulateMedia({ colorScheme: 'light' });
   // Cancelling saves nothing.
   await app.evaluate(({ dialog }) => {
@@ -763,7 +842,7 @@ test('FT-9 the tree exports as a PNG image and as a PDF through a save dialog', 
         filePath: '',
       });
   });
-  await page.getByRole('button', { name: 'Export PDF' }).click();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
   await expect(page.getByTestId('export-note')).toHaveText('Export cancelled. Nothing was saved.');
 });
 
@@ -913,8 +992,7 @@ test('FT-4 a person with two unions: both draw, the ended one with its year, eac
   await editLink('Zhou Lan', { startYear: 2008, endYear: 2020, endReason: 'divorce' });
   await select('Zhou Lan');
   await add('child', 'Kai Chen', 2012, { type: 'biological', coParent: 'Chen Bo' });
-  await page.getByTestId('tree-year').fill('2040');
-  await page.getByTestId('tree-year').press('Enter');
+  await setStoryYear(page, 2040);
   const lanUnions = page.locator('g[data-union]');
   await expect(lanUnions).toHaveCount(5);
   await expect(page.locator('text.tunion-end', { hasText: 'ended 2020' })).toHaveCount(1);
@@ -1163,16 +1241,14 @@ test('CH-4 a character with an unknown birth year is reported as age unknown on 
   await expect(p.getByTestId('char-age')).toHaveText('Unknown age');
   await openTree();
   for (const y of ['1900', '2040', '2100']) {
-    await page.getByTestId('tree-year').fill(y);
-    await page.getByTestId('tree-year').press('Enter');
+    await setStoryYear(page, y);
     await expect(byId('U1').getByTestId('node-state')).toHaveText('age unknown');
   }
 });
 
 test('CH-3 SM-1 the story time drives the age on character pages', async () => {
   await openTree();
-  await page.getByTestId('tree-year').fill('2041');
-  await page.getByTestId('tree-year').press('Enter');
+  await setStoryYear(page, 2041);
   await expect.poll(async () => (await invoke('storyTime.get', {})).time?.year).toBe(2041);
   const p = await openCharacter('Margaret Hale');
   await expect(p.getByTestId('char-age')).toHaveText('Dies this year, age 83');
@@ -1181,8 +1257,7 @@ test('CH-3 SM-1 the story time drives the age on character pages', async () => {
   await expect(byId('H1')).toHaveCount(0);
   await openTree();
   await expect(byId('H1')).toHaveAttribute('data-state', 'dying');
-  await page.getByTestId('tree-year').fill('2075');
-  await page.getByTestId('tree-year').press('Enter');
+  await setStoryYear(page, 2075);
   await openCharacter('Margaret Hale');
   await expect(page.getByTestId('char-age')).toHaveText('Dead since 2041');
   await openCharacter('Noor Zhou');
@@ -1271,7 +1346,8 @@ test('FT-8 a tree of 200 people across six generations redraws in under 500 ms i
     const ms = await page.evaluate(
       (y) =>
         new Promise<number>((resolve) => {
-          const input = document.querySelector<HTMLInputElement>('[data-testid="tree-year"]')!;
+          // A45: the tree has no year box; the top bar's year box commits on Enter the same way.
+          const input = document.querySelector<HTMLInputElement>('[data-testid="top-year"]')!;
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
           const start = performance.now();
           setter.call(input, String(y));

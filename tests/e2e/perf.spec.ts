@@ -96,7 +96,7 @@ test('NF-1 T-6 launch to the dashboard with 5,000 entries and 100 chapters takes
 });
 
 /**
- * Redraw the open tree at a year: set the tree's year box as a person typing
+ * Redraw the open tree at a year: set the top bar's year box as a person typing
  * would and time it until the SVG shows that year and two frames are painted.
  */
 function redrawer(page: Page) {
@@ -104,12 +104,12 @@ function redrawer(page: Page) {
     page.evaluate(
       (y) =>
         new Promise<number>((resolve) => {
-          const input = document.querySelector<HTMLInputElement>('[data-testid="tree-year"]')!;
+          const input = document.querySelector<HTMLInputElement>('[data-testid="top-year"]')!;
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
           const start = performance.now();
           setter.call(input, String(y));
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          // The tree year box commits on Enter (TM-3), like the top bar.
+          // A45 took the tree's own year box away; the top bar year box commits on Enter (TM-3).
           input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
           const check = () => {
             const svg = document.querySelector('[data-testid="tree-svg"]')!;
