@@ -111,12 +111,6 @@
 .bs-marker.bar {
   background: var(--fg-2);
 }
-.bs-era {
-  cursor: default;
-}
-.bs-era:hover {
-  background: var(--surface-2);
-}
 
 /* Legend keys. */
 .bs-key {

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { entryTitle, manifests } from '../../../../shared/schema';
+import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
 import { backstoryGrid, momentsOf, writingBand } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment } from '../../../../shared/domain/backstoryGrid';
@@ -9,16 +10,10 @@ import {
   fromCollections,
   strandSpans,
 } from '../../../../shared/domain/timeline';
-import { shiftSpan } from '../../../../shared/domain/worldGrid';
+import { shiftEnd, shiftSpan } from '../../../../shared/domain/worldGrid';
 import type { Zoom } from '../../../../shared/domain/worldGrid';
 import type { StoredPositions } from '../../../../shared/domain/tree';
-import {
-  createCommand,
-  deleteCommand,
-  editCommand,
-  restoreCommand,
-} from '../../../../shared/domain/undoRunner';
-import type { UndoCommand } from '../../../../shared/domain/undoRunner';
+import { createCommand, editCommand, restoreCommand } from '../../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
 import { useEntries } from '../data';
@@ -27,6 +22,7 @@ import { useUndo } from '../undo';
 import { BackstoryGrid } from './BackstoryGrid';
 import { MomentsTable } from './MomentsTable';
 import type { MomentField } from './MomentsTable';
+import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
@@ -37,6 +33,7 @@ const ZOOMS: { zoom: Zoom; label: string }[] = [
 
 const FIELD_WORDS: Record<MomentField, string> = {
   year: 'the year',
+  endYear: 'the last year',
   title: 'what happens',
   body: 'how they experience it',
   worldContext: 'the relevant world events',
@@ -48,7 +45,11 @@ const FIELD_WORDS: Record<MomentField, string> = {
  * through the write path with one undo step (ED-3); nothing here is computed
  * by a model.
  */
-export function BackstoryView(props: { characterId?: string }) {
+export function BackstoryView(props: {
+  characterId?: string;
+  /** Opens an entry in its section: an era picked in the era band. */
+  onOpen?: (collection: EntryCollection, id: string) => void;
+}) {
   const story = useStoryTime();
   const year = story.year;
   const undo = useUndo();
@@ -67,9 +68,7 @@ export function BackstoryView(props: { characterId?: string }) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<Zoom>('fit');
   const [error, setError] = useState<string | null>(null);
-  const [trashed, setTrashed] = useState<{ cmd: UndoCommand; title: string; id: string } | null>(
-    null,
-  );
+  const [trashed, setTrashed] = useState<{ title: string; id: string } | null>(null);
 
   // The tree's stored places set the order of the rows (FT-10, FT-11).
   useEffect(() => {
@@ -127,6 +126,8 @@ export function BackstoryView(props: { characterId?: string }) {
     [grid.moments, picked],
   );
 
+  const clearFocus = useCallback(() => setFocusId(null), []);
+
   const pick = (id: string) => {
     setPicked(id);
     setSelected(null);
@@ -134,6 +135,7 @@ export function BackstoryView(props: { characterId?: string }) {
 
   const create = async (characterId: string, at: number) => {
     setError(null);
+    if (ro.off) return;
     const data: Record<string, unknown> = {
       ...blankEntry(manifests.moments),
       title: '',
@@ -154,72 +156,85 @@ export function BackstoryView(props: { characterId?: string }) {
     }
   };
 
-  const save = async (id: string, field: MomentField, value: string | number) => {
+  /** Cell saves run one after another, so a blur and a pick right after it land in order. */
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+
+  const save = (id: string, field: MomentField, value: string | number | null) => {
     setError(null);
-    const before = momentEntries.find((e) => e._id === id);
-    if (!before) return;
-    const patch: Record<string, unknown> = { [field]: value };
-    // A moment over several years keeps its length when its year changes.
-    if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
-      patch.endYear = before.endYear + (value - Number(before.year));
-    }
-    try {
-      const { entry } = await call('entry.update', { collection: 'moments', id, patch });
-      const title = entryTitle(entry) || 'a moment';
-      undo.record(
-        editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
-      );
-      // Only a cell of this row counts the stored value as saved (ED-3).
-      const row = (document.activeElement as HTMLElement | null)?.closest('tr');
-      if (row?.getAttribute('data-id') === id) undo.markSaved(entry);
-    } catch (e) {
-      setError(plainError(e));
-      throw e;
-    }
+    if (ro.off) return Promise.resolve();
+    const run = saving.current.then(async () => {
+      try {
+        // The stored entry as it is now, so each step undoes exactly its own change.
+        const before = (await call('entry.get', { collection: 'moments', id })).entry as Record<
+          string,
+          unknown
+        >;
+        const patch: Record<string, unknown> = { [field]: value };
+        // A moment over several years keeps its length when its year changes.
+        if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
+          patch.endYear = before.endYear + (value - Number(before.year));
+        }
+        const { entry } = await call('entry.update', { collection: 'moments', id, patch });
+        const title = entryTitle(entry) || 'a moment';
+        undo.record(
+          editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
+        );
+        // Only a cell of this row counts the stored value as saved (ED-3).
+        const row = (document.activeElement as HTMLElement | null)?.closest('tr');
+        if (row?.getAttribute('data-id') === id) undo.markSaved(entry);
+      } catch (e) {
+        setError(plainError(e));
+        throw e;
+      }
+    });
+    saving.current = run.catch(() => undefined);
+    return run;
   };
 
-  const move = async (id: string, delta: number) => {
+  const move = async (id: string, delta: number, part: MovePart) => {
     setError(null);
+    if (ro.off) return;
     const before = momentEntries.find((e) => e._id === id);
     const m = grid.moments.find((x) => x.id === id);
     if (!before || !m) return;
-    const moved = shiftSpan(m.year, m.endYear ?? m.year, delta, span);
-    if (moved.delta === 0) return;
-    const patch: Record<string, unknown> = {
-      year: moved.startYear,
-      endYear: m.endYear === null ? null : m.endYear + moved.delta,
-    };
+    let patch: Record<string, unknown>;
+    let label: string;
+    if (part === 'span') {
+      const moved = shiftSpan(m.year, m.endYear ?? m.year, delta, span);
+      if (moved.delta === 0) return;
+      patch = {
+        year: moved.startYear,
+        endYear: m.endYear === null ? null : m.endYear + moved.delta,
+      };
+      label = `Moved ${m.title.trim() || 'a moment'} to ${moved.startYear}`;
+    } else {
+      const end = m.endYear ?? m.year;
+      const to = shiftEnd(m.year, end, delta, span);
+      if (to === end) return;
+      patch = { endYear: to === m.year ? null : to };
+      label = `Set the end of ${m.title.trim() || 'a moment'} to ${to}`;
+    }
     try {
       const { entry } = await call('entry.update', { collection: 'moments', id, patch });
-      const title = entryTitle(entry) || 'a moment';
-      undo.record(
-        editCommand(`Moved ${title} to ${moved.startYear}`, 'moments', id, before, entry),
-      );
+      undo.record(editCommand(label, 'moments', id, before, entry));
     } catch (e) {
       setError(plainError(e));
     }
   };
 
-  const remove = async (m: BackstoryMoment) => {
-    setError(null);
-    const title = m.title.trim() || 'a moment';
-    try {
-      await call('entry.delete', { collection: 'moments', id: m.id });
-      const cmd = deleteCommand('moments', m.id, title);
-      undo.record(cmd);
-      setTrashed({ cmd, title, id: m.id });
-      if (selected === m.id) setSelected(null);
-    } catch (e) {
-      setError(plainError(e));
-    }
+  /** ED-5: the confirm moved it to the trash as one undo step; offer Undo here too. */
+  const trashedOne = (m: BackstoryMoment) => {
+    setTrashed({ title: m.title.trim() || `the moment of ${m.year}`, id: m.id });
+    if (selected === m.id) setSelected(null);
   };
 
   const undoTrash = async () => {
-    if (!trashed) return;
+    if (!trashed || ro.off) return;
     const t = trashed;
     setTrashed(null);
     const top = undo.history.undo[undo.history.undo.length - 1];
-    if (top === t.cmd) {
+    const op = top?.undo.length === 1 ? top.undo[0] : undefined;
+    if (op?.kind === 'restore' && op.collection === 'moments' && op.id === t.id) {
       await undo.undo();
     } else {
       // Something else was done since: bring this one back as a step of its own.
@@ -287,6 +302,7 @@ export function BackstoryView(props: { characterId?: string }) {
           setPicked(characterId);
           setSelected(id);
         }}
+        onOpenEra={(id) => props.onOpen?.('eraStates', id)}
         onMove={move}
         onCreate={create}
       />
@@ -319,7 +335,13 @@ export function BackstoryView(props: { characterId?: string }) {
       {trashed && !momentEntries.some((e) => e._id === trashed.id) && (
         <p className="callout bs-trashed" role="status" data-testid="moment-trashed">
           Moved {trashed.title} to the trash.{' '}
-          <button type="button" className="btn small" onClick={() => void undoTrash()}>
+          <button
+            type="button"
+            className="btn small"
+            disabled={ro.off}
+            {...ro.tip}
+            onClick={() => void undoTrash()}
+          >
             Undo
           </button>
         </p>
@@ -331,12 +353,11 @@ export function BackstoryView(props: { characterId?: string }) {
           events={events}
           selectedId={selected}
           focusId={focusId}
-          readOnly={ro.off}
-          onFocused={() => setFocusId(null)}
+          onFocused={clearFocus}
           onSelect={setSelected}
           onSave={save}
           onAdd={() => create(person.id, year)}
-          onDelete={remove}
+          onTrashed={trashedOne}
         />
       ) : (
         <p className="bs-empty" data-testid="backstory-none">

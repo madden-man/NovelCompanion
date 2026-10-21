@@ -19,6 +19,7 @@ import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
 import { BackstoryView } from './backstory/BackstoryView';
+import { useOpenBackstory } from './backstory/nav';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { OutlineView } from './plot';
@@ -125,6 +126,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
 
   const open = (collection: EntryCollection, id: string) =>
     setView({ kind: 'section', collection, selected: id, creating: false });
+  useOpenBackstory((characterId) => setView({ kind: 'backstory', characterId }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
     review: () => setView({ kind: 'review' }),
@@ -286,7 +288,7 @@ function Frame({ bibleId, bibles }: { bibleId: string; bibles: ReactNode }) {
         ) : view.kind === 'timeline' ? (
           <TimelineView />
         ) : view.kind === 'backstory' ? (
-          <BackstoryView characterId={view.characterId} />
+          <BackstoryView characterId={view.characterId} onOpen={open} />
         ) : view.kind === 'entries' ? (
           <EntriesView onOpen={open} />
         ) : view.kind === 'outline' ? (

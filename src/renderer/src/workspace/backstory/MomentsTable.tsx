@@ -4,12 +4,15 @@ import { ageText, eventsNear, insertEventTitle } from '../../../../shared/domain
 import type { BackstoryMoment, BackstoryPerson } from '../../../../shared/domain/backstoryGrid';
 import { lifeYears } from '../../../../shared/domain/ages';
 import type { EventSpan } from '../../../../shared/domain/timeline';
+import { useWriteGuard } from '../../connection';
+import { TrashControls } from '../editor';
 import { span } from '../timeline/common';
 
-export type MomentField = 'year' | 'title' | 'body' | 'worldContext';
+export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext';
 
 const FIELD_LABEL: Record<MomentField, string> = {
   year: 'Year',
+  endYear: 'To',
   title: 'What happens',
   body: 'How they experience it',
   worldContext: 'Relevant world events',
@@ -19,6 +22,8 @@ const FIELD_LABEL: Record<MomentField, string> = {
  * SM-9: the picked person's moments in year order, every cell editable in
  * place. A cell saves on blur or Enter (Shift+Enter starts a new line in the
  * longer cells), one write and one undo step per cell. Age is computed (TL-3).
+ * Delete lists what links to the moment first (ED-5). While a snapshot is open
+ * read-only (ARCH-6) every control is off with the reason.
  */
 export function MomentsTable(props: {
   person: BackstoryPerson;
@@ -27,26 +32,27 @@ export function MomentsTable(props: {
   selectedId: string | null;
   /** A row to focus on What happens once it shows, after it was made. */
   focusId: string | null;
-  readOnly: boolean;
   onFocused: () => void;
   onSelect: (id: string) => void;
-  onSave: (id: string, field: MomentField, value: string | number) => Promise<void>;
+  onSave: (id: string, field: MomentField, value: string | number | null) => Promise<void>;
   onAdd: () => Promise<void>;
-  onDelete: (m: BackstoryMoment) => Promise<void>;
+  /** A moment went to the trash through the confirm; the view offers Undo. */
+  onTrashed: (m: BackstoryMoment) => void;
 }) {
-  const { person, moments } = props;
+  const { person, moments, focusId, onFocused } = props;
+  const ro = useWriteGuard();
   const table = useRef<HTMLTableElement>(null);
   const headingId = useId();
 
   useEffect(() => {
-    if (!props.focusId) return;
+    if (!focusId) return;
     const cell = table.current?.querySelector<HTMLElement>(
-      `tr[data-id="${CSS.escape(props.focusId)}"] [data-field="title"] textarea`,
+      `tr[data-id="${CSS.escape(focusId)}"] [data-field="title"] textarea`,
     );
     if (!cell) return;
     cell.focus();
-    props.onFocused();
-  }, [props.focusId, moments, props]);
+    onFocused();
+  }, [focusId, moments, onFocused]);
 
   useEffect(() => {
     if (!props.selectedId) return;
@@ -71,7 +77,8 @@ export function MomentsTable(props: {
         <button
           type="button"
           className="btn small primary"
-          disabled={props.readOnly}
+          disabled={ro.off}
+          {...ro.tip}
           onClick={() => void props.onAdd()}
         >
           Add a moment
@@ -88,6 +95,9 @@ export function MomentsTable(props: {
               <tr>
                 <th scope="col" className="bs-col-year">
                   Year
+                </th>
+                <th scope="col" className="bs-col-year">
+                  To
                 </th>
                 <th scope="col" className="bs-col-age">
                   Age
@@ -108,10 +118,9 @@ export function MomentsTable(props: {
                   person={person}
                   events={props.events}
                   selected={props.selectedId === m.id}
-                  readOnly={props.readOnly}
                   onSelect={() => props.onSelect(m.id)}
                   onSave={(field, value) => props.onSave(m.id, field, value)}
-                  onDelete={() => props.onDelete(m)}
+                  onTrashed={() => props.onTrashed(m)}
                 />
               ))}
             </tbody>
@@ -127,10 +136,9 @@ function MomentRow(props: {
   person: BackstoryPerson;
   events: EventSpan[];
   selected: boolean;
-  readOnly: boolean;
   onSelect: () => void;
-  onSave: (field: MomentField, value: string | number) => Promise<void>;
-  onDelete: () => Promise<void>;
+  onSave: (field: MomentField, value: string | number | null) => Promise<void>;
+  onTrashed: () => void;
 }) {
   const { m } = props;
   const what = m.title.trim() || 'this moment';
@@ -147,12 +155,17 @@ function MomentRow(props: {
           kind="year"
           label={`Year of ${what}`}
           value={String(m.year)}
-          readOnly={props.readOnly}
           onSave={(v) => props.onSave('year', Number(v))}
         />
-        {m.endYear !== null && m.endYear !== m.year && (
-          <span className="bs-to num">to {m.endYear}</span>
-        )}
+      </td>
+      <td data-field="endYear" className="bs-col-year">
+        <Cell
+          kind="year"
+          blank
+          label={`To, the last year of ${what}, blank for a single year`}
+          value={m.endYear === null ? '' : String(m.endYear)}
+          onSave={(v) => props.onSave('endYear', v === '' ? null : Number(v))}
+        />
       </td>
       <td data-field="age" className="bs-col-age num" data-testid="moment-age">
         {ageText(props.person, m.year)}
@@ -162,7 +175,6 @@ function MomentRow(props: {
           kind="text"
           label={`${FIELD_LABEL.title}, ${span(m.year, m.endYear ?? m.year)}`}
           value={m.title}
-          readOnly={props.readOnly}
           onSave={(v) => props.onSave('title', v)}
         />
       </td>
@@ -171,7 +183,6 @@ function MomentRow(props: {
           kind="text"
           label={`${FIELD_LABEL.body}, ${what}`}
           value={m.body}
-          readOnly={props.readOnly}
           onSave={(v) => props.onSave('body', v)}
         />
       </td>
@@ -181,30 +192,29 @@ function MomentRow(props: {
             kind="text"
             label={`${FIELD_LABEL.worldContext}, ${what}`}
             value={m.worldContext}
-            readOnly={props.readOnly}
             onSave={(v) => props.onSave('worldContext', v)}
           />
           <EventPicker
             year={m.year}
             events={props.events}
-            readOnly={props.readOnly}
             what={what}
-            onPick={(title) =>
-              props.onSave('worldContext', insertEventTitle(m.worldContext, title))
+            onPick={(title, typed) =>
+              // Into what the cell holds now, typed text included, then saved as one step.
+              props.onSave('worldContext', insertEventTitle(typed ?? m.worldContext, title))
             }
           />
         </div>
       </td>
       <td className="bs-col-act">
-        <button
-          type="button"
-          className="btn small danger"
-          disabled={props.readOnly}
-          aria-label={`Delete ${what}, ${span(m.year, m.endYear ?? m.year)}`}
-          onClick={() => void props.onDelete()}
-        >
-          Delete
-        </button>
+        <TrashControls
+          collection="moments"
+          id={m.id}
+          title={m.title.trim() || `the moment of ${m.year}`}
+          inTrash={false}
+          label="Delete"
+          beforeDelete={async () => undefined}
+          onChanged={props.onTrashed}
+        />
       </td>
     </tr>
   );
@@ -213,35 +223,41 @@ function MomentRow(props: {
 /** One editable cell: saves on blur or Enter, Escape puts the stored value back. */
 function Cell(props: {
   kind: 'year' | 'text';
+  /** A year cell that may be left blank. */
+  blank?: boolean;
   label: string;
   value: string;
-  readOnly: boolean;
   onSave: (v: string) => Promise<void>;
 }) {
+  const ro = useWriteGuard();
   const [draft, setDraft] = useState(props.value);
   const [error, setError] = useState<string | null>(null);
-  const focused = useRef(false);
+  const [focused, setFocused] = useState(false);
   const errorId = useId();
 
   // A stored change (a save, an undo, another screen) shows unless the cell is being edited.
-  useEffect(() => {
-    if (!focused.current) setDraft(props.value);
-  }, [props.value]);
+  const [shown, setShown] = useState(props.value);
+  if (props.value !== shown) {
+    setShown(props.value);
+    if (!focused) setDraft(props.value);
+  }
 
   const commit = async () => {
-    if (draft === props.value) return;
-    if (props.kind === 'year') {
-      const t = draft.trim();
-      if (!/^-?\d+$/.test(t)) {
-        setError('The year is a whole number, such as 2042.');
-        return;
-      }
+    const value = props.kind === 'year' ? draft.trim() : draft;
+    if (value === props.value) return;
+    if (props.kind === 'year' && !(props.blank && value === '') && !/^-?\d+$/.test(value)) {
+      setError(
+        props.blank
+          ? 'The year is a whole number, such as 2042, or leave it blank.'
+          : 'The year is a whole number, such as 2042.',
+      );
+      return;
     }
     setError(null);
     try {
-      await props.onSave(props.kind === 'year' ? draft.trim() : draft);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await props.onSave(value);
+    } catch {
+      // The screen shows why in plain words; the typed value stays here to try again.
     }
   };
 
@@ -258,13 +274,12 @@ function Cell(props: {
   const common = {
     'aria-label': props.label,
     'aria-invalid': error ? true : undefined,
-    'aria-describedby': error ? errorId : undefined,
-    disabled: props.readOnly,
-    onFocus: () => {
-      focused.current = true;
-    },
+    'aria-describedby': error ? errorId : ro.tip['aria-describedby'],
+    title: ro.tip.title,
+    disabled: ro.off,
+    onFocus: () => setFocused(true),
     onBlur: () => {
-      focused.current = false;
+      setFocused(false);
       void commit();
     },
     onKeyDown: onKey,
@@ -302,10 +317,11 @@ function Cell(props: {
 function EventPicker(props: {
   year: number;
   events: EventSpan[];
-  readOnly: boolean;
   what: string;
-  onPick: (title: string) => Promise<void>;
+  /** The title picked, and the text the cell beside the picker holds now. */
+  onPick: (title: string, typed: string | undefined) => Promise<void>;
 }) {
+  const ro = useWriteGuard();
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -330,7 +346,9 @@ function EventPicker(props: {
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-label={`Pick events from ${props.year - 1} to ${props.year + 1} for ${props.what}`}
-        disabled={props.readOnly}
+        disabled={ro.off}
+        title={ro.tip.title}
+        aria-describedby={ro.tip['aria-describedby']}
         onClick={() => setOpen((o) => !o)}
       >
         Pick events
@@ -369,7 +387,8 @@ function EventPicker(props: {
                 className="bs-picker-item"
                 data-id={e.id}
                 onClick={() => {
-                  void props.onPick(e.title);
+                  const typed = button.current?.closest('td')?.querySelector('textarea')?.value;
+                  void props.onPick(e.title, typed).catch(() => undefined);
                   close(true);
                 }}
               >
