@@ -141,7 +141,7 @@ M7 asks for Claude through two small services in `src/main/session/claude.ts` (`
 
 ## Schema versions
 
-`src/main/db/migrations/` runs in order on open. Version 7 (`007-conversations.ts`, the `conversations` collection with `{ modifiedAt: -1 }`) was written on 2026-10-11 to match what the East Winds bible in Atlas already carried from a build that was never pushed; M6 stores question-panel conversations and feature runs there. Version 8 (`008-finding-keys.ts`, M8: finding keys and dismissal hashes, with an index on `{ key: 1 }`). A bible newer than the app refuses to open ("Update the app before opening it").
+`src/main/db/migrations/` runs in order on open. Version 7 (`007-conversations.ts`, the `conversations` collection with `{ modifiedAt: -1 }`) was written on 2026-10-11 to match what the East Winds bible in Atlas already carried from a build that was never pushed; M6 stores question-panel conversations and feature runs there. Version 8 (`008-finding-keys.ts`, M8: finding keys and dismissal hashes, with an index on `{ key: 1 }`). Version 9 (`009-simplified-model.ts`, A39, 2026-10-21): the eight dropped collections (facts, knowledge records, themes, custom sections and entries, arcs, relationships, plot beats) go; every live plot beat, voice note and place lived becomes a `moments` document (index `{ characterId: 1, year: 1 }`); the SM-1 and SM-4 fields are unset; a `meta` document `migration9` records the counts. When a bible below version 9 opens with a snapshot folder, `openBibleSession` takes a snapshot with reason `migration` ("Before migration 9") before running the migrations, so every dropped document can be restored from Backups. A bible newer than the app refuses to open ("Update the app before opening it").
 
 ## Local development
 
