@@ -1,6 +1,6 @@
 # Tommy OK'd committing the source material and read-outs (2026-10-10).
 
-node_modules/
+node_modules
 dist/
 out/
 release/
