@@ -123,7 +123,7 @@ test('KB-6 NF-2 Cmd+K does nothing while another dialog holds focus', async () =
   await expect(story).toBeHidden();
 });
 
-test('KB-6 Enter shows two proposal cards with diffs; unticking one and Cmd+Enter files the other; the Filed link opens it', async () => {
+test('KB-6 SM-3 Enter shows two proposal cards with diffs; unticking one and Cmd+Enter files the other; the Filed link opens it', async () => {
   const lanBefore = (await invoke('entry.get', { collection: 'characters', id: 'Z3' })).entry;
   await send(MOVE);
   await expect(box()).toHaveAttribute('data-phase', 'running');
@@ -131,11 +131,12 @@ test('KB-6 Enter shows two proposal cards with diffs; unticking one and Cmd+Ente
   await expect(cards()).toHaveCount(2);
   await expect(box()).toHaveAttribute('data-phase', 'review');
   await expect(box().getByTestId('capture-answer')).toContainText(
-    "I proposed Seattle from 2034 in Zhou Lan's places lived",
+    'I proposed a moment for Zhou Lan, Lives in Seattle from 2034',
   );
-  await expect(cards().nth(0)).toContainText('Change to character Zhou Lan');
-  await expect(cards().nth(0).getByTestId('proposal-diff')).toContainText('Places lived');
-  await expect(cards().nth(0).getByTestId('proposal-diff')).toContainText('Seattle');
+  // SM-3: where a character lives is a Lives in moment.
+  await expect(cards().nth(0)).toContainText('New moment Lives in Seattle');
+  await expect(cards().nth(0).getByTestId('proposal-diff')).toContainText('Z3');
+  await expect(cards().nth(0).getByTestId('proposal-diff')).toContainText('2034');
   await expect(cards().nth(1)).toContainText('New world event Portland rations water');
   await expect(cards().nth(1).getByTestId('proposal-diff')).toContainText('2034');
   // AI-3: nothing is written yet.
@@ -160,7 +161,7 @@ test('KB-6 Enter shows two proposal cards with diffs; unticking one and Cmd+Ente
     expect([...reached], id).toContain(id);
   }
 
-  // Untick the place lived; File it names how many.
+  // Untick the moment; File it names how many.
   await cards().nth(0).getByTestId('capture-tick').uncheck();
   await expect(box().getByTestId('capture-file')).toContainText('File 1 of 2');
   await page.keyboard.press('Meta+Enter');
@@ -174,8 +175,11 @@ test('KB-6 Enter shows two proposal cards with diffs; unticking one and Cmd+Ente
   const made = events.entries.find((e) => e.entry.title === 'Portland rations water')!.entry;
   expect(made).toMatchObject({ status: 'idea', start: { year: 2034 } });
   expect(String(made.sourceNote)).toMatch(/^From a capture on /);
-  const lan = (await invoke('entry.get', { collection: 'characters', id: 'Z3' })).entry;
-  expect(JSON.stringify(lan.placesLived)).not.toContain('Seattle');
+  const moments = await invoke('entry.list', { collection: 'moments', trash: 'exclude' });
+  expect(moments.entries.some((e) => e.entry.title === 'Lives in Seattle')).toBe(false);
+  expect((await invoke('entry.get', { collection: 'characters', id: 'Z3' })).entry).toEqual(
+    lanBefore,
+  );
 
   await link.click();
   await expect(box()).toBeHidden();
@@ -204,17 +208,20 @@ test('KB-6 ED-3 Cmd+Z undoes the filing in one step', async () => {
 
 test('KB-6 Review later leaves the proposal pending in the review queue', async () => {
   await send(RECIPE);
-  await expect(cards()).toHaveCount(1);
-  await expect(cards().first()).toContainText('New fact Meiling and Ruth shared one recipe box');
+  await expect(cards()).toHaveCount(2);
+  await expect(cards().first()).toContainText('New moment Shares a recipe box with Ruth Hale');
   await box().getByTestId('capture-later').click();
   await expect(box()).toBeHidden();
   const { proposals } = await invoke('proposal.list', { state: 'pending' });
-  expect(proposals.map((p) => p.proposal.data.title)).toContain(
-    'Meiling and Ruth shared one recipe box',
+  expect(proposals.map((p) => p.proposal.data.title)).toEqual(
+    expect.arrayContaining([
+      'Shares a recipe box with Ruth Hale',
+      'Shares a recipe box with Zhou Meiling',
+    ]),
   );
   await rail(page, 'Review queue').click();
   await expect(page.getByTestId('review-queue')).toContainText(
-    'Meiling and Ruth shared one recipe box',
+    'Shares a recipe box with Ruth Hale',
   );
   // Reopening starts fresh: the sent text is not put back.
   await page.keyboard.press('Meta+k');
@@ -225,11 +232,11 @@ test('KB-6 Review later leaves the proposal pending in the review queue', async 
 test('KB-6 Escape in the review leaves the proposals pending, as Review later does', async () => {
   const pending = async () =>
     (await invoke('proposal.list', { state: 'pending' })).proposals.filter(
-      (p) => p.proposal.data.title === 'Meiling and Ruth shared one recipe box',
+      (p) => p.proposal.data.title === 'Shares a recipe box with Ruth Hale',
     ).length;
   const before = await pending();
   await send(RECIPE);
-  await expect(cards()).toHaveCount(1);
+  await expect(cards()).toHaveCount(2);
   await expect(box()).toHaveAttribute('data-phase', 'review');
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
