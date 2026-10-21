@@ -417,7 +417,7 @@ type Grab =
  * their scenes; from a focused bar the arrows swap it, Shift with the arrows
  * moves its end and Alt its start.
  */
-export function SceneOutline({ onOpen }: { onOpen: Open }) {
+export function SceneOutline(_props: { onOpen: Open }) {
   const { version } = useStore();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
