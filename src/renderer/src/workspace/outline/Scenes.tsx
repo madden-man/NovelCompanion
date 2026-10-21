@@ -42,7 +42,6 @@ import { useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { ChapterPanel } from './ChapterPage';
 import { NumberField } from './NumberField';
 import { InlineName, NameForm } from './InlineName';
 
@@ -416,9 +415,11 @@ type Grab =
  * of its section. Pulling a bar's top or bottom edge moves where the chapter
  * starts or ends; dragging a bar past a neighbour swaps the two chapters and
  * their scenes; from a focused bar the arrows swap it, Shift with the arrows
- * moves its end and Alt its start.
+ * moves its end and Alt its start. A43: there is no side panel; each bar
+ * edits its title and year in place and shows its scene count, and its
+ * Actions open the chapter's own page.
  */
-export function SceneOutline(_props: { onOpen: Open }) {
+export function SceneOutline(props: { onOpen: Open }) {
   const { version } = useStore();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
@@ -429,8 +430,6 @@ export function SceneOutline(_props: { onOpen: Open }) {
   const [refocus, setRefocus] = useState<string | null>(null);
   const [focusText, setFocusText] = useState<string | null>(null);
   const [adding, setAdding] = useState<'part' | 'book' | null>(null);
-  /** The chapter whose page is open in the inspector (KB-3). */
-  const [openChapter, setOpenChapter] = useState<string | null>(null);
   /** A heading moved from the keyboard keeps the focus once the outline reloads. */
   const [headFocus, setHeadFocus] = useState<string | null>(null);
   const undo = useUndo();
@@ -781,13 +780,9 @@ export function SceneOutline(_props: { onOpen: Open }) {
     onNewChapter: (key, line) => void newChapterAt(key, line),
   };
 
-  const openRow = chapters.find((c) => c.id === openChapter) ?? null;
   const guide = grab && grab.mode !== 'move' ? grab.guide : null;
   return (
-    <div
-      className={`ws-tree-area scenes${openChapter ? ' with-inspector' : ''}`}
-      data-testid="outline-view"
-    >
+    <div className="ws-tree-area scenes" data-testid="outline-view">
       <section
         className="tree-main stack"
         aria-labelledby="outline-title"
@@ -820,7 +815,6 @@ export function SceneOutline(_props: { onOpen: Open }) {
                 </select>
               </>
             )}
-            <UndoButtons />
             <span className="scene-status" data-testid="scene-count">
               {flow === null ? '' : plural(total, 'scene', 'scenes')}
             </span>
@@ -841,8 +835,8 @@ export function SceneOutline(_props: { onOpen: Open }) {
           year comes from the scene above or the chapter. Pull a bar&apos;s top or bottom edge to
           move where the chapter starts or ends, or drag the bar past another to swap them. On a
           focused bar, Up and Down swap it, Shift with the arrows moves its end, and Alt with the
-          arrows moves its start. Each bar's Actions open the chapter, move it to another part, or
-          move it to the trash; New chapter and More at the foot of the chapters add a chapter, a
+          arrows moves its start. Each bar's Actions open the chapter page, move it to another part,
+          or move it to the trash; New chapter and More at the foot of the chapters add a chapter, a
           part or a book.
         </p>
         {(scene.error ?? writes.error ?? notice) && (
@@ -924,7 +918,7 @@ export function SceneOutline(_props: { onOpen: Open }) {
                           onSwap={(by) => swap(row.id, by)}
                           onEdge={(edge, by) => pullEdge(row.id, edge, by)}
                           onFocusBar={() => setRefocus(null)}
-                          onOpen={(_c, id) => setOpenChapter(id)}
+                          onOpen={props.onOpen}
                           parts={parts}
                           onMoveToPart={(partId) => moveToPart(row.id, partId)}
                           onTrash={() => trashChapter(row.id)}
@@ -1021,56 +1015,7 @@ export function SceneOutline(_props: { onOpen: Open }) {
           }}
         />
       </section>
-      {openRow && outline && (
-        <aside
-          className="inspector tree-inspector"
-          aria-label="Outline inspector"
-          data-testid="outline-inspector"
-        >
-          <span className="eyebrow">Inspector</span>
-          <ChapterPanel
-            key={openRow.id}
-            id={openRow.id}
-            outline={outline}
-            writes={writes}
-            scenes={flow ? sectionScenes(sectionOf(flow, openRow.id).lines) : 0}
-            onClose={() => setOpenChapter(null)}
-          />
-        </aside>
-      )}
     </div>
-  );
-}
-
-/** Undo and Redo for the renames, year changes, moves and edges made here, with what the last step did (ED-3). */
-function UndoButtons() {
-  const undo = useUndo();
-  return (
-    <span className="row tight" role="group" aria-label="Undo">
-      <button
-        type="button"
-        className="btn small"
-        disabled={!undo.canUndo}
-        title={undo.history.undo[0]?.label ?? 'Cmd+Z'}
-        onClick={() => void undo.undo()}
-      >
-        Undo
-      </button>
-      <button
-        type="button"
-        className="btn small"
-        disabled={!undo.canRedo}
-        title={undo.history.redo[0]?.label ?? 'Shift+Cmd+Z'}
-        onClick={() => void undo.redo()}
-      >
-        Redo
-      </button>
-      {undo.notice && (
-        <span className="scene-status" role="status" data-testid="undo-notice">
-          {undo.notice}
-        </span>
-      )}
-    </span>
   );
 }
 
@@ -1233,7 +1178,7 @@ function ChapterBar(p: BarProps) {
                   p.onOpen('chapters', row.id);
                 }}
               >
-                Open
+                Open the chapter page
               </button>
               <details className="ol-submenu" data-testid="move-to-part">
                 <summary>Move to part</summary>

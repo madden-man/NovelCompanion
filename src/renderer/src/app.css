@@ -24,7 +24,7 @@
   color: var(--fg-2);
 }
 
-/* Workspace (M1): rail, list, editor, inspector. Colors come only from theme tokens. */
+/* Workspace (M1, A43): rail, list, editor; no inspector column outside the tree. Colors come only from theme tokens. */
 body {
   background: var(--bg);
   color: var(--fg);
@@ -60,10 +60,10 @@ body {
   /* The app header, the top bar, and the status bar: panels between scroll within the rest of the window. */
   --ws-chrome: 186px;
   display: grid;
-  grid-template-columns: 190px 230px minmax(0, 1fr) 290px;
+  grid-template-columns: 190px 230px minmax(0, 1fr);
   grid-template-areas:
-    'top top top top'
-    'rail list editor inspector';
+    'top top top'
+    'rail list editor';
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -393,19 +393,6 @@ legend.ed-label {
   color: var(--fg-2);
   min-width: 84px;
 }
-.ws-inspector {
-  grid-area: inspector;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  max-height: calc(100vh - var(--ws-chrome));
-}
-.ws-inspector h3 {
-  font-size: 1.05rem;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
 .autosave {
   font-size: 0.82rem;
   font-weight: 600;
@@ -494,7 +481,7 @@ legend.ed-label {
   border-color: var(--critical);
 }
 .ws-wide-area {
-  grid-column: 2 / 4;
+  grid-column: 2 / -1;
   padding: 14px 18px;
   overflow-y: auto;
   max-height: calc(100vh - var(--ws-chrome));
@@ -638,11 +625,11 @@ legend.ed-label {
 }
 @media (max-width: 1100px) {
   .ws-frame {
-    grid-template-columns: 180px minmax(0, 1fr) 270px;
+    grid-template-columns: 180px minmax(0, 1fr);
     grid-template-areas:
-      'top top top'
-      'rail list list'
-      'rail editor inspector';
+      'top top'
+      'rail list'
+      'rail editor';
   }
   .ws-list {
     border-right: 0;
@@ -657,7 +644,7 @@ legend.ed-label {
 @media (max-width: 760px) {
   .ws-frame {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'top' 'rail' 'list' 'editor' 'inspector';
+    grid-template-areas: 'top' 'rail' 'list' 'editor';
   }
   .ws-rail {
     flex-direction: row;
@@ -671,14 +658,9 @@ legend.ed-label {
     grid-row: auto;
   }
   .ws-editor,
-  .ws-inspector,
   .ws-list,
   .ws-wide-area {
     max-height: none;
-  }
-  .ws-inspector {
-    border-left: 0;
-    border-top: 1px solid var(--border);
   }
   .drawer-body {
     grid-template-columns: minmax(0, 1fr);
@@ -696,7 +678,7 @@ legend.ed-label {
 
 /* M2: family tree, character page, Chinese names. Colors come only from theme tokens. */
 .ws-tree-area {
-  grid-column: 2 / 5;
+  grid-column: 2 / -1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   min-width: 0;
@@ -1235,7 +1217,6 @@ table.compact th {
 }
 @media (max-width: 1100px) {
   .ws-tree-area {
-    grid-column: 2 / 4;
     grid-row: 2 / 4;
   }
 }
@@ -1907,7 +1888,7 @@ label.check {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 24px;
+  gap: 10px 16px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
@@ -1924,13 +1905,13 @@ label.check {
   min-width: 0;
 }
 .topbar-year input[type='range'] {
-  width: 260px;
+  width: 140px;
 }
 .topbar-year input.num {
   width: 5.5em;
 }
 .topbar-writing {
-  flex: 1 1 240px;
+  flex: 1 1 160px;
 }
 .topbar-writing select {
   flex: 1;
@@ -2139,11 +2120,85 @@ fieldset.write-group[disabled] {
   flex-direction: column;
   gap: 14px;
 }
-/* On the Characters screen the page takes the inspector's column too. */
-.ws-editor.ws-editor-wide {
-  grid-column: editor-start / inspector-end;
-}
-.char-tools {
+/* A43: links, dates, history and trash at the foot of every entry page, side by side when there is room. */
+.entry-tools {
   border-top: 1px solid var(--border);
   padding-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 24px;
+  align-items: start;
+}
+.entry-tools .kv {
+  margin: 0;
+}
+.editor-state {
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* A43: an entry opened in place under its row (Sessions, places, glossary, World events). */
+.row-editor {
+  margin: 6px 0 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.row-editor > .embedded-editor {
+  border-top: 0;
+  padding-top: 0;
+}
+.row-editor-tr > td {
+  padding: 0 0 4px;
+}
+/* The open editor takes its own line in a wrapping row, and a capped list grows to hold it. */
+.place-tree li > .row-editor,
+.stack-list li > .row-editor {
+  flex-basis: 100%;
+}
+.sessions-list:has(.row-editor) {
+  max-height: none;
+}
+/* ED-3, A43: Undo, Redo and the Changes popover in the top bar. */
+.topbar-undo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.changes-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: min(380px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+.changes-pop .eyebrow {
+  color: var(--fg);
+}
+.changes-pop > .btn {
+  align-self: flex-start;
+}
+.status-undo {
+  color: var(--fg);
+}
+.status-undo:empty {
+  display: none;
+}
+@media (max-width: 760px) {
+  .changes-pop {
+    left: 0;
+    right: auto;
+    /* Inside the frame's gutters, which clip what overflows. */
+    width: min(380px, calc(100vw - 100px));
+  }
 }

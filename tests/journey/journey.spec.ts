@@ -603,7 +603,6 @@ test('TL-2 TL-5 the year view lists who is alive in 2075 and what Iris lived thr
 
 const outline = () => page.getByTestId('outline-view');
 const bar = (id: string) => outline().locator(`[data-testid="chapter-bar"][data-chapter="${id}"]`);
-const outlineInspector = () => page.getByTestId('outline-inspector');
 const readingOrder = async (id: string) =>
   (await invoke('entry.get', { collection: 'chapters', id })).entry.readingOrder;
 
@@ -620,24 +619,17 @@ test('SM-7 the outline: drag the Chapter 2 bar above Chapter 1, see the order ch
   await page.mouse.up();
   await expect(outline().getByTestId('chapter-bar').first()).toContainText('Two Kitchens');
   await expect.poll(() => readingOrder('CH2')).toBe(1);
-  await outline().getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.getByTestId('top-undo').click();
   await expect(outline().getByTestId('chapter-bar').first()).toContainText("The Archivist's Door");
   await expect.poll(() => readingOrder('CH2')).toBe(2);
 });
 
-test('KB-3 SM-7 A40 the outline inspector opens from a bar with the title, year and scene count; the chapter page under More shows strands, ages, and places', async () => {
+test('KB-3 SM-7 A40 A43 a chapter bar shows the title, year and scene count, and opens the chapter page with strands, ages, and places', async () => {
+  await expect(bar('CH2').getByTestId('chapter-title')).toHaveText('Two Kitchens');
+  await expect(bar('CH2').getByTestId('chapter-year')).toHaveValue(/\d{4}/);
+  await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText(/^\d+ scenes?$/);
   await bar('CH2').getByLabel('Actions for chapter 2').click();
   await bar('CH2').getByTestId('chapter-open').click();
-  const panel = outlineInspector().getByTestId('chapter-panel');
-  await expect(panel.getByTestId('panel-title')).toHaveValue('Two Kitchens');
-  await expect(panel.getByTestId('panel-year')).toHaveValue(/\d{4}/);
-  await expect(panel.getByTestId('panel-scenes')).toContainText('in the outline');
-  await panel.getByRole('button', { name: 'Close the chapter' }).click();
-  await sectionList(page, 'Chapters');
-  await page
-    .getByRole('button', { name: /Two Kitchens/ })
-    .first()
-    .click();
   const chapter = page.getByTestId('editor');
   await expect(chapter).toHaveAttribute('data-entry-id', 'CH2');
   await expect(chapter.locator('[data-strand="CH2-present"] [data-character="H5"]')).toContainText(
@@ -700,7 +692,7 @@ test('GL-1 GL-3 a glossary term that breaks Pinyin is flagged, and a Chinese nam
 });
 
 test('OQ-1 SM-11 an open question on Sessions is marked decided with a decision', async () => {
-  // SM-11: the open questions are on Sessions, each opening in the inspector beside the list.
+  // SM-11, A43: the open questions are on Sessions, each opening in place under its row.
   await rail(page, 'Sessions').click();
   const questions = page.getByTestId('sessions-view').getByTestId('questions-list');
   await questions.getByRole('button', { name: /Where does Jun live/ }).click();
@@ -869,9 +861,9 @@ test('ED-5 the trial entries are moved to the trash from their pages, and the Tr
       .click();
     const editor = page.getByTestId('editor');
     await expect(editor).toHaveAttribute('data-entry-id', t.id);
-    const inspector = page.getByTestId('inspector');
-    await inspector.getByRole('button', { name: 'Move to trash' }).click();
-    await inspector
+    const tools = page.getByTestId('entry-tools');
+    await tools.getByRole('button', { name: 'Move to trash' }).click();
+    await tools
       .getByRole('dialog', { name: 'Move to trash' })
       .getByRole('button', { name: 'Move to trash' })
       .click();
@@ -948,7 +940,7 @@ test('ED-4 the history drawer compares a revision with the current entry and res
   await waitSaved(page);
   await input.fill('Seaside');
   await waitSaved(page);
-  await page.getByTestId('inspector').getByRole('button', { name: 'History' }).click();
+  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
   const drawer = page.getByTestId('history');
   const revisions = drawer
     .getByRole('list', { name: 'Revisions, newest first' })
@@ -966,9 +958,9 @@ test('ED-4 the history drawer compares a revision with the current entry and res
 
 test('ED-5 a character moves to the trash with what links to it, and is restored from the Trash screen', async () => {
   await openEntry('Characters', /^Tomas Reyes/);
-  const inspector = page.getByTestId('inspector');
-  await inspector.getByRole('button', { name: 'Move to trash' }).click();
-  const dialog = inspector.getByRole('dialog', { name: 'Move to trash' });
+  const tools = page.getByTestId('entry-tools');
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
+  const dialog = tools.getByRole('dialog', { name: 'Move to trash' });
   await expect(dialog.getByTestId('linked-count')).toBeVisible();
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
   await expect(page.getByTestId('editor')).toContainText('This entry is in the trash.');
@@ -1024,7 +1016,7 @@ test('ED-9 typing @ in a long text field links an entry, and the target shows Li
     kind: 'mention',
   });
   await openEntry('Characters', /^Hope Hale/);
-  await expect(page.getByTestId('inspector').getByTestId('linked-from')).toContainText(
+  await expect(page.getByTestId('entry-tools').getByTestId('linked-from')).toContainText(
     'Character: Sam Hale',
   );
 });

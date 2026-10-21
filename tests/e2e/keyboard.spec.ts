@@ -378,7 +378,7 @@ test('NF-2 SM-8 the world events grid by keyboard', async () => {
   await expect(next).not.toHaveAttribute('data-id', first ?? '');
   const id = await next.getAttribute('data-id');
   await page.keyboard.press('Enter');
-  await expect(page.getByTestId('timeline-inspector').getByTestId('editor')).toHaveAttribute(
+  await expect(page.getByTestId('timeline-editor').getByTestId('editor')).toHaveAttribute(
     'data-entry-id',
     id ?? '',
   );
@@ -634,14 +634,14 @@ test('NF-2 ED-5 the delete confirm: Move to trash opens it, every control in it 
       .first(),
   );
   await expect(editor()).toBeVisible();
-  const inspector = page.getByTestId('inspector');
-  await press(inspector.getByRole('button', { name: 'Move to trash' }));
-  const dialog = inspector.getByRole('dialog', { name: 'Move to trash' });
+  const tools = page.getByTestId('entry-tools');
+  await press(tools.getByRole('button', { name: 'Move to trash' }));
+  const dialog = tools.getByRole('dialog', { name: 'Move to trash' });
   await expect(dialog).toBeVisible();
   expect(await unreachable('[role="dialog"]')).toEqual([]);
   await press(dialog.getByRole('button', { name: 'Keep it' }));
   await expect(dialog).toBeHidden();
-  await press(inspector.getByRole('button', { name: 'Move to trash' }));
+  await press(tools.getByRole('button', { name: 'Move to trash' }));
   await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
@@ -663,7 +663,7 @@ test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every c
       .getByRole('button', { name: /Daniel Hale/ })
       .first(),
   );
-  await press(page.getByTestId('inspector').getByRole('button', { name: 'History' }));
+  await press(page.getByTestId('entry-tools').getByRole('button', { name: 'History' }));
   const drawer = page.getByTestId('history');
   await expect(drawer).toBeVisible();
   const revisions = drawer

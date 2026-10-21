@@ -1,6 +1,6 @@
 /* a39-backstory, SM-9: the Backstory screen. The grid itself is grid.css; colors only from theme tokens. */
 .bs-area {
-  grid-column: 2 / 5;
+  grid-column: 2 / -1;
   padding: 14px 18px;
   min-width: 0;
   overflow-y: auto;
@@ -9,7 +9,6 @@
 }
 @media (max-width: 1100px) {
   .bs-area {
-    grid-column: 2 / 4;
     grid-row: 2 / 4;
   }
 }

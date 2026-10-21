@@ -44,7 +44,7 @@ import { call, plainError } from '../../api';
 import { useEntries, useList, useStore } from '../data';
 import { useGlossary } from '../Zh';
 import { zhHint } from '../../../../shared/domain/zh';
-import { EmbeddedEditor, SaveState, TrashControls, UndoPanel, useAutosave } from '../editor';
+import { EmbeddedEditor, SaveState, TrashControls, useAutosave } from '../editor';
 import { Field } from '../fields';
 import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
@@ -1101,7 +1101,6 @@ function TreeInspector(props: {
           />
         </>
       )}
-      <UndoPanel />
     </aside>
   );
 }

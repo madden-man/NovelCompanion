@@ -232,6 +232,16 @@ export function field(scope: Locator, path: string): Locator {
   return scope.locator(`[data-field="${path}"]`);
 }
 
+/**
+ * ED-3, A43: the session's changes, newest first, in the top bar's Changes
+ * popover. Opens the popover when it is closed and returns its list.
+ */
+export async function changes(page: Page): Promise<Locator> {
+  const button = page.getByTestId('top-changes');
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+  return page.getByTestId('undo-history');
+}
+
 /** Wait until every pending change of the open entry is written. */
 export async function waitSaved(page: Page): Promise<void> {
   await expect(page.getByTestId('editor').getByTestId('autosave')).toHaveText('Saved');
