@@ -83,6 +83,15 @@ async function workbook(): Promise<void> {
   momentRows.forEach((r) => moments.addRow(r));
   moments.getRow(1).font = { bold: true };
 
+  // A grid of people by year (SM-12): each filled cell is a moment of the person the row names.
+  const lives = wb.addWorksheet('Lives by year');
+  lives.addRow(['', 1980, 1985, 1990]);
+  lives.addRow(['Hale family']);
+  lives.addRow(['Margaret', 'Moves to Portland', null, null]);
+  lives.addRow(['Zhou Lan', null, null, 'Starts school in Guangzhou']);
+  lives.getRow(1).font = { bold: true };
+  lives.getRow(2).font = { bold: true };
+
   await wb.xlsx.writeFile(join(OUT, 'fixture-workbook.xlsx'));
 }
 

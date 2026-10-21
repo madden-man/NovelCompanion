@@ -139,7 +139,13 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     const hale = wb.sheets.find((x) => x.name === 'Hale family')!;
     // The guessed mapping reads the long headers of a moment sheet (IM-1).
     const moments = guessMapping(hale, 'table', { collection: 'moments' }) as TableMapping;
-    const mappings = [people, { ...grid, regionsFromLabels: true, addOnly: ['regions'] }, moments];
+    const mappings = [
+      people,
+      { ...grid, regionsFromLabels: true, addOnly: ['regions'] },
+      moments,
+      // A grid of people by year: each cell a moment of the person the row names (SM-12).
+      { ...grid, sheet: 'Lives by year', target: { collection: 'moments' as const } },
+    ];
     const out = [];
     for (const m of mappings) {
       const sheet = wb.sheets.find((x) => x.name === m.sheet)!;
@@ -175,6 +181,8 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
         ['Daniel is born', people$.get('Margaret Hale'), 1985],
         // A Chinese given name finds Zhou Meiling (周美玲).
         ['Meiling moves to Guangzhou', people$.get('Zhou Meiling'), 1990],
+        ['Moves to Portland', people$.get('Margaret Hale'), 1980],
+        ['Starts school in Guangzhou', people$.get('Zhou Lan'), 1990],
       ].sort(),
     );
     const marry = moments.find((m) => m.title === 'Peter and Margaret marry')!;
@@ -186,8 +194,8 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
 
     // IM-3: the same file again changes nothing.
     const again = await runAll(open, wb);
-    expect(again.map((r) => r.set.items.length)).toEqual([0, 0, 0]);
-    expect(open.repo.list('moments')).toHaveLength(4);
+    expect(again.map((r) => r.set.items.length)).toEqual([0, 0, 0, 0]);
+    expect(open.repo.list('moments')).toHaveLength(6);
 
     // A newer version of the file moves the wedding a year: the same moment changes, nothing is added.
     const sheet = wb.sheets.find((x) => x.name === 'Hale family')!;
@@ -207,7 +215,7 @@ describe('IM-1 IM-2 IM-3 SM-3 SM-12 the whole fixture workbook into a fresh bibl
     expect(
       third[2]!.set.items.map((i) => [i.kind, i.entryId, i.deltas.map((d) => d.path)]),
     ).toEqual([['changed', marry._id, ['year']]]);
-    expect(open.repo.list('moments')).toHaveLength(4);
+    expect(open.repo.list('moments')).toHaveLength(6);
     expect(open.repo.get('moments', marry._id)!.year).toBe(1983);
   });
 });
@@ -449,6 +457,7 @@ describe('IM-1 the IPC channels preview, compare, and apply through the contract
       ['People', 'table', 1],
       ['High Level', 'grid', 1],
       ['Hale family', 'table', 1],
+      ['Lives by year', 'grid', 1],
     ]);
     expect(info.saved).toEqual([]);
 

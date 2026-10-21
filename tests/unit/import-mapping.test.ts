@@ -67,9 +67,14 @@ describe('IM-1 the mapping engine reads table and grid sheets', () => {
     expect(parseYearHeader('Technology')).toBeNull();
   });
 
-  test('IM-1 the fixture workbook has a table sheet, a grid sheet, and a moments sheet', async () => {
+  test('IM-1 the fixture workbook has a table sheet, a grid sheet, and a moments sheet and grid', async () => {
     const wb = await fixtureWorkbook();
-    expect(wb.sheets.map((s) => s.name)).toEqual(['People', 'High Level', 'Hale family']);
+    expect(wb.sheets.map((s) => s.name)).toEqual([
+      'People',
+      'High Level',
+      'Hale family',
+      'Lives by year',
+    ]);
     expect(wb.sheets[1]!.cells[0]!.slice(0, 3)).toEqual(['', 2030, 2035]);
   });
 
