@@ -317,6 +317,8 @@ test('IM-5 AI-6 a Word document in Import can be read by Claude, and its proposa
 test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in its own bible', async () => {
   await invoke('bible.open', { slug: SLUG });
   await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Claude fixture');
+  // The reopened workspace must hold the panel's shortcut before Cmd+J is pressed.
+  await expect(page.getByTestId('ask-claude')).toBeVisible();
   await page.keyboard.press('Meta+j');
   await panel().getByRole('button', { name: 'New conversation' }).click();
   await ask('Tell me everything about the Hale family');
