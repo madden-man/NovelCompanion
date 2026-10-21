@@ -19,6 +19,7 @@ import {
   yearWindow,
 } from '../../../../shared/domain/worldGrid';
 import type { Zoom } from '../../../../shared/domain/worldGrid';
+import { writingBand } from '../../../../shared/domain/backstoryGrid';
 import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import { isPlainObject } from '../../../../shared/domain/paths';
 import { useWriteGuard } from '../../connection';
@@ -103,24 +104,15 @@ export function TimelineView() {
   );
 
   // The chapter being written: the strand the Writing picker holds (A27), else its primary strand.
-  const writing = useMemo(() => {
-    const chapterId = story.time?.chapterId;
-    const strandId = story.time?.strandId;
-    if (!chapterId) return null;
-    const strands = strandSpans(fromCollections({ chapters })).filter(
-      (s) => s.chapterId === chapterId,
-    );
-    const s =
-      strands.find((x) => strandId !== undefined && x.strandId === strandId) ??
-      strands.find((x) => x.primary) ??
-      strands[0];
-    if (!s) return null;
-    return {
-      from: s.startYear,
-      to: s.endYear,
-      label: `Chapter ${s.readingOrder ?? '?'}: ${s.chapterTitle}, ${s.label}, being written (${s.startYear === s.endYear ? s.startYear : `${s.startYear} to ${s.endYear}`})`,
-    };
-  }, [story.time?.chapterId, story.time?.strandId, chapters]);
+  const writing = useMemo(
+    () =>
+      writingBand(
+        strandSpans(fromCollections({ chapters })),
+        story.time?.chapterId,
+        story.time?.strandId,
+      ),
+    [story.time?.chapterId, story.time?.strandId, chapters],
+  );
 
   const win = useMemo(() => yearWindow(year), [year]);
   const around = useMemo(

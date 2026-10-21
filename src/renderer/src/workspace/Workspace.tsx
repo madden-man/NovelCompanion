@@ -17,6 +17,8 @@ import { UndoProvider } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
+import { BackstoryView } from './backstory/BackstoryView';
+import { useOpenBackstory } from './backstory/nav';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { OutlineView } from './plot';
@@ -24,7 +26,6 @@ import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import type { CultureTab } from './culture';
-import { BackstoryPlaceholder } from './backstory/Placeholder';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
@@ -47,6 +48,7 @@ type View =
   | { kind: 'tree'; focus?: string }
   /** SM-8: the World events grid. */
   | { kind: 'timeline' }
+  | { kind: 'backstory'; characterId?: string }
   | { kind: 'outline' }
   /** SM-9: one row per character; SM-10's Their backstory picks the person. */
   | { kind: 'backstory'; characterId?: string }
@@ -140,6 +142,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
     setView({ kind: 'section', collection, selected: id, creating: false });
   const openSection = (collection: EntryCollection) =>
     setView({ kind: 'section', collection, selected: null, creating: false });
+  useOpenBackstory((characterId) => setView({ kind: 'backstory', characterId }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
     review: () => setView({ kind: 'review' }),
@@ -273,6 +276,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           <TreeView onOpen={open} focus={view.focus} />
         ) : view.kind === 'timeline' ? (
           <TimelineView />
+        ) : view.kind === 'backstory' ? (
+          <BackstoryView characterId={view.characterId} onOpen={open} />
         ) : view.kind === 'outline' ? (
           <OutlineView onOpen={open} />
         ) : view.kind === 'sessions' ? (
@@ -304,9 +309,6 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               {view.kind === 'drive' && <DriveView />}
               {view.kind === 'settings' && <SettingsView />}
               {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
-              {view.kind === 'backstory' && (
-                <BackstoryPlaceholder key={view.characterId} characterId={view.characterId} />
-              )}
               {view.kind === 'relevant' && (
                 <RelevantView
                   onOpen={open}

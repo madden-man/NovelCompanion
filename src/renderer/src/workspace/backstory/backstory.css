@@ -1,0 +1,267 @@
+/* a39-backstory, SM-9: the Backstory screen. The grid itself is grid.css; colors only from theme tokens. */
+.bs-area {
+  grid-column: 2 / 5;
+  padding: 14px 18px;
+  min-width: 0;
+  overflow-y: auto;
+  max-height: calc(100vh - var(--ws-chrome));
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .bs-area {
+    grid-column: 2 / 4;
+    grid-row: 2 / 4;
+  }
+}
+@media (max-width: 760px) {
+  .bs-area {
+    grid-column: auto;
+    grid-row: auto;
+    max-height: none;
+    padding: 12px 16px;
+  }
+}
+.bs-help {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--fg-2);
+}
+.bs-empty {
+  margin: 0;
+  color: var(--fg-2);
+}
+.bs-scroll {
+  max-height: max(280px, calc(100vh - var(--ws-chrome) - 420px));
+}
+
+/* Rows: the name in the primary text color, the Chinese name beside it. */
+.bs-row-label {
+  gap: 8px;
+}
+.bs-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bs-zh {
+  color: var(--fg);
+  font-weight: 500;
+}
+.bs-row-label[aria-pressed='true'] {
+  background: var(--accent-soft);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.bs-row.picked .wg-track {
+  background: color-mix(in oklab, var(--accent-soft) 35%, transparent);
+}
+.bs-count {
+  font-weight: 600;
+  color: var(--fg);
+}
+.bs-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+}
+
+/* The lifespan runs along the foot of the row, under the marker lanes: solid in the family color,
+   dashed past the story year. Clicks pass through to the row. */
+.bs-life {
+  position: absolute;
+  bottom: 1px;
+  height: 6px;
+  z-index: 1;
+  pointer-events: none;
+}
+.bs-life-solid,
+.bs-life-dash {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  box-sizing: border-box;
+}
+.bs-life-solid {
+  left: 0;
+  background: var(--bs-fam);
+  border-radius: 3px;
+}
+.bs-life-dash {
+  background: repeating-linear-gradient(to right, var(--bs-fam) 0 6px, transparent 6px 10px);
+  border-radius: 3px;
+  opacity: 0.85;
+}
+.bs-life-unknown {
+  position: sticky;
+  left: 8px;
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 0.75rem;
+  color: var(--fg-2);
+  pointer-events: none;
+}
+
+/* Markers sit over the lifespan bar in the primary text color, ringed so they read on any family color. */
+.bs-marker {
+  background: var(--fg);
+  border: 2px solid var(--chart-surface);
+}
+.bs-marker.bar {
+  background: var(--fg-2);
+}
+
+/* Legend keys. */
+.bs-key {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.bs-key.life {
+  width: 24px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--series-1);
+}
+.bs-key.life.dash {
+  background: repeating-linear-gradient(to right, var(--series-1) 0 6px, transparent 6px 10px);
+}
+
+/* The moments table. */
+.bs-table-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--fg);
+}
+.bs-years {
+  font-weight: 500;
+  color: var(--fg);
+}
+.bs-table-wrap {
+  overflow-x: auto;
+}
+.bs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.bs-table th {
+  text-align: left;
+  font-weight: 700;
+  color: var(--fg);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+.bs-table td {
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+}
+.bs-table tr.selected td {
+  background: var(--accent-soft);
+}
+.bs-table tr.selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.bs-col-year {
+  width: 6.5rem;
+}
+.bs-col-age {
+  width: 6rem;
+}
+.bs-col-act {
+  width: 1%;
+  white-space: nowrap;
+}
+.bs-cell {
+  width: 100%;
+  min-width: 9rem;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  resize: vertical;
+}
+.bs-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.bs-cell-year {
+  min-width: 0;
+  width: 5.5rem;
+}
+.bs-cell-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--critical-ink);
+}
+.bs-to {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--fg);
+}
+.bs-world {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.bs-picker {
+  position: relative;
+  flex: none;
+}
+.bs-picker-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.bs-picker-head {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.bs-picker-item {
+  all: unset;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.bs-picker-item:hover {
+  background: var(--accent-soft);
+}
+.bs-picker-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.bs-trashed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 400px) {
+  .bs-world {
+    flex-direction: column;
+  }
+  .bs-picker-list {
+    width: min(300px, calc(100vw - 32px));
+  }
+}
