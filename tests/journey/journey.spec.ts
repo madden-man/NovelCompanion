@@ -25,6 +25,8 @@ import {
   launch,
   openListFor,
   rail,
+  screenTab,
+  sectionList,
   setField,
   waitSaved,
   withoutSystem,
@@ -187,7 +189,7 @@ test('BK-3 the fixture novel is loaded through Backups into a new bible, Tide Li
 });
 
 test('DB-1 SL-1 the dashboard shows the last session note, the story time, the position, and open questions', async () => {
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await expect(dash()).toBeVisible();
   await expect(dash().getByTestId('launch-note')).toHaveText('Margaret blows out the candles.');
   await expect(dash().getByTestId('dash-position')).toContainText('Candles');
@@ -405,7 +407,7 @@ test('ARCH-8 FT-2 the Scratch bible is opened from the Bibles screen, its two fa
   test.setTimeout(300_000);
   await openBible('Scratch');
   for (const f of fixture.families!) {
-    await rail(page, 'Families').click();
+    await sectionList(page, 'Families');
     await page.getByRole('button', { name: 'New family', exact: true }).click();
     const form = page.getByTestId('new-entry');
     await field(form, 'title').locator(':scope > input').fill(String(f.title));
@@ -626,7 +628,7 @@ test('KB-3 SM-7 the chapter page opens from its bar and shows strands, ages, and
 });
 
 test('CU-2 culture by year lists what applies to Guangzhou in 2020', async () => {
-  await rail(page, 'Culture by year').click();
+  await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
   await view.getByLabel('Community').selectOption({ label: 'Guangzhou' });
   await view.getByLabel('Year').fill('2020');
@@ -643,7 +645,7 @@ test('PC-1 the place tree nests the Hale house inside Portland', async () => {
 });
 
 test('GL-1 GL-3 a glossary term that breaks Pinyin is flagged, and a Chinese name shows its meaning on hover', async () => {
-  await rail(page, 'Glossary').click();
+  await sectionList(page, 'Glossary');
   await page.getByRole('button', { name: 'New glossary term', exact: true }).click();
   const form = page.getByTestId('new-entry');
   await field(form, 'title').locator(':scope > input').fill('广东');
@@ -686,7 +688,7 @@ test('OQ-1 an open question is marked decided with a decision', async () => {
 });
 
 test('SL-1 a session log entry is written and listed newest first', async () => {
-  await rail(page, 'Session log').click();
+  await sectionList(page, 'Session log');
   await page.getByRole('button', { name: 'New session log', exact: true }).click();
   const form = page.getByTestId('new-entry');
   await field(form, 'title').locator(':scope > input').fill('Journey session');
@@ -1042,7 +1044,7 @@ test('IM-4 a Word document previews with its heading, italics, and scene break, 
 // A new chapter, Claude, proposals
 
 test('PL-1 a new chapter is created with two strands, present and backstory', async () => {
-  await rail(page, 'Chapters').click();
+  await sectionList(page, 'Chapters');
   await page.getByRole('button', { name: 'New chapter', exact: true }).click();
   const form = page.getByTestId('new-entry');
   await field(form, 'title').locator(':scope > input').fill(CHAPTER);
@@ -1198,7 +1200,7 @@ test('SB-8 the brief exports as Markdown', async () => {
 
 test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary approved, and a moment promoted to canon', async () => {
   await nextDocument(files.letter);
-  await rail(page, 'Manuscript').click();
+  await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
   await view.locator('[data-chapter="CH6"]').click();
   const ch = view.getByTestId('ms-chapter');
@@ -1231,7 +1233,7 @@ const finding = (check: string) =>
   alignment().locator(`[data-testid="finding"][data-check="${check}"]`);
 
 test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists structural and Claude findings', async () => {
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await dash().getByRole('button', { name: 'Check alignment' }).click();
   await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
   await expect(alignment().getByTestId('alignment-runner')).toContainText('Model: claude-opus-5-5');
@@ -1303,7 +1305,7 @@ test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on 
   await expect(task).toContainText(
     'What must change: The city Lan grew up in must be Guangzhou, as the bible records.',
   );
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   const tile = dash().getByTestId('dash-tasks');
   await expect(tile).not.toContainText('No open rewrite tasks.');
   await expect(tile.getByTestId('rewrite-task')).toContainText('Lan had grown up in Shanghai');
@@ -1355,7 +1357,7 @@ test('GD-4 the bible exports to a new Drive folder as Markdown by section and on
 
 test('MS-1 MS-5 a chapter is read from a Google Doc picked in the Drive browser, and Drive is never written', async () => {
   const uploads = fake.uploads.length;
-  await rail(page, 'Manuscript').click();
+  await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
   await view.locator('[data-chapter="CH3"]').click();
   const ch = view.getByTestId('ms-chapter');
@@ -1428,7 +1430,7 @@ test('ST-1 DB-4 settings: the summary model and the brief budget are changed and
   const budget = settings().getByTestId('settings-briefs').getByLabel('Size budget (characters)');
   await budget.fill('30000');
   await budget.blur();
-  await rail(page, 'Dashboard').click();
+  await rail(page, 'Sessions').click();
   await rail(page, 'Settings').click();
   await expect(settings().getByTestId('claude-model-summaries')).toHaveValue('claude-haiku-5-5');
   await expect(
