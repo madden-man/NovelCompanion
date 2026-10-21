@@ -44,7 +44,8 @@ export function sceneOutlineText(doc: Record<string, unknown> | null | undefined
  * survive. An outline (or a version) saved before A37 holds scene ranges and
  * no breaks; its breaks are derived from them once, each chapter starting at
  * the first line of its range's first scene (past the end when the scene is
- * gone). The next save writes the breaks and drops the ranges.
+ * gone), each one after the break before it so overlapping ranges leave no
+ * chapter empty. The next save writes the breaks and drops the ranges.
  */
 export function sceneBreaks(doc: Record<string, unknown> | null | undefined): SceneBreaks {
   const raw = doc?.breaks;
@@ -61,11 +62,20 @@ export function sceneBreaks(doc: Record<string, unknown> | null | undefined): Sc
     if (n !== null && !firstLine.has(n)) firstLine.set(n, i);
   });
   const count = text === '' ? 0 : text.split('\n').length;
+  const starts: { id: string; from: number }[] = [];
   for (const [id, r] of Object.entries(doc.ranges)) {
     if (!isRecord(r) || typeof r.from !== 'number' || !Number.isInteger(r.from) || r.from < 1) {
       continue;
     }
-    out[id] = firstLine.get(r.from) ?? count;
+    starts.push({ id, from: r.from });
+  }
+  // In chapter order (by first scene, ties in stored order), each break after the one before,
+  // so overlapping ranges never leave an earlier chapter empty.
+  let prev = -1;
+  for (const { id, from } of starts.sort((a, b) => a.from - b.from)) {
+    const line = Math.min(count, Math.max(firstLine.get(from) ?? count, prev + 1));
+    out[id] = line;
+    prev = line;
   }
   return out;
 }

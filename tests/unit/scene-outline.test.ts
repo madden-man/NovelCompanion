@@ -74,7 +74,7 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(continueBullet(at('Part one', 8))).toBeNull();
   });
 
-  test('PL-5 Tab indents the selected lines and Shift+Tab outdents them', () => {
+  test('PL-5 Cmd+] indents the selected lines and Cmd+[ outdents them', () => {
     const t = '- One\n- Two\n- Three';
     const r = indentLines(at(t, 6, 13), false);
     expect(r.text).toBe('- One\n  - Two\n  - Three');
@@ -226,6 +226,16 @@ describe('SM-5 every scene has a year, its own or inherited, kept in step with t
     expect(sectionOf(flow, LEAD).lines).toEqual(['Opening note']);
     expect(sectionOf(flow, 'X').lines).toEqual(['- A', '  - a detail', '- B']);
     expect(sectionOf(flow, 'Y').lines).toEqual(['- C', '- D']);
+    // Overlapping ranges (A36 allowed two chapters on one scene) still give each chapter its own start.
+    expect(
+      sceneBreaks({
+        text,
+        ranges: { X: { from: 1, to: 3 }, Y: { from: 1, to: 2 }, Z: { from: 2, to: 4 } },
+      }),
+    ).toEqual({ X: 1, Y: 2, Z: 3 });
+    expect(
+      sceneBreaks({ text: '- A', ranges: { X: { from: 1, to: 1 }, Y: { from: 1, to: 1 } } }),
+    ).toEqual({ X: 0, Y: 1 });
     // Once breaks are stored, the ranges are ignored.
     expect(sceneBreaks({ ...old, breaks: { X: 0 } })).toEqual({ X: 0 });
     expect(sceneBreaks({ text, ranges: 'x' })).toEqual({});
