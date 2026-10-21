@@ -47,7 +47,7 @@ What the default mapping does with `East_Winds_World.xlsx` now:
 
 Rehearsal on a fresh local bible (local replica set, 2026-10-21), from `source-material/`:
 
-- Dry run: High Level chapters 53 new (1 book, 4 parts, 48 chapters), High Level moments 8 (4 moments, 4 people), world events 226, Sullivan 105 (97 moments, 8 people), 李 36 (32 moments, 4 people), Plot v1 64 (Book Two: 1 book, 4 parts, 50 chapters, 9 people; Book One's 55 rows left out). A dry run cannot see what earlier steps would make, so on an empty bible it counts a person once per sheet that names them.
+- Dry run: High Level chapters 53 new (1 book, 4 parts, 48 chapters), High Level moments 8 (4 moments, 4 people), world events 226, Sullivan 105 (96 moments, 9 people), 李 36 (32 moments, 4 people), Plot v1 64 (Book Two: 1 book, 4 parts, 50 chapters, 9 people; Book One's 55 rows left out). A dry run cannot see what earlier steps would make, so on an empty bible it counts a person once per sheet that names them.
 - Applied with `--yes`: chapters 99 new (48, 50, the Introduction), world events 226, moments 132, characters 13 new and 3 given backstories, books 2, parts 8, era states 9, open questions 2. One row failed: Sullivan row 98, "HaoYu is killed by a Chinese drone", has no POV and no year ("There is no value for Character"); the real bible's moment for it (year 2093 and point of view set by hand on 2026-10-11) is left alone.
 - A second run reported created 0, updated 0, unchanged 482, failed 1 (the same row).
 
