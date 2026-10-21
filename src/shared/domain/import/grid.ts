@@ -65,10 +65,14 @@ export function findYearHeader(
 /** Words in a row label that name a region, and the region they name. */
 const REGION_WORDS: [RegExp, string][] = [
   [/\b(US|USA|U\.S\.)(?![a-z])/, 'United States'],
-  [/\bAmerican?s?\b/i, 'United States'],
+  // "American" is the United States, but not in Latin, South, Central, or North American.
+  [/(?<!\b(Latin|South|Central|North|Native)\s+)\bAmericans?\b/i, 'United States'],
+  [/(?<!\b(Latin|South|Central|North)\s+)\bAmerica\b/i, 'United States'],
   [/\bChin(a|ese)\b/i, 'China'],
-  [/\bEurope(an)?\b|\bEU\b/i, 'Europe'],
-  [/\bIndia(n)?\b/i, 'India'],
+  [/\bEurope(an)?\b/i, 'Europe'],
+  [/\bEU\b/, 'Europe'],
+  // The Indian Ocean is not India.
+  [/\bIndia(n)?\b(?!\s+Ocean)/i, 'India'],
   [/\bJapan(ese)?\b/i, 'Japan'],
   [/\bRussia(n)?\b/i, 'Russia'],
   [/\bMexic(o|an)\b/i, 'Mexico'],

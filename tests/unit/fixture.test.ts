@@ -307,7 +307,12 @@ describe('Section 7 fixture novel', () => {
   test('Section 7 fixture workbook has one table sheet and one grid sheet', async () => {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(join(ROOT, 'fixtures/files/fixture-workbook.xlsx'));
-    expect(wb.worksheets.map((w) => w.name).slice(0, 2)).toEqual(['People', 'High Level']);
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      'People',
+      'High Level',
+      'Hale family',
+      'Lives by year',
+    ]);
     const table = wb.getWorksheet('People')!;
     expect(table.getRow(1).values).toEqual([
       undefined,

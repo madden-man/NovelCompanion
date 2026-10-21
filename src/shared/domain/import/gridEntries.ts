@@ -2,7 +2,7 @@ import { splitNumberedTitle } from '../numbering';
 import { buildEntry } from './build';
 import { importableFields } from './fields';
 import { findYearHeader, gridRowRange, mergedSlave, skipNote, titleFromText } from './grid';
-import { nameResolver } from './names';
+import { familyHints, nameResolver, partialNote } from './names';
 import { cellRef } from './source';
 import { identityKey, identityTitle, normalizeIdentity, ordinalKey } from './table';
 import type { GridMapping, MapContext, MapOutput, MappedRow, ParsedSheet } from './types';
@@ -64,11 +64,13 @@ export function mapMomentGrid(
   )?.spec;
   let ref = '';
   let where = '';
+  // A heading row such as "Li Family" names the family of the rows below it.
+  let heading = '';
   const resolver = nameResolver(ctx, {
     createMissing: mapping.createMissing,
     ref: () => ref,
     where: () => where,
-    hints: mapping.nameHints ?? [],
+    hints: () => [...(mapping.nameHints ?? []), ...familyHints(heading)],
   });
   const counts = new Map<string, number>();
   const skipped: { row: number; label: string; cells: number }[] = [];
@@ -82,6 +84,13 @@ export function mapMomentGrid(
     );
     if (row < startAt || (label && skipPatterns.some((re) => re.test(label.trim())))) {
       if (label || filled.length) skipped.push({ row, label, cells: filled.length });
+      continue;
+    }
+    if (filled.length === 0) {
+      // A family heading, by its word or its bold type; a person's row with no cells is not one.
+      if (label && (/\bfamil(y|ies)\b/i.test(label) || (sheet.boldRows ?? []).includes(row))) {
+        heading = label;
+      }
       continue;
     }
     for (const y of filled) {
@@ -140,6 +149,8 @@ export function mapMomentGrid(
     }
   }
   out.stubs = resolver.stubs;
+  const partial = partialNote(sheet.name, resolver.partials);
+  if (partial) out.notes.push(partial);
   if (skipped.length) out.notes.push(skipNote(skipped));
   return out;
 }
@@ -151,32 +162,56 @@ interface StrandSpan {
 }
 
 const BACKSTORY = /^backstory\b/i;
+const FORESTORY = /^forestory\b/i;
+
+/** True for an arc span's label: one that is neither "Backstory: ..." nor "Forestory: ...". */
+const isArc = (label: string) => !BACKSTORY.test(label) && !FORESTORY.test(label);
+
+/** The character an arc label is named for: "Siyuan" in "Siyuan: Lost Years". */
+export function arcCharacterOf(label: string): string | null {
+  const at = label.indexOf(':');
+  return at > 0 && isArc(label) ? label.slice(0, at).trim().toLowerCase() : null;
+}
 
 /**
  * A chapter's strands from its row (A29): each label written under the years
- * it spans. A strand labelled "Backstory: ..." is the backstory strand and the
- * other is the present (primary) one. When neither says so, the later span is
- * the present and the earlier one jumps back in story time, so it is labelled
- * backstory.
+ * it spans. The primary strand is the arc span, the one labelled neither
+ * "Backstory" nor "Forestory"; when both are arc spans, the one named for the
+ * part's arc character wins, else the earlier. The other strand keeps its
+ * label when it is later than the primary ("Forestory: John"); when it is
+ * earlier it jumps back in story time and is labelled "Backstory: ...".
  */
 export function chapterStrands(
   spans: StrandSpan[],
-): { primary: StrandSpan; backstory: StrandSpan | null } | { problem: string } {
+  arcCharacter: string | null = null,
+): { primary: StrandSpan; other: StrandSpan | null } | { problem: string } {
   if (spans.length === 0) return { problem: 'The row has no strand labels under its years' };
   if (spans.length > 2) {
     return {
-      problem: `The row names ${spans.length} strands (${spans.map((s) => s.label).join('; ')}); a chapter row has a present strand and a backstory strand`,
+      problem: `The row names ${spans.length} strands (${spans.map((s) => s.label).join('; ')}); a chapter row has a present strand and one more`,
     };
   }
   const [a, b] = [...spans].sort((x, y) => x.start - y.start || x.end - y.end);
   if (!a) return { problem: 'The row has no strand labels under its years' };
-  if (!b) return { primary: a, backstory: null };
-  const aBack = BACKSTORY.test(a.label);
-  const bBack = BACKSTORY.test(b.label);
-  if (aBack !== bBack) return aBack ? { primary: b, backstory: a } : { primary: a, backstory: b };
+  if (!b) return { primary: a, other: null };
+  const arcs = [a, b].filter((x) => isArc(x.label));
+  let primary: StrandSpan;
+  if (arcs.length === 1) primary = arcs[0] ?? a;
+  else if (arcs.length === 2) {
+    const named = arcs.filter(
+      (x) => arcCharacter !== null && arcCharacterOf(x.label) === arcCharacter,
+    );
+    primary = named.length === 1 ? (named[0] ?? a) : a;
+  } else {
+    // Neither is an arc span: a forward strand is closer to the present than a backstory one.
+    primary = FORESTORY.test(a.label) || !FORESTORY.test(b.label) ? a : b;
+    if (BACKSTORY.test(primary.label) && !BACKSTORY.test(b.label)) primary = b;
+  }
+  const rest = primary === a ? b : a;
+  const jumpsBack = rest.start < primary.start && !BACKSTORY.test(rest.label);
   return {
-    primary: b,
-    backstory: aBack ? a : { ...a, label: `Backstory: ${a.label}` },
+    primary,
+    other: jumpsBack ? { ...rest, label: `Backstory: ${rest.label}` } : rest,
   };
 }
 
@@ -256,13 +291,55 @@ export function mapChapterGrid(
     return { id };
   };
 
+  const yearsAt = (r: number) =>
+    header.columns.map((y) => ({ y, text: textAt(r, y.column) })).filter((c) => c.text !== '');
+  /** Each label once, from the first year it is under to the last. */
+  const spansOf = (years: { y: YearColumn; text: string }[]): StrandSpan[] => {
+    const spans: StrandSpan[] = [];
+    for (const { y, text } of years) {
+      const end = y.end ?? y.start;
+      const hit = spans.find((x) => x.label === text);
+      if (hit) {
+        hit.start = Math.min(hit.start, y.start);
+        hit.end = Math.max(hit.end, end);
+      } else spans.push({ label: text, start: y.start, end });
+    }
+    return spans;
+  };
+  // A part's arc character is the one most of its arc labels are named for ("Siyuan" in Part Four).
+  const arcByPart = new Map<number, string | null>();
+  {
+    let n = 0;
+    let tally = new Map<string, number>();
+    const close = () => {
+      const best = [...tally].sort((x, y) => y[1] - x[1])[0];
+      if (n > 0) arcByPart.set(n, best ? best[0] : null);
+    };
+    for (let r = Math.max(header.row, startAt - 1); r < sheet.cells.length && r + 1 < endAt; r++) {
+      const label = cellText(sheet.cells[r]?.[mapping.labelColumn]);
+      const years = yearsAt(r);
+      if (!label) continue;
+      if (years.length === 0) {
+        if (partRe?.test(label.trim())) {
+          close();
+          n += 1;
+          tally = new Map();
+        }
+        continue;
+      }
+      for (const span of spansOf(years)) {
+        const who = arcCharacterOf(span.label);
+        if (who) tally.set(who, (tally.get(who) ?? 0) + 1);
+      }
+    }
+    close();
+  }
+
   for (let r = header.row; r < sheet.cells.length && r + 1 < endAt; r++) {
     const row = r + 1;
     const cells = sheet.cells[r] ?? [];
     const label = cellText(cells[mapping.labelColumn]);
-    const years = header.columns
-      .map((y) => ({ y, text: textAt(r, y.column) }))
-      .filter((c) => c.text !== '');
+    const years = yearsAt(r);
     if (row < startAt || (label && skipPatterns.some((re) => re.test(label.trim())))) {
       if (label || years.length) skipped.push({ row, label, cells: years.length });
       continue;
@@ -329,17 +406,7 @@ export function mapChapterGrid(
       fail('There is no part row above this chapter');
       continue;
     }
-    // Each label once, from the first year it is under to the last.
-    const spans: StrandSpan[] = [];
-    for (const { y, text } of years) {
-      const end = y.end ?? y.start;
-      const hit = spans.find((s) => s.label === text);
-      if (hit) {
-        hit.start = Math.min(hit.start, y.start);
-        hit.end = Math.max(hit.end, end);
-      } else spans.push({ label: text, start: y.start, end });
-    }
-    const strands = chapterStrands(spans);
+    const strands = chapterStrands(spansOf(years), arcByPart.get(partNumber) ?? null);
     if ('problem' in strands) {
       fail(strands.problem);
       continue;
@@ -359,10 +426,10 @@ export function mapChapterGrid(
       'strand.startYear': strands.primary.start,
       'strand.endYear': endOf(strands.primary),
     };
-    if (strands.backstory) {
-      fields['backstory.label'] = strands.backstory.label;
-      fields['backstory.startYear'] = strands.backstory.start;
-      fields['backstory.endYear'] = endOf(strands.backstory);
+    if (strands.other) {
+      fields['backstory.label'] = strands.other.label;
+      fields['backstory.startYear'] = strands.other.start;
+      fields['backstory.endYear'] = endOf(strands.other);
     }
     const built = buildEntry({
       target: { collection: 'chapters' },
@@ -386,6 +453,7 @@ export function mapChapterGrid(
       data: built.data,
       identity: ordinalKey(counts, chapterIdentity(part.title, title)),
       kind: 'entry',
+      position: inPart,
     });
   }
   if (skipped.length) out.notes.push(skipNote(skipped));
