@@ -435,7 +435,15 @@ export function changedItem(
     };
     // No source ever set this field, and the entry already holds a value: it was written by hand (or by an
     // older tool). The newer of the entry and the file wins, and the disagreement is filed like two sources' (IM-7).
-    if (!rec && !isEmptyValue(prior) && !a.addOnly?.includes(path)) {
+    // An empty value counts too once the entry has been edited after it was made: the writer may have cleared
+    // it on purpose (a strand left open, a body emptied). Only a field never on the entry, or an entry never
+    // edited, is filled quietly.
+    const editedSinceMade =
+      typeof existing.createdAt === 'string' &&
+      typeof existing.modifiedAt === 'string' &&
+      existing.modifiedAt !== existing.createdAt;
+    const handValue = !isEmptyValue(prior) || (editedSinceMade && prior !== undefined);
+    if (!rec && handValue && !a.addOnly?.includes(path)) {
       const edited = typeof existing.modifiedAt === 'string' ? existing.modifiedAt : null;
       const incomingWins = edited === null || file.modifiedAt >= edited;
       delta.outcome = incomingWins ? 'apply' : 'keep';

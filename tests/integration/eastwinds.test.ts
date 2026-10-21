@@ -192,6 +192,19 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
       parts: { created: 2, updated: 0 },
       chapters: { created: 3, updated: 0 },
     });
+    // The manuscript would bring its own book and part on an empty bible: counted as such, once.
+    expect(steps['East_Winds.docx, 1: Laid the Foundation']).toMatchObject({
+      created: 3,
+      touched: {
+        books: { created: 1, updated: 0 },
+        parts: { created: 1, updated: 0 },
+        chapters: { created: 1, updated: 0 },
+      },
+    });
+    expect(steps['East_Winds.docx, Introduction']).toMatchObject({
+      created: 1,
+      touched: { chapters: { created: 1, updated: 0 } },
+    });
     expect(steps['East_Winds_World.xlsx, sheet Sullivan']!.touched.moments).toEqual({
       created: 2,
       updated: 0,
@@ -614,6 +627,10 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
         },
       ],
     } as never);
+    // The writer leaves the present strand open-ended after making the chapter (A13, IM-7).
+    await open.repo.update('chapters', made._id, {
+      strands: made.strands.map((x) => (x.id === 'S1' ? { ...x, endYear: null } : x)),
+    } as never);
     // A chapter renamed by hand: the second chapter row of Roots finds it by its place.
     const renamed = await open.repo.create('chapters', {
       title: 'A renamed chapter',
@@ -641,10 +658,12 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
       ],
     );
     expect(after.status).toBe('canon');
+    // The end year cleared by hand stays cleared: the sheet's 2012 is filed, not written.
+    expect(after.strands.find((x) => x.id === 'S1')!.endYear).toBeNull();
     const questions = open.repo.list('openQuestions').map((q) => q.question);
-    expect(questions.find((q) => q.includes('A first chapter'))).toMatch(
-      /the bible \(edited by hand\).*says 2008 \[kept\].*says 2009/s,
-    );
+    const aboutFirst = questions.filter((q) => q.includes('A first chapter')).join('\n');
+    expect(aboutFirst).toMatch(/the bible \(edited by hand\).*says 2008 \[kept\].*says 2009/s);
+    expect(aboutFirst).toMatch(/the bible \(edited by hand\).*says blank \[kept\].*says 2012/s);
     // The renamed chapter keeps its hand title, is not duplicated, and the title is filed as a disagreement.
     expect(open.repo.get('chapters', renamed._id)!.title).toBe('A renamed chapter');
     expect(open.repo.list('chapters').filter((c) => c.title === 'A second chapter')).toEqual([]);
@@ -707,6 +726,12 @@ describe('IM-1 the import:eastwinds script', () => {
     expect(dry.stdout).toContain('Total: created');
     // A dry run cannot see what earlier steps would make, so the manuscript would get a part of its own.
     expect(dry.stdout).toMatch(/Chapters: 9 new, 0 changed/);
+    // The manuscript's own book and part are counted as a book and a part, not as chapters.
+    expect(dry.stdout).toMatch(/Books: 3 new, 0 changed/);
+    expect(dry.stdout).toMatch(/Parts: 6 new, 0 changed/);
+    expect(dry.stdout).toContain(
+      'Would make the chapter, and a book and a part to hold the manuscript chapters.',
+    );
     expect(dry.stdout).toMatch(/World events: 5 new, 0 changed/);
     expect(dry.stdout).toContain('Run again with --yes to apply it.');
     expect(dry.stdout).not.toContain('Snapshot taken');
