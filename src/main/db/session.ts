@@ -11,11 +11,14 @@ import { SnapshotService } from '../backup/snapshots';
 
 /** The schema version of migration 9 (A39), the one that drops collections. */
 const SIMPLIFIED_MODEL_VERSION = 9;
-/**
- * How many snapshots stay when the one before migration 9 is taken. The
- * bible's own setting cannot be read before it is migrated, so the default is used.
- */
-const MIGRATION_SNAPSHOT_KEEP = 30;
+
+/** The bible's snapshot keep setting (BK-1), read straight from `meta` before the read model exists. */
+async function storedSnapshotKeep(handle: BibleHandle): Promise<number> {
+  const doc = await handle
+    .collection<{ _id: string; keep?: unknown }>('meta')
+    .findOne({ _id: 'snapshotSettings' });
+  return typeof doc?.keep === 'number' && doc.keep >= 1 ? Math.floor(doc.keep) : 30;
+}
 
 /** An open bible: its handle, read model, search index, and the write path. */
 export interface OpenBible {
@@ -62,12 +65,9 @@ export async function openBibleSession(
   } else {
     // SM-2: migration 9 drops whole collections, so the bible is snapshotted as it is first.
     if (options.snapshotRoot && (await schemaVersion(handle)) < SIMPLIFIED_MODEL_VERSION) {
-      const before = new SnapshotService(
-        handle,
-        options.snapshotRoot,
-        () => MIGRATION_SNAPSHOT_KEEP,
-        options.now,
-      );
+      // A migration snapshot is never pruned; the keep setting applies to the others.
+      const keep = await storedSnapshotKeep(handle);
+      const before = new SnapshotService(handle, options.snapshotRoot, () => keep, options.now);
       await before.take('migration', MIGRATION9_SNAPSHOT_LABEL);
     }
     await migrate(handle);
