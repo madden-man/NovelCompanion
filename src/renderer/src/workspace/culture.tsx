@@ -12,13 +12,15 @@ import {
   spanInDecade,
 } from '../../../shared/domain/culture';
 import type { DecadeGroup } from '../../../shared/domain/culture';
-import { createCommand, deleteCommand } from '../../../shared/domain/undoRunner';
+import { createCommand, deleteCommand, renameCommand } from '../../../shared/domain/undoRunner';
 import {
   communityNoteCommand,
+  communityRemoveCommand,
   listAddCommand,
   romanizationCommand,
 } from '../../../shared/undoCommands';
 import type { Response } from '../../../shared/ipc';
+import { DEMOGRAPHIC_OPTIONS } from '../../../shared/schema/world';
 import { entryTitle } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { call, plainError } from '../api';
@@ -30,7 +32,6 @@ import { useUndo } from './undo';
 import { EraCoverage } from './views';
 import { InspectorAside } from './inspector';
 import { InlineName } from './outline/InlineName';
-import { WritingToolsView } from './words';
 import { Zh } from './Zh';
 import './culture.css';
 
@@ -58,19 +59,17 @@ function YearField(props: {
   );
 }
 
-export type CultureTab = 'communities' | 'eras' | 'words';
+export type CultureTab = 'communities' | 'eras';
 
 const TABS: { tab: CultureTab; label: string }[] = [
   { tab: 'communities', label: 'Communities' },
   { tab: 'eras', label: 'Eras' },
-  { tab: 'words', label: 'Writing tools' },
 ];
 
 /**
  * SM-11: Cultural data. Tab Communities: one community at a time, its
- * description, and its cultural lines by decade and age group, edited in
- * place (A41). Tab Eras: the era states, edited in place. Tab Writing tools:
- * synonyms, rhymes and related words (WT-1).
+ * description, and its cultural lines for the story year's decade by age
+ * group, edited in place (A41, A42). Tab Eras: the era states, edited in place.
  */
 export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureTab) => void }) {
   const refs = useRef<Partial<Record<CultureTab, HTMLButtonElement | null>>>({});
@@ -118,13 +117,7 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
             role="tabpanel"
             aria-labelledby={`${baseId}-tab-${props.tab}`}
           >
-            {props.tab === 'communities' ? (
-              <CommunityView />
-            ) : props.tab === 'eras' ? (
-              <ErasView />
-            ) : (
-              <WritingToolsView />
-            )}
+            {props.tab === 'communities' ? <CommunityView /> : <ErasView />}
           </div>
         </div>
       </div>
@@ -132,25 +125,18 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
       <InspectorAside
         open={null}
         onClose={() => undefined}
-        hint={
-          props.tab === 'words'
-            ? 'Lookups change nothing in the bible.'
-            : 'Everything here is edited where it sits. Undo and redo are below.'
-        }
+        hint="Everything here is edited where it sits. Undo and redo are below."
       />
     </>
   );
 }
 
-/** A year typed into a small field, or null when it is not a whole year. */
-const yearOf = (t: string): number | null =>
-  /^-?\d{1,5}$/.test(t.trim()) && Math.abs(Number(t)) <= 10000 ? Number(t) : null;
-
 /**
- * A41, CU-1: one community at a time. Its description, then its cultural
- * lines for one decade, grouped by age group, each line edited where it
- * sits: the text, its years, a note, and Remove. Every change is one undo
- * step (ED-3). Nothing here needs the inspector.
+ * A41, A42, CU-3: one community at a time. Its description, then its lines
+ * for the story year's decade (the year control at the top moves it),
+ * grouped by age group. Every line edits where it sits; its age group and
+ * decade are selects at the end of the row. Every change is one undo step
+ * (ED-3). Nothing here needs the inspector.
  */
 export function CommunityView() {
   const story = useStoryTime();
@@ -161,14 +147,17 @@ export function CommunityView() {
   const ro = useWriteGuard();
   const { version } = useStore();
   const items = communities?.items ?? [];
+  const listLabel = communities?.label ?? 'Communities';
   const [picked, setPicked] = useState('');
   const chosen = items.find((c) => c.id === picked) ?? items[0] ?? null;
-  const [decade, setDecade] = useState(decadeOf(story.year));
+  const decade = decadeOf(story.year);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  const ids = { community: useId(), decade: useId(), newName: useId() };
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const ids = { community: useId(), newName: useId() };
+  const keepButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -179,55 +168,98 @@ export function CommunityView() {
       live = false;
     };
   }, [version]);
+  useEffect(() => {
+    if (confirmRemove) keepButton.current?.focus();
+  }, [confirmRemove]);
 
-  const decades = useMemo(() => {
-    const all = decadesFor(entries, eras, story.year);
-    return all.includes(decade) ? all : [...all, decade].sort((a, b) => a - b);
-  }, [entries, eras, story.year, decade]);
+  const decades = useMemo(() => decadesFor(entries, eras, story.year), [entries, eras, story.year]);
   const groups = useMemo(
     () => (chosen ? decadeGroups(entries, chosen.id, decade) : []),
     [entries, chosen, decade],
   );
-  const at = decades.indexOf(decade);
+  const mine = useMemo(
+    () => (chosen ? entries.filter((e) => e.communityId === chosen.id && !e.deletedAt) : []),
+    [entries, chosen],
+  );
 
-  const addCommunity = async (e: FormEvent) => {
+  const run = async (fn: () => Promise<void>) => {
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(plainError(err));
+    }
+  };
+
+  const addCommunity = (e: FormEvent) => {
     e.preventDefault();
     const label = newName.trim();
     if (!label) return;
-    setError(null);
-    try {
+    void run(async () => {
       const { item } = await call('lists.addItem', {
         listId: 'communities',
         label,
         parentId: null,
       });
-      undo.record(listAddCommand(call, communities?.label ?? 'Communities', 'communities', item));
+      undo.record(listAddCommand(call, listLabel, 'communities', item));
       setNewName('');
       setPicked(item.id);
-    } catch (err) {
-      setError(plainError(err));
-    }
+    });
   };
 
-  const saveNote = async (text: string) => {
-    if (!chosen) return;
-    setError(null);
-    const from = notes[chosen.id] ?? '';
-    try {
+  const renameCommunity = (next: string) =>
+    run(async () => {
+      if (!chosen) return;
+      const r = await call('lists.rename', {
+        listId: 'communities',
+        itemId: chosen.id,
+        label: next,
+      });
+      undo.record(
+        renameCommand(listLabel, 'communities', chosen.id, r.from, next.trim(), chosen.id),
+      );
+    });
+
+  /** A42: the community and every line of it go, as one undo step. */
+  const removeCommunity = () =>
+    run(async () => {
+      if (!chosen) return;
+      const lines = mine.map((e) => ({ id: e._id }));
+      for (const l of lines)
+        await call('entry.delete', { collection: 'culturalEntries', id: l.id });
+      await call('lists.removeItem', { listId: 'communities', itemId: chosen.id });
+      undo.record(
+        communityRemoveCommand(
+          call,
+          listLabel,
+          'communities',
+          { id: chosen.id, label: chosen.label, parentId: chosen.parentId },
+          lines,
+        ),
+      );
+      setConfirmRemove(false);
+      setPicked('');
+      setNotice(
+        lines.length === 0
+          ? `Removed ${chosen.label}. Cmd+Z brings it back.`
+          : `Removed ${chosen.label} and its ${lines.length === 1 ? 'line' : `${lines.length} lines`}. Cmd+Z brings them back.`,
+      );
+    });
+
+  const saveNote = (text: string) =>
+    run(async () => {
+      if (!chosen) return;
+      const from = notes[chosen.id] ?? '';
       const r = await call('community.notes.set', { communityId: chosen.id, text });
       setNotes(r.notes);
       if (from.trim() !== text.trim()) {
         undo.record(communityNoteCommand(call, chosen.label, chosen.id, from, text));
       }
-    } catch (err) {
-      setError(plainError(err));
-    }
-  };
+    });
 
-  const addLine = async (group: DecadeGroup<Entry>, title: string) => {
-    if (!chosen) return;
-    setError(null);
-    try {
+  const addLine = (group: DecadeGroup<Entry>, title: string) =>
+    run(async () => {
+      if (!chosen) return;
       const { entry } = await call('entry.create', {
         collection: 'culturalEntries',
         data: {
@@ -239,37 +271,26 @@ export function CommunityView() {
         },
       });
       undo.record(createCommand('culturalEntries', entry._id, entryTitle(entry)));
-    } catch (err) {
-      setError(plainError(err));
-    }
-  };
+    });
 
-  const edit = async (id: string, patch: Record<string, unknown>, label: string) => {
-    setError(null);
-    try {
+  const edit = (id: string, patch: Record<string, unknown>, label: string) =>
+    run(async () => {
       await updateWithUndo(undo, 'culturalEntries', id, patch, label);
-    } catch (err) {
-      setError(plainError(err));
-    }
-  };
+    });
 
-  const remove = async (e: Entry) => {
-    setError(null);
-    const title = entryTitle(e);
-    try {
+  const remove = (e: Entry) =>
+    run(async () => {
+      const title = entryTitle(e);
       await call('entry.delete', { collection: 'culturalEntries', id: e._id });
       undo.record(deleteCommand('culturalEntries', e._id, title));
       setNotice(`Removed ${title}. Cmd+Z brings it back.`);
-    } catch (err) {
-      setError(plainError(err));
-    }
-  };
+    });
 
   return (
     <section className="stack" aria-label="Communities" data-testid="culture-view">
       <p className="lede">
-        One community at a time: what it is like overall, then what its people do in each decade, by
-        age group. Edit any line where it sits; each change is one undo step.
+        What a community is like, and what its people do in the story year&apos;s decade, by age
+        group. Move the year at the top to see another decade.
       </p>
       <div className="tree-toolbar cu-toolbar">
         <div className="field">
@@ -277,7 +298,10 @@ export function CommunityView() {
           <select
             id={ids.community}
             value={chosen?.id ?? ''}
-            onChange={(e) => setPicked(e.target.value)}
+            onChange={(e) => {
+              setPicked(e.target.value);
+              setConfirmRemove(false);
+            }}
             disabled={items.length === 0}
           >
             {items.length === 0 && <option value="">No communities yet</option>}
@@ -288,7 +312,32 @@ export function CommunityView() {
             ))}
           </select>
         </div>
-        <form className="field cu-new-community" onSubmit={(e) => void addCommunity(e)}>
+        {chosen && (
+          <div className="row tight cu-manage" role="group" aria-label={`Manage ${chosen.label}`}>
+            <InlineName
+              key={chosen.id}
+              value={chosen.label}
+              label={`Name of ${chosen.label}`}
+              disabled={ro.off}
+              className="btn small"
+              testId="community-rename"
+              onSave={(next) => void renameCommunity(next)}
+            >
+              Rename
+            </InlineName>
+            <button
+              type="button"
+              className="btn small danger"
+              disabled={ro.off}
+              {...ro.tip}
+              data-testid="community-remove"
+              onClick={() => setConfirmRemove(true)}
+            >
+              Remove
+            </button>
+          </div>
+        )}
+        <form className="field cu-new-community" onSubmit={addCommunity}>
           <label htmlFor={ids.newName}>New community</label>
           <span className="row tight">
             <input
@@ -310,6 +359,44 @@ export function CommunityView() {
           </span>
         </form>
       </div>
+      {confirmRemove && chosen && (
+        <div
+          className="panel stack confirm"
+          role="dialog"
+          aria-label={`Remove ${chosen.label}`}
+          data-testid="community-confirm"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            setConfirmRemove(false);
+          }}
+        >
+          <strong>
+            {mine.length === 0
+              ? `Remove ${chosen.label}?`
+              : `Remove ${chosen.label} and its ${mine.length === 1 ? 'line' : `${mine.length} lines`}? They go to the trash.`}
+          </strong>
+          <p>Its description goes too. Undo brings everything back.</p>
+          <div className="row tight">
+            <button
+              ref={keepButton}
+              type="button"
+              className="btn small"
+              onClick={() => setConfirmRemove(false)}
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="btn small danger"
+              onClick={() => void removeCommunity()}
+            >
+              Remove {chosen.label}
+            </button>
+          </div>
+        </div>
+      )}
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -333,38 +420,6 @@ export function CommunityView() {
             disabled={ro.off}
             onSave={(text) => void saveNote(text)}
           />
-          <div className="row cu-decade" role="group" aria-label="Pick a decade">
-            <button
-              type="button"
-              className="btn small"
-              disabled={at <= 0}
-              onClick={() => setDecade(decades[at - 1] ?? decade)}
-            >
-              Earlier
-            </button>
-            <label htmlFor={ids.decade} className="cu-decade-label">
-              Decade
-            </label>
-            <select
-              id={ids.decade}
-              value={decade}
-              onChange={(e) => setDecade(Number(e.target.value))}
-            >
-              {decades.map((d) => (
-                <option key={d} value={d}>
-                  {decadeLabel(d)}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn small"
-              disabled={at < 0 || at >= decades.length - 1}
-              onClick={() => setDecade(decades[at + 1] ?? decade)}
-            >
-              Later
-            </button>
-          </div>
           <h3 data-testid="culture-heading">
             {chosen.label} in the {decadeLabel(decade)}
           </h3>
@@ -384,6 +439,7 @@ export function CommunityView() {
                         key={e._id}
                         entry={e}
                         decade={decade}
+                        decades={decades}
                         disabled={ro.off}
                         onEdit={(patch, label) => void edit(e._id, patch, label)}
                         onRemove={() => void remove(e)}
@@ -432,7 +488,7 @@ function CommunityNote(props: {
       <label htmlFor={id}>About {props.community}</label>
       <textarea
         id={id}
-        rows={4}
+        rows={3}
         value={draft}
         disabled={props.disabled}
         placeholder="What this community is like overall: who belongs, what they value, how it changes."
@@ -494,25 +550,23 @@ function AddLine(props: {
 }
 
 /**
- * A41: one cultural line. The text edits in place; Details opens its years
- * and a note; Remove moves it to the trash (undo brings it back).
+ * A42: one cultural line. The text and its note edit directly and save when
+ * the field is left; the age group and the decade are selects at the end of
+ * the row; Remove moves it to the trash (undo brings it back).
  */
 function LineRow(props: {
   entry: Entry;
   decade: number;
+  decades: readonly number[];
   disabled: boolean;
   onEdit: (patch: Record<string, unknown>, label: string) => void;
   onRemove: () => void;
 }) {
   const { entry: e } = props;
   const title = entryTitle(e);
-  const ids = { start: useId(), end: useId(), note: useId() };
-  type Key = 'start' | 'end' | 'note';
-  const stored: Record<Key, string> = {
-    start: String(e.startYear ?? ''),
-    end: String(e.endYear ?? ''),
-    note: String(e.body ?? ''),
-  };
+  const ids = { text: useId(), group: useId(), decade: useId(), note: useId() };
+  type Key = 'text' | 'note';
+  const stored: Record<Key, string> = { text: title, note: String(e.body ?? '') };
   const [draft, setDraft] = useState(stored);
   const [dirty, setDirty] = useState<ReadonlySet<Key>>(new Set());
   const storedKey = JSON.stringify(stored);
@@ -530,103 +584,86 @@ function LineRow(props: {
     setDirty((prev) => new Set(prev).add(key));
     setDraft((d) => ({ ...d, [key]: value }));
   };
-  const commit = (key: Key) => {
+  const undirty = (key: Key) =>
     setDirty((prev) => {
       const next = new Set(prev);
       next.delete(key);
       return next;
     });
+  const commit = (key: Key) => {
+    undirty(key);
     const v = draft[key];
-    if (key === 'start' || key === 'end') {
-      const field = key === 'start' ? 'startYear' : 'endYear';
-      const n = v.trim() === '' ? null : yearOf(v);
-      if (v.trim() !== '' && n === null) {
-        setDraft((d) => ({ ...d, [key]: String(e[field] ?? '') }));
-      } else if (n !== (e[field] ?? null)) {
-        props.onEdit({ [field]: n }, key === 'start' ? 'Applies from' : 'Applies to');
-      }
-    } else if (v !== String(e.body ?? '')) props.onEdit({ body: v }, 'Note');
-  };
-  const enterCommits = (key: Key) => (ev: ReactKeyboardEvent) => {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      commit(key);
-    } else if (ev.key === 'Escape') {
-      ev.preventDefault();
-      setDirty((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      setDraft((d) => ({ ...d, [key]: stored[key] }));
-    }
+    if (key === 'text') {
+      if (v.trim() && v.trim() !== title) props.onEdit({ title: v.trim() }, 'Text');
+      else setDraft((d) => ({ ...d, text: title }));
+    } else if (v !== stored.note) props.onEdit({ body: v }, 'Note');
   };
   const span = spanInDecade(e, props.decade);
-  const hasNote = typeof e.body === 'string' && e.body.trim() !== '';
+  const hasNote = stored.note.trim() !== '';
+  const lineDecade = typeof e.startYear === 'number' ? decadeOf(e.startYear) : props.decade;
+  const decadeOptions = props.decades.includes(lineDecade)
+    ? props.decades
+    : [...props.decades, lineDecade].sort((a, b) => a - b);
+  const group = typeof e.demographic === 'string' ? e.demographic : 'all';
   return (
-    <li className="cu-line" data-id={e._id} data-demographic={e.demographic ?? 'all'}>
+    <li className="cu-line" data-id={e._id} data-demographic={group}>
       <div className="row tight cu-line-head">
-        <InlineName
-          value={title}
-          label={`Text of ${title}`}
-          disabled={props.disabled}
+        <input
+          id={ids.text}
           className="cu-line-text"
-          testId="line-text"
-          onSave={(next) => props.onEdit({ title: next }, 'Text')}
-        >
-          <Zh text={title} actions={false} />
-        </InlineName>
+          aria-label={`Text of ${title}`}
+          value={draft.text}
+          maxLength={500}
+          disabled={props.disabled}
+          data-testid="line-text"
+          onChange={(ev) => set('text', ev.target.value)}
+          onBlur={() => commit('text')}
+          onKeyDown={(ev) => {
+            if (ev.key === 'Enter') {
+              ev.preventDefault();
+              commit('text');
+            } else if (ev.key === 'Escape') {
+              ev.preventDefault();
+              undirty('text');
+              setDraft((d) => ({ ...d, text: title }));
+            }
+          }}
+        />
         {span && (
           <span className="chip time" data-testid="line-span">
             {span}
           </span>
         )}
-        <details className="cu-details">
-          <summary className="btn small" aria-label={`Details of ${title}`}>
-            Details
-          </summary>
-          <div className="stack tight cu-details-body">
-            <div className="row">
-              <div className="field year-field">
-                <label htmlFor={ids.start}>Applies from</label>
-                <input
-                  id={ids.start}
-                  className="num"
-                  inputMode="numeric"
-                  value={draft.start}
-                  disabled={props.disabled}
-                  onChange={(ev) => set('start', ev.target.value)}
-                  onBlur={() => commit('start')}
-                  onKeyDown={enterCommits('start')}
-                />
-              </div>
-              <div className="field year-field">
-                <label htmlFor={ids.end}>Applies to</label>
-                <input
-                  id={ids.end}
-                  className="num"
-                  inputMode="numeric"
-                  value={draft.end}
-                  disabled={props.disabled}
-                  onChange={(ev) => set('end', ev.target.value)}
-                  onBlur={() => commit('end')}
-                  onKeyDown={enterCommits('end')}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor={ids.note}>Note</label>
-              <textarea
-                id={ids.note}
-                rows={3}
-                value={draft.note}
-                disabled={props.disabled}
-                onChange={(ev) => set('note', ev.target.value)}
-                onBlur={() => commit('note')}
-              />
-            </div>
-          </div>
-        </details>
+        <select
+          id={ids.group}
+          className="cu-line-select"
+          aria-label={`Age group of ${title}`}
+          value={group}
+          disabled={props.disabled}
+          data-testid="line-group"
+          onChange={(ev) => props.onEdit({ demographic: ev.target.value }, 'Age group')}
+        >
+          {DEMOGRAPHIC_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          id={ids.decade}
+          className="cu-line-select"
+          aria-label={`Decade of ${title}`}
+          value={lineDecade}
+          disabled={props.disabled}
+          data-testid="line-decade"
+          onChange={(ev) => props.onEdit(decadeSpan(Number(ev.target.value)), 'Decade')}
+        >
+          {decadeOptions.map((d) => (
+            <option key={d} value={d}>
+              {decadeLabel(d)}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           className="btn small danger"
@@ -638,9 +675,17 @@ function LineRow(props: {
         </button>
       </div>
       {hasNote && (
-        <p className="cu-note" data-testid="line-note">
-          <Zh text={String(e.body)} />
-        </p>
+        <textarea
+          id={ids.note}
+          className="cu-note"
+          aria-label={`Note on ${title}`}
+          rows={2}
+          value={draft.note}
+          disabled={props.disabled}
+          data-testid="line-note"
+          onChange={(ev) => set('note', ev.target.value)}
+          onBlur={() => commit('note')}
+        />
       )}
     </li>
   );

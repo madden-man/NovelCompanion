@@ -434,7 +434,7 @@ test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and g
   // The description, then a line under an age group, each by keyboard (A41).
   await tabTo(culture.getByLabel('About Portland'));
   await page.keyboard.type('Rain and bridges.');
-  await tabTo(culture.getByLabel('Decade', { exact: true }));
+  await tabTo(culture.getByLabel(/^New line for everyone/));
   await expect
     .poll(async () => (await invoke('community.notes.get', {})).notes.portland)
     .toBe('Rain and bridges.');

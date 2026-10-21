@@ -796,6 +796,8 @@ export class Repository {
     listId: string,
     label: string,
     parentId: string | null = null,
+    /** The ID to use when it is free (an undo putting an item back); otherwise one is made from the label. */
+    wantedId?: string,
   ): Promise<ListItem> {
     if (isDerived(listId) || FIXED_ITEM_LISTS.includes(listId)) {
       throw new RepositoryError('Items in this list come from the entries themselves.');
@@ -809,7 +811,9 @@ export class Repository {
     if (parentId && !list.items.some((i) => i.id === parentId)) {
       throw new RepositoryError('The parent item is not in this list.');
     }
-    const item: ListItem = { id: newItemId(list, name), label: name, parentId };
+    const id =
+      wantedId && !list.items.some((i) => i.id === wantedId) ? wantedId : newItemId(list, name);
+    const item: ListItem = { id, label: name, parentId };
     await this.commit([], undefined, [{ ...list, items: [...list.items, item] }]);
     return item;
   }

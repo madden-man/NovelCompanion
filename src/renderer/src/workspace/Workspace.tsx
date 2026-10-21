@@ -26,6 +26,7 @@ import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import type { CultureTab } from './culture';
+import { WritingToolsScreen } from './words';
 import { ImportView } from './importer';
 import { BackupsView } from './backups';
 import { DriveLaunchNotice, DriveView } from './drive';
@@ -63,6 +64,8 @@ type View =
     }
   /** SM-11: cultural entries by community, and the era states. */
   | { kind: 'culture'; tab: CultureTab }
+  /** A42, WT-1: synonyms, rhymes and related words. */
+  | { kind: 'words' }
   /** SM-10: Relevant to Session, from the top bar. */
   | { kind: 'relevant' }
   | { kind: 'trash' }
@@ -205,6 +208,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Cultural data', view.kind === 'culture', () =>
               setView({ kind: 'culture', tab: 'communities' }),
             )}
+            {railButton('Writing tools', view.kind === 'words', () => setView({ kind: 'words' }))}
           </div>
           <AppMenu
             groups={APP_MENU.map((g) => ({
@@ -295,6 +299,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           />
         ) : view.kind === 'culture' ? (
           <CulturalDataView tab={view.tab} onTab={(tab) => setView({ kind: 'culture', tab })} />
+        ) : view.kind === 'words' ? (
+          <WritingToolsScreen />
         ) : view.kind === 'places' || view.kind === 'romanization' || view.kind === 'glossary' ? (
           <ReferenceScreen key={view.kind} kind={view.kind} />
         ) : (

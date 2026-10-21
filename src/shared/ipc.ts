@@ -749,6 +749,8 @@ export const contract = {
       listId: ListIdParam,
       label: z.string().trim().min(1, 'A list item needs a name.').max(200),
       parentId: z.string().min(1).nullable().default(null),
+      /** ED-3: an undo step puts an item back under the ID the entries still hold, when that ID is free. */
+      id: z.string().min(1).max(64).optional(),
     }),
     response: z.strictObject({
       item: z.strictObject({ id: z.string(), label: z.string(), parentId: z.string().nullable() }),

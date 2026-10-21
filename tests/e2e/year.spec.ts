@@ -6,7 +6,7 @@ import { APP_MENU_ITEMS, RAIL_SCREENS, fileDb, invokeVia, launch, rail } from '.
 import type { TestDb } from './helpers';
 
 /**
- * SM-6 the eight-screen rail with the App menu at its foot (KB-1's five
+ * SM-6 the nine-screen rail with the App menu at its foot (KB-1's five
  * screens and More are withdrawn by it); KB-2 the Story Time dialog as the
  * year view, with Compare and Lived through inside it; KB-8 the new parts by
  * keyboard. The TL-2, TL-5 and TL-7 rows that used to open the Year view and
@@ -91,6 +91,7 @@ const SCREEN_SHOWS: Record<(typeof RAIL_SCREENS)[number], () => Locator> = {
   'Continuity checker': () => page.getByTestId('continuity-view'),
   Sessions: () => page.getByTestId('sessions-view'),
   'Cultural data': () => page.getByTestId('cultural-data'),
+  'Writing tools': () => page.getByTestId('writing-tools-screen'),
 };
 
 /** What each App menu item shows when it opens. */
@@ -109,13 +110,13 @@ const MENU_SHOWS: Record<(typeof APP_MENU_ITEMS)[number], () => Locator> = {
   'Glossary table': () => page.getByTestId('glossary-table'),
 };
 
-test('SM-6 the rail is the eight screens in order under the search box, with no More, and the app opens on Sessions', async () => {
+test('SM-6 the rail is the nine screens in order under the search box, with no More, and the app opens on Sessions', async () => {
   // DB-1 SM-11: the app opens on Sessions, which holds what the dashboard held.
   await expect(page.getByTestId('sessions-view')).toBeVisible();
   await expect(page.getByTestId('dashboard')).toBeVisible();
   await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
   await expect(nav().getByTestId('rail-main').getByRole('button')).toHaveText([...RAIL_SCREENS]);
-  // The search box sits above the eight.
+  // The search box sits above the nine.
   const search = nav().getByRole('searchbox', { name: 'Search the bible' });
   await expect(search).toBeVisible();
   expect(
@@ -130,7 +131,7 @@ test('SM-6 the rail is the eight screens in order under the search box, with no 
   expect(await page.evaluate((id) => localStorage.getItem(`nc.rail.more.${id}`), bibleId)).toBe(
     null,
   );
-  // Only the eight and the App button are visible in the rail; the menu is closed.
+  // Only the nine and the App button are visible in the rail; the menu is closed.
   await expect(nav().getByRole('button')).toHaveText([...RAIL_SCREENS, 'App']);
   await expect(appButton()).toHaveAttribute('aria-expanded', 'false');
   await expect(appMenu()).toBeHidden();
@@ -154,7 +155,7 @@ test('SM-6 the rail is the eight screens in order under the search box, with no 
   }
 });
 
-test('SM-6 each of the eight screens opens from its rail button', async () => {
+test('SM-6 each of the nine screens opens from its rail button', async () => {
   for (const screen of RAIL_SCREENS) {
     await rail(page, screen).click();
     await expect(rail(page, screen)).toHaveAttribute('aria-current', 'page');
@@ -165,7 +166,7 @@ test('SM-6 each of the eight screens opens from its rail button', async () => {
   await expect(rail(page, 'World events')).toHaveAttribute('aria-current', 'page');
   // A name the rail does not have fails at once, naming the valid ones, instead of timing out.
   expect(() => rail(page, 'Dashboard')).toThrow(
-    /"Dashboard" is not in the rail\. The rail screens are Characters, Family tree, Outline, World events, Backstory, Continuity checker, Sessions, Cultural data \("Timeline" still names World events\)/,
+    /"Dashboard" is not in the rail\. The rail screens are Characters, Family tree, Outline, World events, Backstory, Continuity checker, Sessions, Cultural data, Writing tools \("Timeline" still names World events\)/,
   );
 });
 

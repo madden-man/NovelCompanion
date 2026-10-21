@@ -40,9 +40,16 @@
   scrollbar-gutter: stable;
 }
 
-/* A41: one community, its description, and its lines by decade and age group. */
+/* A41, A42: one community, its description, and its lines by age group for the story year's decade. */
 .cu-toolbar {
   align-items: flex-end;
+}
+.cu-manage {
+  align-items: center;
+  padding-bottom: 2px;
+}
+.cu-manage .ol-rename {
+  min-width: 12em;
 }
 .cu-new-community .row {
   align-items: center;
@@ -50,12 +57,6 @@
 .cu-about textarea {
   width: 100%;
   resize: vertical;
-}
-.cu-decade {
-  align-items: center;
-}
-.cu-decade-label {
-  color: var(--fg);
 }
 .cu-groups {
   gap: 12px;
@@ -81,27 +82,21 @@
 .cu-line-head {
   align-items: center;
 }
-.cu-details {
-  position: relative;
+.cu-line-text {
+  flex: 1 1 240px;
+  min-width: 160px;
 }
-.cu-details summary {
-  list-style: none;
-  cursor: pointer;
+.cu-line-select {
+  flex: 0 0 auto;
 }
-.cu-details summary::-webkit-details-marker {
-  display: none;
-}
-.cu-details-body {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  min-width: min(100%, 420px);
-}
-.cu-details-body textarea {
+.cu-note {
+  display: block;
   width: 100%;
+  margin: 4px 0 2px;
   resize: vertical;
+  field-sizing: content;
+  min-height: 2.6em;
+  color: var(--fg);
 }
 .cu-add input {
   flex: 1 1 240px;
@@ -113,20 +108,4 @@
     flex-direction: column;
     align-items: stretch;
   }
-}
-.cu-line-text {
-  flex: 1 1 240px;
-  min-width: 160px;
-  text-align: left;
-  white-space: normal;
-}
-.cu-line .ol-rename {
-  flex: 1 1 240px;
-  min-width: 160px;
-}
-.cu-note {
-  margin: 2px 0 4px;
-  padding-left: 10px;
-  color: var(--fg-2);
-  white-space: pre-wrap;
 }

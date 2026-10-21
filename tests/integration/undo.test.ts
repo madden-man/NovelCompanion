@@ -14,6 +14,7 @@ import { undoIO } from '../../src/shared/undoIO';
 import {
   briefSettingsCommand,
   communityNoteCommand,
+  communityRemoveCommand,
   listAddCommand,
   listRemoveCommand,
   romanizationCommand,
@@ -288,6 +289,64 @@ describe('ED-3 undo and redo of the writes that are not entries: tree positions,
       }),
     );
     expect(await systemOf()).toBe(null);
+  });
+
+  test('ED-3 A42 removing a community with its lines undoes to the list and the lines, and redoes', async () => {
+    const invoke = ipcFor(() => bible);
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const { item } = await invoke('lists.addItem', {
+      listId: 'communities',
+      label: 'Jinan',
+      parentId: null,
+    });
+    const lines: { id: string }[] = [];
+    for (const title of ['Spring stream shrines', 'Night noodle stalls']) {
+      const { entry } = await invoke('entry.create', {
+        collection: 'culturalEntries',
+        data: { title, status: 'idea', communityId: item.id, startYear: 2040, endYear: 2049 },
+      });
+      lines.push({ id: entry._id });
+    }
+    const inList = async () =>
+      (await invoke('lists.get', {})).lists
+        .find((l) => l._id === 'communities')!
+        .items.some((i) => i.id === item.id);
+    const trashed = async () =>
+      Promise.all(
+        lines.map(async (l) => Boolean((await stored('culturalEntries', l.id))?.inTrash)),
+      );
+    // Renamed first, so the ID the lines hold no longer matches the label; undo must keep the ID.
+    await invoke('lists.rename', {
+      listId: 'communities',
+      itemId: item.id,
+      label: 'Jinan, Shandong',
+    });
+    const renamed = { ...item, label: 'Jinan, Shandong' };
+    // The screen trashes the lines, then takes the item out, then records the step.
+    for (const l of lines)
+      await invoke('entry.delete', { collection: 'culturalEntries', id: l.id });
+    await invoke('lists.removeItem', { listId: 'communities', itemId: item.id });
+    undo.record(communityRemoveCommand(invoke, 'Communities', 'communities', renamed, lines));
+    expect(await inList()).toBe(false);
+    expect(await trashed()).toEqual([true, true]);
+    expect(await undo.step('undo', io)).toEqual({
+      status: 'applied',
+      label: 'Removed Jinan, Shandong and its 2 lines',
+    });
+    expect(await inList()).toBe(true);
+    expect(
+      (await invoke('lists.get', {})).lists
+        .find((l) => l._id === 'communities')!
+        .items.find((i) => i.id === item.id)?.label,
+    ).toBe('Jinan, Shandong');
+    expect(await trashed()).toEqual([false, false]);
+    expect((await undo.step('redo', io)).status).toBe('applied');
+    expect(await inList()).toBe(false);
+    expect(await trashed()).toEqual([true, true]);
+    // A line restored by hand since: the undo would re-trash nothing, but the restore step cannot apply, so it is skipped.
+    await invoke('entry.restore', { collection: 'culturalEntries', id: lines[0]!.id });
+    expect((await undo.step('undo', io)).status).toBe('skipped');
   });
 
   test('ED-3 A41 a community description undoes and redoes, and a description written since is left alone', async () => {

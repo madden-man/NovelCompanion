@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { KINDS, kindInfo, posText } from '../../../shared/domain/words';
 import type { WordKind, WordResult } from '../../../shared/domain/words';
 import { call, plainError } from '../api';
+import { InspectorAside } from './inspector';
 import './words.css';
 
 type Shown = { kind: WordKind; word: string; results: WordResult[] };
@@ -192,5 +193,24 @@ function Definitions(props: { results: WordResult[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** A42, SM-6: Writing tools as its own screen in the rail. Lookups change nothing in the bible. */
+export function WritingToolsScreen() {
+  return (
+    <>
+      <div className="ws-wide-area" data-testid="writing-tools-screen">
+        <div className="ws-wide stack">
+          <h2>Writing tools</h2>
+          <WritingToolsView />
+        </div>
+      </div>
+      <InspectorAside
+        open={null}
+        onClose={() => undefined}
+        hint="Lookups change nothing in the bible."
+      />
+    </>
   );
 }

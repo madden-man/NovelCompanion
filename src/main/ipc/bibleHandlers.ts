@@ -606,8 +606,8 @@ export function bibleHandlers(
     'lists.get': () => ({ lists: session().repo.lists() }),
     'lists.rename': ({ listId, itemId, label }) =>
       session().repo.renameListItem(listId, itemId, label),
-    'lists.addItem': async ({ listId, label, parentId }) => ({
-      item: await session().repo.addListItem(listId, label, parentId),
+    'lists.addItem': async ({ listId, label, parentId, id }) => ({
+      item: await session().repo.addListItem(listId, label, parentId, id),
     }),
     'lists.removeItem': async ({ listId, itemId }) => {
       await session().repo.removeListItem(listId, itemId);

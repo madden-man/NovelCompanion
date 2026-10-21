@@ -116,7 +116,12 @@ function addItemOp(invoke: Invoke, listLabel: string, listId: string, item: List
         ? `${item.label} is already in ${listLabel}`
         : null,
     apply: async () => {
-      await invoke('lists.addItem', { listId, label: item.label, parentId: item.parentId });
+      await invoke('lists.addItem', {
+        listId,
+        label: item.label,
+        parentId: item.parentId,
+        id: item.id,
+      });
     },
   };
 }
@@ -249,5 +254,38 @@ export function communityNoteCommand(
     label: `Changed the description of ${communityLabel}`,
     undo: [settingOp(read, same, to, write, from, changed)],
     redo: [settingOp(read, same, from, write, to, changed)],
+  };
+}
+
+/**
+ * A41, A42: a community removed with its lines, as one step. Undo puts the
+ * community back in the list and restores every line from the trash; redo
+ * trashes the lines again and takes the community out.
+ */
+export function communityRemoveCommand(
+  invoke: Invoke,
+  listLabel: string,
+  listId: string,
+  item: ListItemRef,
+  lines: readonly { id: string }[],
+): UndoCommand {
+  const n = lines.length;
+  const restore: Op[] = lines.map((l) => ({
+    kind: 'restore',
+    collection: 'culturalEntries',
+    id: l.id,
+  }));
+  const trash: Op[] = lines.map((l) => ({
+    kind: 'delete',
+    collection: 'culturalEntries',
+    id: l.id,
+  }));
+  return {
+    label:
+      n === 0
+        ? `Removed ${item.label} from ${listLabel}`
+        : `Removed ${item.label} and its ${n === 1 ? 'line' : `${n} lines`}`,
+    undo: [addItemOp(invoke, listLabel, listId, item), ...restore],
+    redo: [...trash, removeItemOp(invoke, listLabel, listId, item)],
   };
 }

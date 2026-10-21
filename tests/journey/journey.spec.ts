@@ -651,17 +651,19 @@ test('KB-3 SM-7 A40 the outline inspector opens from a bar with the title, year 
   ).toContainText('Portland');
 });
 
-test('CU-2 A41 Cultural data lists what applies to Guangzhou in the 2020s, by age group', async () => {
+test("CU-2 A42 Cultural data lists what applies to Guangzhou in the story year's decade, by age group", async () => {
   await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
   await view.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
-  await view.getByLabel('Decade', { exact: true }).selectOption('2020');
+  const was = (await invoke('storyTime.get', {})).time;
+  await invoke('storyTime.set', { time: { year: 2025 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
-  await expect(view.locator('.cu-line[data-id="CU1"]').getByTestId('line-note')).toContainText(
-    'lotus seed mooncakes',
+  await expect(view.locator('.cu-line[data-id="CU1"]').getByTestId('line-note')).toHaveValue(
+    /lotus seed mooncakes/,
   );
-  await view.getByLabel('Decade', { exact: true }).selectOption('1970');
+  await invoke('storyTime.set', { time: { year: 1975 } });
   await expect(view.locator('.cu-line')).toHaveCount(0);
+  await invoke('storyTime.set', { time: was });
 });
 
 test('PC-1 the place tree nests the Hale house inside Portland', async () => {

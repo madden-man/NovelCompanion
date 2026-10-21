@@ -109,7 +109,7 @@ const RAIL_ACTIONS = new Set([
   'waitFor',
 ]);
 
-/** SM-6: the eight screens of the rail, in order. */
+/** SM-6: the nine screens of the rail, in order (A42 added Writing tools). */
 export const RAIL_SCREENS = [
   'Characters',
   'Family tree',
@@ -119,6 +119,7 @@ export const RAIL_SCREENS = [
   'Continuity checker',
   'Sessions',
   'Cultural data',
+  'Writing tools',
 ] as const;
 
 /** SM-6: the App menu's items: the nine utilities, then the reference views. */
@@ -141,7 +142,7 @@ export const APP_MENU_ITEMS = [
 const ALIASES: Record<string, string> = { Timeline: 'World events' };
 
 /**
- * A screen in the rail (SM-6), by its name: one of the eight buttons, or an
+ * A screen in the rail (SM-6), by its name: one of the nine buttons, or an
  * item of the App menu at the rail's foot. Acting on an App menu item (click,
  * focus, press, and the like) opens the menu first. The locator matches the
  * hidden items of a closed menu too, so `count()` and attribute checks work

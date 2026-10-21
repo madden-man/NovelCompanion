@@ -72,6 +72,8 @@ export function countListUsage(
   let n = 0;
   for (const { manifest, docs } of all) {
     for (const doc of docs) {
+      // A42: an entry in the trash does not hold the item; restoring it warns of the missing item (ED-10).
+      if (doc.deletedAt) continue;
       let used = false;
       visitAll(manifest, doc, (s, v) => {
         if (usesItem(s, v, listId, item)) used = true;

@@ -248,7 +248,7 @@ const group = (demographic: string) =>
 const lineOf = (id: string) => culture().locator(`.cu-line[data-id="${id}"]`);
 const notesOf = async () => (await invoke('community.notes.get', {})).notes;
 
-test('CU-1 A41 SM-11 Cultural data shows one community at a time: its description, its lines for a decade by age group, and the decade moves', async () => {
+test("CU-1 A42 SM-11 Cultural data shows one community for the story year's decade, by age group, and the top-bar year moves the decade", async () => {
   await invoke('storyTime.set', { time: { year: 2030 } });
   await expect(page.getByTestId('status-time')).toContainText('Story time 2030');
   await rail(page, 'Cultural data').click();
@@ -256,9 +256,9 @@ test('CU-1 A41 SM-11 Cultural data shows one community at a time: its descriptio
     'aria-selected',
     'true',
   );
+  await expect(page.getByRole('tab', { name: 'Writing tools' })).toHaveCount(0);
   // The first community opens on the story year's decade.
   await expect(culture().getByLabel('Community', { exact: true })).toHaveValue('portland');
-  await expect(culture().getByLabel('Decade', { exact: true })).toHaveValue('2030');
   await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2030s');
   // Every age group has a place, everyone first; both Portland lines touch the 2030s.
   await expect(culture().locator('section[data-demographic] h4')).toHaveText([
@@ -270,13 +270,16 @@ test('CU-1 A41 SM-11 Cultural data shows one community at a time: its descriptio
     'Ages 70 and over',
   ]);
   await expect(group('all').locator('.cu-line')).toHaveCount(2);
-  await expect(lineOf('CU3')).toContainText('Sunday ferry picnics');
+  await expect(lineOf('CU3').getByTestId('line-text')).toHaveValue('Sunday ferry picnics');
   await expect(lineOf('CU3').getByTestId('line-span')).toHaveText('2000 to 2034');
   await expect(lineOf('CU4').getByTestId('line-span')).toHaveText('2035 to 2100');
-  await expect(lineOf('CU3').getByTestId('line-note')).toContainText('ride the river ferry');
-  // Later: the 2040s hold only the walk.
-  await culture().getByRole('button', { name: 'Later' }).click();
-  await expect(culture().getByLabel('Decade', { exact: true })).toHaveValue('2040');
+  await expect(lineOf('CU3').getByTestId('line-note')).toHaveValue(/ride the river ferry/);
+  await expect(lineOf('CU3').getByTestId('line-group')).toHaveValue('all');
+  await expect(lineOf('CU3').getByTestId('line-decade')).toHaveValue('2000');
+  // No decade picker: the year at the top moves the decade.
+  await expect(culture().getByLabel('Decade', { exact: true })).toHaveCount(0);
+  await invoke('storyTime.set', { time: { year: 2047 } });
+  await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2040s');
   await expect(group('all').locator('.cu-line')).toHaveCount(1);
   await expect(lineOf('CU4')).toBeVisible();
   // Guangzhou in the 2040s: the planned mooncakes, not the canon ones.
@@ -286,7 +289,7 @@ test('CU-1 A41 SM-11 Cultural data shows one community at a time: its descriptio
   await expect(lineOf('CU1')).toHaveCount(0);
   // The description saves when the field is left, and one Undo takes it back (ED-3).
   await culture().getByLabel('About Guangzhou').fill('River city; the Lis came from here.');
-  await culture().getByLabel('Decade', { exact: true }).focus();
+  await culture().getByLabel('Community', { exact: true }).focus();
   await expect
     .poll(async () => (await notesOf()).guangzhou)
     .toBe('River city; the Lis came from here.');
@@ -295,9 +298,9 @@ test('CU-1 A41 SM-11 Cultural data shows one community at a time: its descriptio
   await expect(culture().getByLabel('About Guangzhou')).toHaveValue('');
 });
 
-test('CU-1 A41 ED-3 a line is added under an age group with Enter, renamed in place, given years and a note in Details, and removed, each one undo step', async () => {
+test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited directly, moved by its age group and decade selects, given a note, and removed, each one undo step', async () => {
   await culture().getByLabel('Community', { exact: true }).selectOption({ label: 'Portland' });
-  await culture().getByLabel('Decade', { exact: true }).selectOption('2040');
+  await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2040s');
   const add = group('18-30').getByLabel('New line for ages 18 to 30 in the 2040s');
   await add.fill('Apprenticeships at the shipyard');
   await add.press('Enter');
@@ -315,56 +318,109 @@ test('CU-1 A41 ED-3 a line is added under an age group with Enter, renamed in pl
   const id = (await made())!._id;
   const entry = async () =>
     (await invoke('entry.get', { collection: 'culturalEntries', id })).entry;
-  const line = lineOf(id);
-  await expect(line).toBeVisible();
-  await expect(line.getByTestId('line-span')).toHaveCount(0);
+  const line = () => lineOf(id);
+  await expect(line()).toBeVisible();
+  await expect(line().getByTestId('line-span')).toHaveCount(0);
+  await expect(line().getByTestId('line-note')).toHaveCount(0);
   await expect(add).toHaveValue('');
-  // Renamed in place.
-  await line.getByTestId('line-text').click();
-  await line.getByLabel('Text of Apprenticeships at the shipyard').fill('Shipyard apprenticeships');
-  await page.keyboard.press('Enter');
+  // The text is a field: type and press Enter.
+  await line().getByTestId('line-text').fill('Shipyard apprenticeships');
+  await line().getByTestId('line-text').press('Enter');
   await expect.poll(async () => (await entry()).title).toBe('Shipyard apprenticeships');
-  // Details: the years and a note.
-  await line.getByLabel('Details of Shipyard apprenticeships').click();
-  await line.getByLabel('Applies to').fill('2060');
-  await line.getByLabel('Applies to').press('Enter');
-  await expect(line.getByTestId('line-span')).toHaveText('2040 to 2060');
-  await line.getByLabel('Note').fill('Union jobs for the first time since the flood.');
-  await line.getByLabel('Applies from').focus();
-  await expect(line.getByTestId('line-note')).toContainText('Union jobs');
+  // The age group select moves it to another group.
+  await line().getByTestId('line-group').selectOption('30-50');
+  await expect(group('30-50').locator(`.cu-line[data-id="${id}"]`)).toBeVisible();
+  await expect(group('18-30').locator(`.cu-line[data-id="${id}"]`)).toHaveCount(0);
+  await expect.poll(async () => (await entry()).demographic).toBe('30-50');
+  // The decade select moves it out of this decade entirely.
+  await line().getByTestId('line-decade').selectOption('2050');
+  await expect.poll(entry).toMatchObject({ startYear: 2050, endYear: 2059 });
+  await expect(line()).toHaveCount(0);
+  await invoke('storyTime.set', { time: { year: 2055 } });
+  await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2050s');
+  await expect(line()).toBeVisible();
+  await expect(line().getByTestId('line-span')).toHaveCount(0);
+  // A note written through the write path shows as a field and edits directly.
+  await invoke('entry.update', {
+    collection: 'culturalEntries',
+    id,
+    patch: { body: 'Union jobs.' },
+  });
+  await expect(line().getByTestId('line-note')).toHaveValue('Union jobs.');
+  await line().getByTestId('line-note').fill('Union jobs for the first time since the flood.');
+  await line().getByTestId('line-text').focus();
   await expect
-    .poll(entry)
-    .toMatchObject({ endYear: 2060, body: 'Union jobs for the first time since the flood.' });
-  // It now touches the 2050s too.
-  await culture().getByRole('button', { name: 'Later' }).click();
-  await expect(lineOf(id)).toBeVisible();
-  await culture().getByRole('button', { name: 'Earlier' }).click();
+    .poll(async () => (await entry()).body)
+    .toBe('Union jobs for the first time since the flood.');
   // Remove moves it to the trash; Cmd+Z brings it back.
-  await lineOf(id).getByRole('button', { name: 'Remove Shipyard apprenticeships' }).click();
-  await expect(lineOf(id)).toHaveCount(0);
+  await line().getByRole('button', { name: 'Remove Shipyard apprenticeships' }).click();
+  await expect(line()).toHaveCount(0);
   await expect(culture().getByTestId('culture-notice')).toContainText(
     'Removed Shipyard apprenticeships',
   );
   await page.keyboard.press('Meta+z');
-  await expect(lineOf(id)).toBeVisible();
-  // Then the note, the end year, the rename, and the add itself, one step each.
+  await expect(line()).toBeVisible();
+  // Then the note edit, the decade, the age group, the rename, and the add itself, one step each.
   await page.keyboard.press('Meta+z');
-  await expect.poll(async () => (await entry()).body).toBe('');
+  await expect.poll(async () => (await entry()).body).toBe('Union jobs.');
   await page.keyboard.press('Meta+z');
-  await expect(lineOf(id).getByTestId('line-span')).toHaveCount(0);
+  await expect.poll(async () => (await entry()).startYear).toBe(2040);
+  await invoke('storyTime.set', { time: { year: 2047 } });
+  await expect(line()).toBeVisible();
   await page.keyboard.press('Meta+z');
-  await expect(lineOf(id)).toContainText('Apprenticeships at the shipyard');
+  await expect(group('18-30').locator(`.cu-line[data-id="${id}"]`)).toBeVisible();
   await page.keyboard.press('Meta+z');
-  await expect(lineOf(id)).toHaveCount(0);
+  await expect(line().getByTestId('line-text')).toHaveValue('Apprenticeships at the shipyard');
+  await page.keyboard.press('Meta+z');
+  await expect(line()).toHaveCount(0);
 });
 
-test('A41 a new community is added on the screen and picked at once', async () => {
+test('A42 a community is added, renamed, and removed with its lines, and Undo brings them back', async () => {
   await culture().getByLabel('New community').fill('San Francisco');
   await culture().getByRole('button', { name: 'Add community' }).click();
   await expect(culture().getByLabel('Community', { exact: true })).toHaveValue('san-francisco');
   await expect(culture().getByTestId('culture-heading')).toContainText('San Francisco in the');
   await expect(culture().getByLabel('About San Francisco')).toBeVisible();
-  await expect(group('70+').locator('.cu-line')).toHaveCount(0);
+  // Rename in place; the select follows.
+  await culture().getByTestId('community-rename').click();
+  await culture().getByLabel('Name of San Francisco').fill('SF Bay');
+  await page.keyboard.press('Enter');
+  await expect(culture().getByLabel('Community', { exact: true })).toContainText('SF Bay');
+  await expect(culture().getByTestId('culture-heading')).toContainText('SF Bay in the');
+  // Two lines, then Remove: one confirmation, then the community and its lines go together.
+  for (const t of ['Fog season', 'Ferry commutes']) {
+    const add = group('all').getByLabel(/^New line for everyone/);
+    await add.fill(t);
+    await add.press('Enter');
+    await expect(
+      group('all')
+        .locator('.cu-line')
+        .filter({ has: page.locator(`input[value="${t}"]`) }),
+    ).toHaveCount(1);
+  }
+  const titles = async () =>
+    (await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })).entries
+      .filter((e) => e.entry.communityId === 'san-francisco')
+      .map((e) => e.entry.title)
+      .sort();
+  await expect.poll(titles).toEqual(['Ferry commutes', 'Fog season']);
+  await culture().getByTestId('community-remove').click();
+  const confirm = culture().getByTestId('community-confirm');
+  await expect(confirm).toContainText('Remove SF Bay and its 2 lines? They go to the trash.');
+  await confirm.getByRole('button', { name: 'Remove SF Bay' }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(culture().getByTestId('culture-notice')).toContainText(
+    'Removed SF Bay and its 2 lines',
+  );
+  await expect(culture().getByLabel('Community', { exact: true })).not.toContainText('SF Bay');
+  await expect.poll(titles).toEqual([]);
+  // One Undo: the community is back in the list with both lines.
+  await page.keyboard.press('Meta+z');
+  await expect(culture().getByLabel('Community', { exact: true })).toContainText('SF Bay');
+  await expect.poll(titles).toEqual(['Ferry commutes', 'Fog season']);
+  await culture().getByLabel('Community', { exact: true }).selectOption({ label: 'SF Bay' });
+  await expect(group('all').locator('.cu-line')).toHaveCount(2);
+  await invoke('storyTime.set', { time: { year: 2030 } });
 });
 
 test('SM-11 WE-2 the Eras tab lists the era states, edits one in place as one undo step, flags a gap, and New era adds one', async () => {

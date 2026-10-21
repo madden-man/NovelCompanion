@@ -67,6 +67,17 @@ describe('ED-8 list rename cascade', () => {
     expect(countListUsage('tags', { id: 'n', label: 'nobody', parentId: null }, all)).toBe(0);
   });
 
+  test('ED-8 A42 an entry in the trash does not count as using an item, so a trashed community can be removed', () => {
+    const all = docs().map((c) => ({
+      ...c,
+      docs: c.docs.map((d) => ({ ...d, deletedAt: '2026-10-21T00:00:00.000Z' })),
+    }));
+    expect(
+      countListUsage('unionTypes', { id: 'married', label: 'Married', parentId: null }, all),
+    ).toBe(0);
+    expect(countListUsage('tags', { id: 't', label: 'teacher', parentId: null }, all)).toBe(0);
+  });
+
   test('ED-8 tags used are collected from entry tags', () => {
     expect(tagsUsed(manifests.moments, docs()[2]!.docs[0]!)).toEqual(['teacher', 'sweet']);
   });

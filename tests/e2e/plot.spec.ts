@@ -842,20 +842,24 @@ test('SM-7 KB-3 NF-2 the Outline by keyboard: a scene year, the chapter name on 
   await expect(foot.getByLabel('Part title')).toHaveCount(0);
 });
 
-test('CU-2 A41 a community and a decade list the lines that apply', async () => {
+test("CU-2 A42 a community and the story year's decade list the lines that apply", async () => {
   await rail(page, 'Cultural data').click();
   const view = page.getByTestId('culture-view');
   const line = (id: string) => view.locator(`.cu-line[data-id="${id}"]`);
   await view.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
-  await view.getByLabel('Decade', { exact: true }).selectOption('2020');
-  await expect(line('CU1')).toContainText('Mid-Autumn mooncakes');
-  await expect(line('CU1').getByTestId('line-note')).toContainText('lotus seed mooncakes');
+  const was = (await invoke('storyTime.get', {})).time;
+  await invoke('storyTime.set', { time: { year: 2025 } });
+  await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
+  await expect(line('CU1').getByTestId('line-text')).toHaveValue('Mid-Autumn mooncakes');
+  await expect(line('CU1').getByTestId('line-note')).toHaveValue(/lotus seed mooncakes/);
   await expect(line('CU2')).toHaveCount(0);
-  await view.getByLabel('Decade', { exact: true }).selectOption('2080');
-  await expect(line('CU2').getByTestId('line-note')).toContainText('Printed mooncakes');
+  await invoke('storyTime.set', { time: { year: 2083 } });
+  await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2080s');
+  await expect(line('CU2').getByTestId('line-note')).toHaveValue(/Printed mooncakes/);
   await expect(line('CU1')).toHaveCount(0);
-  await view.getByLabel('Decade', { exact: true }).selectOption('1970');
+  await invoke('storyTime.set', { time: { year: 1975 } });
   await expect(view.locator('.cu-line')).toHaveCount(0);
+  await invoke('storyTime.set', { time: was });
 });
 
 test('PC-1 the place tree nests places and shows each description for the year', async () => {
@@ -1003,7 +1007,7 @@ test('GL-3 the editor shows a Meaning control on a title with Chinese and a prev
   await expect(field(editor, 'sourceNote').getByTestId('zh-meaning')).toHaveCount(0);
 });
 
-test('GL-3 the glossary table and the culture view show the meaning of Chinese on hover and focus', async () => {
+test('GL-3 the glossary table shows the meaning of Chinese on hover and focus', async () => {
   // Glossary table.
   await rail(page, 'Glossary table').click();
   const table = page.getByTestId('glossary-table');
@@ -1018,29 +1022,7 @@ test('GL-3 the glossary table and the culture view show the meaning of Chinese o
   await expect(chars.getByRole('tooltip')).toBeVisible();
   await page.mouse.move(0, 0);
 
-  // Culture view.
-  await invoke('entry.create', {
-    collection: 'culturalEntries',
-    data: {
-      title: '中秋月饼',
-      communityId: 'guangzhou',
-      startYear: 1980,
-      endYear: 2100,
-      body: '外婆 bakes them.',
-      status: 'canon',
-    },
-  });
-  await rail(page, 'Cultural data').click();
-  const culture = page.getByTestId('culture-view');
-  await culture.getByLabel('Community', { exact: true }).selectOption({ label: 'Guangzhou' });
-  await culture.getByLabel('Decade', { exact: true }).selectOption('2020');
-  const results = culture.getByTestId('culture-groups');
-  const moon = results.locator('[data-term="GL5"]').first();
-  await moon.focus();
-  await expect(moon.getByRole('tooltip')).toHaveText('yuèbǐng: mooncake');
-  const gran = results.locator('[data-term="GL4"]').first();
-  await gran.focus();
-  await expect(gran.getByRole('tooltip')).toHaveText('wàipó: maternal grandmother');
+  // A42: the culture lines are plain fields, so the meaning shows on the glossary table and in text, not there.
 });
 
 test('GL-1 a system with no checker shows a visible note on the Romanization screen and flags nothing', async () => {
