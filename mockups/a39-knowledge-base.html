@@ -1,0 +1,876 @@
+<title>Novel Companion A39</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a top bar, an eight-item rail on the left, one screen at a time on the right. Grids scroll inside their own frames. */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #eeede7;
+  --surface-3: #e3e1d9;
+  --border: #d9d6cc;
+  --border-strong: #b8b4a6;
+  --fg: #1b1a17;
+  --fg-2: #5a5750;
+  --fg-3: #7d796f;
+  --accent: #1c5cab;
+  --accent-soft: #dbe7f7;
+  --accent-ink: #ffffff;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-1-soft: #dce9f9;
+  --series-2-soft: #fbe3d8;
+  --series-3-soft: #d6f1e6;
+  --good: #1f7a3f;
+  --warn: #9a6200;
+  --crit: #b3261e;
+  --warn-soft: #fff1d6;
+  --crit-soft: #fde2e0;
+  --shadow: 0 6px 24px rgba(27, 26, 23, 0.14);
+  --font-display: 'Newsreader', 'Noto Serif SC', Georgia, serif;
+  --font-body: 'IBM Plex Sans', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15161a; --surface: #1d1f24; --surface-2: #262930; --surface-3: #30343c;
+    --border: #363a43; --border-strong: #545a66; --fg: #f1f0ea; --fg-2: #bdbbb1; --fg-3: #938f84;
+    --accent: #6da7ec; --accent-soft: #233a57; --accent-ink: #0f1722;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-1-soft: #22354f; --series-2-soft: #46281c; --series-3-soft: #1b3a2d;
+    --good: #5fcf86; --warn: #e8b451; --crit: #f0776f; --warn-soft: #3a2f14; --crit-soft: #44201d;
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15161a; --surface: #1d1f24; --surface-2: #262930; --surface-3: #30343c;
+  --border: #363a43; --border-strong: #545a66; --fg: #f1f0ea; --fg-2: #bdbbb1; --fg-3: #938f84;
+  --accent: #6da7ec; --accent-soft: #233a57; --accent-ink: #0f1722;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --series-1-soft: #22354f; --series-2-soft: #46281c; --series-3-soft: #1b3a2d;
+  --good: #5fcf86; --warn: #e8b451; --crit: #f0776f; --warn-soft: #3a2f14; --crit-soft: #44201d;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; margin: 0; padding-block: 0; padding-inline: 16px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.45rem; }
+h3 { font-size: 1.1rem; }
+p { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.intro { max-width: 68ch; padding-block: 18px 10px; display: flex; flex-direction: column; gap: 6px; }
+.intro h1 { font-size: 1.9rem; }
+.intro p { color: var(--fg-2); }
+.note { color: var(--fg-2); font-size: 0.85rem; }
+.eyebrow { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-2); font-weight: 600; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--fg); font-size: 0.78rem; font-weight: 500; border: 1px solid var(--border); }
+.pill.good { border-color: var(--good); }
+.pill.warn { border-color: var(--warn); background: var(--warn-soft); }
+.pill.crit { border-color: var(--crit); background: var(--crit-soft); }
+.btn { border: 1px solid var(--border-strong); background: var(--surface); color: var(--fg); border-radius: 6px; padding: 6px 11px; font-weight: 500; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.small { padding: 3px 8px; font-size: 0.82rem; }
+.btn.danger { border-color: var(--crit); color: var(--crit); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; font-weight: 600; color: var(--fg); min-width: 0; }
+.field input, .field select, .field textarea { font-weight: 400; font-size: 0.92rem; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); width: 100%; }
+.field textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.num { font-variant-numeric: tabular-nums; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border-strong); background: var(--surface); }
+.chip .sw { width: 9px; height: 9px; border-radius: 2px; }
+.sw.fam-a { background: var(--series-2); }
+.sw.fam-b { background: var(--series-3); }
+.saved { font-size: 0.78rem; color: var(--fg-2); min-width: 4em; }
+.saved.on { color: var(--good); }
+
+/* The app frame */
+.app { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; margin-block: 8px 30px; display: grid; grid-template-rows: auto 1fr; min-height: 720px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.brand { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; margin-right: 6px; }
+.yearctl { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 0; }
+.yearctl input[type="range"] { flex: 1 1 120px; min-width: 80px; accent-color: var(--accent); }
+.yearctl input[type="number"] { width: 5.5em; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
+.yearctl .era { font-size: 0.8rem; color: var(--fg-2); white-space: nowrap; }
+.writing select { padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); max-width: 220px; }
+.body { display: grid; grid-template-columns: 196px minmax(0, 1fr); min-height: 0; }
+.rail { border-right: 1px solid var(--border); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); }
+.rail button { text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px; font-weight: 500; color: var(--fg); display: flex; justify-content: space-between; align-items: center; }
+.rail button:hover { background: var(--surface-2); }
+.rail button[aria-current="page"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+.rail .count { font-size: 0.75rem; color: var(--fg-2); font-weight: 500; }
+.rail .gap { flex: 1; }
+.rail .search { margin: 0 2px 8px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); width: calc(100% - 4px); }
+.screen { padding: 16px 18px 24px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.screen-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; justify-content: space-between; }
+.screen-head .note { max-width: 60ch; }
+.panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 12px 14px; }
+.two { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; min-height: 0; }
+.list { display: flex; flex-direction: column; gap: 2px; }
+.list .grp { padding: 10px 8px 4px; }
+.list button { text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; display: flex; gap: 8px; align-items: center; color: var(--fg); width: 100%; }
+.list button[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.list button:hover { background: var(--surface-2); }
+.list .zh { color: var(--fg-2); font-family: var(--font-display); }
+.stripe { width: 4px; height: 18px; border-radius: 2px; flex: none; }
+.stripe.fam-a { background: var(--series-2); }
+.stripe.fam-b { background: var(--series-3); }
+.stripe.none { background: var(--border-strong); }
+
+/* Character page */
+.char-head { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: baseline; justify-content: space-between; }
+.char-name { font-family: var(--font-display); font-size: 1.8rem; font-weight: 600; }
+.char-name .zh { color: var(--fg-2); margin-left: 10px; font-size: 1.5rem; }
+.char-line { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, max-content)); gap: 10px 16px; align-items: end; }
+.char-line .field input, .char-line .field select { width: 8.5em; }
+.textbox { display: flex; flex-direction: column; gap: 4px; }
+.textbox label { font-weight: 600; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: baseline; }
+.textbox textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; padding: 8px 10px; background: var(--surface); line-height: 1.55; resize: vertical; font-size: 0.95rem; }
+.textbox.short textarea { min-height: 44px; }
+.textbox.long textarea { min-height: 150px; }
+.rel { color: var(--fg-2); font-size: 0.9rem; }
+
+/* Tree */
+.tree-wrap { position: relative; height: 420px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); overflow: hidden; touch-action: none; }
+.tree-wrap svg { width: 100%; height: 100%; display: block; cursor: grab; font-family: var(--font-body); }
+.tnode { cursor: pointer; }
+.tnode rect.box { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.5; }
+.tnode.sel rect.box { stroke: var(--accent); stroke-width: 3; }
+.tnode.dead rect.box { stroke: var(--fg); stroke-width: 2.5; }
+.tnode.unborn { opacity: 0.45; }
+.tnode.unborn rect.box { stroke-dasharray: 6 4; }
+.tnode text { fill: var(--fg); font-size: 12px; }
+.tnode text.nm { font-weight: 600; font-size: 13px; }
+.tnode text.age { fill: var(--fg-2); }
+.tnode rect.fam { fill: var(--border-strong); }
+.tnode rect.fam.fam-a { fill: var(--series-2); }
+.tnode rect.fam.fam-b { fill: var(--series-3); }
+.tunion { stroke: var(--fg-2); stroke-width: 2; fill: none; }
+.tunion.ended { stroke-dasharray: 4 4; }
+.tlink { stroke: var(--fg-2); stroke-width: 2; fill: none; }
+.dropmenu { position: absolute; z-index: 5; width: 260px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
+.dropmenu .btn { text-align: left; }
+.tree-aside { display: flex; flex-direction: column; gap: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--fg-2); }
+
+/* Outline */
+.outline { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.scenes { padding: 10px 0 10px 0; border-right: 1px solid var(--border); background: var(--surface); }
+.scene { display: grid; grid-template-columns: 34px 64px minmax(0, 1fr); gap: 8px; align-items: center; padding: 3px 10px; min-height: 34px; }
+.scene.note { grid-template-columns: 34px 64px minmax(0, 1fr); }
+.scene .n { color: var(--fg-2); font-size: 0.78rem; text-align: right; }
+.scene .yr { width: 64px; padding: 3px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); font-size: 0.85rem; }
+.scene .yr.inherit { color: var(--fg-3); border-style: dashed; }
+.scene .txt { padding: 3px 6px; border-radius: 5px; border: 1px solid transparent; min-width: 0; }
+.scene .txt:focus { border-color: var(--accent); outline: none; background: var(--surface); }
+.scene.note .txt { color: var(--fg-2); margin-left: 18px; font-size: 0.9rem; }
+.scene.note .n, .scene.note .yr { visibility: hidden; }
+.track { position: relative; background: var(--surface-2); padding: 10px 8px; }
+.bar { position: absolute; left: 10px; right: 10px; border-radius: 6px; padding: 6px 8px; border: 1px solid var(--border-strong); font-size: 0.82rem; cursor: grab; display: flex; flex-direction: column; gap: 2px; user-select: none; overflow: hidden; }
+.bar strong { font-weight: 600; }
+.bar .meta { color: var(--fg-2); font-size: 0.75rem; }
+.bar .edge { position: absolute; left: 0; right: 0; height: 8px; cursor: ns-resize; }
+.bar .edge.top { top: -1px; }
+.bar .edge.bot { bottom: -1px; }
+.bar.drag { opacity: 0.85; box-shadow: var(--shadow); z-index: 2; }
+.bar.c0 { background: var(--series-1-soft); } .bar.c1 { background: var(--series-2-soft); } .bar.c2 { background: var(--series-3-soft); } .bar.c3 { background: var(--surface-3); }
+.outline-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Grids (world events, backstory) */
+.grid { display: grid; grid-template-columns: 200px minmax(0, 1fr); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.grid .labels { border-right: 1px solid var(--border); background: var(--surface); }
+.grid .plot { overflow-x: auto; overflow-y: hidden; background: var(--surface); position: relative; }
+.grid .canvas { position: relative; }
+.grow { height: 28px; border-bottom: 1px solid var(--border); position: relative; }
+.grow.head { height: 30px; background: var(--surface-2); }
+.glabel { height: 28px; border-bottom: 1px solid var(--border); padding: 0 8px; display: flex; align-items: center; gap: 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glabel.head { height: 30px; background: var(--surface-2); font-weight: 600; }
+.glabel.head button { border: 0; background: none; padding: 0; display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--fg); width: 100%; text-align: left; }
+.glabel.head .caret { display: inline-block; width: 0.45em; height: 0.45em; border-right: 2px solid var(--fg); border-bottom: 2px solid var(--fg); transform: rotate(45deg) translate(-1px, -1px); transition: transform 120ms; }
+.glabel.head.closed .caret { transform: rotate(-45deg); }
+.glabel.sel { background: var(--accent-soft); font-weight: 600; }
+.glabel button.pick { border: 0; background: none; padding: 0; color: var(--fg); text-align: left; width: 100%; display: flex; align-items: center; gap: 6px; }
+.axis { height: 30px; position: relative; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.axis .tick { position: absolute; top: 0; height: 100%; border-left: 1px solid var(--border); padding: 7px 0 0 4px; font-size: 0.75rem; color: var(--fg-2); }
+.axis .tick.dec { border-left-color: var(--border-strong); color: var(--fg); font-weight: 600; }
+.axis .eras { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; }
+.axis .era-seg { position: absolute; bottom: 0; height: 6px; background: var(--series-1); opacity: 0.35; border-right: 2px solid var(--surface); }
+.yline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--accent); z-index: 3; pointer-events: none; }
+.yband { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.08; pointer-events: none; }
+.decade { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); pointer-events: none; }
+.mark { position: absolute; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: var(--series-1); border: 2px solid var(--surface); cursor: grab; z-index: 2; }
+.mark.bar { border-radius: 6px; width: auto; }
+.mark.formative { width: 16px; height: 16px; top: 6px; }
+.mark.sel { outline: 3px solid var(--accent); outline-offset: 1px; }
+.mark.fam-a { background: var(--series-2); } .mark.fam-b { background: var(--series-3); }
+.mlabel { position: absolute; top: 6px; font-size: 0.75rem; color: var(--fg); white-space: nowrap; pointer-events: none; }
+.life { position: absolute; top: 20px; height: 5px; border-radius: 3px; opacity: 0.45; }
+.life.fam-a { background: var(--series-2); } .life.fam-b { background: var(--series-3); } .life.none { background: var(--border-strong); }
+.grow.hit { cursor: copy; }
+.tip { position: absolute; z-index: 6; background: var(--fg); color: var(--bg); padding: 5px 8px; border-radius: 6px; font-size: 0.8rem; pointer-events: none; max-width: 260px; }
+.addform { position: absolute; z-index: 6; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; box-shadow: var(--shadow); width: 260px; display: flex; flex-direction: column; gap: 6px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.tools select { padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
+table.moments { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+table.moments th { text-align: left; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border-strong); color: var(--fg); font-size: 0.8rem; }
+table.moments td { padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.moments input, table.moments textarea { width: 100%; border: 1px solid transparent; border-radius: 5px; padding: 3px 5px; background: transparent; }
+table.moments input:focus, table.moments textarea:focus { border-color: var(--accent); background: var(--surface); outline: none; }
+table.moments td.yr { width: 5em; }
+table.moments textarea { resize: vertical; min-height: 30px; line-height: 1.4; }
+.table-wrap { overflow-x: auto; }
+
+/* Relevant to Session */
+.relevant { display: flex; flex-direction: column; gap: 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; background: var(--surface); text-align: left; display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.tile:hover { background: var(--surface-2); }
+.tile[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.tile .nm { font-weight: 600; }
+.tile .ag { color: var(--fg-2); font-size: 0.85rem; }
+.tile-detail { grid-column: 1 / -1; border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; background: var(--surface); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px; }
+.tile-detail h4 { margin: 0 0 4px; font-size: 0.85rem; font-weight: 600; }
+.events-strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr); gap: 8px; overflow-x: auto; }
+.events-strip .col { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--surface); }
+.events-strip .col.now { border-color: var(--accent); }
+.events-strip .col h4 { margin: 0 0 6px; font-size: 0.85rem; }
+.events-strip li { font-size: 0.85rem; margin-bottom: 4px; }
+.events-strip ul { margin: 0; padding-left: 16px; }
+
+/* Findings, sessions, cultural */
+.finding { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.finding blockquote { margin: 0; padding-left: 10px; border-left: 3px solid var(--border-strong); color: var(--fg-2); font-style: italic; }
+.finding.manuscriptWins { border-color: var(--good); } .finding.rewrite { border-color: var(--warn); } .finding.dismissed { opacity: 0.6; }
+.log li { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.log { list-style: none; padding: 0; margin: 0; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tabs button { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; font-weight: 500; color: var(--fg); }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 600; }
+.cult { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.cult .panel h3 { margin-bottom: 4px; }
+.cult textarea { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; background: var(--surface); min-height: 70px; line-height: 1.5; resize: vertical; }
+.cult .yrs { color: var(--fg-2); font-size: 0.82rem; }
+.dim { opacity: 0.5; }
+
+@media (max-width: 860px) {
+  .body { grid-template-columns: minmax(0, 1fr); }
+  .rail { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 8px; }
+  .rail button { white-space: nowrap; }
+  .rail .gap, .rail .search { display: none; }
+  .two, .outline { grid-template-columns: minmax(0, 1fr); }
+  .outline .track { min-height: 200px; border-top: 1px solid var(--border); }
+  .grid { grid-template-columns: 120px minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="intro">
+  <h1>Novel Companion after A39</h1>
+  <p>A working model of the proposed app: the eight screens on the rail, the top bar, and Relevant to Session. Every control changes what you see. The people, chapters and events are East Winds names with example dates and example world events, not the bible's own figures.</p>
+  <p class="note">Try: drag a person in the Family tree onto another. Drag a chapter bar's edge in the Outline. Click an empty cell in World events. Pick a character in Backstory and edit a row. Open Relevant and expand a tile.</p>
+</div>
+
+<div class="app" id="app">
+  <div class="topbar">
+    <span class="brand">Novel Companion</span>
+    <div class="yearctl">
+      <label for="year-range" class="eyebrow">Story year</label>
+      <input type="range" id="year-range" min="2025" max="2100" value="2053">
+      <input type="number" id="year-num" min="2025" max="2100" value="2053" aria-label="Story year">
+      <span class="era num" id="era-name"></span>
+    </div>
+    <div class="writing row">
+      <label for="writing" class="eyebrow">Writing</label>
+      <select id="writing" aria-label="Chapter being written"></select>
+    </div>
+    <div class="row">
+      <button class="btn" id="btn-relevant" aria-pressed="false">Relevant</button>
+      <button class="btn primary" id="btn-start">Start session</button>
+    </div>
+  </div>
+  <div class="body">
+    <nav class="rail" id="rail" aria-label="Screens"></nav>
+    <main class="screen" id="screen" aria-live="polite"></main>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ---------- example data (East Winds names, example years) ----------
+const FAM = { a: { id: 'a', name: 'Sullivan', cls: 'fam-a' }, b: { id: 'b', name: '李 Li', cls: 'fam-b' } };
+const CH = [
+  ['frank', 'Frank Sullivan', '', 2000, 2082, 'a', 'Patriarch who took American dominance for granted and lives to see it end.', 'Frank built a logistics firm in the 2030s automation rush and lost most of it in the 2039 crash. Proud, generous with money and stingy with words.', 'Born into an ordinary pre-2025 America. Heard his elders fret about Gen Z before he knew what a generation was. Married Laura in 2024.'],
+  ['laura', 'Laura Sullivan', '', 2004, null, 'a', 'Frank\'s wife, the family\'s memory and its conscience.', 'A nurse who stopped working when the hospital automated triage. Keeps every letter.', ''],
+  ['sydney', 'Sydney Sullivan', '', 2028, null, 'a', 'Eldest daughter, the one who stays close.', 'Runs the family\'s money after Frank. Careful where Frank was bold.', ''],
+  ['emilie', 'Emilie Sullivan', '', 2031, null, 'a', 'Middle child, leaves the church and comes back changed.', 'Marries John in 2056.', ''],
+  ['mark', 'Mark Sullivan', '', 2033, null, 'a', 'Youngest son and the first point of view. Meets Dawn in college.', 'Feels free in 2051, drunk in 2052, cannot work in 2053. Marketing, then research, then on two feet by 2055.', 'Grew up in a house that expected the world to stay the way it was.'],
+  ['shannon', 'Shannon Sullivan', '', 2002, null, 'a', 'Frank\'s sister. Raised three children in Oregon.', '', ''],
+  ['matthew', 'Matthew Reyes', '', 2001, 2070, 'a', 'Shannon\'s husband.', '', ''],
+  ['darnell', 'Darnell Reyes', '', 2027, null, 'a', 'Shannon and Matthew\'s son.', '', ''],
+  ['lina', 'LiNa Sullivan', '李娜', 2060, null, 'a', 'Mark and Dawn\'s daughter. Anxiety is her chapter.', '', ''],
+  ['haoyu', 'HaoYu Sullivan', '浩宇', 2062, null, 'a', 'Mark and Dawn\'s son. The family break.', '', ''],
+  ['neveah', 'Neveah Sullivan', '', 2064, null, 'a', 'Sydney\'s daughter, Frank\'s last chapter.', '', ''],
+  ['john', 'John Okafor', '', 2030, null, 'a', 'Emilie\'s husband.', '', ''],
+  ['qin', 'Li Qin', '李勤', 2008, null, 'b', 'Dawn\'s father. Meets Siyuan at a shrine by a stream in Jinan.', 'An engineer in Jinan\'s construction boom. Patient, devout in his own way.', ''],
+  ['siyuan', 'Li Siyuan', '李思远', 2010, 2080, 'b', 'Dawn\'s mother. Early Buddhism, then the earth, the moon and the sky.', 'Part Four is hers. Loses herself and finds the wheel.', 'Grew up outside Jinan. Met Qin in 2030 at the shrine.'],
+  ['dawn', 'Li Dawn', '李晓曦', 2034, null, 'b', 'Shy, then human, then marries her life. The second point of view.', 'Born in Jinan. In California from 2051. Marries Mark in 2057.', 'Misses home in a way she cannot say in either language.'],
+  ['xuan', 'Li Xuan', '李轩', 2037, null, 'b', 'Dawn\'s younger brother, stays in Shandong.', '', ''],
+  ['wangan', 'Wang An', '王安', 1978, 2061, 'b', 'Qin\'s father.', '', ''],
+  ['guchu', 'Gu Chu', '顾楚', 1980, null, 'b', 'Qin\'s mother.', '', ''],
+  ['nianyou', 'Nian You', '念友', 2036, null, 'b', 'Dawn\'s cousin and closest friend in Jinan.', '', ''],
+].map(([id, name, zh, birth, death, fam, role, body, back]) => ({ id, name, zh, birth, death, fam, role, body, back, status: 'canon' }));
+const byId = Object.fromEntries(CH.map((c) => [c.id, c]));
+const UNIONS = [
+  ['frank', 'laura', 2024, null], ['mark', 'dawn', 2057, null], ['qin', 'siyuan', 2031, null],
+  ['shannon', 'matthew', 2026, 2070], ['emilie', 'john', 2056, null], ['wangan', 'guchu', 2005, null],
+].map(([a, b, s, e]) => ({ a, b, s, e }));
+const LINKS = [
+  ['frank', 'sydney'], ['laura', 'sydney'], ['frank', 'emilie'], ['laura', 'emilie'], ['frank', 'mark'], ['laura', 'mark'],
+  ['mark', 'lina'], ['dawn', 'lina'], ['mark', 'haoyu'], ['dawn', 'haoyu'], ['sydney', 'neveah'],
+  ['qin', 'dawn'], ['siyuan', 'dawn'], ['qin', 'xuan'], ['siyuan', 'xuan'], ['wangan', 'qin'], ['guchu', 'qin'],
+  ['shannon', 'darnell'], ['matthew', 'darnell'],
+].map(([p, c]) => ({ p, c }));
+const PARTS = [
+  { id: 'p1', title: 'Part One: Sins of the Father' }, { id: 'p2', title: 'Part Two: Lost Spirits' },
+  { id: 'p3', title: 'Part Three: Inheritance' }, { id: 'p4', title: 'Part Four: Circulation' },
+];
+const CHAPTERS = [
+  ['c1', 'p1', 'Mark Feels Free', 2051, 'mark'], ['c2', 'p1', 'Mark Meets Dawn', 2051, 'mark'], ['c3', 'p1', 'Mark Gets Drunk', 2052, 'mark'],
+  ['c4', 'p1', "Mark Can't Work", 2053, 'mark'], ['c5', 'p1', 'Mark at Home', 2053, 'mark'], ['c6', 'p1', 'Mark in Marketing', 2054, 'mark'],
+  ['c7', 'p1', 'Mark and Dawn', 2054, 'mark'], ['c8', 'p1', 'LiNa and Anxiety', 2075, 'lina'], ['c9', 'p1', 'HaoYu and Family Break', 2078, 'haoyu'],
+  ['c10', 'p1', 'Mark and Research', 2055, 'mark'], ['c11', 'p1', 'Mark and Emilie', 2055, 'mark'], ['c12', 'p1', 'Mark On Two Feet', 2055, 'mark'],
+  ['c13', 'p2', 'Dawn is Shy', 2048, 'dawn'], ['c14', 'p2', 'Dawn is Human', 2052, 'dawn'], ['c15', 'p2', 'Dawn Misses Home', 2056, 'dawn'],
+  ['c16', 'p2', 'Dawn Marries Her Life', 2057, 'dawn'], ['c17', 'p3', "Frank's Piles of Money", 2060, 'frank'], ['c18', 'p3', 'Frank Goes to China', 2066, 'frank'],
+  ['c19', 'p4', 'Attachments', 2070, 'siyuan'], ['c20', 'p4', 'Wheel of Life', 2080, 'siyuan'],
+].map(([id, part, title, year, pov], i) => ({ id, part, title, year, pov, n: i + 1 }));
+// Scenes: top-level lines are scenes, `note` lines belong to the scene above. `year` null inherits.
+let SCENES = [
+  { t: 'Mark moves into the dorm; his father carries nothing', y: 2051 },
+  { t: 'Frank waits in the car with the engine running', note: true },
+  { t: 'Mark skips the campus church and does not tell Laura', y: null },
+  { t: 'First lecture: the professor is an AI tutor and a human proctor', y: null },
+  { t: 'Mark meets Dawn at the language exchange table', y: 2051 },
+  { t: 'She corrects his tones; he corrects nothing', note: true },
+  { t: 'Dawn walks him to the bus and says the city smells like her grandmother\'s kitchen', y: null },
+  { t: 'Mark drunk on the roof after the Compact vote', y: 2052 },
+  { t: 'Sydney calls at 2 a.m. about Frank\'s firm', y: null },
+  { t: 'Mark fails the internship screen; the recruiter is a voice', y: 2053 },
+  { t: 'He walks the Embarcadero past the shuttered pier', y: null },
+  { t: 'Thanksgiving at home; Frank talks about 2039 again', y: 2053 },
+  { t: 'Emilie leaves the table when the pastor is mentioned', note: true },
+  { t: 'Mark takes the marketing job his father arranged', y: 2054 },
+  { t: 'Dawn and Mark in the Sunset, the first "we"', y: 2054 },
+  { t: 'Mark quits and joins the research lab', y: 2055 },
+  { t: 'Mark and Emilie on the roof, sober', y: 2055 },
+  { t: 'Mark stands on his own; Frank does not come', y: 2055 },
+  { t: 'Dawn at thirteen in Jinan, hiding behind Nian You', y: 2048 },
+  { t: 'Dawn is human: the night market, the first lie to Qin', y: 2052 },
+  { t: 'Dawn misses home: a mooncake from a vending machine', y: 2056 },
+  { t: 'Dawn marries her life', y: 2057 },
+];
+// breaks: chapter id to the scene index its section starts on (the chapters in this mockup that have scenes)
+let BREAKS = { c1: 0, c2: 4, c3: 7, c4: 9, c5: 11, c6: 13, c7: 14, c10: 15, c11: 16, c12: 17, c13: 18, c14: 19, c15: 20, c16: 21 };
+
+const GROUPS = [
+  ['Geopolitics', ['Chinese Leadership', 'US Leadership', 'European Leadership', 'Indian Leadership']],
+  ['Pressure Gauges', ['US/China Tension', 'Dollar Dominance', 'Taiwan Conflict Risk']],
+  ['Technology', ['Artificial Intelligence', 'Semiconductors', 'Robotics', 'Biotech/Genetic Engineering', 'Transportation']],
+  ['China: Industrial Capacity', ['Manufacturing', 'Semiconductor Fabrication', 'Construction Capacity', 'Aerospace']],
+  ['Financial Systems', ['GDP', 'US Markets', 'Chinese Markets', 'Dollar', 'Sovereign Debt', 'Unemployment (US)']],
+  ['Military Dominance', ['Naval Power', 'Drone Warfare', 'Cyber Warfare', 'Strategic Constraints']],
+  ['Resources', ['US: Energy', 'China: Energy', 'US: Water', 'China: Food Security']],
+  ['Demographics', ['Fertility Rate: US', 'Fertility Rate: China', 'Median Age: China', 'Brain Drain']],
+  ['Foreign Relations', ['US/China', 'China/Taiwan', 'Pacific States Compact', 'UN']],
+  ['US Domestic Policy', ['Healthcare', 'Immigration', 'Education', 'Technology Policy']],
+  ['Cultural Shifts', ['US: Trust in Institutions', 'China: Entrepreneurship', 'US: Family Formation', 'US: Want to Live There']],
+  ['Second Order Effects', ['Climate', 'Global Demographics', 'Elite Incentives']],
+];
+let EVENTS = [
+  ['Artificial Intelligence', 2025, null, 'Automation tipping point: entry-level white-collar hiring halves', 1, 'United States'],
+  ['Artificial Intelligence', 2041, null, 'AI tutors replace lecturers at state universities', 0, 'United States'],
+  ['Robotics', 2047, null, 'Humanoid warehouse labor cheaper than human in every US state', 0, 'United States'],
+  ['Unemployment (US)', 2039, 2041, 'The 2039 crash: 19% unemployment', 1, 'United States'],
+  ['US Markets', 2039, null, 'Dow loses half its value in six weeks', 1, 'United States'],
+  ['Dollar Dominance', 2044, null, 'Yuan settles a third of Asian trade', 0, 'China'],
+  ['Dollar', 2058, null, 'Treasury auction fails for the first time', 1, 'United States'],
+  ['Pacific States Compact', 2052, null, 'California, Oregon and Washington ratify the Pacific States Compact', 1, 'Pacific States'],
+  ['Pacific States Compact', 2061, null, 'Compact issues its own residency permits', 0, 'Pacific States'],
+  ['US/China Tension', 2036, null, 'Pacific Rim trade accord signed', 0, 'China'],
+  ['US/China Tension', 2057, null, 'Mutual visa suspension after the Spratly incident', 0, 'China'],
+  ['Taiwan Conflict Risk', 2049, null, 'Blockade exercise lasts ninety days', 1, 'China'],
+  ['China/Taiwan', 2063, null, 'Taiwan joins the Shanghai customs union', 1, 'China'],
+  ['Construction Capacity', 2033, 2040, 'Jinan rebuilt in modular towers', 0, 'China'],
+  ['Semiconductor Fabrication', 2038, null, 'China reaches 2nm at scale', 0, 'China'],
+  ['Manufacturing', 2050, null, 'Chinese factories run dark: lights-off automation standard', 0, 'China'],
+  ['Chinese Leadership', 2042, null, 'Succession settled without a purge', 0, 'China'],
+  ['US Leadership', 2040, null, 'First president under fifty since Kennedy', 0, 'United States'],
+  ['US Leadership', 2075, null, 'Constitutional convention called', 1, 'United States'],
+  ['European Leadership', 2046, null, 'EU splits into two currency zones', 0, 'Europe'],
+  ['Indian Leadership', 2055, null, 'India passes China in GDP per worker', 0, ''],
+  ['GDP', 2045, null, 'China twice the US economy', 1, 'China'],
+  ['Sovereign Debt', 2053, null, 'US debt service passes defense spending', 0, 'United States'],
+  ['Naval Power', 2048, null, 'PLAN fields more hulls than every NATO navy combined', 0, 'China'],
+  ['Drone Warfare', 2043, null, 'Swarm defense makes carriers obsolete', 0, ''],
+  ['Cyber Warfare', 2051, null, 'The Grid Week: eastern seaboard dark for six days', 1, 'United States'],
+  ['Strategic Constraints', 2066, null, 'Mutual AI-arms freeze', 0, ''],
+  ['US: Energy', 2037, null, 'Fusion pilot plant in Nevada', 0, 'United States'],
+  ['China: Energy', 2034, null, 'Thorium reactors at scale in Shandong', 0, 'China'],
+  ['US: Water', 2062, null, 'Colorado compact collapses', 0, 'United States'],
+  ['Fertility Rate: China', 2030, null, 'Fertility at 0.9', 0, 'China'],
+  ['Fertility Rate: US', 2050, null, 'Fertility at 1.2', 0, 'United States'],
+  ['Brain Drain', 2056, null, 'Net migration of graduates turns toward China', 0, ''],
+  ['Healthcare', 2047, null, 'Medicare for all under 30', 0, 'United States'],
+  ['Immigration', 2059, null, 'Compact opens its border to Chinese graduates', 0, 'Pacific States'],
+  ['Education', 2044, null, 'Four-year degrees drop below half of cohort', 0, 'United States'],
+  ['US: Trust in Institutions', 2039, null, 'Trust in Congress at 6%', 0, 'United States'],
+  ['China: Entrepreneurship', 2052, null, 'Jinan startup district opens', 0, 'China'],
+  ['US: Family Formation', 2060, null, 'Median first marriage at 35', 0, 'United States'],
+  ['Climate', 2071, null, 'First ice-free Arctic summer', 1, ''],
+  ['Elite Incentives', 2068, null, 'Wealth tax passes in the Compact', 0, 'Pacific States'],
+  ['Global Demographics', 2080, null, 'World population peaks', 1, ''],
+].map(([row, y, e, title, formative, region], i) => ({ id: 'e' + i, row, y, e, title, formative: !!formative, region }));
+const ERAS = [
+  [2025, 2029, 'Automation tipping'], [2030, 2038, 'The long boom'], [2039, 2039, 'The crash'], [2040, 2049, 'Recovery and rivalry'],
+  [2050, 2059, 'The Compact years'], [2060, 2074, 'Two systems'], [2075, 2075, 'The convention'], [2076, 2100, 'Circulation'],
+].map(([s, e, name]) => ({ s, e, name }));
+let MOMENTS = [
+  ['frank', 2000, 'Frank is born', 'Born into an ordinary pre-2025 America he will later describe as having taken its dominance for granted.', 'Predates the world timeline.'],
+  ['frank', 2012, 'Hears his elders talk about Gen Z', 'Too young to know he is listening to the first stirrings of a generational anxiety.', ''],
+  ['frank', 2024, 'Marries Laura', 'Thinks the hard part is over.', ''],
+  ['frank', 2031, 'Founds the logistics firm', 'Rides the boom and believes it is him.', 'The long boom'],
+  ['frank', 2039, 'Loses the firm', 'Blames the Chinese, then the Compact, then nobody.', 'The 2039 crash'],
+  ['frank', 2066, 'Goes to China', 'Meets Qin and cannot hate him.', 'Mutual visa suspension lifts for family visits'],
+  ['laura', 2035, 'Stops nursing when triage is automated', 'Keeps the uniform in the closet.', 'Automation reaches hospitals'],
+  ['mark', 2033, 'Mark is born', '', ''],
+  ['mark', 2039, 'The crash at six', 'Remembers the house being quiet for a year.', 'The 2039 crash'],
+  ['mark', 2051, 'Leaves for college', 'Feels free for the first time; it lasts a semester.', 'Grid Week'],
+  ['mark', 2051, 'Meets Dawn', 'She corrects his tones.', ''],
+  ['mark', 2053, 'Fails the internship screen', 'A voice tells him no. He walks the Embarcadero.', 'Debt service passes defense'],
+  ['mark', 2057, 'Marries Dawn', '', 'Mutual visa suspension'],
+  ['dawn', 2034, 'Dawn is born in Jinan', '', 'Thorium reactors in Shandong'],
+  ['dawn', 2048, 'Thirteen, hiding behind Nian You', 'Shy is a decision.', ''],
+  ['dawn', 2051, 'Arrives in California', 'The city smells like her grandmother\'s kitchen.', 'Pacific States Compact talks'],
+  ['dawn', 2056, 'Misses home', 'A mooncake from a vending machine.', 'Graduate migration turns toward China'],
+  ['qin', 2030, 'Meets Siyuan at the shrine by the stream', 'Patient. Waits a year to speak.', ''],
+  ['qin', 2033, 'Jinan rebuilt; Qin leads a tower crew', 'Proud of the skyline, unsure who it is for.', 'Jinan rebuilt in modular towers'],
+  ['siyuan', 2030, 'Meets Qin', 'Decides he is kind before he speaks.', ''],
+  ['siyuan', 2070, 'Early Buddhism', 'Attachments, hardening, flow.', ''],
+  ['siyuan', 2080, 'Wheel of life', '', 'World population peaks'],
+  ['sydney', 2052, 'Calls Mark at 2 a.m.', 'The firm again. She is the one who answers the phone.', 'Compact ratified'],
+  ['emilie', 2053, 'Leaves the table', 'The pastor is mentioned.', ''],
+  ['xuan', 2050, 'Stays in Shandong', 'The factories run dark; he runs them.', 'Lights-off automation'],
+].map(([c, y, t, how, world], i) => ({ id: 'm' + i, c, y, t, how, world }));
+let FINDINGS = [
+  { id: 'f1', ch: 'c4', kind: 'structural', text: 'Sydney is 25 in 2053 but the chapter calls her "Mark\'s little sister".', quote: 'his little sister Sydney', state: 'open' },
+  { id: 'f2', ch: 'c4', kind: 'alignment', text: 'The chapter has Mark failing a human interview; the bible says the screen was a voice with no person behind it.', quote: 'the recruiter leaned across the table', state: 'open' },
+];
+let SESSIONS = [
+  { date: '2026-10-19', ch: 'c3', stop: 'Roof scene, after the vote', notes: 'Need the Compact vote date.' },
+  { date: '2026-10-17', ch: 'c2', stop: 'Bus stop line', notes: '' },
+];
+let QUESTIONS = [
+  { q: 'Does Frank attend Mark\'s graduation in 2055?', state: 'open', decision: '' },
+  { q: 'Which year does Dawn first visit Jinan again?', state: 'decided', decision: '2059, with Mark.' },
+  { q: 'Is Matthew alive in Part Three?', state: 'open', decision: '' },
+];
+const CULT = [
+  { com: 'San Francisco', s: 2050, e: 2059, body: 'Compact pride. Young people say "the Pacific" the way their parents said "America". Church attendance is a political statement.' },
+  { com: 'San Francisco', s: 2060, e: 2075, body: 'Residency permits sort people. A Chinese surname is an advantage for the first time in the city\'s history.' },
+  { com: 'Jinan, Shandong', s: 2040, e: 2059, body: 'The rebuilt city. Three generations in one tower flat is normal. A daughter abroad is a gift and a wound.' },
+  { com: 'Jinan, Shandong', s: 2060, e: 2080, body: 'Factories run dark. Temples are full on weekdays.' },
+  { com: 'Chinese diaspora in California', s: 2050, e: 2070, body: 'Mixed marriages are common and quietly counted. Mooncakes come from vending machines.' },
+  { com: 'Evangelical church', s: 2040, e: 2060, body: 'Shrinking, suspicious of the Compact, generous to its own.' },
+];
+let SCENE_NOTES = { c4: 'Mark fails the internship screen. The recruiter is a voice. He walks the Embarcadero past the shuttered pier and does not call home.' };
+
+// ---------- state ----------
+const S = { screen: 'characters', year: 2053, writing: 'c4', char: 'mark', relevant: false, sel: null, charBack: 'mark', closed: new Set(), region: '', ppy: 14, cultTab: 'communities', tileOpen: null, treeSel: 'mark' };
+const RAIL = [['characters', 'Characters'], ['tree', 'Family tree'], ['outline', 'Outline'], ['world', 'World events'], ['backstory', 'Backstory'], ['continuity', 'Continuity checker'], ['sessions', 'Sessions'], ['cultural', 'Cultural data']];
+const POS = {};
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const age = (c, y) => (y < c.birth ? 'not yet born' : c.death !== null && y > c.death ? 'dead since ' + c.death : 'age ' + (y - c.birth));
+const eraOf = (y) => ERAS.find((e) => y >= e.s && y <= e.e);
+const chapter = (id) => CHAPTERS.find((c) => c.id === id);
+const partOf = (id) => PARTS.find((p) => p.id === id);
+let savedTimer = null;
+function flashSaved(el) { if (!el) return; el.textContent = 'Saving'; el.classList.remove('on'); clearTimeout(savedTimer); savedTimer = setTimeout(() => { el.textContent = 'Saved'; el.classList.add('on'); }, 500); }
+const counts = () => ({ characters: CH.length, tree: CH.length, outline: SCENES.filter((s) => !s.note).length, world: EVENTS.length, backstory: MOMENTS.length, continuity: FINDINGS.filter((f) => f.state === 'open').length, sessions: SESSIONS.length, cultural: CULT.length });
+
+// ---------- shell ----------
+function renderShell() {
+  const rail = $('#rail');
+  const n = counts();
+  rail.innerHTML = '<input class="search" placeholder="Search (Cmd+K)" aria-label="Search">' + RAIL.map(([k, label]) => `<button data-screen="${k}" ${S.screen === k && !S.relevant ? 'aria-current="page"' : ''}>${label}<span class="count num">${n[k]}</span></button>`).join('') + '<span class="gap"></span>';
+  rail.querySelectorAll('button[data-screen]').forEach((b) => b.addEventListener('click', () => { S.screen = b.dataset.screen; S.relevant = false; render(); }));
+  $('#era-name').textContent = (eraOf(S.year) || {}).name || '';
+  $('#year-range').value = S.year; $('#year-num').value = S.year;
+  const w = $('#writing');
+  w.innerHTML = PARTS.map((p) => `<optgroup label="${esc(p.title)}">` + CHAPTERS.filter((c) => c.part === p.id).map((c) => `<option value="${c.id}" ${c.id === S.writing ? 'selected' : ''}>Ch. ${c.n}: ${esc(c.title)} (${c.year})</option>`).join('') + '</optgroup>').join('');
+  $('#btn-relevant').setAttribute('aria-pressed', String(S.relevant));
+}
+$('#year-range').addEventListener('input', (e) => { S.year = Number(e.target.value); render(); });
+$('#year-num').addEventListener('change', (e) => { S.year = Math.max(2025, Math.min(2100, Number(e.target.value) || 2025)); render(); });
+$('#writing').addEventListener('change', (e) => { S.writing = e.target.value; S.year = chapter(S.writing).year; render(); });
+$('#btn-relevant').addEventListener('click', () => { S.relevant = !S.relevant; render(); });
+$('#btn-start').addEventListener('click', () => { S.screen = 'sessions'; S.relevant = false; S.starting = true; render(); });
+
+function render() {
+  renderShell();
+  const root = $('#screen');
+  root.innerHTML = '';
+  if (S.relevant) return renderRelevant(root);
+  ({ characters: renderCharacters, tree: renderTree, outline: renderOutline, world: renderWorld, backstory: renderBackstory, continuity: renderContinuity, sessions: renderSessions, cultural: renderCultural })[S.screen](root);
+}
+
+// ---------- Characters ----------
+function relativesLine(c) {
+  const name = (id) => byId[id].name.split(' ')[0] === 'Li' || byId[id].name.split(' ')[0] === 'Wang' || byId[id].name.split(' ')[0] === 'Gu' || byId[id].name.split(' ')[0] === 'Nian' ? byId[id].name.split(' ').slice(1).join(' ') : byId[id].name.split(' ')[0];
+  const parents = LINKS.filter((l) => l.c === c.id).map((l) => name(l.p));
+  const children = LINKS.filter((l) => l.p === c.id).map((l) => name(l.c));
+  const partners = UNIONS.filter((u) => u.a === c.id || u.b === c.id).map((u) => name(u.a === c.id ? u.b : u.a) + (u.s ? ' from ' + u.s : '') + (u.e ? ' to ' + u.e : ''));
+  const parts = [];
+  if (parents.length) parts.push('Parents: ' + parents.join(', '));
+  if (partners.length) parts.push('Partner: ' + partners.join('; '));
+  if (children.length) parts.push('Children: ' + children.join(', '));
+  return parts.length ? parts.join('. ') + '.' : 'No links in the tree yet.';
+}
+function renderCharacters(root) {
+  const c = byId[S.char];
+  root.innerHTML = `
+    <div class="screen-head"><h2>Characters</h2><p class="note">One page per person: who they are to the story, a description, a backstory. Family links live in the tree.</p></div>
+    <div class="two">
+      <div class="list" id="char-list">
+        ${Object.values(FAM).map((f) => `<div class="eyebrow grp">${f.name}</div>` + CH.filter((x) => x.fam === f.id).map((x) => `<button data-id="${x.id}" ${x.id === S.char ? 'aria-current="true"' : ''}><span class="stripe ${f.cls}"></span>${esc(x.name)}${x.zh ? `<span class="zh">${esc(x.zh)}</span>` : ''}</button>`).join('')).join('')}
+        <button class="btn small" id="new-char" style="margin:10px 8px 0">New character</button>
+      </div>
+      <div class="stack" id="char-page">
+        <div class="char-head">
+          <div class="char-name" contenteditable="true" spellcheck="false" aria-label="Name"><span id="cn">${esc(c.name)}</span>${c.zh ? `<span class="zh">${esc(c.zh)}</span>` : ''}</div>
+          <span class="saved" id="char-saved">Saved</span>
+        </div>
+        <div class="char-line">
+          <div class="field"><label for="f-zh">Chinese name</label><input id="f-zh" value="${esc(c.zh)}" placeholder="where applicable"></div>
+          <div class="field"><label for="f-birth">Born</label><input id="f-birth" type="number" class="num" value="${c.birth}"></div>
+          <div class="field"><label for="f-death">Died</label><input id="f-death" type="number" class="num" value="${c.death ?? ''}" placeholder="alive"></div>
+          <div class="field"><label for="f-status">Status</label><select id="f-status"><option ${c.status === 'canon' ? 'selected' : ''}>canon</option><option ${c.status === 'planned' ? 'selected' : ''}>planned</option><option ${c.status === 'idea' ? 'selected' : ''}>idea</option></select></div>
+          <div class="field"><span>Family</span><span class="row"><span class="chip"><span class="sw ${FAM[c.fam].cls}"></span>${FAM[c.fam].name}</span></span></div>
+          <div class="field"><span>In ${S.year}</span><span class="num" id="f-age">${age(c, S.year)}</span></div>
+        </div>
+        <p class="rel" id="rel">${esc(relativesLine(c))} <button class="link" id="to-tree">Open in the tree</button></p>
+        <div class="textbox short"><label for="f-role">In the story <span class="note">one or two sentences</span></label><textarea id="f-role" rows="2">${esc(c.role)}</textarea></div>
+        <div class="textbox long"><label for="f-body">Description</label><textarea id="f-body" rows="6" placeholder="Who they are.">${esc(c.body)}</textarea></div>
+        <div class="textbox long"><label for="f-back">Backstory <span class="note">where applicable; dated moments go on the Backstory screen</span></label><textarea id="f-back" rows="6" placeholder="Their life before the page.">${esc(c.back)}</textarea></div>
+        <div class="row"><button class="btn small" id="to-back">Their moments on the Backstory grid</button><button class="btn small danger" id="trash">Move to trash</button></div>
+      </div>
+    </div>`;
+  root.querySelectorAll('#char-list button[data-id]').forEach((b) => b.addEventListener('click', () => { S.char = b.dataset.id; render(); }));
+  $('#new-char').addEventListener('click', () => { const id = 'new' + Date.now(); const n = { id, name: 'New person', zh: '', birth: S.year, death: null, fam: 'a', role: '', body: '', back: '', status: 'idea' }; CH.push(n); byId[id] = n; S.char = id; render(); });
+  const saved = $('#char-saved');
+  const bind = (sel, fn) => $(sel).addEventListener('input', (e) => { fn(e.target.value); flashSaved(saved); });
+  bind('#f-zh', (v) => { c.zh = v; });
+  bind('#f-birth', (v) => { c.birth = Number(v) || c.birth; $('#f-age').textContent = age(c, S.year); });
+  bind('#f-death', (v) => { c.death = v === '' ? null : Number(v); $('#f-age').textContent = age(c, S.year); });
+  bind('#f-status', (v) => { c.status = v; });
+  bind('#f-role', (v) => { c.role = v; });
+  bind('#f-body', (v) => { c.body = v; });
+  bind('#f-back', (v) => { c.back = v; });
+  $('.char-name').addEventListener('input', () => { c.name = $('#cn').textContent.trim() || c.name; flashSaved(saved); });
+  $('#to-tree').addEventListener('click', () => { S.treeSel = c.id; S.screen = 'tree'; render(); });
+  $('#to-back').addEventListener('click', () => { S.charBack = c.id; S.screen = 'backstory'; render(); });
+  $('#trash').addEventListener('click', () => { const i = CH.indexOf(c); if (i >= 0) CH.splice(i, 1); delete byId[c.id]; S.char = CH[0].id; render(); });
+}
+
+// ---------- Family tree ----------
+const NW = 150, NH = 54, RH = 110;
+function layoutTree() {
+  if (Object.keys(POS).length) return;
+  const rows = { 0: ['wangan', 'guchu'], 1: ['shannon', 'matthew', 'frank', 'laura', 'qin', 'siyuan'], 2: ['darnell', 'sydney', 'emilie', 'john', 'mark', 'dawn', 'xuan', 'nianyou'], 3: ['neveah', 'lina', 'haoyu'] };
+  const xs = { wangan: 1060, guchu: 1230, shannon: 0, matthew: 170, frank: 420, laura: 590, qin: 1060, siyuan: 1230, darnell: 85, sydney: 300, emilie: 470, john: 640, mark: 820, dawn: 990, xuan: 1200, nianyou: 1370, neveah: 300, lina: 820, haoyu: 990 };
+  for (const [r, ids] of Object.entries(rows)) for (const id of ids) POS[id] = { x: xs[id], y: Number(r) * RH };
+}
+function renderTree(root) {
+  layoutTree();
+  const sel = byId[S.treeSel] ? S.treeSel : null;
+  root.innerHTML = `
+    <div class="screen-head"><h2>Family tree</h2><div class="row"><button class="btn primary small" id="add-person">Add person</button><button class="btn small" id="fit">Fit to window</button></div></div>
+    <div class="tree-wrap" id="tree-wrap"><svg id="tree" viewBox="-30 -30 1620 470" role="group" aria-label="Family tree in ${S.year}"></svg></div>
+    <div class="legend"><span><span class="chip"><span class="sw fam-a"></span>Sullivan</span></span><span><span class="chip"><span class="sw fam-b"></span>Li</span></span><span>Drag a person to move them. Drop them on someone to make them a parent, child or partner.</span><span>Faint dashed box: not yet born. Heavy border: dead by ${S.year}.</span></div>
+    <div class="panel tree-aside" id="tree-aside"></div>`;
+  const svg = $('#tree');
+  const draw = () => {
+    const edges = [];
+    for (const u of UNIONS) { const A = POS[u.a], B = POS[u.b]; if (!A || !B) continue; const [L, R] = A.x <= B.x ? [A, B] : [B, A]; const ended = u.e !== null && S.year > u.e; const future = u.s !== null && S.year < u.s; edges.push(`<path class="tunion ${ended ? 'ended' : ''}" style="${future ? 'opacity:.35' : ''}" d="M${L.x + NW},${L.y + NH / 2} L${R.x},${R.y + NH / 2}"/>`); }
+    for (const l of LINKS) { const P = POS[l.p], C = POS[l.c]; if (!P || !C) continue; const partner = UNIONS.find((u) => (u.a === l.p || u.b === l.p) && LINKS.some((m) => m.c === l.c && m.p === (u.a === l.p ? u.b : u.a))); let sx = P.x + NW / 2; if (partner) { const O = POS[partner.a === l.p ? partner.b : partner.a]; sx = (P.x + O.x + NW) / 2; } const my = C.y - 20; edges.push(`<path class="tlink" d="M${sx},${P.y + NH} L${sx},${my} L${C.x + NW / 2},${my} L${C.x + NW / 2},${C.y}"/>`); }
+    const nodes = CH.filter((c) => POS[c.id]).map((c) => { const p = POS[c.id]; const dead = c.death !== null && S.year > c.death; const unborn = S.year < c.birth; return `<g class="tnode ${c.id === sel ? 'sel' : ''} ${dead ? 'dead' : ''} ${unborn ? 'unborn' : ''}" data-id="${c.id}" transform="translate(${p.x},${p.y})" tabindex="0" role="button" aria-label="${esc(c.name)}, ${age(c, S.year)}"><rect class="box" width="${NW}" height="${NH}" rx="6"/><rect class="fam ${FAM[c.fam].cls}" width="6" height="${NH}" rx="2"/><text class="nm" x="14" y="20">${esc(c.name)}${c.zh ? ' ' + esc(c.zh) : ''}</text><text class="age" x="14" y="40">${c.birth}${c.death !== null ? ' to ' + c.death : ''}</text><text x="${NW - 8}" y="40" text-anchor="end">${age(c, S.year).replace('dead since ', 'd. ')}</text></g>`; });
+    svg.innerHTML = '<g>' + edges.join('') + '</g><g>' + nodes.join('') + '</g>';
+  };
+  draw();
+  // drag to move; drop on someone to link
+  let drag = null;
+  const toSvg = (e) => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+  svg.addEventListener('pointerdown', (e) => { const g = e.target.closest('.tnode'); if (!g) return; const at = toSvg(e); drag = { id: g.dataset.id, ox: POS[g.dataset.id].x - at.x, oy: POS[g.dataset.id].y - at.y, moved: false, sx: e.clientX, sy: e.clientY }; });
+  svg.addEventListener('pointermove', (e) => { if (!drag) return; if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 4) return; if (!drag.moved) { drag.moved = true; svg.setPointerCapture(e.pointerId); drag.start = { ...POS[drag.id] }; } const at = toSvg(e); POS[drag.id] = { x: Math.round(at.x + drag.ox), y: Math.round(at.y + drag.oy) }; draw(); });
+  const endDrag = (e) => { if (!drag) return; const d = drag; drag = null; if (!d.moved) { S.treeSel = d.id; render(); return; } const at = toSvg(e); const onto = CH.find((c) => c.id !== d.id && POS[c.id] && at.x >= POS[c.id].x && at.x <= POS[c.id].x + NW && at.y >= POS[c.id].y && at.y <= POS[c.id].y + NH); if (onto) { POS[d.id] = d.start; draw(); openDrop(d.id, onto.id, e); return; } POS[d.id].y = Math.round(POS[d.id].y / RH) * RH; draw(); };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', () => { if (drag && drag.moved) POS[drag.id] = drag.start; drag = null; draw(); });
+  svg.addEventListener('keydown', (e) => { const g = e.target.closest('.tnode'); if (!g) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); S.treeSel = g.dataset.id; render(); } });
+  function openDrop(a, b, e) {
+    const wrap = $('#tree-wrap'); const r = wrap.getBoundingClientRect();
+    const A = byId[a].name, B = byId[b].name;
+    const m = document.createElement('div'); m.className = 'dropmenu'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', `${A} dropped on ${B}`);
+    m.style.left = Math.max(4, Math.min(e.clientX - r.left, r.width - 270)) + 'px'; m.style.top = Math.max(4, Math.min(e.clientY - r.top, r.height - 200)) + 'px';
+    m.innerHTML = `<strong>${esc(A)} on ${esc(B)}</strong><button class="btn small" data-k="parent">Make ${esc(A)} a parent of ${esc(B)}</button><button class="btn small" data-k="child">Make ${esc(A)} a child of ${esc(B)}</button><button class="btn small" data-k="partner">Make ${esc(A)} and ${esc(B)} partners</button><button class="btn small" data-k="move">Just move ${esc(A)} here</button><button class="btn small" data-k="cancel">Cancel</button><p class="note" id="drop-err" role="alert"></p>`;
+    wrap.appendChild(m); m.querySelector('button').focus();
+    m.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') m.remove(); });
+    m.addEventListener('click', (ev) => { const k = ev.target.dataset.k; if (!k) return; const ancestors = (id, seen = new Set()) => { LINKS.filter((l) => l.c === id).forEach((l) => { if (!seen.has(l.p)) { seen.add(l.p); ancestors(l.p, seen); } }); return seen; };
+      if (k === 'parent') { if (ancestors(a).has(b) || a === b) { $('#drop-err').textContent = `This link was not made: ${B} is already an ancestor of ${A}, so it would make someone their own ancestor.`; return; } LINKS.push({ p: a, c: b }); }
+      if (k === 'child') { if (ancestors(b).has(a)) { $('#drop-err').textContent = `This link was not made: ${A} is already an ancestor of ${B}, so it would make someone their own ancestor.`; return; } LINKS.push({ p: b, c: a }); }
+      if (k === 'partner') UNIONS.push({ a, b, s: S.year, e: null });
+      if (k === 'move') { const at = toSvg(e); POS[a] = { x: Math.round(at.x - NW / 2), y: Math.round(at.y / RH) * RH }; }
+      m.remove(); renderTree(root); });
+  }
+  $('#add-person').addEventListener('click', () => { const id = 'new' + Date.now(); const n = { id, name: 'New person', zh: '', birth: S.year, death: null, fam: 'a', role: '', body: '', back: '', status: 'idea' }; CH.push(n); byId[id] = n; POS[id] = { x: 1540, y: -RH + 80 }; S.treeSel = id; renderTree(root); });
+  $('#fit').addEventListener('click', () => { svg.setAttribute('viewBox', '-30 -30 1620 470'); });
+  const aside = $('#tree-aside');
+  if (!sel) { aside.innerHTML = '<p class="note">Pick a person in the tree to edit them here.</p>'; return; }
+  const c = byId[sel];
+  const links = [...LINKS.filter((l) => l.c === sel).map((l) => ({ role: 'Parent', other: l.p, kind: 'link', ref: l })), ...LINKS.filter((l) => l.p === sel).map((l) => ({ role: 'Child', other: l.c, kind: 'link', ref: l })), ...UNIONS.filter((u) => u.a === sel || u.b === sel).map((u) => ({ role: 'Partner', other: u.a === sel ? u.b : u.a, kind: 'union', ref: u }))];
+  aside.innerHTML = `<div class="row" style="justify-content:space-between"><h3>${esc(c.name)} <span class="note num">${age(c, S.year)}</span></h3><button class="btn small" id="open-char">Open the character page</button></div>
+    <div class="row">${['parent', 'child', 'sibling', 'partner'].map((k) => `<button class="btn small" data-add="${k}">Add ${k}</button>`).join('')}</div>
+    <div class="stack" style="gap:4px"><span class="eyebrow">Links</span>${links.length ? links.map((l, i) => `<div class="row" style="justify-content:space-between"><span>${l.role}: <button class="link" data-go="${l.other}">${esc(byId[l.other].name)}</button></span><button class="btn small danger" data-rm="${i}">Remove</button></div>`).join('') : '<p class="note">No links yet.</p>'}</div>
+    <div class="textbox short"><label for="t-role">In the story</label><textarea id="t-role" rows="2">${esc(c.role)}</textarea></div>
+    <div class="row"><button class="btn small danger" id="t-remove">Remove ${esc(c.name)}</button><span class="saved" id="t-saved">Saved</span></div>`;
+  $('#open-char').addEventListener('click', () => { S.char = sel; S.screen = 'characters'; render(); });
+  aside.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => { S.treeSel = b.dataset.go; render(); }));
+  aside.querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { const l = links[Number(b.dataset.rm)]; if (l.kind === 'link') LINKS.splice(LINKS.indexOf(l.ref), 1); else UNIONS.splice(UNIONS.indexOf(l.ref), 1); render(); }));
+  aside.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.add; const id = 'new' + Date.now(); const p = POS[sel]; const n = { id, name: `New ${k} of ${c.name.split(' ')[0]}`, zh: '', birth: k === 'parent' ? c.birth - 28 : k === 'child' ? c.birth + 28 : c.birth, death: null, fam: c.fam, role: '', body: '', back: '', status: 'idea' }; CH.push(n); byId[id] = n;
+    if (k === 'parent') { POS[id] = { x: p.x, y: p.y - RH }; LINKS.push({ p: id, c: sel }); }
+    if (k === 'child') { POS[id] = { x: p.x + 40, y: p.y + RH }; LINKS.push({ p: sel, c: id }); }
+    if (k === 'sibling') { POS[id] = { x: p.x + NW + 30, y: p.y }; LINKS.filter((l) => l.c === sel).forEach((l) => LINKS.push({ p: l.p, c: id })); }
+    if (k === 'partner') { POS[id] = { x: p.x + NW + 26, y: p.y }; UNIONS.push({ a: sel, b: id, s: S.year, e: null }); }
+    S.treeSel = id; render(); }));
+  $('#t-role').addEventListener('input', (e) => { c.role = e.target.value; flashSaved($('#t-saved')); });
+  $('#t-remove').addEventListener('click', () => { CH.splice(CH.indexOf(c), 1); delete byId[sel]; for (let i = LINKS.length - 1; i >= 0; i--) if (LINKS[i].p === sel || LINKS[i].c === sel) LINKS.splice(i, 1); for (let i = UNIONS.length - 1; i >= 0; i--) if (UNIONS[i].a === sel || UNIONS[i].b === sel) UNIONS.splice(i, 1); S.treeSel = null; render(); });
+}
+
+// ---------- Outline ----------
+function sceneYear(i) { for (let j = i; j >= 0; j--) { if (SCENES[j].note) continue; if (SCENES[j].y !== null && SCENES[j].y !== undefined) return SCENES[j].y; } const ch = chapterAt(i); return ch ? ch.year : S.year; }
+function chapterAt(i) { let best = null; for (const [id, start] of Object.entries(BREAKS)) if (start <= i && (!best || start > BREAKS[best])) best = id; return best ? chapter(best) : null; }
+function renderOutline(root) {
+  const order = Object.keys(BREAKS).sort((a, b) => BREAKS[a] - BREAKS[b]);
+  root.innerHTML = `
+    <div class="screen-head"><h2>Outline</h2><p class="note">Left: every scene in order with its year. Right: one bar per chapter, as tall as its scenes. Drag a bar's edge to change where the chapter starts or ends; drag the bar to swap it with a neighbour.</p></div>
+    <div class="outline-tools"><button class="btn small" id="add-scene">Add scene at the end</button><span class="note">A blank year inherits the scene above. Indented lines are notes on the scene above them.</span><span class="saved" id="o-saved">Saved</span></div>
+    <div class="outline"><div class="scenes" id="scenes"></div><div class="track" id="track"></div></div>`;
+  const scenes = $('#scenes'); let n = 0;
+  scenes.innerHTML = SCENES.map((s, i) => { if (!s.note) n++; const inherit = s.note ? '' : (s.y === null ? ' inherit' : ''); return `<div class="scene ${s.note ? 'note' : ''}" data-i="${i}"><span class="n num">${s.note ? '' : n}</span><input class="yr num${inherit}" type="number" value="${s.note ? '' : s.y === null ? '' : s.y}" placeholder="${s.note ? '' : sceneYear(i)}" aria-label="Year of scene ${n}"><span class="txt" contenteditable="true" spellcheck="false">${esc(s.t)}</span></div>`; }).join('');
+  scenes.querySelectorAll('.yr').forEach((inp) => inp.addEventListener('change', (e) => { const i = Number(e.target.closest('.scene').dataset.i); SCENES[i].y = e.target.value === '' ? null : Number(e.target.value); flashSaved($('#o-saved')); renderOutline(root); }));
+  scenes.querySelectorAll('.txt').forEach((el) => el.addEventListener('input', (e) => { SCENES[Number(e.target.closest('.scene').dataset.i)].t = e.target.textContent; flashSaved($('#o-saved')); }));
+  $('#add-scene').addEventListener('click', () => { SCENES.push({ t: 'New scene', y: null }); renderOutline(root); });
+  // bars
+  const track = $('#track');
+  const rows = [...scenes.querySelectorAll('.scene')];
+  const top = (i) => rows[i].offsetTop - scenes.offsetTop;
+  const bottom = (i) => top(i) + rows[i].offsetHeight;
+  const sectionEnd = (id) => { const k = order.indexOf(id); return k + 1 < order.length ? BREAKS[order[k + 1]] : SCENES.length; };
+  const drawBars = () => {
+    track.innerHTML = order.map((id, k) => { const ch = chapter(id); const s = BREAKS[id], e = sectionEnd(id); const t = top(s), h = Math.max(30, bottom(e - 1) - t); const cnt = SCENES.slice(s, e).filter((x) => !x.note).length; const pi = PARTS.findIndex((p) => p.id === ch.part); return `<div class="bar c${pi}" data-id="${id}" tabindex="0" role="button" aria-label="Chapter ${ch.n}, ${esc(ch.title)}, ${cnt} scenes" style="top:${t + 10}px;height:${h}px"><span class="edge top" data-edge="top"></span><strong>Ch. ${ch.n} ${esc(ch.title)}</strong><span class="meta">${esc(partOf(ch.part).title.split(':')[0])}, ${ch.year}, ${cnt} scene${cnt === 1 ? '' : 's'}</span><span class="edge bot" data-edge="bot"></span></div>`; }).join('');
+    track.style.height = (bottom(SCENES.length - 1) + 20) + 'px';
+  };
+  drawBars();
+  let bd = null;
+  const sceneIndexAtY = (clientY) => { const y = clientY - scenes.getBoundingClientRect().top; let best = 0; rows.forEach((r, i) => { if (SCENES[i].note) return; if (r.offsetTop - scenes.offsetTop + r.offsetHeight / 2 <= y) best = i; }); return best; };
+  track.addEventListener('pointerdown', (e) => { const bar = e.target.closest('.bar'); if (!bar) return; const edge = e.target.dataset.edge || 'body'; bd = { id: bar.dataset.id, edge, sy: e.clientY, moved: false }; track.setPointerCapture(e.pointerId); bar.classList.add('drag'); });
+  track.addEventListener('pointermove', (e) => { if (!bd) return; if (Math.abs(e.clientY - bd.sy) < 4) return; bd.moved = true; const k = order.indexOf(bd.id); const i = sceneIndexAtY(e.clientY);
+    if (bd.edge === 'top') { const prev = k > 0 ? order[k - 1] : null; const lo = prev ? BREAKS[prev] + 1 : 0; const hi = sectionEnd(bd.id) - 1; const v = Math.max(lo, Math.min(hi, i)); if (SCENES[v].note) return; BREAKS[bd.id] = v; }
+    else if (bd.edge === 'bot') { const next = k + 1 < order.length ? order[k + 1] : null; if (!next) return; const lo = BREAKS[bd.id] + 1; const hi = sectionEnd(next) - 1; const v = Math.max(lo, Math.min(hi, i + 1)); if (v >= SCENES.length || SCENES[v].note) return; BREAKS[next] = v; }
+    else { const next = k + 1 < order.length ? order[k + 1] : null; const prev = k > 0 ? order[k - 1] : null; if (next && i >= BREAKS[next]) { const lenA = sectionEnd(bd.id) - BREAKS[bd.id]; const lenB = sectionEnd(next) - BREAKS[next]; const start = BREAKS[bd.id]; const moved = SCENES.splice(start, lenA); SCENES.splice(start + lenB, 0, ...moved); BREAKS[next] = start; BREAKS[bd.id] = start + lenB; order.splice(k, 2, next, bd.id); renderOutline(root); bd = null; return; }
+      if (prev && i < BREAKS[bd.id] && i < BREAKS[prev] + (sectionEnd(prev) - BREAKS[prev])) { const lenA = sectionEnd(bd.id) - BREAKS[bd.id]; const lenP = sectionEnd(prev) - BREAKS[prev]; const start = BREAKS[prev]; const moved = SCENES.splice(BREAKS[bd.id], lenA); SCENES.splice(start, 0, ...moved); BREAKS[bd.id] = start; BREAKS[prev] = start + lenA; order.splice(k - 1, 2, bd.id, prev); renderOutline(root); bd = null; return; } }
+    drawBars(); track.querySelector(`[data-id="${bd.id}"]`)?.classList.add('drag'); });
+  const endBar = () => { if (!bd) return; if (bd.moved) flashSaved($('#o-saved')); bd = null; drawBars(); };
+  track.addEventListener('pointerup', endBar); track.addEventListener('pointercancel', endBar);
+  track.addEventListener('keydown', (e) => { const bar = e.target.closest('.bar'); if (!bar) return; const id = bar.dataset.id; const k = order.indexOf(id); const next = order[k + 1];
+    if (e.key === 'ArrowUp' && e.shiftKey && next && BREAKS[next] > BREAKS[id] + 1) { BREAKS[next]--; e.preventDefault(); }
+    else if (e.key === 'ArrowDown' && e.shiftKey && next && BREAKS[next] + 1 < sectionEnd(next)) { BREAKS[next]++; e.preventDefault(); }
+    else if (e.key === 'ArrowUp' && k > 0) { const prev = order[k - 1]; BREAKS[id]--; if (BREAKS[id] <= BREAKS[prev]) BREAKS[id] = BREAKS[prev] + 1; e.preventDefault(); }
+    else if (e.key === 'ArrowDown' && BREAKS[id] + 1 < sectionEnd(id)) { BREAKS[id]++; e.preventDefault(); }
+    else return; flashSaved($('#o-saved')); drawBars(); track.querySelector(`[data-id="${id}"]`)?.focus(); });
+}
+
+// ---------- shared year axis ----------
+const Y0 = 2025, Y1 = 2100;
+const X = (y) => (y - Y0) * S.ppy;
+function axisHtml() {
+  let ticks = '';
+  for (let y = Y0; y <= Y1; y += 5) ticks += `<span class="tick ${y % 10 === 0 ? 'dec' : ''} num" style="left:${X(y)}px">${y % 10 === 0 || S.ppy >= 16 ? y : ''}</span>`;
+  const eras = ERAS.map((e) => `<span class="era-seg" style="left:${X(e.s)}px;width:${Math.max(3, X(e.e + 1) - X(e.s))}px" title="${esc(e.name)}, ${e.s} to ${e.e}"></span>`).join('');
+  return `<div class="axis" style="width:${X(Y1 + 1)}px">${ticks}<div class="eras">${eras}</div></div>`;
+}
+function overlayHtml() {
+  const ch = chapter(S.writing);
+  let dec = ''; for (let y = 2030; y <= Y1; y += 10) dec += `<span class="decade" style="left:${X(y)}px"></span>`;
+  return dec + `<span class="yband" style="left:${X(ch.year)}px;width:${S.ppy}px" title="Writing: ${esc(ch.title)}"></span><span class="yline" style="left:${X(S.year) + S.ppy / 2}px" title="Story year ${S.year}"></span>`;
+}
+function tipAt(host, e, text) { let t = host.querySelector('.tip'); if (!t) { t = document.createElement('div'); t.className = 'tip'; host.appendChild(t); } const r = host.getBoundingClientRect(); t.textContent = text; t.style.left = Math.min(e.clientX - r.left + 12, r.width - 270) + 'px'; t.style.top = (e.clientY - r.top + 14) + 'px'; }
+function tipOff(host) { host.querySelector('.tip')?.remove(); }
+function zoomTools() { return `<label class="row" style="gap:6px">Zoom <select id="ppy"><option value="8" ${S.ppy === 8 ? 'selected' : ''}>75 years</option><option value="14" ${S.ppy === 14 ? 'selected' : ''}>Default</option><option value="24" ${S.ppy === 24 ? 'selected' : ''}>Close</option></select></label>`; }
+
+// ---------- World events ----------
+function renderWorld(root) {
+  const regions = ['United States', 'China', 'Europe', 'Pacific States'];
+  root.innerHTML = `
+    <div class="screen-head"><h2>World events</h2><p class="note">Years left to right, one row per category from the world tracker sheet. Click an empty spot in a row to add an event there. Drag a marker to change its year. Larger markers are formative events.</p></div>
+    <div class="tools">${zoomTools()}<span class="row" role="group" aria-label="Region">${['', ...regions].map((r) => `<button class="btn small" data-region="${r}" aria-pressed="${S.region === r}">${r || 'All regions'}</button>`).join('')}</span><span class="note">Rows trimmed to a sample in this mockup; the app shows all 111.</span></div>
+    <div class="grid" id="wgrid"><div class="labels" id="wlabels"><div class="glabel head" style="font-weight:600">Category</div></div><div class="plot" id="wplot"><div class="canvas" id="wcanvas">${axisHtml()}</div></div></div>
+    <div class="panel" id="winspector"><p class="note">Click a marker to edit the event here.</p></div>`;
+  $('#ppy').addEventListener('change', (e) => { S.ppy = Number(e.target.value); renderWorld(root); });
+  root.querySelectorAll('[data-region]').forEach((b) => b.addEventListener('click', () => { S.region = b.dataset.region; renderWorld(root); }));
+  const labels = $('#wlabels'), canvas = $('#wcanvas'), plot = $('#wplot');
+  const W = X(Y1 + 1);
+  for (const [g, rows] of GROUPS) {
+    const closed = S.closed.has(g);
+    labels.insertAdjacentHTML('beforeend', `<div class="glabel head ${closed ? 'closed' : ''}"><button data-g="${esc(g)}" aria-expanded="${!closed}"><span class="caret"></span>${esc(g)}</button></div>`);
+    canvas.insertAdjacentHTML('beforeend', `<div class="grow head" style="width:${W}px">${closed ? EVENTS.filter((ev) => rows.includes(ev.row) && (!S.region || ev.region === S.region)).map((ev) => `<span class="mark dim" style="left:${X(ev.y) + 1}px" title="${esc(ev.title)}"></span>`).join('') : ''}</div>`);
+    if (closed) continue;
+    for (const row of rows) {
+      labels.insertAdjacentHTML('beforeend', `<div class="glabel" title="${esc(row)}">${esc(row)}</div>`);
+      const evs = EVENTS.filter((ev) => ev.row === row && (!S.region || ev.region === S.region));
+      canvas.insertAdjacentHTML('beforeend', `<div class="grow hit" data-row="${esc(row)}" style="width:${W}px">${evs.map((ev) => `<span class="mark ${ev.e ? 'bar' : ''} ${ev.formative ? 'formative' : ''} ${S.sel === ev.id ? 'sel' : ''}" data-id="${ev.id}" tabindex="0" role="button" aria-label="${esc(ev.title)}, ${ev.y}${ev.e ? ' to ' + ev.e : ''}" style="left:${X(ev.y) + 1}px;${ev.e ? `width:${X(ev.e + 1) - X(ev.y) - 2}px` : ''}"></span>${S.ppy >= 14 && !ev.e ? `<span class="mlabel" style="left:${X(ev.y) + 18}px">${esc(ev.title.length > 28 ? ev.title.slice(0, 27) + '…' : ev.title)}</span>` : ''}`).join('')}</div>`);
+    }
+  }
+  canvas.insertAdjacentHTML('beforeend', overlayHtml());
+  labels.querySelectorAll('[data-g]').forEach((b) => b.addEventListener('click', () => { const g = b.dataset.g; if (S.closed.has(g)) S.closed.delete(g); else S.closed.add(g); renderWorld(root); }));
+  plot.scrollLeft = Math.max(0, X(S.year) - plot.clientWidth / 2);
+  // hover, click to add, drag along the row
+  let md = null;
+  canvas.addEventListener('pointerover', (e) => { const m = e.target.closest('.mark'); if (m && m.dataset.id) { const ev = EVENTS.find((x) => x.id === m.dataset.id); tipAt(plot, e, `${ev.y}${ev.e ? ' to ' + ev.e : ''}: ${ev.title}${ev.region ? ' (' + ev.region + ')' : ''}${ev.formative ? '. Formative.' : ''}`); } });
+  canvas.addEventListener('pointerout', (e) => { if (e.target.closest('.mark')) tipOff(plot); });
+  canvas.addEventListener('pointerdown', (e) => { const m = e.target.closest('.mark'); if (!m || !m.dataset.id) return; md = { ev: EVENTS.find((x) => x.id === m.dataset.id), sx: e.clientX, y0: null, moved: false }; md.y0 = md.ev.y; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', (e) => { if (!md) return; const dy = Math.round((e.clientX - md.sx) / S.ppy); if (!md.moved && Math.abs(e.clientX - md.sx) < 4) return; md.moved = true; const ny = Math.max(Y0, Math.min(Y1, md.y0 + dy)); if (ny !== md.ev.y) { if (md.ev.e !== null) md.ev.e += ny - md.ev.y; md.ev.y = ny; const el = canvas.querySelector(`[data-id="${md.ev.id}"]`); el.style.left = (X(ny) + 1) + 'px'; const lab = el.nextElementSibling; if (lab && lab.classList.contains('mlabel')) lab.style.left = (X(ny) + 18) + 'px'; tipAt(plot, e, `${ny}: ${md.ev.title}`); } });
+  canvas.addEventListener('pointerup', (e) => { if (md) { const was = md; md = null; tipOff(plot); if (!was.moved) { S.sel = was.ev.id; renderWorld(root); } else { S.sel = was.ev.id; renderWorld(root); } return; } const row = e.target.closest('.grow.hit'); if (!row || e.target.closest('.mark')) return; const r = canvas.getBoundingClientRect(); const y = Y0 + Math.floor((e.clientX - r.left) / S.ppy); openAdd(row.dataset.row, y, e); });
+  function openAdd(row, y, e) { const r = plot.getBoundingClientRect(); const f = document.createElement('form'); f.className = 'addform'; f.style.left = Math.min(e.clientX - r.left, r.width - 270) + 'px'; f.style.top = (e.clientY - r.top + 8) + 'px'; f.innerHTML = `<strong>New event in ${esc(row)}, ${y}</strong><div class="field"><label for="ne-title">What happens</label><input id="ne-title" required></div><div class="field"><label for="ne-year">Year</label><input id="ne-year" type="number" value="${y}"></div><label class="row" style="gap:6px;font-size:.85rem"><input type="checkbox" id="ne-form">Formative</label><div class="row"><button class="btn primary small" type="submit">Add the event</button><button class="btn small" type="button" id="ne-cancel">Cancel</button></div>`; plot.appendChild(f); f.querySelector('#ne-title').focus(); f.addEventListener('submit', (ev) => { ev.preventDefault(); EVENTS.push({ id: 'e' + Date.now(), row, y: Number(f.querySelector('#ne-year').value) || y, e: null, title: f.querySelector('#ne-title').value, formative: f.querySelector('#ne-form').checked, region: S.region }); renderWorld(root); }); f.querySelector('#ne-cancel').addEventListener('click', () => f.remove()); f.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') f.remove(); }); }
+  canvas.addEventListener('keydown', (e) => { const m = e.target.closest('.mark'); if (!m) return; const ev = EVENTS.find((x) => x.id === m.dataset.id); if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { ev.y += e.key === 'ArrowLeft' ? -1 : 1; if (ev.e !== null) ev.e += e.key === 'ArrowLeft' ? -1 : 1; S.sel = ev.id; renderWorld(root); canvas.querySelector(`[data-id="${ev.id}"]`)?.focus(); e.preventDefault(); } if (e.key === 'Enter') { S.sel = ev.id; renderWorld(root); } });
+  const ev = EVENTS.find((x) => x.id === S.sel);
+  if (ev) { const ins = $('#winspector'); ins.innerHTML = `<div class="stack"><div class="row" style="justify-content:space-between"><h3>Event</h3><span class="saved" id="w-saved">Saved</span></div><div class="row" style="align-items:flex-end"><div class="field" style="flex:1 1 240px"><label for="we-title">What happens</label><input id="we-title" value="${esc(ev.title)}"></div><div class="field"><label for="we-year">Year</label><input id="we-year" type="number" class="num" value="${ev.y}"></div><div class="field"><label for="we-end">Until</label><input id="we-end" type="number" class="num" value="${ev.e ?? ''}" placeholder="one year"></div><div class="field"><label for="we-row">Row</label><select id="we-row">${GROUPS.flatMap(([g, rows]) => rows.map((r) => `<option ${r === ev.row ? 'selected' : ''}>${esc(r)}</option>`)).join('')}</select></div><label class="row" style="gap:6px"><input type="checkbox" id="we-form" ${ev.formative ? 'checked' : ''}>Formative</label></div><div class="field"><label for="we-body">Notes</label><textarea id="we-body" placeholder="What it means for the people in the story."></textarea></div><div class="row"><button class="btn small danger" id="we-del">Move to trash</button></div></div>`;
+    const bind = (sel, fn, evn = 'input') => $(sel).addEventListener(evn, (e) => { fn(e.target); flashSaved($('#w-saved')); });
+    bind('#we-title', (t) => { ev.title = t.value; });
+    bind('#we-year', (t) => { ev.y = Number(t.value) || ev.y; }, 'change'); $('#we-year').addEventListener('change', () => renderWorld(root));
+    bind('#we-end', (t) => { ev.e = t.value === '' ? null : Number(t.value); }, 'change'); $('#we-end').addEventListener('change', () => renderWorld(root));
+    bind('#we-row', (t) => { ev.row = t.value; }, 'change'); $('#we-row').addEventListener('change', () => renderWorld(root));
+    bind('#we-form', (t) => { ev.formative = t.checked; }, 'change'); $('#we-form').addEventListener('change', () => renderWorld(root));
+    $('#we-del').addEventListener('click', () => { EVENTS.splice(EVENTS.indexOf(ev), 1); S.sel = null; renderWorld(root); }); }
+}
+
+// ---------- Backstory ----------
+function renderBackstory(root) {
+  const c = byId[S.charBack] || CH[0];
+  root.innerHTML = `
+    <div class="screen-head"><h2>Backstory</h2><p class="note">One row per person, their life as a bar and each dated moment as a marker. Pick a person to edit their moments below. Click an empty spot in a row to add one there.</p></div>
+    <div class="tools">${zoomTools()}<span class="chip"><span class="sw fam-a"></span>Sullivan</span><span class="chip"><span class="sw fam-b"></span>Li</span><span class="note">Markers sit on the same year axis as World events.</span></div>
+    <div class="grid" id="bgrid"><div class="labels" id="blabels"><div class="glabel head">Person</div></div><div class="plot" id="bplot"><div class="canvas" id="bcanvas">${axisHtml()}</div></div></div>
+    <div class="panel stack" id="bmoments"></div>`;
+  $('#ppy').addEventListener('change', (e) => { S.ppy = Number(e.target.value); renderBackstory(root); });
+  const labels = $('#blabels'), canvas = $('#bcanvas'), plot = $('#bplot'); const W = X(Y1 + 1);
+  for (const f of Object.values(FAM)) {
+    labels.insertAdjacentHTML('beforeend', `<div class="glabel head">${f.name}</div>`); canvas.insertAdjacentHTML('beforeend', `<div class="grow head" style="width:${W}px"></div>`);
+    for (const p of CH.filter((x) => x.fam === f.id).sort((a, b) => a.birth - b.birth)) {
+      labels.insertAdjacentHTML('beforeend', `<div class="glabel ${p.id === c.id ? 'sel' : ''}"><button class="pick" data-id="${p.id}"><span class="stripe ${f.cls}" style="height:14px"></span>${esc(p.name)}</button></div>`);
+      const ms = MOMENTS.filter((m) => m.c === p.id);
+      const lifeL = X(Math.max(Y0, p.birth)), lifeR = X(Math.min(Y1, p.death ?? Y1) + 1);
+      canvas.insertAdjacentHTML('beforeend', `<div class="grow hit" data-id="${p.id}" style="width:${W}px"><span class="life ${f.cls}" style="left:${lifeL}px;width:${Math.max(0, lifeR - lifeL)}px"></span>${ms.map((m) => `<span class="mark ${f.cls}" data-m="${m.id}" tabindex="0" role="button" aria-label="${esc(m.t)}, ${m.y}" style="left:${X(m.y) + 1}px"></span>`).join('')}</div>`);
+    }
+  }
+  canvas.insertAdjacentHTML('beforeend', overlayHtml());
+  plot.scrollLeft = Math.max(0, X(S.year) - plot.clientWidth / 2);
+  labels.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => { S.charBack = b.dataset.id; renderBackstory(root); }));
+  canvas.addEventListener('pointerover', (e) => { const m = e.target.closest('.mark'); if (m) { const mo = MOMENTS.find((x) => x.id === m.dataset.m); tipAt(plot, e, `${mo.y}, ${byId[mo.c].name}: ${mo.t}`); } });
+  canvas.addEventListener('pointerout', (e) => { if (e.target.closest('.mark')) tipOff(plot); });
+  canvas.addEventListener('click', (e) => { const m = e.target.closest('.mark'); const row = e.target.closest('.grow.hit'); if (!row) return; if (m) { S.charBack = row.dataset.id; S.sel = m.dataset.m; renderBackstory(root); return; } const r = canvas.getBoundingClientRect(); const y = Y0 + Math.floor((e.clientX - r.left) / S.ppy); const id = 'm' + Date.now(); MOMENTS.push({ id, c: row.dataset.id, y, t: 'New moment', how: '', world: '' }); S.charBack = row.dataset.id; S.sel = id; renderBackstory(root); });
+  const mine = MOMENTS.filter((m) => m.c === c.id).sort((a, b) => a.y - b.y);
+  const box = $('#bmoments');
+  box.innerHTML = `<div class="row" style="justify-content:space-between"><h3>${esc(c.name)}${c.zh ? ' ' + esc(c.zh) : ''} <span class="note num">born ${c.birth}${c.death !== null ? ', died ' + c.death : ''}</span></h3><span class="row"><button class="btn small" id="b-add">Add a moment</button><button class="btn small" id="b-char">Character page</button><span class="saved" id="b-saved">Saved</span></span></div>
+    <div class="table-wrap"><table class="moments"><thead><tr><th>Year</th><th>Age</th><th>What happens</th><th>How they experience it</th><th>Relevant world events</th><th></th></tr></thead><tbody>${mine.length ? mine.map((m) => `<tr data-m="${m.id}" ${m.id === S.sel ? 'style="background:var(--accent-soft)"' : ''}><td class="yr"><input type="number" class="num" value="${m.y}" aria-label="Year"></td><td class="num note">${m.y - c.birth}</td><td><textarea aria-label="What happens">${esc(m.t)}</textarea></td><td><textarea aria-label="How they experience it">${esc(m.how)}</textarea></td><td><textarea aria-label="Relevant world events" placeholder="${esc(EVENTS.filter((ev) => ev.y === m.y).map((ev) => ev.title).slice(0, 1).join('') || 'none that year')}">${esc(m.world)}</textarea></td><td><button class="btn small danger" data-del="${m.id}" aria-label="Remove">Remove</button></td></tr>`).join('') : '<tr><td colspan="6" class="note">No moments yet. Click a spot in their row, or Add a moment.</td></tr>'}</tbody></table></div>`;
+  $('#b-add').addEventListener('click', () => { const id = 'm' + Date.now(); MOMENTS.push({ id, c: c.id, y: S.year, t: 'New moment', how: '', world: '' }); S.sel = id; renderBackstory(root); });
+  $('#b-char').addEventListener('click', () => { S.char = c.id; S.screen = 'characters'; render(); });
+  box.querySelectorAll('tr[data-m]').forEach((tr) => { const m = MOMENTS.find((x) => x.id === tr.dataset.m); const [yr, what, how, world] = [tr.querySelector('input'), ...tr.querySelectorAll('textarea')]; yr.addEventListener('change', () => { m.y = Number(yr.value) || m.y; flashSaved($('#b-saved')); renderBackstory(root); }); what.addEventListener('input', () => { m.t = what.value; flashSaved($('#b-saved')); }); how.addEventListener('input', () => { m.how = how.value; flashSaved($('#b-saved')); }); world.addEventListener('input', () => { m.world = world.value; flashSaved($('#b-saved')); }); });
+  box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { MOMENTS.splice(MOMENTS.findIndex((m) => m.id === b.dataset.del), 1); renderBackstory(root); }));
+}
+
+// ---------- Relevant to Session ----------
+function renderRelevant(root) {
+  const ch = chapter(S.writing); const y = ch.year;
+  const cast = CH.filter((c) => c.id === ch.pov || MOMENTS.some((m) => m.c === c.id && Math.abs(m.y - y) <= 1) || LINKS.some((l) => (l.p === ch.pov && l.c === c.id) || (l.c === ch.pov && l.p === c.id)) || UNIONS.some((u) => (u.a === ch.pov && u.b === c.id) || (u.b === ch.pov && u.a === c.id))).filter((c) => c.birth <= y).sort((a, b) => (a.id === ch.pov ? -1 : b.id === ch.pov ? 1 : a.birth - b.birth));
+  const years = [y - 3, y - 2, y - 1, y, y + 1];
+  const open = S.tileOpen && byId[S.tileOpen] ? byId[S.tileOpen] : null;
+  const detail = (c) => { const ms = MOMENTS.filter((m) => m.c === c.id && m.y <= y).sort((a, b) => b.y - a.y).slice(0, 3); return `<div class="tile-detail"><div><h4>${esc(c.name)}${c.zh ? ' ' + esc(c.zh) : ''}, ${age(c, y)} in ${y}</h4><p>${esc(c.role)}</p><p class="note" style="margin-top:6px">${esc(c.body || 'No description yet.')}</p></div><div><h4>Lately</h4>${ms.length ? '<ul style="margin:0;padding-left:16px">' + ms.map((m) => `<li><span class="num">${m.y}</span> ${esc(m.t)}${m.how ? `<span class="note">. ${esc(m.how)}</span>` : ''}</li>`).join('') + '</ul>' : '<p class="note">No dated moments before this year.</p>'}</div><div><h4>Family</h4><p class="note">${esc(relativesLine(c))}</p><div class="row" style="margin-top:8px"><button class="btn small" data-open-char="${c.id}">Character page</button><button class="btn small" data-open-back="${c.id}">Backstory row</button></div></div></div>`; };
+  root.innerHTML = `<div class="relevant">
+    <div class="screen-head"><div><span class="eyebrow">Relevant to session</span><h2>Ch. ${ch.n}: ${esc(ch.title)} <span class="note num">${esc(partOf(ch.part).title.split(':')[0])}, ${y}, ${esc(byId[ch.pov].name)}'s point of view</span></h2></div><button class="btn small" id="rel-close">Back to ${RAIL.find((r) => r[0] === S.screen)[1]}</button></div>
+    <div class="textbox long"><label for="scene-note">What happens in this scene <span class="saved" id="rel-saved">Saved</span></label><textarea id="scene-note" rows="4" placeholder="Your own note for the scene you are writing. Kept with the chapter.">${esc(SCENE_NOTES[ch.id] || '')}</textarea></div>
+    <div class="stack" style="gap:8px"><span class="eyebrow">Characters in ${y}</span><div class="tiles" id="tiles">${cast.map((c) => `<button class="tile" data-id="${c.id}" aria-expanded="${open && open.id === c.id}"><span class="stripe ${FAM[c.fam].cls}"></span><span><span class="nm">${esc(c.name)}${c.zh ? ' <span class="note">' + esc(c.zh) + '</span>' : ''}</span><br><span class="ag num">${age(c, y)}${c.id === ch.pov ? ', point of view' : ''}</span></span></button>`).join('')}${open ? detail(open) : ''}</div></div>
+    <div class="stack" style="gap:8px"><span class="eyebrow">World events, ${years[0]} to ${years[4]}</span><div class="events-strip">${years.map((yy) => `<div class="col ${yy === y ? 'now' : ''}"><h4 class="num">${yy}${yy === y ? ' (this chapter)' : yy > y ? ' (ahead)' : ''}</h4>${EVENTS.filter((ev) => ev.y === yy).length ? '<ul>' + EVENTS.filter((ev) => ev.y === yy).map((ev) => `<li><button class="link" data-ev="${ev.id}">${esc(ev.title)}</button></li>`).join('') + '</ul>' : '<p class="note">Nothing recorded.</p>'}</div>`).join('')}</div></div>
+    <div class="stack" style="gap:8px"><span class="eyebrow">Cultural context, ${y}</span><div class="cult">${CULT.filter((cu) => cu.s <= y && cu.e >= y).map((cu) => `<div class="panel"><h3>${esc(cu.com)}</h3><p class="yrs num">${cu.s} to ${cu.e}</p><p>${esc(cu.body)}</p></div>`).join('') || '<p class="note">No cultural entries cover this year.</p>'}</div></div>
+  </div>`;
+  $('#rel-close').addEventListener('click', () => { S.relevant = false; render(); });
+  $('#scene-note').addEventListener('input', (e) => { SCENE_NOTES[ch.id] = e.target.value; flashSaved($('#rel-saved')); });
+  root.querySelectorAll('.tile').forEach((t) => t.addEventListener('click', () => { S.tileOpen = S.tileOpen === t.dataset.id ? null : t.dataset.id; renderRelevant(root); }));
+  root.querySelectorAll('[data-open-char]').forEach((b) => b.addEventListener('click', () => { S.char = b.dataset.openChar; S.screen = 'characters'; S.relevant = false; render(); }));
+  root.querySelectorAll('[data-open-back]').forEach((b) => b.addEventListener('click', () => { S.charBack = b.dataset.openBack; S.screen = 'backstory'; S.relevant = false; render(); }));
+  root.querySelectorAll('[data-ev]').forEach((b) => b.addEventListener('click', () => { S.sel = b.dataset.ev; S.screen = 'world'; S.relevant = false; render(); }));
+}
+
+// ---------- Continuity checker ----------
+function renderContinuity(root) {
+  const ch = chapter(S.writing);
+  const mine = FINDINGS.filter((f) => f.ch === ch.id);
+  root.innerHTML = `
+    <div class="screen-head"><h2>Continuity checker</h2><div class="row"><button class="btn primary small" id="run">Check Ch. ${ch.n}</button><button class="btn small" id="run-all">Check the whole manuscript</button></div></div>
+    <p class="note">Structural checks run in code (ages, deaths, places). Alignment checks ask Claude to compare the chapter text with the bible. Each finding resolves one of three ways. The manuscript is never edited.</p>
+    <div class="two"><div class="panel stack" style="gap:6px"><span class="eyebrow">Manuscript</span><p><strong>Ch. ${ch.n}: ${esc(ch.title)}</strong></p><p class="note">2 chapters hold text. Imported from the Google Doc "East Winds"; re-import shows a diff.</p><button class="btn small">Import a chapter</button></div>
+    <div class="stack" id="findings">${mine.length ? mine.map((f) => `<div class="finding ${f.state}" data-id="${f.id}"><span class="row"><span class="pill ${f.kind === 'structural' ? 'warn' : ''}">${f.kind}</span><span class="pill ${f.state === 'open' ? '' : 'good'}">${f.state === 'open' ? 'open' : f.state === 'manuscriptWins' ? 'manuscript wins, bible updated' : f.state === 'rewrite' ? 'rewrite recommended' : 'dismissed'}</span></span><p>${esc(f.text)}</p><blockquote>${esc(f.quote)}</blockquote>${f.state === 'open' ? `<div class="row"><button class="btn small" data-res="manuscriptWins">Manuscript wins</button><button class="btn small" data-res="rewrite">Rewrite recommended</button><button class="btn small" data-res="dismissed">Dismiss</button></div>` : `<button class="btn small" data-res="open">Reopen</button>`}</div>`).join('') : '<p class="note">No findings for this chapter. Run a check.</p>'}</div></div>`;
+  root.querySelectorAll('[data-res]').forEach((b) => b.addEventListener('click', () => { const f = FINDINGS.find((x) => x.id === b.closest('.finding').dataset.id); f.state = b.dataset.res; renderContinuity(root); }));
+  $('#run').addEventListener('click', () => { if (!FINDINGS.some((f) => f.ch === ch.id && f.id === 'f-' + ch.id)) FINDINGS.push({ id: 'f-' + ch.id, ch: ch.id, kind: 'structural', text: `${byId[ch.pov].name} is ${age(byId[ch.pov], ch.year).replace('age ', '')} in ${ch.year}; check every age the chapter states.`, quote: 'age check', state: 'open' }); renderContinuity(root); });
+  $('#run-all').addEventListener('click', () => { S.writing = 'c4'; renderContinuity(root); });
+}
+
+// ---------- Sessions ----------
+function renderSessions(root) {
+  const ch = chapter(S.writing);
+  root.innerHTML = `
+    <div class="screen-head"><h2>Sessions</h2><button class="btn primary small" id="start2">Start session</button></div>
+    ${S.starting ? `<div class="panel stack" id="start-panel"><h3>Start a session on Ch. ${ch.n}: ${esc(ch.title)}</h3><p class="note">The brief is built from the bible by code first (characters and ages, world events, cultural context), then Opus writes it up. Nothing it writes is prose for the novel.</p><div class="row"><div class="field"><label for="s-ch">Section</label><select id="s-ch">${CHAPTERS.map((c) => `<option value="${c.id}" ${c.id === ch.id ? 'selected' : ''}>Ch. ${c.n}: ${esc(c.title)}</option>`).join('')}</select></div><div class="field"><label for="s-year">Story year</label><input id="s-year" type="number" class="num" value="${ch.year}"></div></div><div class="row"><button class="btn primary small" id="s-go">Build the brief and log the session</button><button class="btn small" id="s-cancel">Cancel</button></div></div>` : ''}
+    <div class="two"><div class="stack"><span class="eyebrow">Session log</span><ul class="log">${SESSIONS.map((s) => `<li><span class="num note">${s.date}</span><span><strong>Ch. ${chapter(s.ch).n}: ${esc(chapter(s.ch).title)}</strong><br><span class="note">Stopped at: ${esc(s.stop)}${s.notes ? '. ' + esc(s.notes) : ''}</span></span></li>`).join('')}</ul></div>
+    <div class="stack"><span class="eyebrow">Questions</span>${QUESTIONS.map((q, i) => `<div class="panel stack" style="gap:6px"><p>${esc(q.q)}</p>${q.state === 'decided' ? `<p class="note"><span class="pill good">decided</span> ${esc(q.decision)}</p>` : `<div class="row"><input class="field" style="flex:1 1 160px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface)" placeholder="The decision" data-q="${i}"><button class="btn small" data-decide="${i}">Mark decided</button></div>`}</div>`).join('')}<div class="row"><input id="new-q" style="flex:1 1 200px;padding:6px 8px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface)" placeholder="A question to settle later"><button class="btn small" id="add-q">Add</button></div></div></div>`;
+  $('#start2').addEventListener('click', () => { S.starting = true; renderSessions(root); });
+  if (S.starting) { $('#s-cancel').addEventListener('click', () => { S.starting = false; renderSessions(root); }); $('#s-go').addEventListener('click', () => { S.writing = $('#s-ch').value; S.year = Number($('#s-year').value) || S.year; SESSIONS.unshift({ date: new Date().toISOString().slice(0, 10), ch: S.writing, stop: 'session started', notes: 'Brief built.' }); S.starting = false; S.relevant = true; render(); }); }
+  root.querySelectorAll('[data-decide]').forEach((b) => b.addEventListener('click', () => { const i = Number(b.dataset.decide); const v = root.querySelector(`[data-q="${i}"]`).value.trim(); if (!v) return; QUESTIONS[i].state = 'decided'; QUESTIONS[i].decision = v; renderSessions(root); }));
+  $('#add-q').addEventListener('click', () => { const v = $('#new-q').value.trim(); if (!v) return; QUESTIONS.unshift({ q: v, state: 'open', decision: '' }); renderSessions(root); });
+}
+
+// ---------- Cultural data ----------
+function renderCultural(root) {
+  root.innerHTML = `
+    <div class="screen-head"><h2>Cultural data</h2><p class="note">What people expect of each other, by community and years. Entries that cover the story year are highlighted.</p></div>
+    <div class="tabs" role="tablist"><button role="tab" aria-selected="${S.cultTab === 'communities'}" data-tab="communities">Communities</button><button role="tab" aria-selected="${S.cultTab === 'eras'}" data-tab="eras">Eras</button></div>
+    <div id="cult-body"></div>`;
+  root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { S.cultTab = b.dataset.tab; renderCultural(root); }));
+  const body = $('#cult-body');
+  if (S.cultTab === 'communities') {
+    const coms = [...new Set(CULT.map((c) => c.com))];
+    body.innerHTML = `<div class="cult">${coms.map((com) => `<div class="panel stack" style="gap:8px"><h3>${esc(com)}</h3>${CULT.filter((c) => c.com === com).sort((a, b) => a.s - b.s).map((c) => { const now = c.s <= S.year && c.e >= S.year; return `<div class="stack" style="gap:4px;${now ? '' : 'opacity:.6'}"><span class="row" style="justify-content:space-between"><span class="yrs num">${c.s} to ${c.e}${now ? ' <span class="pill good">now</span>' : ''}</span></span><textarea aria-label="${esc(com)} ${c.s} to ${c.e}" data-i="${CULT.indexOf(c)}">${esc(c.body)}</textarea></div>`; }).join('')}<button class="btn small" data-add="${esc(com)}">Add a period</button></div>`).join('')}</div><p class="saved" id="c-saved" style="margin-top:8px">Saved</p>`;
+    body.querySelectorAll('textarea').forEach((t) => t.addEventListener('input', () => { CULT[Number(t.dataset.i)].body = t.value; flashSaved($('#c-saved')); }));
+    body.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => { CULT.push({ com: b.dataset.add, s: S.year, e: S.year + 9, body: '' }); renderCultural(root); }));
+  } else {
+    body.innerHTML = `<div class="cult">${ERAS.map((e) => { const now = S.year >= e.s && S.year <= e.e; return `<div class="panel stack" style="gap:6px;${now ? 'border-color:var(--accent)' : ''}"><h3>${esc(e.name)}</h3><p class="yrs num">${e.s} to ${e.e}${now ? ' <span class="pill good">now</span>' : ''}</p><textarea aria-label="${esc(e.name)}" placeholder="What the world is like in these years."></textarea></div>`; }).join('')}</div>`;
+  }
+}
+
+render();
+</script>

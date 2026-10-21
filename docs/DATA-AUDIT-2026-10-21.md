@@ -230,14 +230,9 @@ Order of work, each a milestone with its own verification and commit: the charac
 page (smallest, proves the migration pattern); the Backstory rows and grid; the World events
 grid; the Outline track; the rail; then the importer. The tree work from today (A38) stands.
 
-## 5. Decisions needed
+## 5. Decisions, 2026-10-21
 
-1. Facts and knowledge records: drop them (export to a file first), or keep off the rail?
-2. Themes: drop, or keep as tags on chapters?
-3. Custom sections: drop (one exists, with two entries), or keep off the rail?
-4. Arcs: drop in favour of the Backstory grid, or keep as coloured spans drawn on that grid?
-5. Backstory as a screen: the per-character dated rows (the Sullivan and Li sheets) is my
-   reading of the sketch. Confirm, or say what it should hold.
-6. Relationships (friend, rival, employer): fold into descriptions, or keep as a line on the
-   character page?
-7. Scene years in the text ("2051: ...") or as a separate year field per scene line?
+Tommy answered the same day: drop facts and knowledge records; drop themes; drop custom sections;
+drop arcs in favour of the Backstory grid; Backstory is per character; drop relationships
+entirely; a separate year field per scene. Recorded as A39 (SPEC section 5.23). The mockup is
+`mockups/a39-knowledge-base.html`.
