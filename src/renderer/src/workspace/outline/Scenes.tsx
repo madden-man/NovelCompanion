@@ -32,6 +32,7 @@ import {
   shownYears,
   sliceSection,
   splitFlow,
+  typedSince,
   withSection,
 } from '../../../../shared/domain/sceneOutline';
 import type { Flow, SceneOutlineState, ShownYear } from '../../../../shared/domain/sceneOutline';
@@ -52,7 +53,10 @@ import { useOutlineWrites } from './actions';
 import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings';
 import { NumberField } from './NumberField';
-import { InlineName } from './InlineName';
+import { EntryEditable } from '../editable';
+import { BooksParts } from './BooksParts';
+import { StrandPopover, strandChipText } from './StrandPopover';
+import { clearOutlineFocus, useOpenOutline, waitingOutlineFocus } from './nav';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
@@ -136,9 +140,42 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const lastError = useRef<string | null>(null);
   /** Lines waiting for a new chapter to reach the reading order (Cmd+Enter). */
   const split = useRef<{ id: string | null; change: (f: Flow, id: string) => Flow } | null>(null);
+  /** IP-6: the outline as it was before the typing not yet recorded as an undo step. */
+  const typedFrom = useRef<SceneOutlineState | null>(null);
 
   const stored = () =>
     current.current === null ? null : composeFlow(current.current, orderRef.current);
+
+  /**
+   * ED-3: the focused section's text counts as saved once its typing is a
+   * step (or an undo step put it back), so Cmd+Z in the box steps the app's
+   * history rather than the box's own.
+   */
+  const { record, markSaved } = undo;
+  const markFocused = useCallback(() => {
+    const el = document.activeElement;
+    const key = el instanceof HTMLTextAreaElement ? el.dataset.section : undefined;
+    if (!key || !current.current) return;
+    markSaved({ [`scene:${key}`]: sectionOf(current.current, key).lines.join('\n') });
+  }, [markSaved]);
+
+  /**
+   * IP-6, A44: the typing since the last step becomes one undo step, at each
+   * pause (the autosave), before any other step, and on leaving. Undo puts
+   * the outline back to where the typing began while nothing changed it since.
+   */
+  const closeTyping = useCallback(() => {
+    const from = typedFrom.current;
+    typedFrom.current = null;
+    const now = current.current === null ? null : composeFlow(current.current, orderRef.current);
+    if (!from || !now || !typedSince(from, now)) return;
+    record({
+      label: 'Typed in the scene outline',
+      undo: [outlineOp(now, from)],
+      redo: [outlineOp(from, now)],
+    });
+    markFocused();
+  }, [record, markFocused]);
 
   useEffect(() => {
     let live = true;
@@ -167,6 +204,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const save = useCallback(async (): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
+    closeTyping();
     if (inflight.current) await inflight.current;
     for (;;) {
       const target = stored();
@@ -203,7 +241,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
         return true;
       }
     }
-  }, []);
+  }, [closeTyping]);
 
   const schedule = useCallback(() => {
     if (readOnly) return;
@@ -241,6 +279,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       setFlow(current.current);
       return;
     }
+    // Typing before a new reading order is its own step, in the order it was typed in.
+    closeTyping();
     const waiting = pending.current;
     pending.current = null;
     current.current = waiting
@@ -262,10 +302,11 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      closeTyping();
       const target = stored();
       if (target && !sameState(saved.current, target)) void call('sceneOutline.set', target);
     },
-    [],
+    [closeTyping],
   );
 
   // An undo or redo writes what is pending first, and outline steps reach this flow.
@@ -292,8 +333,10 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
             setStatus('saved');
           }
         };
+        typedFrom.current = null;
         current.current = splitFlow(s, orderRef.current);
         setFlow(current.current);
+        markFocused();
         if (Object.keys(s.breaks).some((id) => !orderRef.current.includes(id))) {
           // A chapter in it is not back in the reading order yet: wait for it, then write.
           await new Promise<void>((resolve, reject) => {
@@ -356,8 +399,10 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
    * step. Undo puts the outline back when nothing changed it since.
    */
   const step = (label: string, change: (f: Flow) => Flow | null): boolean => {
+    if (readOnly) return false;
+    closeTyping();
     const base = current.current;
-    if (!base || readOnly) return false;
+    if (!base) return false;
     const next = change(base);
     if (!next) return false;
     const before = composeFlow(base, orderRef.current);
@@ -366,6 +411,13 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     edit(() => next);
     undo.record({ label, undo: [outlineOp(after, before)], redo: [outlineOp(before, after)] });
     return true;
+  };
+
+  /** IP-6: typing in a section; the run becomes one undo step at the next pause. */
+  const type = (change: (f: Flow) => Flow) => {
+    if (readOnly) return;
+    typedFrom.current ??= stored();
+    edit(change);
   };
 
   /** After a restore the stored state is the new truth. */
@@ -397,7 +449,20 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const snapshot = () =>
     current.current === null ? null : { flow: current.current, order: orderRef.current };
 
-  return { flow, status, error, saves, edit, step, save, replace, splitInto, snapshot };
+  return {
+    flow,
+    status,
+    error,
+    saves,
+    edit,
+    type,
+    step,
+    save,
+    replace,
+    splitInto,
+    snapshot,
+    commitTyping: closeTyping,
+  };
 }
 
 /** Series tokens the chapters cycle through, in reading order. */
@@ -556,6 +621,7 @@ export function SceneOutline(props: { onOpen: Open }) {
    * year. The lines from the caret on move into it once it exists.
    */
   const newChapterAt = async (key: string, line: number) => {
+    scene.commitTyping();
     const row = chapters.find((c) => c.id === key);
     const partId = row?.partId ?? chapters[0]?.partId ?? (await ensurePart());
     if (!partId) return;
@@ -732,6 +798,51 @@ export function SceneOutline(props: { onOpen: Open }) {
       }
     });
   };
+
+  /**
+   * IP-3: the first part's divider goes. Its chapters join the section after
+   * it and the part goes to the trash, as one undo step. Never offered while
+   * it is the only section.
+   */
+  const removeFirstDivider = () => {
+    const first = chapters[0];
+    const next = chapters.find((c) => first && c.partId !== first.partId);
+    if (!first || !next) return;
+    const moving = chapters.filter((c) => c.partId === first.partId);
+    const gone = parts.find((p) => p.id === first.partId);
+    void together(
+      `Removed the divider ${gone?.title ?? 'above the first chapter'}`,
+      async (steps) => {
+        for (const c of moving) {
+          steps.push(await update('chapters', c.id, { partId: next.partId }));
+        }
+        if (gone) {
+          await call('entry.delete', { collection: 'parts', id: gone.id });
+          steps.push(deleteCommand('parts', gone.id, gone.title));
+        }
+      },
+    );
+  };
+
+  // IP-5: a strand row in the Story time dialog opens the Outline on its chapter's bar.
+  const [show, setShow] = useState<{ id: string; at: number } | null>(() => {
+    const id = waitingOutlineFocus();
+    return id ? { id, at: Date.now() } : null;
+  });
+  const shown = useRef<number | null>(null);
+  useOpenOutline((id) => setShow({ id, at: Date.now() }));
+  useEffect(() => {
+    if (!show || shown.current === show.at || !outline || !flow) return;
+    const el = board.current?.querySelector<HTMLElement>(
+      `[data-testid="chapter-bar"][data-chapter="${CSS.escape(show.id)}"]`,
+    );
+    // A chapter the outline does not hold (gone to the trash since) is let go.
+    shown.current = show.at;
+    clearOutlineFocus();
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.focus({ preventScroll: true });
+  }, [show, outline, flow]);
 
   // ---------- pointer drags ----------
 
@@ -912,7 +1023,7 @@ export function SceneOutline(props: { onOpen: Open }) {
       else areas.current.delete(key);
     },
     onLines: (key, lines) =>
-      scene.edit((f) => withSection(f, key, retext(sectionOf(f, key), lines))),
+      scene.type((f) => withSection(f, key, retext(sectionOf(f, key), lines))),
     // SM-5: a committed year is one undo step, as the story year field is.
     onYear: (key, line, year) =>
       void scene.step(
@@ -1021,6 +1132,10 @@ export function SceneOutline(props: { onOpen: Open }) {
               const tint = row ? tintOf(row.id) : 'lead';
               const split = row !== null && aboveRow !== null && aboveRow.partId !== row.partId;
               const part = split ? parts.find((p) => p.id === row.partId) : undefined;
+              const firstPart =
+                row !== null && row.id === chapters[0]?.id
+                  ? parts.find((p) => p.id === row.partId)
+                  : undefined;
               return (
                 <Fragment key={key}>
                   {above !== undefined && (
@@ -1051,6 +1166,15 @@ export function SceneOutline(props: { onOpen: Open }) {
                       onStep={(by) => moveLine(above, key, linesOf(above).length + by)}
                       onAddDivider={() => addDivider(key)}
                       onRemoveDivider={() => removeDivider(key)}
+                    />
+                  )}
+                  {firstPart && (
+                    <FirstDivider
+                      partId={firstPart.id}
+                      title={firstPart.title}
+                      canRemove={chapters.some((c) => c.partId !== firstPart.id)}
+                      disabled={ro.off}
+                      onRemove={removeFirstDivider}
                     />
                   )}
                   <div className={`sb-row ${tint}`} data-row={key}>
@@ -1112,10 +1236,12 @@ export function SceneOutline(props: { onOpen: Open }) {
             )}
           </div>
         )}
+        {outline && <BooksParts writes={writes} />}
         <Versions
           saves={scene.saves}
           onRestore={(r) => {
             // ED-3: a restored version is one step; undo puts the outline back as it was.
+            scene.commitTyping();
             const snap = scene.snapshot();
             const before = snap ? composeFlow(snap.flow, snap.order) : null;
             scene.replace(r);
@@ -1170,7 +1296,6 @@ function Boundary(p: {
   onAddDivider: () => void;
   onRemoveDivider: () => void;
 }) {
-  const writes = useOutlineWrites();
   const { divider } = p;
   const canMove = p.upperLines + p.lowerLines > 0;
   return (
@@ -1205,18 +1330,15 @@ function Boundary(p: {
       {divider ? (
         <span className="sb-divider-label" data-testid="divider">
           {divider.partId ? (
-            <InlineName
-              value={divider.title}
+            <EntryEditable
+              collection="parts"
+              id={divider.partId}
+              path="title"
+              kind="text"
               label="Divider name"
-              disabled={writes.ro.off}
+              allowEmpty={false}
               testId="divider-name"
-              onSave={(t) =>
-                divider.partId &&
-                writes.edit('parts', divider.partId, { title: t }, `Renamed ${divider.label}`)
-              }
-            >
-              {divider.title}
-            </InlineName>
+            />
           ) : (
             <span className="ol-name missing">{divider.title}</span>
           )}
@@ -1250,6 +1372,48 @@ function Boundary(p: {
   );
 }
 
+/**
+ * IP-3: the first part's title, as a divider above the first chapter. It
+ * renames in place like every divider; its removal is offered only when
+ * another section follows.
+ */
+function FirstDivider(p: {
+  partId: string;
+  title: string;
+  canRemove: boolean;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="sb-boundary divider first off" data-testid="first-divider" data-part={p.partId}>
+      <span className="sb-divider-label">
+        <EntryEditable
+          collection="parts"
+          id={p.partId}
+          path="title"
+          kind="text"
+          label="Divider name"
+          allowEmpty={false}
+          testId="divider-name"
+        />
+        {p.canRemove && (
+          <button
+            type="button"
+            className="btn small sb-divider-remove"
+            disabled={p.disabled}
+            aria-label={`Remove the divider ${p.title}`}
+            title="Remove this divider: its chapters join the section below"
+            data-testid="remove-divider"
+            onClick={p.onRemove}
+          >
+            ×
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
 interface BarProps {
   row: ChapterRow;
   scenes: number;
@@ -1263,11 +1427,15 @@ interface BarProps {
   onTrash: () => void;
 }
 
+/** What a press on a bar leaves alone: its own controls and fields. */
+const BAR_CONTROLS = 'input, button, select, a, label, [data-editable], [role="button"]';
+
 /**
  * One chapter's bar, as tall as its section, in its colour, with its name
- * (renamed in place), scene count and story year. Drag it to a new place or
- * onto the trash. Focused: Up and Down move it past its neighbour, Delete
- * puts it in the trash.
+ * (renamed in place), scene count, story year, the Written toggle and the
+ * strand chip, which opens the strand popover beside the bar (IP-3). Drag it
+ * to a new place or onto the trash. Focused: Up and Down move it past its
+ * neighbour, Delete puts it in the trash.
  */
 function ChapterBar(p: BarProps) {
   const { row } = p;
@@ -1276,15 +1444,13 @@ function ChapterBar(p: BarProps) {
   const doc = stored.find((c) => c._id === row.id);
   const title = doc ? entryTitle(doc) : row.title;
   const off = writes.ro.off;
-
-  const rename = async (next: string) => {
-    await writes.edit(
-      'chapters',
-      row.id,
-      { title: next },
-      `Renamed chapter ${row.readingOrder} to ${next}`,
-    );
-  };
+  const [strandOpen, setStrandOpen] = useState(false);
+  const chip = useRef<HTMLButtonElement | null>(null);
+  const closeStrand = useCallback((refocus: boolean) => {
+    setStrandOpen(false);
+    if (refocus) chip.current?.focus({ preventScroll: true });
+  }, []);
+  const written = doc?.written === true;
 
   /** The story year is the primary strand's start year; moving it moves that strand (TM-5). */
   const setYear = async (y: number): Promise<boolean> => {
@@ -1303,6 +1469,15 @@ function ChapterBar(p: BarProps) {
     );
     return ok === true;
   };
+
+  /** IP-3: the written flag, one undo step. */
+  const setWritten = (next: boolean) =>
+    void writes.edit(
+      'chapters',
+      row.id,
+      { written: next },
+      next ? `Marked ${title} as written` : `Marked ${title} as not written`,
+    );
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || off) return;
@@ -1323,68 +1498,107 @@ function ChapterBar(p: BarProps) {
         ? `scene ${p.firstScene}`
         : `scenes ${p.firstScene} to ${p.firstScene + p.scenes - 1}`;
   return (
-    <div
-      className={`cbar${p.moving ? ' moving' : ''}${off ? ' off' : ''}`}
-      style={p.dy ? { transform: `translateY(${p.dy}px)` } : undefined}
-      role="group"
-      tabIndex={0}
-      aria-roledescription="chapter bar"
-      aria-label={`Chapter ${row.readingOrder}, ${title}, ${span}`}
-      aria-keyshortcuts="ArrowUp ArrowDown Delete"
-      title="Drag to move this chapter, or onto the trash to delete it. Up and Down move it, Delete deletes it."
-      data-testid="chapter-bar"
-      data-chapter={row.id}
-      onKeyDown={onKeyDown}
-      onFocus={(e) => {
-        if (e.target === e.currentTarget) p.onFocusBar();
-      }}
-      onPointerDown={(e) => {
-        if ((e.target as HTMLElement).closest('input, button, select, a')) return;
-        p.onGrab(e);
-      }}
-    >
-      <span className="cbar-main">
-        <span className="cbar-line">
-          <span className="cbar-no">Ch {row.readingOrder}</span>
-          <InlineName
-            value={title}
-            label={`Title of chapter ${row.readingOrder}`}
-            onSave={rename}
-            disabled={off}
-            className="cbar-title"
-            testId="chapter-title"
-          >
-            <Zh text={title} actions={false} />
-          </InlineName>
-        </span>
-        <span className="cbar-line cbar-sub">
-          <span data-testid="chapter-scenes">{plural(p.scenes, 'scene', 'scenes')}</span>
-          <span className="cbar-year">
-            <span>Year</span>
-            <NumberField
-              label={`Story year of chapter ${row.readingOrder}`}
-              testId="chapter-year"
-              value={row.storyYear}
-              min={MIN_YEAR}
-              max={MAX_YEAR}
-              width="5.2em"
-              disabled={off}
-              tip={writes.ro.tip}
-              onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(y))}
+    <>
+      <div
+        className={`cbar${p.moving ? ' moving' : ''}${off ? ' off' : ''}`}
+        style={p.dy ? { transform: `translateY(${p.dy}px)` } : undefined}
+        role="group"
+        tabIndex={0}
+        aria-roledescription="chapter bar"
+        aria-label={`Chapter ${row.readingOrder}, ${title}, ${span}`}
+        aria-keyshortcuts="ArrowUp ArrowDown Delete"
+        title="Drag to move this chapter, or onto the trash to delete it. Up and Down move it, Delete deletes it."
+        data-testid="chapter-bar"
+        data-chapter={row.id}
+        data-written={written ? 'true' : 'false'}
+        onKeyDown={onKeyDown}
+        onFocus={(e) => {
+          if (e.target === e.currentTarget) p.onFocusBar();
+        }}
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest(BAR_CONTROLS)) return;
+          p.onGrab(e);
+        }}
+      >
+        <span className="cbar-main">
+          <span className="cbar-line">
+            <span className="cbar-no">Ch {row.readingOrder}</span>
+            <EntryEditable
+              collection="chapters"
+              id={row.id}
+              entry={doc ?? null}
+              path="title"
+              kind="text"
+              label={`Title of chapter ${row.readingOrder}`}
+              allowEmpty={false}
+              className="cbar-title"
+              testId="chapter-title"
+              display={(t) => <Zh text={t} actions={false} />}
             />
           </span>
-          <button
-            type="button"
-            className="link-btn cbar-open"
-            data-testid="chapter-open"
-            aria-label={`Open chapter ${row.readingOrder}, ${title}`}
-            onClick={() => p.onOpen('chapters', row.id)}
-          >
-            Open
-          </button>
+          <span className="cbar-line cbar-sub">
+            <span data-testid="chapter-scenes">{plural(p.scenes, 'scene', 'scenes')}</span>
+            <span className="cbar-year">
+              <span>Year</span>
+              <NumberField
+                label={`Story year of chapter ${row.readingOrder}`}
+                testId="chapter-year"
+                value={row.storyYear}
+                min={MIN_YEAR}
+                max={MAX_YEAR}
+                width="5.2em"
+                disabled={off}
+                tip={writes.ro.tip}
+                onCommit={(y) => (y === null ? Promise.resolve(false) : setYear(y))}
+              />
+            </span>
+            <button
+              type="button"
+              className="link-btn cbar-open"
+              data-testid="chapter-open"
+              aria-label={`Open chapter ${row.readingOrder}, ${title}`}
+              onClick={() => p.onOpen('chapters', row.id)}
+            >
+              Open
+            </button>
+          </span>
+          <span className="cbar-line cbar-sub">
+            <button
+              ref={chip}
+              type="button"
+              className="cbar-strand"
+              aria-expanded={strandOpen}
+              aria-haspopup="dialog"
+              aria-label={`Strands of chapter ${row.readingOrder}: ${doc ? strandChipText(doc.strands) : 'loading'}`}
+              data-testid="strand-chip"
+              onClick={() => setStrandOpen((o) => !o)}
+            >
+              {doc ? strandChipText(doc.strands) : ''}
+            </button>
+            <label className="cbar-written">
+              <input
+                type="checkbox"
+                checked={written}
+                disabled={off || !doc}
+                {...writes.ro.tip}
+                data-testid="chapter-written"
+                onChange={(e) => setWritten(e.target.checked)}
+              />
+              Written
+            </label>
+          </span>
         </span>
-      </span>
-    </div>
+      </div>
+      {strandOpen && doc && (
+        <StrandPopover
+          chapter={doc}
+          chapterNo={row.readingOrder}
+          anchor={chip}
+          writes={writes}
+          onClose={closeStrand}
+        />
+      )}
+    </>
   );
 }
 
@@ -1532,6 +1746,7 @@ function SectionText(p: SectionProps) {
         placeholder={p.chapter !== undefined ? '- The first scene of this chapter' : undefined}
         data-testid="scene-text"
         data-section={p.sectionKey}
+        data-field={`scene:${p.sectionKey}`}
         onFocus={() => {
           // An empty section starts with a bullet, so the first keystroke writes a scene.
           if (p.lines.length === 0 && !p.disabled) apply(EMPTY_OUTLINE, 2, 2);

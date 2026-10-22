@@ -1,0 +1,49 @@
+/* a47-outline, IP-5: the Story time dialog's rows as links and fields. The
+   date columns keep their width, so opening a field moves no row. */
+.year-people {
+  table-layout: fixed;
+  width: 100%;
+}
+.year-people col.yp-name {
+  width: 24%;
+}
+.year-people col.yp-family {
+  width: 16%;
+}
+.year-people col.yp-date {
+  width: 15%;
+}
+.year-people col.yp-state {
+  width: 20%;
+}
+.year-people col.yp-age {
+  width: 10%;
+}
+.year-people td {
+  overflow-wrap: anywhere;
+}
+.year-people .yp-field .editable-sizer {
+  max-width: 100%;
+}
+.year-people .yp-field .editable-input {
+  min-width: 0;
+  max-width: 100%;
+}
+.year-person {
+  text-align: left;
+}
+.year-person-pick {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.year-era-line {
+  display: inline;
+}
+.year-era-span {
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  .year-people {
+    table-layout: auto;
+  }
+}

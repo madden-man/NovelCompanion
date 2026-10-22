@@ -686,3 +686,152 @@
   outline: 2px solid var(--critical-ink);
   outline-offset: 1px;
 }
+
+/* a47-outline, IP-3: the strand chip and the Written toggle on a bar. */
+.cbar-strand {
+  max-width: 100%;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cbar-strand:hover {
+  border-color: var(--accent);
+}
+.cbar-strand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cbar-strand[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cbar-written {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.cbar-written input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cbar .editable-text {
+  cursor: text;
+}
+
+/* The strand popover: beside the bar, over the text, moving nothing. */
+.strand-pop {
+  position: absolute;
+  top: 3px;
+  right: calc(100% - 6px);
+  z-index: 20;
+  width: min(360px, 70vw);
+  box-sizing: border-box;
+  padding: 10px 12px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow, 0 6px 18px rgb(0 0 0 / 0.25));
+  cursor: default;
+}
+.strand-pop:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.strand-pop-title {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.strand-pop-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.strand-pop-fields dt {
+  font-weight: 600;
+  color: var(--fg);
+}
+.strand-pop-fields dd {
+  margin: 0;
+  min-width: 0;
+}
+.strand-pop-none {
+  color: var(--fg);
+}
+@media (max-width: 600px) {
+  .strand-pop {
+    right: 0;
+    top: calc(100% - 3px);
+    width: min(320px, calc(100vw - 32px));
+  }
+  .strand-pop-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* IP-3: the first part's divider sits above the first chapter, in the flow, not dragged. */
+.sb-boundary.divider.first {
+  cursor: default;
+}
+
+/* IP-13: Books and parts, a disclosure under the track. */
+.books-parts {
+  max-width: 1180px;
+  padding: 8px 12px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+.books-parts > summary {
+  font-weight: 700;
+  cursor: pointer;
+}
+.books-parts > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.bp-books,
+.bp-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bp-book {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.bp-parts {
+  margin: 6px 0 8px 16px;
+}
+.bp-part {
+  padding: 6px 0;
+}
+.bp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.bp-kind {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+.bp-title {
+  font-weight: 600;
+}

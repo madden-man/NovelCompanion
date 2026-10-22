@@ -7,7 +7,8 @@ import type { LifeState } from '../../../../shared/domain/ages';
 import { eventSpans, fromCollections } from '../../../../shared/domain/timeline';
 import type { EntryCollection } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
-import { editCommand } from '../../../../shared/domain/undoRunner';
+import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
+import { entryTitle } from '../../../../shared/schema';
 import { useUndo } from '../undo';
 import { useEntries } from '../data';
 import { formatMoment, useStoryTime } from '../storyTime';
@@ -17,8 +18,11 @@ import { FamilyChips, StateText, span, useFamilies, useYearView } from './common
 import { CompareView } from './CompareView';
 import { LivedThrough } from './LivedThrough';
 import { WorldEventsStrip } from './WorldEventsStrip';
-import { MarkdownView } from '../richText/MarkdownView';
+import { EntryEditable } from '../editable';
+import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { openOutline } from '../outline/nav';
 import './year.css';
+import './yearLinks.css';
 
 type Preview = Response<'storyTime.promotePreview'>;
 
@@ -109,6 +113,38 @@ export function StoryTimeDialog(props: {
   const openEvent = (id: string) => {
     close();
     props.onOpen('worldEvents', id);
+  };
+  // IP-5: a name opens the person's page, a strand its chapter's bar on the Outline.
+  const openPerson = (id: string) => {
+    close();
+    props.onOpen('characters', id);
+  };
+  const openChapter = (chapterId: string) => {
+    close();
+    openOutline(chapterId);
+  };
+  const { templates } = useBibleSettings();
+  const statusOf = useDefaultStatus();
+  const eras = useEntries('eraStates');
+  const eraDoc = view?.era ? (eras.find((e) => e._id === view.era?.id) ?? null) : null;
+  const byId = useMemo(() => new Map(characters.map((c) => [c._id, c])), [characters]);
+  /** IP-14: a new era for the year, named from the bible's template; one undo step. */
+  const addEra = async () => {
+    try {
+      const { entry } = await call('entry.create', {
+        collection: 'eraStates',
+        data: {
+          title: templates.eraName,
+          name: templates.eraName,
+          startYear: time.year,
+          endYear: time.year + 9,
+          status: statusOf('idea'),
+        },
+      });
+      undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));
+    } catch (e) {
+      setNote({ text: plainError(e), bad: true });
+    }
   };
 
   useEffect(() => {
@@ -499,11 +535,21 @@ export function StoryTimeDialog(props: {
         <section className="stack tight" aria-labelledby={ids.everyone}>
           <h3 id={ids.everyone}>Everyone in {formatMoment(time)}</h3>
           <div className="table-wrap">
-            <table className="compact state-table" data-testid="time-states">
+            <table className="compact state-table year-people" data-testid="time-states">
+              <colgroup>
+                <col className="yp-name" />
+                <col className="yp-family" />
+                <col className="yp-date" />
+                <col className="yp-date" />
+                <col className="yp-state" />
+                <col className="yp-age" />
+              </colgroup>
               <thead>
                 <tr>
                   <th scope="col">Character</th>
                   <th scope="col">Family</th>
+                  <th scope="col">Birth</th>
+                  <th scope="col">Death</th>
                   <th scope="col">State</th>
                   <th scope="col">Age</th>
                 </tr>
@@ -512,10 +558,43 @@ export function StoryTimeDialog(props: {
                 {(view?.rows ?? []).map((r) => (
                   <tr key={r.id} data-person={r.id}>
                     <td>
-                      <Zh text={r.name} /> {r.chinese && <Zh text={r.chinese} />}
+                      <button
+                        type="button"
+                        className="link-btn year-person"
+                        data-testid="year-person"
+                        aria-label={`Open ${r.name}`}
+                        onClick={() => openPerson(r.id)}
+                      >
+                        <Zh text={r.name} actions={false} />
+                      </button>{' '}
+                      {r.chinese && <Zh text={r.chinese} />}
                     </td>
                     <td>
                       <FamilyChips ids={r.familyIds} families={families} />
+                    </td>
+                    <td className="yp-field" data-testid="year-birth">
+                      <EntryEditable
+                        collection="characters"
+                        id={r.id}
+                        entry={byId.get(r.id) ?? null}
+                        path="birth"
+                        kind="date"
+                        dateBox="birth"
+                        label={`Birth of ${r.name}`}
+                        placeholder="Unknown"
+                      />
+                    </td>
+                    <td className="yp-field" data-testid="year-death">
+                      <EntryEditable
+                        collection="characters"
+                        id={r.id}
+                        entry={byId.get(r.id) ?? null}
+                        path="death"
+                        kind="date"
+                        dateBox="death"
+                        label={`Death of ${r.name}`}
+                        placeholder="None"
+                      />
                     </td>
                     <td>
                       <StateText state={r.state} />
@@ -536,19 +615,73 @@ export function StoryTimeDialog(props: {
               <span className="eyebrow">Era</span>
               {view?.era ? (
                 <>
-                  <strong>
-                    {view.era.name}{' '}
-                    <span className="num">({span(view.era.startYear, view.era.endYear)})</span>
+                  <strong className="year-era-line">
+                    <EntryEditable
+                      collection="eraStates"
+                      id={view.era.id}
+                      entry={eraDoc}
+                      path="name"
+                      kind="text"
+                      label="Era name"
+                      allowEmpty={false}
+                      testId="era-name"
+                      // The title the app shows follows the name while they agree.
+                      extraPatch={(next, e) => (e.title === e.name ? { title: next } : {})}
+                    />{' '}
+                    <span className="num year-era-span">
+                      (
+                      <EntryEditable
+                        collection="eraStates"
+                        id={view.era.id}
+                        entry={eraDoc}
+                        path="startYear"
+                        kind="year"
+                        label="Era start year"
+                        testId="era-start"
+                      />{' '}
+                      to{' '}
+                      <EntryEditable
+                        collection="eraStates"
+                        id={view.era.id}
+                        entry={eraDoc}
+                        path="endYear"
+                        kind="year"
+                        label="Era end year"
+                        testId="era-end"
+                      />
+                      )
+                    </span>
                   </strong>
                   {view.eras.length > 1 && (
                     <p className="callout warn">
                       {view.eras.length} eras cover {view.year}. The one that started last applies.
                     </p>
                   )}
-                  {view.era.body && <MarkdownView text={view.era.body} />}
+                  <EntryEditable
+                    collection="eraStates"
+                    id={view.era.id}
+                    entry={eraDoc}
+                    path="body"
+                    kind="rich"
+                    label={`What ${view.era.name} is like`}
+                    placeholder="Add what the world is like in this era"
+                    testId="era-body"
+                  />
                 </>
               ) : (
-                <p>No era covers {time.year}.</p>
+                <>
+                  <p>No era covers {time.year}.</p>
+                  <button
+                    type="button"
+                    className="btn small"
+                    disabled={ro.off}
+                    {...ro.tip}
+                    data-testid="era-add"
+                    onClick={() => void addEra()}
+                  >
+                    Add an era from {time.year}
+                  </button>
+                </>
               )}
             </div>
             <div className="year-strip">
@@ -569,8 +702,17 @@ export function StoryTimeDialog(props: {
                 <ul className="plain-list">
                   {view.strands.map((s) => (
                     <li key={`${s.chapterId}|${s.strandId}`}>
-                      Chapter {s.readingOrder ?? '?'}: {s.chapterTitle}, {s.label}
-                      {s.primary ? ' (primary)' : ''}
+                      <button
+                        type="button"
+                        className="link-btn"
+                        data-testid="year-strand"
+                        data-chapter={s.chapterId}
+                        title="Open this chapter on the Outline"
+                        onClick={() => openChapter(s.chapterId)}
+                      >
+                        Chapter {s.readingOrder ?? '?'}: {s.chapterTitle}, {s.label}
+                        {s.primary ? ' (primary)' : ''}
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -581,10 +723,10 @@ export function StoryTimeDialog(props: {
           </div>
         </section>
         <Disclosure label="Compare two characters" testid="time-compare">
-          <CompareView />
+          <CompareView onOpenPerson={openPerson} />
         </Disclosure>
         <Disclosure label="Lived through" testid="time-lived">
-          <LivedThrough year={time.year} />
+          <LivedThrough year={time.year} onOpenPerson={openPerson} />
         </Disclosure>
       </div>
     </div>

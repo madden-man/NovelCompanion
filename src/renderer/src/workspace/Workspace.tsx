@@ -22,6 +22,7 @@ import { useOpenBackstory } from './backstory/nav';
 import { useYearView } from './timeline/common';
 import { TreeView } from './tree/TreeView';
 import { OutlineView } from './plot';
+import { useOpenOutline } from './outline/nav';
 import { ZhNavProvider } from './Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from './culture';
@@ -144,6 +145,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   const openSection = (collection: EntryCollection) =>
     setView({ kind: 'section', collection, selected: null, creating: false });
   useOpenBackstory((characterId, at) => setView({ kind: 'backstory', characterId, at }));
+  useOpenOutline(() => setView({ kind: 'outline' }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
     review: () => setView({ kind: 'review' }),

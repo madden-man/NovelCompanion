@@ -10,7 +10,14 @@ type Lived = Response<'timeline.livedThrough'>;
  * TL-5: the world events one character has lived through by a year, with
  * their age at each. Shown in the year dialog's "Lived through" disclosure.
  */
-export function LivedThrough({ year }: { year: number }) {
+export function LivedThrough({
+  year,
+  onOpenPerson,
+}: {
+  year: number;
+  /** IP-5: the name opens the person's page. */
+  onOpenPerson?: (id: string) => void;
+}) {
   const { version } = useStore();
   const characters = useEntries('characters');
   const [who, setWho] = useState('');
@@ -40,15 +47,27 @@ export function LivedThrough({ year }: { year: number }) {
         World events inside the character&rsquo;s lifetime up to {year}, with their age at each.
         Formative events reach every brief for that character.
       </p>
-      <div className="field">
-        <label htmlFor={id}>Lived through by</label>
-        <select id={id} value={chosen} onChange={(e) => setWho(e.target.value)}>
-          {characters.map((c) => (
-            <option key={c._id} value={c._id}>
-              {name(c._id)}
-            </option>
-          ))}
-        </select>
+      <div className="row tight year-person-pick">
+        <div className="field">
+          <label htmlFor={id}>Lived through by</label>
+          <select id={id} value={chosen} onChange={(e) => setWho(e.target.value)}>
+            {characters.map((c) => (
+              <option key={c._id} value={c._id}>
+                {name(c._id)}
+              </option>
+            ))}
+          </select>
+        </div>
+        {chosen && onOpenPerson && (
+          <button
+            type="button"
+            className="link-btn"
+            data-testid="lived-person"
+            onClick={() => onOpenPerson(chosen)}
+          >
+            Open {name(chosen)}
+          </button>
+        )}
       </div>
       <div className="table-wrap">
         <table className="compact" data-testid="lived-table">
