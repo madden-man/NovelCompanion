@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { UndoManager, stepNotice } from '../../../shared/domain/undoRunner';
+import { plainErrorMessage } from '../../../shared/errors';
 import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner';
 import { undoIO } from '../../../shared/undoIO';
 import { savedFieldText } from '../../../shared/domain/undoText';
@@ -142,9 +143,14 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     (direction: 'undo' | 'redo') => {
       // Steps run one after another, so fast key presses replay in order.
       busy.current = busy.current.then(async () => {
-        await flushAll();
-        const r = await manager.current.step(direction, io);
-        setNotice(stepNotice(direction, r));
+        // Whatever one step throws, the queue goes on: a later Cmd+Z still runs.
+        try {
+          await flushAll();
+          const r = await manager.current.step(direction, io);
+          setNotice(stepNotice(direction, r));
+        } catch (e) {
+          setNotice(`Could not ${direction}: ${plainErrorMessage(e)}`);
+        }
         refresh();
       });
       return busy.current;

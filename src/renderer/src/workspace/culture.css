@@ -109,3 +109,29 @@
     align-items: stretch;
   }
 }
+
+/* a47-house, IP-10: the stepper over units of years, and the line fields. */
+.cu-stepper {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cu-unit {
+  min-width: 7.5em;
+  text-align: center;
+  color: var(--fg);
+}
+.cu-unit-setting {
+  margin-left: auto;
+}
+.cu-line-head .cu-line-text {
+  flex: 1 1 240px;
+  min-width: 160px;
+}
+.cu-line .cu-note {
+  margin: 4px 0 2px;
+}
+@media (max-width: 400px) {
+  .cu-unit-setting {
+    margin-left: 0;
+  }
+}

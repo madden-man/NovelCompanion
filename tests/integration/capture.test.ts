@@ -453,6 +453,46 @@ describe('IP-17 capture can mint a list item', () => {
     await invoke('lists.removeItem', { listId: 'communities', itemId: item.id });
   });
 
+  test('IP-17 ED-7 the name of a proposed item edits before approval: blank, too long and a name the list has are refused, and a good name lands on the proposal only', async () => {
+    const { add, line } = await jinan();
+    const before = communities();
+    await expect(invoke('proposal.edit', { id: add._id, data: { label: '   ' } })).rejects.toThrow(
+      'A list item needs a name.',
+    );
+    await expect(
+      invoke('proposal.edit', { id: add._id, data: { label: 'J'.repeat(201) } }),
+    ).rejects.toThrow('A list item name is at most 200 characters.');
+    // Only the case differs from an item the list has: refused, like a proposal of it.
+    await expect(
+      invoke('proposal.edit', { id: add._id, data: { label: 'GUANGZHOU' } }),
+    ).rejects.toThrow(
+      'The Communities list already has Guangzhou. Reject this proposal and use it instead.',
+    );
+    expect(bible.model.get('proposals', add._id)).toMatchObject({
+      listAdd: { label: 'Jinan' },
+      edited: false,
+    });
+    const { proposal } = await invoke('proposal.edit', {
+      id: add._id,
+      data: { label: '  Jinan City ' },
+    });
+    expect(proposal).toMatchObject({
+      state: 'pending',
+      edited: true,
+      listAdd: { listId: 'communities', label: 'Jinan City', ref: 'new:jinan' },
+    });
+    // The proposal only: the list is as it was, and the line now shows the new name.
+    expect(communities()).toEqual(before);
+    const lineDiff = await invoke('proposal.diff', { id: line._id });
+    expect(lineDiff.changes).toContainEqual({
+      path: 'communityId',
+      before: undefined,
+      after: '+ Jinan City',
+    });
+    await invoke('proposal.reject', { id: line._id });
+    await invoke('proposal.reject', { id: add._id });
+  });
+
   test('IP-17 proposal.reject drops the item, and a line that uses it is then refused with a plain reason', async () => {
     const { add, line } = await jinan();
     await invoke('proposal.reject', { id: add._id });

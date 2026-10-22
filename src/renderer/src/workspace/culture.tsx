@@ -2,26 +2,30 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useWriteGuard } from '../connection';
 import {
+  ageGroupOptions,
   decadeGroups,
-  decadeLabel,
-  decadeOf,
-  decadeSpan,
   decadesFor,
+  demographicOf,
   descriptionFor,
   placeOutline,
   spanInDecade,
+  unitLabel,
+  unitOf,
+  unitSpan,
 } from '../../../shared/domain/culture';
-import type { DecadeGroup } from '../../../shared/domain/culture';
+import type { AgeGroupOption, DecadeGroup } from '../../../shared/domain/culture';
+import type { CultureUnit } from '../../../shared/schema/settings';
 import { createCommand, deleteCommand, renameCommand } from '../../../shared/domain/undoRunner';
 import {
   communityNoteCommand,
   communityRemoveCommand,
+  cultureUnitCommand,
   listAddCommand,
   romanizationCommand,
 } from '../../../shared/undoCommands';
 import type { Response } from '../../../shared/ipc';
-import { DEMOGRAPHIC_OPTIONS } from '../../../shared/schema/world';
-import { entryTitle } from '../../../shared/schema';
+import { entryTitle, manifests } from '../../../shared/schema';
+import { blankEntry } from '../../../shared/domain/blank';
 import { call, plainError } from '../api';
 import { useEntries, useList, useStore } from './data';
 import type { Entry } from './data';
@@ -36,6 +40,15 @@ import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
 import { useBibleSettings, useDefaultStatus } from './bibleSettings';
+import {
+  Editable,
+  EntryEditable,
+  listOptions,
+  saveEntryField,
+  useEditableSave,
+  useListAddNew,
+} from './editable';
+import type { SaveInfo } from './editable';
 
 function YearField(props: {
   id: string;
@@ -59,17 +72,21 @@ function YearField(props: {
   );
 }
 
-export type CultureTab = 'communities' | 'eras';
+export type CultureTab = 'communities' | 'eras' | 'places' | 'glossary';
 
 const TABS: { tab: CultureTab; label: string }[] = [
   { tab: 'communities', label: 'Communities' },
   { tab: 'eras', label: 'Eras' },
+  { tab: 'places', label: 'Places' },
+  { tab: 'glossary', label: 'Glossary' },
 ];
 
 /**
  * SM-11: Cultural data. Tab Communities: one community at a time, its
- * description, and its cultural lines for the story year's decade by age
- * group, edited in place (A41, A42). Tab Eras: the era states, edited in place.
+ * description, and its cultural lines for a unit of years by age group,
+ * edited in place (A41, A42, IP-10). Tab Eras: the era states, edited in
+ * place. Tabs Places and Glossary (IP-13): the place tree and the glossary
+ * table, the same components the App menu opens.
  */
 export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureTab) => void }) {
   const refs = useRef<Partial<Record<CultureTab, HTMLButtonElement | null>>>({});
@@ -112,24 +129,42 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
           ))}
         </div>
         <div id={`${baseId}-panel`} role="tabpanel" aria-labelledby={`${baseId}-tab-${props.tab}`}>
-          {props.tab === 'communities' ? <CommunityView /> : <ErasView />}
+          {props.tab === 'communities' && <CommunityView />}
+          {props.tab === 'eras' && <ErasView />}
+          {props.tab === 'places' && <PlacesView embedded />}
+          {props.tab === 'glossary' && <GlossaryTable embedded />}
         </div>
       </div>
     </div>
   );
 }
 
+const UNIT_OPTIONS: { value: CultureUnit; label: string }[] = [
+  { value: 'decade', label: 'A decade' },
+  { value: 'five', label: 'Five years' },
+  { value: 'one', label: 'One year' },
+];
+
+/** "Portland in the 2040s", "Portland in 2045 to 2049", "Portland in 2045". */
+function unitHeading(start: number, unit: CultureUnit): string {
+  return unit === 'decade' ? `the ${unitLabel(start, unit)}` : unitLabel(start, unit);
+}
+
 /**
- * A41, A42, CU-3: one community at a time. Its description, then its lines
- * for the story year's decade (the year control at the top moves it),
- * grouped by age group. Every line edits where it sits; its age group and
- * decade are selects at the end of the row. Every change is one undo step
- * (ED-3), and Undo is in the top bar (A43).
+ * A41, A42, CU-3, IP-10: one community at a time. Its description, then its
+ * lines for one unit of years (a decade, five years or one year, as the
+ * bible's settings say), grouped by the age groups list. The stepper starts
+ * at the story year's unit and moves on its own; Back to the story year
+ * returns. Every line edits where it sits: its text, community, age group
+ * and years are fields, and "Add a note" opens a note box. Every change is
+ * one undo step (ED-3, IP-6), and Undo is in the top bar (A43).
  */
 export function CommunityView() {
   const statusOf = useDefaultStatus();
   const story = useStoryTime();
+  const { cultureUnit: unit } = useBibleSettings();
   const communities = useList('communities');
+  const ageList = useList('ageGroups');
   const entries = useEntries('culturalEntries');
   const eras = useEntries('eraStates');
   const undo = useUndo();
@@ -139,7 +174,12 @@ export function CommunityView() {
   const listLabel = communities?.label ?? 'Communities';
   const [picked, setPicked] = useState('');
   const chosen = items.find((c) => c.id === picked) ?? items[0] ?? null;
-  const decade = decadeOf(story.year);
+  /** A year inside the unit the stepper shows; null follows the story year. */
+  const [at, setAt] = useState<number | null>(null);
+  const storyUnit = unitOf(story.year, unit);
+  const start = unitOf(at ?? story.year, unit);
+  const size = unitSpan(start, unit).endYear - start + 1;
+  const ageGroups = useMemo(() => ageGroupOptions(ageList), [ageList]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -161,10 +201,10 @@ export function CommunityView() {
     if (confirmRemove) keepButton.current?.focus();
   }, [confirmRemove]);
 
-  const decades = useMemo(() => decadesFor(entries, eras, story.year), [entries, eras, story.year]);
+  const units = useMemo(() => decadesFor(entries, eras, start, unit), [entries, eras, start, unit]);
   const groups = useMemo(
-    () => (chosen ? decadeGroups(entries, chosen.id, decade) : []),
-    [entries, chosen, decade],
+    () => (chosen ? decadeGroups(entries, chosen.id, start, unit, ageGroups) : []),
+    [entries, chosen, start, unit, ageGroups],
   );
   const mine = useMemo(
     () => (chosen ? entries.filter((e) => e.communityId === chosen.id && !e.deletedAt) : []),
@@ -256,15 +296,10 @@ export function CommunityView() {
           status: statusOf('idea'),
           communityId: chosen.id,
           demographic: group.demographic,
-          ...decadeSpan(decade),
+          ...unitSpan(start, unit),
         },
       });
       undo.record(createCommand('culturalEntries', entry._id, entryTitle(entry)));
-    });
-
-  const edit = (id: string, patch: Record<string, unknown>, label: string) =>
-    run(async () => {
-      await updateWithUndo(undo, 'culturalEntries', id, patch, label);
     });
 
   const remove = (e: Entry) =>
@@ -275,11 +310,24 @@ export function CommunityView() {
       setNotice(`Removed ${title}. Cmd+Z brings it back.`);
     });
 
+  const saveUnit = useEditableSave<string | null>({
+    value: unit,
+    write: (next) => call('settings.set', { cultureUnit: next as CultureUnit }),
+    command: (before, after) =>
+      before === after || !after
+        ? null
+        : cultureUnitCommand(call, before as CultureUnit, after as CultureUnit),
+  });
+
+  const step = (by: -1 | 1) => setAt(start + by * size);
+  const prev = unitLabel(start - size, unit);
+  const next = unitLabel(start + size, unit);
+
   return (
     <section className="stack" aria-label="Communities" data-testid="culture-view">
       <p className="lede">
-        What a community is like, and what its people do in the story year&apos;s decade, by age
-        group. Move the year at the top to see another decade.
+        What a community is like, and what its people do in each span of years, by age group. Step
+        through the years with Previous and Next; the story year does not move.
       </p>
       <div className="tree-toolbar cu-toolbar">
         <div className="field">
@@ -348,6 +396,50 @@ export function CommunityView() {
           </span>
         </form>
       </div>
+      <div className="row tight cu-stepper" role="group" aria-label="Years shown">
+        <button
+          type="button"
+          className="btn small"
+          aria-label={`Previous: ${prev}`}
+          data-testid="culture-prev"
+          onClick={() => step(-1)}
+        >
+          Previous
+        </button>
+        <strong className="cu-unit" aria-live="polite" data-testid="culture-unit">
+          {unitLabel(start, unit)}
+        </strong>
+        <button
+          type="button"
+          className="btn small"
+          aria-label={`Next: ${next}`}
+          data-testid="culture-next"
+          onClick={() => step(1)}
+        >
+          Next
+        </button>
+        {start !== storyUnit && (
+          <button
+            type="button"
+            className="btn small"
+            data-testid="culture-to-story"
+            onClick={() => setAt(null)}
+          >
+            Back to the story year, {unitLabel(storyUnit, unit)}
+          </button>
+        )}
+        <span className="cu-unit-setting">
+          <Editable
+            kind="select"
+            label="Step by"
+            showLabel
+            value={unit}
+            options={UNIT_OPTIONS}
+            testId="culture-step-by"
+            onSave={saveUnit}
+          />
+        </span>
+      </div>
       {confirmRemove && chosen && (
         <div
           className="panel stack confirm"
@@ -410,7 +502,7 @@ export function CommunityView() {
             onSave={(text) => void saveNote(text)}
           />
           <h3 data-testid="culture-heading">
-            {chosen.label} in the {decadeLabel(decade)}
+            {chosen.label} in {unitHeading(start, unit)}
           </h3>
           <div className="stack cu-groups" data-testid="culture-groups">
             {groups.map((g) => (
@@ -427,10 +519,11 @@ export function CommunityView() {
                       <LineRow
                         key={e._id}
                         entry={e}
-                        decade={decade}
-                        decades={decades}
+                        start={start}
+                        unit={unit}
+                        units={units}
+                        ageGroups={ageGroups}
                         disabled={ro.off}
-                        onEdit={(patch, label) => void edit(e._id, patch, label)}
                         onRemove={() => void remove(e)}
                       />
                     ))}
@@ -438,7 +531,7 @@ export function CommunityView() {
                 )}
                 <AddLine
                   group={g}
-                  decade={decade}
+                  span={unitHeading(start, unit)}
                   disabled={ro.off}
                   tip={ro.tip}
                   onAdd={(title) => addLine(g, title)}
@@ -494,14 +587,15 @@ function CommunityNote(props: {
 /** A41: the add row under an age group: type a line and press Enter. */
 function AddLine(props: {
   group: DecadeGroup<Entry>;
-  decade: number;
+  /** "the 2040s", "2045 to 2049", "2045". */
+  span: string;
   disabled: boolean;
   tip: { title?: string; 'aria-describedby'?: string };
   onAdd: (title: string) => Promise<void>;
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const label = `New line for ${props.group.label.toLowerCase()} in the ${decadeLabel(props.decade)}`;
+  const label = `New line for ${props.group.label.toLowerCase()} in ${props.span}`;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const title = text.trim();
@@ -538,120 +632,126 @@ function AddLine(props: {
 }
 
 /**
- * A42: one cultural line. The text and its note edit directly and save when
- * the field is left; the age group and the decade are selects at the end of
- * the row; Remove moves it to the trash (undo brings it back).
+ * A42, IP-1, IP-10: one cultural line. Its text, community, age group and
+ * years are fields that look like text until picked; the community and age
+ * group selects end with "Add new...". A line with no note has "Add a note",
+ * which opens the note box under it; the note saves as one undo step (IP-6).
+ * Remove moves it to the trash (undo brings it back).
  */
 function LineRow(props: {
   entry: Entry;
-  decade: number;
-  decades: readonly number[];
+  start: number;
+  unit: CultureUnit;
+  units: readonly number[];
+  ageGroups: readonly AgeGroupOption[];
   disabled: boolean;
-  onEdit: (patch: Record<string, unknown>, label: string) => void;
   onRemove: () => void;
 }) {
-  const { entry: e } = props;
+  const { entry: e, unit } = props;
+  const undo = useUndo();
+  const communities = useList('communities');
+  const addCommunity = useListAddNew('communities');
+  const addAgeGroup = useListAddNew('ageGroups');
+  const [noting, setNoting] = useState(false);
   const title = entryTitle(e);
-  const ids = { text: useId(), group: useId(), decade: useId() };
-  type Key = 'text' | 'note';
-  const stored: Record<Key, string> = { text: title, note: String(e.body ?? '') };
-  const [draft, setDraft] = useState(stored);
-  const [dirty, setDirty] = useState<ReadonlySet<Key>>(new Set());
-  const storedKey = JSON.stringify(stored);
-  const [seen, setSeen] = useState(storedKey);
-  if (seen !== storedKey) {
-    // Adjusted during render: a save, an undo or another writer changed the line.
-    setSeen(storedKey);
-    setDraft((d) => {
-      const next = { ...d };
-      for (const k of Object.keys(stored) as Key[]) if (!dirty.has(k)) next[k] = stored[k];
-      return next;
+  const span = spanInDecade(e, props.start, unit);
+  const hasNote = String(e.body ?? '').trim() !== '';
+  const lineUnit = typeof e.startYear === 'number' ? unitOf(e.startYear, unit) : props.start;
+  const unitOptions = (
+    props.units.includes(lineUnit) ? props.units : [...props.units, lineUnit].sort((a, b) => a - b)
+  ).map((u) => ({ value: String(u), label: unitLabel(u, unit) }));
+  const group = demographicOf(e, props.ageGroups);
+  const groupOptions = props.ageGroups.map((g) => ({ value: g.value, label: g.label }));
+  const saveYears = async (next: string | null, info: SaveInfo) => {
+    if (next === null) return;
+    const span = unitSpan(Number(next), unit);
+    await saveEntryField(undo, {
+      collection: 'culturalEntries',
+      id: e._id,
+      path: 'startYear',
+      value: span.startYear,
+      label: 'Years',
+      extraPatch: () => ({ endYear: span.endYear }),
+      added: info.added,
     });
-  }
-  const set = (key: Key, value: string) => {
-    setDirty((prev) => new Set(prev).add(key));
-    setDraft((d) => ({ ...d, [key]: value }));
   };
-  const undirty = (key: Key) =>
-    setDirty((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-  const commit = (key: Key) => {
-    undirty(key);
-    const v = draft[key];
-    if (key === 'text') {
-      if (v.trim() && v.trim() !== title) props.onEdit({ title: v.trim() }, 'Text');
-      else setDraft((d) => ({ ...d, text: title }));
-    } else if (v !== stored.note) props.onEdit({ body: v }, 'Note');
-  };
-  const span = spanInDecade(e, props.decade);
-  const hasNote = stored.note.trim() !== '';
-  const lineDecade = typeof e.startYear === 'number' ? decadeOf(e.startYear) : props.decade;
-  const decadeOptions = props.decades.includes(lineDecade)
-    ? props.decades
-    : [...props.decades, lineDecade].sort((a, b) => a - b);
-  const group = typeof e.demographic === 'string' ? e.demographic : 'all';
   return (
     <li className="cu-line" data-id={e._id} data-demographic={group}>
       <div className="row tight cu-line-head">
-        <input
-          id={ids.text}
-          className="cu-line-text"
-          aria-label={`Text of ${title}`}
-          value={draft.text}
-          maxLength={500}
+        <EntryEditable
+          collection="culturalEntries"
+          id={e._id}
+          entry={e}
+          path="title"
+          kind="text"
+          label={`Text of ${title}`}
+          allowEmpty={false}
           disabled={props.disabled}
-          data-testid="line-text"
-          onChange={(ev) => set('text', ev.target.value)}
-          onBlur={() => commit('text')}
-          onKeyDown={(ev) => {
-            if (ev.key === 'Enter') {
-              ev.preventDefault();
-              commit('text');
-            } else if (ev.key === 'Escape') {
-              ev.preventDefault();
-              undirty('text');
-              setDraft((d) => ({ ...d, text: title }));
-            }
-          }}
+          className="cu-line-text"
+          testId="line-text"
         />
         {span && (
           <span className="chip time" data-testid="line-span">
             {span}
           </span>
         )}
-        <select
-          id={ids.group}
+        <EntryEditable
+          collection="culturalEntries"
+          id={e._id}
+          entry={e}
+          path="communityId"
+          kind="select"
+          label={`Community of ${title}`}
+          options={listOptions(communities)}
+          onAddNew={addCommunity}
+          disabled={props.disabled}
           className="cu-line-select"
-          aria-label={`Age group of ${title}`}
+          testId="line-community"
+        />
+        <Editable
+          kind="select"
+          label={`Age group of ${title}`}
           value={group}
+          options={groupOptions}
+          onAddNew={addAgeGroup}
           disabled={props.disabled}
-          data-testid="line-group"
-          onChange={(ev) => props.onEdit({ demographic: ev.target.value }, 'Age group')}
-        >
-          {DEMOGRAPHIC_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <select
-          id={ids.decade}
           className="cu-line-select"
-          aria-label={`Decade of ${title}`}
-          value={lineDecade}
+          testId="line-group"
+          data-field="demographic"
+          onSave={async (next, info) => {
+            await saveEntryField(undo, {
+              collection: 'culturalEntries',
+              id: e._id,
+              path: 'demographic',
+              value: next ?? 'all',
+              label: 'Age group',
+              added: info.added,
+            });
+          }}
+        />
+        <Editable
+          kind="select"
+          label={`Years of ${title}`}
+          value={String(lineUnit)}
+          options={unitOptions}
           disabled={props.disabled}
-          data-testid="line-decade"
-          onChange={(ev) => props.onEdit(decadeSpan(Number(ev.target.value)), 'Decade')}
-        >
-          {decadeOptions.map((d) => (
-            <option key={d} value={d}>
-              {decadeLabel(d)}
-            </option>
-          ))}
-        </select>
+          className="cu-line-select"
+          testId="line-unit"
+          data-field="startYear"
+          onSave={saveYears}
+        />
+        {!hasNote && !noting && (
+          <button
+            type="button"
+            className="btn small"
+            aria-label={`Add a note to ${title}`}
+            disabled={props.disabled}
+            data-testid="line-add-note"
+            onClick={() => setNoting(true)}
+          >
+            Add a note
+          </button>
+        )}
         <button
           type="button"
           className="btn small danger"
@@ -662,16 +762,20 @@ function LineRow(props: {
           Remove
         </button>
       </div>
-      {hasNote && (
-        <RichText
-          mode="inline"
-          className="cu-note"
+      {(hasNote || noting) && (
+        <EntryEditable
+          collection="culturalEntries"
+          id={e._id}
+          entry={e}
+          path="body"
+          kind="rich"
           label={`Note on ${title}`}
-          value={draft.note}
+          placeholder="Add a note"
           disabled={props.disabled}
+          className="cu-note"
           testId="line-note"
-          onChange={(md) => set('note', md)}
-          onBlur={() => commit('note')}
+          autoOpen={noting && !hasNote}
+          onClose={() => setNoting(false)}
         />
       )}
     </li>
@@ -919,26 +1023,115 @@ function EraRow(props: {
 }
 
 /**
- * PC-1: places nested under the places they sit in, each with its description
- * for a chosen year. A43: a picked place opens its editor in place, under its row.
+ * A form that makes a new entry from one typed name (IP-13): type it and
+ * press Enter or the button. The entry is one undo step.
  */
-export function PlacesView() {
+function NewByName(props: {
+  label: string;
+  button: string;
+  testId: string;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const ro = useWriteGuard();
+  const id = useId();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = text.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onCreate(name);
+      setText('');
+    } catch (err) {
+      setError(plainError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="stack tight" onSubmit={(e) => void submit(e)} data-testid={props.testId}>
+      <div className="row tight cu-add">
+        <label htmlFor={id} className="sr-only">
+          {props.label}
+        </label>
+        <input
+          id={id}
+          placeholder={props.label}
+          value={text}
+          maxLength={200}
+          disabled={ro.off || busy}
+          {...ro.tip}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="btn small"
+          disabled={ro.off || busy || !text.trim()}
+          {...ro.tip}
+        >
+          {props.button}
+        </button>
+      </div>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/**
+ * PC-1: places nested under the places they sit in, each with its description
+ * for a chosen year. IP-13: each name renames in place, and New place adds
+ * one at the top level. A43: Edit opens the place's editor in place, under
+ * its row, for its parent and its descriptions by year. The App menu's Place
+ * tree and the Places tab of Cultural data (`embedded`) are this one view.
+ */
+export function PlacesView(props: { embedded?: boolean } = {}) {
   const story = useStoryTime();
+  const undo = useUndo();
+  const statusOf = useDefaultStatus();
+  const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
   const places = useEntries('places');
   const [year, setYear] = useState(story.year);
   const yearId = useId();
+  const titleId = useId();
   const nodes = useMemo(() => placeOutline(places), [places]);
   const byId = new Map(places.map((p) => [p._id, p]));
+  const Heading = props.embedded ? 'h3' : 'h2';
+
+  const create = async (name: string) => {
+    const { entry } = await call('entry.create', {
+      collection: 'places',
+      data: { ...blankEntry(manifests.places), title: name, status: statusOf('idea') },
+    });
+    undo.record(createCommand('places', entry._id, entryTitle(entry)));
+  };
 
   return (
-    <section className="ws-wide stack" aria-labelledby="places-title" data-testid="places-view">
-      <h2 id="places-title">Place tree</h2>
+    <section
+      className={props.embedded ? 'stack' : 'ws-wide stack'}
+      aria-labelledby={titleId}
+      data-testid="places-view"
+    >
+      <Heading id={titleId}>{props.embedded ? 'Places' : 'Place tree'}</Heading>
       <p className="lede">
-        Places sit inside larger places. Each shows its description for the year you pick. Pick a
-        place to set its parent and its descriptions by year; its editor opens under it.
+        Places sit inside larger places. Each shows its description for the year you pick. Click a
+        name to rename it; Edit opens its parent and its descriptions by year under it.
       </p>
       <YearField id={yearId} label="Year" value={year} onChange={setYear} />
+      <NewByName
+        label="Name of a new place"
+        button="New place"
+        testId="new-place"
+        onCreate={create}
+      />
       {nodes.length === 0 ? (
         <p className="example-note">No places yet.</p>
       ) : (
@@ -946,6 +1139,7 @@ export function PlacesView() {
           {nodes.map((n) => {
             const place = byId.get(n.id);
             const d = place ? descriptionFor(place as never, year) : null;
+            const name = n.title || 'Untitled';
             return (
               <li
                 key={n.id}
@@ -953,23 +1147,36 @@ export function PlacesView() {
                 data-place={n.id}
                 data-depth={n.depth}
               >
-                <button
-                  type="button"
-                  className="link-btn"
-                  aria-expanded={open?.id === n.id}
-                  onClick={() =>
-                    setOpen(open?.id === n.id ? null : { collection: 'places', id: n.id })
-                  }
-                >
-                  <Zh text={n.title || 'Untitled'} actions={false} />
-                </button>
+                <EntryEditable
+                  collection="places"
+                  id={n.id}
+                  entry={place ?? null}
+                  path="title"
+                  kind="text"
+                  label={`Name of ${name}`}
+                  allowEmpty={false}
+                  disabled={ro.off}
+                  className="place-name"
+                  testId="place-name"
+                  display={(t) => <Zh text={t || 'Untitled'} actions={false} />}
+                />{' '}
                 <span className="place-desc" data-testid="place-description">
                   {d ? (
                     <Zh text={d.text} />
                   ) : (
                     <span className="example-note">No description for {year}.</span>
                   )}
-                </span>
+                </span>{' '}
+                <button
+                  type="button"
+                  className="btn small"
+                  aria-expanded={open?.id === n.id}
+                  onClick={() =>
+                    setOpen(open?.id === n.id ? null : { collection: 'places', id: n.id })
+                  }
+                >
+                  Edit {name}
+                </button>
                 {open?.id === n.id && (
                   <RowEditor open={open} onClose={() => setOpen(null)} testId="place-editor" />
                 )}
@@ -1100,30 +1307,63 @@ export function RomanizationView() {
 
 /**
  * GL-1, GL-3: every glossary term in one table. Hovering or focusing the
- * characters shows the meaning. A43: Edit opens the term's editor in a row
- * under its own.
+ * characters shows the meaning. IP-13: the term, its romanization, its
+ * language and its meaning edit in place (one undo step each), and New term
+ * adds one. A43: Edit opens the term's editor in a row under its own, for
+ * every other field. The App menu's Glossary table and the Glossary tab of
+ * Cultural data (`embedded`) are this one view.
  */
-export function GlossaryTable() {
+export function GlossaryTable(props: { embedded?: boolean } = {}) {
   const terms = useEntries('glossaryTerms');
+  const undo = useUndo();
+  const statusOf = useDefaultStatus();
+  const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
   const languages = useList('languages');
-  const label = (id: unknown) =>
-    languages?.items.find((l) => l.id === id)?.label ?? String(id ?? '');
+  const addLanguage = useListAddNew('languages');
+  const titleId = useId();
+  const Heading = props.embedded ? 'h3' : 'h2';
   const rows = useMemo(
     () => [...terms].sort((a, b) => String(a.characters).localeCompare(String(b.characters))),
     [terms],
   );
+  /** The title follows the characters while it still matches them (the title is what lists show). */
+  const titleFollows = (next: unknown, entry: Record<string, unknown>) =>
+    !entry.title || entry.title === entry.characters ? { title: next } : {};
+
+  const create = async (characters: string) => {
+    const language = languages?.items[0]?.id;
+    if (!language) throw new Error('Add a language on the Lists screen first.');
+    const { entry } = await call('entry.create', {
+      collection: 'glossaryTerms',
+      data: {
+        ...blankEntry(manifests.glossaryTerms),
+        title: characters,
+        characters,
+        language,
+        status: statusOf('idea'),
+      },
+    });
+    undo.record(createCommand('glossaryTerms', entry._id, entryTitle(entry)));
+  };
+
   return (
     <section
-      className="ws-wide stack"
-      aria-labelledby="glossary-table-title"
+      className={props.embedded ? 'stack' : 'ws-wide stack'}
+      aria-labelledby={titleId}
       data-testid="glossary-table"
     >
-      <h2 id="glossary-table-title">Glossary table</h2>
+      <Heading id={titleId}>{props.embedded ? 'Glossary' : 'Glossary table'}</Heading>
       <p className="lede">
-        Every term with its characters, romanization, language, and meaning. Hover over the
-        characters or focus them with the keyboard for the meaning.
+        Every term with its characters, romanization, language, and meaning. Click a value to change
+        it. Hover over the characters or focus them with the keyboard for the meaning.
       </p>
+      <NewByName
+        label="Characters of a new term"
+        button="New term"
+        testId="new-term"
+        onCreate={create}
+      />
       {rows.length === 0 ? (
         <p className="example-note">No glossary terms yet.</p>
       ) : (
@@ -1139,41 +1379,99 @@ export function GlossaryTable() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((t) => (
-                <Fragment key={t._id}>
-                  <tr data-term={t._id}>
-                    <td>
-                      <Zh text={String(t.characters ?? '')} />
-                    </td>
-                    <td>{String(t.romanization ?? '')}</td>
-                    <td>{label(t.language)}</td>
-                    <td>
-                      <MarkdownView text={String(t.meaning ?? '')} inline />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn small"
-                        aria-expanded={open?.id === t._id}
-                        onClick={() =>
-                          setOpen(
-                            open?.id === t._id ? null : { collection: 'glossaryTerms', id: t._id },
-                          )
-                        }
-                      >
-                        Edit {String(t.characters ?? '')}
-                      </button>
-                    </td>
-                  </tr>
-                  {open?.id === t._id && (
-                    <tr className="row-editor-tr">
-                      <td colSpan={5}>
-                        <RowEditor open={open} onClose={() => setOpen(null)} testId="term-editor" />
+              {rows.map((t) => {
+                const chars = String(t.characters ?? '');
+                return (
+                  <Fragment key={t._id}>
+                    <tr data-term={t._id}>
+                      <td>
+                        <EntryEditable
+                          collection="glossaryTerms"
+                          id={t._id}
+                          entry={t}
+                          path="characters"
+                          kind="text"
+                          label={`Characters of ${chars}`}
+                          allowEmpty={false}
+                          disabled={ro.off}
+                          testId="term-characters"
+                          extraPatch={titleFollows}
+                          display={(s) => <Zh text={s} actions={false} />}
+                        />
+                      </td>
+                      <td>
+                        <EntryEditable
+                          collection="glossaryTerms"
+                          id={t._id}
+                          entry={t}
+                          path="romanization"
+                          kind="text"
+                          label={`Romanization of ${chars}`}
+                          placeholder="Add"
+                          disabled={ro.off}
+                          testId="term-romanization"
+                        />
+                      </td>
+                      <td>
+                        <EntryEditable
+                          collection="glossaryTerms"
+                          id={t._id}
+                          entry={t}
+                          path="language"
+                          kind="select"
+                          label={`Language of ${chars}`}
+                          options={listOptions(languages)}
+                          onAddNew={addLanguage}
+                          disabled={ro.off}
+                          testId="term-language"
+                        />
+                      </td>
+                      <td>
+                        <EntryEditable
+                          collection="glossaryTerms"
+                          id={t._id}
+                          entry={t}
+                          path="meaning"
+                          kind="rich"
+                          layout="inline"
+                          label={`Meaning of ${chars}`}
+                          placeholder="Add a meaning"
+                          disabled={ro.off}
+                          testId="term-meaning"
+                          display={(s) => <MarkdownView text={s} inline />}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn small"
+                          aria-expanded={open?.id === t._id}
+                          onClick={() =>
+                            setOpen(
+                              open?.id === t._id
+                                ? null
+                                : { collection: 'glossaryTerms', id: t._id },
+                            )
+                          }
+                        >
+                          Edit {chars}
+                        </button>
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              ))}
+                    {open?.id === t._id && (
+                      <tr className="row-editor-tr">
+                        <td colSpan={5}>
+                          <RowEditor
+                            open={open}
+                            onClose={() => setOpen(null)}
+                            testId="term-editor"
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

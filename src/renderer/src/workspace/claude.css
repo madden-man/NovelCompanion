@@ -45,3 +45,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* a47-house, IP-16: the open conversation's title, Clear and Delete. */
+.claude-conversation-head {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}

@@ -466,7 +466,7 @@ test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and g
   await expect(tab('Communities')).toHaveAttribute('aria-selected', 'true');
 
   await go('Place tree');
-  await press(page.getByTestId('places-view').getByRole('button', { name: 'Portland' }));
+  await press(page.getByTestId('places-view').getByRole('button', { name: 'Edit Portland' }));
   await expect(editor()).toContainText('Portland');
   await go('Glossary table');
   await press(page.getByRole('button', { name: 'Edit 团圆' }));

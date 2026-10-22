@@ -17,6 +17,8 @@ import { call, plainError } from '../api';
 import { formatTime } from './format';
 import { RichText } from './richText/RichText';
 import type { RichTextHandle } from './richText/RichText';
+import { Editable, useEditableSave, valueCommand } from './editable';
+import { ConfirmLine } from './housekeeping';
 import './claude.css';
 
 /**
@@ -393,6 +395,13 @@ export function ClaudePanelGate() {
 let keptDraft = '';
 let keptConversation: string | null = null;
 
+/** IP-16: who hears that a conversation was renamed (by the field, or by undo and redo). */
+const conversationListeners = new Set<() => void>();
+async function renameConversation(id: string, title: string): Promise<void> {
+  await call('claude.conversation.rename', { id, title });
+  for (const l of conversationListeners) l();
+}
+
 /** AI-1: questions about the bible and the manuscript, streamed, stoppable, and saved. */
 function ClaudePanel() {
   const nav = claudeNav;
@@ -441,6 +450,18 @@ function ClaudePanel() {
     async (id: string, attach = false) => adopt(await call('claude.run', { id }), attach),
     [adopt],
   );
+
+  useEffect(() => {
+    // A rename (or its undo) shows in the picker and the title field at once.
+    const reload = () => {
+      loadHistory();
+      if (keptConversation) void loadConversation(keptConversation);
+    };
+    conversationListeners.add(reload);
+    return () => {
+      conversationListeners.delete(reload);
+    };
+  }, [loadHistory, loadConversation]);
 
   useEffect(() => {
     loadHistory();
@@ -578,6 +599,22 @@ function ClaudePanel() {
           </select>
         </div>
       )}
+      {conversation && (
+        <ConversationTools
+          key={conversation._id}
+          run={conversation}
+          running={running}
+          onCleared={async () => {
+            await loadConversation(conversation._id);
+            loadHistory();
+          }}
+          onDeleted={() => {
+            setConversation(null);
+            loadHistory();
+            inputRef.current?.focus();
+          }}
+        />
+      )}
       {status && !status.acknowledgedAt && (
         <Disclosure onConfirm={() => void acknowledge()} onDecline={nav.closePanel} />
       )}
@@ -652,6 +689,134 @@ function ClaudePanel() {
         </div>
       </form>
     </aside>
+  );
+}
+
+/**
+ * IP-16: the open conversation's title renames in place (one undo step);
+ * Clear takes its messages out and Delete removes it, each after a one-line
+ * confirmation and neither an undo step.
+ */
+function ConversationTools(props: {
+  run: ClaudeRun;
+  running: boolean;
+  onCleared: () => Promise<void>;
+  onDeleted: () => void;
+}) {
+  const { run } = props;
+  const ro = useWriteGuard();
+  const [asking, setAsking] = useState<'clear' | 'delete' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // A deleted conversation reads as no title, so an undo step over it is skipped
+  // with a plain notice instead of throwing (a throw would stop every later undo).
+  const read = useCallback(async () => {
+    try {
+      return (await call('claude.run', { id: run._id })).run.title;
+    } catch {
+      return '';
+    }
+  }, [run._id]);
+  const write = useCallback((title: string) => renameConversation(run._id, title), [run._id]);
+  const command = useCallback(
+    (before: string, after: string) =>
+      before.trim() === after.trim()
+        ? null
+        : valueCommand({
+            label: `Renamed the conversation ${before}`,
+            read,
+            write,
+            before,
+            after,
+            changed: 'the conversation was renamed or deleted since',
+          }),
+    [read, write],
+  );
+  const save = useEditableSave({ value: run.title, write, command });
+  const off = ro.off || props.running;
+  const why = props.running
+    ? 'Claude is still answering in this conversation. Stop it first.'
+    : ro.tip.title;
+  return (
+    <div className="stack tight claude-conversation" data-testid="claude-conversation">
+      <div className="row tight claude-conversation-head">
+        <Editable
+          kind="text"
+          label="Conversation title"
+          showLabel
+          allowEmpty={false}
+          value={run.title}
+          disabled={off}
+          reason={why}
+          testId="claude-title"
+          onSave={save}
+        />
+        <span className="row tight">
+          <button
+            type="button"
+            className="btn small"
+            disabled={off || asking === 'clear'}
+            title={why}
+            aria-label={`Clear the messages of ${run.title}`}
+            data-testid="claude-clear"
+            onClick={() => {
+              setNotice(null);
+              setAsking('clear');
+            }}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            className="btn small danger"
+            disabled={off || asking === 'delete'}
+            title={why}
+            aria-label={`Delete ${run.title}`}
+            data-testid="claude-delete"
+            onClick={() => {
+              setNotice(null);
+              setAsking('delete');
+            }}
+          >
+            Delete
+          </button>
+        </span>
+      </div>
+      {asking === 'clear' && (
+        <ConfirmLine
+          action="Clear messages"
+          keep="Keep them"
+          testId="claude-clear-confirm"
+          onCancel={() => setAsking(null)}
+          onConfirm={async () => {
+            await call('claude.conversation.clear', { id: run._id });
+            setAsking(null);
+            setNotice(`Cleared ${run.title}. This is not an undo step.`);
+            await props.onCleared();
+          }}
+        >
+          Take every message out of {run.title}? The title stays. This is not an undo step.
+        </ConfirmLine>
+      )}
+      {asking === 'delete' && (
+        <ConfirmLine
+          action="Delete conversation"
+          testId="claude-delete-confirm"
+          onCancel={() => setAsking(null)}
+          onConfirm={async () => {
+            await call('claude.conversation.delete', { id: run._id });
+            setAsking(null);
+            props.onDeleted();
+          }}
+        >
+          Delete {run.title} and its messages? This is not an undo step.
+        </ConfirmLine>
+      )}
+      {notice && (
+        <p className="example-note" role="status" data-testid="claude-conversation-notice">
+          {notice}
+        </p>
+      )}
+    </div>
   );
 }
 

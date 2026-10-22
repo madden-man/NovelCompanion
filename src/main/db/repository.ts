@@ -1017,7 +1017,7 @@ export class Repository {
   async editProposal(id: string, data: Record<string, unknown>): Promise<Proposal> {
     const proposal = this.pending(id);
     if (proposal.op === 'delete') throw new RepositoryError('A deletion has no values to edit.');
-    if (proposal.op === 'listAdd') throw new RepositoryError(LIST_ADD_NO_EDIT);
+    if (proposal.op === 'listAdd') return this.editListAddLabel(proposal, data); // a47-house
     const c = proposal.collection as EntryCollection;
     const clean = this.stripSystem(data);
     if (proposal.op === 'update') {
@@ -2451,6 +2451,33 @@ export class Repository {
     await this.commit([], undefined, [list]);
     return this.eraDefaults();
   }
+
+  // ---------- a47-house ----------
+
+  /**
+   * IP-17: rename the item a list item proposal adds, before approval
+   * (`data.label`). The same rules as when it was proposed: not blank, and
+   * not a name the list already has.
+   */
+  private async editListAddLabel(
+    proposal: Proposal,
+    data: Record<string, unknown>,
+  ): Promise<Proposal> {
+    const add = proposal.listAdd as ListAddProposal;
+    const label = typeof data.label === 'string' ? data.label.trim() : '';
+    if (!label) throw new RepositoryError('A list item needs a name.');
+    if (label.length > 200)
+      throw new RepositoryError('A list item name is at most 200 characters.');
+    if (label === add.label) return proposal;
+    const list = this.storedList(add.listId);
+    const same = list.items.find((i) => i.label.toLowerCase() === label.toLowerCase());
+    if (same) {
+      throw new RepositoryError(
+        `The ${list.label} list already has ${same.label}. Reject this proposal and use it instead.`,
+      );
+    }
+    return this.saveProposal({ ...proposal, listAdd: { ...add, label }, edited: true });
+  }
 }
 
 const STORY_TIME_ID = 'storyTime';
@@ -2511,10 +2538,6 @@ export const MANUSCRIPT_LOCKED = 'The manuscript text is imported, not edited he
 /** IP-16: Delete forever is only for an entry already in the trash. */
 export const PURGE_NOT_IN_TRASH =
   'Only an entry in the trash can be deleted forever. Move it to the trash first.';
-
-/** IP-17: a list item proposal is approved or rejected as it stands. */
-export const LIST_ADD_NO_EDIT =
-  'A new list item cannot be edited here. Reject it, or approve it and rename the item in Lists.';
 
 /** IP-18: fields only the manuscript importer writes. */
 export const LOCKED_FIELDS: Partial<Record<EntryCollection, readonly string[]>> = {

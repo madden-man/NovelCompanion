@@ -429,6 +429,154 @@ test('ED-5 deleting lists what links here, moves it to the trash, and restores i
   );
 });
 
+/** The revisions MongoDB holds for one entry. */
+async function revisionsInMongo(id: string): Promise<number> {
+  const client = new MongoClient(db.uri);
+  try {
+    await client.connect();
+    return await client
+      .db(db.name)
+      .collection(`${BIBLE}.revisions`)
+      .countDocuments({ entryId: id });
+  } finally {
+    await client.close();
+  }
+}
+
+/** The labels of the undo history, newest first. */
+async function undoLabels(): Promise<string[]> {
+  const list = await changes(page);
+  const labels = await list.locator('li').allTextContents();
+  await page.getByTestId('top-changes').click();
+  return labels;
+}
+
+test('IP-16 ED-5 Delete forever asks for the title typed, then the entry and its revisions are gone, and it is not an undo step', async () => {
+  const { entry } = await invoke('entry.create', {
+    collection: 'places',
+    data: { title: 'Purge Wharf', status: 'idea' },
+  });
+  await invoke('entry.update', {
+    collection: 'places',
+    id: entry._id,
+    patch: { descriptions: [{ startYear: null, endYear: null, text: 'Pilings in the mud.' }] },
+  });
+  await invoke('entry.delete', { collection: 'places', id: entry._id });
+  const stored = await revisionsInMongo(entry._id);
+  expect(stored).toBeGreaterThan(1);
+  await rail(page, 'Trash').click();
+  const row = page.getByTestId('trash-list').locator(`li[data-id="${entry._id}"]`);
+  await expect(row).toContainText('Purge Wharf');
+  const labels = await undoLabels();
+  await row.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
+  const confirm = row.getByTestId('trash-purge-confirm');
+  await expect(confirm).toContainText('This is not an undo step.');
+  const typed = confirm.getByLabel('Type Purge Wharf to confirm');
+  await expect(typed).toBeFocused();
+  const go = confirm.getByRole('button', { name: 'Delete Purge Wharf forever' });
+  await expect(go).toBeDisabled();
+  await typed.fill('Purge');
+  await expect(go).toBeDisabled();
+  // Escape keeps it.
+  await typed.press('Escape');
+  await expect(confirm).toHaveCount(0);
+  expect(await fromMongo('places', entry._id)).not.toBeNull();
+  await row.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
+  await confirm.getByLabel('Type Purge Wharf to confirm').fill('Purge Wharf');
+  await confirm.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
+  await expect(page.getByTestId('trash-notice')).toContainText(
+    `Deleted Purge Wharf forever, with ${stored} revisions. This is not an undo step.`,
+  );
+  await expect(row).toHaveCount(0);
+  expect(await fromMongo('places', entry._id)).toBeNull();
+  expect(await revisionsInMongo(entry._id)).toBe(0);
+  // Nothing was added to the undo history.
+  expect(await undoLabels()).toEqual(labels);
+});
+
+test('IP-16 Empty trash asks for the word empty, shows the count, and is not an undo step', async () => {
+  const ids: string[] = [];
+  for (const title of ['Empty Dock One', 'Empty Dock Two']) {
+    const { entry } = await invoke('entry.create', {
+      collection: 'places',
+      data: { title, status: 'idea' },
+    });
+    await invoke('entry.delete', { collection: 'places', id: entry._id });
+    ids.push(entry._id);
+  }
+  await rail(page, 'Lists').click();
+  await rail(page, 'Trash').click();
+  const count = (await invoke('trash.list', {})).entries.length;
+  expect(count).toBeGreaterThanOrEqual(2);
+  const labels = await undoLabels();
+  await page.getByTestId('trash-empty-all').click();
+  const confirm = page.getByTestId('trash-empty-confirm');
+  await expect(confirm).toContainText(`${count} entries and every revision of them`);
+  const go = confirm.getByRole('button', { name: `Delete all ${count} entries forever` });
+  await expect(go).toBeDisabled();
+  await confirm.getByLabel('Type empty to confirm').fill('Empty');
+  await go.click();
+  await expect(page.getByTestId('trash-notice')).toContainText(
+    `Emptied the trash: ${count} entries`,
+  );
+  await expect(page.getByTestId('trash-notice')).toContainText('This is not an undo step.');
+  await expect(page.getByTestId('trash-empty')).toHaveText('The trash is empty.');
+  expect((await invoke('trash.list', {})).entries).toEqual([]);
+  for (const id of ids) {
+    expect(await fromMongo('places', id)).toBeNull();
+    expect(await revisionsInMongo(id)).toBe(0);
+  }
+  expect(await undoLabels()).toEqual(labels);
+});
+
+test('IP-16 ED-4 History removes revisions older than a date: a dry run shows the count, then confirm, and the list reloads', async () => {
+  const doyle = await currentEntry('characters', 'Revision Doyle');
+  const stored = await revisionsInMongo(doyle._id);
+  expect(stored).toBeGreaterThan(1);
+  await openSection('characters');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Revision Doyle/ })
+    .click();
+  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
+  const drawer = page.getByTestId('history');
+  const revisions = drawer
+    .getByRole('list', { name: 'Revisions, newest first' })
+    .getByRole('button');
+  await expect(revisions).toHaveCount(stored);
+  const prune = drawer.getByTestId('revision-prune');
+  const day = prune.getByLabel('Remove revisions older than');
+  // A day before any revision: nothing to remove.
+  await day.fill('2000-01-01');
+  await prune.getByRole('button', { name: 'Count them' }).click();
+  await expect(prune.getByTestId('revision-prune-count')).toHaveText(
+    'No revisions of Revision Doyle are older than 2000-01-01.',
+  );
+  // Tomorrow: every revision, counted first, and nothing removed by counting.
+  const tomorrow = await page.evaluate(() => {
+    const d = new Date(Date.now() + 86_400_000);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  });
+  await day.fill(tomorrow);
+  await prune.getByRole('button', { name: 'Count them' }).click();
+  await expect(prune.getByTestId('revision-prune-count')).toHaveText(
+    `${stored} revisions of Revision Doyle are older than ${tomorrow}. Removing them is not an undo step.`,
+  );
+  expect(await revisionsInMongo(doyle._id)).toBe(stored);
+  await expect(prune.getByRole('button', { name: 'Keep them' })).toBeFocused();
+  await prune.getByRole('button', { name: `Remove ${stored} revisions` }).click();
+  await expect(prune.getByTestId('revision-prune-notice')).toHaveText(
+    `Removed ${stored} revisions from before ${tomorrow}. This is not an undo step.`,
+  );
+  await expect(revisions).toHaveCount(0);
+  await expect(drawer).toContainText('No revisions are kept for this entry.');
+  expect(await revisionsInMongo(doyle._id)).toBe(0);
+  // The entry itself is untouched.
+  expect((await currentEntry('characters', 'Revision Doyle')).role).toBe(doyle.role);
+  await drawer.getByRole('button', { name: 'Close' }).click();
+});
+
 test('ED-9 typing @ in a long text field searches, inserts a link, and the target shows Linked from', async () => {
   await openSection('characters');
   await page

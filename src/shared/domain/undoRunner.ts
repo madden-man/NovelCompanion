@@ -119,6 +119,11 @@ export function renameCommand(
   };
 }
 
+/** Why a step was skipped: a newer change, an entry deleted forever, or a check that failed. */
+export type SkipWhy = 'changed' | 'gone' | 'error';
+
+const GONE = 'the entry no longer exists';
+
 /** Why a step cannot apply, in plain words, or null when it can. */
 async function blocked(op: Op, io: UndoIO): Promise<string | null> {
   if (op.kind === 'run') return op.check();
@@ -129,7 +134,7 @@ async function blocked(op: Op, io: UndoIO): Promise<string | null> {
       : `the item ${op.expect} is now called ${label ?? 'something else'}`;
   }
   const doc = await io.get(op.collection, op.id);
-  if (!doc) return 'the entry no longer exists';
+  if (!doc) return GONE;
   if (op.kind === 'delete')
     return doc.deletedAt ? `${entryTitle(doc)} is already in the trash` : null;
   if (op.kind === 'restore')
@@ -145,7 +150,7 @@ async function blocked(op: Op, io: UndoIO): Promise<string | null> {
 
 export type StepResult =
   | { status: 'applied'; label: string }
-  | { status: 'skipped'; label: string; reason: string }
+  | { status: 'skipped'; label: string; reason: string; why?: SkipWhy }
   | { status: 'failed'; label: string; error: string }
   | { status: 'empty' };
 
@@ -162,12 +167,24 @@ export class UndoManager {
     if (!cmd) return { status: 'empty' };
     const ops = cmd[direction];
     for (const op of ops) {
-      const reason = await blocked(op, io);
+      let reason: string | null;
+      let why: SkipWhy = 'changed';
+      try {
+        reason = await blocked(op, io);
+        if (reason === GONE) why = 'gone';
+      } catch (e) {
+        // A check that cannot even look is a step that cannot apply: skip it with the reason,
+        // so the stacks stay consistent and the next step still runs.
+        reason = plainErrorMessage(e);
+        why = 'error';
+      }
       if (reason) {
         // The step would overwrite a newer change, so it is dropped, not kept for later.
         if (direction === 'undo') this.stack.discardUndone();
         else this.stack.discardDone();
-        return { status: 'skipped', label: cmd.label, reason };
+        return why === 'changed'
+          ? { status: 'skipped', label: cmd.label, reason }
+          : { status: 'skipped', label: cmd.label, reason, why };
       }
     }
     try {
@@ -194,6 +211,9 @@ export function stepNotice(direction: 'undo' | 'redo', r: StepResult): string {
     case 'applied':
       return `${direction === 'undo' ? 'Undid' : 'Redid'}: ${r.label}`;
     case 'skipped':
+      if (r.why === 'gone')
+        return `${verb} skipped: the entry no longer exists (it was deleted forever), so nothing was written.`;
+      if (r.why === 'error') return `${verb} skipped: ${r.reason} Nothing was written.`;
       return `${verb} skipped: this field changed since that step, so nothing was overwritten (${r.reason}).`;
     case 'failed':
       return `Could not ${direction}: ${r.error}`;
