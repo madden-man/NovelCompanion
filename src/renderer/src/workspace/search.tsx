@@ -5,6 +5,7 @@ import type { Request, Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { useEntries, useList, useStore } from './data';
 import { Zh } from './Zh';
+import { ListChip, ListSwatch } from './listChip';
 
 type Hit = Response<'search.query'>['hits'][number];
 
@@ -139,6 +140,7 @@ export function SearchView(props: {
         </div>
         <div className="field">
           <label htmlFor={ids.status}>Status</label>
+          <ListSwatch listId="statuses" id={status || null} />
           <select id={ids.status} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Any status</option>
             {(statuses?.items ?? []).map((i) => (
@@ -150,6 +152,7 @@ export function SearchView(props: {
         </div>
         <div className="field">
           <label htmlFor={ids.prov}>Provenance</label>
+          <ListSwatch listId="provenance" id={provenance || null} />
           <select id={ids.prov} value={provenance} onChange={(e) => setProvenance(e.target.value)}>
             <option value="">Any provenance</option>
             {(provenances?.items ?? []).map((i) => (
@@ -252,7 +255,7 @@ export function SearchView(props: {
                       <span className="entry-title">
                         <Zh text={h.title} actions={false} />
                       </span>
-                      {h.status && <span className={`chip ${h.status}`}>{h.status}</span>}
+                      <ListChip listId="statuses" id={h.status} />
                     </span>
                     {h.snippet && (
                       <span className="example-note">

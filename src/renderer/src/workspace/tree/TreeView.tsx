@@ -60,6 +60,7 @@ import { rasterize, standaloneSvg } from './exportImage';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
+import { useItemLook } from '../listChip';
 
 type TreeData = Response<'tree.get'>;
 type View = { x: number; y: number; w: number; h: number };
@@ -166,6 +167,8 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
     if (cardText) p.onCard({ text: cardText, el: e.currentTarget });
   };
   const stripes = p.colors.length ? p.colors : ['none'];
+  // A47 (IP-9): the status edge in the status list's colour.
+  const statusLook = useItemLook('statuses', p.person.status);
   const h = NODE_H / stripes.length;
   return (
     <g
@@ -211,7 +214,15 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       <text className="tnode-state" x={NODE_W - 8} y={38} textAnchor="end" data-testid="node-state">
         {stateText(s)}
       </text>
-      <rect className={`tchip ${p.person.status}`} x={14} y={46} width={52} height={14} rx={7} />
+      <rect
+        className={`tchip ${p.person.status}`}
+        style={statusLook.colour ? { stroke: statusLook.colour } : undefined}
+        x={14}
+        y={46}
+        width={52}
+        height={14}
+        rx={7}
+      />
       <text className="tchip-text" x={40} y={56.5} textAnchor="middle">
         {p.person.status}
       </text>
@@ -1485,6 +1496,14 @@ function FamilyList(props: {
   const name = (id: string) => graph.byId.get(id)?.name ?? id;
   const rel = relativesOf(graph, person.id);
 
+  const { lists } = useStore();
+  /** The type's name for the undo label, from its list; read afresh for an item Add new just made. */
+  const typeLabel = async (collection: 'unions' | 'parentLinks', type: string) => {
+    const listId = collection === 'unions' ? 'unionTypes' : 'parentLinkTypes';
+    const find = (all: readonly { _id: string; items: { id: string; label: string }[] }[]) =>
+      all.find((l) => l._id === listId)?.items.find((i) => i.id === type)?.label;
+    return find(lists) ?? find((await call('lists.get', {})).lists) ?? type;
+  };
   /** IP-8: a type Add new made on the way joins the change as one undo step. */
   const setType = async (
     collection: 'unions' | 'parentLinks',
@@ -1497,7 +1516,7 @@ function FamilyList(props: {
       const before = (await call('entry.get', { collection, id })).entry;
       const { entry } = await call('entry.update', { collection, id, patch: { type } });
       const step = editCommand(
-        `Changed the type of ${String(before.title ?? 'a link')} to ${type}`,
+        `Changed the type of ${String(before.title ?? 'a link')} to ${await typeLabel(collection, type)}`,
         collection,
         id,
         before,

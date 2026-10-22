@@ -14,12 +14,12 @@ import type { Response } from '../../../shared/ipc';
 import { blankEntry } from '../../../shared/domain/blank';
 import { fieldIssues } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
-import { listColorCss } from '../../../shared/domain/lists';
 import { filterQuestions, questionCounts } from '../../../shared/domain/questions';
 import type { QuestionFilter } from '../../../shared/domain/questions';
 import { logsNewestFirst } from '../../../shared/domain/sessionLog';
 import { call, plainError } from '../api';
-import { useList, useStore } from './data';
+import { useStore } from './data';
+import { ListChip } from './listChip';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
@@ -198,7 +198,9 @@ export function EntryList(props: {
                         {entry.state === 'decided' ? 'decided' : 'open'}
                       </span>
                     )}
-                    {typeof entry.status === 'string' && <StatusChip id={entry.status} />}
+                    {typeof entry.status === 'string' && (
+                      <ListChip listId="statuses" id={entry.status} />
+                    )}
                     {warnings.length > 0 && (
                       <span className="chip warn-chip" title="Fields with warnings">
                         {warnings.length} {warnings.length === 1 ? 'warning' : 'warnings'}
@@ -241,21 +243,6 @@ function renameSpec(collection: EntryCollection): {
     };
   }
   return { path: 'title', label: 'Title' };
-}
-
-/** IP-9: a status chip with the status list's label and colour. */
-function StatusChip({ id }: { id: string }) {
-  const item = useList('statuses')?.items.find((i) => i.id === id);
-  // The seeded statuses keep their theme chips; any other is drawn with its own colour.
-  const colour = ['canon', 'planned', 'idea'].includes(id) ? null : listColorCss(item?.color);
-  return (
-    <span
-      className={`chip ${id}`}
-      style={colour ? { borderColor: colour, color: 'var(--fg)' } : undefined}
-    >
-      {item?.label.toLowerCase() ?? id}
-    </span>
-  );
 }
 
 /**

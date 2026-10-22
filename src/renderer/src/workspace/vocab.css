@@ -176,3 +176,21 @@
     margin-left: 0;
   }
 }
+
+/* A status or provenance chip in its list colour; the text keeps the text token. */
+.chip.list-chip {
+  color: var(--fg);
+  background: transparent;
+}
+
+/* IP-12: a family chip in a picked hex; its dot keeps the tree stripe's outline so a pale or dark colour still shows. */
+.chip.fam.fam-hex {
+  color: var(--fg);
+  background: transparent;
+}
+.chip.fam .fam-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}

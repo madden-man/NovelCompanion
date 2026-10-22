@@ -659,6 +659,21 @@ test('IP-9 statuses and provenance recolour in place, a status changes kind, and
     (await listItems(listId)).find((i) => i.id === id);
   await itemRow('statuses', 'idea').getByTestId('item-colour').fill('#aa3300');
   await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#aa3300');
+  // An entry's chip shows the new colour on its edge and dot; its text stays in the text colour.
+  await invoke('entry.create', {
+    collection: 'openQuestions',
+    data: { title: 'Who paints the harbor wall?', status: 'idea' },
+  });
+  await openSection('openQuestions');
+  const chip = page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Who paints the harbor wall\?/ })
+    .locator('.chip[data-list="statuses"][data-item="idea"]');
+  await expect(chip).toHaveCSS('border-top-color', 'rgb(170, 51, 0)');
+  await expect(chip.locator('.dot')).toHaveCSS('background-color', 'rgb(170, 51, 0)');
+  const fg = await chip.evaluate((el) => getComputedStyle(el).color);
+  expect(fg).not.toBe('rgb(170, 51, 0)');
+  await rail(page, 'Lists').click();
   await undoStep();
   await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#7a611b');
   await itemRow('provenance', 'invented').getByTestId('item-colour').fill('#225588');
@@ -688,6 +703,19 @@ test('IP-9 statuses and provenance recolour in place, a status changes kind, and
   await expect(ideaKind.getByRole('alert')).toContainText('idea');
   await ideaKind.locator('select').press('Escape');
   expect((await item('statuses', 'idea'))?.extra.kind).toBe('idea');
+});
+
+test('IP-9 removing a status in use is refused on the Lists screen with the reason', async () => {
+  await rail(page, 'Lists').click();
+  const used = (await listItems('statuses')).find((i) => i.id === 'idea')!;
+  expect(used.usage).toBeGreaterThan(0);
+  await itemRow('statuses', 'idea')
+    .getByRole('button', { name: `Remove ${used.label}` })
+    .click();
+  const note = listPanel('statuses').locator('p[role="status"]');
+  await expect(note).toContainText(new RegExp(`(entry uses|entries use) ${used.label}\\.`));
+  await expect(note).toContainText('Change them first, or rename the item instead.');
+  expect((await listItems('statuses')).some((i) => i.id === 'idea')).toBe(true);
 });
 
 test('IP-8 renaming a region on the Lists screen renames it on every event that names it', async () => {

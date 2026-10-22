@@ -6,6 +6,7 @@ import type { LifeState } from '../../../../shared/domain/ages';
 import { call } from '../../api';
 import { useEntries, useStore } from '../data';
 import { Zh } from '../Zh';
+import '../vocab.css';
 
 export type YearView = Response<'timeline.year'>;
 export type Moment = { year: number; month?: number; day?: number };
@@ -45,7 +46,12 @@ export function useFamilies(): Map<string, { name: string; color: string }> {
           f._id,
           {
             name: typeof f.name === 'string' ? f.name : f._id,
-            color: familyToken(f.color) ?? 'series-4',
+            // IP-12: a seeded colour draws through its theme token; any other hex as itself.
+            color:
+              familyToken(f.color) ??
+              (typeof f.color === 'string' && /^#[0-9a-f]{6}$/i.test(f.color)
+                ? f.color.toLowerCase()
+                : 'series-4'),
           },
         ]),
       ),
@@ -75,7 +81,18 @@ export function FamilyChips(props: {
     <span className="row tight">
       {props.ids.map((id) => {
         const f = props.families.get(id);
-        return (
+        const hex = f?.color.startsWith('#') ? f.color : null;
+        return hex ? (
+          <span
+            key={id}
+            className="chip fam fam-hex"
+            style={{ borderColor: hex }}
+            data-family={hex}
+          >
+            <span className="fam-dot" style={{ background: hex }} aria-hidden="true" />
+            <Zh text={f?.name ?? id} />
+          </span>
+        ) : (
           <span key={id} className={`chip fam fam-${f?.color ?? 'series-4'}`}>
             <Zh text={f?.name ?? id} />
           </span>
