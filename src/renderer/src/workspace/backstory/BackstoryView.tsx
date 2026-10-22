@@ -31,6 +31,7 @@ import { useEntries } from '../data';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { BackstoryGrid } from './BackstoryGrid';
+import { MomentDialog } from './MomentDialog';
 import { MomentsTable } from './MomentsTable';
 import type { MomentField } from './MomentsTable';
 import { useEraEdits, useTitleRename } from '../timeline/gridShared';
@@ -55,7 +56,8 @@ const FIELD_WORDS: Record<MomentField, string> = {
 
 /**
  * The Backstory screen (SM-9): the character grid on the World events axis,
- * then the picked person's moments as an editable table. Every write goes
+ * then the picked person's moments as a list, each of which opens across the
+ * screen in `MomentDialog` for reading and editing (A49). Every write goes
  * through the write path with one undo step (ED-3); nothing here is computed
  * by a model.
  */
@@ -83,6 +85,8 @@ export function BackstoryView(props: {
   const [positions, setPositions] = useState<StoredPositions | null>(null);
   const [picked, setPicked] = useState<string | null>(props.characterId ?? null);
   const [selected, setSelected] = useState<string | null>(null);
+  /** The moment open across the screen (A49). */
+  const [open, setOpen] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<Zoom>('fit');
   const [error, setError] = useState<string | null>(null);
@@ -147,15 +151,31 @@ export function BackstoryView(props: {
     [grid.moments, grid.people, person],
   );
   const everyone = useMemo(() => grid.families.flatMap((f) => f.people), [grid.families]);
+  const whoOptions = useMemo(
+    () =>
+      everyone.map((p) => ({ value: p.id, label: p.chinese ? `${p.name} ${p.chinese}` : p.name })),
+    [everyone],
+  );
+  // The open moment is looked up among every moment, so moving it to another person keeps it open.
+  const openMoment = open ? grid.moments.find((m) => m.id === open) : undefined;
   const eraEdits = useEraEdits({ eras, span, readOnly: ro.off, onError: setError });
   const renameMoment = useTitleRename('moments');
-
-  const clearFocus = useCallback(() => setFocusId(null), []);
 
   const pick = (id: string) => {
     setPicked(id);
     setSelected(null);
   };
+
+  /** A line of the list opens its moment across the screen, selected in the grid too. */
+  const show = (id: string) => {
+    setSelected(id);
+    setOpen(id);
+  };
+  // Stable: the dialog's one-time focus effect lists it.
+  const hide = useCallback(() => {
+    setOpen(null);
+    setFocusId(null);
+  }, []);
 
   /** `keepPick`: a moment made from the table of every moment leaves nobody picked (IP-13). */
   const create = async (characterId: string, at: number, keepPick = false) => {
@@ -176,6 +196,7 @@ export function BackstoryView(props: {
       if (!keepPick) setPicked(characterId);
       setSelected(entry._id);
       setFocusId(entry._id);
+      setOpen(entry._id);
     } catch (e) {
       setError(plainError(e));
     }
@@ -228,9 +249,11 @@ export function BackstoryView(props: {
       undo.record(
         editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
       );
-      // Only a cell of this row counts the stored value as saved (ED-3).
-      const row = (document.activeElement as HTMLElement | null)?.closest('tr');
-      if (row?.getAttribute('data-id') === id) undo.markSaved(entry);
+      // Only a field of this moment's dialog counts the stored value as saved (ED-3).
+      const box = (document.activeElement as HTMLElement | null)?.closest(
+        '[data-testid="moment-dialog"]',
+      );
+      if (box?.getAttribute('data-id') === id) undo.markSaved(entry);
     });
   };
 
@@ -349,6 +372,7 @@ export function BackstoryView(props: {
   const trashedOne = (m: BackstoryMoment) => {
     setTrashed({ title: m.title.trim() || `the moment of ${m.year}`, id: m.id });
     if (selected === m.id) setSelected(null);
+    if (open === m.id) hide();
   };
 
   const undoTrash = async () => {
@@ -481,20 +505,29 @@ export function BackstoryView(props: {
         person={person ?? null}
         people={everyone}
         moments={rows}
-        events={events}
         selectedId={selected}
-        focusId={focusId}
-        onFocused={clearFocus}
         onSelect={setSelected}
-        onSave={save}
-        onMention={mention}
+        onOpen={show}
         onAdd={(id) => create(id, year, !person)}
-        onTrashed={trashedOne}
         onShowAll={() => {
           setPicked(null);
           setSelected(null);
         }}
       />
+      {openMoment && (
+        <MomentDialog
+          key={openMoment.id}
+          m={openMoment}
+          person={grid.people.get(openMoment.characterId) ?? null}
+          options={whoOptions}
+          events={events}
+          fresh={focusId === openMoment.id}
+          onSave={(field, value, mentioned) => save(openMoment.id, field, value, mentioned)}
+          onMention={(e) => mention(openMoment.id, e)}
+          onTrashed={() => trashedOne(openMoment)}
+          onClose={hide}
+        />
+      )}
     </div>
   );
 }
