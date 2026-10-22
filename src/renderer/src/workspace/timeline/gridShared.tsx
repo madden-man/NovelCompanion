@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -148,6 +148,28 @@ export interface GridMarkers {
 }
 
 /**
+ * After a rename field closes and is gone, the focus goes back to what it
+ * renamed, unless the writer put it somewhere else (a click elsewhere).
+ */
+function useRefocus(
+  open: string | null,
+  selector: (id: string) => string,
+): (id: string | null) => void {
+  const backToRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = backToRef.current;
+    if (open !== null || id === null) return;
+    backToRef.current = null;
+    const now = document.activeElement;
+    if (now && now !== document.body) return;
+    document.querySelector<HTMLElement>(selector(id))?.focus({ preventScroll: true });
+  });
+  return useCallback((id: string | null) => {
+    backToRef.current = id;
+  }, []);
+}
+
+/**
  * Marker behaviour both grids share. A marker drags along its row by whole
  * years (shown live, written once on release); a click right after a drag is
  * swallowed. The markers are one Tab stop: Up and Down walk them in reading
@@ -167,6 +189,7 @@ export function useGridMarkers(opts: {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const backTo = useRefocus(renaming, (id) => `.wg-marker[data-id="${CSS.escape(id)}"]`);
   const suppressClick = useRef(false);
   const order = useMemo(
     () => layout.lines.flatMap((l) => lineMarkers(l).map((m) => m.id)),
@@ -232,18 +255,8 @@ export function useGridMarkers(opts: {
       setRenaming(id);
     },
     endRename: () => {
-      const id = renaming;
+      backTo(renaming);
       setRenaming(null);
-      if (id === null) return;
-      // The field is gone after this render; the focus goes back to its marker.
-      requestAnimationFrame(() => {
-        // Only when the focus has nowhere else to be: a click elsewhere keeps its own focus.
-        const now = document.activeElement;
-        if (now && now !== document.body) return;
-        document
-          .querySelector<HTMLElement>(`.wg-marker[data-id="${CSS.escape(id)}"]`)
-          ?.focus({ preventScroll: true });
-      });
     },
     onKeyDown: (ev, id) => {
       if (ev.key === 'Escape') {
@@ -732,21 +745,14 @@ export function GridHeader(props: {
   const [renaming, setRenaming] = useState<string | null>(null);
   const shown = previewEras(props.eras, drag, scale);
   const gaps = useMemo(() => bandGaps(props.eras, scale), [props.eras, scale]);
-  const band = useRef<HTMLDivElement>(null);
 
   const startRename = (id: string) => {
     if (canEdit) setRenaming(id);
   };
+  const backTo = useRefocus(renaming, (id) => `.wg-era[data-id="${CSS.escape(id)}"]`);
   const endRename = () => {
-    const id = renaming;
+    backTo(renaming);
     setRenaming(null);
-    requestAnimationFrame(() => {
-      const now = document.activeElement;
-      if (id === null || (now && now !== document.body)) return;
-      band.current
-        ?.querySelector<HTMLElement>(`.wg-era[data-id="${CSS.escape(id)}"]`)
-        ?.focus({ preventScroll: true });
-    });
   };
   const makeEra = async (gap: BandGap) => {
     if (!edits || !canEdit) return;
@@ -784,7 +790,6 @@ export function GridHeader(props: {
         )}
       </div>
       <div
-        ref={band}
         className="wg-eras"
         style={{ width: layout.width }}
         role="group"
