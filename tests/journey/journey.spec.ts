@@ -21,6 +21,7 @@ import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import {
   field,
+  fillEditable,
   invokeVia,
   launch,
   openListFor,
@@ -815,10 +816,8 @@ test('ED-1 one entry of every section is created from its form, every field is c
         : editableFields(manifest);
     if (c === 'characters') {
       const names = b.names as { full: string; chinese: string };
-      await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
-      await field(editor, 'names.full').locator('input').fill(names.full);
-      await field(editor, 'names.chinese').locator('input').fill(names.chinese);
-      await editor.getByRole('button', { name: 'Done', exact: true }).click();
+      await fillEditable(field(editor, 'names.full'), names.full);
+      await fillEditable(field(editor, 'names.chinese'), names.chinese);
     }
     for (const spec of fields.filter((s) => s.name !== 'names')) {
       await setField(ctx, editor, spec, spec.name, b[spec.name], b);

@@ -65,11 +65,30 @@ export function useAutosave(collection: EntryCollection, id: string) {
   const [reloads, setReloads] = useState(0);
   const reload = useCallback(() => setReloads((n) => n + 1), []);
 
+  /**
+   * IP-1: a write made elsewhere on this entry (an Editable in the page) becomes the
+   * saved base, while fields with unsaved typing keep it, so the next save is only them.
+   */
+  const adopt = useCallback((entry: Entry) => {
+    const base = saved.current;
+    const cur = current.current;
+    const dirty = base && cur ? Object.keys(patchBetween(base, cur).forward) : [];
+    const next =
+      dirty.length && cur
+        ? ({ ...entry, ...Object.fromEntries(dirty.map((k) => [k, cur[k]])) } as Entry)
+        : entry;
+    saved.current = entry;
+    current.current = next;
+    setDraft(next);
+  }, []);
+
   useEffect(() => {
     let live = true;
     call('entry.get', { collection, id })
       .then((r) => {
         if (!live) return;
+        // Typing landed while this read was out: keep it (IP-1).
+        if (saved.current && current.current !== saved.current) return adopt(r.entry as Entry);
         saved.current = r.entry as Entry;
         current.current = r.entry as Entry;
         setDraft(r.entry as Entry);
@@ -85,7 +104,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
     return () => {
       live = false;
     };
-  }, [collection, id, reloads]);
+  }, [collection, id, reloads, adopt]);
 
   const save = useCallback(async (): Promise<void> => {
     if (timer.current) clearTimeout(timer.current);
@@ -193,7 +212,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
     [reload],
   );
 
-  return { draft, warnings, backlinks, issues, status, error, setField, flush, reload };
+  return { draft, warnings, backlinks, issues, status, error, setField, flush, reload, adopt };
 }
 
 export function SaveState({ status, error }: { status: SaveStatus; error: string | null }) {
@@ -471,6 +490,7 @@ export function EntryPane(props: {
             draft={draft}
             messages={messages}
             onChange={ed.setField}
+            onSaved={ed.adopt}
             onMention={onMention}
             onOpen={props.onOpen}
             onOpenTree={props.onOpenTree}

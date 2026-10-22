@@ -16,8 +16,10 @@ import {
   field,
   fileDb,
   fillDateBox,
+  fillEditable,
   invokeVia,
   launch,
+  openEditable,
   openListFor,
   rail,
   sectionList,
@@ -133,12 +135,10 @@ test('ED-1 every field of every entity can be created and changed through the ed
     await waitSaved(page);
     const fields = c === 'characters' ? CHARACTER_PAGE_FIELDS : editableFields(manifest);
     if (c === 'characters') {
-      // SM-1: the name and the Chinese name are edited from the heading.
+      // SM-1, IP-1: the name and the Chinese name are fields in the heading.
       const names = b.names as { full: string; chinese: string };
-      await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
-      await field(editor, 'names.full').locator('input').fill(names.full);
-      await field(editor, 'names.chinese').locator('input').fill(names.chinese);
-      await editor.getByRole('button', { name: 'Done', exact: true }).click();
+      await fillEditable(field(editor, 'names.full'), names.full);
+      await fillEditable(field(editor, 'names.chinese'), names.chinese);
     }
     for (const spec of fields.filter((s) => s.name !== 'names')) {
       await setField(ctx, editor, spec, spec.name, b[spec.name], b);
@@ -485,17 +485,19 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
 
 test('ED-10 a value the schema cannot store is marked at the field and not sent', async () => {
   const editor = page.getByTestId('editor');
-  await editor.getByRole('button', { name: 'Edit name', exact: true }).click();
-  await field(editor, 'names.full').locator('input').fill('');
-  await expect(editor.getByTestId('autosave')).toHaveText(/^Not saved/);
-  await expect(field(editor, 'names.full').getByRole('alert')).toHaveText(
-    'Not saved: Cannot be empty.',
-  );
+  // IP-1: the name is a field in the heading; an empty one is refused there and nothing is sent.
+  const name = field(editor, 'names.full');
+  await openEditable(name);
+  await name.locator('input').fill('');
+  await name.locator('input').press('Enter');
+  await expect(name.getByRole('alert')).toHaveText('Not saved: Full name cannot be empty.');
+  await expect(name).toHaveAttribute('data-save-state', 'error');
   expect(((await currentEntry('characters', 'Warned Hale')).names as { full: string }).full).toBe(
     'Warned Hale',
   );
-  await field(editor, 'names.full').locator('input').fill('Warned Hale');
-  await waitSaved(page);
+  await name.locator('input').press('Escape');
+  await expect(name.locator('input')).toHaveCount(0);
+  await expect(name).toContainText('Warned Hale');
 });
 
 test('ED-8 renaming a tag on the Lists screen updates every entry that uses it', async () => {

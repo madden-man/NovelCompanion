@@ -16,8 +16,10 @@ import {
   field,
   fileDb,
   fillDateBox,
+  fillEditable,
   invokeVia,
   launch,
+  openEditable,
   rail,
   setStoryYear,
   waitSaved,
@@ -415,8 +417,8 @@ test('FT-7 FT-3 a click opens the character in the inspector without leaving the
     .getByRole('button', { name: /Zhou Jun/ })
     .click();
   const line = page.getByTestId('character-page').getByTestId('char-line');
-  await expect(line.getByLabel('Birth', { exact: true })).toHaveValue('1995');
-  await expect(line.getByLabel('Death', { exact: true })).toHaveValue('2070');
+  await expect(field(line, 'birth').locator('.editable-text')).toHaveText('1995');
+  await expect(field(line, 'death').locator('.editable-text')).toHaveText('2070');
   // An edit on the character page shows in the tree.
   await fillDateBox(field(page.getByTestId('editor'), 'birth'), '1993');
   await waitSaved(page);
@@ -1089,17 +1091,21 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   await expect(fam.getByLabel('Family to add')).toHaveCount(0);
   // The Characters screen is the list and the page: no inspector column beside it.
   await expect(page.locator('aside.ws-inspector')).toHaveCount(0);
-  // Birth and Death are one box each; Iris's birth is a full date.
-  await expect(line.getByLabel('Birth', { exact: true })).toHaveValue('2031-03-14');
-  await expect(line.getByLabel('Death', { exact: true })).toHaveValue('');
-  // A full date shows whole in its box.
+  // Birth and Death are one field each (IP-1); Iris's birth is a full date, her death not recorded.
+  await expect(field(line, 'birth').locator('.editable-text')).toHaveText('2031-03-14');
+  await expect(field(line, 'death').locator('.editable-text.is-placeholder')).toHaveText(
+    'Not recorded',
+  );
+  // A full date shows whole in its box when the field is open.
+  await openEditable(field(line, 'birth'));
   expect(
-    await line
-      .getByLabel('Birth', { exact: true })
+    await field(line, 'birth')
+      .locator('input')
       .evaluate((el) => el.scrollWidth - el.clientWidth),
   ).toBeLessThanOrEqual(0);
-  // Status is the only select until Add family is pressed.
-  await expect(line.locator('select')).toHaveCount(1);
+  await field(line, 'birth').locator('input').press('Escape');
+  // IP-1: every value reads as text until it is picked: no box, no select.
+  await expect(line.locator('select, input')).toHaveCount(0);
   // The relatives, read only: parents, partners with the union years, children.
   const rel = p.getByTestId('char-relatives');
   await expect(rel).toContainText('Parents: ');
@@ -1159,46 +1165,49 @@ test('SM-1 ED-2 each text box saves on its own and grows with its text', async (
 
 test('SM-1 TL-3 Birth is one box: a month and a full date save on Enter as one undo step, and a bad value writes nothing', async () => {
   const p = await openCharacter('Ruth Hale');
-  const birth = p.getByLabel('Birth', { exact: true });
+  // IP-1: Birth reads as text and opens as one box.
+  const f = field(p, 'birth');
+  const shown = f.locator('.editable-text');
+  const birth = f.getByRole('textbox', { name: 'Birth', exact: true });
   const ruth = async () =>
     (await invoke('entry.get', { collection: 'characters', id: 'H4' })).entry;
+  await expect(shown).toHaveText('1990');
+  await shown.click();
   await expect(birth).toHaveValue('1990');
   await birth.fill('1990-3');
   await birth.press('Enter');
-  await waitSaved(page);
-  await expect(birth).toHaveValue('1990-03');
+  await expect(birth).toHaveCount(0);
+  await expect(shown).toHaveText('1990-03');
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
   const history = (await changes(page)).locator('li');
   await expect(history.first()).toHaveText('Changed Birth on Ruth Hale');
   await page.keyboard.press('Escape');
   // A value it cannot read is refused at the box, and nothing is written.
+  await shown.click();
   await birth.fill('March 1990');
   await birth.press('Enter');
-  await expect(field(p, 'birth').getByRole('alert')).toHaveText(
+  await expect(f.getByRole('alert')).toHaveText(
     'Not saved: March 1990 is not a date. Write a year (1990), a year and month (1990-03), or a full date (1990-03-14).',
   );
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
   await birth.fill('1990-03-14');
   await birth.blur();
-  await waitSaved(page);
-  await expect(field(p, 'birth').getByRole('alert')).toHaveCount(0);
+  await expect(birth).toHaveCount(0);
+  await expect(f.getByRole('alert')).toHaveCount(0);
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3, day: 14 });
   // One commit is one undo step.
   await page.locator('body').click();
   await page.keyboard.press('Meta+z');
   await expect.poll(async () => (await ruth()).birth).toEqual({ year: 1990, month: 3 });
-  await expect(birth).toHaveValue('1990-03');
+  await expect(shown).toHaveText('1990-03');
   await page.keyboard.press('Meta+z');
   await expect.poll(async () => (await ruth()).birth).toEqual({ year: 1990 });
 });
 
-test('SM-1 the name and the Chinese name are edited from the heading, and the title follows the name', async () => {
+test('SM-1 IP-1 the name and the Chinese name are fields in the heading, and the title follows the name', async () => {
   const p = await openCharacter('Sam Hale');
-  await p.getByRole('button', { name: 'Edit name', exact: true }).click();
-  await field(p, 'names.full').locator('input').fill('Samuel Hale');
-  await field(p, 'names.chinese').locator('input').fill('山');
-  await waitSaved(page);
-  await p.getByRole('button', { name: 'Done', exact: true }).click();
+  await fillEditable(field(p, 'names.full'), 'Samuel Hale');
+  await fillEditable(field(p, 'names.chinese'), '山');
   await expect(p.getByTestId('char-heading').locator('.char-name')).toContainText('Samuel Hale');
   await expect(p.getByTestId('char-chinese').locator('.zh-chars')).toHaveText('山');
   const sam = (await invoke('entry.get', { collection: 'characters', id: 'H6' })).entry;
@@ -1206,11 +1215,11 @@ test('SM-1 the name and the Chinese name are edited from the heading, and the ti
     title: 'Samuel Hale',
     names: { full: 'Samuel Hale', chinese: '山' },
   });
-  await p.getByRole('button', { name: 'Edit name', exact: true }).click();
-  await field(p, 'names.full').locator('input').fill('Sam Hale');
-  await field(p, 'names.chinese').locator('input').fill('');
-  await waitSaved(page);
-  await p.getByRole('button', { name: 'Done', exact: true }).click();
+  await fillEditable(field(p, 'names.full'), 'Sam Hale');
+  await fillEditable(field(p, 'names.chinese'), '');
+  await expect(p.getByTestId('char-chinese').locator('.editable-text.is-placeholder')).toHaveText(
+    'Add a Chinese name',
+  );
 });
 
 test('SM-1 FT-7 the relatives line opens the family tree on that person', async () => {
@@ -1243,9 +1252,8 @@ test('SM-1 GL-3 a Chinese name shows as characters, with romanization and meanin
 
 test('CH-4 a character with an unknown birth year is reported as age unknown on the page and in the tree', async () => {
   const p = await openCharacter('The Archivist');
-  // A blank Birth box is an unknown birth.
-  await expect(p.getByLabel('Birth', { exact: true })).toHaveValue('');
-  await expect(p.getByLabel('Birth', { exact: true })).toHaveAttribute('placeholder', 'Unknown');
+  // A blank Birth is an unknown birth.
+  await expect(field(p, 'birth').locator('.editable-text.is-placeholder')).toHaveText('Unknown');
   await expect(p.getByTestId('char-age')).toHaveText('Unknown age');
   await openTree();
   for (const y of ['1900', '2040', '2100']) {
@@ -1289,13 +1297,14 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
       (e) => e.entry.title === 'Ada Lin',
     )!.entry;
   expect(await ada()).toMatchObject({ status: 'idea', familyIds: [], birth: { unknown: true } });
+  // IP-1: the families are a chip row; Add family turns into a picker in its place.
   const fam = field(ed, 'familyIds');
+  const families = async () => (await ada()).familyIds;
   await fam.getByRole('button', { name: 'Add family' }).click();
-  await fam.getByLabel('Family to add').selectOption('FAM-ZHOU');
-  await waitSaved(page);
-  expect((await ada()).familyIds).toEqual(['FAM-ZHOU']);
+  await fam.locator('[role="option"][data-value="FAM-ZHOU"]').click();
+  await expect.poll(families).toEqual(['FAM-ZHOU']);
   await expect(fam.getByLabel('Family to add')).toHaveCount(0);
-  // NF-2: Add family from the keyboard: Enter shows the choice, arrows pick, Escape puts it away.
+  // NF-2: Add family from the keyboard: Enter shows the picker, Enter picks, Escape puts it away.
   await fam.getByRole('button', { name: 'Add family' }).focus();
   await page.keyboard.press('Enter');
   await expect(fam.getByLabel('Family to add')).toBeFocused();
@@ -1303,21 +1312,22 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await expect(fam.getByLabel('Family to add')).toHaveCount(0);
   await expect(fam.getByRole('button', { name: 'Add family' })).toBeFocused();
   await page.keyboard.press('Enter');
-  await fam.getByLabel('Family to add').selectOption('FAM-HALE');
-  await waitSaved(page);
-  expect((await ada()).familyIds).toEqual(['FAM-ZHOU', 'FAM-HALE']);
-  await expect(fam.getByRole('button', { name: 'Add family' })).toBeDisabled();
-  await fam.getByRole('button', { name: 'Remove Hale from Families' }).click();
-  await waitSaved(page);
-  expect((await ada()).familyIds).toEqual(['FAM-ZHOU']);
+  await expect(fam.getByRole('option')).toHaveText(['Hale', 'Add new...']);
+  await page.keyboard.press('Enter');
+  await expect.poll(families).toEqual(['FAM-ZHOU', 'FAM-HALE']);
+  // Every family is on the chips; the picker offers only Add new.
   await fam.getByRole('button', { name: 'Add family' }).click();
-  await fam.getByLabel('Family to add').selectOption('FAM-HALE');
-  await waitSaved(page);
-  expect((await ada()).familyIds).toEqual(['FAM-ZHOU', 'FAM-HALE']);
+  await expect(fam.getByRole('option')).toHaveText(['Add new...']);
+  await page.keyboard.press('Escape');
+  await fam.getByRole('button', { name: 'Remove Hale from Families' }).click();
+  await expect.poll(families).toEqual(['FAM-ZHOU']);
+  await fam.getByRole('button', { name: 'Add family' }).click();
+  await fam.locator('[role="option"][data-value="FAM-HALE"]').click();
+  await expect.poll(families).toEqual(['FAM-ZHOU', 'FAM-HALE']);
   await fillDateBox(field(ed, 'birth'), '2040');
-  await field(ed, 'status').locator(':scope > select').selectOption('planned');
-  await waitSaved(page);
-  expect(await ada()).toMatchObject({ birth: { year: 2040 }, status: 'planned' });
+  await openEditable(field(ed, 'status'));
+  await field(ed, 'status').locator('select').selectOption('planned');
+  await expect.poll(ada).toMatchObject({ birth: { year: 2040 }, status: 'planned' });
   // Delete and restore through the trash.
   await page.getByTestId('entry-tools').getByRole('button', { name: 'Move to trash' }).click();
   await page

@@ -1,0 +1,302 @@
+/* IP-1: the editing primitive. A field reads as text until it is picked, and
+   the field that replaces it keeps the text's font, size and box, so nothing
+   around it moves. Colours are theme tokens (light and dark are set in
+   theme.css); labels and placeholders use the primary text colour. */
+.editable {
+  position: relative;
+  min-width: 0;
+  color: var(--fg);
+}
+.editable-inline {
+  display: inline;
+}
+.editable-block {
+  display: block;
+}
+.editable-labelled {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.editable-label {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--fg);
+}
+
+/* The closed field: text, with a dashed underline on hover (inline) or a dashed box (block). */
+.editable-text {
+  cursor: text;
+  color: inherit;
+  border-radius: 3px;
+  text-decoration-line: none;
+  overflow-wrap: anywhere;
+}
+.editable-text.is-placeholder {
+  color: var(--fg);
+  font-style: italic;
+}
+.editable-inline > .editable-text:hover,
+.editable-labelled > .editable-text:hover {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.editable-block > .editable-text {
+  display: block;
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+}
+.editable-block > .editable-text:hover {
+  outline: 1px dashed var(--border-strong);
+}
+.editable-text:focus-visible,
+.editable-block > .editable-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.editable.is-disabled .editable-text {
+  cursor: default;
+}
+.editable.is-disabled > .editable-text:hover {
+  text-decoration-line: none;
+  outline-color: transparent;
+}
+
+/* The open field: an input the width of its own text, in the text's font. */
+.editable-sizer {
+  display: inline-grid;
+  vertical-align: baseline;
+  max-width: 100%;
+}
+.editable-sizer::after,
+.editable-sizer > .editable-input {
+  grid-area: 1 / 1;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 1ch;
+}
+.editable-sizer::after {
+  content: attr(data-value);
+  visibility: hidden;
+  white-space: pre;
+  overflow: hidden;
+}
+.editable .editable-input {
+  width: 100%;
+  height: auto;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+.editable .editable-input::placeholder {
+  color: var(--fg);
+  font-style: italic;
+  opacity: 1;
+}
+.editable .editable-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.editable .editable-select {
+  appearance: none;
+  cursor: pointer;
+  text-decoration-line: none;
+}
+.editable.has-error .editable-input {
+  text-decoration-color: var(--critical-ink);
+}
+
+/* Rich text: the closed box has the open box's padding, border width and smallest height. */
+.editable-rich > .editable-text {
+  font-size: 1rem;
+  line-height: 1.55;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  min-height: calc(1.55em * 2 + 18px);
+  max-width: 75ch;
+}
+.editable-rich > .editable-text:hover {
+  outline: 0;
+  border: 1px dashed var(--border-strong);
+}
+.editable-rich > .editable-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The saved tick sits beside the text and takes no room. */
+.editable-tick {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 4px;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--good-ink);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.editable-labelled > .editable-tick {
+  top: auto;
+  bottom: 0;
+}
+.editable-block > .editable-tick {
+  left: auto;
+  right: 0;
+}
+
+/* The reason a value did not save, under the field, over what follows rather than pushing it. */
+.editable .editable-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 4px;
+  min-width: 16rem;
+  max-width: min(32rem, 90vw);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  box-shadow: var(--shadow);
+  background: var(--surface);
+}
+.editable-block .editable-error,
+.editable-labelled .editable-error {
+  position: static;
+  min-width: 0;
+  box-shadow: none;
+}
+.editable .editable-note {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* Chips: each chip has its remove button; Add turns into a picker in its place. */
+.editable-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.editable-chips-empty {
+  font-size: 0.9rem;
+}
+.editable-combo {
+  position: relative;
+  display: inline-block;
+  font-size: 0.9rem;
+}
+.editable-combo .editable-sizer {
+  min-width: 8em;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.editable-combo .editable-input {
+  text-decoration-line: none;
+}
+.editable-listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.editable-option {
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.editable-option.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+  outline: 1px solid var(--accent);
+}
+.editable-option.add-new {
+  font-weight: 600;
+  border-top: 1px solid var(--border-strong);
+}
+.editable-empty {
+  padding: 4px 8px;
+  color: var(--fg);
+}
+
+/* The gallery of every kind (IP-1), opened by #editable-gallery for tests and design checks. */
+/* It sits over the screen below the top bar, so Undo and Changes stay in reach. */
+.editable-gallery {
+  position: fixed;
+  top: 180px;
+  right: 16px;
+  bottom: 48px;
+  width: min(40rem, calc(100vw - 32px));
+  z-index: 50;
+  overflow: auto;
+  padding: 16px 20px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.editable-gallery-list {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+  gap: 14px 18px;
+  align-items: baseline;
+  margin: 0;
+}
+.editable-gallery-list dt {
+  font-weight: 600;
+  color: var(--fg);
+}
+.editable-gallery-list dd {
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 400px) {
+  .editable-gallery-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The Characters proof: an empty Chinese name reads as a small prompt, not a second heading. */
+.char-name-zh .editable-text.is-placeholder {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+.char-line .editable-labelled > .editable-text,
+.char-line .editable-labelled > .editable-sizer {
+  min-height: 1.6em;
+  line-height: 1.6;
+}
