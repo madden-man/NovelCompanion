@@ -3,7 +3,16 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail, sectionList } from './helpers';
+import {
+  changes,
+  field,
+  fileDb,
+  fillEditable,
+  invokeVia,
+  launch,
+  rail,
+  sectionList,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -660,33 +669,412 @@ test('SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on i
   await page.keyboard.type('2076');
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await stored()).years).toEqual({ '1': 2076, '4': 2046 });
-  // Tab: the text, then the bar, then the chapter name, renamed in place with Enter.
+  // Tab: the text, then the bar, then the chapter name, renamed in place with Enter (IP-1).
   await page.keyboard.press('Tab');
   await expect(section('CH1')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(bar('CH1')).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(bar('CH1').getByTestId('chapter-title')).toBeFocused();
+  await expect(bar('CH1').getByTestId('chapter-title-text')).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Meta+a');
   await page.keyboard.type('The Archive Door');
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await chapterOf('CH1')).title).toBe('The Archive Door');
-  await expect(bar('CH1').getByTestId('chapter-title')).toBeFocused();
+  await expect(bar('CH1').getByTestId('chapter-title-text')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(bar('CH1').getByTestId('chapter-year')).toBeFocused();
   await undo();
   await expect(bar('CH1').getByTestId('chapter-title')).toHaveText("The Archivist's Door");
-  // Then Open, then the line under the chapter, which Down moves a line.
+  // Then Open, the strand chip and Written (IP-3), then the line under the chapter, which Down moves a line.
   await bar('CH1').getByTestId('chapter-year').focus();
   await page.keyboard.press('Tab');
   await expect(bar('CH1').getByTestId('chapter-open')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('strand-chip')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('chapter-written')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(boundary('CH1', 'CH2').getByTestId('boundary-grip')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect.poll(async () => (await stored()).breaks.CH2).toBe(3);
   await undo();
   await expect.poll(async () => (await stored()).breaks.CH2).toBe(2);
+});
+
+// ---------- A47: strands on the bars, the first part, scene typing, Books and parts ----------
+
+type StrandDoc = {
+  id: string;
+  label: string;
+  startYear: number;
+  endYear: number | null;
+  primary: boolean;
+  povCharacterId: string | null;
+  characterIds: string[];
+  placeIds: string[];
+};
+const strandsOf = async (id: string) => (await chapterOf(id)).strands as StrandDoc[];
+const pop = () => view().getByTestId('strand-popover');
+const notice = () => page.getByTestId('undo-notice');
+async function openPop(id: string) {
+  await bar(id).getByTestId('strand-chip').click();
+  await expect(pop()).toBeVisible();
+  await expect(pop()).toHaveAttribute('data-chapter', id);
+}
+
+test('IP-3 the strand chip opens a popover beside the bar that moves nothing; it closes on Escape with the focus back on the chip, on a click outside, and when Tab leaves it', async () => {
+  await rail(page, 'Outline').click();
+  const chip = bar('CH2').getByTestId('strand-chip');
+  await expect(chip).toHaveText('present, 2045');
+  await bar('CH2').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const scroll = view().getByTestId('outline-scroll');
+  const at = () => scroll.evaluate((el) => el.scrollTop);
+  const boxes = async () => ({
+    bar2: await box(bar('CH2')),
+    row2: await box(row('CH2')),
+    bar3: await box(bar('CH3')),
+    row3: await box(row('CH3')),
+    top: await at(),
+  });
+  const before = await boxes();
+  await chip.click();
+  await expect(pop()).toBeVisible();
+  await expect(chip).toHaveAttribute('aria-expanded', 'true');
+  await expect(pop()).toContainText('Strands of chapter 2');
+  // Nothing in the outline moved or scrolled, and the outline behind it is still readable.
+  const after = await boxes();
+  for (const k of ['bar2', 'row2', 'bar3', 'row3'] as const) {
+    near(after[k].x, before[k].x);
+    near(after[k].y, before[k].y);
+    near(after[k].height, before[k].height);
+  }
+  expect(after.top).toBe(before.top);
+  await expect(section('CH2')).toBeVisible();
+  // It sits beside the bar, not over it.
+  expect((await box(pop())).x + (await box(pop())).width).toBeLessThanOrEqual(after.bar2.x + 8);
+  // Escape closes it and the focus goes back to the chip.
+  await page.keyboard.press('Escape');
+  await expect(pop()).toHaveCount(0);
+  await expect(chip).toBeFocused();
+  // Enter on the chip opens it; a click outside closes it.
+  await page.keyboard.press('Enter');
+  await expect(pop()).toBeVisible();
+  await view().getByRole('heading', { name: 'Outline', level: 2 }).click();
+  await expect(pop()).toHaveCount(0);
+  // Tab through its fields and out of it closes it.
+  await chip.click();
+  await expect(pop()).toBeVisible();
+  for (let i = 0; i < 20 && (await pop().count()) > 0; i++) await page.keyboard.press('Tab');
+  await expect(pop()).toHaveCount(0);
+  await expect(boundary('CH2', 'CH3').getByTestId('boundary-grip')).toBeFocused();
+});
+
+test('IP-3 each field in the popover writes the writing strand as one undo step: label, point of view, characters present (with Add new), places, and the backstory year', async () => {
+  const start = await strandsOf('CH2');
+  // The label.
+  await openPop('CH2');
+  await fillEditable(pop().getByTestId('strand-label'), 'now');
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.label).toBe('now');
+  await expect(bar('CH2').getByTestId('strand-chip')).toHaveText('now, 2045');
+  await undo();
+  await expect.poll(async () => await strandsOf('CH2')).toEqual(start);
+  await expect(notice()).toHaveText('Undid: Changed Writing strand label on Two Kitchens');
+  // Point of view: a select over the characters present.
+  await openPop('CH2');
+  await pop().getByTestId('strand-pov').locator('.editable-text').click();
+  const pov = pop().getByTestId('strand-pov').locator('select');
+  await expect(pov.locator('option')).toHaveText([
+    'No point of view',
+    'Daniel Hale',
+    'Iris Hale-Zhou',
+    'Zhou Lan',
+  ]);
+  await pov.selectOption({ label: 'Zhou Lan' });
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.povCharacterId).toBe('Z3');
+  await undo();
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.povCharacterId).toBe('H3');
+  // Characters present: remove one, then Add new makes a character and adds her, one step.
+  await openPop('CH2');
+  const chars = pop().getByTestId('strand-characters');
+  await chars
+    .getByRole('button', { name: 'Remove Iris Hale-Zhou from Characters present' })
+    .click();
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.characterIds).toEqual(['H3', 'Z3']);
+  await chars.getByRole('button', { name: 'Add a character' }).click();
+  await page.keyboard.type('Add new');
+  await chars.getByRole('option', { name: 'Add new...' }).click();
+  await chars.getByLabel('Name of the new item for Characters present').fill('Wen Li');
+  await chars.getByLabel('Name of the new item for Characters present').press('Enter');
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.characterIds).toHaveLength(3);
+  const wen = (await strandsOf('CH2'))[0]!.characterIds[2]!;
+  expect((await invoke('entry.get', { collection: 'characters', id: wen })).entry.title).toBe(
+    'Wen Li',
+  );
+  await undo();
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.characterIds).toEqual(['H3', 'Z3']);
+  expect(
+    (await invoke('entry.get', { collection: 'characters', id: wen })).entry.deletedAt,
+  ).toBeTruthy();
+  await undo();
+  await expect
+    .poll(async () => (await strandsOf('CH2'))[0]!.characterIds)
+    .toEqual(['H3', 'Z3', 'H5']);
+  // Places: the picker lists places by their path.
+  await openPop('CH2');
+  const where = pop().getByTestId('strand-places');
+  await where.getByRole('button', { name: 'Add a place' }).click();
+  await page.keyboard.type('Archive');
+  await where.getByRole('option', { name: 'Portland > The Archive' }).click();
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.placeIds).toEqual(['PLC2', 'PLC4']);
+  await undo();
+  await expect.poll(async () => (await strandsOf('CH2'))[0]!.placeIds).toEqual(['PLC2']);
+  // The backstory strand's year moves only that strand.
+  await openPop('CH2');
+  await fillEditable(pop().getByTestId('strand-backstory-year'), '2033');
+  await expect.poll(async () => (await strandsOf('CH2'))[1]!.startYear).toBe(2033);
+  expect((await strandsOf('CH2'))[0]!.startYear).toBe(2045);
+  await undo();
+  await expect.poll(async () => await strandsOf('CH2')).toEqual(start);
+});
+
+test('IP-3 IP-14 Add one adds a backstory strand labelled from the template, as one undo step', async () => {
+  await invoke('settings.set', { templates: { strandBackstory: 'memory' } });
+  await openPop('CH6');
+  await expect(pop().getByTestId('strand-no-backstory')).toContainText('No backstory strand.');
+  await pop().getByTestId('strand-add-backstory').click();
+  await expect.poll(async () => (await strandsOf('CH6')).length).toBe(2);
+  expect((await strandsOf('CH6'))[1]).toMatchObject({
+    label: 'memory',
+    startYear: 2045,
+    endYear: null,
+    primary: false,
+  });
+  await expect(pop().getByTestId('strand-backstory-year')).toHaveText('2045');
+  await undo();
+  await expect.poll(async () => (await strandsOf('CH6')).length).toBe(1);
+  await invoke('settings.set', { templates: { strandBackstory: 'backstory' } });
+});
+
+test('IP-3 the Written toggle on a bar writes the flag as one undo step, by pointer and by keyboard', async () => {
+  const toggle = bar('CH6').getByTestId('chapter-written');
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect.poll(async () => (await chapterOf('CH6')).written).toBe(true);
+  await expect(bar('CH6')).toHaveAttribute('data-written', 'true');
+  await undo();
+  await expect.poll(async () => (await chapterOf('CH6')).written).toBe(false);
+  await expect(toggle).not.toBeChecked();
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await chapterOf('CH6')).written).toBe(true);
+  await undo();
+  await expect.poll(async () => (await chapterOf('CH6')).written).toBe(false);
+});
+
+test("IP-3 the first part's title is a divider above the first chapter that renames in place; its removal joins its chapters to the next section and is not offered when it is the only one", async () => {
+  const first = view().getByTestId('first-divider');
+  await expect(first).toHaveCount(1);
+  await expect(first.getByTestId('divider-name')).toHaveText('Part One: High Water');
+  expect((await box(first)).y).toBeLessThan((await box(bar('CH1'))).y);
+  await fillEditable(first.getByTestId('divider-name'), 'High Water');
+  await expect
+    .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT1' })).entry.title)
+    .toBe('High Water');
+  // Books and parts reads the same part.
+  await expect(
+    view().locator('[data-testid="bp-part"][data-part="PT1"] [data-testid="bp-part-title"]'),
+  ).toHaveText('High Water');
+  await undo();
+  await expect(first.getByTestId('divider-name')).toHaveText('Part One: High Water');
+  // Removed: chapters 1 to 4 join Part Two, which is now the first and only section.
+  await first.getByTestId('remove-divider').click();
+  await expect.poll(async () => (await chapterOf('CH1')).partId).toBe('PT2');
+  expect((await chapterOf('CH4')).partId).toBe('PT2');
+  await expect(first.getByTestId('divider-name')).toHaveText('Part Two: The Letter');
+  await expect(first.getByTestId('remove-divider')).toHaveCount(0);
+  await expect(view().getByTestId('divider')).toHaveCount(0);
+  expect(await chapterIds()).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await undo();
+  await expect.poll(async () => (await chapterOf('CH1')).partId).toBe('PT1');
+  await expect(first.getByTestId('divider-name')).toHaveText('Part One: High Water');
+  await expect(view().getByTestId('divider')).toHaveCount(1);
+});
+
+test('IP-6 typing in the scene outline is one undo step per pause and two across a pause; a structural move right after typing is its own step', async () => {
+  const seven = section('CH7');
+  const was = await seven.inputValue();
+  await seven.click();
+  await seven.press('Meta+ArrowDown');
+  await seven.pressSequentially(' at dusk');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  await seven.pressSequentially(' again');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  await expect.poll(async () => (await stored()).text).toContain('Rain in Guangzhou at dusk again');
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(seven).toHaveValue(`${was} at dusk`);
+  await expect.poll(async () => (await stored()).text).not.toContain('again');
+  await undo();
+  await expect(seven).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).not.toContain('at dusk');
+  await redo();
+  await redo();
+  await expect(seven).toHaveValue(`${was} at dusk again`);
+  await undo();
+  await undo();
+  await expect(seven).toHaveValue(was);
+  // Typing, then at once the line moved: two steps, undone one at a time.
+  const breaks = (await stored()).breaks;
+  await seven.click();
+  await seven.press('Meta+ArrowDown');
+  await seven.pressSequentially(' x');
+  await boundary('CH7', 'CH8').getByTestId('boundary-grip').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(async () => (await stored()).breaks.CH8).toBe(breaks.CH8! + 1);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Moved the line between Rain in Guangzhou and Noor');
+  await expect.poll(async () => (await stored()).breaks.CH8).toBe(breaks.CH8);
+  await expect(seven).toHaveValue(`${was} x`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(seven).toHaveValue(was);
+});
+
+test('IP-6 Cmd+Z inside the scene box with unsaved typing undoes the typing first, then the recorded typing step', async () => {
+  // The longest pause the settings allow, so the second run is still unsaved when Cmd+Z comes.
+  await invoke('settings.set', { numbers: { autosaveMs: 750 } });
+  const history = async () => {
+    const list = await (await changes(page)).locator('li').allTextContents();
+    await page.getByTestId('top-changes').click();
+    return list;
+  };
+  const listBefore = await history();
+  const seven = section('CH7');
+  const was = await seven.inputValue();
+  const textBefore = (await stored()).text;
+  await seven.click();
+  await seven.press('Meta+ArrowDown');
+  await seven.pressSequentially(' one');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  await expect.poll(async () => (await stored()).text).toContain('Rain in Guangzhou one');
+  // Typed on the other side of the pause: Chromium could join both runs as one native step.
+  await seven.pressSequentially(' two');
+  await seven.press('Meta+z');
+  await expect(seven).toHaveValue(`${was} one`);
+  await expect(seven).toBeFocused();
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  expect((await stored()).text).toContain('Rain in Guangzhou one');
+  expect((await stored()).text).not.toContain(' two');
+  // The second Cmd+Z is the recorded typing step.
+  await seven.press('Meta+z');
+  await expect(seven).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).toBe(textBefore);
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  // Past the longest autosave wait, no reverse "Typed" step has been recorded.
+  await page.waitForTimeout(1000);
+  const listAfter = await history();
+  const done = (l: string[]) => l.filter((t) => !t.startsWith('Undone: '));
+  expect(listAfter[0]).toBe('Undone: Typed in the scene outline');
+  expect(listAfter.filter((t) => t.startsWith('Undone: '))).toEqual([
+    'Undone: Typed in the scene outline',
+  ]);
+  expect(done(listAfter)).toEqual(done(listBefore));
+  await invoke('settings.set', { numbers: { autosaveMs: 500 } });
+});
+
+test('IP-6 a chapter bar drag or a keyboard move right after typing closes the typing step first, so each is its own step', async () => {
+  const six = section('CH6');
+  const was = await six.inputValue();
+  const order = await chapterIds();
+  // From the keyboard: type, then at once move the bar down.
+  await six.click();
+  await six.press('Meta+ArrowDown');
+  await six.pressSequentially(' y');
+  await bar('CH6').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH7', 'CH6', 'CH8']);
+  await expect(six).toHaveValue(`${was} y`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Moved The Letter down');
+  await expect.poll(chapterIds).toEqual(order);
+  await expect(six).toHaveValue(`${was} y`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(six).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).not.toContain(' y');
+  // By pointer: type, then at once drag the bar below the next one.
+  await six.click();
+  await six.press('Meta+ArrowDown');
+  await six.pressSequentially(' z');
+  const target = await box(bar('CH7'));
+  await dragBar('CH6', { y: target.y + target.height * 0.75 });
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH7', 'CH6', 'CH8']);
+  await expect(six).toHaveValue(`${was} z`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Moved The Letter');
+  await expect.poll(chapterIds).toEqual(order);
+  await expect(six).toHaveValue(`${was} z`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(six).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).not.toContain(' z');
+});
+
+test('IP-13 Books and parts under the track lists every book and part, renames in place in step with the divider, edits a part summary, and New part and New book are one step each', async () => {
+  const bp = view().getByTestId('books-parts');
+  await bp.locator('summary').click();
+  await expect(bp.getByTestId('bp-book')).toHaveCount(1);
+  await expect(bp.getByTestId('bp-book-title')).toHaveText('Tide Lines');
+  await expect(bp.getByTestId('bp-part-title')).toHaveText([
+    'Part One: High Water',
+    'Part Two: The Letter',
+  ]);
+  const two = bp.locator('[data-testid="bp-part"][data-part="PT2"]');
+  await fillEditable(two.getByTestId('bp-part-title'), 'The Letter Comes');
+  await expect(boundary('CH4', 'CH5').getByTestId('divider-name')).toHaveText('The Letter Comes');
+  await undo();
+  await expect(boundary('CH4', 'CH5').getByTestId('divider-name')).toHaveText(
+    'Part Two: The Letter',
+  );
+  await expect(two.getByTestId('bp-part-title')).toHaveText('Part Two: The Letter');
+  // The summary is the rich text box; Cmd+Enter saves it.
+  await two.getByTestId('bp-part-summary').locator('.editable-text').click();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Iris reads the letter.');
+  await page.keyboard.press('Meta+Enter');
+  await expect
+    .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.summary)
+    .toBe('Iris reads the letter.');
+  await undo();
+  await expect
+    .poll(async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.summary)
+    .toBe('A secret comes out.');
+  // New part takes the part template and the next number; New book the book template.
+  await bp.getByTestId('bp-new-part').click();
+  await expect(bp.getByTestId('bp-part')).toHaveCount(3);
+  await expect(bp.getByTestId('bp-part-title').last()).toHaveText('Part 3');
+  await bp.getByTestId('bp-new-book').click();
+  await expect(bp.getByTestId('bp-book')).toHaveCount(2);
+  await expect(bp.getByTestId('bp-book-title').last()).toHaveText('Book 2');
+  await undo();
+  await expect(bp.getByTestId('bp-book')).toHaveCount(1);
+  await undo();
+  await expect(bp.getByTestId('bp-part')).toHaveCount(2);
+  await bp.locator('summary').click();
+});
+
+test('IP-14 a new chapter takes its title from the template in settings', async () => {
+  await invoke('settings.set', { templates: { chapterTitle: 'A chapter to name' } });
+  const ids = await chapterIds();
+  await view().getByTestId('new-chapter').click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length + 1);
+  await expect(view().getByTestId('chapter-bar').last().getByTestId('chapter-title')).toHaveText(
+    'A chapter to name',
+  );
+  await undo();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length);
+  await invoke('settings.set', { templates: { chapterTitle: 'New chapter' } });
 });
 
 test("CU-2 A42 a community and the story year's decade list the lines that apply", async () => {

@@ -32,6 +32,12 @@ import {
   startsNewVersion,
   takeSceneAbove,
   yearOf,
+  backstoryStrand,
+  barStrands,
+  newBackstoryStrand,
+  patchStrand,
+  typedSince,
+  writingStrand,
 } from '../../src/shared/domain/sceneOutline';
 import type { Flow, Section } from '../../src/shared/domain/sceneOutline';
 import {
@@ -508,5 +514,69 @@ describe('A37 the world around the outline', () => {
     expect(lane('e3')).toBe(0);
     expect(lane('e4')).toBe(0);
     expect(new Set(eventLanes(events, 1).map((l) => l.lane))).toEqual(new Set([0]));
+  });
+});
+
+describe('A47 strands on the bars', () => {
+  const strands = [
+    { id: 'b', label: 'backstory', startYear: 2032, endYear: null, primary: false },
+    {
+      id: 'w',
+      label: 'present',
+      startYear: 2045,
+      endYear: 2046,
+      primary: true,
+      povCharacterId: 'H3',
+      characterIds: ['H3', 'Z3'],
+      placeIds: ['PLC2'],
+    },
+  ];
+
+  test('IP-3 the writing strand is the primary one and the backstory strand the first other one', () => {
+    expect(writingStrand(strands)?.id).toBe('w');
+    expect(backstoryStrand(strands)?.id).toBe('b');
+    // With none marked primary, the first is the writing strand.
+    const unmarked = strands.map((s) => ({ ...s, primary: false }));
+    expect(writingStrand(unmarked)?.id).toBe('b');
+    expect(backstoryStrand(unmarked)?.id).toBe('w');
+    expect(backstoryStrand([strands[1]])).toBeNull();
+    expect(writingStrand('not strands')).toBeNull();
+    expect(barStrands([{ label: 'no id' }, ...strands])).toHaveLength(2);
+    expect(barStrands(strands)[0]).toMatchObject({
+      characterIds: [],
+      placeIds: [],
+      povCharacterId: null,
+    });
+  });
+
+  test('IP-3 a strand patch changes only the strand with that ID and keeps the order', () => {
+    const next = patchStrand(strands, 'w', { label: 'now', characterIds: ['H3'] });
+    expect(next.map((s) => s.id)).toEqual(['b', 'w']);
+    expect(next[0]).toBe(strands[0]);
+    expect(next[1]).toMatchObject({ label: 'now', characterIds: ['H3'], startYear: 2045 });
+    expect(patchStrand(strands, 'missing', { label: 'x' })).toEqual(strands);
+  });
+
+  test('IP-3 Add one makes a backstory strand that is not primary, from the template label', () => {
+    expect(newBackstoryStrand('n1', 'flashback', 2045)).toEqual({
+      id: 'n1',
+      label: 'flashback',
+      startYear: 2045,
+      endYear: null,
+      primary: false,
+      povCharacterId: null,
+      characterIds: [],
+      placeIds: [],
+    });
+  });
+
+  test('IP-6 a typing run is a step only when the outline differs from where it began', () => {
+    const a = { text: '- One', breaks: { CH1: 0 }, years: {} };
+    expect(typedSince(null, a)).toBe(false);
+    expect(typedSince(a, null)).toBe(false);
+    expect(typedSince(a, { ...a })).toBe(false);
+    expect(typedSince(a, { ...a, text: '- One more' })).toBe(true);
+    expect(typedSince(a, { ...a, breaks: { CH1: 1 } })).toBe(true);
+    expect(typedSince(a, { ...a, years: { '0': 2045 } })).toBe(true);
   });
 });

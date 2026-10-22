@@ -684,3 +684,91 @@ export function moveBoundary(flow: Flow, upper: string, lower: string, at: numbe
     sliceSection(both, cut),
   );
 }
+
+// ---------- strands on the bars (A47, IP-3) ----------
+
+/**
+ * A chapter strand as the outline's bar popover reads it. The writing strand
+ * is the primary one (the first when none is marked); the backstory strand is
+ * the first strand that is not the writing strand.
+ */
+export interface BarStrand {
+  id: string;
+  label: string;
+  startYear: number;
+  endYear: number | null;
+  primary: boolean;
+  povCharacterId: string | null;
+  characterIds: string[];
+  placeIds: string[];
+}
+
+const strandIds = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+
+/** The stored strands of a chapter, read leniently: anything without an ID is left out. */
+export function barStrands(strands: unknown): BarStrand[] {
+  if (!Array.isArray(strands)) return [];
+  return strands.flatMap((s: unknown) => {
+    if (!isRecord(s) || typeof s.id !== 'string') return [];
+    return [
+      {
+        id: s.id,
+        label: typeof s.label === 'string' ? s.label : '',
+        startYear: typeof s.startYear === 'number' ? s.startYear : 0,
+        endYear: typeof s.endYear === 'number' ? s.endYear : null,
+        primary: s.primary === true,
+        povCharacterId: typeof s.povCharacterId === 'string' ? s.povCharacterId : null,
+        characterIds: strandIds(s.characterIds),
+        placeIds: strandIds(s.placeIds),
+      },
+    ];
+  });
+}
+
+/** The writing strand: the primary one, or the first when none is marked. */
+export function writingStrand(strands: unknown): BarStrand | null {
+  const all = barStrands(strands);
+  return all.find((s) => s.primary) ?? all[0] ?? null;
+}
+
+/** The backstory strand: the first strand that is not the writing strand, or null. */
+export function backstoryStrand(strands: unknown): BarStrand | null {
+  const writing = writingStrand(strands);
+  return barStrands(strands).find((s) => s.id !== writing?.id) ?? null;
+}
+
+/** The strands with the one whose ID is `strandId` patched; the others untouched, in order. */
+export function patchStrand<S>(
+  strands: readonly S[],
+  strandId: string,
+  patch: Partial<BarStrand>,
+): S[] {
+  return strands.map((s) => (isRecord(s) && s.id === strandId ? ({ ...s, ...patch } as S) : s));
+}
+
+/** A new strand that is not primary, in `year`, labelled from the bible's template. */
+export function newBackstoryStrand(id: string, label: string, year: number): BarStrand {
+  return {
+    id,
+    label,
+    startYear: year,
+    endYear: null,
+    primary: false,
+    povCharacterId: null,
+    characterIds: [],
+    placeIds: [],
+  };
+}
+
+/**
+ * IP-6: whether a run of typing since `from` is worth an undo step now:
+ * there was a run, and what the outline holds differs from where it began.
+ */
+export function typedSince(from: SceneOutlineState | null, now: SceneOutlineState | null): boolean {
+  if (!from || !now) return false;
+  return !(
+    from.text === now.text &&
+    sameBreaks(from.breaks, now.breaks) &&
+    sameYears(from.years, now.years)
+  );
+}

@@ -27,7 +27,10 @@ const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? 
  * every five. It lives in the year dialog's "Compare two characters"
  * disclosure (KB-2); the range starts at the story year.
  */
-export function CompareView() {
+export function CompareView(props: {
+  /** IP-5: each name opens the person's page. */
+  onOpenPerson?: (id: string) => void;
+}) {
   const { version } = useStore();
   const story = useStoryTime();
   const characters = useEntries('characters');
@@ -65,6 +68,20 @@ export function CompareView() {
     const c = characters.find((x) => x._id === cid);
     return String((c?.names as { full?: string } | undefined)?.full ?? c?.title ?? cid);
   };
+  const head = (cid: string, testid: string) =>
+    props.onOpenPerson ? (
+      <button
+        type="button"
+        className="link-btn"
+        data-testid={testid}
+        aria-label={`Open ${name(cid)}`}
+        onClick={() => props.onOpenPerson?.(cid)}
+      >
+        {name(cid)}
+      </button>
+    ) : (
+      name(cid)
+    );
   const options = characters.map((c) => (
     <option key={c._id} value={c._id}>
       {name(c._id)}
@@ -123,8 +140,8 @@ export function CompareView() {
           <thead>
             <tr>
               <th scope="col">Year</th>
-              <th scope="col">{name(first)}</th>
-              <th scope="col">{name(second)}</th>
+              <th scope="col">{head(first, 'compare-first')}</th>
+              <th scope="col">{head(second, 'compare-second')}</th>
               <th scope="col">Age gap</th>
             </tr>
           </thead>
