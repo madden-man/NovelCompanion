@@ -29,7 +29,13 @@
       { "id": "guangdong", "label": "Guangdong", "parentId": null, "color": null, "extra": {} },
       { "id": "oregon", "label": "Oregon", "parentId": null, "color": null, "extra": {} },
       { "id": "pacific", "label": "Pacific", "parentId": null, "color": null, "extra": {} },
-      { "id": "united-states", "label": "United States", "parentId": null, "color": null, "extra": {} },
+      {
+        "id": "united-states",
+        "label": "United States",
+        "parentId": null,
+        "color": null,
+        "extra": {}
+      },
       { "id": "washington", "label": "Washington", "parentId": null, "color": null, "extra": {} }
     ]
   },
@@ -37,16 +43,40 @@
     "_id": "statuses",
     "label": "Statuses",
     "items": [
-      { "id": "canon", "label": "Canon", "parentId": null, "color": "#1b705f", "extra": {"kind": "canon"} },
-      { "id": "planned", "label": "Planned", "parentId": null, "color": "#4a3aa7", "extra": {"kind": "planned"} },
-      { "id": "idea", "label": "Idea", "parentId": null, "color": "#7a611b", "extra": {"kind": "idea"} }
+      {
+        "id": "canon",
+        "label": "Canon",
+        "parentId": null,
+        "color": "#1b705f",
+        "extra": { "kind": "canon" }
+      },
+      {
+        "id": "planned",
+        "label": "Planned",
+        "parentId": null,
+        "color": "#4a3aa7",
+        "extra": { "kind": "planned" }
+      },
+      {
+        "id": "idea",
+        "label": "Idea",
+        "parentId": null,
+        "color": "#7a611b",
+        "extra": { "kind": "idea" }
+      }
     ]
   },
   {
     "_id": "provenance",
     "label": "Provenance",
     "items": [
-      { "id": "researched", "label": "Researched", "parentId": null, "color": "#2a78d6", "extra": {} },
+      {
+        "id": "researched",
+        "label": "Researched",
+        "parentId": null,
+        "color": "#2a78d6",
+        "extra": {}
+      },
       { "id": "invented", "label": "Invented", "parentId": null, "color": "#b84f25", "extra": {} }
     ]
   },
@@ -54,12 +84,42 @@
     "_id": "ageGroups",
     "label": "Age groups",
     "items": [
-      { "id": "all", "label": "Everyone", "parentId": null, "color": null, "extra": {"from": 0} },
-      { "id": "0-18", "label": "Ages 0 to 18", "parentId": null, "color": null, "extra": {"from": 0, "to": 18} },
-      { "id": "18-30", "label": "Ages 18 to 30", "parentId": null, "color": null, "extra": {"from": 18, "to": 30} },
-      { "id": "30-50", "label": "Ages 30 to 50", "parentId": null, "color": null, "extra": {"from": 30, "to": 50} },
-      { "id": "50-70", "label": "Ages 50 to 70", "parentId": null, "color": null, "extra": {"from": 50, "to": 70} },
-      { "id": "70+", "label": "Ages 70 and over", "parentId": null, "color": null, "extra": {"from": 70} }
+      { "id": "all", "label": "Everyone", "parentId": null, "color": null, "extra": { "from": 0 } },
+      {
+        "id": "0-18",
+        "label": "Ages 0 to 18",
+        "parentId": null,
+        "color": null,
+        "extra": { "from": 0, "to": 18 }
+      },
+      {
+        "id": "18-30",
+        "label": "Ages 18 to 30",
+        "parentId": null,
+        "color": null,
+        "extra": { "from": 18, "to": 30 }
+      },
+      {
+        "id": "30-50",
+        "label": "Ages 30 to 50",
+        "parentId": null,
+        "color": null,
+        "extra": { "from": 30, "to": 50 }
+      },
+      {
+        "id": "50-70",
+        "label": "Ages 50 to 70",
+        "parentId": null,
+        "color": null,
+        "extra": { "from": 50, "to": 70 }
+      },
+      {
+        "id": "70+",
+        "label": "Ages 70 and over",
+        "parentId": null,
+        "color": null,
+        "extra": { "from": 70 }
+      }
     ]
   }
 ]
