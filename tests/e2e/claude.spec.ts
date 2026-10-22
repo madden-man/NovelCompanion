@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { fileDb, fillEditable, invokeVia, launch, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -234,6 +234,56 @@ test('AI-1 closing the panel mid-answer and reopening it follows the same run: n
   await expect(panel().getByTestId('claude-turn').first()).toHaveAttribute(
     'data-status',
     'stopped',
+  );
+});
+
+test('IP-16 NF-2 a conversation renames in place as one undo step, and Clear and Delete each ask on one line first', async () => {
+  const tools = panel().getByTestId('claude-conversation');
+  await expect(tools).toBeVisible();
+  const runs = async () => (await invoke('claude.runs', { feature: 'panel' })).runs;
+  const id = (await panel().getByTestId('claude-history').inputValue())!;
+  const run = async () => (await invoke('claude.run', { id })).run;
+  const before = (await run()).title;
+  await expect(tools.getByTestId('claude-title-text')).toHaveText(before);
+
+  // Rename in place: the picker follows, and Cmd+Z puts the old title back.
+  await fillEditable(tools.getByTestId('claude-title'), 'Hale family, the long version');
+  await expect.poll(async () => (await run()).title).toBe('Hale family, the long version');
+  await expect(panel().getByTestId('claude-history')).toContainText(
+    'Hale family, the long version',
+  );
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await run()).title).toBe(before);
+  await expect(tools.getByTestId('claude-title-text')).toHaveText(before);
+  await page.keyboard.press('Shift+Meta+z');
+  await expect.poll(async () => (await run()).title).toBe('Hale family, the long version');
+  await expect(tools.getByTestId('claude-title-text')).toHaveText('Hale family, the long version');
+
+  // Clear: one line asks first, Keep takes the focus, Escape keeps the messages.
+  await tools.getByTestId('claude-clear').click();
+  const clear = tools.getByTestId('claude-clear-confirm');
+  await expect(clear).toContainText('Take every message out of Hale family, the long version?');
+  await expect(clear).toContainText('This is not an undo step.');
+  await expect(clear.getByRole('button', { name: 'Keep them' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(clear).toHaveCount(0);
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(2);
+  await tools.getByTestId('claude-clear').click();
+  await clear.getByRole('button', { name: 'Clear messages' }).click();
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
+  await expect.poll(async () => (await run()).turns.length).toBe(0);
+  expect((await run()).title).toBe('Hale family, the long version');
+
+  // Delete: the conversation goes, and the panel starts a new one.
+  await tools.getByTestId('claude-delete').click();
+  const del = tools.getByTestId('claude-delete-confirm');
+  await expect(del).toContainText('Delete Hale family, the long version and its messages?');
+  await del.getByRole('button', { name: 'Delete conversation' }).click();
+  await expect(panel().getByTestId('claude-conversation')).toHaveCount(0);
+  await expect.poll(async () => (await runs()).some((r) => r.id === id)).toBe(false);
+  await expect(panel().getByTestId('claude-history')).not.toContainText(
+    'Hale family, the long version',
   );
 });
 
