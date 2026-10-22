@@ -1149,12 +1149,18 @@ test('GL-1 a term that breaks the language system is flagged and listed, and the
   await expect(view.getByTestId('romanization-flagged')).toContainText(
     'does not follow Hanyu Pinyin',
   );
-  await view.getByLabel('Mandarin').selectOption({ label: 'Jyutping' });
+  await view.getByTestId('romanization-systems-mandarin-text').click();
+  await view
+    .getByLabel('Romanization system for Mandarin', { exact: true })
+    .selectOption({ label: 'Jyutping' });
   // Under Jyutping the Pinyin terms are the ones flagged, and gwong2dung1 is not.
   const flagged = view.getByTestId('romanization-flagged');
   await expect(flagged).toContainText('does not follow Jyutping');
   await expect(flagged).not.toContainText('gwong2dung1');
-  await view.getByLabel('Mandarin').selectOption({ label: 'Hanyu Pinyin' });
+  await view.getByTestId('romanization-systems-mandarin-text').click();
+  await view
+    .getByLabel('Romanization system for Mandarin', { exact: true })
+    .selectOption({ label: 'Hanyu Pinyin' });
   await expect(view.getByTestId('romanization-flagged')).toBeVisible();
   await sectionList(page, 'Glossary');
   await page.getByTestId('entry-list').getByRole('button', { name: /^广东/ }).click();
@@ -1291,13 +1297,19 @@ test('GL-1 a system with no checker shows a visible note on the Romanization scr
   await rail(page, 'Romanization').click();
   const view = page.getByTestId('romanization-view');
   await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
-  await view.getByLabel('Mandarin').selectOption({ label: 'Wade-Giles' });
+  await view.getByTestId('romanization-systems-mandarin-text').click();
+  await view
+    .getByLabel('Romanization system for Mandarin', { exact: true })
+    .selectOption({ label: 'Wade-Giles' });
   await expect(view.getByTestId('romanization-no-checker')).toHaveText(
     'No checker for this system; terms are not flagged',
   );
   expect(
     (await invoke('romanization.get', {})).languages.find((l) => l.id === 'mandarin')?.systemId,
   ).toBe(item.id);
-  await view.getByLabel('Mandarin').selectOption({ label: 'Hanyu Pinyin' });
+  await view.getByTestId('romanization-systems-mandarin-text').click();
+  await view
+    .getByLabel('Romanization system for Mandarin', { exact: true })
+    .selectOption({ label: 'Hanyu Pinyin' });
   await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
 });

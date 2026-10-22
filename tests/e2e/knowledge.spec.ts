@@ -512,18 +512,23 @@ test('IP-8 the Community select offers Add new, which creates the community as o
 test('IP-8 GL-1 the romanization system select on Cultural data offers Add new, and the new system shows in Settings too', async () => {
   await rail(page, 'Romanization').click();
   const view = page.getByTestId('romanization-view');
-  const select = view.getByLabel('Cantonese', { exact: true });
-  await expect(select).toHaveValue('cantonese');
-  await select.selectOption('Add new...');
-  const name = view.getByLabel('Name of the new item for Romanization systems');
+  const field = view.getByTestId('romanization-systems-cantonese');
+  const text = view.getByTestId('romanization-systems-cantonese-text');
+  await expect(text).toHaveText('Jyutping');
+  await openEditable(field);
+  await field.locator('select').selectOption('Add new...');
+  const name = field.getByLabel('Name of the new item for Romanization system for Cantonese');
   await name.fill('Yale');
   await name.press('Enter');
-  await expect(select.locator('option:checked')).toHaveText('Yale');
+  await expect(text).toHaveText('Yale');
   const cantonese = async () =>
     (await invoke('romanization.get', {})).languages.find((l) => l.id === 'cantonese')?.systemId;
-  const yale = (await invoke('lists.get', {})).lists
-    .find((l) => l._id === 'romanizationSystems')!
-    .items.find((i) => i.label === 'Yale')!.id;
+  const yaleId = async () =>
+    (await invoke('lists.get', {})).lists
+      .find((l) => l._id === 'romanizationSystems')!
+      .items.find((i) => i.label === 'Yale')?.id;
+  const yale = await yaleId();
+  expect(yale).toBeTruthy();
   await expect.poll(cantonese).toBe(yale);
   await expect(view.getByTestId('romanization-no-checker')).toHaveText(
     'No checker for this system; terms are not flagged',
@@ -535,18 +540,26 @@ test('IP-8 GL-1 the romanization system select on Cultural data offers Add new, 
   await page.keyboard.press('Escape');
   // Settings draws the same choice.
   await rail(page, 'Settings').click();
-  const settings = page.getByTestId('settings-romanization');
-  const inSettings = settings.getByTestId('settings-romanization-cantonese');
-  await expect(inSettings).toHaveValue(yale);
-  await expect(inSettings.locator('option:checked')).toHaveText('Yale');
+  const inSettings = page.getByTestId('settings-romanization-cantonese-text');
+  await expect(inSettings).toHaveText('Yale');
   // One Cmd+Z takes back both: Jyutping again, and Yale gone from the list.
   await leaveFields();
   await page.keyboard.press('Meta+z');
   await expect.poll(cantonese).toBe('cantonese');
   await expect.poll(() => listLabels('romanizationSystems')).not.toContain('Yale');
-  await expect(inSettings).toHaveValue('cantonese');
+  await expect(inSettings).toHaveText('Jyutping');
+  // One Shift+Cmd+Z puts both back, under the same item ID.
+  await leaveFields();
+  await page.keyboard.press('Meta+Shift+z');
+  await expect.poll(yaleId).toBe(yale);
+  await expect.poll(cantonese).toBe(yale);
+  await expect(inSettings).toHaveText('Yale');
+  // Back to Jyutping for the rows that follow.
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(cantonese).toBe('cantonese');
   await rail(page, 'Romanization').click();
-  await expect(select).toHaveValue('cantonese');
+  await expect(text).toHaveText('Jyutping');
   await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
 });
 

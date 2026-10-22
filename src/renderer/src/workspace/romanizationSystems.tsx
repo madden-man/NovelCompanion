@@ -1,19 +1,18 @@
 /**
- * GL-1, ST-1, IP-8: the romanization system for each language, one select
- * per language that saves on pick as one undo step. "Add new..." on a select
- * adds a system to the Romanization systems list and picks it; the add and
- * the pick are one undo step. The Romanization screen and Settings both draw
- * this; ARCH-6 read-only turns every select off with the reason.
+ * GL-1, ST-1, IP-1, IP-8: the romanization system for each language, one
+ * `Editable` select per language that saves on pick as one undo step. "Add
+ * new..." adds a system to the Romanization systems list and picks it; the
+ * add and the pick are one undo step. The Romanization screen and Settings
+ * both draw this; under ARCH-6 read-only each field stays text with the reason.
  */
-import { useEffect, useId, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { Response } from '../../../shared/ipc';
-import type { UndoCommand } from '../../../shared/domain/undoRunner';
 import { romanizationCommand } from '../../../shared/undoCommands';
 import { call, plainError } from '../api';
-import { useWriteGuard } from '../connection';
-import { useStore } from './data';
-import { mergeCommands } from './editable';
-import { ListSelect } from './listSelect';
+import { useReadOnly } from '../connection';
+import { useList, useStore } from './data';
+import { Editable, listOptions, mergeCommands, useListAddNew } from './editable';
+import type { SaveInfo } from './editable';
 import { useUndo } from './undo';
 import './vocab.css';
 import './romanizationSystems.css';
@@ -22,16 +21,18 @@ type Romanization = Response<'romanization.get'>;
 type Language = Romanization['languages'][number];
 
 export function RomanizationSystems(props: {
-  /** The root's test ID; each select is `<testId>-<language ID>`, a read failure `<testId>-failed`. */
+  /** The root's test ID; each field is `<testId>-<language ID>`, a read failure `<testId>-failed`. */
   testId: string;
 }) {
   const undo = useUndo();
-  const ro = useWriteGuard();
+  // ARCH-6: Editable keeps each field shut with this reason as its title.
+  const readOnly = useReadOnly();
   const { version } = useStore();
-  const prefix = useId();
+  const options = listOptions(useList('romanizationSystems'));
+  const addNew = useListAddNew('romanizationSystems');
   const [data, setData] = useState<Romanization | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -50,26 +51,24 @@ export function RomanizationSystems(props: {
     };
   }, [version]);
 
-  /** One step, with the system Add new made on the way when it made one (IP-8). */
-  const choose = async (l: Language, systemId: string | null, added?: UndoCommand) => {
+  /**
+   * One step, with the system Add new made on the way when it made one (IP-8).
+   * A failed save throws, so the field shows "Not saved" and keeps the item for
+   * a second Enter; the add alone is not recorded.
+   */
+  const save = async (l: Language, systemId: string | null, info: SaveInfo) => {
     setNote(null);
     await undo.flush();
     const from = l.systemId;
-    try {
-      setData(await call('romanization.set', { languageId: l.id, systemId }));
-    } catch (e) {
-      // The new system stays in the list, so its add is still a step of its own.
-      if (added) undo.record(added);
-      setNote({ text: plainError(e), bad: true });
-      return;
-    }
+    setData(await call('romanization.set', { languageId: l.id, systemId }));
     const step =
       (from ?? '') !== (systemId ?? '')
         ? romanizationCommand(call, l.label, l.id, from, systemId)
         : null;
+    const added = info.added?.command;
     const both = step && added ? mergeCommands(step.label, added, step) : (step ?? added);
     if (both) undo.record(both);
-    setNote({ text: `Saved the romanization system for ${l.label}.`, bad: false });
+    setNote(`Saved the romanization system for ${l.label}.`);
   };
 
   if (!data && failed) {
@@ -88,58 +87,44 @@ export function RomanizationSystems(props: {
       {data.languages.length > 0 && (
         <div className="settings-grid">
           {data.languages.map((l) => (
-            <RomanizationRow
-              key={l.id}
-              language={l}
-              id={`${prefix}-${l.id}`}
-              testId={`${props.testId}-${l.id}`}
-              disabled={ro.off}
-              tip={ro.tip}
-              onChange={(systemId, added) => void choose(l, systemId, added)}
-            />
+            <Fragment key={l.id}>
+              <span className="settings-label" aria-hidden="true">
+                {l.label}
+              </span>
+              <span className="settings-value">
+                <Editable
+                  kind="select"
+                  label={`Romanization system for ${l.label}`}
+                  value={l.systemId}
+                  options={options}
+                  allowEmpty
+                  emptyLabel="No system"
+                  placeholder="No system"
+                  onAddNew={addNew}
+                  disabled={readOnly !== null}
+                  reason={readOnly ?? undefined}
+                  testId={`${props.testId}-${l.id}`}
+                  onSave={(next, info) => save(l, next, info)}
+                />
+                {l.note && (
+                  <span
+                    className="callout roman-note"
+                    role="note"
+                    data-testid="romanization-no-checker"
+                  >
+                    {l.note}
+                  </span>
+                )}
+              </span>
+            </Fragment>
           ))}
         </div>
       )}
       {note && (
-        <p className={note.bad ? 'callout crit' : 'example-note'} role="status">
-          {note.text}
+        <p className="example-note" role="status">
+          {note}
         </p>
       )}
     </div>
-  );
-}
-
-function RomanizationRow(props: {
-  language: Language;
-  id: string;
-  testId: string;
-  disabled: boolean;
-  tip: { title?: string; 'aria-describedby'?: string };
-  onChange: (systemId: string | null, added?: UndoCommand) => void;
-}) {
-  const l = props.language;
-  return (
-    <>
-      <label className="settings-label" htmlFor={props.id}>
-        {l.label}
-      </label>
-      <span className="settings-value roman-value" {...props.tip}>
-        <ListSelect
-          listId="romanizationSystems"
-          id={props.id}
-          value={l.systemId ?? ''}
-          emptyLabel="No system"
-          joinAdd
-          disabled={props.disabled}
-          testId={props.testId}
-          onChange={props.onChange}
-        />
-        {l.note && (
-          <span className="callout roman-note" role="note" data-testid="romanization-no-checker">
-            {l.note}
-          </span>
-        )}
-      </span>
-    </>
   );
 }

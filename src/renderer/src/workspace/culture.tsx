@@ -333,6 +333,11 @@ export function CommunityView() {
               setConfirmRemove(false);
             }}
           />
+          {ro.off && (
+            <span className="example-note" data-testid="community-add-off">
+              Add new is off. {ro.tip.title}
+            </span>
+          )}
         </div>
         {chosen && (
           <div className="row tight cu-manage" role="group" aria-label={`Manage ${chosen.label}`}>
