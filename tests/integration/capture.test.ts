@@ -99,9 +99,37 @@ function rig(key: string | null = KEY) {
 let n = 0;
 const runId = () => `capture${Date.now()}${n++}`.padEnd(16, '0');
 
+/**
+ * A48: the KB-6 and KB-7 rows below are Route C, the full capture, which the
+ * writer also gets from Ask Claude instead. The real router would send a
+ * recorded line like MOVE to Route A or B, so these rows route it full.
+ */
+function fullFact(text: string): CaptureFact {
+  return {
+    index: 0,
+    text,
+    years: { start: 2034, end: null, source: 'the story year' },
+    sentences: 1,
+    candidates: [],
+    scores: {},
+    cues: {},
+    ranked: [],
+    section: 'openQuestions',
+    share: 0,
+    margin: 0,
+    communities: [],
+    missing: [],
+    asks: [],
+    reasons: [],
+    drafts: [],
+    route: 'full',
+  };
+}
+
 async function capture(text: string, key: string | null = KEY) {
   const r = rig(key);
   const id = runId();
+  if (!routing.next) routeAs(fullFact(text));
   await r.call('claude.capture', { runId: id, text, storyTime: { year: 2034 } });
   const run = await r.finished(id);
   return { ...r, id, run, turn: run.turns[0]! };
