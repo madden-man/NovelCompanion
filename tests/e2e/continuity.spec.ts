@@ -330,6 +330,16 @@ test('IP-7 ED-3 a card edits the finding text, a quoted line and what must chang
   await line.locator('.editable-text').click();
   await expect(line.locator('input')).toBeFocused();
   expect(await text.boundingBox()).toEqual(below);
+  await page.keyboard.press('Escape');
+  // Opening the A44 box of the finding text moves nothing either: what must change stays put.
+  const must0 = p1.getByTestId('finding-must-change');
+  const mustBefore = await must0.boundingBox();
+  await text.locator('.editable-text').click();
+  await expect(text.locator('[contenteditable="true"]')).toBeFocused();
+  expect(await must0.boundingBox()).toEqual(mustBefore);
+  await page.keyboard.press('Escape');
+  await expect(text.locator('[contenteditable="true"]')).toHaveCount(0);
+  await line.locator('.editable-text').click();
   // The input takes the quote's font, inside the same quote box.
   expect(await quoteBox.evaluate((el) => getComputedStyle(el).borderLeftStyle)).toBe(boxBefore);
   expect(
@@ -393,7 +403,9 @@ test('IP-7 a rewrite task edits its text in place on Sessions, and Done and Open
   await expect(task).toHaveCount(1);
   const id = await findingId('place');
   const before = String((await entryOf('findings', id)).mustChange);
-  await fillEditable(
+  // The same A44 box as the card, so a value of several lines is never flattened.
+  await expect(task.getByTestId('rewrite-task-text')).toHaveAttribute('data-editable', 'rich');
+  await fillRich(
     task.getByTestId('rewrite-task-text'),
     'Lan grew up in Guangzhou, so change the city.',
   );
@@ -419,12 +431,34 @@ test('IP-7 the approved summary edits on the chapter row as one step, and Not wr
   const ch = ms.getByTestId('ms-chapter');
   const summary = ch.getByTestId('ms-summary');
   await expect(summary.locator('.editable-label')).toHaveText('Approved summary');
+  // A summary marked out of date: the hand edit approves it, in the same step.
+  await invoke('entry.update', {
+    collection: 'chapters',
+    id: 'CH5',
+    patch: { summaryOutOfDate: true },
+  });
+  await expect(ch.getByTestId('summary-stale')).toBeVisible();
+  const summaryBefore = (await entryOf('chapters', 'CH5')).summary;
   await fillRich(summary, 'Ruth counts the candles and gets her mother wrong.');
   await expect
     .poll(async () => (await entryOf('chapters', 'CH5')).summary)
     .toBe('Ruth counts the candles and gets her mother wrong.');
+  expect((await entryOf('chapters', 'CH5')).summaryOutOfDate).toBe(false);
+  await expect(ch.getByTestId('summary-stale')).toHaveCount(0);
   await expect(summary).toContainText('Ruth counts the candles and gets her mother wrong.');
-  expect((await history())[0]).toMatch(/^Changed Approved summary on /);
+  const steps = await history();
+  expect(steps[0]).toMatch(/^Changed Approved summary on /);
+  expect(steps[1]).not.toMatch(/Summary may be out of date/);
+  // One undo takes back both: the old summary and the flag.
+  await page.getByTestId('top-undo').click();
+  await expect.poll(async () => (await entryOf('chapters', 'CH5')).summary).toBe(summaryBefore);
+  expect((await entryOf('chapters', 'CH5')).summaryOutOfDate).toBe(true);
+  await expect(ch.getByTestId('summary-stale')).toBeVisible();
+  await page.getByTestId('top-redo').click();
+  await expect
+    .poll(async () => (await entryOf('chapters', 'CH5')).summary)
+    .toBe('Ruth counts the candles and gets her mother wrong.');
+  expect((await entryOf('chapters', 'CH5')).summaryOutOfDate).toBe(false);
 
   // Not written after all: one step, and Mark as written comes back.
   await ch.getByRole('button', { name: 'Not written after all' }).click();

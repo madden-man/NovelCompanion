@@ -17,7 +17,8 @@ import {
   watchRun,
 } from '../claude';
 import { useEntries, useStore } from '../data';
-import { Editable, EntryEditable, saveEntryField, useEntryDoc } from '../editable';
+import type { Entry } from '../data';
+import { Editable, EntryEditable, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
 import type { OpenEntry } from './common';
 import './alignment.css';
@@ -72,6 +73,32 @@ export function useFindings(chapterId: Scope, states?: FindingWire['state'][]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId, key, version]);
   return data;
+}
+
+/**
+ * IP-7: the stored findings, from the renderer's cache, which reloads only
+ * when a finding changes. A card takes its finding from here, so its fields
+ * never wait on a read or flash their placeholders; one the cache has not
+ * caught up with yet is drawn from what the findings channel said.
+ */
+function useFindingDocs(): { loaded: boolean; docOf: (f: FindingWire) => Entry } {
+  const store = useStore();
+  const all = useEntries('findings');
+  const loaded = store.entries('findings') !== undefined;
+  const byId = new Map(all.map((e) => [e._id, e]));
+  return {
+    loaded,
+    docOf: (f) =>
+      byId.get(f.id) ??
+      ({
+        _id: f.id,
+        modifiedAt: f.createdAt,
+        text: f.text,
+        quote: f.lines.map((l) => l.text).join('\n'),
+        mustChange: f.mustChange,
+        resolutionNote: '',
+      } as Entry),
+  };
 }
 
 /** One alignment check run over a scope: structural checks, then Claude chapter by chapter. */
@@ -390,11 +417,9 @@ function ProposedWording(props: {
 }
 
 /** CC-4, IP-7: one finding with its quoted lines, citations, the three resolutions, and its fields. */
-function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
-  const { f, onOpen } = props;
+function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
+  const { f, doc, onOpen } = props;
   const undo = useUndo();
-  // One read of the stored finding feeds every field on the card.
-  const doc = useEntryDoc('findings', f.id);
   const [showApply, setShowApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -683,7 +708,8 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
 /** CC-3, CC-4: the findings for a scope, structural first, then Claude's. */
 function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
   const data = useFindings(props.scope, ['open', 'manuscriptWins']);
-  if (!data) return <p aria-live="polite">Loading findings.</p>;
+  const docs = useFindingDocs();
+  if (!data || !docs.loaded) return <p aria-live="polite">Loading findings.</p>;
   const structural = data.findings.filter((f) => f.kind === 'structural');
   const alignment = data.findings.filter((f) => f.kind === 'alignment');
   return (
@@ -697,7 +723,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
         {structural.length ? (
           <ul className="al-list">
             {structural.map((f) => (
-              <FindingCard key={f.id} f={f} onOpen={props.onOpen} />
+              <FindingCard key={f.id} f={f} doc={docs.docOf(f)} onOpen={props.onOpen} />
             ))}
           </ul>
         ) : (
@@ -713,7 +739,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
         {alignment.length ? (
           <ul className="al-list">
             {alignment.map((f) => (
-              <FindingCard key={f.id} f={f} onOpen={props.onOpen} />
+              <FindingCard key={f.id} f={f} doc={docs.docOf(f)} onOpen={props.onOpen} />
             ))}
           </ul>
         ) : (
@@ -737,6 +763,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
  */
 export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: string) => void }) {
   const data = useFindings(props.chapterId, ['rewrite']);
+  const docs = useFindingDocs();
   const undo = useUndo();
   const guard = useWriteGuard();
   const [error, setError] = useState<string | null>(null);
@@ -767,19 +794,21 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
                 <span className="chip planned">{t.label}</span>
               </div>
               {t.lines.length > 0 && <QuoteLines f={t} editable={false} />}
-              <p>
-                <strong>What must change:</strong>{' '}
-                {/* IP-7: the task's text edits in place; a task with no "what must change" edits its finding text. */}
+              <div className="al-task-text">
+                <strong>{t.mustChange ? 'What must change' : 'Finding'}:</strong>{' '}
+                {/* IP-7: the task's text edits in place, in the same box as the card; a task with
+                    no "what must change" edits its finding text, under that field's label. */}
                 <EntryEditable
                   collection="findings"
                   id={t.id}
+                  entry={docs.docOf(t)}
                   path={t.mustChange ? 'mustChange' : 'text'}
-                  kind="text"
-                  label="What must change"
+                  kind="rich"
+                  size="quick"
                   allowEmpty={false}
                   testId="rewrite-task-text"
                 />
-              </p>
+              </div>
               <div className="row tight">
                 {props.onOpenChapter && t.chapterId && (
                   <button
