@@ -17,6 +17,8 @@ import {
   watchRun,
 } from '../claude';
 import { useEntries, useStore } from '../data';
+import type { Entry } from '../data';
+import { Editable, EntryEditable, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
 import type { OpenEntry } from './common';
 import './alignment.css';
@@ -28,6 +30,13 @@ import './alignment.css';
  * lines, cites its entries, and offers Manuscript wins (the change set as a
  * diff, applied in one step and undoable), Rewrite recommended (a rewrite
  * task, never replacement text), or Dismiss.
+ *
+ * IP-7 (a47-continuity): a card edits the finding in place. The text and
+ * what must change are A44 boxes, each quoted line is a field that keeps the
+ * quote styling, and the resolution note sits with the resolution. Every
+ * save is one undo step through the entry write path; Open goes to the
+ * finding's page. The change set stays a system field, shown as a diff
+ * before Apply.
  */
 
 type Check = Response<'continuity.check'>;
@@ -64,6 +73,32 @@ export function useFindings(chapterId: Scope, states?: FindingWire['state'][]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId, key, version]);
   return data;
+}
+
+/**
+ * IP-7: the stored findings, from the renderer's cache, which reloads only
+ * when a finding changes. A card takes its finding from here, so its fields
+ * never wait on a read or flash their placeholders; one the cache has not
+ * caught up with yet is drawn from what the findings channel said.
+ */
+function useFindingDocs(): { loaded: boolean; docOf: (f: FindingWire) => Entry } {
+  const store = useStore();
+  const all = useEntries('findings');
+  const loaded = store.entries('findings') !== undefined;
+  const byId = new Map(all.map((e) => [e._id, e]));
+  return {
+    loaded,
+    docOf: (f) =>
+      byId.get(f.id) ??
+      ({
+        _id: f.id,
+        modifiedAt: f.createdAt,
+        text: f.text,
+        quote: f.lines.map((l) => l.text).join('\n'),
+        mustChange: f.mustChange,
+        resolutionNote: '',
+      } as Entry),
+  };
 }
 
 /** One alignment check run over a scope: structural checks, then Claude chapter by chapter. */
@@ -270,15 +305,127 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
   );
 }
 
-/** CC-4: one finding with its quoted lines, citations, and the three resolutions. */
-function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
-  const { f, onOpen } = props;
+/** Why the change set goes in whole: shown as the Apply button's title (CC-4). */
+const ALL_OR_NOTHING =
+  'Applies every change in the set together, or none of them, so the bible never matches the chapter halfway.';
+
+/**
+ * IP-7: the quoted lines, each a field in the quote's own styling. A line
+ * saves the whole quote with that line changed, as one undo step.
+ */
+function QuoteLines(props: { f: FindingWire; editable: boolean; testId?: string }) {
+  const { f } = props;
   const undo = useUndo();
-  const [showDiff, setShowDiff] = useState(false);
+  const saveLine = async (index: number, next: string) => {
+    const quote = f.lines.map((l, i) => (i === index ? next : l.text)).join('\n');
+    await saveEntryField(undo, {
+      collection: 'findings',
+      id: f.id,
+      path: 'quote',
+      value: quote,
+      label: 'Quoted passage',
+    });
+  };
+  return (
+    <blockquote className="al-quote" data-testid={props.testId}>
+      {f.lines.map((l, i) => (
+        <p key={l.n}>
+          <span className="al-ln">Line {l.n}:</span>
+          {props.editable ? (
+            <Editable
+              kind="text"
+              label={`Quoted line ${l.n}`}
+              value={l.text}
+              allowEmpty={false}
+              data-field="quote"
+              testId={`quote-line-${l.n}`}
+              onSave={(next) => saveLine(i, next)}
+            />
+          ) : (
+            l.text
+          )}
+        </p>
+      ))}
+    </blockquote>
+  );
+}
+
+const WORDING_LABELS = {
+  text: 'Finding',
+  quote: 'Quoted passage',
+  mustChange: 'What must change',
+} as const;
+
+/**
+ * IP-7, ED-7: a re-run found new words for a field the writer edited. The
+ * edit stays; the card shows what the check says now, and Take the new text
+ * replaces the edit as one undo step.
+ */
+function ProposedWording(props: {
+  findingId: string;
+  doc: Record<string, unknown> | null;
+  field: keyof typeof WORDING_LABELS;
+}) {
+  const undo = useUndo();
+  const [error, setError] = useState<string | null>(null);
+  const proposed = props.doc?.proposed as Record<string, unknown> | null | undefined;
+  const now = proposed?.[props.field];
+  if (typeof now !== 'string' || now === props.doc?.[props.field]) return null;
+  const label = WORDING_LABELS[props.field];
+  const take = async () => {
+    setError(null);
+    try {
+      await saveEntryField(undo, {
+        collection: 'findings',
+        id: props.findingId,
+        path: props.field,
+        value: now,
+        label,
+      });
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+  return (
+    <div
+      className="callout al-proposed stack tight"
+      data-testid="finding-proposed"
+      data-wording={props.field}
+    >
+      <span>
+        <strong>The check now says{props.field === 'text' ? '' : ` (${label})`}:</strong>{' '}
+        <span className="al-proposed-text">{now}</span>
+      </span>
+      <span>You edited this, so your words stay until you take the new text.</span>
+      <WriteFieldset className="row tight">
+        <button
+          type="button"
+          className="btn small"
+          aria-label={`Take the new text for ${label}`}
+          onClick={() => void take()}
+        >
+          Take the new text
+        </button>
+      </WriteFieldset>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** CC-4, IP-7: one finding with its quoted lines, citations, the three resolutions, and its fields. */
+function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
+  const { f, doc, onOpen } = props;
+  const undo = useUndo();
+  const [showApply, setShowApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const diffId = useId();
+  const applyId = useId();
+  const diffCaptionId = useId();
 
   const resolve = async (
     action: 'manuscriptWins' | 'rewrite' | 'dismiss' | 'done',
@@ -308,7 +455,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
             ? 'Added to the rewrite tasks.'
             : null,
       );
-      setShowDiff(false);
+      setShowApply(false);
     } catch (e) {
       setError(plainError(e));
     }
@@ -317,6 +464,8 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
   const openEntry = (collection: string, id: string) => {
     if (isEntryCollection(collection)) onOpen(collection, id);
   };
+
+  const hasDiff = f.state === 'open' && f.kind === 'alignment' && f.changes.length > 0;
 
   return (
     <li
@@ -332,23 +481,33 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
         <span className="chip">{chapterText(f)}</span>
         {f.lineStart !== null && <span>{linesText(f)}</span>}
         {f.storyYear !== null && <span>story year {f.storyYear}</span>}
-        {f.state === 'manuscriptWins' && <span className="chip canon">bible updated</span>}
-        {f.state === 'rewrite' && <span className="chip planned">rewrite task</span>}
+        <button
+          type="button"
+          className="link-btn al-open"
+          aria-label="Open the finding page"
+          data-testid="finding-open"
+          onClick={() => onOpen('findings', f.id)}
+        >
+          Open
+        </button>
       </div>
-      {f.lines.length > 0 && (
-        <blockquote className="al-quote" data-testid="finding-quote">
-          {f.lines.map((l) => (
-            <p key={l.n}>
-              <span className="al-ln">Line {l.n}:</span>
-              {l.text}
-            </p>
-          ))}
-        </blockquote>
-      )}
+      {f.lines.length > 0 && <QuoteLines f={f} editable testId="finding-quote" />}
+      <ProposedWording findingId={f.id} doc={doc} field="quote" />
       {f.textChanged && (
         <p className="callout warn">The chapter text changed since this check. Check it again.</p>
       )}
-      <p data-testid="finding-text">{f.text}</p>
+      <EntryEditable
+        collection="findings"
+        id={f.id}
+        entry={doc}
+        path="text"
+        kind="rich"
+        label="Finding"
+        placeholder="Say what the check found"
+        testId="finding-text"
+        className="al-field"
+      />
+      <ProposedWording findingId={f.id} doc={doc} field="text" />
       {f.entries.length > 0 && (
         <div className="row tight" aria-label="Cited entries">
           <span>Cites:</span>
@@ -370,11 +529,21 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           )}
         </div>
       )}
-      {f.kind === 'alignment' && f.mustChange && (
-        <p>
-          <strong>What must change:</strong> {f.mustChange}
-        </p>
+      {f.kind === 'alignment' && (
+        <EntryEditable
+          collection="findings"
+          id={f.id}
+          entry={doc}
+          path="mustChange"
+          kind="rich"
+          label="What must change"
+          showLabel
+          placeholder="Say what must change in the text"
+          testId="finding-must-change"
+          className="al-field"
+        />
       )}
+      {f.kind === 'alignment' && <ProposedWording findingId={f.id} doc={doc} field="mustChange" />}
       {f.state === 'open' && (
         <WriteFieldset className="row tight">
           <div className="row tight" data-testid="finding-actions">
@@ -383,15 +552,15 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
                 <button
                   type="button"
                   className="btn small"
-                  aria-expanded={showDiff}
-                  aria-controls={diffId}
+                  aria-expanded={showApply}
+                  aria-controls={applyId}
                   disabled={f.changes.length === 0}
                   title={
                     f.changes.length === 0
                       ? 'No change set was prepared for this finding.'
                       : undefined
                   }
-                  onClick={() => setShowDiff((v) => !v)}
+                  onClick={() => setShowApply((v) => !v)}
                 >
                   Manuscript wins
                 </button>
@@ -419,44 +588,57 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           No change set was prepared, so the bible cannot be updated from here.
         </p>
       )}
-      {showDiff && f.state === 'open' && (
-        <div id={diffId} className="sunken stack tight" data-testid="finding-diff">
-          <table className="diff-table">
-            <caption className="sr-only">Changes to the bible</caption>
-            <thead>
-              <tr>
-                <th scope="col">Entry</th>
-                <th scope="col">Field</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.changes.map((c, i) => (
-                <tr key={i}>
-                  <th scope="row">{c.entry}</th>
-                  <td>{c.label}</td>
-                  <td>
-                    <del>{c.before}</del>
-                  </td>
-                  <td>
-                    <ins>{c.after}</ins>
-                  </td>
+      {hasDiff && (
+        <div className="sunken stack tight al-diff" data-testid="finding-diff">
+          <span className="eyebrow" id={diffCaptionId}>
+            If the manuscript wins, the bible changes like this
+          </span>
+          {/* Bounded, so a long change set does not push the next findings down the screen. */}
+          <div className="al-diff-body" tabIndex={0} role="region" aria-labelledby={diffCaptionId}>
+            <table className="diff-table" aria-labelledby={diffCaptionId}>
+              <thead>
+                <tr>
+                  <th scope="col">Entry</th>
+                  <th scope="col">Field</th>
+                  <th scope="col">Before</th>
+                  <th scope="col">After</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          <WriteFieldset className="row tight">
-            <button
-              type="button"
-              className="btn primary small"
-              onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
-              data-testid="finding-apply"
-            >
-              Apply all
-            </button>
-            <span>Changes the bible to match the chapter. Nothing in the manuscript changes.</span>
-          </WriteFieldset>
+              </thead>
+              <tbody>
+                {f.changes.map((c, i) => (
+                  <tr key={i}>
+                    <th scope="row">{c.entry}</th>
+                    <td>{c.label}</td>
+                    <td>
+                      <del>{c.before}</del>
+                    </td>
+                    <td>
+                      <ins>{c.after}</ins>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {showApply && (
+            <WriteFieldset className="row tight">
+              <div id={applyId} className="row tight" data-testid="finding-apply-row">
+                <button
+                  type="button"
+                  className="btn primary small"
+                  title={ALL_OR_NOTHING}
+                  onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
+                  data-testid="finding-apply"
+                >
+                  Apply all
+                </button>
+                <span>
+                  Changes the bible to match the chapter, every change or none. Nothing in the
+                  manuscript changes.
+                </span>
+              </div>
+            </WriteFieldset>
+          )}
         </div>
       )}
       {f.rejectedChanges.length > 0 && (
@@ -471,6 +653,29 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           </ul>
         </div>
       )}
+      <div className="al-resolution" data-testid="finding-resolution">
+        <div className="row tight" aria-label="Resolution">
+          <span>Resolution:</span>
+          {f.state === 'manuscriptWins' ? (
+            <span className="chip canon">bible updated</span>
+          ) : f.state === 'rewrite' ? (
+            <span className="chip planned">rewrite task</span>
+          ) : (
+            <span className="chip">not resolved yet</span>
+          )}
+        </div>
+        <EntryEditable
+          collection="findings"
+          id={f.id}
+          entry={doc}
+          path="resolutionNote"
+          kind="rich"
+          label="Resolution note"
+          placeholder="Why you chose this"
+          testId="finding-note"
+          className="al-field"
+        />
+      </div>
       {note && (
         <p role="status" className="row tight">
           {note}
@@ -503,7 +708,8 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
 /** CC-3, CC-4: the findings for a scope, structural first, then Claude's. */
 function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
   const data = useFindings(props.scope, ['open', 'manuscriptWins']);
-  if (!data) return <p aria-live="polite">Loading findings.</p>;
+  const docs = useFindingDocs();
+  if (!data || !docs.loaded) return <p aria-live="polite">Loading findings.</p>;
   const structural = data.findings.filter((f) => f.kind === 'structural');
   const alignment = data.findings.filter((f) => f.kind === 'alignment');
   return (
@@ -517,7 +723,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
         {structural.length ? (
           <ul className="al-list">
             {structural.map((f) => (
-              <FindingCard key={f.id} f={f} onOpen={props.onOpen} />
+              <FindingCard key={f.id} f={f} doc={docs.docOf(f)} onOpen={props.onOpen} />
             ))}
           </ul>
         ) : (
@@ -533,7 +739,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
         {alignment.length ? (
           <ul className="al-list">
             {alignment.map((f) => (
-              <FindingCard key={f.id} f={f} onOpen={props.onOpen} />
+              <FindingCard key={f.id} f={f} doc={docs.docOf(f)} onOpen={props.onOpen} />
             ))}
           </ul>
         ) : (
@@ -557,6 +763,7 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
  */
 export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: string) => void }) {
   const data = useFindings(props.chapterId, ['rewrite']);
+  const docs = useFindingDocs();
   const undo = useUndo();
   const guard = useWriteGuard();
   const [error, setError] = useState<string | null>(null);
@@ -586,19 +793,22 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
                 {t.lineStart !== null && <span>{linesText(t)}</span>}
                 <span className="chip planned">{t.label}</span>
               </div>
-              {t.lines.length > 0 && (
-                <blockquote className="al-quote">
-                  {t.lines.map((l) => (
-                    <p key={l.n}>
-                      <span className="al-ln">Line {l.n}:</span>
-                      {l.text}
-                    </p>
-                  ))}
-                </blockquote>
-              )}
-              <p>
-                <strong>What must change:</strong> {t.mustChange || t.text}
-              </p>
+              {t.lines.length > 0 && <QuoteLines f={t} editable={false} />}
+              <div className="al-task-text">
+                <strong>{t.mustChange ? 'What must change' : 'Finding'}:</strong>{' '}
+                {/* IP-7: the task's text edits in place, in the same box as the card; a task with
+                    no "what must change" edits its finding text, under that field's label. */}
+                <EntryEditable
+                  collection="findings"
+                  id={t.id}
+                  entry={docs.docOf(t)}
+                  path={t.mustChange ? 'mustChange' : 'text'}
+                  kind="rich"
+                  size="quick"
+                  allowEmpty={false}
+                  testId="rewrite-task-text"
+                />
+              </div>
               <div className="row tight">
                 {props.onOpenChapter && t.chapterId && (
                   <button

@@ -24,6 +24,7 @@ import {
   dismissalFor,
   fromAlignment,
   fromStructural,
+  newFindingData,
   reconcile,
   resolutionCommand,
   stillDismissed,
@@ -541,6 +542,128 @@ describe('CC-4 dismissals and re-runs', () => {
     );
     expect(moved.creates).toEqual([]);
     expect(moved.updates.map((u) => [u.id, u.patch.state])).toEqual([['F-1', 'open']]);
+    // IP-7: a hand edit to the quote of a dismissed finding does not bring it back.
+    const editedQuote = [
+      finding({
+        check: 'age',
+        quote: `${quote} (checked)`,
+        generated: { text: 't', quote, mustChange: '' },
+        dismissal: dis,
+        key: 'alignment:CH5:age:H1',
+      }),
+    ];
+    const kept = reconcile(editedQuote, [fresh()], (f) => f.kind === 'alignment', data);
+    expect(kept.creates).toEqual([]);
+    expect(kept.hidden).toBe(1);
+  });
+
+  test('IP-7 ED-7 a re-run keeps a hand-edited finding and records what the check now says', () => {
+    const data = briefData(false);
+    const run = (text: string, mustChange = 'Make her 82.'): FreshFinding =>
+      fromAlignment(
+        {
+          key: 'alignment:CH5:age:H1',
+          check: 'age',
+          chapterId: 'CH5',
+          title: 't',
+          text,
+          quote: 'Her mother was seventy.',
+          lineStart: 1,
+          lineEnd: 1,
+          entryIds: ['H1'],
+          mustChange,
+          changeSet: [],
+          rejectedChanges: [],
+        },
+        { storyYear: 2040, runId: 'r2' },
+      );
+    const first = run('Margaret is 82, not seventy.');
+    const created = newFindingData(first);
+    // A new finding remembers its own words.
+    expect(created).toMatchObject({
+      generated: {
+        text: 'Margaret is 82, not seventy.',
+        quote: 'Her mother was seventy.',
+        mustChange: 'Make her 82.',
+      },
+      proposed: null,
+    });
+    // It parses, and a finding stored before the field existed parses too.
+    expect(Finding.parse({ ...finding({ state: 'open' }), ...created }).generated).not.toBeNull();
+    expect(Finding.parse(finding()).generated).toBeNull();
+    expect(Finding.parse(finding()).proposed).toBeNull();
+
+    const stored = (over: Doc) =>
+      finding({ ...created, _id: 'F-1', state: 'open', key: first.key, ...over });
+
+    // Untouched: the re-run updates it as before.
+    const plain = reconcile([stored({})], [run('Margaret is 82 in 2040.')], () => true, data);
+    expect(plain.updates).toEqual([
+      {
+        id: 'F-1',
+        patch: {
+          text: 'Margaret is 82 in 2040.',
+          generated: { ...(created.generated as Doc), text: 'Margaret is 82 in 2040.' },
+        },
+      },
+    ]);
+
+    // Hand-edited text: the edit stays, the new wording is proposed; the untouched field updates.
+    const edited = stored({ text: 'Ruth rounds her mother down.' });
+    const plan = reconcile(
+      [edited],
+      [run('Margaret is 82 in 2040.', 'Make her eighty-two.')],
+      () => true,
+      data,
+    );
+    const patch = plan.updates[0]!.patch;
+    expect(patch).not.toHaveProperty('text');
+    expect(patch.mustChange).toBe('Make her eighty-two.');
+    expect(patch.proposed).toEqual({ text: 'Margaret is 82 in 2040.' });
+    expect(patch.generated).toEqual({
+      text: 'Margaret is 82 in 2040.',
+      quote: 'Her mother was seventy.',
+      mustChange: 'Make her eighty-two.',
+    });
+
+    // The same words again: the proposal stays pending and nothing else changes.
+    const after = { ...edited, ...patch };
+    const again = reconcile(
+      [after],
+      [run('Margaret is 82 in 2040.', 'Make her eighty-two.')],
+      () => true,
+      data,
+    );
+    expect(again.updates).toEqual([]);
+
+    // A run that says what the writer wrote clears the proposal.
+    const agreed = reconcile(
+      [after],
+      [run('Ruth rounds her mother down.', 'Make her eighty-two.')],
+      () => true,
+      data,
+    );
+    expect(agreed.updates[0]!.patch).toMatchObject({ proposed: null });
+    expect(agreed.updates[0]!.patch).not.toHaveProperty('text');
+
+    // An edit that matches the last run's words exactly is no edit: the run's words win.
+    const repeated = reconcile([stored({})], [run(first.text)], () => true, data);
+    expect(repeated.updates).toEqual([]);
+
+    // A finding stored before `generated` existed counts as untouched: the run's words land.
+    const legacy = finding({
+      _id: 'F-1',
+      state: 'open',
+      key: first.key,
+      text: 'Older words.',
+      quote: 'Her mother was seventy.',
+    });
+    const old = reconcile([legacy], [run('Margaret is 82 in 2040.')], () => true, data);
+    expect(old.updates[0]!.patch).toMatchObject({
+      text: 'Margaret is 82 in 2040.',
+      generated: { text: 'Margaret is 82 in 2040.' },
+    });
+    expect(old.updates[0]!.patch).not.toHaveProperty('proposed');
   });
 
   test('CC-4 ED-3 a resolution undoes as one step: every changed entry and the finding state, editable fields only', () => {

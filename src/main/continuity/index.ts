@@ -177,7 +177,14 @@ export function findingWire(session: OpenBible, f: Doc): FindingWire {
   const lines =
     start !== null && quote ? quote.split('\n').map((text, i) => ({ n: start + i, text })) : [];
   const now = chapter ? numberedLines(chapter.manuscriptText) : [];
-  const textChanged = f.kind === 'alignment' && lines.some((l) => now[l.n - 1]?.text !== l.text);
+  // The quote the check read, not a hand edit of it (IP-7), says whether the chapter text moved on.
+  const generated = (f.generated ?? null) as { quote?: unknown } | null;
+  const read = typeof generated?.quote === 'string' ? generated.quote : quote;
+  const textChanged =
+    f.kind === 'alignment' &&
+    start !== null &&
+    read !== '' &&
+    read.split('\n').some((text, i) => now[start + i - 1]?.text !== text);
   const entryIds = Array.isArray(f.entryIds) ? (f.entryIds as string[]) : [];
   const changeSet = Array.isArray(f.changeSet) ? (f.changeSet as FreshFinding['changeSet']) : [];
   return {

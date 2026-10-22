@@ -505,3 +505,95 @@ describe('CC-3 CC-4 ED-10 recording and resolving guards', () => {
     ).rejects.toThrow(/already dismissed/);
   });
 });
+
+describe('IP-7 a finding edits like any entry, and its resolution note stays', () => {
+  test('IP-7 the text, quote, what must change and resolution note of a finding save through entry.update and show on the card; the note survives a re-run and a resolution', async () => {
+    await invoke('continuity.check', { chapterId: null });
+    const f = (await open()).find((x) => x.kind === 'structural' && x.state === 'open')!;
+    expect(f).toBeDefined();
+    const note = 'Kept on purpose: the reader learns the date later.';
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: f.id,
+      patch: {
+        text: 'Edited on the card.',
+        quote: 'A line the writer quoted.',
+        mustChange: 'Nothing yet.',
+        resolutionNote: note,
+      },
+    });
+    expect(bible.model.get('findings', f.id)!.quote).toBe('A line the writer quoted.');
+    const shown = (await open()).find((x) => x.id === f.id)!;
+    expect(shown).toMatchObject({ text: 'Edited on the card.', mustChange: 'Nothing yet.' });
+    expect(bible.model.get('findings', f.id)!.resolutionNote).toBe(note);
+    // A re-run refreshes what the check found and keeps the writer's note.
+    await invoke('continuity.check', { chapterId: null });
+    expect(bible.model.get('findings', f.id)!.resolutionNote).toBe(note);
+    await invoke('continuity.resolve', { id: f.id, action: 'dismiss' });
+    expect(bible.model.get('findings', f.id)).toMatchObject({
+      state: 'dismissed',
+      resolutionNote: note,
+    });
+  });
+});
+
+describe('IP-7 ED-7 a re-run never writes over a hand edit', () => {
+  test('IP-7 ED-7 a re-run keeps the edited finding text, records what the check now says, and taking it clears the proposal', async () => {
+    const check = 'character-present-while-dead';
+    const stored = async () =>
+      bible.model
+        .all('findings')
+        .find((x) => !x.deletedAt && x.chapterId === 'CH4' && x.check === check)!;
+    const death = bible.model.get('characters', 'H2')!.death;
+    await invoke('continuity.check', { chapterId: null });
+    const first = await stored();
+    expect(first.state).toBe('open');
+    expect(first.generated).toMatchObject({ text: first.text });
+
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: String(first._id),
+      patch: { text: 'My own words about Peter.' },
+    });
+    // The check's own words change with the cited entry.
+    await invoke('entry.update', {
+      collection: 'characters',
+      id: 'H2',
+      patch: { death: { year: 2031 } },
+    });
+    await invoke('continuity.check', { chapterId: null });
+    const kept = await stored();
+    expect(kept.text).toBe('My own words about Peter.');
+    expect((kept.proposed as { text: string }).text).toMatch(/died in 2031/);
+    expect((kept.generated as { text: string }).text).toMatch(/died in 2031/);
+
+    // Take the new text: the next run has nothing to propose.
+    const taken = (kept.proposed as { text: string }).text;
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: String(kept._id),
+      patch: { text: taken },
+    });
+    await invoke('continuity.check', { chapterId: null });
+    expect(await stored()).toMatchObject({ text: taken, proposed: null });
+
+    await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { death } });
+  });
+});
+
+describe('IP-7 a hand edit to the quote is not a change to the chapter', () => {
+  test('IP-7 CC-3 editing a quoted line shows the edit and does not warn that the chapter text changed', async () => {
+    const f = (await open()).find((x) => x.kind === 'alignment' && !x.textChanged)!;
+    expect(f).toBeDefined();
+    const quote = String(bible.model.get('findings', f.id)!.quote);
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: f.id,
+      patch: { quote: `${quote} (checked)` },
+    });
+    const shown = (await open()).find((x) => x.id === f.id)!;
+    expect(shown.lines.at(-1)!.text).toMatch(/\(checked\)$/);
+    expect(shown.textChanged).toBe(false);
+    await invoke('entry.update', { collection: 'findings', id: f.id, patch: { quote } });
+  });
+});
