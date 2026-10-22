@@ -1,0 +1,13 @@
+# Follow-ups common brief, 2026-10-22
+
+Three small branches off `main` (8d187d9), each in its own worktree under `.claude/worktrees/<branch>`, each built by one agent. They close items the A47 and A46 builds left open; none needs a SPEC amendment. Read `docs/briefs/A47-common.md` first: its rules 1, 2, 4, 5, 7, 8 and 9 apply here word for word (own files only, tests prove criteria, one test file at a time, copy standards, commit with `git add <paths>`, never `git add -A`, never stash, merge, rebase or push, report at the end). Do not open anything under `mockups/`. Do not change `SPEC.md`, `docs/ARCHITECTURE.md` or `PROGRESS.md`.
+
+Another build (A48, capture routing) is running on this machine at the same time on `a48-router` and `a48-box`. It owns `src/renderer/src/workspace/capture.tsx`, `capture.css`, `src/shared/domain/captureRouter/*`, `src/shared/domain/capture.ts`, `src/main/claude/*`, `src/shared/claude.ts`, `tests/unit/capture.test.ts`, `tests/integration/capture.test.ts` and `tests/e2e/capture.spec.ts`. Never touch those files.
+
+The worktree's `node_modules` is a symlink to the main checkout's. Before any e2e run: `npx electron-vite build` in your worktree, then `npx playwright test tests/e2e/<one file>.spec.ts`. Every e2e run is hidden (`NOVEL_COMPANION_HIDDEN=1`, set by the helpers). Run `npm run typecheck`, `npx eslint src tests scripts` and `npx prettier --check src tests scripts` before you report.
+
+| Branch | Task | Owns |
+|---|---|---|
+| `fu-ed1` | `tests/e2e/editing.spec.ts` "ED-1 every field of every entity can be created and changed through the editor" times out on "Add to Strands" (since aa85826, before A47). Make it pass. | the ED-1 test and the `setField` family in `tests/e2e/helpers.ts` (lines 348 to 490), plus app code only if the cause is an app bug |
+| `fu-culture` | IP-8 says every select that chooses a list item has "Add new...". The Community select on Cultural data and the romanization system selects (Cultural data Romanization tab and Settings) have none. The per-language romanization select is also implemented twice. | `src/renderer/src/workspace/culture.tsx`, `settings.tsx`, a new shared component file, their CSS, `tests/e2e/knowledge.spec.ts`, `tests/e2e/settings.spec.ts` |
+| `fu-seed` | `seedFixtureLists` (`tests/e2e/helpers.ts` line 501) is called only by `timeline.spec.ts` and `backstory.spec.ts`. Every other spec that seeds the fixture through `test.seed` shows list items made from IDs where a label should show. Seed the lists everywhere the fixture is seeded. | `tests/e2e/helpers.ts` (the seeding helpers only, lines 490 to the end, never `setField`), every `tests/e2e/*.spec.ts` except `editing.spec.ts` and `capture.spec.ts` |
