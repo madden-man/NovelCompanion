@@ -1,56 +1,37 @@
 /**
- * Capture routing (A48). This file is a placeholder on `main` so the capture
- * features and the box can be built against the contract in `types.ts`
- * while branch `a48-router` builds the router. `a48-router` replaces it.
+ * Capture routing (A48, CR-1 to CR-5): the pure router. Build the index once
+ * per capture with `buildIndex`, then `routeCapture` splits the text into
+ * facts and gives each its section, community, years, drafts and route. No
+ * Electron, MongoDB or React (ARCHITECTURE rule 1).
  */
-import type { CaptureRouting, RouteOptions, RouterIndex, RouterIndexInput } from './types';
-
 export * from './types';
-
-/** Placeholder: an empty index. `a48-router` builds the real one from lists and entries. */
-export function buildIndex(input: RouterIndexInput): RouterIndex {
-  return {
-    characters: [],
-    places: [],
-    communities: [],
-    categories: [],
-    glossary: [],
-    ageGroups: [],
-    culturalLines: [],
-    moments: [],
-    timelineEnd: input.timelineEnd,
-  };
-}
-
-/** Placeholder: one fact on Route C with nothing resolved. `a48-router` replaces it. */
-export function routeCapture(
-  text: string,
-  _index: RouterIndex,
-  options: RouteOptions,
-): CaptureRouting {
-  return {
-    text,
-    storyYear: options.storyYear,
-    facts: [
-      {
-        index: 0,
-        text: text.trim(),
-        years: { start: options.storyYear, end: null, source: 'the story year' },
-        sentences: 1,
-        candidates: [],
-        scores: {},
-        cues: {},
-        ranked: [],
-        section: 'openQuestions',
-        share: 0,
-        margin: 0,
-        communities: [],
-        missing: [],
-        asks: [],
-        reasons: ['the router is not built yet'],
-        drafts: [],
-        route: 'full',
-      },
-    ],
-  };
-}
+export { LEXICON } from './lexicon';
+export type { Adjustment, CommunityWords, Cue, CueSignal, DiasporaRule, Lexicon } from './lexicon';
+export { buildIndex, characterAliases } from './buildIndex';
+export {
+  YEAR_SOURCES,
+  parse,
+  parseSentence,
+  parseYears,
+  quotedWords,
+  splitSentences,
+} from './parse';
+export type { OwnYears, ParsedSentence } from './parse';
+export { WRITING_STRAND, candidatesOf, pickCommunity, resolve } from './resolve';
+export type { CommunityChoice, Match, Resolved } from './resolve';
+export { rank, score, signals } from './score';
+export type { Scored } from './score';
+export {
+  ASKABLE,
+  REQUIRED,
+  draftsFor,
+  firstCommunity,
+  momentSubjects,
+  leadingUnknown,
+  secondClause,
+  singleCategory,
+  titleFrom,
+} from './drafts';
+export type { DraftContext, DraftResult } from './drafts';
+export { decide, routeCapture, routeFact } from './route';
+export type { DecideInput } from './route';

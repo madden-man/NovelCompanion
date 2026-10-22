@@ -1,0 +1,170 @@
+{
+  "about": "The twelve lines of the Capture Router design page (2026-10-22) with their expected routing, written by hand from SPEC 5.25 and the brief, run against eastwinds-slice.json with story year 2066 (CR-10). A cultural line's endYear is the stored value (the timeline end, 2100, for an open end). A section given as a list accepts either. A null categoryId means the category is left to choose. Where the router's answer differs from the brief's table, the brief's value is kept in briefSaid with the reason in note.",
+  "storyYear": 2066,
+  "lines": [
+    {
+      "line": 1,
+      "text": "Chinese people in San Francisco begin to say yee haw ironically starting around 2065",
+      "facts": [
+        {
+          "route": "local",
+          "section": "culturalEntries",
+          "communityId": "san-francisco",
+          "startYear": 2065,
+          "endYear": 2100,
+          "demographic": "all"
+        }
+      ]
+    },
+    {
+      "line": 2,
+      "text": "Teenagers in Jinan treat an American college degree as a joke by the 2070s",
+      "facts": [
+        {
+          "route": "local",
+          "section": "culturalEntries",
+          "communityId": "jinan-shandong",
+          "startYear": 2070,
+          "endYear": 2100,
+          "demographic": "0-18"
+        }
+      ]
+    },
+    {
+      "line": 3,
+      "text": "Mark moves to Seattle in 2061 for a job at a Compact logistics firm",
+      "facts": [
+        {
+          "route": "local",
+          "section": "moments",
+          "characters": ["Mark Sullivan"],
+          "startYear": 2061,
+          "endYear": null,
+          "title": "Lives in Seattle"
+        }
+      ]
+    },
+    {
+      "line": 4,
+      "text": "Should Frank's church split over the Compact in 2075?",
+      "facts": [{ "route": "local", "section": "openQuestions", "startYear": 2075 }]
+    },
+    {
+      "line": 5,
+      "text": "Chinese parents stop sending kids abroad after 2068",
+      "facts": [
+        {
+          "route": "local",
+          "section": "culturalEntries",
+          "communityId": "china-national",
+          "startYear": 2068,
+          "endYear": 2100,
+          "demographic": "30-50",
+          "note": "The brief gives no age group. Parents and kids both match; the first named, the subject, wins."
+        }
+      ]
+    },
+    {
+      "line": 6,
+      "text": "The Compact bans gas cars on coastal highways in 2068",
+      "facts": [
+        {
+          "route": "fast",
+          "section": "worldEvents",
+          "startYear": 2068,
+          "endYear": null,
+          "categoryId": null,
+          "categories": ["Transportation", "Pacific States Compact"]
+        }
+      ]
+    },
+    {
+      "line": 7,
+      "text": "Siyuan's temple starts hosting Compact officials for merit-making dinners in 2070",
+      "facts": [
+        {
+          "route": "local",
+          "section": "culturalEntries",
+          "communityId": "pure-land-buddhism",
+          "startYear": 2070,
+          "endYear": 2100,
+          "demographic": "all"
+        }
+      ]
+    },
+    {
+      "line": 8,
+      "text": "Dawn and Mark argue about whether to raise LiNa bilingual",
+      "facts": [
+        {
+          "route": "fast",
+          "section": "moments",
+          "characters": ["Dawn Li", "Mark Sullivan"],
+          "startYear": 2066,
+          "note": "LiNa comes after the verb, so she is the object: a candidate, with no moment of her own."
+        }
+      ]
+    },
+    {
+      "line": 9,
+      "text": "望安 goes by 'Wanda' at school",
+      "facts": [
+        {
+          "route": "fast",
+          "section": "moments",
+          "characters": ["Wang'an"],
+          "startYear": 2066,
+          "glossary": "Wanda"
+        }
+      ]
+    },
+    {
+      "line": 10,
+      "text": "The Mission district becomes mostly Compact bureaucrats by 2080",
+      "facts": [
+        {
+          "route": "fast",
+          "section": "places",
+          "title": "Mission district",
+          "startYear": 2080,
+          "unknown": "Mission district"
+        }
+      ]
+    },
+    {
+      "line": 11,
+      "text": "Sydney's husband is a Nevada state trooper",
+      "facts": [
+        {
+          "route": "fast",
+          "section": "moments",
+          "characters": ["Sydney's husband (unnamed)"],
+          "startYear": 2066
+        }
+      ]
+    },
+    {
+      "line": 12,
+      "text": "In 2063 the second crash hits. Qin's drone factory loses its export license. Xuan takes a Party job in Beijing, and the Li family apartment is sold.",
+      "facts": [
+        {
+          "route": "local",
+          "section": "worldEvents",
+          "startYear": 2063,
+          "endYear": null,
+          "categoryId": "economy",
+          "briefSaid": "fast, category to choose",
+          "note": "\"crash\" is a cue of one category only (Economy), so the category is filled and nothing needs judgment."
+        },
+        {
+          "route": "fast",
+          "section": ["worldEvents", "culturalEntries"],
+          "communityId": "jinan-shandong",
+          "startYear": 2063,
+          "note": "No year of its own: takes 2063 from the sentence before. \"drone\" sits inside the place name, so only Economy is cued; the section leads by too little for Route A."
+        },
+        { "route": "fast", "section": "moments", "characters": ["Li Xuan"], "startYear": 2063 }
+      ]
+    }
+  ]
+}

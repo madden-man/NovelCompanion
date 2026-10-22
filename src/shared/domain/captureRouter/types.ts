@@ -38,12 +38,16 @@ export interface IndexedCharacter {
   name: string;
   /** Lowercase: the full name, the first name, the Chinese name, and lexicon aliases. */
   aliases: string[];
+  /** a48-router: aliases that are ordinary English words ("mark"), matched only when capitalised. */
+  capitalOnly?: string[];
 }
 export interface IndexedPlace {
   id: string;
   name: string;
   communityId: string | null;
   aliases: string[];
+  /** a48-router: the place it sits in, so a world event can take the region of a larger place. */
+  parentId?: string | null;
 }
 export interface IndexedCommunity {
   id: string;
@@ -90,6 +94,8 @@ export interface RouterIndex {
   culturalLines: IndexedLine[];
   moments: IndexedMoment[];
   timelineEnd: number;
+  /** a48-router: the `regions` list, so a world event's regions are item IDs (IP-8) or new items (IP-17). */
+  regions?: { id: string; label: string }[];
 }
 
 export type CandidateKind =

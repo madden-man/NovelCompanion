@@ -1,0 +1,1827 @@
+{
+  "about": "A small slice of the East Winds bible (2026-10-22) for the capture router fixture (CR-10): the lists and entries the design draft names. Moments mo-01 and mo-02 are examples added for the index; the rest comes from the draft.",
+  "timelineEnd": 2100,
+  "storyYear": 2066,
+  "lists": [
+    {
+      "_id": "communities",
+      "label": "Communities",
+      "items": [
+        {
+          "id": "san-francisco",
+          "label": "San Francisco",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "jinan-shandong",
+          "label": "Jinan / Shandong",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "chinese-diaspora-in-california",
+          "label": "Chinese diaspora in California",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "evangelical-church",
+          "label": "Evangelical church",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "china-national",
+          "label": "China (national)",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "united-states-national",
+          "label": "United States (national)",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "pacific-states-ca-or-wa",
+          "label": "Pacific States (CA / OR / WA)",
+          "parentId": "united-states-national",
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "pure-land-buddhism",
+          "label": "Pure Land Buddhism",
+          "parentId": "jinan-shandong",
+          "color": null,
+          "extra": {}
+        }
+      ]
+    },
+    {
+      "_id": "eventCategories",
+      "label": "Event categories",
+      "items": [
+        {
+          "id": "geopolitics",
+          "label": "Geopolitics",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "technology",
+          "label": "Technology",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "economy",
+          "label": "Economy",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "environment",
+          "label": "Environment",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "demographics",
+          "label": "Demographics",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "culture",
+          "label": "Culture",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "transportation",
+          "label": "Transportation",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "us-leadership",
+          "label": "US Leadership",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "chinese-leadership",
+          "label": "Chinese Leadership",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "pacific-states-compact",
+          "label": "Pacific States Compact",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "china-taiwan",
+          "label": "China/Taiwan",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "immigration",
+          "label": "Immigration",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "energy",
+          "label": "Energy",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        }
+      ]
+    },
+    {
+      "_id": "ageGroups",
+      "label": "Age groups",
+      "items": [
+        {
+          "id": "all",
+          "label": "Everyone",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 0
+          }
+        },
+        {
+          "id": "0-18",
+          "label": "Ages 0 to 18",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 0,
+            "to": 18
+          }
+        },
+        {
+          "id": "18-30",
+          "label": "Ages 18 to 30",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 18,
+            "to": 30
+          }
+        },
+        {
+          "id": "30-50",
+          "label": "Ages 30 to 50",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 30,
+            "to": 50
+          }
+        },
+        {
+          "id": "50-70",
+          "label": "Ages 50 to 70",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 50,
+            "to": 70
+          }
+        },
+        {
+          "id": "70+",
+          "label": "Ages 70 and over",
+          "parentId": null,
+          "color": null,
+          "extra": {
+            "from": 70
+          }
+        }
+      ]
+    },
+    {
+      "_id": "languages",
+      "label": "Languages",
+      "items": [
+        {
+          "id": "mandarin",
+          "label": "Mandarin",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "cantonese",
+          "label": "Cantonese",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "english",
+          "label": "English",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        }
+      ]
+    },
+    {
+      "_id": "regions",
+      "label": "Regions",
+      "items": [
+        {
+          "id": "california",
+          "label": "California",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "china",
+          "label": "China",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "united-states",
+          "label": "United States",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "taiwan",
+          "label": "Taiwan",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        },
+        {
+          "id": "pacific-states",
+          "label": "Pacific States",
+          "parentId": null,
+          "color": null,
+          "extra": {}
+        }
+      ]
+    }
+  ],
+  "entries": {
+    "characters": [
+      {
+        "_id": "01M4MG30PAAB68PRXSHM5EN4YH",
+        "title": "Frank Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Frank Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFXMQE73DVKE03Y4GWX",
+        "title": "Laura Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Laura Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PCH00CCJPNZT7M1H2Q",
+        "title": "Sydney Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Sydney Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PDPAK8SJ5CQF1Y04RT",
+        "title": "Mark Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Mark Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PDPAK8SJ5CQF1Y04RK",
+        "title": "Emilie Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Emilie Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PDPAK8SJ5CQF1Y04RR",
+        "title": "Shannon Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Shannon Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PEDP5Q3MP84FAR7BYJ",
+        "title": "HaoYu Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "HaoYu Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PEDP5Q3MP84FAR7BYC",
+        "title": "LiNa Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "LiNa Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PDPAK8SJ5CQF1Y04SP",
+        "title": "Darnell Shaw",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Darnell Shaw"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFXMQE73DVKE03Y4GWZ",
+        "title": "Matthew Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Matthew Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTP7",
+        "title": "Brock Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Brock Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFXMQE73DVKE03Y4GWY",
+        "title": "Samantha Sullivan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Samantha Sullivan"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG379QE60CNG2GM5A7VQMY",
+        "title": "Li Qin",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Li Qin",
+          "chinese": "李勤"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG379QE60CNG2GM5A7VQND",
+        "title": "Li Xuan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Li Xuan",
+          "chinese": "李煊"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG379P82F2K84YPS1SWJCJ",
+        "title": "Li Siyuan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Li Siyuan",
+          "chinese": "李思源"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG379QE60CNG2GM5A7VQNB",
+        "title": "Dawn Li",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Dawn Li",
+          "chinese": "李晓曦"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPF",
+        "title": "Li Sichao",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Li Sichao",
+          "chinese": "李思潮"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPG",
+        "title": "Wang'an",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Wang'an",
+          "chinese": "望安"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPH",
+        "title": "Nian You",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Nian You",
+          "chinese": "念忧"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPJ",
+        "title": "Gu Chu",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Gu Chu",
+          "chinese": "固伫"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4MG30PEDP5Q3MP84FAR7BYT",
+        "title": "Neveah",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Neveah"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFXMQE73DVKE03Y4GX0",
+        "title": "Leon",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Leon"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPD",
+        "title": "Jenn",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Jenn"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTPC",
+        "title": "Linh",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Linh"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTP9",
+        "title": "Sydney's husband (unnamed)",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Sydney's husband (unnamed)"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      },
+      {
+        "_id": "01M4PC5VFY7HMQXWY1470XTTP5",
+        "title": "Frank's father (unnamed)",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "role": "",
+        "names": {
+          "full": "Frank's father (unnamed)"
+        },
+        "birth": {
+          "unknown": true
+        },
+        "death": null,
+        "familyIds": [],
+        "backstory": ""
+      }
+    ],
+    "places": [
+      {
+        "_id": "pl-united-states",
+        "title": "United States",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": null,
+        "communityId": "united-states-national",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-california",
+        "title": "California",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-united-states",
+        "communityId": "pacific-states-ca-or-wa",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-oregon",
+        "title": "Oregon",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-united-states",
+        "communityId": "pacific-states-ca-or-wa",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-washington-state",
+        "title": "Washington State",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-united-states",
+        "communityId": "pacific-states-ca-or-wa",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-san-francisco",
+        "title": "San Francisco",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-california",
+        "communityId": "san-francisco",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-sullivan-home",
+        "title": "Sullivan family home",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-san-francisco",
+        "communityId": "san-francisco",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-marks-school",
+        "title": "Mark's high school",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-san-francisco",
+        "communityId": "san-francisco",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-sullivans-church",
+        "title": "The Sullivans' church",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-san-francisco",
+        "communityId": "evangelical-church",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-china",
+        "title": "China",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": null,
+        "communityId": "china-national",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-shandong",
+        "title": "Shandong province",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-china",
+        "communityId": "jinan-shandong",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-jinan",
+        "title": "Jinan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-shandong",
+        "communityId": "jinan-shandong",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-li-apartment",
+        "title": "Li family apartment",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-jinan",
+        "communityId": "jinan-shandong",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-drone-factory",
+        "title": "Qin's drone factory",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-jinan",
+        "communityId": "jinan-shandong",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-siyuan-temple",
+        "title": "Siyuan's temple",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-jinan",
+        "communityId": "pure-land-buddhism",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-shrine",
+        "title": "Buddhist shrine by a stream",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-jinan",
+        "communityId": "pure-land-buddhism",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-beijing",
+        "title": "Beijing",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-china",
+        "communityId": "china-national",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-shanghai",
+        "title": "Shanghai",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-china",
+        "communityId": "china-national",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-shenzhen",
+        "title": "Shenzhen",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-china",
+        "communityId": "china-national",
+        "descriptions": []
+      },
+      {
+        "_id": "pl-seattle",
+        "title": "Seattle",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-washington-state",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-los-angeles",
+        "title": "Los Angeles",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-california",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-san-jose",
+        "title": "San Jose",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-california",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-uc-berkeley",
+        "title": "UC Berkeley",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-california",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-usc",
+        "title": "University of Southern California (USC)",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-los-angeles",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-tsinghua",
+        "title": "Tsinghua University",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-beijing",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-nevada",
+        "title": "Nevada",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-united-states",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-reno",
+        "title": "Reno",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-nevada",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-taiwan",
+        "title": "Taiwan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": null,
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-japan",
+        "title": "Japan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": null,
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-mexico",
+        "title": "Mexico",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": null,
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-tijuana",
+        "title": "Tijuana",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-mexico",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-atlanta",
+        "title": "Atlanta",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-united-states",
+        "communityId": null,
+        "descriptions": []
+      },
+      {
+        "_id": "pl-port-la",
+        "title": "Port of Los Angeles and Long Beach",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "parentId": "pl-los-angeles",
+        "communityId": null,
+        "descriptions": []
+      }
+    ],
+    "culturalEntries": [
+      {
+        "_id": "ce-01",
+        "title": "Learning Chinese in San Francisco",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "san-francisco",
+        "startYear": 2046,
+        "endYear": 2050,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-02",
+        "title": "Sending children to America for prestige",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "jinan-shandong",
+        "startYear": 2055,
+        "endYear": 2065,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-03",
+        "title": "Status through lavish parties",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "jinan-shandong",
+        "startYear": 2044,
+        "endYear": 2066,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-04",
+        "title": "Women's housework and 'uncles'",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "jinan-shandong",
+        "startYear": 2037,
+        "endYear": 2057,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-05",
+        "title": "Studying in English as a Chinese student at USC",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "chinese-diaspora-in-california",
+        "startYear": 2056,
+        "endYear": 2066,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-06",
+        "title": "Church life: bright shirts, platitudes, youth group",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "evangelical-church",
+        "startYear": 2040,
+        "endYear": 2066,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-07",
+        "title": "Individual initiative within collective purpose",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "china-national",
+        "startYear": 2044,
+        "endYear": 2100,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-08",
+        "title": "Immersive VR schooling",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "china-national",
+        "startYear": 2037,
+        "endYear": 2100,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-09",
+        "title": "Welfare instead of jobs",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "china-national",
+        "startYear": 2052,
+        "endYear": 2100,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-10",
+        "title": "Growing up inside the Compact",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "pacific-states-ca-or-wa",
+        "startYear": 2073,
+        "endYear": 2100,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-11",
+        "title": "Trusting the state over Washington",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "united-states-national",
+        "startYear": 2065,
+        "endYear": 2100,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-12",
+        "title": "Viral fame for kids",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "united-states-national",
+        "startYear": 2078,
+        "endYear": 2080,
+        "demographic": "all"
+      },
+      {
+        "_id": "ce-13",
+        "title": "Siyuan's Pure Land practice",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "communityId": "pure-land-buddhism",
+        "startYear": 2016,
+        "endYear": 2086,
+        "demographic": "all"
+      }
+    ],
+    "moments": [
+      {
+        "_id": "mo-01",
+        "title": "Lives in San Francisco",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characterId": "01M4MG30PDPAK8SJ5CQF1Y04RT",
+        "year": 2055,
+        "endYear": null,
+        "worldContext": ""
+      },
+      {
+        "_id": "mo-02",
+        "title": "Lives in Jinan",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characterId": "01M4MG379QE60CNG2GM5A7VQNB",
+        "year": 2050,
+        "endYear": null,
+        "worldContext": ""
+      }
+    ],
+    "glossaryTerms": [
+      {
+        "_id": "gl-01",
+        "title": "李",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "李",
+        "romanization": "Lǐ",
+        "language": "mandarin",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-02",
+        "title": "思源",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "思源",
+        "romanization": "Sīyuán",
+        "language": "mandarin",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-03",
+        "title": "晓曦",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "晓曦",
+        "romanization": "Xiǎoxī",
+        "language": "mandarin",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-04",
+        "title": "思潮",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "思潮",
+        "romanization": "Sīcháo",
+        "language": "mandarin",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-05",
+        "title": "念忧",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "念忧",
+        "romanization": "Niànyōu",
+        "language": "mandarin",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-06",
+        "title": "Pure Land Buddhism",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "Pure Land Buddhism",
+        "romanization": "",
+        "language": "english",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-07",
+        "title": "I take refuge",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "I take refuge",
+        "romanization": "",
+        "language": "english",
+        "meaning": "",
+        "usageNote": ""
+      },
+      {
+        "_id": "gl-08",
+        "title": "Pacific Coordination Framework (PCF)",
+        "body": "",
+        "status": "canon",
+        "provenance": null,
+        "sourceNote": "",
+        "sourceRef": "",
+        "tags": [],
+        "createdAt": "2026-10-22T00:00:00.000Z",
+        "modifiedAt": "2026-10-22T00:00:00.000Z",
+        "links": [],
+        "characters": "Pacific Coordination Framework (PCF)",
+        "romanization": "",
+        "language": "english",
+        "meaning": "",
+        "usageNote": ""
+      }
+    ]
+  }
+}
