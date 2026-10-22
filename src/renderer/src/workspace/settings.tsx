@@ -10,10 +10,7 @@ import { APPEARANCES } from '../../../shared/ipcApp';
 import type { Appearance, MongoSettingsWire } from '../../../shared/ipcApp';
 import { applyAppearance } from '../appearance';
 import { WriteFieldset, useConnection } from '../connection';
-import { romanizationCommand } from '../../../shared/undoCommands';
-import { useUndo } from './undo';
-import { Editable, mergeCommands, useListAddNew } from './editable';
-import type { SaveInfo } from './editable';
+import { RomanizationSystems } from './romanizationSystems';
 import { BibleVocabularySettings, ClaudeInstructionsSettings } from './settingsGroups';
 
 type Models = Response<'claude.models'>;
@@ -69,105 +66,14 @@ function BibleSettings() {
   );
 }
 
-type Romanization = Response<'romanization.get'>;
-
 function RomanizationSettings() {
-  const undo = useUndo();
-  const [data, setData] = useState<Romanization | null>(null);
-  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
-  useEffect(() => {
-    const load = () =>
-      void call('romanization.get', {}).then(
-        (r) => {
-          setData(r);
-          setFailed(null);
-        },
-        (e: unknown) => setFailed(plainError(e)),
-      );
-    load();
-    return window.api.on('lists.changed', load);
-  }, []);
-  /** One step (A47: with the system Add new made on the way, when it made one). */
-  const set = async (languageId: string, label: string, systemId: string, info: SaveInfo = {}) => {
-    setNote(null);
-    await undo.flush();
-    const from = data?.languages.find((l) => l.id === languageId)?.systemId ?? null;
-    const to = systemId || null;
-    setData(await call('romanization.set', { languageId, systemId: to }));
-    const step =
-      (from ?? '') !== (to ?? '') ? romanizationCommand(call, label, languageId, from, to) : null;
-    const added = info.added?.command;
-    const both = step && added ? mergeCommands(step.label, added, step) : (step ?? added);
-    if (both) undo.record(both);
-    setNote({ text: `Saved the romanization system for ${label}.`, bad: false });
-  };
-  if (!data && failed) {
-    return (
-      <LoadFailed
-        what="The romanization systems"
-        error={failed}
-        testId="settings-romanization-failed"
-      />
-    );
-  }
-  if (!data) return <p>Loading the romanization systems.</p>;
   return (
-    <div className="panel stack tight" data-testid="settings-romanization">
+    <div className="panel stack tight">
       <h4>Romanization system for each language</h4>
       <p className="example-note">
         Glossary terms that do not follow their language&apos;s system are flagged.
       </p>
-      {data.languages.length === 0 && (
-        <p>The Languages list is empty. Add a language under Lists.</p>
-      )}
-      {data.languages.map((l) => (
-        <LanguageSystem
-          key={l.id}
-          label={l.label}
-          value={l.systemId ?? ''}
-          systems={data.systems}
-          languageId={l.id}
-          onChange={(v) => set(l.id, l.label, v)}
-        />
-      ))}
-      {note && (
-        <p className={note.bad ? 'callout crit' : 'example-note'} role="status">
-          {note.text}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** GL-1, IP-8: a language's system, a select that saves on pick, with Add new for a new system. */
-function LanguageSystem(props: {
-  label: string;
-  languageId: string;
-  value: string;
-  systems: { id: string; label: string }[];
-  onChange(systemId: string, info: SaveInfo): Promise<void>;
-}) {
-  const addNew = useListAddNew('romanizationSystems');
-  return (
-    <div className="settings-grid">
-      <span className="settings-label" aria-hidden="true">
-        {props.label}
-      </span>
-      <span className="settings-value">
-        <Editable
-          kind="select"
-          label={`Romanization system for ${props.label}`}
-          value={props.value || null}
-          options={props.systems.map((s) => ({ value: s.id, label: s.label }))}
-          allowEmpty
-          emptyLabel="No system"
-          placeholder="No system"
-          onAddNew={addNew}
-          testId={`settings-romanization-${props.languageId}`}
-          onSave={(next, info) => props.onChange(next ?? '', info)}
-        />
-      </span>
+      <RomanizationSystems testId="settings-romanization" />
     </div>
   );
 }

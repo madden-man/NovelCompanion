@@ -51,9 +51,6 @@
 .cu-manage .ol-rename {
   min-width: 12em;
 }
-.cu-new-community .row {
-  align-items: center;
-}
 .cu-about textarea {
   width: 100%;
   resize: vertical;

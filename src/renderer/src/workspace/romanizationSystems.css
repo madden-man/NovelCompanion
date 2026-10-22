@@ -1,0 +1,5 @@
+/* fu-culture: the no-checker note sits on its own line under the system (GL-1). */
+.roman-note {
+  flex-basis: 100%;
+  margin: 0;
+}

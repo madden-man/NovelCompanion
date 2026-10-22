@@ -114,6 +114,70 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await expect(again.getByTestId('appearance-dark')).toBeChecked();
 });
 
+test('ST-1 GL-1 the romanization system saved in Settings shows on the Cultural data Romanization tab', async () => {
+  const view = await openSettings();
+  const mandarin = view.getByTestId('settings-romanization-mandarin');
+  await openEditable(mandarin);
+  await mandarin.locator('select').selectOption({ label: 'Jyutping' });
+  await expect(view.getByTestId('settings-romanization')).toContainText(
+    'Saved the romanization system for Mandarin.',
+  );
+  await rail(page, 'Romanization').click();
+  const roman = page.getByTestId('romanization-view');
+  const there = roman.getByTestId('romanization-systems-mandarin');
+  await expect(there.getByTestId('romanization-systems-mandarin-text')).toHaveText('Jyutping');
+  // Picked back on the Romanization screen, Settings follows.
+  await openEditable(there);
+  await there.locator('select').selectOption({ label: 'Hanyu Pinyin' });
+  await expect
+    .poll(
+      async () =>
+        (await invoke('romanization.get', {})).languages.find((l) => l.id === 'mandarin')?.systemId,
+    )
+    .toBe('mandarin');
+  await rail(page, 'Settings').click();
+  await expect(page.getByTestId('settings-romanization-mandarin-text')).toHaveText('Hanyu Pinyin');
+});
+
+test('IP-8 GL-1 when the pick of a new system fails, the field says so, keeps the new system for Enter, and records no step', async () => {
+  const view = await openSettings();
+  const before = await page.getByTestId('top-undo').getAttribute('title');
+  // Main answers romanization.set with a failure, as a broken bible write would.
+  await app!.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('nc:romanization.set');
+    ipcMain.handle('nc:romanization.set', () => {
+      throw new Error('The bible could not be written. Try again.');
+    });
+  });
+  try {
+    const cantonese = view.getByTestId('settings-romanization-cantonese');
+    await openEditable(cantonese);
+    await cantonese.locator('select').selectOption('Add new...');
+    const name = cantonese.getByLabel('Name of the new item for Romanization system for Cantonese');
+    await name.fill('Yale');
+    await name.press('Enter');
+    await expect(cantonese.getByRole('alert')).toHaveText(
+      'Not saved: The bible could not be written. Try again.',
+    );
+    await expect(name).toBeVisible();
+    const yale = async () =>
+      (await invoke('lists.get', {})).lists
+        .find((l) => l._id === 'romanizationSystems')!
+        .items.find((i) => i.label === 'Yale')?.id;
+    await expect.poll(yale).toBeTruthy();
+    const cantoneseSystem = (await invoke('romanization.get', {})).languages.find(
+      (l) => l.id === 'cantonese',
+    )?.systemId;
+    expect(cantoneseSystem).not.toBe(await yale());
+    // Neither the add nor the pick is an undo step.
+    await expect(page.getByTestId('top-undo')).toHaveAttribute('title', before ?? '');
+  } finally {
+    // A fresh launch registers the real handler again.
+    await app?.close();
+    await start();
+  }
+});
+
 test('ST-1 appearance applies live, light, dark, or the system, without a reload', async () => {
   const view = await openSettings();
   const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

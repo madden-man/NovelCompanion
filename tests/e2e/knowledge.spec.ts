@@ -430,8 +430,10 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
 });
 
 test('A42 a community is added, renamed, and removed with its lines, and Undo brings them back', async () => {
-  await culture().getByLabel('New community').fill('San Francisco');
-  await culture().getByRole('button', { name: 'Add community' }).click();
+  // IP-8: the select's Add new makes the community (the separate New community box is gone).
+  await culture().getByLabel('Community', { exact: true }).selectOption('Add new...');
+  await culture().getByLabel('Name of the new item for Communities').fill('San Francisco');
+  await page.keyboard.press('Enter');
   await expect(culture().getByLabel('Community', { exact: true })).toHaveValue('san-francisco');
   await expect(culture().getByTestId('culture-heading')).toContainText('San Francisco in the');
   await expect(culture().getByLabel('About San Francisco')).toBeVisible();
@@ -471,6 +473,96 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await culture().getByLabel('Community', { exact: true }).selectOption({ label: 'SF Bay' });
   await expect(group('all').locator('.cu-line')).toHaveCount(2);
   await invoke('storyTime.set', { time: { year: 2030 } });
+});
+
+const listLabels = async (listId: string) =>
+  (await invoke('lists.get', {})).lists.find((l) => l._id === listId)!.items.map((i) => i.label);
+
+test('IP-8 the Community select offers Add new, which creates the community as one undo step and picks it', async () => {
+  await rail(page, 'Cultural data').click();
+  const select = culture().getByLabel('Community', { exact: true });
+  await select.selectOption({ label: 'Guangzhou' });
+  await expect(select).toHaveValue('guangzhou');
+  await expect(select.locator('option').last()).toHaveText('Add new...');
+  // Escape puts the select back and adds nothing.
+  await select.selectOption('Add new...');
+  const name = culture().getByLabel('Name of the new item for Communities');
+  await expect(name).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(select).toBeFocused();
+  await expect(select).toHaveValue('guangzhou');
+  // Enter adds Jinan to the list and picks it.
+  await select.selectOption('Add new...');
+  await name.fill('Jinan');
+  await name.press('Enter');
+  await expect(select).toHaveValue('jinan');
+  await expect(select).toBeFocused();
+  await expect(culture().getByTestId('culture-heading')).toContainText('Jinan in the');
+  await expect.poll(() => listLabels('communities')).toContain('Jinan');
+  await expect((await changes(page)).locator('li').first()).toHaveText(
+    'Added Jinan to Communities',
+  );
+  await page.keyboard.press('Escape');
+  // One Cmd+Z removes it, and the select goes back to Guangzhou.
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(() => listLabels('communities')).not.toContain('Jinan');
+  await expect(select).toHaveValue('guangzhou');
+  await expect(select).not.toContainText('Jinan');
+});
+
+test('IP-8 GL-1 the romanization system select on Cultural data offers Add new, and the new system shows in Settings too', async () => {
+  await rail(page, 'Romanization').click();
+  const view = page.getByTestId('romanization-view');
+  const field = view.getByTestId('romanization-systems-cantonese');
+  const text = view.getByTestId('romanization-systems-cantonese-text');
+  await expect(text).toHaveText('Jyutping');
+  await openEditable(field);
+  await field.locator('select').selectOption('Add new...');
+  const name = field.getByLabel('Name of the new item for Romanization system for Cantonese');
+  await name.fill('Yale');
+  await name.press('Enter');
+  await expect(text).toHaveText('Yale');
+  const cantonese = async () =>
+    (await invoke('romanization.get', {})).languages.find((l) => l.id === 'cantonese')?.systemId;
+  const yaleId = async () =>
+    (await invoke('lists.get', {})).lists
+      .find((l) => l._id === 'romanizationSystems')!
+      .items.find((i) => i.label === 'Yale')?.id;
+  const yale = await yaleId();
+  expect(yale).toBeTruthy();
+  await expect.poll(cantonese).toBe(yale);
+  await expect(view.getByTestId('romanization-no-checker')).toHaveText(
+    'No checker for this system; terms are not flagged',
+  );
+  // The add and the pick are one undo step.
+  await expect((await changes(page)).locator('li').first()).toHaveText(
+    'Changed the romanization system for Cantonese',
+  );
+  await page.keyboard.press('Escape');
+  // Settings draws the same choice.
+  await rail(page, 'Settings').click();
+  const inSettings = page.getByTestId('settings-romanization-cantonese-text');
+  await expect(inSettings).toHaveText('Yale');
+  // One Cmd+Z takes back both: Jyutping again, and Yale gone from the list.
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(cantonese).toBe('cantonese');
+  await expect.poll(() => listLabels('romanizationSystems')).not.toContain('Yale');
+  await expect(inSettings).toHaveText('Jyutping');
+  // One Shift+Cmd+Z puts both back, under the same item ID.
+  await leaveFields();
+  await page.keyboard.press('Meta+Shift+z');
+  await expect.poll(yaleId).toBe(yale);
+  await expect.poll(cantonese).toBe(yale);
+  await expect(inSettings).toHaveText('Yale');
+  // Back to Jyutping for the rows that follow.
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(cantonese).toBe('cantonese');
+  await rail(page, 'Romanization').click();
+  await expect(text).toHaveText('Jyutping');
+  await expect(view.getByTestId('romanization-no-checker')).toHaveCount(0);
 });
 
 const unitShown = () => culture().getByTestId('culture-unit');
