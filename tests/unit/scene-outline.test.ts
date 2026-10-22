@@ -10,6 +10,7 @@ import {
   LEAD,
   chapterBars,
   edgeLimits,
+  moveBoundary,
   moveEdge,
   moveOnto,
   neighbourOf,
@@ -367,6 +368,26 @@ describe('SM-7 the chapter bars beside the text', () => {
       scenes: 0,
       firstScene: 6,
     });
+  });
+
+  test('A46 the line between two chapters moves by lines, indented ones too, and the years go with their lines', () => {
+    const one = moveBoundary(flow(), 'X', 'Y', 2) as Flow;
+    expect(one.bodies.X?.lines).toEqual(['- A', '- B']);
+    expect(one.bodies.Y?.lines).toEqual(['  - b', '- C', '- D']);
+    expect(composeFlow(one, order)).toEqual({
+      text: doc.text,
+      breaks: { X: 1, Y: 3, Z: 6 },
+      years: { '2': 2040, '4': 2045 },
+    });
+    // All the way down empties the chapter below; the text stays as it was.
+    expect(composeFlow(moveBoundary(flow(), 'X', 'Y', 99) as Flow, order).breaks).toEqual({
+      X: 1,
+      Y: 6,
+      Z: 6,
+    });
+    // The lines before the first chapter can go into it.
+    expect(composeFlow(moveBoundary(flow(), LEAD, 'X', 0) as Flow, order).breaks.X).toBe(0);
+    expect(moveBoundary(flow(), 'X', 'Y', 3)).toBeNull();
   });
 
   test('SM-7 the limits of the edges: no chapter gives away or takes the last scene of a chapter', () => {

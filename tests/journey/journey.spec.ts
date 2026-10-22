@@ -615,7 +615,7 @@ test('SM-7 the outline: drag the Chapter 2 bar above Chapter 1, see the order ch
   const target = (await bar('CH1').boundingBox())!;
   await page.mouse.move(grip.x + 4, grip.y + 4);
   await page.mouse.down();
-  await page.mouse.move(grip.x + 4, target.y + target.height / 2, { steps: 8 });
+  await page.mouse.move(grip.x + 4, target.y + 4, { steps: 8 });
   await page.mouse.up();
   await expect(outline().getByTestId('chapter-bar').first()).toContainText('Two Kitchens');
   await expect.poll(() => readingOrder('CH2')).toBe(1);
@@ -628,7 +628,6 @@ test('KB-3 SM-7 A40 A43 a chapter bar shows the title, year and scene count, and
   await expect(bar('CH2').getByTestId('chapter-title')).toHaveText('Two Kitchens');
   await expect(bar('CH2').getByTestId('chapter-year')).toHaveValue(/\d{4}/);
   await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText(/^\d+ scenes?$/);
-  await bar('CH2').getByLabel('Actions for chapter 2').click();
   await bar('CH2').getByTestId('chapter-open').click();
   const chapter = page.getByTestId('editor');
   await expect(chapter).toHaveAttribute('data-entry-id', 'CH2');

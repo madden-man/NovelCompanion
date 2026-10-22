@@ -400,3 +400,13 @@ The frame is `'rail list editor'`; `inspector.tsx`, `ChapterPanel`, the Outline'
 | IM-4 migration 10 | pass | `tests/integration/migration10.test.ts` "A44 opening takes a snapshot of the HTML first, then runs migration 10", "A44 every HTML body becomes Markdown, nested and trashed ones too", "A44 the manuscript text, the history and the modified times are left as they were", "A44 the summary in meta counts what changed, and search reads the Markdown as words", "A44 running it again changes nothing, and a bible at version 10 is not snapshotted again". |
 | SM-1 (A44) | pass | `tests/e2e/tree.spec.ts` "SM-1 the character page is ... three text boxes, nothing else", "SM-1 ED-2 each text box saves on its own and grows with its text"; `tests/e2e/session.spec.ts` "SM-10 a tile opens to role, description, the three latest moments ..." (the shared read-only renderer). |
 | CU-3 (A44) | pass | `tests/e2e/knowledge.spec.ts` "CU-1 A42 SM-11 Cultural data shows one community ..." (description box and its undo), "CU-1 A42 ED-3 a line is added ..." (the inline note box); `tests/e2e/plot.spec.ts` "CU-2 A42 a community and the story year's decade list the lines that apply". |
+
+## A46: the Outline track is a flat list with draggable lines, dividers and a trash, 2026-10-21
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| SM-7 (A46) flat list, dividers, no menus | pass | `tests/e2e/plot.spec.ts` "SM-7 A46 the Outline opens on two panels ...", "A46 a divider is added between two chapters, named in place, and removed; each is one undo step", "A46 a bar dragged across a divider joins the section on the other side; Undo puts it back". |
+| SM-7 (A46) lines move between chapters | pass | `tests/e2e/plot.spec.ts` "A46 dragging the line between two chapters moves lines either way, an indented line too; each drag is one Undo step", "SM-7 A46 NF-2 the Outline by keyboard ..."; `tests/unit/scene-outline.test.ts` "A46 the line between two chapters moves by lines ...". |
+| SM-7 (A46) trash | pass | `tests/e2e/plot.spec.ts` "A46 a chapter dragged onto the trash pinned at the top goes, its lines join the chapter above, and Undo brings both back; Delete on a focused bar does the same". |
+| SM-5 (A46) inherited year fills in | pass | `tests/e2e/plot.spec.ts` "SM-5 a year typed in the gutter ..." (focus fills 2045, unchanged blur stays inherited, edited to 2046). |
+| Known | open | `tests/e2e/editing.spec.ts` "ED-1 every field of every entity ..." times out on "Add to Strands" in the chapter editor; it fails the same way on aa85826 before A46. The journey suite was updated (bar drop point, Open on the bar) but not run, since the packaged app takes the focus. |

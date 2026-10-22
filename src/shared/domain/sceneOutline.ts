@@ -349,8 +349,8 @@ export function refitFlow(flow: Flow, before: readonly string[], after: readonly
     if (still.has(id)) {
       bodies[id] = own;
       above = id;
-    } else if (above === null) lead = joinSections(lead, own);
-    else bodies[above] = joinSections(bodies[above] as Section, own);
+    } else if (above === null) lead = joinSections(lead, kept(own));
+    else bodies[above] = joinSections(bodies[above] as Section, kept(own));
   }
   for (const id of after) bodies[id] ??= flow.bodies[id] ?? section();
   return { lead, bodies };
@@ -663,4 +663,24 @@ export function neighbourOf(
 ): string | null {
   const i = chapters.findIndex((c) => c.id === id);
   return i < 0 ? null : (chapters[i + by]?.id ?? null);
+}
+
+/**
+ * A46: the line between two sections next to each other (`upper` just above
+ * `lower`) moves so that `upper` holds the first `at` lines of the two,
+ * counted in lines, not scenes: any line, indented or not, can go either way.
+ * Years go with their lines. `at` is clamped to the lines of the two; null
+ * when the line is already there.
+ */
+export function moveBoundary(flow: Flow, upper: string, lower: string, at: number): Flow | null {
+  const a = sectionOf(flow, upper);
+  const b = sectionOf(flow, lower);
+  const both = joinSections(a, b);
+  const cut = Math.max(0, Math.min(both.lines.length, Math.round(at)));
+  if (cut === a.lines.length) return null;
+  return withSection(
+    withSection(flow, upper, sliceSection(both, 0, cut)),
+    lower,
+    sliceSection(both, cut),
+  );
 }

@@ -338,9 +338,6 @@
 .sb-row.series-1 .sl-year {
   border-color: var(--series-1);
 }
-.sb-row.series-1 .cbar-edge::after {
-  background: var(--series-1);
-}
 .sb-row.series-2 .scene-edit,
 .sb-row.series-2 .cbar {
   border-color: var(--series-2);
@@ -351,9 +348,6 @@
 }
 .sb-row.series-2 .sl-year {
   border-color: var(--series-2);
-}
-.sb-row.series-2 .cbar-edge::after {
-  background: var(--series-2);
 }
 .sb-row.series-3 .scene-edit,
 .sb-row.series-3 .cbar {
@@ -366,9 +360,6 @@
 .sb-row.series-3 .sl-year {
   border-color: var(--series-3);
 }
-.sb-row.series-3 .cbar-edge::after {
-  background: var(--series-3);
-}
 .sb-row.series-4 .scene-edit,
 .sb-row.series-4 .cbar {
   border-color: var(--series-4);
@@ -380,9 +371,6 @@
 .sb-row.series-4 .sl-year {
   border-color: var(--series-4);
 }
-.sb-row.series-4 .cbar-edge::after {
-  background: var(--series-4);
-}
 /* An inherited year: faded and dashed. */
 .sb-row .sl-year.inherited {
   background: var(--surface);
@@ -392,7 +380,7 @@
 .cbar {
   position: relative;
   flex: 1 1 auto;
-  padding: 10px 0;
+  padding: 6px 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -415,10 +403,6 @@
   z-index: 5;
   cursor: grabbing;
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
-}
-.cbar.target {
-  outline: 2px dashed var(--accent);
-  outline-offset: 2px;
 }
 .cbar-main {
   position: relative;
@@ -465,40 +449,6 @@
   height: 1.8em;
   padding: 1px 4px;
 }
-.cbar-edge {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 10px;
-  cursor: ns-resize;
-}
-.cbar-edge.top {
-  top: 0;
-}
-.cbar-edge.bottom {
-  bottom: 0;
-}
-.cbar-edge::after {
-  content: '';
-  position: absolute;
-  left: 30%;
-  right: 30%;
-  top: 4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--border-strong);
-}
-.sb-row .cbar-edge:hover::after,
-.sb-row .cbar.pulling-start .cbar-edge.top::after,
-.sb-row .cbar.pulling-end .cbar-edge.bottom::after {
-  left: 10%;
-  right: 10%;
-  height: 3px;
-  background: var(--accent);
-}
-.cbar.off .cbar-edge {
-  cursor: default;
-}
 .sb-guide {
   position: absolute;
   left: 0;
@@ -507,13 +457,15 @@
   border-top: 3px solid var(--accent);
   pointer-events: none;
 }
-/* KB-3 on the track: book and part headings above their chapters' bars, and what to add at the bottom. */
+/* The foot of the chapters, with New chapter. */
 .sb-gap {
   background: var(--surface-2);
   border-left: 6px solid var(--border-strong);
-  border-bottom: 1px solid var(--border);
 }
-.sb-track.head,
+.sb-track.foot {
+  min-height: 0;
+  padding: 6px 8px;
+}
 .sb-track.foot {
   min-height: 0;
   padding: 6px 8px;
@@ -546,32 +498,6 @@
 }
 .sb-foot-row .sb-gap {
   border-bottom: 0;
-}
-.sb-track.foot .ol-name-form input {
-  min-width: 0;
-  width: 100%;
-}
-.cbar .ol-menu > summary {
-  padding: 0 6px;
-  font-size: 0.8rem;
-}
-.ol-submenu > summary {
-  cursor: pointer;
-  font-size: 0.85rem;
-  color: var(--fg);
-  padding: 2px 0;
-}
-.ol-submenu > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.ol-submenu > div {
-  padding: 4px 0 0 10px;
-}
-.ol-menu-body .confirm {
-  min-width: 16em;
-  max-width: 22em;
-  cursor: default;
 }
 .scene-versions {
   margin-top: 16px;
@@ -616,8 +542,147 @@
     padding: 3px;
   }
 }
-/* Menus on the track open towards the text, so they stay on screen. */
-.sb-track .ol-menu-body {
-  left: auto;
+/* A46: the line between two chapters drags; a divider starts a new section of chapters. */
+.sb-boundary {
+  grid-column: 1 / -1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 14px;
+  margin: -7px 0;
+  z-index: 3;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.sb-boundary.off {
+  cursor: default;
+}
+.sb-grip {
+  position: absolute;
+  left: 0;
   right: 0;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: 6px;
+}
+.sb-grip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  height: 2px;
+  background: transparent;
+}
+.sb-grip::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 22px);
+  width: 44px;
+  top: 3px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-strong);
+  opacity: 0;
+}
+.sb-boundary:not(.off):hover .sb-grip::before,
+.sb-boundary.active .sb-grip::before,
+.sb-grip:focus-visible::before {
+  background: var(--accent);
+}
+.sb-boundary:not(.off):hover .sb-grip::after,
+.sb-boundary.active .sb-grip::after,
+.sb-grip:focus-visible::after {
+  opacity: 1;
+  background: var(--accent);
+}
+.sb-grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sb-add-divider {
+  position: relative;
+  margin-right: 8px;
+  opacity: 0;
+  cursor: pointer;
+}
+.sb-boundary:hover .sb-add-divider,
+.sb-add-divider:focus-visible {
+  opacity: 1;
+}
+.scene-board.grabbing .sb-add-divider {
+  opacity: 0;
+}
+.sb-boundary.divider {
+  min-height: 36px;
+  margin: 0;
+  justify-content: flex-start;
+  background: var(--surface-2);
+  border-top: 2px solid var(--border-strong);
+  border-bottom: 2px solid var(--border-strong);
+}
+.sb-boundary.divider .sb-grip::before {
+  top: -1px;
+}
+.sb-divider-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg);
+  cursor: default;
+}
+.sb-divider-remove {
+  min-width: 1.8em;
+  padding: 0 6px;
+  font-size: 1rem;
+  line-height: 1.3;
+  text-transform: none;
+}
+.sb-guide.slot {
+  border-top-style: dashed;
+}
+.scene-board.grabbing,
+.scene-board.grabbing * {
+  cursor: grabbing;
+}
+.cbar-open {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+/* The trash, pinned in the head of the Outline. */
+.scene-head {
+  align-items: center;
+}
+.scene-trash {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 11em;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  color: var(--fg);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.scene-trash.armed {
+  color: var(--critical-ink);
+  border-color: var(--critical-ink);
+}
+.scene-trash.over {
+  color: var(--critical-ink);
+  border-style: solid;
+  background: var(--surface-2);
+  outline: 2px solid var(--critical-ink);
+  outline-offset: 1px;
 }
