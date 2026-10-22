@@ -6,8 +6,15 @@
 import { LEXICON } from './lexicon';
 import { escapeRegExp, foldText } from './text';
 
-const Y = '(1[5-9]\\d\\d|2[0-4]\\d\\d)';
-const DECADE3 = '(1[5-9]\\d|2[0-4]\\d)0s';
+/** A year the router reads (1500 to 2499), as a regular expression source with no group. */
+export const YEAR_SOURCE = '(?:1[5-9]\\d\\d|2[0-4]\\d\\d)';
+/** The first three digits of a decade ("206" of "2060s"), no group. */
+export const DECADE_DIGITS_SOURCE = '(?:1[5-9]\\d|2[0-4]\\d)';
+/** "early", "mid" or "late" before a decade, optional, no group. */
+export const DECADE_PART_SOURCE = '(?:(?:early|mid|late)[\\s-]+)?';
+
+const Y = `(${YEAR_SOURCE})`;
+const DECADE3 = `${DECADE_PART_SOURCE}(${DECADE_DIGITS_SOURCE})0s`;
 const alt = (words: readonly string[]) =>
   [...words]
     .sort((a, b) => b.length - a.length)
@@ -18,6 +25,10 @@ const G = LEXICON.years;
 const SPAN = new RegExp(`(?<!\\p{N})${Y}s?\\s*(?:${alt(G.spanJoiners)})\\s*${Y}(?!\\p{N})`, 'u');
 const BY = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${alt(G.openStartWords)})\\s+(?:the\\s+)?(?:${DECADE3}|${Y})(?!\\p{N})`,
+  'u',
+);
+const BEFORE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${alt(G.beforeWords)})\\s+(?:the\\s+)?(?:${DECADE3}|${Y})(?!\\p{N})`,
   'u',
 );
 const DECADE = new RegExp(`(?<!\\p{N})${DECADE3}(?![\\p{L}\\p{N}])`, 'u');
@@ -39,6 +50,7 @@ export const YEAR_SOURCES = {
   decade: 'a decade in the text',
   by: '"by" a year in the text, taken as the start with an open end',
   end: 'an end year in the text',
+  beforeYear: '"before" a year in the text, taken as the end the year before',
   story: 'the story year',
   before: 'the year of the sentence before',
 } as const;
@@ -60,6 +72,11 @@ export function parseYears(sentence: string): OwnYears | null {
   if (by) {
     const start = by[1] ? Number(by[1]) * 10 : Number(by[2]);
     return { start, end: null, source: YEAR_SOURCES.by, years };
+  }
+  const before = BEFORE.exec(lower);
+  if (before) {
+    const end = before[1] ? Number(before[1]) * 10 - 1 : Number(before[2]) - 1;
+    return { start: null, end, source: YEAR_SOURCES.beforeYear, years };
   }
   const decade = DECADE.exec(lower);
   if (decade) {
@@ -146,7 +163,13 @@ export function parseSentence(
 ): ParsedSentence {
   const own = parseYears(text);
   const start = own?.start ?? inherited.start;
-  const source = own?.start != null ? own.source : own ? own.source : inherited.source;
+  // A sentence that gave only an end says where its start came from.
+  const source =
+    own?.start != null
+      ? own.source
+      : own
+        ? `${own.source}; the start is ${inherited.source}`
+        : inherited.source;
   return {
     index,
     text,

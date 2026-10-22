@@ -7,11 +7,12 @@
 import { LIVES_IN_PREFIX } from '../../schema/moment';
 import { LEXICON } from './lexicon';
 import type { Lexicon } from './lexicon';
+import { DECADE_PART_SOURCE, YEAR_SOURCE } from './parse';
 import type { ParsedSentence } from './parse';
 import { WRITING_STRAND } from './resolve';
 import type { CommunityChoice, Match, Resolved } from './resolve';
 import { lexiconPattern } from './score';
-import { escapeHtml, foldAlias, hasHan } from './text';
+import { foldAlias, hasHan } from './text';
 import type { CaptureDraft, CaptureSection, RouterIndex } from './types';
 
 /** Required fields per section, and which of them a chip can ask for. */
@@ -33,9 +34,9 @@ export const ASKABLE: ReadonlySet<string> = new Set([
   'names.full',
 ]);
 
-const Y = '(?:1[5-9]\\d\\d|2[0-4]\\d\\d)';
+const Y = YEAR_SOURCE;
 const YEAR_PHRASE = new RegExp(
-  `\\s*,?\\s*(?<![\\p{L}\\p{N}])(?:(?:starting|beginning)\\s+)?(?:(?:around|from|by|in|after|since|until|through|before|during|up\\s+to)\\s+)?(?:the\\s+)?${Y}s?(?:\\s*(?:to|-|–|until|through)\\s*${Y}s?)?(?!\\p{N}),?`,
+  `\\s*,?\\s*(?<![\\p{L}\\p{N}])(?:(?:starting|beginning)\\s+)?(?:(?:around|from|by|in|after|since|until|through|before|during|up\\s+to)\\s+)?(?:the\\s+)?${DECADE_PART_SOURCE}${Y}s?(?:\\s*(?:to|-|–|until|through)\\s*${Y}s?)?(?!\\p{N}),?`,
   'giu',
 );
 const END_PUNCT = /[.!]+$/;
@@ -154,15 +155,57 @@ function regionsFor(r: Resolved, index: RouterIndex): { values: string[]; adds: 
 }
 
 const CLAUSE = /,\s*(?:and|but|while|so)\s+|;\s*/;
+const AND = /\sand\s+/gu;
+const LEADING_SPACE = /^\s+/;
+const AND_NEXT = /^and\s+/;
 
-/** A second clause that names a person or place the first does not: probably another fact. */
-export function secondClause(r: Resolved): string | null {
-  const at = CLAUSE.exec(r.text.lower)?.index;
-  if (at === undefined) return null;
+/**
+ * A second clause that names a person or place the first does not: after
+ * ", and", "but", "while", "so" or ";", or after " and " when a life verb
+ * comes before it and a known name right after it ("Mark moves to Seattle
+ * and Dawn moves to Jinan", but not "Dawn and Mark argue").
+ */
+export function secondClause(r: Resolved, lexicon: Lexicon = LEXICON): string | null {
+  const lower = r.text.lower;
   const named = [...r.characters, ...r.places, ...r.unknown];
-  const before = new Set(named.filter((m) => m.start < at).map((m) => m.id ?? m.label));
-  const after = named.find((m) => m.start > at && !before.has(m.id ?? m.label));
-  return after ? after.label : null;
+  const verb = lexiconPattern('life', lexicon).exec(lower)?.index;
+  const splits: number[] = [];
+  const comma = CLAUSE.exec(lower)?.index;
+  if (comma !== undefined) splits.push(comma);
+  if (verb !== undefined) {
+    for (const m of lower.matchAll(AND)) {
+      const next = m.index + m[0].length;
+      if (m.index > verb && [...r.characters, ...r.places].some((n) => n.start === next)) {
+        splits.push(m.index);
+      }
+    }
+  }
+  for (const at of splits) {
+    const before = new Set(named.filter((m) => m.start < at).map((m) => m.id ?? m.label));
+    const after = named.find((m) => m.start > at && !before.has(m.id ?? m.label));
+    if (after) return after.label;
+  }
+  return null;
+}
+
+/**
+ * A capitalised first word the bible lacks, counted as an unknown name when a
+ * life verb follows it or "and" plus a known name does ("Rosa meets Mark",
+ * "Rosa and Mark argue"). "Teenagers in Jinan treat ..." is not one.
+ */
+export function leadingUnknown(r: Resolved, lexicon: Lexicon = LEXICON): Match | null {
+  const lead = r.leading;
+  const end = lead?.spans[0]?.[1];
+  if (!lead || end === undefined) return null;
+  const gap = LEADING_SPACE.exec(r.text.lower.slice(end))?.[0].length ?? 0;
+  const at = end + gap;
+  const rest = r.text.lower.slice(at);
+  if (lexiconPattern('life', lexicon).exec(rest)?.index === 0) return lead;
+  const and = AND_NEXT.exec(rest);
+  if (and && [...r.characters, ...r.places].some((n) => n.start === at + and[0].length)) {
+    return lead;
+  }
+  return null;
 }
 
 /** CR-5, CR-6: the drafts, missing fields, asks and judgment flags of one fact. */
@@ -177,7 +220,8 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
     if (ask) asks.push(ask);
   };
   const text = sentence.trim();
-  const body = `<p>${escapeHtml(text)}</p>`;
+  // A44, ED-2: long text is Markdown, so the body is the sentence as typed.
+  const body = text;
   const title = titleFrom(text);
   const lower = r.text.lower;
   const unknown = r.unknown[0];
@@ -223,8 +267,16 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
         });
       }
       if (subjects.length > 1) {
-        reasons.push(`one moment for each of ${subjects.length} characters, each in its own words`);
+        reasons.push(`a moment for each of ${subjects.length} characters`);
       }
+      // A second person the moment would leave out ("Dawn Li marries Mark Sullivan").
+      if (!ctx.characterId) {
+        for (const c of r.characters) {
+          if (!subjects.some((s) => s.id === c.id)) reasons.push(`${c.label} is named too`);
+        }
+      }
+      const lead = leadingUnknown(r, lexicon);
+      if (lead) reasons.push(`unknown name "${lead.label}"`);
       const quoted = r.quoted[0];
       if (quoted && lexiconPattern('nickname', lexicon).test(lower)) {
         drafts.push({
@@ -310,7 +362,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
       drafts.push({
         op: 'create',
         collection: 'openQuestions',
-        data: { title, question: text, body, tags: ['capture'], status: 'idea' },
+        data: { title, question: text, body: '', tags: ['capture'], status: 'idea' },
       });
       break;
     }
@@ -339,7 +391,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
         : `unknown name "${u.label}"`,
     );
   }
-  const clause = secondClause(r);
+  const clause = secondClause(r, lexicon);
   if (clause) reasons.push(`a second clause names ${clause}, probably another fact`);
   return { drafts, missing, asks, reasons };
 }

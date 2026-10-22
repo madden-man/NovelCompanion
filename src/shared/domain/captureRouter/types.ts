@@ -38,6 +38,8 @@ export interface IndexedCharacter {
   name: string;
   /** Lowercase: the full name, the first name, the Chinese name, and lexicon aliases. */
   aliases: string[];
+  /** a48-router: aliases that are ordinary English words ("mark"), matched only when capitalised. */
+  capitalOnly?: string[];
 }
 export interface IndexedPlace {
   id: string;

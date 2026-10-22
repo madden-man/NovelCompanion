@@ -41,17 +41,26 @@ export interface Resolved {
   cjk: string[];
   /** Words in quotes. */
   quoted: string[];
+  /**
+   * The first word when it could be a name the bible lacks: capitalised, not
+   * inside a known name, not a stop word or an ordinary English word. The
+   * moment rule decides whether it is one ("Rosa meets Mark").
+   */
+  leading: Match | null;
 }
 
 /** Every occurrence of any alias, the longest alias, and the first offset; null when none match. */
 function matchAliases(
-  lower: string,
+  t: FoldedText,
   aliases: readonly string[],
+  capitalOnly?: readonly string[],
 ): { matched: string; spans: [number, number][]; start: number } | null {
   let matched = '';
   const spans: [number, number][] = [];
   for (const a of aliases) {
-    const at = findAll(lower, a);
+    let at = findAll(t.lower, a);
+    // "mark" the verb is not Mark: an alias that is an English word needs a capital.
+    if (capitalOnly?.includes(a)) at = at.filter((i) => UPPER.test(t.folded[i] ?? ''));
     if (!at.length) continue;
     if (a.length > matched.length) matched = a;
     for (const s of at) spans.push([s, s + a.length]);
@@ -64,6 +73,8 @@ function matchAliases(
   own.sort((a, b) => a[0] - b[0]);
   return { matched, spans: own, start: own[0]?.[0] ?? 0 };
 }
+
+const UPPER = /\p{Lu}/u;
 
 const inside = ([s, e]: [number, number], [s2, e2]: [number, number]) =>
   s2 <= s && e <= e2 && e2 - s2 > e - s;
@@ -114,8 +125,13 @@ function unknownNames(t: FoldedText, covered: [number, number][], lexicon: Lexic
     const w = words[i];
     if (!w) break;
     const start = w.index;
-    // The word must start a word (not "LiNa" inside "xLiNa") and not open the sentence.
-    if (start === firstWord || WORD.test(t.folded[start - 1] ?? '')) {
+    // The word must start a word (not "LiNa" inside "xLiNa") and not open the sentence;
+    // a single capital before a full stop is an initial or "U.S.", not a name.
+    if (
+      start === firstWord ||
+      WORD.test(t.folded[start - 1] ?? '') ||
+      (w[0].length === 1 && t.folded[start + 1] === '.')
+    ) {
       i++;
       continue;
     }
@@ -158,6 +174,35 @@ function unknownNames(t: FoldedText, covered: [number, number][], lexicon: Lexic
   return out;
 }
 
+const LEAD = /^\s*["'“‘(]?(\p{Lu}[\p{L}\p{M}'-]*)/u;
+
+/** The first word of the sentence when it could be an unknown name. */
+function leadingWord(t: FoldedText, covered: [number, number][], lexicon: Lexicon): Match | null {
+  const m = LEAD.exec(t.folded);
+  const word = m?.[1];
+  if (!m || !word) return null;
+  const start = m.index + m[0].length - word.length;
+  const end = start + word.length;
+  const lower = word.replace(POSSESSIVE, '').toLowerCase();
+  if (covered.some(([s, e]) => s < end && start < e)) return null;
+  if (
+    lexicon.stopWords.includes(lower) ||
+    lexicon.englishWords.includes(lower) ||
+    lexicon.groupWords.includes(lower)
+  ) {
+    return null;
+  }
+  const label = t.text.slice(start, end).replace(POSSESSIVE, '');
+  return {
+    kind: 'unknown',
+    id: null,
+    label,
+    matched: label.toLowerCase(),
+    start,
+    spans: [[start, end]],
+  };
+}
+
 /** CR-3: resolve one sentence against the index. */
 export function resolve(
   sentence: string,
@@ -172,10 +217,11 @@ export function resolve(
     aliases: (i: T) => readonly string[],
     label: (i: T) => string,
     community?: (i: T) => string | null,
+    capitalOnly?: (i: T) => readonly string[] | undefined,
   ): Match[] => {
     const out: Match[] = [];
     for (const item of items) {
-      const m = matchAliases(lower, aliases(item));
+      const m = matchAliases(t, aliases(item), capitalOnly?.(item));
       if (!m) continue;
       out.push({
         kind,
@@ -193,6 +239,8 @@ export function resolve(
     'character',
     (c) => c.aliases,
     (c) => c.name,
+    undefined,
+    (c) => c.capitalOnly,
   );
   const allPlaces = find(
     index.places,
@@ -263,6 +311,7 @@ export function resolve(
     ...quoteSpans,
   ];
   const unknown = unknownNames(t, covered, lexicon);
+  const leading = leadingWord(t, covered, lexicon);
 
   const nameSpans = keptNames.flatMap((m) => m.spans);
   const cjk: string[] = [];
@@ -284,6 +333,7 @@ export function resolve(
     unknown,
     cjk,
     quoted: quoted.filter(Boolean),
+    leading,
   };
 }
 
@@ -338,14 +388,31 @@ export function pickCommunity(
   const add = (id: string | null | undefined, why: string) => {
     if (id && !out.some((c) => c.id === id)) out.push({ id, why });
   };
-  for (const p of r.places) if (p.communityId) add(p.communityId, `the place ${p.label}`);
+  const places = new Map(index.places.map((p) => [p.id, p]));
+  for (const p of r.places) {
+    if (p.communityId) {
+      add(p.communityId, `the place ${p.label}`);
+      continue;
+    }
+    // A place with no community takes its nearest larger place's.
+    let up = p.id ? places.get(p.id)?.parentId : null;
+    for (let hops = 0; up && hops < 10; hops++) {
+      const parent = places.get(up);
+      if (!parent) break;
+      if (parent.communityId) {
+        add(parent.communityId, `the place ${p.label}, in ${parent.name}`);
+        break;
+      }
+      up = parent.parentId;
+    }
+  }
   for (const c of r.communities) add(c.id, `named as "${c.matched}"`);
   for (const d of r.demonyms) {
     for (const rule of lexicon.diaspora) {
       if (rule.demonymOf !== d.id || !known.has(rule.community)) continue;
       if (out.some((c) => rule.whenCommunities.includes(c.id))) add(rule.community, rule.why);
     }
-    add(d.id, `the demonym "${d.matched}"`);
+    add(d.id, `people of a country, "${d.matched}"`);
   }
   if (povCommunityId) add(povCommunityId, WRITING_STRAND);
   return out;

@@ -4,11 +4,12 @@
  * writer's hints applied. Pure: the renderer and main run the same function
  * on the same index and get the same facts.
  */
-import { ASKABLE, draftsFor, firstCommunity } from './drafts';
+import { ASKABLE, draftsFor, firstCommunity, leadingUnknown } from './drafts';
 import { LEXICON } from './lexicon';
 import type { Lexicon } from './lexicon';
 import { YEAR_SOURCES, parseSentence, splitSentences } from './parse';
 import { candidatesOf, pickCommunity, resolve } from './resolve';
+import type { Resolved } from './resolve';
 import { score } from './score';
 import { DEFAULT_THRESHOLDS } from './types';
 import type {
@@ -70,6 +71,47 @@ function hintFor(hints: readonly CaptureHint[] | undefined, fact: number): Parti
 
 const pct = (n: number) => Math.round(n * 100);
 
+/**
+ * Hint IDs must exist: a community, character, category or age group the
+ * index lacks is dropped, with a reason, and never reaches a draft.
+ */
+function checkedHint(
+  raw: Partial<CaptureHint>,
+  index: RouterIndex,
+): { hint: Partial<CaptureHint>; ignored: string[] } {
+  const hint = { ...raw };
+  const ignored: string[] = [];
+  if (hint.communityId && !index.communities.some((c) => c.id === hint.communityId)) {
+    delete hint.communityId;
+    ignored.push('the community picked is not in the list');
+  }
+  if (hint.characterId && !index.characters.some((c) => c.id === hint.characterId)) {
+    delete hint.characterId;
+    ignored.push('the character picked is not in the bible');
+  }
+  if (hint.categoryId && !index.categories.some((c) => c.id === hint.categoryId)) {
+    delete hint.categoryId;
+    ignored.push('the category picked is not in the list');
+  }
+  if (
+    hint.demographic &&
+    hint.demographic !== 'all' &&
+    !index.ageGroups.some((a) => a.id === hint.demographic)
+  ) {
+    delete hint.demographic;
+    ignored.push('the age group picked is not in the list');
+  }
+  return { hint, ignored };
+}
+
+/** The candidates, with a leading unknown name when the moment rule counts it. */
+function candidatesWithLead(r: Resolved, section: CaptureSection, lexicon: Lexicon) {
+  const out = candidatesOf(r);
+  const lead = section === 'moments' ? leadingUnknown(r, lexicon) : null;
+  if (lead) out.push({ kind: 'unknown', id: null, label: lead.label, matched: lead.matched });
+  return out;
+}
+
 /** Route one sentence, given the start year it inherits. */
 export function routeFact(
   sentence: string,
@@ -81,7 +123,7 @@ export function routeFact(
   lexicon: Lexicon = LEXICON,
 ): CaptureFact {
   const thresholds = options.thresholds ?? DEFAULT_THRESHOLDS;
-  const hint = hintFor(options.hints, factIndex);
+  const { hint, ignored } = checkedHint(hintFor(options.hints, factIndex), index);
   const parsed = parseSentence(sentence, factIndex, inherited);
   const resolved = resolve(sentence, index, lexicon);
   const { scores, cues, ranked, matched } = score(parsed, resolved, lexicon);
@@ -128,6 +170,12 @@ export function routeFact(
     },
     lexicon,
   );
+  reasons.push(...ignored);
+  // A range that runs backwards, or a year past the timeline, never files silently.
+  if (years.end !== null && years.end < years.start) {
+    reasons.push('the end year comes before the start');
+  }
+  if (years.start > index.timelineEnd) reasons.push("the year is after the timeline's end");
   // How sure the router is of the section; not asked when the writer chose it.
   if (!hint.section && !reasons.length && share < thresholds.localShare) {
     reasons.push(`section only ${pct(share)}% sure`);
@@ -143,7 +191,7 @@ export function routeFact(
     text: sentence,
     years,
     sentences,
-    candidates: candidatesOf(resolved),
+    candidates: candidatesWithLead(resolved, section, lexicon),
     scores,
     cues,
     ranked,

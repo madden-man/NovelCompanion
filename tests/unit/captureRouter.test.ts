@@ -179,7 +179,6 @@ describe('CR-2 facts and years', () => {
   test('CR-2 "by 2070" and "by the 2070s" set the start and leave the end open', () => {
     expect(parseYears('they joke about it by 2070')).toMatchObject({ start: 2070, end: null });
     expect(parseYears('they joke about it by the 2070s')).toMatchObject({ start: 2070, end: null });
-    expect(parseYears('before 2070')).toMatchObject({ start: 2070, end: null });
   });
 
   test('CR-2 "until", "through" and "to" set the end', () => {
@@ -190,7 +189,11 @@ describe('CR-2 facts and years', () => {
       end: 2064,
     });
     const [s] = parse('They wear red until 2070', 2066);
-    expect(s!.years).toEqual({ start: 2066, end: 2070, source: 'an end year in the text' });
+    expect(s!.years).toEqual({
+      start: 2066,
+      end: 2070,
+      source: 'an end year in the text; the start is the story year',
+    });
   });
 
   test('CR-2 "the 2060s" is 2060 to 2069 and "2063 to 2066" is a span', () => {
@@ -370,8 +373,8 @@ describe('CR-4 sections score by weighted cues', () => {
     expect(f.cues.culturalEntries).toEqual([
       'a group starts to say or do something',
       'custom or expectation words',
-      'a demonym plus a place ("Chinese people in San Francisco")',
-      'a demonym names a group ("Chinese parents")',
+      'people of a country plus a place',
+      'people of a country are named',
       'a community or its alias is named',
     ]);
     expect(f.scores.culturalEntries).toBe(30 + 22 + 28 + 18 + 16);
@@ -385,15 +388,13 @@ describe('CR-4 sections score by weighted cues', () => {
     const asked = one("Should Frank's church split over the Compact in 2075?");
     expect(asked.section).toBe('openQuestions');
     expect(asked.scores.worldEvents).toBe(Math.round(plain.scores.worldEvents! * 0.25));
-    expect(asked.cues.worldEvents).toContain(
-      'a question mark cuts every other section to a quarter',
-    );
+    expect(asked.cues.worldEvents).toContain('a question mark cuts the rest to a quarter');
   });
 
   test('CR-4 a character as subject halves the world event reading; no character cuts the moment reading', () => {
     const f = one('Mark moves to Seattle in 2061 for a job at a Compact logistics firm');
     expect(f.scores.worldEvents).toBe(8);
-    expect(f.cues.worldEvents).toContain('a character as subject halves the world event reading');
+    expect(f.cues.worldEvents).toContain('a character named halves the world event');
     const g = one(
       "Siyuan's temple starts hosting Compact officials for merit-making dinners in 2070",
     );
@@ -410,9 +411,7 @@ describe('CR-4 sections score by weighted cues', () => {
     const f = one(
       "Siyuan's temple starts hosting Compact officials for merit-making dinners in 2070",
     );
-    expect(f.cues.culturalEntries).toContain(
-      'the line starts with a place or community (a group custom, not one person)',
-    );
+    expect(f.cues.culturalEntries).toContain('the line starts with a place or community');
     const g = one('blue green');
     expect(g.section).toBe('openQuestions');
     expect(g.cues.openQuestions).toEqual(['nothing matched, so it waits as a question']);
@@ -423,7 +422,7 @@ describe('CR-4 sections score by weighted cues', () => {
     const g = one('叶落归根 means returning to your roots');
     expect(g.section).toBe('glossaryTerms');
     expect(g.cues.glossaryTerms).toEqual([
-      'Chinese characters that are not a name in the bible',
+      'Chinese characters that are not a name',
       'a word is explained',
     ]);
   });
@@ -467,7 +466,8 @@ describe('CR-5 three routes', () => {
       'unknown name "Rosa Delgado"',
     );
     expect(one('Dawn and Mark argue about whether to raise LiNa bilingual').reasons).toEqual([
-      'one moment for each of 2 characters, each in its own words',
+      'a moment for each of 2 characters',
+      'LiNa Sullivan is named too',
     ]);
     expect(one("望安 goes by 'Wanda' at school").reasons).toEqual([
       '"Wanda" may also be a glossary term',
@@ -590,7 +590,7 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
           demographic: '0-18',
           startYear: 2070,
           endYear: 2100,
-          body: '<p>Teenagers in Jinan treat an American college degree as a joke by the 2070s</p>',
+          body: 'Teenagers in Jinan treat an American college degree as a joke by the 2070s',
           status: 'idea',
         },
       },
@@ -689,5 +689,168 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
         valid(f);
       }
     }
+  });
+});
+
+describe('A48 review fixes', () => {
+  test('CR-2 "before 2070" ends the year before and takes the start it inherits', () => {
+    expect(parseYears('before 2070')).toMatchObject({ start: null, end: 2069 });
+    expect(parseYears('before the 2070s')).toMatchObject({ start: null, end: 2069 });
+    const f = one('Kids in Jinan stop wearing masks before 2070');
+    expect(mainDraft(f)).toMatchObject({ startYear: 2066, endYear: 2069 });
+    expect(f.years.source).toBe(
+      '"before" a year in the text, taken as the end the year before; the start is the story year',
+    );
+  });
+
+  test('CR-2 an inherited start is named in the source when the sentence gives only an end', () => {
+    const facts = routeCapture(
+      'In 2060 the crash hits. Kids in Jinan wear masks until 2064.',
+      INDEX,
+      OPTS,
+    ).facts;
+    expect(facts[1]!.years).toEqual({
+      start: 2060,
+      end: 2064,
+      source: 'an end year in the text; the start is the year of the sentence before',
+    });
+  });
+
+  test('CR-2 "early", "mid" and "late" before a decade leave a clean title and the whole decade', () => {
+    const f = one('Kids in Jinan wear masks in the late 2060s');
+    expect(mainDraft(f)).toMatchObject({
+      title: 'Kids in Jinan wear masks',
+      startYear: 2060,
+      endYear: 2069,
+    });
+    expect(titleFrom('Kids wear masks by the mid-2070s')).toBe('Kids wear masks');
+  });
+
+  test('CR-5 a range that runs backwards or a year past the timeline goes to Route B', () => {
+    const until = one('Kids in Jinan wear masks until 2060');
+    expect(until.years).toMatchObject({ start: 2066, end: 2060 });
+    expect(until.reasons).toContain('the end year comes before the start');
+    expect(until.route).toBe('fast');
+    const back = one('Kids in Jinan wear masks from 2070 to 2065');
+    expect(back.reasons).toContain('the end year comes before the start');
+    expect(back.route).toBe('fast');
+    const late = one('Kids in Jinan wear masks in 2150');
+    expect(late.reasons).toContain("the year is after the timeline's end");
+    expect(late.route).toBe('fast');
+    const hinted = one('Kids in Jinan wear masks in 2070', {
+      hints: [{ fact: 0, startYear: 2080, endYear: 2070 }],
+    });
+    expect(hinted.reasons).toContain('the end year comes before the start');
+    expect(hinted.route).toBe('fast');
+    expect(one('Kids in Jinan wear masks in 2070').route).toBe('local');
+  });
+
+  test('CR-5 a second person a moment would leave out is flagged', () => {
+    const wed = one('Dawn Li marries Mark Sullivan in 2060');
+    expect(wed.drafts.map((d) => d.data?.characterId)).toEqual([DAWN]);
+    expect(wed.reasons).toEqual(['Mark Sullivan is named too']);
+    expect(wed.route).toBe('fast');
+    const moves = one('In the 2060s, Mark moves to Seattle and Dawn moves to Jinan');
+    expect(moves.reasons).toEqual([
+      'Dawn Li is named too',
+      'a second clause names Dawn Li, probably another fact',
+    ]);
+    expect(moves.route).toBe('fast');
+    // "and" between two subjects before the verb is not a second clause.
+    expect(one("Frank and Frank's father argue in 2062").reasons).toEqual([
+      'a moment for each of 2 characters',
+    ]);
+  });
+
+  test('CR-3 CR-5 a capitalised first word the bible lacks, before a life verb, is an unknown name', () => {
+    const f = one('Rosa meets Mark in 2062');
+    expect(f.section).toBe('moments');
+    expect(f.reasons).toEqual(['unknown name "Rosa"']);
+    expect(f.route).toBe('fast');
+    expect(f.candidates).toContainEqual({
+      kind: 'unknown',
+      id: null,
+      label: 'Rosa',
+      matched: 'rosa',
+    });
+    expect(one('Rosa and Mark argue in 2062').reasons).toContain('unknown name "Rosa"');
+    const teens = one('Teenagers in Jinan treat an American college degree as a joke by the 2070s');
+    expect(teens.reasons).toEqual([]);
+    expect(teens.route).toBe('local');
+    expect(one('Mark gets a bike in 2062').route).toBe('local');
+  });
+
+  test('CR-3 a place with no community takes the community of its nearest larger place', () => {
+    const f = one('Chinese people in Seattle start bowing in 2070');
+    expect(f.communities.map((c) => c.id)).toEqual([
+      'pacific-states-ca-or-wa',
+      'chinese-diaspora-in-california',
+      'china-national',
+    ]);
+    expect(f.communities[0]!.why).toBe('the place Seattle, in Washington State');
+    expect(mainDraft(f).communityId).toBe('pacific-states-ca-or-wa');
+  });
+
+  test('CR-5 a hinted ID the index lacks is ignored and said', () => {
+    const f = one('Kids in Jinan wear masks in 2070', {
+      hints: [{ fact: 0, communityId: 'atlantis', demographic: 'toddlers' }],
+    });
+    expect(mainDraft(f)).toMatchObject({ communityId: 'jinan-shandong', demographic: '0-18' });
+    expect(f.communities.map((c) => c.id)).not.toContain('atlantis');
+    expect(f.reasons).toEqual([
+      'the community picked is not in the list',
+      'the age group picked is not in the list',
+    ]);
+    const g = one('The war ends in 2070', { hints: [{ fact: 0, categoryId: 'nope' }] });
+    expect(mainDraft(g).categoryId).toBeUndefined();
+    expect(g.reasons).toContain('the category picked is not in the list');
+    const h = one('Someone learns to drive in 2070', {
+      hints: [{ fact: 0, section: 'moments', characterId: 'nobody' }],
+    });
+    expect(mainDraft(h).characterId).toBeUndefined();
+    expect(h.reasons).toContain('the character picked is not in the bible');
+  });
+
+  test('CR-3 a first name that is an English word matches only with a capital', () => {
+    const mark = INDEX.characters.find((c) => c.id === MARK)!;
+    expect(mark.capitalOnly).toEqual(['mark']);
+    expect(INDEX.characters.find((c) => c.id === DAWN)!.capitalOnly).toEqual(['dawn']);
+    expect(INDEX.characters.find((c) => c.id === QIN)!.capitalOnly).toEqual([]);
+    expect(resolve('They mark the holiday with lanterns in 2070', INDEX).characters).toEqual([]);
+    expect(resolve('mark moves to seattle', INDEX).characters).toEqual([]);
+    expect(resolve('mark sullivan moves to seattle', INDEX).characters.map((c) => c.id)).toEqual([
+      MARK,
+    ]);
+    expect(resolve('Mark moves to Seattle', INDEX).characters.map((c) => c.id)).toEqual([MARK]);
+  });
+
+  test('CR-3 "U.S." is not two unknown names', () => {
+    const f = one('The U.S. bans cars in 2070.');
+    expect(f.candidates.filter((c) => c.kind === 'unknown')).toEqual([]);
+    expect(f.section).toBe('worldEvents');
+  });
+
+  test('CR-4 cue labels fit a chip and say "people of a country", not "demonym"', () => {
+    const labels = [
+      ...LEXICON.cues.map((c) => c.label),
+      ...LEXICON.adjustments.map((a) => a.label),
+      LEXICON.fallback.label,
+    ];
+    for (const l of labels) {
+      expect(l.length, l).toBeLessThan(50);
+      expect(l, l).not.toMatch(/demonym/i);
+    }
+    const f = one('Chinese parents stop sending kids abroad after 2068');
+    expect(JSON.stringify([f.communities, f.reasons])).not.toMatch(/demonym/i);
+  });
+
+  test('CR-5 A44 ED-2 bodies are the sentence as typed in Markdown, and a question stores it once', () => {
+    const f = one('Kids in Jinan say <b>ok</b> & more in 2070');
+    expect(mainDraft(f).body).toBe('Kids in Jinan say <b>ok</b> & more in 2070');
+    const q = one("Should Frank's church split over the Compact in 2075?");
+    expect(mainDraft(q)).toMatchObject({
+      question: "Should Frank's church split over the Compact in 2075?",
+      body: '',
+    });
   });
 });

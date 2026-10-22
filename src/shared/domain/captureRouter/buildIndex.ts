@@ -74,15 +74,25 @@ export function characterAliases(
 export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON): RouterIndex {
   const list = (id: string) => input.lists.find((l) => l._id === id)?.items ?? [];
   const e = input.entries;
+  const english = new Set(lexicon.englishWords);
 
   const characters: IndexedCharacter[] = live(e.characters).map((d) => {
     const names = (d.names ?? {}) as Doc;
     const name = str(names.full) || str(d.title);
     const id = d._id as string;
+    const aliases = characterAliases(
+      name,
+      str(names.chinese),
+      lexicon.characters[id] ?? [],
+      lexicon,
+    );
+    const full = foldAlias(name);
     return {
       id,
       name,
-      aliases: characterAliases(name, str(names.chinese), lexicon.characters[id] ?? [], lexicon),
+      aliases,
+      // A first name that is an ordinary English word ("mark") needs a capital in the text.
+      capitalOnly: aliases.filter((a) => a !== full && english.has(a)),
     };
   });
 

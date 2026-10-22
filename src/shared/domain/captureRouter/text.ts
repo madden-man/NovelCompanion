@@ -99,7 +99,3 @@ export function wordsPattern(words: readonly string[], flags = 'u'): RegExp {
   const sorted = [...words].sort((a, b) => b.length - a.length).map(escapeRegExp);
   return new RegExp(`(?<![\\p{L}\\p{N}])(?:${sorted.join('|')})(?![\\p{L}\\p{N}])`, flags);
 }
-
-/** Escape text for the body of an entry, which is stored as HTML. */
-export const escapeHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
