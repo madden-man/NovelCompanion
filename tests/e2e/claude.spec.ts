@@ -285,6 +285,35 @@ test('IP-16 NF-2 a conversation renames in place as one undo step, and Clear and
   await expect(panel().getByTestId('claude-history')).not.toContainText(
     'Hale family, the long version',
   );
+
+  // ED-3: Cmd+Z now reaches the rename of a conversation that is gone. It is skipped
+  // with a plain notice, and undo keeps working for the next step.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect(page.getByTestId('undo-notice')).toHaveText(
+    'Undo skipped: this field changed since that step, so nothing was overwritten (the conversation was renamed or deleted since).',
+  );
+  const history = panel().getByTestId('claude-history');
+  await history.selectOption({ index: 1 });
+  await expect(history).not.toHaveValue('');
+  await expect(panel().getByTestId('claude-conversation')).toBeVisible();
+  const other = await history.inputValue();
+  const otherTitle = (await invoke('claude.run', { id: other })).run.title;
+  await fillEditable(
+    panel().getByTestId('claude-conversation').getByTestId('claude-title'),
+    'Margaret, at 82',
+  );
+  await expect
+    .poll(async () => (await invoke('claude.run', { id: other })).run.title)
+    .toBe('Margaret, at 82');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect
+    .poll(async () => (await invoke('claude.run', { id: other })).run.title)
+    .toBe(otherTitle);
+  await expect(page.getByTestId('undo-notice')).toHaveText(
+    `Undid: Renamed the conversation ${otherTitle}`,
+  );
 });
 
 test('AI-4 asking for a scene gets a one-sentence refusal that offers the facts', async () => {

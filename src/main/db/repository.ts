@@ -2539,10 +2539,6 @@ export const MANUSCRIPT_LOCKED = 'The manuscript text is imported, not edited he
 export const PURGE_NOT_IN_TRASH =
   'Only an entry in the trash can be deleted forever. Move it to the trash first.';
 
-/** IP-17: a list item proposal is approved or rejected as it stands. */
-export const LIST_ADD_NO_EDIT =
-  'A new list item cannot be edited here. Reject it, or approve it and rename the item in Lists.';
-
 /** IP-18: fields only the manuscript importer writes. */
 export const LOCKED_FIELDS: Partial<Record<EntryCollection, readonly string[]>> = {
   chapters: ['manuscriptText', 'manuscriptSource', 'sourceFile'],

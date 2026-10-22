@@ -493,6 +493,20 @@ test("IP-10 the stepper starts at the story year's unit and moves by a decade, f
   await expect(lineOf('CU3')).toBeVisible();
   await culture().getByTestId('culture-to-story').click();
   await expect(unitShown()).toHaveText('2040s');
+  // After a step, a new story year does not move the stepper; Back to the story year goes to it.
+  await culture().getByTestId('culture-next').click();
+  await expect(unitShown()).toHaveText('2050s');
+  await invoke('storyTime.set', { time: { year: 2063 } });
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2063');
+  await expect(culture().getByTestId('culture-to-story')).toHaveText(
+    'Back to the story year, 2060s',
+  );
+  await expect(unitShown()).toHaveText('2050s');
+  await culture().getByTestId('culture-to-story').click();
+  await expect(unitShown()).toHaveText('2060s');
+  await expect(culture().getByTestId('culture-to-story')).toHaveCount(0);
+  await invoke('storyTime.set', { time: { year: 2047 } });
+  await expect(unitShown()).toHaveText('2040s');
 
   // Five years: the unit is a setting of the bible, chosen here, one undo step.
   await pickEditable(culture().getByTestId('culture-step-by'), 'five');

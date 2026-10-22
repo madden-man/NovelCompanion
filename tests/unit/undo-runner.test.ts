@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   UndoManager,
   createCommand,
+  deleteCommand,
   editCommand,
   renameCommand,
   stepNotice,
@@ -219,5 +220,59 @@ describe("SM-7 a step outside the entries (kind: 'run', the scene outline)", () 
     expect(stepNotice('undo', r)).toBe('Could not undo: The scene outline was not saved.');
     expect(m.stack.canUndo).toBe(true);
     expect(m.stack.canRedo).toBe(false);
+  });
+});
+
+describe('ED-3 a step that cannot be checked never stops undo', () => {
+  test('ED-3 a step whose check throws is skipped with its reason and the next step still runs', async () => {
+    const f = fakeIO();
+    f.docs.set('A', { _id: 'A', title: 'Ada', backstory: 'Oakland' });
+    const m = new UndoManager();
+    m.record(
+      editCommand(
+        'Changed Backstory on Ada',
+        'characters',
+        'A',
+        { backstory: '' },
+        { backstory: 'Oakland' },
+      ),
+    );
+    const throwing: Op = {
+      kind: 'run',
+      check: async () => {
+        throw new Error('There is no conversation with that ID.');
+      },
+      apply: async () => undefined,
+    };
+    m.record({ label: 'Renamed the conversation', undo: [throwing], redo: [throwing] });
+    const r = await m.step('undo', f.io);
+    expect(r).toEqual({
+      status: 'skipped',
+      label: 'Renamed the conversation',
+      reason: 'There is no conversation with that ID.',
+      why: 'error',
+    });
+    expect(stepNotice('undo', r)).toBe(
+      'Undo skipped: There is no conversation with that ID. Nothing was written.',
+    );
+    // The stacks stay consistent and the step before it still undoes.
+    expect(m.stack.canRedo).toBe(false);
+    expect(await m.step('undo', f.io)).toEqual({
+      status: 'applied',
+      label: 'Changed Backstory on Ada',
+    });
+    expect(f.docs.get('A')!.backstory).toBe('');
+  });
+
+  test('ED-3 IP-16 undoing the delete of an entry deleted forever says the entry no longer exists', async () => {
+    const f = fakeIO();
+    const m = new UndoManager();
+    // Moved to the trash, then deleted forever: undo would restore an entry that is gone.
+    m.record(deleteCommand('places', 'P', 'Purge Wharf'));
+    const r = await m.step('undo', f.io);
+    expect(r).toMatchObject({ status: 'skipped', why: 'gone' });
+    expect(stepNotice('undo', r)).toBe(
+      'Undo skipped: the entry no longer exists (it was deleted forever), so nothing was written.',
+    );
   });
 });
