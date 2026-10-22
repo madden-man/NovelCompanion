@@ -17,7 +17,16 @@ import { CAPTURE_NO_DELETE } from '../../src/main/claude/features/capture';
 import type { ClaudeRun, ClaudeStreamEvent } from '../../src/shared/claude';
 import type { Request, Response } from '../../src/shared/ipc';
 import type { EntryCollection } from '../../src/shared/schema';
-import { captureQuestionData, fileCapture } from '../../src/shared/domain/capture';
+import {
+  captureQuestionData,
+  fileCapture,
+  fileLocalDrafts,
+  mergeFilings,
+} from '../../src/shared/domain/capture';
+import { buildIndex, localSourceNote } from '../../src/shared/domain/captureRouter';
+import { indexFromSession, povCommunityId } from '../../src/main/claude/features/captureIndex';
+import * as boxRouting from '../../src/renderer/src/workspace/captureLocal';
+import { defaultStatus } from '../../src/shared/domain/lists';
 import type { CaptureProposal } from '../../src/shared/domain/capture';
 import { UndoManager } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
@@ -807,5 +816,136 @@ describe('CR-9 a split capture stops and fails as one', () => {
       r.call('claude.capture', { runId: runId(), text: 'Many facts.', storyTime: { year: 2034 } }),
     ).rejects.toThrow(CAPTURE_TOO_MANY_FACTS);
     expect(r.fake.requests).toHaveLength(0);
+  });
+});
+
+// ---------- a48-box: Route A files from the box (CR-6, CR-9, CR-10) ----------
+
+describe('CR-6 Route A files from the box, without Claude', () => {
+  const MOONCAKES = 'Teenagers in Guangzhou start to eat mooncakes with coffee by the 2050s.';
+  const today = '2026-10-22';
+  const route = (text: string) =>
+    routeCapture(text, buildIndex(indexFromSession(bible)), {
+      storyYear: 2034,
+      povCommunityId: null,
+      hints: [],
+    });
+  const live = (c: EntryCollection) => bible.model.all(c).filter((d) => !d.deletedAt);
+  const communityLabels = () =>
+    (bible.model.get('lists', 'communities')!.items as { label: string }[]).map((i) => i.label);
+  /** The channels the filing used, in order. */
+  function logged() {
+    const calls: string[] = [];
+    const via: Invoke = (async (channel, req) => {
+      calls.push(channel);
+      return invoke(channel, req);
+    }) as Invoke;
+    return { calls, via };
+  }
+
+  test('CR-6 CR-10 a clear cultural line routes locally, writes nothing until File it, then files an idea with the local source note', async () => {
+    const before = live('culturalEntries').length;
+    const runsBefore = bible.model.all('conversations').length;
+    const [line] = route(MOONCAKES).facts;
+    expect(line).toMatchObject({ route: 'local', section: 'culturalEntries', asks: [] });
+    // Routing and drafting write nothing (CR-6), and no Claude run is saved.
+    expect(live('culturalEntries')).toHaveLength(before);
+    expect(bible.model.all('conversations')).toHaveLength(runsBefore);
+
+    const idea = defaultStatus(
+      bible.model.all('lists') as unknown as Parameters<typeof defaultStatus>[0],
+      'idea',
+    );
+    const { calls, via } = logged();
+    const filing = await fileLocalDrafts(via, line!.drafts, today, idea);
+    expect(calls).toEqual(['entry.create']);
+    expect(filing.failed).toEqual([]);
+    expect(live('culturalEntries')).toHaveLength(before + 1);
+    const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
+    expect(made).toMatchObject({
+      title: 'Teenagers in Guangzhou start to eat mooncakes with coffee',
+      communityId: 'guangzhou',
+      demographic: '0-18',
+      startYear: 2050,
+      endYear: 2100,
+      status: idea,
+      sourceNote: localSourceNote(today),
+      body: MOONCAKES,
+    });
+    expect(made.sourceNote).toBe('From a capture on 2026-10-22, filed without Claude.');
+    const undo = new UndoManager();
+    undo.record(filing.command!);
+    await undo.step('undo', undoIO(invoke));
+    expect(bible.model.get('culturalEntries', made._id)?.deletedAt).toBeTruthy();
+  });
+
+  test('CR-9 CR-10 ED-3 IP-17 a mixed filing mints the list item first, writes the local line, approves the proposals, and undoes as one step', async () => {
+    // Routed first: `capture` below routes its own text full through the mock.
+    const [line] = route(MOONCAKES).facts;
+    expect(line).toMatchObject({ route: 'local' });
+    const { turn } = await capture(MOVE);
+    const proposals = proposalsOf(turn.proposalIds).map(asCapture);
+    expect(proposals).toHaveLength(2);
+    // The writer picks a new community for the line (IP-17): the draft names it by its ref.
+    const drafts = [
+      { op: 'listAdd' as const, listId: 'communities', label: 'Jinan', ref: 'new:jinan' },
+      ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:jinan' } })),
+    ];
+    const eventsBefore = live('worldEvents').length;
+    const momentsBefore = live('moments').length;
+    const linesBefore = live('culturalEntries').length;
+    expect(communityLabels()).not.toContain('Jinan');
+
+    const { calls, via } = logged();
+    const local = await fileLocalDrafts(via, drafts, today, 'idea');
+    const approved = await fileCapture(via, proposals, []);
+    const filing = mergeFilings(local, approved);
+    expect(filing.failed).toEqual([]);
+    expect(calls.slice(0, 3)).toEqual(['lists.get', 'lists.addItem', 'entry.create']);
+    expect(filing.filed.map((f) => f.collection)).toEqual([
+      'culturalEntries',
+      'moments',
+      'worldEvents',
+    ]);
+    const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
+    expect(made).toMatchObject({ communityId: 'jinan', sourceNote: localSourceNote(today) });
+    // The approved proposals keep Claude's source note; only the local line says without Claude.
+    expect(String(bible.model.get('moments', filing.filed[1]!.id)!.sourceNote)).not.toContain(
+      'without Claude',
+    );
+    expect(filing.command!.label).toBe(
+      'Filed a capture: Teenagers in Guangzhou start to eat mooncakes with coffee, Lives in Seattle and 2 more',
+    );
+
+    const undo = new UndoManager();
+    undo.record(filing.command!);
+    const io = undoIO(invoke);
+    expect(await undo.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect(live('culturalEntries')).toHaveLength(linesBefore);
+    expect(live('moments')).toHaveLength(momentsBefore);
+    expect(live('worldEvents')).toHaveLength(eventsBefore);
+    expect(communityLabels()).not.toContain('Jinan');
+    expect(await undo.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect(live('culturalEntries')).toHaveLength(linesBefore + 1);
+    expect(communityLabels()).toContain('Jinan');
+    expect(bible.model.get('culturalEntries', made._id)).toMatchObject({ communityId: 'jinan' });
+    // Leave the bible as the fixture had it.
+    await undo.step('undo', io);
+  });
+
+  test('CR-1 CR-9 the box reads the bible as main does: the same index, the same writing strand community, the same refusal of a long capture', async () => {
+    const time = { year: 2032, chapterId: 'CH2', strandId: 'CH2-backstory' };
+    const box = await boxRouting.loadCaptureBible(invoke, 2100, time);
+    expect(box.index).toEqual(buildIndex(indexFromSession(bible)));
+    expect(box.povCommunityId).toBe(povCommunityId(bible, time));
+    expect(boxRouting.CAPTURE_TOO_MANY_FACTS).toBe(CAPTURE_TOO_MANY_FACTS);
+    const text = 'Teenagers start to wear paper masks by 2060. Zhou Lan moved to Seattle.';
+    expect(boxRouting.routeWith(text, box, 2034, [])).toEqual(
+      routeCapture(text, buildIndex(indexFromSession(bible)), {
+        storyYear: 2034,
+        povCommunityId: box.povCommunityId,
+        hints: [],
+      }).facts,
+    );
   });
 });
