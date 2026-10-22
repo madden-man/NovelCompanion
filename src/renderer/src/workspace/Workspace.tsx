@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { collectionInfo } from '../../../shared/schema';
+import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
 import { EntryPane } from './editor';
@@ -214,14 +214,25 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Writing tools', view.kind === 'words', () => setView({ kind: 'words' }))}
           </div>
           <AppMenu
-            groups={APP_MENU.map((g) => ({
-              label: g.label,
-              items: g.items.map((it) => ({
-                label: it.label,
-                active: view.kind === it.kind,
-                onSelect: () => setView({ kind: it.kind }),
+            groups={[
+              ...APP_MENU.map((g) => ({
+                label: g.label,
+                items: g.items.map((it) => ({
+                  label: it.label,
+                  active: view.kind === it.kind,
+                  onSelect: () => setView({ kind: it.kind }),
+                })),
               })),
-            }))}
+              // IP-13: every collection has a door, its section list with New and rename in place.
+              {
+                label: 'All sections',
+                items: ENTRY_COLLECTIONS.map((c) => ({
+                  label: collectionInfo[c].plural,
+                  active: view.kind === 'section' && view.collection === c,
+                  onSelect: () => openSection(c),
+                })),
+              },
+            ]}
           />
         </nav>
         {view.kind === 'section' ? (

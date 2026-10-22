@@ -8,6 +8,7 @@ import { DOCUMENT_KIND_LABELS } from '../../../shared/domain/import/documents';
 import type { DocumentKind } from '../../../shared/domain/import/documents';
 import { GRID_TARGETS } from '../../../shared/domain/import/guess';
 import type { GridMapping, Mapping, TableMapping } from '../../../shared/domain/import/types';
+import { ListSelect } from './listSelect';
 import { call, plainError } from '../api';
 import { useEntries } from './data';
 import { formatTime } from './format';
@@ -20,12 +21,6 @@ type Applied = Response<'import.apply'>;
 type Preview = Response<'import.preview'>;
 type Fields = Response<'import.fields'>['fields'];
 type DocInfo = Response<'import.document'>;
-
-const STATUS_CHOICES = [
-  ['canon', 'Canon'],
-  ['planned', 'Planned'],
-  ['idea', 'Idea'],
-] as const;
 
 type PickedFile = NonNullable<Response<'import.pickFile'>['file']>;
 
@@ -695,21 +690,20 @@ function CommonOptions(props: {
       <div className="row">
         <label className="field narrow">
           Status
-          <select value={status} onChange={(e) => fixed({ status: e.target.value })}>
-            {STATUS_CHOICES.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
+          <ListSelect
+            listId="statuses"
+            value={status}
+            onChange={(v) => fixed({ status: v ?? '' })}
+          />
         </label>
         <label className="field narrow">
           Provenance
-          <select value={provenance} onChange={(e) => fixed({ provenance: e.target.value })}>
-            <option value="">Not set</option>
-            <option value="researched">Researched</option>
-            <option value="invented">Invented</option>
-          </select>
+          <ListSelect
+            listId="provenance"
+            value={provenance}
+            emptyLabel="Not set"
+            onChange={(v) => fixed({ provenance: v ?? '' })}
+          />
         </label>
       </div>
       {(mapping.shape === 'table' || mapping.target.collection === 'moments') && (

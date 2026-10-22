@@ -157,9 +157,11 @@ test('SM-6 the rail is the nine screens in order under the search box, with no M
     'Culture by year',
   ]) {
     await expect(nav().getByRole('button', { name: gone, exact: true })).toHaveCount(0);
-    await expect(
-      nav().getByRole('menuitem', { name: gone, exact: true, includeHidden: true }),
-    ).toHaveCount(0);
+    // IP-13: the section lists are back as doors under the App menu's All sections, and only there.
+    const menuItems = nav().getByRole('menuitem', { name: gone, exact: true, includeHidden: true });
+    await expect(menuItems).toHaveCount(
+      ['Moments', 'Chapters', 'Open questions'].includes(gone) ? 1 : 0,
+    );
   }
 });
 
@@ -182,7 +184,8 @@ test('SM-6 the App menu holds the nine utilities and the reference views, and ea
   await appButton().click();
   await expect(appButton()).toHaveAttribute('aria-expanded', 'true');
   await expect(appMenu()).toBeVisible();
-  await expect(appMenu().getByRole('group')).toHaveCount(2);
+  // IP-13: a third group, All sections, follows (app.spec.ts covers it).
+  await expect(appMenu().getByRole('group')).toHaveCount(3);
   await expect(appMenu().getByRole('group', { name: 'Manage' }).getByRole('menuitem')).toHaveText(
     APP_MENU_ITEMS.slice(0, 9),
   );
@@ -363,8 +366,9 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await page.keyboard.press('Enter');
   await expect(appMenu()).toBeVisible();
   await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
+  // IP-13: All sections is the last group, so End reaches its last section.
   await page.keyboard.press('End');
-  await expect(appMenu().getByRole('menuitem', { name: 'Glossary table' })).toBeFocused();
+  await expect(appMenu().getByRole('menuitem', { name: 'Continuity findings' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
   for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
@@ -375,7 +379,7 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await expect(appButton()).toBeFocused();
   // ArrowUp on the button opens it on the last item; Tab closes it and moves on.
   await page.keyboard.press('ArrowUp');
-  await expect(appMenu().getByRole('menuitem', { name: 'Glossary table' })).toBeFocused();
+  await expect(appMenu().getByRole('menuitem', { name: 'Continuity findings' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(appMenu()).toBeHidden();
 

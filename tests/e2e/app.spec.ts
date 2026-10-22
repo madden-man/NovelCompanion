@@ -222,3 +222,65 @@ test('ARCH-8 opening a bible that is not registered fails plainly and keeps the 
     bible: { id: 'tide-lines', name: 'Tide Lines' },
   });
 });
+
+test('IP-13 the App menu lists every section under All sections; each opens its list, where New makes an entry and a row renames in place', async () => {
+  const { ENTRY_COLLECTIONS, collectionInfo } = await import('../../src/shared/schema');
+  await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines');
+  const nav = page.getByRole('navigation', { name: 'Sections' });
+  const button = nav.getByTestId('app-menu-button');
+  await button.click();
+  const group = nav.getByRole('group', { name: 'All sections' });
+  await expect(group.getByRole('menuitem')).toHaveText(
+    ENTRY_COLLECTIONS.map((c) => collectionInfo[c].plural),
+  );
+  // Every section opens its own list.
+  for (const c of ENTRY_COLLECTIONS) {
+    if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
+    await group.getByRole('menuitem', { name: collectionInfo[c].plural, exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: collectionInfo[c].plural, level: 2 }),
+    ).toBeVisible();
+    await expect(
+      nav.getByRole('group', { name: 'All sections', includeHidden: true }).getByRole('menuitem', {
+        name: collectionInfo[c].plural,
+        exact: true,
+        includeHidden: true,
+      }),
+    ).toHaveAttribute('aria-current', 'page');
+  }
+  // From the keyboard: Enter on the App button opens the menu, Enter on an item opens its list.
+  await button.focus();
+  await page.keyboard.press('Enter');
+  await group.getByRole('menuitem', { name: 'Open questions', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Open questions', level: 2 })).toBeVisible();
+  // New makes one.
+  await page.getByRole('button', { name: 'New open question' }).click();
+  const form = page.getByTestId('new-entry');
+  await form.locator('[data-field="title"] input').fill('Who keeps the harbor log?');
+  await form.getByRole('button', { name: 'Create open question' }).click();
+  const list = page.getByTestId('entry-list');
+  const row = list.getByRole('button', { name: /Who keeps the harbor log\?/ });
+  await expect(row).toBeVisible();
+  // The row renames in place: F2 opens its title as a field, Enter saves.
+  await row.focus();
+  await page.keyboard.press('F2');
+  const rename = list.getByTestId('row-rename');
+  await rename.locator('input').fill('Who keeps the tide log?');
+  await rename.locator('input').press('Enter');
+  await expect(list.getByRole('button', { name: /Who keeps the tide log\?/ })).toBeVisible();
+  const stored = await page.evaluate(() =>
+    window.api.invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' }),
+  );
+  expect(stored.entries.map((e) => e.entry.title)).toContain('Who keeps the tide log?');
+  // A double-click renames too, here a place.
+  await button.click();
+  await group.getByRole('menuitem', { name: 'Places', exact: true }).click();
+  await page.getByRole('button', { name: 'New place' }).click();
+  await page.getByTestId('new-entry').locator('[data-field="title"] input').fill('Pier Nine');
+  await page.getByTestId('new-entry').getByRole('button', { name: 'Create place' }).click();
+  await list.getByRole('button', { name: /Pier Nine/ }).dblclick();
+  await rename.locator('input').fill('Pier Ten');
+  await rename.locator('input').press('Enter');
+  await expect(list.getByRole('button', { name: /Pier Ten/ })).toBeVisible();
+});

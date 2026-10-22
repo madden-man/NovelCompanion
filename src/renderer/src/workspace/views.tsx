@@ -1,5 +1,4 @@
-import { createCommand, renameCommand, restoreCommand } from '../../../shared/domain/undoRunner';
-import { listAddCommand, listRemoveCommand } from '../../../shared/undoCommands';
+import { createCommand, restoreCommand } from '../../../shared/domain/undoRunner';
 import { WriteFieldset, useWriteGuard } from '../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -11,16 +10,16 @@ import {
   withoutDerived,
 } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
-import type { Response, WireList } from '../../../shared/ipc';
+import type { Response } from '../../../shared/ipc';
 import { blankEntry } from '../../../shared/domain/blank';
 import { fieldIssues } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
-import { itemPath } from '../../../shared/domain/lists';
 import { filterQuestions, questionCounts } from '../../../shared/domain/questions';
 import type { QuestionFilter } from '../../../shared/domain/questions';
 import { logsNewestFirst } from '../../../shared/domain/sessionLog';
 import { call, plainError } from '../api';
 import { useStore } from './data';
+import { ListChip } from './listChip';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
@@ -80,8 +79,9 @@ export function EntryList(props: {
   }, [entries, filter, state, collection]);
 
   const ro = useWriteGuard();
-  // IP-1: a character row renames in place, and New character takes the name in the list.
+  // IP-1, IP-13: every row renames in place; New character takes the name in the list.
   const inPlace = collection === 'characters';
+  const rename = renameSpec(collection);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   return (
@@ -142,18 +142,18 @@ export function EntryList(props: {
         <ul className="entry-list" data-testid="entry-list">
           {shown.map(({ entry, warnings }) => (
             <li key={entry._id}>
-              {inPlace && renaming === entry._id ? (
+              {renaming === entry._id ? (
                 <div className="entry-row entry-row-renaming" data-testid="row-rename">
                   <EntryEditable
-                    collection="characters"
+                    collection={collection}
                     id={entry._id}
-                    path="names.full"
-                    label="Full name"
+                    path={rename.path}
+                    label={rename.label}
                     kind="text"
                     allowEmpty={false}
                     autoOpen
                     entry={entry}
-                    extraPatch={(next) => ({ title: next })}
+                    extraPatch={rename.extraPatch}
                     onClose={() => {
                       const id = entry._id;
                       setRenaming(null);
@@ -175,12 +175,12 @@ export function EntryList(props: {
                   className="entry-row"
                   data-entry-id={entry._id}
                   aria-current={props.selected === entry._id ? 'true' : undefined}
-                  aria-keyshortcuts={inPlace ? 'F2' : undefined}
-                  title={inPlace && !ro.off ? 'Double-click or press F2 to rename' : undefined}
+                  aria-keyshortcuts="F2"
+                  title={!ro.off ? 'Double-click or press F2 to rename' : undefined}
                   onClick={() => props.onSelect(entry._id)}
-                  onDoubleClick={inPlace && !ro.off ? () => setRenaming(entry._id) : undefined}
+                  onDoubleClick={!ro.off ? () => setRenaming(entry._id) : undefined}
                   onKeyDown={
-                    inPlace && !ro.off
+                    !ro.off
                       ? (e) => {
                           if (e.key === 'F2') {
                             e.preventDefault();
@@ -200,7 +200,7 @@ export function EntryList(props: {
                       </span>
                     )}
                     {typeof entry.status === 'string' && (
-                      <span className={`chip ${entry.status}`}>{entry.status}</span>
+                      <ListChip listId="statuses" id={entry.status} />
                     )}
                     {warnings.length > 0 && (
                       <span className="chip warn-chip" title="Fields with warnings">
@@ -216,6 +216,34 @@ export function EntryList(props: {
       )}
     </section>
   );
+}
+
+/**
+ * IP-13: which field a row's rename writes. A character's full name (the title
+ * follows it), a family's or an era's name (a title that holds the old name
+ * follows it), and every other entry's title.
+ */
+function renameSpec(collection: EntryCollection): {
+  path: string;
+  label: string;
+  extraPatch?: (next: unknown, entry: Record<string, unknown>) => Record<string, unknown>;
+} {
+  if (collection === 'characters') {
+    return { path: 'names.full', label: 'Full name', extraPatch: (next) => ({ title: next }) };
+  }
+  if (collection === 'families' || collection === 'eraStates') {
+    return {
+      path: 'name',
+      label: collection === 'families' ? 'Family name' : 'Era name',
+      extraPatch: (next, entry) => {
+        const old = typeof entry.name === 'string' ? entry.name : '';
+        const title = typeof entry.title === 'string' ? entry.title : '';
+        if (!title.trim() || title === old) return { title: next };
+        return old && title.includes(old) ? { title: title.split(old).join(String(next)) } : {};
+      },
+    };
+  }
+  return { path: 'title', label: 'Title' };
 }
 
 /**
@@ -625,198 +653,5 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   );
 }
 
-/** Every editable list, with rename, add, and remove (ED-8). */
-export function ListsView() {
-  const { lists } = useStore();
-  return (
-    <section className="ws-wide stack" aria-labelledby="lists-title">
-      <h2 id="lists-title">Lists</h2>
-      <p className="lede">
-        Types, communities, tags, family names, section names, and eras. Renaming an item updates
-        every entry that uses it.
-      </p>
-      <div className="lists-grid">
-        {lists.map((l) => (
-          <ListPanel key={l._id} list={l} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ListPanel({ list }: { list: WireList }) {
-  const undo = useUndo();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [label, setLabel] = useState('');
-  const [newLabel, setNewLabel] = useState('');
-  const [parent, setParent] = useState('');
-  const [message, setMessage] = useState<{ text: string; bad: boolean } | null>(null);
-  const addId = useId();
-  const parentId = useId();
-  const hierarchical = list._id === 'eventCategories';
-  const asDoc = { _id: list._id, label: list.label, items: list.items };
-
-  const rename = async (itemId: string) => {
-    setMessage(null);
-    try {
-      const r = await call('lists.rename', { listId: list._id, itemId, label });
-      undo.record(renameCommand(list.label, list._id, itemId, r.from, label.trim(), itemId));
-      setMessage({
-        text:
-          r.updated > 0
-            ? `Renamed. ${r.updated} ${r.updated === 1 ? 'entry was' : 'entries were'} updated.`
-            : 'Renamed. Every entry shows the new name.',
-        bad: false,
-      });
-      setEditing(null);
-    } catch (e) {
-      setMessage({ text: plainError(e), bad: true });
-    }
-  };
-
-  const add = async (e: FormEvent) => {
-    e.preventDefault();
-    setMessage(null);
-    try {
-      const { item } = await call('lists.addItem', {
-        listId: list._id,
-        label: newLabel,
-        parentId: parent || null,
-      });
-      undo.record(listAddCommand(call, list.label, list._id, item));
-      setNewLabel('');
-      setParent('');
-    } catch (err) {
-      setMessage({ text: plainError(err), bad: true });
-    }
-  };
-
-  const remove = async (itemId: string) => {
-    setMessage(null);
-    const item = list.items.find((i) => i.id === itemId);
-    try {
-      await call('lists.removeItem', { listId: list._id, itemId });
-      if (item) {
-        undo.record(
-          listRemoveCommand(call, list.label, list._id, {
-            id: item.id,
-            label: item.label,
-            parentId: item.parentId,
-          }),
-        );
-      }
-    } catch (e) {
-      setMessage({ text: plainError(e), bad: true });
-    }
-  };
-
-  return (
-    <div className="panel stack" data-list={list._id}>
-      <h3>{list.label}</h3>
-      <WriteFieldset className="stack tight">
-        {list.items.length === 0 ? (
-          <p className="example-note">No items yet.</p>
-        ) : (
-          <ul className="list-items">
-            {list.items.map((item) => (
-              <li key={item.id}>
-                {editing === item.id ? (
-                  <form
-                    className="row tight"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void rename(item.id);
-                    }}
-                  >
-                    <label className="sr-only" htmlFor={`rename-${list._id}-${item.id}`}>
-                      New name for {item.label}
-                    </label>
-                    <input
-                      id={`rename-${list._id}-${item.id}`}
-                      value={label}
-                      autoFocus
-                      onChange={(e) => setLabel(e.target.value)}
-                    />
-                    <button type="submit" className="btn small primary" disabled={!label.trim()}>
-                      Save name
-                    </button>
-                    <button type="button" className="btn small" onClick={() => setEditing(null)}>
-                      Cancel
-                    </button>
-                  </form>
-                ) : (
-                  <div className="row tight item-row">
-                    <span className="item-label">
-                      {hierarchical ? itemPath(asDoc, item.id) : item.label}
-                    </span>
-                    {item.detail && <span className="example-note">{item.detail}</span>}
-                    <span className="example-note">
-                      {item.usage === 1 ? 'used once' : `used ${item.usage} times`}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn small"
-                      aria-label={`Rename ${item.label}`}
-                      onClick={() => {
-                        setEditing(item.id);
-                        setLabel(item.label);
-                      }}
-                    >
-                      Rename
-                    </button>
-                    {!list.fixedItems && (
-                      <button
-                        type="button"
-                        className="btn small danger"
-                        aria-label={`Remove ${item.label}`}
-                        onClick={() => void remove(item.id)}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {!list.fixedItems && (
-          <form className="row tight" onSubmit={(e) => void add(e)}>
-            <label className="sr-only" htmlFor={addId}>
-              New item for {list.label}
-            </label>
-            <input
-              id={addId}
-              value={newLabel}
-              placeholder="New item"
-              onChange={(e) => setNewLabel(e.target.value)}
-            />
-            {hierarchical && (
-              <>
-                <label className="sr-only" htmlFor={parentId}>
-                  Inside
-                </label>
-                <select id={parentId} value={parent} onChange={(e) => setParent(e.target.value)}>
-                  <option value="">At the top</option>
-                  {list.items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      Inside {itemPath(asDoc, i.id)}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            <button type="submit" className="btn small" disabled={!newLabel.trim()}>
-              Add to {list.label}
-            </button>
-          </form>
-        )}
-      </WriteFieldset>
-      {message && (
-        <p className={message.bad ? 'callout crit' : 'callout'} role="status">
-          {message.text}
-        </p>
-      )}
-    </div>
-  );
-}
+/** The Lists screen moved to `listsScreen.tsx` (A47, a47-vocab). */
+export { ListsView } from './listsScreen';

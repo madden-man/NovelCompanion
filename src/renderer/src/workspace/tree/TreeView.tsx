@@ -1,4 +1,4 @@
-import { useBibleSettings } from '../bibleSettings';
+import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
@@ -39,7 +39,12 @@ import type {
   TreeGraph,
   TreePerson,
 } from '../../../../shared/domain/tree';
-import { createCommand, deleteCommand, editCommand } from '../../../../shared/domain/undoRunner';
+import {
+  createCommand,
+  deleteCommand,
+  editCommand,
+  renameCommand,
+} from '../../../../shared/domain/undoRunner';
 import type { UndoCommand } from '../../../../shared/domain/undoRunner';
 import { treeMoveCommand, treeMoves } from '../../../../shared/undoCommands';
 import { call, plainError } from '../../api';
@@ -52,6 +57,10 @@ import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
+import { Editable, mergeCommands, saveEntryField } from '../editable';
+import { ColourBox } from '../colourBox';
+import { ListSelect } from '../listSelect';
+import { useItemLook } from '../listChip';
 
 type TreeData = Response<'tree.get'>;
 type View = { x: number; y: number; w: number; h: number };
@@ -158,6 +167,8 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
     if (cardText) p.onCard({ text: cardText, el: e.currentTarget });
   };
   const stripes = p.colors.length ? p.colors : ['none'];
+  // A47 (IP-9): the status edge in the status list's colour.
+  const statusLook = useItemLook('statuses', p.person.status);
   const h = NODE_H / stripes.length;
   return (
     <g
@@ -185,7 +196,8 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       {stripes.map((c, i) => (
         <rect
           key={i}
-          className={`tnode-fam fam-${c}`}
+          className={c.startsWith('#') ? 'tnode-fam fam-hex' : `tnode-fam fam-${c}`}
+          style={c.startsWith('#') ? { fill: c } : undefined}
           x={0}
           y={i * h}
           width={6}
@@ -202,7 +214,15 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       <text className="tnode-state" x={NODE_W - 8} y={38} textAnchor="end" data-testid="node-state">
         {stateText(s)}
       </text>
-      <rect className={`tchip ${p.person.status}`} x={14} y={46} width={52} height={14} rx={7} />
+      <rect
+        className={`tchip ${p.person.status}`}
+        style={statusLook.colour ? { stroke: statusLook.colour } : undefined}
+        x={14}
+        y={46}
+        width={52}
+        height={14}
+        rx={7}
+      />
       <text className="tchip-text" x={40} y={56.5} textAnchor="middle">
         {p.person.status}
       </text>
@@ -407,9 +427,7 @@ export function TreeView(props: {
   );
 
   const colorOf = useMemo(() => {
-    const m = new Map(
-      families.map((f): [string, string] => [f._id, familyToken(f.color) ?? 'series-1']),
-    );
+    const m = new Map(families.map((f): [string, string] => [f._id, familyShade(f.color)]));
     return (ids: string[]) => ids.map((id) => m.get(id)).filter((c): c is string => Boolean(c));
   }, [families]);
 
@@ -880,7 +898,7 @@ export function TreeView(props: {
             families={families.map((f) => ({
               id: f._id,
               name: String(f.name),
-              color: familyToken(f.color) ?? 'series-1',
+              color: typeof f.color === 'string' ? f.color : null,
             }))}
           />
         </div>
@@ -902,13 +920,31 @@ export function TreeView(props: {
   );
 }
 
-/** The key to the tree's marks, a small overlay in its bottom left corner that opens on request (A45). */
+/**
+ * IP-12: how a family colour draws: one of the four series tokens (so it
+ * follows the theme) or, for any other stored hex, the hex itself.
+ */
+function familyShade(color: unknown): string {
+  const token = familyToken(color);
+  if (token) return token;
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)
+    ? color.toLowerCase()
+    : 'series-1';
+}
+
+/**
+ * The key to the tree's marks, a small overlay in its bottom left corner that
+ * opens on request (A45). IP-12: each family renames in place and has a colour
+ * box; the tree redraws with the new colour.
+ */
 function Legend(props: {
   open: boolean;
   onToggle: () => void;
-  families: { id: string; name: string; color: string }[];
+  families: { id: string; name: string; color: string | null }[];
 }) {
   const id = useId();
+  const undo = useUndo();
+  const ro = useWriteGuard();
   // A47 (IP-14): the link type labels are the bible's templates.
   const labels = useBibleSettings().templates.linkTypeLabels;
   return (
@@ -916,9 +952,38 @@ function Legend(props: {
       {props.open && (
         <div className="legend panel" id={id} role="region" aria-label="Tree legend">
           {props.families.map((f) => (
-            <span key={f.id}>
-              <span className={`sw fam-${f.color}`} />
-              {f.name}
+            <span key={f.id} className="legend-family" data-family-id={f.id}>
+              <ColourBox
+                label={`Colour of ${f.name}`}
+                value={f.color && /^#[0-9a-f]{6}$/i.test(f.color) ? f.color.toLowerCase() : null}
+                disabled={ro.off}
+                testId="legend-colour"
+                onPick={async (hex) => {
+                  await saveEntryField(undo, {
+                    collection: 'families',
+                    id: f.id,
+                    path: 'color',
+                    value: hex,
+                    label: 'Display color',
+                  });
+                }}
+              />
+              <Editable
+                kind="text"
+                label={`Name of the ${f.name} family`}
+                value={f.name}
+                allowEmpty={false}
+                testId="legend-family-name"
+                onSave={async (next) => {
+                  const to = next.trim();
+                  const r = await call('lists.rename', {
+                    listId: 'families',
+                    itemId: f.id,
+                    label: to,
+                  });
+                  undo.record(renameCommand('Families', 'families', f.id, r.from, to));
+                }}
+              />
             </span>
           ))}
           <span>
@@ -1246,7 +1311,8 @@ function AddRelativeForm(props: {
   const partners = anchor ? partnersOf(graph, anchor.id) : [];
   const [name, setName] = useState('');
   const [born, setBorn] = useState('');
-  const [status, setStatus] = useState<Status>('idea');
+  const defaultStatus = useDefaultStatus();
+  const [status, setStatus] = useState<Status>(() => defaultStatus('idea') as Status);
   const [linkType, setLinkType] = useState('biological');
   const [unionType, setUnionType] = useState('married');
   const [coParent, setCoParent] = useState(partners[0] ?? '');
@@ -1330,38 +1396,33 @@ function AddRelativeForm(props: {
         </div>
         <div className="field">
           <label htmlFor={ids.status}>Status</label>
-          <select
+          <ListSelect
             id={ids.status}
+            listId="statuses"
             value={status}
-            onChange={(e) => setStatus(e.target.value as Status)}
-          >
-            <option value="canon">Canon</option>
-            <option value="planned">Planned</option>
-            <option value="idea">Idea</option>
-          </select>
+            onChange={(v) => setStatus((v ?? defaultStatus('idea')) as Status)}
+          />
         </div>
         {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
           <div className="field">
             <label htmlFor={ids.type}>Link type</label>
-            <select id={ids.type} value={linkType} onChange={(e) => setLinkType(e.target.value)}>
-              {linkTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            <ListSelect
+              id={ids.type}
+              listId="parentLinkTypes"
+              value={linkType}
+              onChange={(v) => setLinkType(v ?? linkTypes[0]?.id ?? 'biological')}
+            />
           </div>
         )}
         {kind === 'partner' && (
           <div className="field">
             <label htmlFor={ids.type}>Union type</label>
-            <select id={ids.type} value={unionType} onChange={(e) => setUnionType(e.target.value)}>
-              {unionTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            <ListSelect
+              id={ids.type}
+              listId="unionTypes"
+              value={unionType}
+              onChange={(v) => setUnionType(v ?? unionTypes[0]?.id ?? 'married')}
+            />
           </div>
         )}
         {kind === 'child' && (
@@ -1435,21 +1496,36 @@ function FamilyList(props: {
   const name = (id: string) => graph.byId.get(id)?.name ?? id;
   const rel = relativesOf(graph, person.id);
 
-  const setType = async (collection: 'unions' | 'parentLinks', id: string, type: string) => {
+  const { lists } = useStore();
+  /** The type's name for the undo label, from its list; read afresh for an item Add new just made. */
+  const typeLabel = async (collection: 'unions' | 'parentLinks', type: string) => {
+    const listId = collection === 'unions' ? 'unionTypes' : 'parentLinkTypes';
+    const find = (all: readonly { _id: string; items: { id: string; label: string }[] }[]) =>
+      all.find((l) => l._id === listId)?.items.find((i) => i.id === type)?.label;
+    return find(lists) ?? find((await call('lists.get', {})).lists) ?? type;
+  };
+  /** IP-8: a type Add new made on the way joins the change as one undo step. */
+  const setType = async (
+    collection: 'unions' | 'parentLinks',
+    id: string,
+    type: string,
+    added?: UndoCommand,
+  ) => {
     setError(null);
     try {
       const before = (await call('entry.get', { collection, id })).entry;
       const { entry } = await call('entry.update', { collection, id, patch: { type } });
-      undo.record(
-        editCommand(
-          `Changed the type of ${String(before.title ?? 'a link')} to ${type}`,
-          collection,
-          id,
-          before,
-          entry,
-        ),
+      const step = editCommand(
+        `Changed the type of ${String(before.title ?? 'a link')} to ${await typeLabel(collection, type)}`,
+        collection,
+        id,
+        before,
+        entry,
       );
+      undo.record(added ? mergeCommands(step.label, added, step) : step);
     } catch (e) {
+      // The new type is in the list even though the link kept its old one: undo can take it out.
+      if (added) undo.record(added);
       setError(plainError(e));
     }
   };
@@ -1566,8 +1642,11 @@ function FamilyList(props: {
                       row={{ ...r, link: r.link }}
                       name={name(r.other)}
                       types={r.link.collection === 'unions' ? unionTypes : linkTypes}
+                      listId={r.link.collection === 'unions' ? 'unionTypes' : 'parentLinkTypes'}
                       ro={ro}
-                      onType={(type) => r.link && void setType(r.link.collection, r.id, type)}
+                      onType={(type, added) =>
+                        r.link && void setType(r.link.collection, r.id, type, added)
+                      }
                       onEdit={() =>
                         r.link && props.onEdit({ collection: r.link.collection, id: r.id })
                       }
@@ -1605,8 +1684,10 @@ function FamilyRowControls(props: {
   row: FamilyRow & { link: NonNullable<FamilyRow['link']> };
   name: string;
   types: { id: string; label: string }[];
+  /** IP-8: the list the types come from, for Add new. */
+  listId: 'unionTypes' | 'parentLinkTypes';
   ro: ReturnType<typeof useWriteGuard>;
-  onType: (type: string) => void;
+  onType: (type: string, added?: UndoCommand) => void;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -1616,19 +1697,16 @@ function FamilyRowControls(props: {
       <label className="sr-only" htmlFor={`type-${row.id}`}>
         Type of the link with {name}
       </label>
-      <select
+      <ListSelect
         id={`type-${row.id}`}
+        listId={props.listId}
         value={row.link.type}
         disabled={ro.off}
-        {...ro.tip}
-        onChange={(e) => props.onType(e.target.value)}
-      >
-        {props.types.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.label}
-          </option>
-        ))}
-      </select>
+        joinAdd
+        onChange={(v, added) => {
+          if (v) props.onType(v, added);
+        }}
+      />
       <button
         type="button"
         className="btn small"

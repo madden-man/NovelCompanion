@@ -1434,3 +1434,45 @@ test('GL-3 a tree node with a Chinese name shows a visible card with the meaning
   await iris.hover();
   await expect(card).toHaveText('晓曦 xiǎoxī: dawn light');
 });
+
+test('IP-12 IP-14 the legend renames a family in place and recolours it with any hex, the tree redraws, and the link labels come from the templates', async () => {
+  await openBible(FIX);
+  await openTree();
+  const hale = fixture.families!.find((f) => f.name === 'Hale')!;
+  const id = String(hale._id);
+  const family = async () => (await invoke('entry.get', { collection: 'families', id })).entry;
+  await invoke('settings.set', { templates: { linkTypeLabels: { married: 'Wed' } } });
+  await page.getByRole('button', { name: 'Legend', exact: true }).click();
+  const legend = page.getByRole('region', { name: 'Tree legend' });
+  await expect(legend).toContainText('Wed');
+  const row = legend.locator(`[data-family-id="${id}"]`);
+  const stripe = node('Sam Hale').locator('rect.tnode-fam');
+  await expect(stripe).toHaveAttribute('data-family', 'series-1');
+
+  // Any hex, not only the four series colours, and the node draws it.
+  await row.getByTestId('legend-colour').fill('#c03a8e');
+  await expect.poll(async () => (await family()).color).toBe('#c03a8e');
+  await expect(stripe).toHaveAttribute('data-family', '#c03a8e');
+  expect(await stripe.evaluate((el) => getComputedStyle(el).fill)).toBe('rgb(192, 58, 142)');
+
+  // The name renames in place, by keyboard: Enter opens it, Enter saves.
+  const name = row.getByTestId('legend-family-name-text');
+  await name.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Hale-Ashby');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await family()).name).toBe('Hale-Ashby');
+  await expect(name).toHaveText('Hale-Ashby');
+  await expect(name).toBeFocused();
+
+  // Each was one step.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await family()).name).toBe('Hale');
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await family()).color).toBe('#2a78d6');
+  await expect(stripe).toHaveAttribute('data-family', 'series-1');
+  await page.getByRole('button', { name: 'Hide legend' }).click();
+  await invoke('settings.set', { templates: { linkTypeLabels: { married: 'Married' } } });
+});

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ListChip } from '../listChip';
 import { isEntryCollection } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import type { Response } from '../../../../shared/ipc';
@@ -37,8 +38,8 @@ export async function updateWithUndo(
 
 /** A status chip: canon, planned, or idea (SB-5 keeps them visibly apart). */
 export function StatusChip({ status }: { status: string }) {
-  if (!status) return null;
-  return <span className={`chip ${status}`}>{status}</span>;
+  // A47 (IP-9): the status list's label and colour (a47-vocab).
+  return <ListChip listId="statuses" id={status} />;
 }
 
 function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) => ReactNode }) {

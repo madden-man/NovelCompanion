@@ -18,6 +18,7 @@ import { NewEntryForm } from '../views';
 import { Zh } from '../Zh';
 import { RewriteTasks, useFindings } from './alignment';
 import { BriefView } from './brief';
+import { StatusChip } from './common';
 import type { OpenEntry } from './common';
 import { StartSessionView } from './start';
 import './sessions.css';
@@ -494,9 +495,7 @@ function Questions(props: {
                   <span className="chip" data-state={String(q.state ?? 'open')}>
                     {q.state === 'decided' ? 'decided' : 'open'}
                   </span>
-                  {typeof q.status === 'string' && (
-                    <span className={`chip ${q.status}`}>{q.status}</span>
-                  )}
+                  {typeof q.status === 'string' && <StatusChip status={String(q.status ?? '')} />}
                 </span>
               </button>
               {props.open?.id === q._id && (
