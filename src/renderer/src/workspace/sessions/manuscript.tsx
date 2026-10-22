@@ -9,10 +9,13 @@ import { useUndo } from '../undo';
 import { OpenSettingsButton, claudeNav } from '../claude';
 import { DriveDocumentPicker } from '../drive';
 import { useClaudeRun } from './claudeRun';
-import { ManuscriptDiff } from './Reimport';
+import { ManuscriptDiff, Reimport } from './Reimport';
+import { EntryEditable } from '../editable';
+import { numberedLines } from '../../../../shared/domain/continuity/lines';
 import { updateWithUndo } from './common';
 import { RichText } from '../richText/RichText';
 import type { OpenEntry } from './common';
+import './alignment.css';
 
 type Read = Response<'manuscript.read'>;
 type Establishment = Response<'chapter.establishes'>['items'][number];
@@ -146,7 +149,25 @@ function ChapterManuscript({
     }
   };
 
+  // IP-7: the flag clears as one step, and the summary flow closes with it.
+  const markNotWritten = async () => {
+    setError(null);
+    try {
+      await updateWithUndo(
+        undo,
+        'chapters',
+        chapter._id,
+        { written: false },
+        'Marked as not written',
+      );
+      setFlow(false);
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+
   const source = typeof chapter.manuscriptSource === 'string' ? chapter.manuscriptSource : '';
+  const lines = numberedLines(chapter.manuscriptText);
   return (
     <section className="panel stack" data-testid="ms-chapter" aria-label={entryTitle(chapter)}>
       <div className="row">
@@ -163,6 +184,20 @@ function ChapterManuscript({
       <p data-testid="ms-source">
         {chapter.sourceFile ? `Source: ${String(chapter.sourceFile)}` : 'No manuscript imported.'}
       </p>
+      {/* IP-7: the approved summary shows and edits on the chapter's row, as one step; a hand
+          edit is an approval, so it clears the out of date flag in the same step. */}
+      <EntryEditable
+        collection="chapters"
+        id={chapter._id}
+        entry={chapter}
+        path="summary"
+        kind="rich"
+        label="Approved summary"
+        showLabel
+        placeholder="No approved summary yet. Write one here."
+        testId="ms-summary"
+        extraPatch={(_next, e) => (e.summaryOutOfDate === true ? { summaryOutOfDate: false } : {})}
+      />
       {chapter.summaryOutOfDate === true && (
         <p className="callout warn" data-testid="summary-stale">
           The summary may be out of date: the text changed after it was written.
@@ -186,9 +221,14 @@ function ChapterManuscript({
           </button>
         )}
         {chapter.written === true ? (
-          <button type="button" className="btn small" onClick={() => setFlow(true)}>
-            Summary and promotions
-          </button>
+          <>
+            <button type="button" className="btn small" onClick={() => setFlow(true)}>
+              Summary and promotions
+            </button>
+            <button type="button" className="btn small" onClick={() => void markNotWritten()}>
+              Not written after all
+            </button>
+          </>
         ) : (
           <button type="button" className="btn primary small" onClick={() => void markWritten()}>
             Mark as written
@@ -240,6 +280,25 @@ function ChapterManuscript({
         </div>
       )}
       {flow && <WrittenFlow chapter={chapter} onOpen={onOpen} />}
+      {lines.length > 0 && (
+        <div className="ms-text-row" data-testid="ms-text-row">
+          {/* IP-18: the text is imported, never edited here; Re-import heads it. */}
+          <Reimport chapter={chapter} />
+          <ol
+            className="ms-text"
+            data-testid="ms-text"
+            tabIndex={0}
+            aria-label="Manuscript text, read only. Use Re-import to change it."
+            title="The manuscript text is imported, not edited here. Use Re-import."
+          >
+            {lines.map((l) => (
+              <li key={l.n} value={l.n}>
+                {l.text}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </section>
   );
 }

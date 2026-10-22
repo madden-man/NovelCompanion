@@ -17,6 +17,7 @@ import {
   watchRun,
 } from '../claude';
 import { useEntries, useStore } from '../data';
+import { Editable, EntryEditable, saveEntryField, useEntryDoc } from '../editable';
 import { useUndo } from '../undo';
 import type { OpenEntry } from './common';
 import './alignment.css';
@@ -28,6 +29,13 @@ import './alignment.css';
  * lines, cites its entries, and offers Manuscript wins (the change set as a
  * diff, applied in one step and undoable), Rewrite recommended (a rewrite
  * task, never replacement text), or Dismiss.
+ *
+ * IP-7 (a47-continuity): a card edits the finding in place. The text and
+ * what must change are A44 boxes, each quoted line is a field that keeps the
+ * quote styling, and the resolution note sits with the resolution. Every
+ * save is one undo step through the entry write path; Open goes to the
+ * finding's page. The change set stays a system field, shown as a diff
+ * before Apply.
  */
 
 type Check = Response<'continuity.check'>;
@@ -270,15 +278,63 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
   );
 }
 
-/** CC-4: one finding with its quoted lines, citations, and the three resolutions. */
+/** Why the change set goes in whole: shown as the Apply button's title (CC-4). */
+const ALL_OR_NOTHING =
+  'Applies every change in the set together, or none of them, so the bible never matches the chapter halfway.';
+
+/**
+ * IP-7: the quoted lines, each a field in the quote's own styling. A line
+ * saves the whole quote with that line changed, as one undo step.
+ */
+function QuoteLines(props: { f: FindingWire; editable: boolean; testId?: string }) {
+  const { f } = props;
+  const undo = useUndo();
+  const saveLine = async (index: number, next: string) => {
+    const quote = f.lines.map((l, i) => (i === index ? next : l.text)).join('\n');
+    await saveEntryField(undo, {
+      collection: 'findings',
+      id: f.id,
+      path: 'quote',
+      value: quote,
+      label: 'Quoted passage',
+    });
+  };
+  return (
+    <blockquote className="al-quote" data-testid={props.testId}>
+      {f.lines.map((l, i) => (
+        <p key={l.n}>
+          <span className="al-ln">Line {l.n}:</span>
+          {props.editable ? (
+            <Editable
+              kind="text"
+              label={`Quoted line ${l.n}`}
+              value={l.text}
+              allowEmpty={false}
+              data-field="quote"
+              testId={`quote-line-${l.n}`}
+              onSave={(next) => saveLine(i, next)}
+            />
+          ) : (
+            l.text
+          )}
+        </p>
+      ))}
+    </blockquote>
+  );
+}
+
+/** CC-4, IP-7: one finding with its quoted lines, citations, the three resolutions, and its fields. */
 function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
   const { f, onOpen } = props;
   const undo = useUndo();
-  const [showDiff, setShowDiff] = useState(false);
+  // One read of the stored finding feeds every field on the card.
+  const doc = useEntryDoc('findings', f.id);
+  const [showApply, setShowApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const diffId = useId();
+  const applyId = useId();
+  const diffCaptionId = useId();
 
   const resolve = async (
     action: 'manuscriptWins' | 'rewrite' | 'dismiss' | 'done',
@@ -308,7 +364,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
             ? 'Added to the rewrite tasks.'
             : null,
       );
-      setShowDiff(false);
+      setShowApply(false);
     } catch (e) {
       setError(plainError(e));
     }
@@ -317,6 +373,8 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
   const openEntry = (collection: string, id: string) => {
     if (isEntryCollection(collection)) onOpen(collection, id);
   };
+
+  const hasDiff = f.state === 'open' && f.kind === 'alignment' && f.changes.length > 0;
 
   return (
     <li
@@ -332,23 +390,31 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
         <span className="chip">{chapterText(f)}</span>
         {f.lineStart !== null && <span>{linesText(f)}</span>}
         {f.storyYear !== null && <span>story year {f.storyYear}</span>}
-        {f.state === 'manuscriptWins' && <span className="chip canon">bible updated</span>}
-        {f.state === 'rewrite' && <span className="chip planned">rewrite task</span>}
+        <button
+          type="button"
+          className="link-btn al-open"
+          aria-label="Open the finding page"
+          data-testid="finding-open"
+          onClick={() => onOpen('findings', f.id)}
+        >
+          Open
+        </button>
       </div>
-      {f.lines.length > 0 && (
-        <blockquote className="al-quote" data-testid="finding-quote">
-          {f.lines.map((l) => (
-            <p key={l.n}>
-              <span className="al-ln">Line {l.n}:</span>
-              {l.text}
-            </p>
-          ))}
-        </blockquote>
-      )}
+      {f.lines.length > 0 && <QuoteLines f={f} editable testId="finding-quote" />}
       {f.textChanged && (
         <p className="callout warn">The chapter text changed since this check. Check it again.</p>
       )}
-      <p data-testid="finding-text">{f.text}</p>
+      <EntryEditable
+        collection="findings"
+        id={f.id}
+        entry={doc}
+        path="text"
+        kind="rich"
+        label="Finding"
+        placeholder="Say what the check found"
+        testId="finding-text"
+        className="al-field"
+      />
       {f.entries.length > 0 && (
         <div className="row tight" aria-label="Cited entries">
           <span>Cites:</span>
@@ -370,10 +436,50 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           )}
         </div>
       )}
-      {f.kind === 'alignment' && f.mustChange && (
-        <p>
-          <strong>What must change:</strong> {f.mustChange}
-        </p>
+      {f.kind === 'alignment' && (
+        <EntryEditable
+          collection="findings"
+          id={f.id}
+          entry={doc}
+          path="mustChange"
+          kind="rich"
+          label="What must change"
+          showLabel
+          placeholder="Say what must change in the text"
+          testId="finding-must-change"
+          className="al-field"
+        />
+      )}
+      {hasDiff && (
+        <div className="sunken stack tight al-diff" data-testid="finding-diff">
+          <span className="eyebrow" id={diffCaptionId}>
+            If the manuscript wins, the bible changes like this
+          </span>
+          <table className="diff-table" aria-labelledby={diffCaptionId}>
+            <thead>
+              <tr>
+                <th scope="col">Entry</th>
+                <th scope="col">Field</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
+              </tr>
+            </thead>
+            <tbody>
+              {f.changes.map((c, i) => (
+                <tr key={i}>
+                  <th scope="row">{c.entry}</th>
+                  <td>{c.label}</td>
+                  <td>
+                    <del>{c.before}</del>
+                  </td>
+                  <td>
+                    <ins>{c.after}</ins>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {f.state === 'open' && (
         <WriteFieldset className="row tight">
@@ -383,15 +489,15 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
                 <button
                   type="button"
                   className="btn small"
-                  aria-expanded={showDiff}
-                  aria-controls={diffId}
+                  aria-expanded={showApply}
+                  aria-controls={applyId}
                   disabled={f.changes.length === 0}
                   title={
                     f.changes.length === 0
                       ? 'No change set was prepared for this finding.'
                       : undefined
                   }
-                  onClick={() => setShowDiff((v) => !v)}
+                  onClick={() => setShowApply((v) => !v)}
                 >
                   Manuscript wins
                 </button>
@@ -419,45 +525,24 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           No change set was prepared, so the bible cannot be updated from here.
         </p>
       )}
-      {showDiff && f.state === 'open' && (
-        <div id={diffId} className="sunken stack tight" data-testid="finding-diff">
-          <table className="diff-table">
-            <caption className="sr-only">Changes to the bible</caption>
-            <thead>
-              <tr>
-                <th scope="col">Entry</th>
-                <th scope="col">Field</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.changes.map((c, i) => (
-                <tr key={i}>
-                  <th scope="row">{c.entry}</th>
-                  <td>{c.label}</td>
-                  <td>
-                    <del>{c.before}</del>
-                  </td>
-                  <td>
-                    <ins>{c.after}</ins>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <WriteFieldset className="row tight">
+      {showApply && hasDiff && (
+        <WriteFieldset className="row tight">
+          <div id={applyId} className="row tight" data-testid="finding-apply-row">
             <button
               type="button"
               className="btn primary small"
+              title={ALL_OR_NOTHING}
               onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
               data-testid="finding-apply"
             >
               Apply all
             </button>
-            <span>Changes the bible to match the chapter. Nothing in the manuscript changes.</span>
-          </WriteFieldset>
-        </div>
+            <span>
+              Changes the bible to match the chapter, every change or none. Nothing in the
+              manuscript changes.
+            </span>
+          </div>
+        </WriteFieldset>
       )}
       {f.rejectedChanges.length > 0 && (
         <div className="stack tight" data-testid="finding-rejected">
@@ -471,6 +556,29 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           </ul>
         </div>
       )}
+      <div className="al-resolution" data-testid="finding-resolution">
+        <div className="row tight" aria-label="Resolution">
+          <span>Resolution:</span>
+          {f.state === 'manuscriptWins' ? (
+            <span className="chip canon">bible updated</span>
+          ) : f.state === 'rewrite' ? (
+            <span className="chip planned">rewrite task</span>
+          ) : (
+            <span className="chip">not resolved yet</span>
+          )}
+        </div>
+        <EntryEditable
+          collection="findings"
+          id={f.id}
+          entry={doc}
+          path="resolutionNote"
+          kind="rich"
+          label="Resolution note"
+          placeholder="Why you chose this"
+          testId="finding-note"
+          className="al-field"
+        />
+      </div>
       {note && (
         <p role="status" className="row tight">
           {note}
@@ -586,18 +694,19 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
                 {t.lineStart !== null && <span>{linesText(t)}</span>}
                 <span className="chip planned">{t.label}</span>
               </div>
-              {t.lines.length > 0 && (
-                <blockquote className="al-quote">
-                  {t.lines.map((l) => (
-                    <p key={l.n}>
-                      <span className="al-ln">Line {l.n}:</span>
-                      {l.text}
-                    </p>
-                  ))}
-                </blockquote>
-              )}
+              {t.lines.length > 0 && <QuoteLines f={t} editable={false} />}
               <p>
-                <strong>What must change:</strong> {t.mustChange || t.text}
+                <strong>What must change:</strong>{' '}
+                {/* IP-7: the task's text edits in place; a task with no "what must change" edits its finding text. */}
+                <EntryEditable
+                  collection="findings"
+                  id={t.id}
+                  path={t.mustChange ? 'mustChange' : 'text'}
+                  kind="text"
+                  label="What must change"
+                  allowEmpty={false}
+                  testId="rewrite-task-text"
+                />
               </p>
               <div className="row tight">
                 {props.onOpenChapter && t.chapterId && (

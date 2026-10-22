@@ -505,3 +505,34 @@ describe('CC-3 CC-4 ED-10 recording and resolving guards', () => {
     ).rejects.toThrow(/already dismissed/);
   });
 });
+
+describe('IP-7 a finding edits like any entry, and its resolution note stays', () => {
+  test('IP-7 the text, quote, what must change and resolution note of a finding save through entry.update and show on the card; the note survives a re-run and a resolution', async () => {
+    await invoke('continuity.check', { chapterId: null });
+    const f = (await open()).find((x) => x.kind === 'structural' && x.state === 'open')!;
+    expect(f).toBeDefined();
+    const note = 'Kept on purpose: the reader learns the date later.';
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: f.id,
+      patch: {
+        text: 'Edited on the card.',
+        quote: 'A line the writer quoted.',
+        mustChange: 'Nothing yet.',
+        resolutionNote: note,
+      },
+    });
+    expect(bible.model.get('findings', f.id)!.quote).toBe('A line the writer quoted.');
+    const shown = (await open()).find((x) => x.id === f.id)!;
+    expect(shown).toMatchObject({ text: 'Edited on the card.', mustChange: 'Nothing yet.' });
+    expect(bible.model.get('findings', f.id)!.resolutionNote).toBe(note);
+    // A re-run refreshes what the check found and keeps the writer's note.
+    await invoke('continuity.check', { chapterId: null });
+    expect(bible.model.get('findings', f.id)!.resolutionNote).toBe(note);
+    await invoke('continuity.resolve', { id: f.id, action: 'dismiss' });
+    expect(bible.model.get('findings', f.id)).toMatchObject({
+      state: 'dismissed',
+      resolutionNote: note,
+    });
+  });
+});

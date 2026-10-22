@@ -43,3 +43,53 @@
   flex-direction: column;
   gap: 10px;
 }
+
+/* a47-continuity (IP-7, IP-18): finding fields, the resolution with its note, the change set,
+   and the read-only manuscript text with Re-import beside it. */
+.al-finding .al-open {
+  margin-left: auto;
+}
+.al-quote .editable-text,
+.al-quote .editable-input {
+  font: inherit;
+  color: var(--fg);
+}
+.al-resolution {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.al-diff .diff-table {
+  width: 100%;
+}
+.ms-text-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ms-text {
+  margin: 0;
+  padding: 8px 10px 8px 3.2em;
+  max-height: 24rem;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  line-height: 1.55;
+}
+.ms-text li {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.ms-text li::marker {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.ms-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
