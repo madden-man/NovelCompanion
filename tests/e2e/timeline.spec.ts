@@ -59,6 +59,14 @@ test.beforeAll(async () => {
       }[]
     ).map((i) => [i.id, i.parentId]),
   );
+  // The fixture's regions list (IP-8): events store these item IDs and the grid shows the labels.
+  const regions = fixture.lists!.find((l) => l._id === 'regions')!.items as {
+    id: string;
+    label: string;
+  }[];
+  for (const r of regions) {
+    await invoke('lists.addItem', { listId: 'regions', label: r.label, id: r.id, parentId: null });
+  }
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
