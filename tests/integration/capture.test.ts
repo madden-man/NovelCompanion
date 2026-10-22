@@ -5,7 +5,7 @@ import { openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
 import { runHandler } from '../../src/main/ipc/validate';
 import type { Handler } from '../../src/main/ipc/validate';
-import { claudeHandlers } from '../../src/main/claude/handlers';
+import { CAPTURE_TOO_MANY_FACTS, claudeHandlers } from '../../src/main/claude/handlers';
 import type { ClaudeChannel } from '../../src/main/claude/handlers';
 import { ClaudeRuntime } from '../../src/main/claude/runtime';
 import { FakeClaudeClient, FakeModelCatalog, loadRecordings } from '../../src/main/claude/fake';
@@ -560,7 +560,7 @@ describe('CR-7 the fast file', () => {
     expect(turn.status).toBe('done');
     const req = r.fake.requests[0]!;
     expect(req.feature).toBe('captureFast');
-    expect(req.model).toBe('claude-haiku-4-5-20251001');
+    expect(req.model).toBe('claude-haiku-5-5');
     expect(req.tools).toEqual([]);
     expect(req.system).toContain(PROSE_PROHIBITION);
     expect(req.system.startsWith(CAPTURE_FAST_INSTRUCTIONS.split('\n')[0]!)).toBe(true);
@@ -597,7 +597,12 @@ describe('CR-7 the fast file', () => {
     expect(run.turns[0]).toMatchObject({ status: 'done', proposalIds: [], rejected: [] });
     expect(run.output).toMatchObject({
       proposals: [],
-      cannotPlace: 'The text names no community the bible has, so the fact needs the full capture.',
+      cannotPlace: [
+        {
+          fact: 0,
+          reason: 'The text names no community the bible has, so the fact needs the full capture.',
+        },
+      ],
     });
   });
 });
@@ -649,20 +654,22 @@ describe('CR-9 the handler reruns the router with the hints', () => {
     expect(fullReq.prompt).toContain('World event categories (categoryId): left out');
     expect(fast.turns[0]!.proposalIds).toHaveLength(1);
     expect(full.turns[0]!.proposalIds).toHaveLength(2);
-    // Stop under the request's run ID reaches both (nothing is running now, so nothing stops).
-    expect(await r.call('claude.stop', { runId: id })).toEqual({ stopped: false });
   });
 
-  test('CR-8 the capture view of get_entry is what Claude reads in a capture run', async () => {
+  test('CR-8 the capture view of get_entry is what Claude reads in a capture run: the whole entry, with the entries that link to it', async () => {
     const { fake } = await capture(MOVE);
     const reads = fake.toolResults.filter((t) => t.name === 'get_entry');
     expect(reads).toHaveLength(1);
-    for (const t of reads) {
-      const out = JSON.parse(t.output.text) as { entry: Record<string, unknown> };
-      for (const k of Object.keys(out.entry)) {
-        expect(['id', 'title', 'status', 'years', 'links', 'body', 'backstory']).toContain(k);
-      }
-    }
+    const out = JSON.parse(reads[0]!.output.text) as {
+      section: string;
+      entry: Record<string, unknown>;
+      linkedFrom: unknown[];
+    };
+    expect(out.section).toBe('characters');
+    expect(Object.keys(out.entry).sort()).toEqual(
+      Object.keys(bible.model.get('characters', 'Z3')!).sort(),
+    );
+    expect(out.linkedFrom.length).toBeGreaterThan(0);
   });
 
   test('CR-9 AI-4 a capture with only local facts starts no run and sends nothing', async () => {
@@ -679,5 +686,58 @@ describe('CR-9 the handler reruns the router with the hints', () => {
     expect(r.fake.requests).toHaveLength(0);
     expect(r.events).toEqual([]);
     expect((await r.call('claude.runs', {})).runs).toHaveLength(runsBefore);
+  });
+});
+
+describe('CR-9 a split capture stops and fails as one', () => {
+  const HOLD = 'HOLD-FAST-UNTIL-STOPPED in Portland from 2065.';
+
+  test("CR-9 AI-1 Stop under the box's run ID stops a live fast run of a split capture, and only the runs that capture started", async () => {
+    routeAs(routedFact(0, HOLD, 'fast'), { ...routedFact(1, MOVE, 'full'), section: 'moments' });
+    const r = rig();
+    const id = runId();
+    await r.call('claude.capture', {
+      runId: id,
+      text: `${HOLD} ${MOVE}`,
+      storyTime: { year: 2034 },
+    });
+    await r.finished(`${id}-full`);
+    // The fast run waits for Stop; the box stops it by its own run ID.
+    expect(await r.call('claude.stop', { runId: id })).toEqual({ stopped: true });
+    const fast = await r.finished(`${id}-fast`);
+    expect(fast.turns[0]).toMatchObject({ status: 'stopped', proposalIds: [] });
+    // A run ID no capture split is stopped as itself and nothing else.
+    const other = runId();
+    expect(await r.call('claude.stop', { runId: other })).toEqual({ stopped: false });
+    expect(
+      r.events
+        .filter((e) => e.kind === 'finished')
+        .map((e) => e.runId)
+        .sort(),
+    ).toEqual([`${id}-fast`, `${id}-full`].sort());
+  });
+
+  test('CR-9 NF-3 when the second run cannot start, the first is stopped and the box gets a plain reason', async () => {
+    routeAs(routedFact(0, HOLD, 'fast'), { ...routedFact(1, MOVE, 'full'), text: '   ' });
+    const r = rig();
+    const id = runId();
+    await expect(
+      r.call('claude.capture', { runId: id, text: `${HOLD} ${MOVE}`, storyTime: { year: 2034 } }),
+    ).rejects.toThrow(
+      /^The fast file started, but the full capture could not \(.+\), so the fast file was stopped too\. Nothing was filed\. Try again\.$/,
+    );
+    const fast = await r.finished(`${id}-fast`);
+    expect(fast.turns[0]).toMatchObject({ status: 'stopped', proposalIds: [] });
+  });
+
+  test('CR-9 NF-3 a capture of more than 50 facts is refused in plain words and sends nothing', async () => {
+    routeAs(
+      ...Array.from({ length: 51 }, (_, i) => routedFact(i, `Fact ${i} in Portland.`, 'fast')),
+    );
+    const r = rig();
+    await expect(
+      r.call('claude.capture', { runId: runId(), text: 'Many facts.', storyTime: { year: 2034 } }),
+    ).rejects.toThrow(CAPTURE_TOO_MANY_FACTS);
+    expect(r.fake.requests).toHaveLength(0);
   });
 });

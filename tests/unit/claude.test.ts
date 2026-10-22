@@ -258,7 +258,7 @@ describe('DB-4 model per feature', () => {
       importProposals: 'claude-sonnet-5-5',
       panel: 'claude-sonnet-5-5',
       capture: 'claude-sonnet-5-5',
-      captureFast: 'claude-haiku-4-5-20251001',
+      captureFast: 'claude-haiku-5-5',
     });
     expect(modelsWithDefaults({ models: { panel: 'claude-haiku-5-5' }, acknowledged: {} })).toEqual(
       {
@@ -273,9 +273,9 @@ describe('DB-4 model per feature', () => {
     for (const f of CLAUDE_FEATURES) expect(FEATURE_INFO[f].sends.length).toBeGreaterThan(10);
   });
 
-  test('CR-7 AI-6 DB-4 CLAUDE_FEATURES has captureFast on Haiku 4.5, and the disclosure says what it sends', () => {
+  test('CR-7 AI-6 DB-4 CLAUDE_FEATURES has captureFast on the newest Haiku, and the disclosure says what it sends', () => {
     expect(CLAUDE_FEATURES).toContain('captureFast');
-    expect(DEFAULT_MODELS.captureFast).toBe('claude-haiku-4-5-20251001');
+    expect(DEFAULT_MODELS.captureFast).toBe('claude-haiku-5-5');
     expect(FEATURE_INFO.captureFast.label).toBe('Capture, fast file');
     expect(FEATURE_INFO.captureFast.sends).toMatch(
       /the sentence you type in the capture box .*the names the box resolved .*titles of nearby entries/,
@@ -283,7 +283,7 @@ describe('DB-4 model per feature', () => {
     // Its instructions are editable (IP-15) and its model a setting (DB-4), as for every feature.
     expect(Object.keys(FEATURES)).toContain('captureFast');
     expect(modelsWithDefaults({ models: {}, acknowledged: {} }).captureFast).toBe(
-      'claude-haiku-4-5-20251001',
+      'claude-haiku-5-5',
     );
   });
 });

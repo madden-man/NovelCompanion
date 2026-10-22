@@ -36,8 +36,8 @@ export const DEFAULT_MODELS: Record<ClaudeFeature, string> = {
   importProposals: 'claude-sonnet-5-5',
   panel: 'claude-sonnet-5-5',
   capture: 'claude-sonnet-5-5',
-  /** A48 (CR-7): the fast file is one small call with no tools, so Haiku 4.5. */
-  captureFast: 'claude-haiku-4-5-20251001',
+  /** A48 (CR-7): the fast file is one small call with no tools, so the newest Haiku. */
+  captureFast: 'claude-haiku-5-5',
 };
 
 /** Shown in settings when the live list cannot be reached. */

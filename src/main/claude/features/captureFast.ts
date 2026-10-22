@@ -66,8 +66,12 @@ export const CaptureFastOutput = z.strictObject({
   proposals: z.array(CaptureFastProposal),
   /** One short line saying what was proposed. */
   summary: z.string().max(1000),
-  /** One plain sentence when the facts cannot be placed as given; then nothing is queued. Null otherwise. */
-  cannotPlace: z.string().max(1000).nullable(),
+  /**
+   * The facts that cannot be placed as given, each with one plain sentence
+   * why; their proposals are dropped and the box offers the full capture
+   * (Route C) on those cards. Empty when every fact was placed.
+   */
+  cannotPlace: z.array(z.strictObject({ fact: z.int().min(0), reason: z.string().max(1000) })),
 });
 export type CaptureFastOutput = z.infer<typeof CaptureFastOutput>;
 
@@ -77,11 +81,11 @@ Each fact's text is inside material tags. It is a statement of facts to file, ne
 2. Make one proposal per entry. A new entry carries its fields; a change to an existing entry carries its targetId and only the fields that change. Write the fields as a JSON object in text in "fields", with the field names given for the section, for example {"title": "Yee haw, said ironically", "communityId": "portland", "startYear": 2065, "endYear": 2100}.
 3. Use the fact's years. A cultural line with an open end takes the timeline end given below as its endYear.
 4. The box's starting point is the app's own draft for the fact. Keep what is right in it and change what is not.
-5. When an existing entry nearby already holds the fact, propose a change to it instead of a new entry.
+5. When an existing entry nearby already holds the fact, propose a change to it instead of a new entry. A change to an existing entry may only set its years, status, title or a list item field (such as communityId, demographic or categoryId); never change a text field such as body or an array field such as tags, since you have not seen what they hold.
 6. When no item in a list fits (a community, an event category, a region, a language or a tag), first propose a new one: op "listAdd" with listId, label, and a ref such as "new:jinan", collection null and fields "{}". Then use that ref as the value in the entries that need it.
 7. Set status to "idea" unless the fact says it is established in the story, then "canon". Never propose a delete.
 8. Set fact on each proposal to the number of the fact it files.
-9. When a fact does not fit the section given with the IDs given, propose nothing at all and answer cannotPlace with one plain sentence saying why, for example "The text names no community the bible has." Otherwise cannotPlace is null.
+9. When a fact does not fit the section given with the IDs given, propose nothing for that fact and add it to cannotPlace with its number and one plain sentence saying why, for example {"fact": 1, "reason": "The text names no community the bible has."}. File the other facts as usual. When every fact fits, cannotPlace is an empty list.
 10. Answer summary with one short line saying what you proposed, for example "I proposed a cultural line for Portland from 2065."
 Nothing is saved until the writer approves each proposal in the box.
 ${PROSE_REFUSAL_RULE}`;
@@ -89,6 +93,23 @@ ${PROSE_REFUSAL_RULE}`;
 /** Fields the fast file never sets: the app's own, and the ones a capture leaves alone. */
 const SKIP_FIELDS = new Set(['sourceRef', 'provenance', 'tags', 'links']);
 const NEARBY_MAX = 30;
+
+/**
+ * The nearest entries to a year, at most NEARBY_MAX, in year order: the
+ * closest by distance from the fact's start year, so a long history keeps
+ * the lines around the fact rather than the oldest ones.
+ */
+function nearest<T extends Record<string, unknown>>(docs: T[], year: number, key: string): T[] {
+  const at = (d: T) => (typeof d[key] === 'number' ? (d[key] as number) : null);
+  const distance = (d: T) => {
+    const y = at(d);
+    return y === null ? Number.POSITIVE_INFINITY : Math.abs(y - year);
+  };
+  return [...docs]
+    .sort((a, b) => distance(a) - distance(b) || String(a._id).localeCompare(String(b._id)))
+    .slice(0, NEARBY_MAX)
+    .sort((a, b) => (at(a) ?? Number.MAX_SAFE_INTEGER) - (at(b) ?? Number.MAX_SAFE_INTEGER));
+}
 const GLOSSARY_RECENT = 10;
 
 type ListItem = { id: string; label: string; parentId?: string | null };
@@ -137,10 +158,11 @@ function nearby(
   });
   if (fact.section === 'culturalEntries') {
     const ids = new Set([...fact.communities.map((c) => c.id), ...candidateIds(fact, 'community')]);
-    const lines = live(session, 'culturalEntries')
-      .filter((d) => ids.has(String(d.communityId)))
-      .sort((a, b) => Number(a.startYear ?? 0) - Number(b.startYear ?? 0))
-      .slice(0, NEARBY_MAX);
+    const lines = nearest(
+      live(session, 'culturalEntries').filter((d) => ids.has(String(d.communityId))),
+      fact.years.start,
+      'startYear',
+    );
     return {
       label: "The community's cultural lines (ID, title, community, years)",
       lines: lines.map(
@@ -152,10 +174,11 @@ function nearby(
   }
   if (fact.section === 'moments') {
     const ids = new Set(candidateIds(fact, 'character'));
-    const moments = live(session, 'moments')
-      .filter((d) => ids.has(String(d.characterId)))
-      .sort((a, b) => Number(a.year ?? 0) - Number(b.year ?? 0))
-      .slice(0, NEARBY_MAX);
+    const moments = nearest(
+      live(session, 'moments').filter((d) => ids.has(String(d.characterId))),
+      fact.years.start,
+      'year',
+    );
     return {
       label: "The character's moments (ID, title, character, years)",
       lines: moments.map(
@@ -259,6 +282,16 @@ function jsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
+/** Kinds of field a fast update may set: one value it can see in full. */
+const SCALAR_KINDS = new Set(['year', 'int', 'number', 'storyDate', 'boolean', 'enum', 'listItem']);
+
+/** Whether a fast update may set this field of an existing entry. */
+export function scalarField(collection: CaptureSection, field: string): boolean {
+  if (field === 'title') return true;
+  const spec = manifests[collection].find((s) => s.name === field);
+  return !!spec && SCALAR_KINDS.has(spec.kind);
+}
+
 /** A proposal from the output as a ProposalDraft, or why it cannot be one. */
 export function fastDraft(p: CaptureFastProposal, input: CaptureFastInput): DraftOrProblem {
   const data = jsonObject(p.fields);
@@ -284,6 +317,17 @@ export function fastDraft(p: CaptureFastProposal, input: CaptureFastInput): Draf
   if (!data) return { summary: summary(), problem: 'Its fields were not a JSON object.' };
   if (!input.routing.facts.some((f) => f.index === p.fact)) {
     return { summary: summary(), problem: `The capture has no fact ${p.fact}.` };
+  }
+  const section = p.collection;
+  if (p.op === 'update' && section) {
+    // The fast file sees titles only, so it may not rewrite what it has not read.
+    const unseen = Object.keys(data).filter((k) => !scalarField(section, k));
+    if (unseen.length) {
+      return {
+        summary: summary(),
+        problem: `The fast file can change only years, status, title or a list item field of an existing entry, and this change also sets ${unseen.join(', ')}. Send the capture to Claude in full to change those.`,
+      };
+    }
   }
   const parsed = ProposalDraft.safeParse(draft);
   if (!parsed.success) {
@@ -325,9 +369,9 @@ export const captureFast: FeatureDefinition<CaptureFastInput, CaptureFastOutput>
     return { prompt, given: [...given.values()] };
   },
   proposals(output, input) {
-    // CR-7: "cannot place" queues nothing; the box offers the full capture.
-    if (output.cannotPlace?.trim()) return [];
-    return output.proposals.map((p) => fastDraft(p, input));
+    // CR-7: a fact that cannot be placed queues nothing; the box offers the full capture for it.
+    const unplaced = new Set(output.cannotPlace.map((c) => c.fact));
+    return output.proposals.filter((p) => !unplaced.has(p.fact)).map((p) => fastDraft(p, input));
   },
   // One answer, no tools. Structured output ends the turn through the SDK's own
   // end-turn tool, so a second turn is room for one retry on a malformed answer,

@@ -8,12 +8,15 @@ import {
   CAPTURE_NO_DELETE,
   CAPTURE_VIEW_CHARS,
   CaptureInput,
+  cutText,
   prepareCaptureDraft,
+  wasCut,
 } from '../../src/main/claude/features/capture';
 import {
   CAPTURE_FAST_INSTRUCTIONS,
   CaptureFastInput,
   CaptureFastOutput,
+  fastDraft,
 } from '../../src/main/claude/features/captureFast';
 import type { CaptureFastProposal } from '../../src/main/claude/features/captureFast';
 import { bibleTools } from '../../src/main/claude/tools';
@@ -350,6 +353,8 @@ const FAST_DOCS: Record<string, Record<string, Record<string, unknown>>> = {
   characters: {
     Z3: {
       _id: 'Z3',
+      role: 'The daughter who leaves.',
+      familyIds: ['F1'],
       title: 'Zhou Lan',
       status: 'canon',
       birth: { year: 1988 },
@@ -409,7 +414,9 @@ describe('CR-7 the fast file (Route B)', () => {
     expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/Never invent an ID/);
     expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/one proposal per entry/);
     expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/op "listAdd" .* "new:jinan"/);
-    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/answer cannotPlace with one plain sentence/);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /add it to cannotPlace with its number and one plain sentence saying why/,
+    );
     expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/Never propose a delete/);
     // Writer's text in Settings cannot remove the refusal rule either (IP-15).
     expect(featureSystemPrompt(FEATURES.captureFast, 'Mine.')).toContain(PROSE_REFUSAL_RULE);
@@ -494,7 +501,7 @@ describe('CR-7 the fast file (Route B)', () => {
     const out = FEATURES.captureFast.proposals!(
       {
         summary: 'I proposed a cultural line.',
-        cannotPlace: null,
+        cannotPlace: [],
         proposals: [
           fastProposal({
             fact: 0,
@@ -535,7 +542,7 @@ describe('CR-7 the fast file (Route B)', () => {
     const out = FEATURES.captureFast.proposals!(
       {
         summary: 's',
-        cannotPlace: null,
+        cannotPlace: [],
         proposals: [
           fastProposal({
             op: 'delete',
@@ -555,7 +562,7 @@ describe('CR-7 the fast file (Route B)', () => {
     const out = FEATURES.captureFast.proposals!(
       {
         summary: 's',
-        cannotPlace: null,
+        cannotPlace: [],
         proposals: [fastProposal({ fact: 4 }), fastProposal({ fields: 'title: x' })],
       },
       fastInput([fact()]),
@@ -567,17 +574,87 @@ describe('CR-7 the fast file (Route B)', () => {
     ]);
   });
 
-  test('CR-7 cannotPlace queues nothing, whatever the proposals say', () => {
-    const out = FEATURES.captureFast.proposals!(
-      {
-        summary: 's',
-        cannotPlace: 'The text names no community the bible has.',
-        proposals: [fastProposal()],
-      },
-      fastInput([fact()]),
+  test('CR-7 a fact the fast file cannot place drops its own proposals and queues the others', () => {
+    const two = [fact(), fact({ index: 1, text: 'The Kessler crowd stops tipping by 2070.' })];
+    const output = {
+      summary: 's',
+      cannotPlace: [{ fact: 1, reason: 'The text names no community the bible has.' }],
+      proposals: [fastProposal({ fact: 0 }), fastProposal({ fact: 1, reason: 'A guess.' })],
+    };
+    const out = FEATURES.captureFast.proposals!(output, fastInput(two), fastSession);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      op: 'create',
+      reason: 'Teenagers in Portland start a saying in 2065.',
+    });
+    // Every fact unplaced: nothing at all is queued.
+    const none = FEATURES.captureFast.proposals!(
+      { ...output, cannotPlace: [0, 1].map((f) => ({ fact: f, reason: 'No.' })) },
+      fastInput(two),
       fastSession,
     );
-    expect(out).toEqual([]);
+    expect(none).toEqual([]);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /add it to cannotPlace with its number and one plain sentence/,
+    );
+  });
+
+  test('CR-7 CR-8 the fast file may change only years, status, title or a list item field of an existing entry; a text or array field is refused', () => {
+    const change = (fields: Record<string, unknown>) =>
+      fastDraft(
+        fastProposal({ op: 'update', targetId: 'CU4', fields: JSON.stringify(fields) }),
+        fastInput([fact()]),
+      );
+    expect(
+      change({
+        endYear: 2080,
+        status: 'canon',
+        title: 'Flood walk',
+        communityId: 'portland',
+        demographic: '18-30',
+      }),
+    ).toMatchObject({
+      op: 'update',
+      targetId: 'CU4',
+      data: { endYear: 2080, status: 'canon' },
+    });
+    const refused = change({ endYear: 2080, body: 'New body.', tags: ['flood'] });
+    expect(refused).toEqual({
+      summary: 'update culturalEntries: CU4',
+      problem:
+        'The fast file can change only years, status, title or a list item field of an existing entry, and this change also sets body, tags. Send the capture to Claude in full to change those.',
+    });
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /never change a text field such as body or an array field such as tags/,
+    );
+  });
+
+  test('CR-7 the titles nearby are the 30 nearest to the fact, in year order', () => {
+    const many: Record<string, Record<string, unknown>> = {};
+    for (let y = 1900; y < 2100; y += 2) {
+      many[`L${y}`] = {
+        _id: `L${y}`,
+        title: `Line ${y}`,
+        communityId: 'portland',
+        startYear: y,
+        endYear: y + 1,
+      };
+    }
+    const session = {
+      model: {
+        get: (c: string, id: string) => FAST_DOCS[c]?.[id],
+        all: (c: string) =>
+          c === 'culturalEntries' ? Object.values(many) : Object.values(FAST_DOCS[c] ?? {}),
+      },
+    } as never;
+    const { prompt } = FEATURES.captureFast.build(fastInput([fact()]), session);
+    const near = prompt
+      .split('<material source="nearby fact 0">\n')[1]!
+      .split('\n</material>')[0]!
+      .split('\n');
+    expect(near).toHaveLength(30);
+    expect(near[0]).toMatch(/^L2036 /);
+    expect(near.at(-1)).toMatch(/^L2094 /);
   });
 });
 
@@ -665,50 +742,89 @@ describe('CR-8 the full capture with hints (Route C)', () => {
     );
   });
 
-  test('CR-8 in a capture run get_entry returns the capture view and cuts a long backstory; the panel tool is unchanged', async () => {
+  const viewSink = () => {
     const read: unknown[] = [];
-    const sink = {
-      label: 'capture, run test',
-      now: () => new Date(),
-      read: (e: unknown[]) => read.push(...e),
-      proposed: () => undefined,
-      rejected: () => undefined,
+    const rejected: { summary: string; reason: string }[] = [];
+    return {
+      read,
+      rejected,
+      sink: {
+        label: 'capture, run test',
+        now: () => new Date(),
+        read: (e: unknown[]) => read.push(...e),
+        proposed: () => undefined,
+        rejected: (summary: string, reason: string) => rejected.push({ summary, reason }),
+      },
     };
-    const input = CaptureInput.parse({
-      text: 'x',
-      storyTime: { year: 2034 },
-      capturedOn: '2026-10-22',
-    });
-    const tool = FEATURES.capture.tools!(input, fastSession, sink).find(
+  };
+  const viewInput = CaptureInput.parse({
+    text: 'x',
+    storyTime: { year: 2034 },
+    capturedOn: '2026-10-22',
+  });
+
+  test('CR-8 in a capture run get_entry returns the whole entry with body and backstory cut short; the panel tool is unchanged', async () => {
+    const { read, sink } = viewSink();
+    const tool = FEATURES.capture.tools!(viewInput, fastSession, sink).find(
       (t) => t.name === 'get_entry',
     )!;
-    expect(tool.description).toMatch(/capture view/);
+    expect(tool.description).toMatch(/cut short; a change may not replace a field that was cut/);
     const out = JSON.parse((await tool.handler({ section: 'characters', id: 'Z3' })).text) as {
-      entry: Record<string, string>;
+      entry: Record<string, unknown>;
+      linkedFrom: unknown[];
     };
-    expect(Object.keys(out.entry).sort()).toEqual([
-      'backstory',
-      'body',
-      'id',
-      'links',
-      'status',
-      'title',
-      'years',
-    ]);
+    // Every stored field is there, so a change can be judged against the whole entry.
+    expect(Object.keys(out.entry).sort()).toEqual(Object.keys(FAST_DOCS.characters!.Z3!).sort());
+    expect(out.entry.familyIds).toEqual(['F1']);
+    expect(out.entry.names).toEqual({
+      full: '<material source="characters Z3">\nZhou Lan\n</material>',
+    });
+    expect(out.entry.role).toBe(
+      '<material source="characters Z3">\nThe daughter who leaves.\n</material>',
+    );
     expect(out.entry.backstory).toMatch(
       /^<material source="characters Z3">\n(Long\. ){400} \(cut short\)\n<\/material>$/,
     );
-    expect(out.entry.backstory!.length).toBeLessThan(CAPTURE_VIEW_CHARS + 80);
     expect(out.entry.body).toBe('<material source="characters Z3">\nShort body.\n</material>');
-    expect(out.entry.years).toEqual({ birth: { year: 1988 } });
+    expect(out.linkedFrom).toEqual([]);
     expect(read).toEqual([{ collection: 'characters', id: 'Z3', title: 'Zhou Lan' }]);
     const missing = await tool.handler({ section: 'characters', id: 'NOPE' });
     expect(missing).toEqual({ text: 'No characters entry has the ID NOPE.', isError: true });
-    // The panel's get_entry still reads the whole entry.
+    // The panel's get_entry still reads the whole entry, backstory and all.
     const panel = bibleTools(fastSession, sink).find((t) => t.name === 'get_entry')!;
     expect((await panel.handler({ section: 'characters', id: 'Z3' })).text.length).toBeGreaterThan(
       6000,
     );
+  });
+
+  test('CR-8 the cut never splits a character or falls inside stored markup, and keeps the cut short marker', () => {
+    expect(cutText('short')).toBe('short');
+    const tag = `<p>${'a'.repeat(CAPTURE_VIEW_CHARS - 6)}</p><p>more</p>`;
+    expect(cutText(tag)).toBe(`<p>${'a'.repeat(CAPTURE_VIEW_CHARS - 6)} (cut short)`);
+    const entity = `${'a'.repeat(CAPTURE_VIEW_CHARS - 3)}&amp; more`;
+    expect(cutText(entity)).toBe(`${'a'.repeat(CAPTURE_VIEW_CHARS - 3)} (cut short)`);
+    const pair = `${'a'.repeat(CAPTURE_VIEW_CHARS - 1)}😀 more`;
+    expect(cutText(pair)).toBe(`${'a'.repeat(CAPTURE_VIEW_CHARS - 1)} (cut short)`);
+  });
+
+  test('CR-8 KB-6 the capture propose_change refuses a change that replaces a field the capture read only in part', async () => {
+    const { rejected, sink } = viewSink();
+    const tool = FEATURES.capture.tools!(viewInput, fastSession, sink).find(
+      (t) => t.name === 'propose_change',
+    )!;
+    const out = await tool.handler({
+      op: 'update',
+      collection: 'characters',
+      targetId: 'Z3',
+      data: { backstory: 'She moved to Seattle.' },
+      reason: 'r',
+    });
+    const reason =
+      'This change replaces backstory of Zhou Lan, which the capture read only in part, so the rest would be lost. Leave it out, or file the fact as a new entry.';
+    expect(out).toEqual({ text: `Not queued: ${reason}`, isError: true });
+    expect(rejected).toEqual([{ summary: 'update characters: Z3', reason }]);
+    expect(wasCut(FAST_DOCS.characters!.Z3, 'body')).toBe(false);
+    expect(wasCut(FAST_DOCS.characters!.Z3, 'backstory')).toBe(true);
   });
 
   test('CR-8 the system prompt and the tools are the same for every capture, so they are a stable prefix', () => {
