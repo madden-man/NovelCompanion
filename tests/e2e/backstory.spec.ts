@@ -197,8 +197,11 @@ test('SM-9 FT-1 TL-2 the fixture families are headings in tree order, their peop
     ['X1', '__nofamily'],
   ]);
   // The label is the name with the Chinese name.
-  await expect(rowCell('Z1')).toHaveText('Zhou Meiling周美玲');
-  await expect(rowCell('H1')).toHaveText('Margaret Hale');
+  await expect(label('Z1')).toHaveText('Zhou Meiling周美玲');
+  await expect(label('H1')).toHaveText('Margaret Hale');
+  // IP-4: the name drawn in the cell is a link to the page, the Chinese name beside it.
+  await expect(rowCell('Z1').locator('.bs-row-text')).toHaveText('Zhou Meiling周美玲');
+  await expect(rowCell('Z1').getByRole('link')).toHaveText('Zhou Meiling');
   // Margaret Hale: 1958 to 2041, solid, in the Hale colour, across exactly those years.
   await expect(row('H1')).toHaveAttribute('data-birth', '1958');
   await expect(row('H1')).toHaveAttribute('data-death', '2041');

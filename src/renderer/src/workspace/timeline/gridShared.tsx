@@ -34,6 +34,7 @@ import type {
 import type { EntryCollection } from '../../../../shared/schema';
 import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import { call, plainError } from '../../api';
+import { useReadOnly } from '../../connection';
 import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
@@ -560,7 +561,10 @@ export function useEraEdits(o: {
   readOnly: boolean;
   onError: (message: string | null) => void;
 }): EraEdits {
-  const { eras, span: axis, readOnly, onError } = o;
+  const { eras, span: axis, onError } = o;
+  // ARCH-6: off while the host says so, and always while a snapshot is open read-only.
+  const snapshot = useReadOnly();
+  const readOnly = o.readOnly || snapshot !== null;
   const undo = useUndo();
   const { templates } = useBibleSettings();
   const statusOf = useDefaultStatus();

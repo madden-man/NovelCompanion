@@ -208,7 +208,13 @@ export function BackstoryGrid(props: {
                 aria-pressed={picked}
                 aria-label={`${p.name}${p.chinese ? ` ${p.chinese}` : ''}, ${lifeYears(p)}, show their moments`}
                 onClick={() => props.onPick(p.id)}
-              />
+              >
+                {/* The name drawn beside it is the link; the button carries it too, for a reader. */}
+                <span className="sr-only">
+                  {p.name}
+                  {p.chinese}
+                </span>
+              </button>
               <span className="bs-row-text">
                 {props.onOpenPerson ? (
                   <a
