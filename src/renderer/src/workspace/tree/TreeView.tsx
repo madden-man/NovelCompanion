@@ -1,3 +1,4 @@
+import { useBibleSettings } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
@@ -908,6 +909,8 @@ function Legend(props: {
   families: { id: string; name: string; color: string }[];
 }) {
   const id = useId();
+  // A47 (IP-14): the link type labels are the bible's templates.
+  const labels = useBibleSettings().templates.linkTypeLabels;
   return (
     <div className="tree-legend">
       {props.open && (
@@ -926,21 +929,20 @@ function Legend(props: {
             <svg className="ln" width="26" height="8" aria-hidden="true">
               <line x1="0" y1="4" x2="26" y2="4" className="tunion married" />
             </svg>
-            Married
+            {labels.married}
           </span>
           <span>
             <svg className="ln" width="26" height="8" aria-hidden="true">
               <line x1="0" y1="4" x2="26" y2="4" className="tunion partnered" />
             </svg>
-            Partnered
+            {labels.partnered}
           </span>
           {['biological', 'adoptive', 'step', 'guardian'].map((t) => (
             <span key={t}>
               <svg className="ln" width="26" height="8" aria-hidden="true">
                 <line x1="0" y1="4" x2="26" y2="4" className={`tlink ${t}`} />
               </svg>
-              {t[0]?.toUpperCase()}
-              {t.slice(1)} parent
+              {labels[t]}
             </span>
           ))}
           <span className="legend-note">
