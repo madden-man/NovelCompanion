@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, invokeVia, launch, rail } from './helpers';
+import { field, fileDb, fillEditable, invokeVia, launch, openEditable, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -144,9 +144,10 @@ test('KB-6 SM-3 Enter shows two proposal cards with diffs; unticking one and Cmd
     lanBefore,
   );
 
-  // NF-2: every control takes focus by Tab, and focus stays in the box.
+  // NF-2: every control takes focus by Tab, and focus stays in the box. IP-17: each
+  // proposed value is a field too, so the round through the box is longer.
   const reached = new Set<string>();
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 40; i++) {
     await page.keyboard.press('Tab');
     const id = await page.evaluate(
       () =>
@@ -241,6 +242,105 @@ test('KB-6 Escape in the review leaves the proposals pending, as Review later do
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
   expect(await pending()).toBe(before + 1);
+});
+
+const JINAN = 'Add culture for Jinan, 2045';
+const communities = async () =>
+  (await invoke('lists.get', {})).lists.find((l) => l._id === 'communities')!.items;
+const lineTitled = async (title: string) =>
+  (await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })).entries.find(
+    (e) => e.entry.title === title,
+  )?.entry;
+const diffRow = (card: ReturnType<typeof cards>, path: string) =>
+  card.getByTestId('proposal-diff').locator(`tr[data-path="${path}"]`);
+
+test('IP-17 KB-6 Add culture for Jinan shows the new community as a field; edited values and the edited name land, the item before the line', async () => {
+  await send(JINAN);
+  await expect(cards()).toHaveCount(2);
+  await expect(box()).toHaveAttribute('data-phase', 'review');
+  const item = cards().nth(0);
+  const line = cards().nth(1);
+  // The new item is a field of the diff: "Community: + Jinan", ticked like any other.
+  await expect(item).toContainText('New list item: Jinan');
+  await expect(diffRow(item, 'Community').getByRole('rowheader')).toHaveText('Community');
+  await expect(item.getByTestId('proposal-label-text')).toHaveText('+ Jinan');
+  await expect(item.getByTestId('capture-tick')).toBeChecked();
+  await expect(line).toContainText('Jinan in 2045');
+  await expect(diffRow(line, 'communityId').getByTestId('proposed-value-text')).toHaveText(
+    '+ Jinan',
+  );
+  expect((await communities()).some((i) => i.label.startsWith('Jinan'))).toBe(false);
+
+  // The name and the values edit in place before filing; nothing reaches the bible yet (AI-3).
+  await fillEditable(item.getByTestId('proposal-label'), 'Jinan City');
+  await expect(item.getByTestId('proposal-label-text')).toHaveText('+ Jinan City');
+  await expect(diffRow(line, 'communityId').getByTestId('proposed-value-text')).toHaveText(
+    '+ Jinan City',
+  );
+  await fillEditable(diffRow(line, 'title').getByTestId('proposed-value'), 'Jinan street food');
+  await fillEditable(diffRow(line, 'endYear').getByTestId('proposed-value'), '2049');
+  await expect(diffRow(line, 'endYear').getByTestId('proposed-value-text')).toHaveText('2049');
+  expect((await communities()).some((i) => i.label.startsWith('Jinan'))).toBe(false);
+  expect(await lineTitled('Jinan street food')).toBeUndefined();
+
+  // NF-2: the fields are reached by Tab like the ticks.
+  await item.getByTestId('capture-tick').focus();
+  await page.keyboard.press('Tab');
+  await expect(item.getByTestId('proposal-label-text')).toBeFocused();
+
+  await page.keyboard.press('Meta+Enter');
+  await expect(box().getByTestId('capture-filed')).toContainText('Jinan street food');
+  const jinan = (await communities()).find((i) => i.label === 'Jinan City');
+  expect(jinan).toBeTruthy();
+  expect(await lineTitled('Jinan street food')).toMatchObject({
+    communityId: jinan!.id,
+    startYear: 2045,
+    endYear: 2049,
+  });
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+  // One Cmd+Z takes the line and the new community back out.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => lineTitled('Jinan street food')).toBeUndefined();
+  await expect
+    .poll(async () => (await communities()).some((i) => i.label === 'Jinan City'))
+    .toBe(false);
+});
+
+test('IP-17 ED-7 the review queue shows the new community as a field and its name edits before approval; approving the line adds it first', async () => {
+  await send(JINAN);
+  await expect(cards()).toHaveCount(2);
+  await box().getByTestId('capture-later').click();
+  await expect(box()).toBeHidden();
+  await rail(page, 'Review queue').click();
+  const queue = page.getByTestId('review-queue');
+  const pending = (await invoke('proposal.list', { state: 'pending' })).proposals;
+  const add = pending.find((p) => p.proposal.listAdd?.label === 'Jinan')!.proposal;
+  const made = pending.find(
+    (p) => p.proposal.op === 'create' && p.proposal.data.title === 'Jinan in 2045',
+  )!.proposal;
+  const itemCard = queue.locator(`[data-proposal="${add._id}"]`);
+  const lineCard = queue.locator(`[data-proposal="${made._id}"]`);
+  await expect(itemCard.getByTestId('proposal-diff')).toContainText('Community');
+  await expect(itemCard.getByTestId('proposal-label-text')).toHaveText('+ Jinan');
+  await fillEditable(itemCard.getByTestId('proposal-label'), 'Jinan Old Town');
+  await expect(itemCard.getByTestId('proposal-label-text')).toHaveText('+ Jinan Old Town');
+  await expect(lineCard.getByTestId('proposal-diff')).toContainText('+ Jinan Old Town');
+  // A name the list already has is refused at the field, in plain words.
+  await openEditable(itemCard.getByTestId('proposal-label'));
+  await itemCard.getByTestId('proposal-label').locator('input').fill('Portland');
+  await itemCard.getByTestId('proposal-label').locator('input').press('Enter');
+  await expect(itemCard.getByRole('alert')).toContainText('already has Portland');
+  await itemCard.getByTestId('proposal-label').locator('input').press('Escape');
+  // Approving the line approves the new item first.
+  await lineCard.getByRole('button', { name: 'Approve' }).click();
+  await expect(lineCard).toHaveCount(0);
+  await expect(itemCard).toHaveCount(0);
+  const oldTown = (await communities()).find((i) => i.label === 'Jinan Old Town');
+  expect(oldTown).toBeTruthy();
+  expect(await lineTitled('Jinan in 2045')).toMatchObject({ communityId: oldTown!.id });
+  await expect(queue).toContainText('Approved after editing');
 });
 
 test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, with a link', async () => {
