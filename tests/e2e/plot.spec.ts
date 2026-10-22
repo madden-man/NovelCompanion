@@ -1085,12 +1085,12 @@ test("CU-2 A42 a community and the story year's decade list the lines that apply
   const was = (await invoke('storyTime.get', {})).time;
   await invoke('storyTime.set', { time: { year: 2025 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
-  await expect(line('CU1').getByTestId('line-text')).toHaveValue('Mid-Autumn mooncakes');
-  await expect(line('CU1').getByTestId('line-note')).toHaveText(/lotus seed mooncakes/);
+  await expect(line('CU1').getByTestId('line-text-text')).toHaveText('Mid-Autumn mooncakes');
+  await expect(line('CU1').getByTestId('line-note-text')).toHaveText(/lotus seed mooncakes/);
   await expect(line('CU2')).toHaveCount(0);
   await invoke('storyTime.set', { time: { year: 2083 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2080s');
-  await expect(line('CU2').getByTestId('line-note')).toHaveText(/Printed mooncakes/);
+  await expect(line('CU2').getByTestId('line-note-text')).toHaveText(/Printed mooncakes/);
   await expect(line('CU1')).toHaveCount(0);
   await invoke('storyTime.set', { time: { year: 1975 } });
   await expect(view.locator('.cu-line')).toHaveCount(0);
@@ -1121,7 +1121,7 @@ test('PC-1 the place tree nests places and shows each description for the year',
   await view.getByLabel('Year').fill('2050');
   await expect(child.getByTestId('place-description')).toContainText('Stilt houses');
   // A43: a picked place opens its editor in place, under its row, and Close puts it away.
-  const name = child.getByRole('button', { name: 'Pearl District', exact: true });
+  const name = child.getByRole('button', { name: 'Edit Pearl District', exact: true });
   await name.click();
   await expect(name).toHaveAttribute('aria-expanded', 'true');
   const placeEditor = child.getByTestId('place-editor').getByTestId('editor');
