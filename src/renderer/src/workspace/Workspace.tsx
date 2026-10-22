@@ -34,6 +34,7 @@ import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude'
 import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
 import { AppMenu } from './AppMenu';
+import { EditableGallery } from './editable/Gallery';
 import './shell.css';
 
 type View =
@@ -327,6 +328,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         <StatusBar />
         <StoryTimeGate onOpen={open} />
         <ClaudePanelGate />
+        <EditableGallery />
       </div>
     </ZhNavProvider>
   );

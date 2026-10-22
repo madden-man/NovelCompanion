@@ -26,6 +26,7 @@ import { Field } from './fields';
 import { Zh } from './Zh';
 import { formatTime } from './format';
 import { useUndo } from './undo';
+import { EntryEditable } from './editable';
 
 type Listed = Response<'entry.list'>['entries'][number];
 
@@ -78,6 +79,10 @@ export function EntryList(props: {
   }, [entries, filter, state, collection]);
 
   const ro = useWriteGuard();
+  // IP-1: a character row renames in place, and New character takes the name in the list.
+  const inPlace = collection === 'characters';
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [naming, setNaming] = useState(false);
   return (
     <section className="ws-list" aria-labelledby="list-title">
       <div className="list-head">
@@ -85,13 +90,22 @@ export function EntryList(props: {
         <button
           type="button"
           className="btn primary small"
-          onClick={props.onNew}
+          onClick={inPlace ? () => setNaming(true) : props.onNew}
           disabled={ro.off}
           {...ro.tip}
         >
           New {info.singular.toLowerCase()}
         </button>
       </div>
+      {inPlace && naming && (
+        <NewCharacterRow
+          onCreated={(id) => {
+            setNaming(false);
+            props.onSelect(id);
+          }}
+          onCancel={() => setNaming(false)}
+        />
+      )}
       {collection === 'openQuestions' && (
         <div className="field">
           <label htmlFor={stateId}>Show questions</label>
@@ -127,36 +141,154 @@ export function EntryList(props: {
         <ul className="entry-list" data-testid="entry-list">
           {shown.map(({ entry, warnings }) => (
             <li key={entry._id}>
-              <button
-                type="button"
-                className="entry-row"
-                aria-current={props.selected === entry._id ? 'true' : undefined}
-                onClick={() => props.onSelect(entry._id)}
-              >
-                <span className="entry-title">
-                  <Zh text={entryTitle(entry)} actions={false} />
-                </span>
-                <span className="row tight">
-                  {collection === 'openQuestions' && (
-                    <span className="chip" data-state={String(entry.state ?? 'open')}>
-                      {entry.state === 'decided' ? 'decided' : 'open'}
-                    </span>
-                  )}
-                  {typeof entry.status === 'string' && (
-                    <span className={`chip ${entry.status}`}>{entry.status}</span>
-                  )}
-                  {warnings.length > 0 && (
-                    <span className="chip warn-chip" title="Fields with warnings">
-                      {warnings.length} {warnings.length === 1 ? 'warning' : 'warnings'}
-                    </span>
-                  )}
-                </span>
-              </button>
+              {inPlace && renaming === entry._id ? (
+                <div className="entry-row entry-row-renaming" data-testid="row-rename">
+                  <EntryEditable
+                    collection="characters"
+                    id={entry._id}
+                    path="names.full"
+                    label="Full name"
+                    kind="text"
+                    allowEmpty={false}
+                    autoOpen
+                    entry={entry}
+                    extraPatch={(next) => ({ title: next })}
+                    onClose={() => {
+                      const id = entry._id;
+                      setRenaming(null);
+                      // The row comes back under the caret, so the keyboard carries on from it.
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector<HTMLElement>(`.entry-row[data-entry-id="${id}"]`)
+                          ?.focus(),
+                      );
+                    }}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="entry-row"
+                  data-entry-id={entry._id}
+                  aria-current={props.selected === entry._id ? 'true' : undefined}
+                  aria-keyshortcuts={inPlace ? 'F2' : undefined}
+                  title={inPlace && !ro.off ? 'Double-click or press F2 to rename' : undefined}
+                  onClick={() => props.onSelect(entry._id)}
+                  onDoubleClick={inPlace && !ro.off ? () => setRenaming(entry._id) : undefined}
+                  onKeyDown={
+                    inPlace && !ro.off
+                      ? (e) => {
+                          if (e.key === 'F2') {
+                            e.preventDefault();
+                            setRenaming(entry._id);
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  <span className="entry-title">
+                    <Zh text={entryTitle(entry)} actions={false} />
+                  </span>
+                  <span className="row tight">
+                    {collection === 'openQuestions' && (
+                      <span className="chip" data-state={String(entry.state ?? 'open')}>
+                        {entry.state === 'decided' ? 'decided' : 'open'}
+                      </span>
+                    )}
+                    {typeof entry.status === 'string' && (
+                      <span className={`chip ${entry.status}`}>{entry.status}</span>
+                    )}
+                    {warnings.length > 0 && (
+                      <span className="chip warn-chip" title="Fields with warnings">
+                        {warnings.length} {warnings.length === 1 ? 'warning' : 'warnings'}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * IP-1, SM-1: New character on the Characters list asks for the full name in
+ * a row at the top of the list. Enter makes the character (one undo step) and
+ * opens its page; Escape or Cancel puts the row away.
+ */
+function NewCharacterRow(props: { onCreated: (id: string) => void; onCancel: () => void }) {
+  const undo = useUndo();
+  const nameId = useId();
+  const errorId = useId();
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const full = name.trim();
+    if (!full) {
+      setError('A character needs a full name.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const data = { ...blankEntry(manifests.characters), title: full, names: { full } };
+      const { entry } = await call('entry.create', { collection: 'characters', data });
+      undo.record(createCommand('characters', entry._id, entryTitle(entry)));
+      props.onCreated(entry._id);
+    } catch (err) {
+      setError(plainError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="new-row stack tight"
+      data-testid="new-entry"
+      aria-label="New character"
+      onSubmit={(e) => void submit(e)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          props.onCancel();
+        }
+      }}
+    >
+      <WriteFieldset className="stack tight">
+        <div className="field" data-field="names.full">
+          <label htmlFor={nameId}>Full name</label>
+          <input
+            id={nameId}
+            type="text"
+            autoComplete="off"
+            autoFocus
+            value={name}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            onChange={(ev) => setName(ev.target.value)}
+          />
+          {error && (
+            <p id={errorId} className="ed-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+        <div className="row tight">
+          <button type="submit" className="btn primary small" disabled={busy}>
+            Create character
+          </button>
+          <button type="button" className="btn small" onClick={props.onCancel}>
+            Cancel
+          </button>
+        </div>
+      </WriteFieldset>
+    </form>
   );
 }
 

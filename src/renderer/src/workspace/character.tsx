@@ -1,20 +1,17 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { WriteFieldset } from '../connection';
-import { manifests } from '../../../shared/schema';
+import { STATUS_OPTIONS, manifests } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { fieldByName } from '../../../shared/schema/manifest';
 import type { Response } from '../../../shared/ipc';
 import type { Doc } from '../../../shared/domain/paths';
-import { dateText, parseDateText } from '../../../shared/domain/dates';
-import type { DateBox } from '../../../shared/domain/dates';
-import type { StoryDate } from '../../../shared/schema';
-import { deepEqual } from '../../../shared/domain/paths';
 import { call } from '../api';
 import { useEntries, useList, useStore } from './data';
 import { Field } from './fields';
 import type { Messages } from './fields';
 import { formatMoment, useStoryTime } from './storyTime';
 import { Zh } from './Zh';
+import { EntryEditable, entryOptions, useEntryAddNew } from './editable';
 
 type Page = Response<'character.page'>['page'];
 type Relatives = Page['relatives'];
@@ -60,91 +57,6 @@ export function relativesLine(rel: Relatives, unionLabel: (id: string) => string
   return parts.join(' ') || 'No parents, partners or children in the family tree yet.';
 }
 
-/**
- * SM-1: Birth or Death as one text box: a year, a year and month, or a full
- * date. It commits on blur or Enter, as one change; a value it cannot read
- * shows why under the box and writes nothing. The date warnings show here too.
- */
-function DateBoxField(props: {
-  name: DateBox;
-  label: string;
-  value: unknown;
-  messages: Messages;
-  onChange: (value: StoryDate | null) => void;
-}) {
-  const id = useId();
-  const errorId = useId();
-  const stored = (props.value ?? null) as StoryDate | null;
-  const [text, setText] = useState(() => dateText(stored));
-  const [error, setError] = useState<string | null>(null);
-  const editing = useRef(false);
-  const shown = dateText(stored);
-  useEffect(() => {
-    if (!editing.current) setText(shown);
-  }, [shown]);
-  const commit = () => {
-    editing.current = false;
-    const parsed = parseDateText(text, props.name);
-    if (!parsed.ok) {
-      setError(parsed.message);
-      return;
-    }
-    setError(null);
-    setText(dateText(parsed.value));
-    const before = props.name === 'death' ? stored : (stored ?? { unknown: true });
-    if (!deepEqual(parsed.value, before)) props.onChange(parsed.value);
-  };
-  const warnings = props.messages.warnings.filter((w) => w.path === props.name);
-  const issues = props.messages.issues.filter((i) => i.path === props.name);
-  return (
-    <div
-      className={`ed-field date-box${warnings.length ? ' has-warning' : ''}${error || issues.length ? ' has-error' : ''}`}
-      data-field={props.name}
-      data-kind="dateText"
-    >
-      <label className="ed-label" htmlFor={id}>
-        {props.label}
-      </label>
-      <input
-        id={id}
-        className="num date-box-input"
-        value={text}
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder={props.name === 'birth' ? 'Unknown' : 'Not recorded'}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        onChange={(e) => {
-          editing.current = true;
-          setText(e.target.value);
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            commit();
-          }
-        }}
-      />
-      {error && (
-        <p id={errorId} className="ed-error" role="alert">
-          Not saved: {error}
-        </p>
-      )}
-      {issues.map((issue, i) => (
-        <p key={`e${i}`} className="ed-error" role="alert">
-          Not saved: {issue.message}
-        </p>
-      ))}
-      {warnings.map((w, i) => (
-        <p key={`w${i}`} className="ed-warning" role="note" data-code={w.code}>
-          {w.message}
-        </p>
-      ))}
-    </div>
-  );
-}
-
 /** The age for the page line (TL-2, TL-4): short, since the story year is in the top bar. */
 function ageWords(s: NonNullable<Page['current']['state']>): string {
   switch (s.state) {
@@ -166,102 +78,16 @@ function ageLine(page: Page): string {
   return 'No story year set';
 }
 
-/**
- * SM-1: the families as compact chips, each with a remove button, and one
- * "Add family" button that shows the choice only when pressed.
- */
-function FamiliesField(props: {
-  value: unknown;
-  messages: Messages;
-  onChange: (ids: string[]) => void;
-}) {
-  const families = useEntries('families');
-  const [adding, setAdding] = useState(false);
-  const addButton = useRef<HTMLButtonElement>(null);
-  const ids = Array.isArray(props.value) ? props.value.map(String) : [];
-  const nameOf = (id: string) => {
-    const f = families.find((x) => x._id === id);
-    return f ? str(f.name) || str(f.title) || id : id;
-  };
-  const choices = families.filter((f) => f.deletedAt === undefined && !ids.includes(f._id));
-  const close = () => {
-    setAdding(false);
-    requestAnimationFrame(() => addButton.current?.focus());
-  };
-  const warnings = props.messages.warnings.filter((w) => w.path === 'familyIds');
-  return (
-    <fieldset
-      className={`ed-field ed-group fam-field${warnings.length ? ' has-warning' : ''}`}
-      data-field="familyIds"
-      data-kind="familyChips"
-    >
-      <legend className="ed-label">Families</legend>
-      <div className="chips">
-        {ids.length === 0 && <span className="example-note">None yet</span>}
-        {ids.map((id) => (
-          <span key={id} className="chip">
-            {nameOf(id)}
-            <button
-              type="button"
-              className="chip-remove"
-              aria-label={`Remove ${nameOf(id)} from Families`}
-              onClick={() => props.onChange(ids.filter((x) => x !== id))}
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        {adding ? (
-          <select
-            aria-label="Family to add"
-            autoFocus
-            value=""
-            onChange={(e) => {
-              if (e.target.value) props.onChange([...ids, e.target.value]);
-              close();
-            }}
-            onBlur={() => setAdding(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                close();
-              }
-            }}
-          >
-            <option value="">Choose a family</option>
-            {choices.map((f) => (
-              <option key={f._id} value={f._id}>
-                {nameOf(f._id)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <button
-            ref={addButton}
-            type="button"
-            className="btn small"
-            disabled={choices.length === 0}
-            onClick={() => setAdding(true)}
-          >
-            Add family
-          </button>
-        )}
-      </div>
-      {warnings.map((w, i) => (
-        <p key={i} className="ed-warning" role="note" data-code={w.code}>
-          {w.message}
-        </p>
-      ))}
-    </fieldset>
-  );
-}
+/** SM-1: a quick family made from a chip row's "Add new...": the name is the title. */
+const newFamily = (label: string) => ({ name: label, title: label });
 
 /**
- * The character page (SM-1, A39): the name and the Chinese name as the
- * heading; one line with birth, death, status, families and the age at the
- * story year; the relatives as one read-only line that opens the family tree;
- * then three text boxes that grow with their text: In the story, Description,
- * and Backstory. Nothing else. Every box saves on its own (ED-2).
+ * The character page (SM-1, A39, IP-1): the name and the Chinese name as the
+ * heading, each a field in place; one line with birth, death, status,
+ * families and the age at the story year; the relatives as one read-only line
+ * that opens the family tree; then three text boxes that grow with their
+ * text: In the story, Description, and Backstory. Nothing else. Every field
+ * saves on its own as one undo step (ED-2, ED-3).
  */
 export function CharacterPage(props: {
   id: string;
@@ -278,10 +104,9 @@ export function CharacterPage(props: {
   const story = useStoryTime();
   const [page, setPage] = useState<Page | null>(null);
   const [error, setError] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   const unionLabel = useLabel('unionTypes');
-  const fullId = useId();
-  const chineseId = useId();
+  const families = useEntries('families');
+  const addFamily = useEntryAddNew('families', newFamily);
   const st = story.stored?.time;
   const storyKey = st ? formatMoment(st) : null;
 
@@ -323,76 +148,47 @@ export function CharacterPage(props: {
   if (!page) return <p aria-live="polite">Loading the character page.</p>;
   const names = (draft.names ?? {}) as Record<string, unknown>;
   const full = str(names.full);
-  const chinese = str(names.chinese);
-  const setNames = (next: { full?: string; chinese?: string }) => {
-    const merged = { ...names, ...next };
-    props.onChange('names', merged);
-    // The title is the name the app shows everywhere; it follows the full name.
-    if (next.full !== undefined) props.onChange('title', next.full);
-  };
   const relatives = relativesLine(page.relatives, unionLabel);
-  const issuesAt = (path: string) => props.messages.issues.filter((i) => i.path === path);
-  const nameIssue = (path: string) =>
-    issuesAt(path).map((issue, i) => (
-      <p key={i} className="ed-error" role="alert">
-        Not saved: {issue.message}
-      </p>
-    ));
+  const familyOptions = entryOptions(families).map((o) => {
+    const f = families.find((x) => x._id === o.value);
+    return { value: o.value, label: str(f?.name) || o.label };
+  });
+  const common = {
+    collection: 'characters' as const,
+    id: props.id,
+    entry: draft,
+    warnings: props.messages.warnings,
+  };
 
   return (
     <section className="char-page stack" aria-label="Character page" data-testid="character-page">
       <header className="char-head" data-testid="char-heading">
-        {renaming ? (
-          <form className="char-rename row" onSubmit={(e) => e.preventDefault()}>
-            <WriteFieldset>
-              <div className="ed-field" data-field="names.full">
-                <label className="ed-label" htmlFor={fullId}>
-                  Full name
-                </label>
-                <input
-                  id={fullId}
-                  value={full}
-                  autoComplete="off"
-                  aria-invalid={issuesAt('names.full').length > 0 || undefined}
-                  onChange={(e) => setNames({ full: e.target.value })}
-                />
-                {nameIssue('names.full')}
-              </div>
-              <div className="ed-field" data-field="names.chinese">
-                <label className="ed-label" htmlFor={chineseId}>
-                  Name in Chinese characters
-                </label>
-                <input
-                  id={chineseId}
-                  value={chinese}
-                  autoComplete="off"
-                  onChange={(e) => setNames({ chinese: e.target.value })}
-                />
-                {nameIssue('names.chinese')}
-              </div>
-              <button type="button" className="btn small" onClick={() => setRenaming(false)}>
-                Done
-              </button>
-            </WriteFieldset>
-          </form>
-        ) : (
-          <div className="row char-name-row">
-            <h3 className="char-name">
-              <Zh text={full || page.name} />
-              {chinese && (
-                <>
-                  {' '}
-                  <span className="char-name-zh" data-testid="char-chinese">
-                    <Zh text={chinese} />
-                  </span>
-                </>
-              )}
-            </h3>
-            <button type="button" className="btn small" onClick={() => setRenaming(true)}>
-              Edit name
-            </button>
-          </div>
-        )}
+        <div className="row char-name-row">
+          <h3 className="char-name">
+            <EntryEditable
+              {...common}
+              kind="text"
+              path="names.full"
+              label="Full name"
+              allowEmpty={false}
+              placeholder={page.name}
+              display={(t) => <Zh text={t || page.name} />}
+              // The title is the name the app shows everywhere; it follows the full name.
+              extraPatch={(next) => ({ title: next })}
+            />
+            {full && ' '}
+            <span className="char-name-zh" data-testid="char-chinese">
+              <EntryEditable
+                {...common}
+                kind="text"
+                path="names.chinese"
+                label="Name in Chinese characters"
+                placeholder="Add a Chinese name"
+                display={(t) => <Zh text={t} />}
+              />
+            </span>
+          </h3>
+        </div>
       </header>
 
       <form
@@ -401,25 +197,44 @@ export function CharacterPage(props: {
         onSubmit={(e) => e.preventDefault()}
       >
         <WriteFieldset>
-          <DateBoxField
-            name="birth"
-            label="Birth"
-            value={draft.birth}
-            messages={props.messages}
-            onChange={(v) => props.onChange('birth', v)}
+          <EntryEditable
+            {...common}
+            kind="date"
+            path="birth"
+            dateBox="birth"
+            showLabel
+            placeholder="Unknown"
+            className="ed-field"
           />
-          <DateBoxField
-            name="death"
-            label="Death"
-            value={draft.death}
-            messages={props.messages}
-            onChange={(v) => props.onChange('death', v)}
+          <EntryEditable
+            {...common}
+            kind="date"
+            path="death"
+            dateBox="death"
+            showLabel
+            placeholder="Not recorded"
+            className="ed-field"
           />
-          {field('status')}
-          <FamiliesField
-            value={draft.familyIds}
-            messages={props.messages}
-            onChange={(v) => props.onChange('familyIds', v)}
+          <EntryEditable
+            {...common}
+            kind="select"
+            path="status"
+            showLabel
+            options={STATUS_OPTIONS}
+            className="ed-field"
+          />
+          <EntryEditable
+            {...common}
+            kind="chips"
+            path="familyIds"
+            label="Families"
+            showLabel
+            layout="inline"
+            options={familyOptions}
+            onAddNew={addFamily}
+            addLabel="Add family"
+            pickerLabel="Family to add"
+            className="ed-field fam-field"
           />
           <p className="char-age" data-testid="char-age">
             {ageLine(page)}
