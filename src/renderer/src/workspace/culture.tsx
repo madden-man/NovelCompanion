@@ -1396,7 +1396,7 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
                           disabled={ro.off}
                           testId="term-characters"
                           extraPatch={titleFollows}
-                          display={(s) => <Zh text={s} />}
+                          display={(s) => <Zh text={s} actions={false} />}
                         />
                       </td>
                       <td>
