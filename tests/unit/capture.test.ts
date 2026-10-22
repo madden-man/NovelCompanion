@@ -5,16 +5,29 @@ import { DEFAULT_MODELS, FEATURE_INFO, claudeContract } from '../../src/shared/c
 import { FEATURES } from '../../src/main/claude/features';
 import {
   CAPTURE_INSTRUCTIONS,
+  CAPTURE_NO_DELETE,
+  CAPTURE_VIEW_CHARS,
   CaptureInput,
+  cutText,
   prepareCaptureDraft,
+  wasCut,
 } from '../../src/main/claude/features/capture';
+import {
+  CAPTURE_FAST_INSTRUCTIONS,
+  CaptureFastInput,
+  CaptureFastOutput,
+  fastDraft,
+} from '../../src/main/claude/features/captureFast';
+import type { CaptureFastProposal } from '../../src/main/claude/features/captureFast';
+import { bibleTools } from '../../src/main/claude/tools';
+import type { CaptureFact } from '../../src/shared/domain/captureRouter';
 import { loadRecordings } from '../../src/main/claude/fake';
 import {
   MATERIAL_RULE,
   PROSE_PROHIBITION,
   PROSE_REFUSAL_RULE,
 } from '../../src/main/claude/prompts';
-import { featureSystemPrompt } from '../../src/main/claude/runtime';
+import { featureSystemPrompt, jsonSchemaFor } from '../../src/main/claude/runtime';
 import { captureQuestionData, fileCapture } from '../../src/shared/domain/capture';
 import type { CaptureProposal } from '../../src/shared/domain/capture';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
@@ -229,5 +242,609 @@ describe('KB-6 ED-3 filing', () => {
     // AI-3: the only writes are the filing (approve and reject) and the KB-7 open question.
     expect(src.match(/call\('entry\.(create|update|delete)'/g)).toEqual(["call('entry.create'"]);
     expect(src).not.toMatch(/proposal\.approve/);
+  });
+});
+
+// ---------- a48-fast: capture routing, Route B and Route C (CR-7, CR-8) ----------
+
+/** A routed fact, built by hand: the router is built on another branch (A48). */
+function fact(over: Partial<CaptureFact> = {}): CaptureFact {
+  return {
+    index: 0,
+    text: 'Teenagers in Portland begin to say yee haw ironically starting around 2065.',
+    years: { start: 2065, end: null, source: 'a year in the text' },
+    sentences: 1,
+    candidates: [
+      {
+        kind: 'place',
+        id: 'PLC1',
+        label: 'Portland',
+        matched: 'portland',
+        communityId: 'portland',
+      },
+      { kind: 'ageGroup', id: '18-30', label: '18 to 30', matched: 'teenagers' },
+    ],
+    scores: { culturalEntries: 62, moments: 8 },
+    cues: { culturalEntries: ['a group starts to say something'] },
+    ranked: [
+      ['culturalEntries', 62],
+      ['moments', 8],
+    ],
+    section: 'culturalEntries',
+    share: 0.886,
+    margin: 54,
+    communities: [{ id: 'portland', why: 'the community of Portland, the place named' }],
+    missing: [],
+    asks: [],
+    reasons: ['the age group needs judgment'],
+    drafts: [
+      {
+        op: 'create',
+        collection: 'culturalEntries',
+        data: { title: 'Saying yee haw ironically', communityId: 'portland', startYear: 2065 },
+      },
+    ],
+    route: 'fast',
+    ...over,
+  };
+}
+
+const FAST_DOCS: Record<string, Record<string, Record<string, unknown>>> = {
+  lists: {
+    communities: {
+      _id: 'communities',
+      items: [
+        { id: 'portland', label: 'Portland' },
+        { id: 'guangzhou', label: 'Guangzhou' },
+      ],
+    },
+    eventCategories: {
+      _id: 'eventCategories',
+      items: [
+        { id: 'technology', label: 'Technology', parentId: null },
+        { id: 'robotics', label: 'Robotics', parentId: 'technology' },
+        { id: 'humanoids', label: 'Humanoid robots', parentId: 'robotics' },
+        { id: 'energy', label: 'Energy', parentId: 'technology' },
+        { id: 'climate', label: 'Climate', parentId: null },
+        { id: 'floods', label: 'Floods', parentId: 'climate' },
+      ],
+    },
+    regions: { _id: 'regions', items: [{ id: 'oregon', label: 'Oregon' }] },
+    languages: { _id: 'languages', items: [{ id: 'mandarin', label: 'Mandarin' }] },
+    ageGroups: {
+      _id: 'ageGroups',
+      items: [
+        { id: 'all', label: 'Everyone' },
+        { id: '18-30', label: '18 to 30' },
+      ],
+    },
+  },
+  culturalEntries: {
+    CU3: {
+      _id: 'CU3',
+      title: 'Sunday ferry picnics',
+      communityId: 'portland',
+      startYear: 2000,
+      endYear: 2034,
+    },
+    CU4: {
+      _id: 'CU4',
+      title: 'Flood memorial walk',
+      communityId: 'portland',
+      startYear: 2035,
+      endYear: 2100,
+    },
+    CU1: {
+      _id: 'CU1',
+      title: 'Mid-Autumn mooncakes',
+      communityId: 'guangzhou',
+      startYear: 1980,
+      endYear: 2039,
+    },
+    CU9: {
+      _id: 'CU9',
+      title: 'A trashed line',
+      communityId: 'portland',
+      startYear: 2050,
+      endYear: 2060,
+      deletedAt: '2026-01-01T00:00:00.000Z',
+    },
+  },
+  characters: {
+    Z3: {
+      _id: 'Z3',
+      role: 'The daughter who leaves.',
+      familyIds: ['F1'],
+      title: 'Zhou Lan',
+      status: 'canon',
+      birth: { year: 1988 },
+      backstory: 'Long. '.repeat(1000),
+      body: 'Short body.',
+      links: [{ targetId: 'Z1', kind: 'child-of' }],
+      names: { full: 'Zhou Lan' },
+    },
+  },
+};
+
+const fastSession = {
+  model: {
+    get: (c: string, id: string) => FAST_DOCS[c]?.[id],
+    all: (c: string) => Object.values(FAST_DOCS[c] ?? {}),
+    backlinks: () => [],
+  },
+} as never;
+
+const fastInput = (facts: CaptureFact[]) =>
+  CaptureFastInput.parse({
+    text: facts.map((f) => f.text).join(' '),
+    storyTime: { year: 2045 },
+    capturedOn: '2026-10-22',
+    routing: { storyYear: 2045, timelineEnd: 2100, facts },
+  });
+
+const fastProposal = (over: Partial<CaptureFastProposal> = {}): CaptureFastProposal => ({
+  fact: 0,
+  op: 'create',
+  collection: 'culturalEntries',
+  targetId: null,
+  fields: JSON.stringify({
+    title: 'Saying yee haw ironically',
+    communityId: 'portland',
+    demographic: '18-30',
+    startYear: 2065,
+    endYear: 2100,
+  }),
+  link: null,
+  listId: null,
+  label: null,
+  parentId: null,
+  ref: null,
+  reason: 'Teenagers in Portland start a saying in 2065.',
+  ...over,
+});
+
+describe('CR-7 the fast file (Route B)', () => {
+  test('CR-7 AI-4 AI-5 the captureFast system prompt carries the prose prohibition, the refusal, the material rule and the filing rules', () => {
+    const system = featureSystemPrompt(FEATURES.captureFast);
+    expect(system).toContain(PROSE_PROHIBITION);
+    expect(system).toContain(PROSE_REFUSAL_RULE);
+    expect(system).toContain(MATERIAL_RULE);
+    expect(system.split(PROSE_REFUSAL_RULE)).toHaveLength(2);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/using only the IDs given/);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/Never invent an ID/);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/one proposal per entry/);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/op "listAdd" .* "new:jinan"/);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /add it to cannotPlace with its number and one plain sentence saying why/,
+    );
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/Never propose a delete/);
+    // Writer's text in Settings cannot remove the refusal rule either (IP-15).
+    expect(featureSystemPrompt(FEATURES.captureFast, 'Mine.')).toContain(PROSE_REFUSAL_RULE);
+  });
+
+  test('CR-7 captureFast is a feature with no tools and an output of proposals, a summary and cannotPlace', () => {
+    expect(FEATURES.captureFast.feature).toBe('captureFast');
+    expect(FEATURES.captureFast.tools).toBeUndefined();
+    const schema = jsonSchemaFor(CaptureFastOutput) as {
+      required: string[];
+      properties: { proposals: { items: { properties: { op: { enum: string[] } } } } };
+    };
+    expect(schema.required.sort()).toEqual(['cannotPlace', 'proposals', 'summary']);
+    expect(schema.properties.proposals.items.properties.op.enum).toEqual([
+      'create',
+      'update',
+      'link',
+      'listAdd',
+      'delete',
+    ]);
+  });
+
+  test('CR-7 AI-5 the fast prompt carries the fact, the candidates with IDs, the fields, the nearby titles and the starting point as material', () => {
+    const { prompt, given } = FEATURES.captureFast.build(fastInput([fact()]), fastSession);
+    expect(prompt).toContain(
+      'Story year 2045. Capture date 2026-10-22. The timeline ends in 2100.',
+    );
+    expect(prompt).toContain(
+      'File it in culturalEntries (Cultural entries); the box gave that section 89% of the points. Years: from 2065, open ended (a year in the text).',
+    );
+    expect(prompt).toContain(
+      '<material source="fact 0">\nTeenagers in Portland begin to say yee haw ironically starting around 2065.\n</material>',
+    );
+    expect(prompt).toContain(
+      '<material source="candidates fact 0">\nplace PLC1: Portland, community portland\nageGroup 18-30: 18 to 30\ncommunity in order of preference: portland (the community of Portland, the place named)\n</material>',
+    );
+    // The section's fields from the manifest.
+    expect(prompt).toContain(
+      'communityId: Community, listItem, from the communities list, required',
+    );
+    expect(prompt).toContain('demographic: Age group, listItem, from the ageGroups list');
+    expect(prompt).not.toMatch(/^_id:/m);
+    // The lists those fields take, as material.
+    expect(prompt).toContain(
+      '<material source="list ageGroups">\nall (Everyone), 18-30 (18 to 30)\n</material>',
+    );
+    // The community's lines with years, live ones only, as material; Guangzhou's are not near.
+    expect(prompt).toContain(
+      '<material source="nearby fact 0">\nCU3 Sunday ferry picnics (portland, 2000 to 2034)\nCU4 Flood memorial walk (portland, 2035 to 2100)\n</material>',
+    );
+    expect(prompt).not.toContain('Mid-Autumn mooncakes');
+    expect(prompt).not.toContain('A trashed line');
+    expect(prompt).toContain('The box\'s starting point:\n<material source="drafts fact 0">');
+    expect(prompt).toContain(
+      '<material source="reasons fact 0">\nthe age group needs judgment\n</material>',
+    );
+    expect(given).toEqual([
+      { collection: 'culturalEntries', id: 'CU3', title: 'Sunday ferry picnics' },
+      { collection: 'culturalEntries', id: 'CU4', title: 'Flood memorial walk' },
+      { collection: 'places', id: 'PLC1', title: 'Portland' },
+    ]);
+  });
+
+  test('CR-7 the nearby titles follow the section: a world event gets the top-level categories and the matched subtree', () => {
+    const event = fact({
+      index: 1,
+      text: 'Humanoid robots are banned in Oregon by 2050.',
+      section: 'worldEvents',
+      candidates: [{ kind: 'category', id: 'robotics', label: 'Robotics', matched: 'robots' }],
+      communities: [],
+    });
+    const { prompt } = FEATURES.captureFast.build(fastInput([event]), fastSession);
+    expect(prompt).toContain(
+      '<material source="nearby fact 1">\ntechnology (Technology)\nclimate (Climate)\nrobotics (Robotics) under technology\nhumanoids (Humanoid robots) under robotics\n</material>',
+    );
+    expect(prompt).not.toContain('energy (Energy)');
+    expect(prompt).not.toContain('floods (Floods)');
+  });
+
+  test('CR-7 KB-6 a proposal becomes a draft that is an idea with the capture date, and a new list item keeps its ref', () => {
+    const input = fastInput([fact()]);
+    const out = FEATURES.captureFast.proposals!(
+      {
+        summary: 'I proposed a cultural line.',
+        cannotPlace: [],
+        proposals: [
+          fastProposal({
+            fact: 0,
+            op: 'listAdd',
+            collection: null,
+            fields: '{}',
+            listId: 'communities',
+            label: 'Jinan',
+            ref: 'new:jinan',
+            reason: 'No community fits.',
+          }),
+          fastProposal(),
+        ],
+      },
+      input,
+      fastSession,
+    );
+    expect(out[0]).toMatchObject({
+      op: 'listAdd',
+      listId: 'communities',
+      label: 'Jinan',
+      ref: 'new:jinan',
+    });
+    expect(out[1]).toMatchObject({
+      op: 'create',
+      collection: 'culturalEntries',
+      data: {
+        communityId: 'portland',
+        startYear: 2065,
+        endYear: 2100,
+        status: 'idea',
+        sourceNote: 'From a capture on 2026-10-22.',
+      },
+    });
+  });
+
+  test('CR-7 KB-6 a delete from the fast file is refused with its reason, never queued', () => {
+    const out = FEATURES.captureFast.proposals!(
+      {
+        summary: 's',
+        cannotPlace: [],
+        proposals: [
+          fastProposal({
+            op: 'delete',
+            collection: 'culturalEntries',
+            targetId: 'CU3',
+            fields: '{}',
+          }),
+        ],
+      },
+      fastInput([fact()]),
+      fastSession,
+    );
+    expect(out).toEqual([{ summary: 'delete culturalEntries: CU3', problem: CAPTURE_NO_DELETE }]);
+  });
+
+  test('CR-7 a proposal for a fact the capture does not have, or with fields that are not JSON, is refused with a reason', () => {
+    const out = FEATURES.captureFast.proposals!(
+      {
+        summary: 's',
+        cannotPlace: [],
+        proposals: [fastProposal({ fact: 4 }), fastProposal({ fields: 'title: x' })],
+      },
+      fastInput([fact()]),
+      fastSession,
+    );
+    expect(out.map((o) => ('problem' in o ? o.problem : 'queued'))).toEqual([
+      'The capture has no fact 4.',
+      'Its fields were not a JSON object.',
+    ]);
+  });
+
+  test('CR-7 a fact the fast file cannot place drops its own proposals and queues the others', () => {
+    const two = [fact(), fact({ index: 1, text: 'The Kessler crowd stops tipping by 2070.' })];
+    const output = {
+      summary: 's',
+      cannotPlace: [{ fact: 1, reason: 'The text names no community the bible has.' }],
+      proposals: [fastProposal({ fact: 0 }), fastProposal({ fact: 1, reason: 'A guess.' })],
+    };
+    const out = FEATURES.captureFast.proposals!(output, fastInput(two), fastSession);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      op: 'create',
+      reason: 'Teenagers in Portland start a saying in 2065.',
+    });
+    // Every fact unplaced: nothing at all is queued.
+    const none = FEATURES.captureFast.proposals!(
+      { ...output, cannotPlace: [0, 1].map((f) => ({ fact: f, reason: 'No.' })) },
+      fastInput(two),
+      fastSession,
+    );
+    expect(none).toEqual([]);
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /add it to cannotPlace with its number and one plain sentence/,
+    );
+  });
+
+  test('CR-7 CR-8 the fast file may change only years, status, title or a list item field of an existing entry; a text or array field is refused', () => {
+    const change = (fields: Record<string, unknown>) =>
+      fastDraft(
+        fastProposal({ op: 'update', targetId: 'CU4', fields: JSON.stringify(fields) }),
+        fastInput([fact()]),
+      );
+    expect(
+      change({
+        endYear: 2080,
+        status: 'canon',
+        title: 'Flood walk',
+        communityId: 'portland',
+        demographic: '18-30',
+      }),
+    ).toMatchObject({
+      op: 'update',
+      targetId: 'CU4',
+      data: { endYear: 2080, status: 'canon' },
+    });
+    const refused = change({ endYear: 2080, body: 'New body.', tags: ['flood'] });
+    expect(refused).toEqual({
+      summary: 'update culturalEntries: CU4',
+      problem:
+        'The fast file can change only years, status, title or a list item field of an existing entry, and this change also sets body, tags. Send the capture to Claude in full to change those.',
+    });
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
+      /never change a text field such as body or an array field such as tags/,
+    );
+  });
+
+  test('CR-7 the titles nearby are the 30 nearest to the fact, in year order', () => {
+    const many: Record<string, Record<string, unknown>> = {};
+    for (let y = 1900; y < 2100; y += 2) {
+      many[`L${y}`] = {
+        _id: `L${y}`,
+        title: `Line ${y}`,
+        communityId: 'portland',
+        startYear: y,
+        endYear: y + 1,
+      };
+    }
+    const session = {
+      model: {
+        get: (c: string, id: string) => FAST_DOCS[c]?.[id],
+        all: (c: string) =>
+          c === 'culturalEntries' ? Object.values(many) : Object.values(FAST_DOCS[c] ?? {}),
+      },
+    } as never;
+    const { prompt } = FEATURES.captureFast.build(fastInput([fact()]), session);
+    const near = prompt
+      .split('<material source="nearby fact 0">\n')[1]!
+      .split('\n</material>')[0]!
+      .split('\n');
+    expect(near).toHaveLength(30);
+    expect(near[0]).toMatch(/^L2036 /);
+    expect(near.at(-1)).toMatch(/^L2094 /);
+  });
+});
+
+describe('CR-8 the full capture with hints (Route C)', () => {
+  const routed = (facts: CaptureFact[]) =>
+    CaptureInput.parse({
+      text: facts.map((f) => f.text).join(' '),
+      storyTime: { year: 2045 },
+      capturedOn: '2026-10-22',
+      routing: {
+        storyYear: 2045,
+        timelineEnd: 2100,
+        facts: facts.map((f) => ({ ...f, route: 'full' })),
+      },
+    });
+  const listPart = (prompt: string, id: string) =>
+    prompt
+      .split('\n\n')
+      .find((p) =>
+        p.includes(
+          `(${id === 'eventCategories' ? 'categoryId' : id === 'communities' ? 'communityId' : id === 'languages' ? 'language' : 'regions, item IDs'})`,
+        ),
+      )!;
+
+  test('CR-8 the lists are trimmed: communities and regions always, event categories only when a world event scored, languages only for a glossary term', () => {
+    const cultural = FEATURES.capture.build(routed([fact()]), fastSession).prompt;
+    expect(listPart(cultural, 'communities')).toContain(
+      'portland (Portland), guangzhou (Guangzhou)',
+    );
+    expect(listPart(cultural, 'regions')).toContain('oregon (Oregon)');
+    expect(listPart(cultural, 'eventCategories')).toBe(
+      'World event categories (categoryId): left out, since no fact in this capture reads as a world event.',
+    );
+    expect(listPart(cultural, 'languages')).toBe(
+      'Languages for glossary terms (language): left out, since no fact in this capture names a glossary term.',
+    );
+
+    const event = fact({
+      text: 'Humanoid robots are banned in Oregon by 2050.',
+      scores: { worldEvents: 40, culturalEntries: 30 },
+      candidates: [{ kind: 'category', id: 'robotics', label: 'Robotics', matched: 'robots' }],
+    });
+    const ev = FEATURES.capture.build(routed([event]), fastSession).prompt;
+    expect(listPart(ev, 'eventCategories')).toContain(
+      'technology (Technology), climate (Climate), robotics (Robotics), humanoids (Humanoid robots)\n',
+    );
+    expect(listPart(ev, 'eventCategories')).not.toContain('energy');
+
+    const term = fact({ text: 'Lan says 团圆 at every dinner.', scores: { glossaryTerms: 50 } });
+    expect(
+      listPart(FEATURES.capture.build(routed([term]), fastSession).prompt, 'languages'),
+    ).toContain('mandarin (Mandarin)');
+    // Nothing scored: the router knows nothing, so every list goes in whole, as before A48.
+    const blank = FEATURES.capture.build(routed([fact({ scores: {} })]), fastSession).prompt;
+    expect(listPart(blank, 'eventCategories')).toContain('energy (Energy)');
+    expect(listPart(blank, 'languages')).toContain('mandarin (Mandarin)');
+  });
+
+  test('CR-8 CR-9 the prompt files only the facts of this run and carries the candidates block with the section guess', () => {
+    const other = fact({
+      index: 1,
+      text: 'Zhou Lan moved to Seattle in 2040.',
+      section: 'moments',
+      share: 0.5,
+    });
+    const input = CaptureInput.parse({
+      text: `${fact().text} Lan cooks every Sunday.`,
+      storyTime: { year: 2045 },
+      capturedOn: '2026-10-22',
+      routing: { storyYear: 2045, timelineEnd: 2100, facts: [other] },
+    });
+    const { prompt } = FEATURES.capture.build(input, fastSession);
+    expect(prompt).toContain(
+      '<material source="capture box">\nZhou Lan moved to Seattle in 2040.\n</material>',
+    );
+    expect(prompt).not.toContain('yee haw');
+    expect(prompt).toContain(
+      "Candidates the box resolved for fact 1 of 1 (kind, ID, label). The box's section guess: moments, 50% of the points. Years: from 2065, open ended (a year in the text).",
+    );
+    expect(prompt).toContain(
+      '<material source="candidates fact 1">\nplace PLC1: Portland, community portland',
+    );
+    expect(prompt).toContain(
+      'Skip search_entries for these; read one with get_entry only if you need a field.',
+    );
+  });
+
+  const viewSink = () => {
+    const read: unknown[] = [];
+    const rejected: { summary: string; reason: string }[] = [];
+    return {
+      read,
+      rejected,
+      sink: {
+        label: 'capture, run test',
+        now: () => new Date(),
+        read: (e: unknown[]) => read.push(...e),
+        proposed: () => undefined,
+        rejected: (summary: string, reason: string) => rejected.push({ summary, reason }),
+      },
+    };
+  };
+  const viewInput = CaptureInput.parse({
+    text: 'x',
+    storyTime: { year: 2034 },
+    capturedOn: '2026-10-22',
+  });
+
+  test('CR-8 in a capture run get_entry returns the whole entry with body and backstory cut short; the panel tool is unchanged', async () => {
+    const { read, sink } = viewSink();
+    const tool = FEATURES.capture.tools!(viewInput, fastSession, sink).find(
+      (t) => t.name === 'get_entry',
+    )!;
+    expect(tool.description).toMatch(/cut short; a change may not replace a field that was cut/);
+    const out = JSON.parse((await tool.handler({ section: 'characters', id: 'Z3' })).text) as {
+      entry: Record<string, unknown>;
+      linkedFrom: unknown[];
+    };
+    // Every stored field is there, so a change can be judged against the whole entry.
+    expect(Object.keys(out.entry).sort()).toEqual(Object.keys(FAST_DOCS.characters!.Z3!).sort());
+    expect(out.entry.familyIds).toEqual(['F1']);
+    expect(out.entry.names).toEqual({
+      full: '<material source="characters Z3">\nZhou Lan\n</material>',
+    });
+    expect(out.entry.role).toBe(
+      '<material source="characters Z3">\nThe daughter who leaves.\n</material>',
+    );
+    expect(out.entry.backstory).toMatch(
+      /^<material source="characters Z3">\n(Long\. ){400} \(cut short\)\n<\/material>$/,
+    );
+    expect(out.entry.body).toBe('<material source="characters Z3">\nShort body.\n</material>');
+    expect(out.linkedFrom).toEqual([]);
+    expect(read).toEqual([{ collection: 'characters', id: 'Z3', title: 'Zhou Lan' }]);
+    const missing = await tool.handler({ section: 'characters', id: 'NOPE' });
+    expect(missing).toEqual({ text: 'No characters entry has the ID NOPE.', isError: true });
+    // The panel's get_entry still reads the whole entry, backstory and all.
+    const panel = bibleTools(fastSession, sink).find((t) => t.name === 'get_entry')!;
+    expect((await panel.handler({ section: 'characters', id: 'Z3' })).text.length).toBeGreaterThan(
+      6000,
+    );
+  });
+
+  test('CR-8 the cut never splits a character or falls inside stored markup, and keeps the cut short marker', () => {
+    expect(cutText('short')).toBe('short');
+    const tag = `<p>${'a'.repeat(CAPTURE_VIEW_CHARS - 6)}</p><p>more</p>`;
+    expect(cutText(tag)).toBe(`<p>${'a'.repeat(CAPTURE_VIEW_CHARS - 6)} (cut short)`);
+    const entity = `${'a'.repeat(CAPTURE_VIEW_CHARS - 3)}&amp; more`;
+    expect(cutText(entity)).toBe(`${'a'.repeat(CAPTURE_VIEW_CHARS - 3)} (cut short)`);
+    const pair = `${'a'.repeat(CAPTURE_VIEW_CHARS - 1)}😀 more`;
+    expect(cutText(pair)).toBe(`${'a'.repeat(CAPTURE_VIEW_CHARS - 1)} (cut short)`);
+  });
+
+  test('CR-8 KB-6 the capture propose_change refuses a change that replaces a field the capture read only in part', async () => {
+    const { rejected, sink } = viewSink();
+    const tool = FEATURES.capture.tools!(viewInput, fastSession, sink).find(
+      (t) => t.name === 'propose_change',
+    )!;
+    const out = await tool.handler({
+      op: 'update',
+      collection: 'characters',
+      targetId: 'Z3',
+      data: { backstory: 'She moved to Seattle.' },
+      reason: 'r',
+    });
+    const reason =
+      'This change replaces backstory of Zhou Lan, which the capture read only in part, so the rest would be lost. Leave it out, or file the fact as a new entry.';
+    expect(out).toEqual({ text: `Not queued: ${reason}`, isError: true });
+    expect(rejected).toEqual([{ summary: 'update characters: Z3', reason }]);
+    expect(wasCut(FAST_DOCS.characters!.Z3, 'body')).toBe(false);
+    expect(wasCut(FAST_DOCS.characters!.Z3, 'backstory')).toBe(true);
+  });
+
+  test('CR-8 the system prompt and the tools are the same for every capture, so they are a stable prefix', () => {
+    const sink = {
+      label: 'l',
+      now: () => new Date(),
+      read: () => undefined,
+      proposed: () => undefined,
+      rejected: () => undefined,
+    };
+    const a = CaptureInput.parse({
+      text: 'Lan moved.',
+      storyTime: { year: 2034 },
+      capturedOn: '2026-10-22',
+    });
+    const b = routed([fact()]);
+    const shape = (i: CaptureInput) =>
+      FEATURES.capture.tools!(i, fastSession, sink).map((t) => `${t.name}: ${t.description}`);
+    expect(shape(a)).toEqual(shape(b));
+    expect(featureSystemPrompt(FEATURES.capture)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(featureSystemPrompt(FEATURES.captureFast)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 });

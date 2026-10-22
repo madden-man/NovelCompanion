@@ -12,7 +12,10 @@ import { FEATURES } from './features';
 import { recordAlignment } from '../continuity';
 import { textHash } from '../../shared/domain/continuity/lines';
 import { localDateString } from '../../shared/domain/sessionLog';
+import { plainErrorMessage } from '../../shared/errors';
 import { instructionView, instructionViews } from './instructions';
+import { routeForCapture, routingFor } from './features/captureIndex';
+import type { CaptureRunWire, CaptureStarted } from '../../shared/claude';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
@@ -54,6 +57,10 @@ export function claudeHandlers(
     return s;
   };
   const bibleId = () => current()?.handle.id ?? null;
+  /** CR-9: the run IDs each split capture started, by the box's run ID. */
+  const splitCaptures = new Map<string, string[]>();
+  /** AI-1: box run IDs stopped before their capture started. */
+  const stoppedEarly = new Map<string, true>();
 
   return {
     'claude.status': () => runtime.status(bibleId()),
@@ -129,7 +136,17 @@ export function claudeHandlers(
       const start = await runtime.ask(session(), req);
       return { runId: start.runId, conversationId: start.conversationId };
     },
-    'claude.stop': ({ runId }) => ({ stopped: runtime.stop(runId) }),
+    'claude.stop': ({ runId }) => {
+      // CR-9: a capture that started a fast and a full run stops both under the box's run ID.
+      const split = splitCaptures.get(runId);
+      if (split) {
+        const stopped = split.map((id) => runtime.stop(id));
+        return { stopped: stopped.some(Boolean) };
+      }
+      // AI-1: a Stop that arrives before its capture splits is kept, so the runs start stopped.
+      remember(stoppedEarly, runId);
+      return { stopped: runtime.stop(runId) };
+    },
     'claude.runs': ({ feature }) => ({
       runs: new RunStore(session())
         .list(feature)
@@ -149,14 +166,60 @@ export function claudeHandlers(
       );
       return { runId: start.runId, conversationId: start.conversationId };
     },
-    'claude.capture': async ({ runId, text, storyTime }) => {
-      const start = await runtime.runFeature(
-        session(),
-        FEATURES.capture,
-        { text, storyTime, capturedOn: localDateString(new Date()) },
-        runId,
-      );
-      return { runId: start.runId, conversationId: start.conversationId };
+    'claude.capture': async ({ runId, text, storyTime, hints }): Promise<CaptureStarted> => {
+      // CR-9: rerun the router with the box's hints, so main sees the box's facts.
+      const s = session();
+      const routing = routeForCapture(s, text, storyTime, hints);
+      const timelineEnd = s.repo.bibleSettings().numbers.timelineEnd;
+      const capturedOn = localDateString(new Date());
+      // Local facts were filed by the box; one run per route takes every fact on it.
+      const wanted = (['fast', 'full'] as const)
+        .map((route) => ({ route, routing: routingFor(routing, route, timelineEnd) }))
+        .filter((r) => r.routing.facts.length > 0);
+      if (routing.facts.length > CAPTURE_MAX_FACTS) {
+        throw new Error(CAPTURE_TOO_MANY_FACTS);
+      }
+      const split = wanted.length > 1;
+      const ids = wanted.map((w) => (split ? captureRunId(runId, w.route) : runId));
+      if (split) {
+        remember(splitCaptures, runId, ids);
+        // A Stop that came first reaches the runs as they start (AI-1).
+        if (stoppedEarly.has(runId)) for (const id of ids) runtime.stop(id);
+      }
+      const runs: CaptureRunWire[] = [];
+      for (const [i, w] of wanted.entries()) {
+        const id = ids[i] ?? runId;
+        const input = { text, storyTime, capturedOn, routing: w.routing };
+        let start: Awaited<ReturnType<typeof runtime.runFeature>>;
+        try {
+          start =
+            w.route === 'fast'
+              ? await runtime.runFeature(s, FEATURES.captureFast, input, id)
+              : await runtime.runFeature(s, FEATURES.capture, input, id);
+        } catch (e) {
+          const first = runs[0];
+          if (!first) throw e;
+          // Never leave half a capture running: stop the run that did start.
+          runtime.stop(first.runId);
+          throw new Error(
+            `The ${ROUTE_WORDS[first.route]} started, but the ${ROUTE_WORDS[w.route]} could not (${plainErrorMessage(e).replace(/\.$/, '')}), so the ${ROUTE_WORDS[first.route]} was stopped too. Nothing was filed. Try again.`,
+            { cause: e },
+          );
+        }
+        runs.push({
+          route: w.route,
+          runId: start.runId,
+          conversationId: start.conversationId,
+          facts: w.routing.facts.map((f) => f.index),
+        });
+      }
+      const first = runs[0];
+      return {
+        runId: first?.runId ?? runId,
+        conversationId: first?.conversationId ?? null,
+        started: runs.length > 0,
+        runs,
+      };
     },
     'claude.alignment': async ({ runId, chapterId }) => {
       const s = session();
@@ -213,6 +276,30 @@ export function claudeHandlers(
     return store;
   }
 }
+
+/** CR-9: what each route is called in a message. */
+const ROUTE_WORDS = { fast: 'fast file', full: 'full capture' } as const;
+
+/** NF-3: a capture of more facts than one run takes is refused in plain words. */
+export const CAPTURE_MAX_FACTS = 50;
+export const CAPTURE_TOO_MANY_FACTS = `This capture has more than ${CAPTURE_MAX_FACTS} sentences, more than the app sends at once. Split it into smaller captures and send each one.`;
+
+/** Keep only the latest few entries, so IDs that are never used again are not kept forever. */
+function remember<V>(map: Map<string, V>, key: string, value?: V): void {
+  map.delete(key);
+  map.set(key, value ?? (true as V));
+  if (map.size > 100) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
+
+/**
+ * CR-9: the run ID of one route when a capture starts both: `<runId>-fast`
+ * and `<runId>-full`, cut so the result is still at most 64 characters.
+ */
+export const captureRunId = (runId: string, route: 'fast' | 'full'): string =>
+  `${runId.slice(0, 64 - route.length - 1)}-${route}`;
 
 /** IP-16: a conversation Claude is still answering in cannot be renamed, cleared or deleted. */
 export const CONVERSATION_BUSY =

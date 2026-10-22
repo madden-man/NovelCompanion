@@ -3,7 +3,7 @@ import { StoryTimeValue } from './storyTime';
 import { CaptureHint } from './domain/captureRouter/types';
 
 /**
- * Claude in the app (ARCH-4, AI-1 to AI-7, DB-4): the five features, their
+ * Claude in the app (ARCH-4, AI-1 to AI-7, DB-4): the features, their
  * default models, the failure kinds, and the shape of a saved run. Shared by
  * main (the runtime) and the renderer (the panel, settings, and feature panes).
  */
@@ -16,6 +16,7 @@ export const CLAUDE_FEATURES = [
   'importProposals',
   'panel',
   'capture',
+  'captureFast',
 ] as const;
 export const ClaudeFeature = z.enum(CLAUDE_FEATURES);
 export type ClaudeFeature = z.infer<typeof ClaudeFeature>;
@@ -35,6 +36,8 @@ export const DEFAULT_MODELS: Record<ClaudeFeature, string> = {
   importProposals: 'claude-sonnet-5-5',
   panel: 'claude-sonnet-5-5',
   capture: 'claude-sonnet-5-5',
+  /** A48 (CR-7): the fast file is one small call with no tools, so the newest Haiku. */
+  captureFast: 'claude-haiku-5-5',
 };
 
 /** Shown in settings when the live list cannot be reached. */
@@ -72,6 +75,11 @@ export const FEATURE_INFO: Record<ClaudeFeature, { label: string; sends: string 
     label: 'Capture',
     sends:
       'the text you type in the capture box (Cmd+K), the story time, and the entries Claude looks up to file it',
+  },
+  captureFast: {
+    label: 'Capture, fast file',
+    sends:
+      'the sentence you type in the capture box (Cmd+K), the names the box resolved in it, and the titles of nearby entries',
   },
 };
 
@@ -248,6 +256,32 @@ const ModelList = z.array(z.strictObject({ id: z.string(), displayName: z.string
 /** A run has started; its stream events carry `runId`. The renderer picks `runId` so it can listen first. */
 const Started = z.strictObject({ runId: z.string(), conversationId: z.string() });
 
+/** A48 (CR-9): one run a capture started, the route it handles and the facts in it. */
+export const CaptureRunWire = z.strictObject({
+  route: z.enum(['fast', 'full']),
+  runId: z.string(),
+  conversationId: z.string(),
+  /** The indexes of the facts this run files. */
+  facts: z.array(z.int().min(0)),
+});
+export type CaptureRunWire = z.infer<typeof CaptureRunWire>;
+
+/**
+ * A48 (CR-9): what `claude.capture` returns. One run per route: the fast
+ * facts go to `captureFast` and the full facts to `capture`. A single run
+ * keeps the request's `runId`; when both start, they run as `<runId>-fast`
+ * and `<runId>-full`. `runId` and `conversationId` are the first run's
+ * (fast before full). When every fact was filed by the box, nothing is sent:
+ * `started` is false, `runs` is empty and `conversationId` is null.
+ */
+export const CaptureStarted = z.strictObject({
+  runId: z.string(),
+  conversationId: z.string().nullable(),
+  started: z.boolean(),
+  runs: z.array(CaptureRunWire),
+});
+export type CaptureStarted = z.infer<typeof CaptureStarted>;
+
 /**
  * The Claude channels of the IPC contract (`src/shared/ipc.ts` spreads them
  * in). AI-4: only `claude.ask` (the question typed into the panel) and
@@ -332,7 +366,7 @@ export const claudeContract = {
        */
       hints: z.array(CaptureHint).max(50).optional(),
     }),
-    response: Started,
+    response: CaptureStarted,
   },
   /** IM-5: Claude reads a Word document picked in Import and proposes entries for review. */
   'claude.importProposals': {

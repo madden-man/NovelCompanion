@@ -806,5 +806,68 @@
         }
       }
     ]
+  },
+  {
+    "name": "captureFast: a routed fact files as a cultural line of the place's community, from the candidates alone (CR-7)",
+    "feature": "captureFast",
+    "match": "Teenagers in Portland begin to say yee haw ironically starting around 2065.",
+    "steps": [
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "proposals": [
+              {
+                "fact": 0,
+                "op": "create",
+                "collection": "culturalEntries",
+                "targetId": null,
+                "fields": "{\"title\": \"Saying yee haw ironically\", \"communityId\": \"portland\", \"demographic\": \"18-30\", \"startYear\": 2065, \"endYear\": 2100}",
+                "link": null,
+                "listId": null,
+                "label": null,
+                "parentId": null,
+                "ref": null,
+                "reason": "Teenagers in Portland start saying yee haw ironically around 2065; Portland's community, open ended to the timeline end."
+              }
+            ],
+            "summary": "I proposed a cultural line for Portland from 2065.",
+            "cannotPlace": []
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "captureFast: a fact the box cannot place with the IDs given is answered with a reason and queues nothing (CR-7)",
+    "feature": "captureFast",
+    "match": "The Kessler crowd stops tipping by 2070.",
+    "steps": [
+      {
+        "result": {
+          "text": "",
+          "structured": {
+            "proposals": [],
+            "summary": "I proposed nothing.",
+            "cannotPlace": [
+              {
+                "fact": 0,
+                "reason": "The text names no community the bible has, so the fact needs the full capture."
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "captureFast: a fast file that waits until Stop, for stopping a split capture (AI-1, CR-9)",
+    "feature": "captureFast",
+    "match": "HOLD-FAST-UNTIL-STOPPED",
+    "steps": [
+      {
+        "waitForAbort": true
+      }
+    ]
   }
 ]
