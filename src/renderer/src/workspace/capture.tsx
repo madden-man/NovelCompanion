@@ -778,8 +778,10 @@ function CaptureDialog(props: {
     else if (phase !== 'running') {
       const box = dialogRef.current;
       (
-        box?.querySelector<HTMLElement>('[data-focus-first]') ??
-        box?.querySelector<HTMLElement>('[data-testid="capture-tick"]')
+        box?.querySelector<HTMLElement>('[data-focus-first]:not(:disabled)') ??
+        box?.querySelector<HTMLElement>(
+          '[data-testid="capture-fact-tick"]:not(:disabled), [data-testid="capture-tick"], [data-testid="capture-file"]:not(:disabled), [data-testid="capture-later"]',
+        )
       )?.focus();
     }
     // Focus moves when the phase settles, not on every chip change.

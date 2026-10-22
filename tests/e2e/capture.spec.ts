@@ -1,16 +1,21 @@
 import { expect, test } from '@playwright/test';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { field, fileDb, fillEditable, invokeVia, launch, openEditable, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
- * KB-6 and KB-7 through the interface: Cmd+K (or Add in the status bar) opens
- * the capture box on every screen, Enter sends the sentence to the recorded
- * Claude, the proposals show with their diffs, File it approves the ticked
- * ones as one undo step, Review later leaves them in the queue, and without a
- * key or with a failed run the text is saved as an open question.
+ * KB-6, KB-7 and A48 (CR-6, CR-9) through the interface: Cmd+K (or Add in
+ * the status bar) opens the capture box on every screen. Enter runs the
+ * capture router: a fact the router places (Route A) shows its chips and its
+ * drafts and files without Claude; the rest go to the recorded Claude with
+ * hints. Alt+Enter (Send it all to Claude) sends every fact on Route C, the
+ * KB-6 capture with tools, which the recordings of MOVE, RECIPE, FERRY and
+ * Jinan answer. The proposals show with their diffs, File it approves the
+ * ticked ones and writes the ticked drafts as one undo step, Review later
+ * leaves proposals in the queue, and without a key or with a failed run the
+ * text is saved as an open question.
  */
 let db: TestDb;
 let app: ElectronApplication;
@@ -22,6 +27,15 @@ const MOVE = 'Zhou Lan moved to Seattle when Portland started rationing water.';
 const RECIPE = 'Meiling and Ruth kept the same recipe box, passed between the families.';
 const FERRY = 'The ferry to Macau stopped running in winter.';
 const TRAM = 'The tram to the coast was free on Sundays.';
+/** A48: lines the router files from the box (Route A) against this bible. */
+const MOONCAKES = 'Teenagers in Guangzhou start to eat mooncakes with coffee by the 2050s.';
+const YEE_HAW = 'Teenagers in Portland begin to say yee haw ironically starting around 2065.';
+const MASKS = 'Teenagers start to wear paper masks by 2060.';
+/** Route A as an open question; its words hold the RECIPE recording, so Ask Claude instead reaches it. */
+const RECIPE_MAYBE =
+  'Meiling and Ruth kept the same recipe box, passed between the families, maybe?';
+/** Route B: the fast file's recording answers it with "cannot place". */
+const KESSLER = 'The Kessler crowd stops tipping by 2070.';
 const fixture = readFixture();
 
 test.describe.configure({ mode: 'serial' });
@@ -75,6 +89,14 @@ async function send(text: string) {
   await input().press('Enter');
 }
 
+/** CR-5: Alt+Enter sends every fact to Claude on Route C, the KB-6 capture the recordings answer. */
+async function sendAll(text: string) {
+  await page.keyboard.press('Meta+k');
+  await expect(input()).toBeFocused();
+  await input().fill(text);
+  await input().press('Alt+Enter');
+}
+
 test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with the story time; Escape closes it', async () => {
   await expect(page.getByTestId('dashboard')).toBeVisible();
   await page.keyboard.press('Meta+k');
@@ -82,7 +104,9 @@ test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with th
   await expect(box().getByRole('heading', { name: 'Add to the bible' })).toBeVisible();
   await expect(box().getByTestId('capture-time')).toContainText('Story time 2034');
   await expect(input()).toBeFocused();
-  await expect(box()).toContainText('Enter sends it to Claude, Shift+Enter for a new line.');
+  await expect(box()).toContainText(
+    'Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.',
+  );
   // Shift+Enter is a new line, and the unsent text is there when the box opens again.
   await input().pressSequentially('First line');
   await input().press('Shift+Enter');
@@ -125,11 +149,11 @@ test('KB-6 NF-2 Cmd+K does nothing while another dialog holds focus', async () =
 
 test('KB-6 SM-3 Enter shows two proposal cards with diffs; unticking one and Cmd+Enter files the other; the Filed link opens it', async () => {
   const lanBefore = (await invoke('entry.get', { collection: 'characters', id: 'Z3' })).entry;
-  await send(MOVE);
+  await sendAll(MOVE);
   await expect(box()).toHaveAttribute('data-phase', 'running');
   await expect(box().getByTestId('capture-sent')).toHaveText(MOVE);
   await expect(cards()).toHaveCount(2);
-  await expect(box()).toHaveAttribute('data-phase', 'review');
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
   await expect(box().getByTestId('capture-answer')).toContainText(
     'I proposed a moment for Zhou Lan, Lives in Seattle from 2034',
   );
@@ -208,7 +232,7 @@ test('KB-6 ED-3 Cmd+Z undoes the filing in one step', async () => {
 });
 
 test('KB-6 Review later leaves the proposal pending in the review queue', async () => {
-  await send(RECIPE);
+  await sendAll(RECIPE);
   await expect(cards()).toHaveCount(2);
   await expect(cards().first()).toContainText('New moment Shares a recipe box with Ruth Hale');
   await box().getByTestId('capture-later').click();
@@ -236,9 +260,9 @@ test('KB-6 Escape in the review leaves the proposals pending, as Review later do
       (p) => p.proposal.data.title === 'Shares a recipe box with Ruth Hale',
     ).length;
   const before = await pending();
-  await send(RECIPE);
+  await sendAll(RECIPE);
   await expect(cards()).toHaveCount(2);
-  await expect(box()).toHaveAttribute('data-phase', 'review');
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
   expect(await pending()).toBe(before + 1);
@@ -255,9 +279,9 @@ const diffRow = (card: ReturnType<typeof cards>, path: string) =>
   card.getByTestId('proposal-diff').locator(`tr[data-path="${path}"]`);
 
 test('IP-17 KB-6 Add culture for Jinan shows the new community as a field; edited values and the edited name land, the item before the line', async () => {
-  await send(JINAN);
+  await sendAll(JINAN);
   await expect(cards()).toHaveCount(2);
-  await expect(box()).toHaveAttribute('data-phase', 'review');
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
   const item = cards().nth(0);
   const line = cards().nth(1);
   // The new item is a field of the diff: "Community: + Jinan", ticked like any other.
@@ -309,7 +333,7 @@ test('IP-17 KB-6 Add culture for Jinan shows the new community as a field; edite
 });
 
 test('IP-17 ED-7 the review queue shows the new community as a field and its name edits before approval; approving the line adds it first', async () => {
-  await send(JINAN);
+  await sendAll(JINAN);
   await expect(cards()).toHaveCount(2);
   await box().getByTestId('capture-later').click();
   await expect(box()).toBeHidden();
@@ -343,8 +367,268 @@ test('IP-17 ED-7 the review queue shows the new community as a field and its nam
   await expect(queue).toContainText('Approved after editing');
 });
 
+// ---------- A48: capture routing in the box (CR-6, CR-9, CR-10) ----------
+
+const facts = () => box().getByTestId('capture-fact');
+const runCount = async (feature: 'capture' | 'captureFast') =>
+  (await invoke('claude.runs', { feature })).runs.length;
+const chip = (card: Locator, name: string) => card.getByTestId(`chip-${name}`);
+async function pick(card: Locator, name: string, value: string) {
+  const f = card.getByTestId(`chip-${name}-field`);
+  await openEditable(f);
+  await f.locator('select').selectOption(value);
+  await expect(f.locator('select')).toHaveCount(0);
+}
+
+test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothing; Cmd+Enter files it and the Filed list links it', async () => {
+  const before = [await runCount('capture'), await runCount('captureFast')];
+  await send(MOONCAKES);
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  await expect(facts()).toHaveCount(1);
+  const card = facts().first();
+  await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(card).toContainText(
+    'New cultural entry Teenagers in Guangzhou start to eat mooncakes with coffee',
+  );
+  // The chips for cultural data, in one row under the title.
+  await expect(chip(card, 'section')).toContainText('Cultural data');
+  await expect(chip(card, 'community')).toContainText('Guangzhou');
+  await expect(chip(card, 'age')).toContainText('Ages 0 to 18');
+  await expect(chip(card, 'year')).toContainText('2050');
+  // An open end shows the timeline end it is stored as (CR-2).
+  await expect(chip(card, 'end')).toContainText('Open (2100)');
+  // The cue labels that placed it, in small text.
+  await expect(card.getByTestId('capture-route')).toContainText(
+    'Files here, without Claude. Placed by: a group starts to say or do something',
+  );
+  // The drafts as the ED-7 table, with the status and the source note File it adds.
+  const diff = card.getByTestId('draft-diff');
+  await expect(diff.getByRole('columnheader')).toHaveText(['Field', 'Now', 'Proposed']);
+  await expect(diff.locator('tr[data-path="communityId"]')).toContainText('Guangzhou');
+  await expect(diff.locator('tr[data-path="startYear"]')).toContainText('2050');
+  await expect(diff.locator('tr[data-path="status"]')).toContainText('Idea');
+  await expect(diff.locator('tr[data-path="sourceNote"]')).toContainText('filed without Claude.');
+  await expect(card.getByTestId('capture-fact-tick')).toBeChecked();
+  // Nothing was sent and nothing written (CR-6, AI-3).
+  expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
+  expect(
+    await lineTitled('Teenagers in Guangzhou start to eat mooncakes with coffee'),
+  ).toBeUndefined();
+
+  await page.keyboard.press('Meta+Enter');
+  const filed = box().getByTestId('capture-filed');
+  const link = filed.getByRole('button', {
+    name: 'Teenagers in Guangzhou start to eat mooncakes with coffee',
+  });
+  await expect(link).toBeVisible();
+  const made = (await lineTitled('Teenagers in Guangzhou start to eat mooncakes with coffee'))!;
+  expect(made).toMatchObject({
+    status: 'idea',
+    communityId: 'guangzhou',
+    demographic: '0-18',
+    startYear: 2050,
+    endYear: 2100,
+    body: MOONCAKES,
+  });
+  expect(String(made.sourceNote)).toMatch(
+    /^From a capture on \d{4}-\d{2}-\d{2}, filed without Claude\.$/,
+  );
+  expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
+  // The link opens the entry; its provenance names the capture and says Claude was not used.
+  await link.click();
+  await expect(box()).toBeHidden();
+  const editor = page.getByTestId('editor');
+  await expect(field(editor, 'title').locator('input')).toHaveValue(
+    'Teenagers in Guangzhou start to eat mooncakes with coffee',
+  );
+  await expect(field(editor, 'sourceNote')).toContainText('filed without Claude.');
+});
+
+test('CR-6 changing the Section chip re-routes', async () => {
+  const before = await runCount('captureFast');
+  await send(YEE_HAW);
+  const card = facts().first();
+  await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(chip(card, 'community')).toContainText('Portland');
+  // A world event needs a category picked among many: the card now needs Claude (CR-5).
+  await pick(card, 'section', 'worldEvents');
+  await expect(chip(card, 'section')).toContainText('World event');
+  await expect(chip(card, 'category')).toBeVisible();
+  await expect(chip(card, 'community')).toHaveCount(0);
+  await expect(card).toHaveAttribute('data-stand', 'unsent');
+  await expect(card).not.toHaveAttribute('data-route', 'local');
+  await expect(card.getByTestId('capture-route')).toContainText('Needs Claude');
+  await expect(card.getByTestId('capture-route')).toContainText('category to choose');
+  await expect(card.getByTestId('capture-send-fact')).toBeVisible();
+  await expect(card.getByTestId('draft-diff')).toHaveCount(0);
+  // Back to cultural data: filed from the box again, with its chips and diff.
+  await pick(card, 'section', 'culturalEntries');
+  await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(chip(card, 'community')).toContainText('Portland');
+  await expect(card.getByTestId('draft-diff')).toContainText('Portland');
+  // A chip change sends nothing.
+  expect(await runCount('captureFast')).toBe(before);
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+  expect(await lineTitled('Teenagers in Portland begin to say yee haw ironically')).toBeUndefined();
+});
+
+test('CR-6 a missing community is a highlighted chip and File it waits for it', async () => {
+  await send(MASKS);
+  const card = facts().first();
+  await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(chip(card, 'community')).toHaveAttribute('data-needed', 'true');
+  await expect(chip(card, 'community')).toContainText('Community (needed)');
+  await expect(card.getByTestId('capture-needed')).toContainText('Pick the community');
+  await expect(card.getByTestId('capture-fact-tick')).toBeDisabled();
+  await expect(card.getByTestId('capture-fact-tick')).not.toBeChecked();
+  await expect(box().getByTestId('capture-file')).toBeDisabled();
+  await expect(box().getByTestId('capture-file-waits')).toBeVisible();
+  // Cmd+Enter waits too: nothing is filed.
+  await page.keyboard.press('Meta+Enter');
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  expect(await lineTitled('Teenagers start to wear paper masks')).toBeUndefined();
+
+  await pick(card, 'community', 'portland');
+  await expect(chip(card, 'community')).not.toHaveAttribute('data-needed', 'true');
+  await expect(card.getByTestId('capture-fact-tick')).toBeChecked();
+  await expect(box().getByTestId('capture-file')).toBeEnabled();
+  await expect(card.getByTestId('draft-diff').locator('tr[data-path="communityId"]')).toContainText(
+    'Portland',
+  );
+  await page.keyboard.press('Meta+Enter');
+  await expect(box().getByTestId('capture-filed')).toContainText(
+    'Teenagers start to wear paper masks',
+  );
+  expect(await lineTitled('Teenagers start to wear paper masks')).toMatchObject({
+    communityId: 'portland',
+    startYear: 2060,
+    status: 'idea',
+  });
+  await page.keyboard.press('Escape');
+});
+
+test('CR-6 KB-7 Review later keeps a fact the box would file as an open question; nothing else is written', async () => {
+  await send(YEE_HAW);
+  await expect(facts().first()).toHaveAttribute('data-stand', 'local');
+  await box().getByTestId('capture-later').click();
+  await expect(box().getByTestId('capture-saved')).toContainText('Saved as an open question');
+  const list = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
+  expect(list.entries.find((e) => e.entry.title === YEE_HAW)?.entry).toMatchObject({
+    question: YEE_HAW,
+    tags: ['capture'],
+  });
+  expect(await lineTitled('Teenagers in Portland begin to say yee haw ironically')).toBeUndefined();
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+});
+
+test('CR-9 CR-7 a two-sentence capture shows two cards; the Route A one files locally and the Route B one streams from the recording', async () => {
+  const fastBefore = await runCount('captureFast');
+  const fullBefore = await runCount('capture');
+  // The recording answers for fact 0, so the fast fact comes first.
+  await send(`${KESSLER} ${YEE_HAW}`);
+  await expect(facts()).toHaveCount(2);
+  const [fast, local] = [facts().nth(0), facts().nth(1)];
+  await expect(local).toHaveAttribute('data-stand', 'local');
+  await expect(fast).toHaveAttribute('data-stand', 'sent');
+  await expect(fast).toHaveAttribute('data-route', 'fast');
+  await expect(fast.getByTestId('capture-route')).toContainText('Sent to Claude, fast file.');
+  // The chips of a sent fact are the hints that went with the text: read-only.
+  await expect(chip(fast, 'section').locator('.editable')).toHaveClass(/is-disabled/);
+  // The fast file's recording streams in and says it cannot place the fact, with why (CR-7).
+  await expect(fast.getByTestId('capture-run')).toBeVisible();
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  await expect(fast.getByTestId('capture-cannot-place')).toContainText(
+    'Claude could not place this. The text names no community the bible has, so the fact needs the full capture.',
+  );
+  await expect(fast.getByTestId('capture-ask-claude')).toBeVisible();
+  expect(await runCount('captureFast')).toBe(fastBefore + 1);
+  expect(await runCount('capture')).toBe(fullBefore);
+  // File it writes the Route A line; the fast fact proposed nothing.
+  await expect(box().getByTestId('capture-file')).toContainText('File it');
+  await page.keyboard.press('Meta+Enter');
+  const filed = box().getByTestId('capture-filed');
+  await expect(
+    filed.getByRole('button', { name: 'Teenagers in Portland begin to say yee haw ironically' }),
+  ).toBeVisible();
+  expect(await lineTitled('Teenagers in Portland begin to say yee haw ironically')).toMatchObject({
+    communityId: 'portland',
+    startYear: 2065,
+    endYear: 2100,
+  });
+  expect(await lineTitled('The Kessler crowd stops tipping')).toBeUndefined();
+  await page.keyboard.press('Escape');
+});
+
+test('CR-6 Ask Claude instead sends the fact on Route C', async () => {
+  const fastBefore = await runCount('captureFast');
+  const fullBefore = await runCount('capture');
+  await send(`${MOONCAKES} ${RECIPE_MAYBE}`);
+  await expect(facts()).toHaveCount(2);
+  const [line, recipe] = [facts().nth(0), facts().nth(1)];
+  await expect(line).toHaveAttribute('data-stand', 'local');
+  await expect(recipe).toHaveAttribute('data-stand', 'local');
+  expect(await runCount('capture')).toBe(fullBefore);
+  await recipe.getByTestId('capture-ask-claude').click();
+  await expect(recipe).toHaveAttribute('data-stand', 'sent');
+  await expect(recipe).toHaveAttribute('data-route', 'full');
+  await expect(recipe.getByTestId('capture-route')).toContainText('Sent to Claude, full capture.');
+  // The full capture's recording streams its proposals into that fact's card.
+  await expect(recipe.getByTestId('capture-card')).toHaveCount(2);
+  await expect(recipe.getByTestId('capture-card').first()).toContainText(
+    'New moment Shares a recipe box with Ruth Hale',
+  );
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  // The other fact stays with the box: main skipped it.
+  await expect(line).toHaveAttribute('data-stand', 'local');
+  expect(await runCount('capture')).toBe(fullBefore + 1);
+  expect(await runCount('captureFast')).toBe(fastBefore);
+  await expect(box().getByTestId('capture-file')).toContainText('File it');
+});
+
+test('CR-6 CR-9 ED-3 Cmd+Z undoes a mixed filing in one step', async () => {
+  // The box from the row above: one Route A line and two proposals from the full capture.
+  await expect(facts()).toHaveCount(2);
+  const title = 'Teenagers in Guangzhou start to eat mooncakes with coffee';
+  const linesBefore = (
+    await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })
+  ).entries.filter((e) => e.entry.title === title).length;
+  const recipeMoments = async () =>
+    (await invoke('entry.list', { collection: 'moments', trash: 'exclude' })).entries.filter((e) =>
+      String(e.entry.title).startsWith('Shares a recipe box with'),
+    ).length;
+  const momentsBefore = await recipeMoments();
+  const lines = async () =>
+    (
+      await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })
+    ).entries.filter((e) => e.entry.title === title).length;
+
+  await page.keyboard.press('Meta+Enter');
+  const filed = box().getByTestId('capture-filed');
+  await expect(filed.getByRole('button', { name: title })).toBeVisible();
+  await expect(
+    filed.getByRole('button', { name: 'Shares a recipe box with Ruth Hale' }),
+  ).toBeVisible();
+  await expect(
+    filed.getByRole('button', { name: 'Shares a recipe box with Zhou Meiling' }),
+  ).toBeVisible();
+  expect(await lines()).toBe(linesBefore + 1);
+  expect(await recipeMoments()).toBe(momentsBefore + 2);
+
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+  await page.getByTestId('status-bar').click();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(lines).toBe(linesBefore);
+  await expect.poll(recipeMoments).toBe(momentsBefore);
+  await page.keyboard.press('Shift+Meta+z');
+  await expect.poll(lines).toBe(linesBefore + 1);
+  await expect.poll(recipeMoments).toBe(momentsBefore + 2);
+});
+
 test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, with a link', async () => {
-  await send(FERRY);
+  await sendAll(FERRY);
   const saved = box().getByTestId('capture-saved');
   await expect(saved).toContainText('Saved as an open question');
   await expect(saved).toContainText('could not reach Anthropic');
@@ -371,4 +655,29 @@ test('KB-7 with the key removed, Enter saves an open question and sends nothing'
   await expect(input()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
+});
+
+test('CR-6 KB-7 with no key, a line the box can place still files without Claude, and the box says so', async () => {
+  // The key was removed in the row above.
+  await send(MASKS);
+  const card = facts().first();
+  await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(box().getByTestId('capture-no-key')).toHaveText(
+    'No Anthropic key is set, so these file here without Claude.',
+  );
+  await expect(card.getByTestId('capture-ask-claude')).toBeDisabled();
+  await pick(card, 'community', 'guangzhou');
+  await page.keyboard.press('Meta+Enter');
+  await expect(box().getByTestId('capture-filed')).toContainText(
+    'Teenagers start to wear paper masks',
+  );
+  const lines = await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' });
+  expect(
+    lines.entries.some(
+      (e) =>
+        e.entry.title === 'Teenagers start to wear paper masks' &&
+        e.entry.communityId === 'guangzhou',
+    ),
+  ).toBe(true);
+  await page.keyboard.press('Escape');
 });

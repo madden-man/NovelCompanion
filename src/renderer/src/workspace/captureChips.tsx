@@ -290,7 +290,7 @@ function Chips(props: {
           label="Until"
           value={fact.years.end}
           allowEmpty
-          placeholder="Open"
+          placeholder={`Open (${index.timelineEnd})`}
           testId="chip-end-field"
           onSave={async (v) => props.onChoose({ hint: { endYear: v } })}
         />
