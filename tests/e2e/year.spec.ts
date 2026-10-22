@@ -2,7 +2,15 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { APP_MENU_ITEMS, RAIL_SCREENS, fileDb, invokeVia, launch, rail } from './helpers';
+import {
+  APP_MENU_ITEMS,
+  RAIL_SCREENS,
+  fileDb,
+  fillEditable,
+  invokeVia,
+  launch,
+  rail,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -410,4 +418,193 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await page.keyboard.press('Enter');
   await expect(dialog()).toHaveCount(0);
   await expect(editor()).toContainText('Grid batteries replace the last coal plant in Guangdong');
+});
+
+// ---------- A47 IP-5: the dialog's rows are links and fields ----------
+
+const person = (id: string) => dialog().locator(`tr[data-person="${id}"]`);
+const top = (testid: string) => page.getByTestId(testid);
+const character = async (id: string) =>
+  (await invoke('entry.get', { collection: 'characters', id })).entry;
+const era = async () =>
+  (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry;
+
+async function openAt(year: number) {
+  await invoke('storyTime.set', { time: { year } });
+  await page.keyboard.press('Meta+t');
+  await expect(dialog()).toBeVisible();
+  await expect(dialog().getByTestId('time-now')).toHaveText(String(year));
+}
+
+test("IP-5 a person's name in the dialog opens their page and closes the dialog", async () => {
+  await rail(page, 'Characters').click();
+  await openAt(2045);
+  await person('H3').getByTestId('year-person').click();
+  await expect(dialog()).toHaveCount(0);
+  await expect(editor()).toHaveAttribute('data-entry-id', 'H3');
+});
+
+test('IP-5 birth and death edit in place in the row, the state and age follow at once, each is one undo step, and opening a field moves no row', async () => {
+  await openAt(2045);
+  await expect(person('H3').getByTestId('year-age')).toHaveText('60');
+  await expect(person('H3').getByTestId('year-birth')).toHaveText('1985');
+  const rows = async () =>
+    dialog()
+      .locator('[data-testid="time-states"] tbody tr')
+      .evaluateAll((els) =>
+        els.slice(0, 6).map((e) => {
+          const r = e.getBoundingClientRect();
+          const cells = [...e.children].map((c) => Math.round(c.getBoundingClientRect().width));
+          return [Math.round(r.y), Math.round(r.height), ...cells];
+        }),
+      );
+  const before = await rows();
+  await person('H3').getByTestId('year-birth').locator('.editable-text').click();
+  await expect(person('H3').getByTestId('year-birth').locator('input')).toBeFocused();
+  expect(await rows()).toEqual(before);
+  await person('H3').getByTestId('year-birth').locator('input').fill('1990');
+  await person('H3').getByTestId('year-birth').locator('input').press('Enter');
+  await expect.poll(async () => (await character('H3')).birth).toEqual({ year: 1990 });
+  await expect(person('H3').getByTestId('year-age')).toHaveText('55');
+  // Death: H6 dies in 2044, so in 2045 he is dead.
+  await fillEditable(person('H6').getByTestId('year-death'), '2044');
+  await expect.poll(async () => (await character('H6')).death).toEqual({ year: 2044 });
+  await expect(person('H6').locator('[data-state]')).toHaveText('dead since 2044');
+  await closeDialog();
+  await top('top-undo').click();
+  await expect.poll(async () => (await character('H6')).death).toBeNull();
+  await top('top-undo').click();
+  await expect.poll(async () => (await character('H3')).birth).toEqual({ year: 1985 });
+  await openAt(2045);
+  await expect(person('H3').getByTestId('year-age')).toHaveText('60');
+  await closeDialog();
+});
+
+test('IP-5 the era panel edits its name, start, end and body in place', async () => {
+  await openAt(2045);
+  const panel = dialog().getByTestId('time-era');
+  await fillEditable(panel.getByTestId('era-name'), 'The battery forties');
+  await expect.poll(async () => (await era()).name).toBe('The battery forties');
+  expect((await era()).title).toBe('The battery forties');
+  await fillEditable(panel.getByTestId('era-start'), '2041');
+  await expect.poll(async () => (await era()).startYear).toBe(2041);
+  await fillEditable(panel.getByTestId('era-end'), '2050');
+  await expect.poll(async () => (await era()).endYear).toBe(2050);
+  await expect(panel).toContainText('The battery forties (2041 to 2050)');
+  await panel.getByTestId('era-body').locator('.editable-text').click();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Grid batteries in every house.');
+  await page.keyboard.press('Meta+Enter');
+  await expect.poll(async () => (await era()).body).toBe('Grid batteries in every house.');
+  await expect(panel.getByTestId('era-body')).toContainText('Grid batteries in every house.');
+  await closeDialog();
+  for (let i = 0; i < 4; i++) await top('top-undo').click();
+  await expect
+    .poll(async () => {
+      const e = await era();
+      return [e.name, e.title, e.startYear, e.endYear];
+    })
+    .toEqual(['The forties', 'The forties', 2040, 2049]);
+  expect((await era()).body).toContain('Grid batteries everywhere.');
+});
+
+test('IP-5 IP-14 a year no era covers offers a new era named from the template', async () => {
+  await invoke('settings.set', { templates: { eraName: 'Unnamed era' } });
+  await openAt(2150);
+  const panel = dialog().getByTestId('time-era');
+  await expect(panel).toContainText('No era covers 2150.');
+  await panel.getByTestId('era-add').click();
+  await expect(panel.getByTestId('era-name')).toHaveText('Unnamed era');
+  await expect(panel).toContainText('Unnamed era (2150 to 2159)');
+  await closeDialog();
+  await top('top-undo').click();
+  await openAt(2150);
+  await expect(dialog().getByTestId('time-era')).toContainText('No era covers 2150.');
+  await closeDialog();
+  await invoke('settings.set', { templates: { eraName: 'New era' } });
+});
+
+test("IP-5 a chapter strand in the year opens the chapter's bar on the Outline, scrolled into view and focused, with its popover closed", async () => {
+  await rail(page, 'Characters').click();
+  await openAt(2085);
+  const strand = dialog().locator('[data-testid="year-strand"][data-chapter="CH8"]');
+  await expect(strand).toHaveText('Chapter 8: Noor, present (primary)');
+  await strand.click();
+  await expect(dialog()).toHaveCount(0);
+  const outline = page.getByTestId('outline-view');
+  await expect(outline).toBeVisible();
+  const bar = outline.locator('[data-testid="chapter-bar"][data-chapter="CH8"]');
+  await expect(bar).toBeFocused();
+  await expect(bar).toBeInViewport();
+  await expect(outline.getByTestId('strand-popover')).toHaveCount(0);
+  // From the Outline itself it works the same.
+  await openAt(2045);
+  await dialog().locator('[data-testid="year-strand"][data-chapter="CH2"]').click();
+  await expect(dialog()).toHaveCount(0);
+  await expect(outline.locator('[data-testid="chapter-bar"][data-chapter="CH2"]')).toBeFocused();
+  await expect(outline.locator('[data-testid="chapter-bar"][data-chapter="CH2"]')).toBeInViewport();
+});
+
+test('IP-5 Lived through and Compare link the name to the person', async () => {
+  await openAt(2075);
+  const lived = dialog().getByTestId('time-lived');
+  await lived.getByText('Lived through', { exact: true }).click();
+  await lived.getByLabel('Lived through by').selectOption({ label: 'Iris Hale-Zhou' });
+  await lived.getByTestId('lived-person').click();
+  await expect(dialog()).toHaveCount(0);
+  await expect(editor()).toHaveAttribute('data-entry-id', 'H5');
+  await openAt(2075);
+  const compare = dialog().getByTestId('time-compare');
+  await compare.getByText('Compare two characters', { exact: true }).click();
+  await compare.getByLabel('Second').selectOption({ label: 'Zhou Lan' });
+  await compare.getByTestId('compare-second').click();
+  await expect(dialog()).toHaveCount(0);
+  await expect(editor()).toHaveAttribute('data-entry-id', 'Z3');
+});
+
+test('IP-5 NF-2 by keyboard in both themes: a name link and a birth field are reached with Tab and show a focus ring, Enter opens the field and Escape closes only the field; headings and fields use the primary text colour', async () => {
+  const theme0 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    await openAt(2045);
+    const link = person('H3').getByTestId('year-person');
+    await tabTo(link);
+    await expect(link).toHaveCSS('outline-style', 'solid');
+    const birth = person('H3').getByTestId('year-birth').locator('.editable-text');
+    await tabTo(birth);
+    await expect(birth).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('Enter');
+    await expect(person('H3').getByTestId('year-birth').locator('input')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(person('H3').getByTestId('year-birth').locator('input')).toHaveCount(0);
+    await expect(dialog()).toBeVisible();
+    await expect(birth).toBeFocused();
+    const read = await dialog().evaluate((d) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--fg)';
+      document.body.append(probe);
+      const fg = getComputedStyle(probe).color;
+      probe.remove();
+      const els = [
+        ...d.querySelectorAll(
+          '[data-testid="time-states"] th, [data-testid="time-states"] .editable-text, [data-testid="time-era"] .editable-text',
+        ),
+      ];
+      return { fg, colors: els.map((e) => getComputedStyle(e).color) };
+    });
+    expect(read.colors.length).toBeGreaterThan(10);
+    for (const c of read.colors) expect(c, theme).toBe(read.fg);
+    // Enter on a name opens the page.
+    await link.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog()).toHaveCount(0);
+    await expect(editor()).toHaveAttribute('data-entry-id', 'H3');
+  }
+  await page.evaluate(
+    (t) =>
+      t === null
+        ? document.documentElement.removeAttribute('data-theme')
+        : document.documentElement.setAttribute('data-theme', t),
+    theme0,
+  );
 });
