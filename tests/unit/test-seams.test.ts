@@ -82,6 +82,8 @@ describe('T-4 the packaged app honours the test seams only under the documented 
     // The NOVEL_COMPANION_TEST_FAKE_CLAUDE stand-in was retired: briefs and summaries use the runtime fake.
     expect(handlers).toMatch(/testSeams: seams\(\)/);
     // The proposal seam stays refused in every packaged build.
-    expect(handlers).toMatch(/if \(!app\.isPackaged\) \{\s+handle\(\s+'test\.propose'/);
+    expect(handlers).toMatch(
+      /if \(!app\.isPackaged\) \{\s+const tests = testHandlers[^}]*handle\('test\.propose'[^}]*handle\('test\.seed'/,
+    );
   });
 });
