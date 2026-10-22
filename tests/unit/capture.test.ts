@@ -28,8 +28,20 @@ import {
   PROSE_REFUSAL_RULE,
 } from '../../src/main/claude/prompts';
 import { featureSystemPrompt, jsonSchemaFor } from '../../src/main/claude/runtime';
-import { captureQuestionData, fileCapture } from '../../src/shared/domain/capture';
+import {
+  captureQuestionData,
+  fileCapture,
+  fileLocalDrafts,
+  mergeFilings,
+} from '../../src/shared/domain/capture';
 import type { CaptureProposal } from '../../src/shared/domain/capture';
+import type { CaptureDraft } from '../../src/shared/domain/captureRouter';
+import {
+  NO_CHOICE,
+  draftsWith,
+  openAsks,
+  sendHints,
+} from '../../src/renderer/src/workspace/captureLocal';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -190,9 +202,11 @@ describe('KB-7 a capture Claude cannot file becomes an open question', () => {
       question: 'The ferry to Macau <stopped> in winter.\nNobody remembers why.',
       tags: ['capture'],
     });
+    // A44: long text is Markdown, so the body is the text, a blank line, and the story time.
     expect(data.body).toBe(
-      '<p>The ferry to Macau &lt;stopped&gt; in winter.</p><p>Nobody remembers why.</p><p>Story time 2034, writing Chapter 4: Rain</p>',
+      'The ferry to Macau <stopped> in winter.\nNobody remembers why.\n\nStory time 2034, writing Chapter 4: Rain',
     );
+    expect(String(data.body)).not.toMatch(/<p>/);
   });
 });
 
@@ -238,10 +252,214 @@ describe('KB-6 ED-3 filing', () => {
   test('KB-6 the capture box source asks Claude for no prose and writes only through File it', () => {
     const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/capture.tsx'), 'utf8');
     expect(src).toContain('Add to the bible');
-    expect(src).toContain('Enter sends it to Claude, Shift+Enter for a new line.');
+    // CR-6: Enter routes first; nothing is filed before File it.
+    expect(src).toContain(
+      'Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.',
+    );
     // AI-3: the only writes are the filing (approve and reject) and the KB-7 open question.
     expect(src.match(/call\('entry\.(create|update|delete)'/g)).toEqual(["call('entry.create'"]);
     expect(src).not.toMatch(/proposal\.approve/);
+    // CR-6: the chips and the routing around them write nothing; Route A files through fileLocalDrafts.
+    for (const file of ['captureChips.tsx', 'captureLocal.ts']) {
+      const other = readFileSync(join(ROOT, 'src/renderer/src/workspace', file), 'utf8');
+      expect(other, file).not.toMatch(
+        /'(entry\.(create|update|delete)|lists\.addItem|proposal\.(approve|reject))'/,
+      );
+    }
+    expect(src).toContain('fileLocalDrafts(call, drafts, capturedOn');
+  });
+});
+
+// ---------- a48-box: Route A files from the box (CR-6, CR-9, CR-10) ----------
+
+type AnyInvoke = <C extends Channel>(c: C, r: Request<C>) => Promise<Response<C>>;
+
+/** A fake bible behind the channels Route A uses, logging every call in order. */
+function localRig() {
+  const calls: string[] = [];
+  const lists = [
+    {
+      _id: 'communities',
+      label: 'Communities',
+      derived: false,
+      fixedItems: false,
+      items: [{ id: 'portland', label: 'Portland', parentId: null, color: null, extra: {} }],
+    },
+  ];
+  const made: Record<string, Record<string, unknown>> = {};
+  let n = 0;
+  const invoke = (async (channel: Channel, req: Record<string, unknown>) => {
+    calls.push(channel);
+    if (channel === 'lists.get') return { lists };
+    if (channel === 'lists.addItem') {
+      const item = { id: String(req.label).toLowerCase(), label: String(req.label) };
+      return { item: { ...item, parentId: null, color: null, extra: {} } };
+    }
+    if (channel === 'entry.create') {
+      const id = `NEW${++n}`;
+      made[id] = { _id: id, ...(req.data as Record<string, unknown>) };
+      return { entry: made[id], warnings: [] };
+    }
+    throw new Error(`unexpected ${channel}`);
+  }) as unknown as AnyInvoke;
+  return { calls, made, invoke };
+}
+
+const JINAN_DRAFTS: CaptureDraft[] = [
+  {
+    op: 'create',
+    collection: 'culturalEntries',
+    data: {
+      title: 'Teenagers in Jinan treat a degree as a joke',
+      communityId: 'new:jinan',
+      demographic: '0-18',
+      startYear: 2070,
+      endYear: 2100,
+      body: 'Teenagers in Jinan treat a degree as a joke by the 2070s.',
+      status: 'idea',
+    },
+  },
+  { op: 'listAdd', listId: 'communities', label: 'Jinan', ref: 'new:jinan' },
+];
+
+describe('CR-6 Route A files from the box', () => {
+  test('CR-6 CR-10 fileLocalDrafts writes nothing until it is called, mints the new item first, and files an idea with the local source note as one undo step', async () => {
+    const rig = localRig();
+    // Nothing is written by building the drafts: the rig has seen no call yet.
+    expect(rig.calls).toEqual([]);
+    const r = await fileLocalDrafts(rig.invoke, JINAN_DRAFTS, '2026-10-22', 'idea-status');
+    // IP-17: the new community is added before the line that uses it, though it came second.
+    expect(rig.calls).toEqual(['lists.get', 'lists.addItem', 'entry.create']);
+    expect(rig.made.NEW1).toMatchObject({
+      communityId: 'jinan',
+      status: 'idea-status',
+      sourceNote: 'From a capture on 2026-10-22, filed without Claude.',
+      startYear: 2070,
+      endYear: 2100,
+    });
+    expect(r.failed).toEqual([]);
+    expect(r.filed).toEqual([
+      {
+        collection: 'culturalEntries',
+        id: 'NEW1',
+        title: 'Teenagers in Jinan treat a degree as a joke',
+        op: 'create',
+      },
+    ]);
+    expect(r.minted).toEqual(['Jinan']);
+    expect(r.command?.label).toBe(
+      'Filed a capture: Teenagers in Jinan treat a degree as a joke and Jinan',
+    );
+    // Undo takes the line out before the item it uses; redo puts the item back first.
+    expect(r.command?.undo.map((o) => o.kind)).toEqual(['delete', 'run']);
+    expect(r.command?.redo.map((o) => o.kind)).toEqual(['run', 'restore']);
+  });
+
+  test('CR-6 IP-17 a new item the list already holds in any case is used as it is and not undone; a line whose item failed is not written', async () => {
+    const rig = localRig();
+    const portland: CaptureDraft[] = [
+      { op: 'listAdd', listId: 'communities', label: 'PORTLAND', ref: 'new:portland' },
+      {
+        op: 'create',
+        collection: 'culturalEntries',
+        data: { title: 'Rain hats', communityId: 'new:portland', startYear: 2040 },
+      },
+    ];
+    const r = await fileLocalDrafts(rig.invoke, portland, '2026-10-22');
+    expect(rig.calls).toEqual(['lists.get', 'entry.create']);
+    expect(rig.made.NEW1).toMatchObject({ communityId: 'portland', status: 'idea' });
+    expect(r.minted).toEqual([]);
+    expect(r.command?.undo.map((o) => o.kind)).toEqual(['delete']);
+
+    const broken: CaptureDraft[] = [
+      { op: 'listAdd', listId: 'communities', ref: 'new:nowhere' },
+      {
+        op: 'create',
+        collection: 'culturalEntries',
+        data: { title: 'Lost line', communityId: 'new:nowhere', startYear: 2040 },
+      },
+    ];
+    const lost = await fileLocalDrafts(localRig().invoke, broken, '2026-10-22');
+    expect(lost.filed).toEqual([]);
+    expect(lost.failed.map((f) => f.id)).toEqual(['draft 0', 'draft 1']);
+    expect(lost.command).toBeNull();
+  });
+
+  test('CR-9 ED-3 one File it merges the local filing and the approved proposals into one undo step, the later undone first', () => {
+    const local = {
+      filed: [{ collection: 'culturalEntries', id: 'L1', title: 'Rain hats', op: 'create' }],
+      minted: [],
+      rejected: [],
+      failed: [],
+      command: {
+        label: 'Filed a capture: Rain hats',
+        undo: [{ kind: 'delete', collection: 'culturalEntries', id: 'L1' }],
+        redo: [{ kind: 'restore', collection: 'culturalEntries', id: 'L1' }],
+      },
+    } as const;
+    const approved = {
+      filed: [{ collection: 'moments', id: 'M1', title: 'Lives in Seattle', op: 'create' }],
+      minted: ['Seattle'],
+      rejected: ['P9'],
+      failed: [],
+      command: {
+        label: 'Filed a capture: Lives in Seattle and Seattle',
+        undo: [{ kind: 'delete', collection: 'moments', id: 'M1' }],
+        redo: [{ kind: 'restore', collection: 'moments', id: 'M1' }],
+      },
+    } as const;
+    const r = mergeFilings(structuredClone(local) as never, structuredClone(approved) as never);
+    expect(r.filed.map((f) => f.id)).toEqual(['L1', 'M1']);
+    expect(r.rejected).toEqual(['P9']);
+    expect(r.command?.label).toBe('Filed a capture: Rain hats, Lives in Seattle and 1 more');
+    expect(r.command?.undo).toEqual([
+      { kind: 'delete', collection: 'moments', id: 'M1' },
+      { kind: 'delete', collection: 'culturalEntries', id: 'L1' },
+    ]);
+    expect(r.command?.redo.map((o) => ('id' in o ? o.id : ''))).toEqual(['L1', 'M1']);
+    expect(mergeFilings().command).toBeNull();
+  });
+
+  test('CR-9 AI-4 the hints the box sends hold IDs and numbers: kept facts carry route local, a sent fact its chips, and Ask Claude instead forces full', () => {
+    const facts = [
+      fact({ index: 0, route: 'local' }),
+      fact({ index: 1, route: 'fast' }),
+      fact({ index: 2, route: 'local' }),
+    ];
+    const choices = [
+      NO_CHOICE,
+      { hint: { communityId: 'portland', demographic: '18-30' }, typed: {} },
+      { hint: { startYear: 2061, endYear: null }, typed: { title: 'Some text' } },
+    ];
+    expect(sendHints(facts, choices, new Set([1]))).toEqual([
+      { fact: 0, route: 'local' },
+      { fact: 1, communityId: 'portland', demographic: '18-30', route: 'fast' },
+      { fact: 2, route: 'local' },
+    ]);
+    const forced = sendHints(facts, choices, new Set([2]), 'full');
+    expect(forced).toEqual([
+      { fact: 0, route: 'local' },
+      { fact: 1, route: 'local' },
+      { fact: 2, startYear: 2061, endYear: null, route: 'full' },
+    ]);
+    // A typed name never crosses IPC (AI-4): no string but IDs and the route.
+    expect(JSON.stringify(forced)).not.toContain('Some text');
+  });
+
+  test('CR-6 a missing community is an open ask until a chip picks it; a typed place name fills the draft', () => {
+    const line = fact({ asks: ['Community'], missing: ['communityId'], route: 'local' });
+    expect(openAsks(line, NO_CHOICE)).toEqual(['Community']);
+    expect(openAsks(line, { hint: { communityId: 'portland' }, typed: {} })).toEqual([]);
+    const place = fact({
+      section: 'places',
+      asks: ['Place name'],
+      missing: ['title'],
+      drafts: [{ op: 'create', collection: 'places', data: { title: '', body: 'x' } }],
+    });
+    expect(openAsks(place, NO_CHOICE)).toEqual(['Place name']);
+    const choice = { hint: {}, typed: { title: ' Ferry dock ' } };
+    expect(openAsks(place, choice)).toEqual([]);
+    expect(draftsWith(place, choice)[0]?.data).toEqual({ title: 'Ferry dock', body: 'x' });
   });
 });
 
