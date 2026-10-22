@@ -446,7 +446,7 @@ describe('CR-6 Route A files from the box', () => {
     expect(JSON.stringify(forced)).not.toContain('Some text');
   });
 
-  test('CR-6 a missing community is an open ask until a chip picks it; a typed place name fills the draft', () => {
+  test('CR-6 a missing community is an open ask until a chip picks it; a typed place name or term fills the draft', () => {
     const line = fact({ asks: ['Community'], missing: ['communityId'], route: 'local' });
     expect(openAsks(line, NO_CHOICE)).toEqual(['Community']);
     expect(openAsks(line, { hint: { communityId: 'portland' }, typed: {} })).toEqual([]);
@@ -460,6 +460,27 @@ describe('CR-6 Route A files from the box', () => {
     const choice = { hint: {}, typed: { title: ' Ferry dock ' } };
     expect(openAsks(place, choice)).toEqual([]);
     expect(draftsWith(place, choice)[0]?.data).toEqual({ title: 'Ferry dock', body: 'x' });
+    // A typed glossary term takes its language as the router would: Chinese characters are Mandarin.
+    const term = fact({
+      section: 'glossaryTerms',
+      asks: ['Term'],
+      missing: ['characters'],
+      drafts: [
+        {
+          op: 'create',
+          collection: 'glossaryTerms',
+          data: { title: '', characters: '', language: 'english' },
+        },
+      ],
+    });
+    expect(draftsWith(term, { hint: {}, typed: { title: '孝顺' } })[0]?.data).toEqual({
+      title: '孝顺',
+      characters: '孝顺',
+      language: 'mandarin',
+    });
+    expect(draftsWith(term, { hint: {}, typed: { title: 'filial' } })[0]?.data).toMatchObject({
+      language: 'english',
+    });
   });
 });
 

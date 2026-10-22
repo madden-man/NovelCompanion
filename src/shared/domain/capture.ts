@@ -11,7 +11,7 @@ import type { Channel, Request, Response } from '../ipc';
 import { plainErrorMessage } from '../errors';
 import { patchBetween } from './diff';
 import type { Op, UndoCommand } from './undoRunner';
-import { listAddCommand } from '../undoCommands';
+import type { ListItemRef } from '../undoCommands';
 import { localSourceNote } from './captureRouter/types';
 import type { CaptureDraft } from './captureRouter/types';
 
@@ -90,7 +90,7 @@ export async function fileCapture(
         const lists = (await invoke('lists.get', {})).lists;
         const label = lists.find((l) => l._id === add.listId)?.label ?? add.listId;
         const item = { id: proposal.appliedItemId, label: add.label, parentId: add.parentId };
-        const step = listAddCommand(invoke, label, add.listId, item);
+        const step = mintedItemCommand(invoke, label, add.listId, item);
         undo.push(step.undo);
         redo.push(...step.redo);
         minted.push(add.label);
@@ -144,6 +144,53 @@ export async function fileCapture(
         }
       : null;
   return { filed, minted, rejected, failed, command };
+}
+
+/**
+ * ED-3, IP-17: the undo of a list item a filing added. Undo takes the item
+ * out unless another live entry uses it by then; then it stays, as an item
+ * the list already had does, and the rest of the step still applies. Redo
+ * puts it back only when it is gone.
+ */
+function mintedItemCommand(
+  invoke: Invoke,
+  listLabel: string,
+  listId: string,
+  item: ListItemRef,
+): UndoCommand {
+  const current = async () =>
+    (await invoke('lists.get', {})).lists
+      .find((l) => l._id === listId)
+      ?.items.find((i) => i.id === item.id || i.label === item.label);
+  return {
+    label: `Added ${item.label} to ${listLabel}`,
+    undo: [
+      {
+        kind: 'run',
+        check: async () => null,
+        apply: async () => {
+          const found = await current();
+          if (!found || found.usage > 0) return;
+          await invoke('lists.removeItem', { listId: listId as never, itemId: found.id });
+        },
+      },
+    ],
+    redo: [
+      {
+        kind: 'run',
+        check: async () => null,
+        apply: async () => {
+          if (await current()) return;
+          await invoke('lists.addItem', {
+            listId: listId as never,
+            label: item.label,
+            parentId: item.parentId,
+            id: item.id,
+          });
+        },
+      },
+    ],
+  };
 }
 
 function filingLabel(names: readonly string[]): string {
@@ -212,7 +259,7 @@ export async function fileLocalDrafts(
         parentId,
       });
       if (d.ref) refs.set(d.ref, item.id);
-      const step = listAddCommand(invoke, list?.label ?? d.listId, d.listId, {
+      const step = mintedItemCommand(invoke, list?.label ?? d.listId, d.listId, {
         id: item.id,
         label: item.label,
         parentId,

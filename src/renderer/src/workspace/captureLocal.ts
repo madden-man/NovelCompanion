@@ -10,6 +10,7 @@ import type { Channel, Request, Response } from '../../../shared/ipc';
 import type { EntryCollection } from '../../../shared/schema';
 import type { StoryTimeValue } from '../../../shared/storyTime';
 import { buildIndex, routeCapture } from '../../../shared/domain/captureRouter';
+import { hasHan } from '../../../shared/domain/captureRouter/text';
 import type {
   CaptureDraft,
   CaptureFact,
@@ -190,9 +191,11 @@ export function draftsWith(fact: CaptureFact, choice: FactChoice): CaptureDraft[
   return fact.drafts.map((d, i) => {
     if (d.op !== 'create' || i !== fact.drafts.findIndex((x) => x.op === 'create')) return d;
     const data = { ...(d.data ?? {}) };
-    for (const [, t] of typed) {
+    for (const [ask, t] of typed) {
       const value = (choice.typed[t.key] ?? '').trim();
       for (const path of t.paths) setPath(data, path, value);
+      // A typed term picks its language as the router does: Chinese characters are Mandarin.
+      if (ask === 'Term') data.language = hasHan(value) ? 'mandarin' : 'english';
     }
     return { ...d, data };
   });

@@ -948,4 +948,73 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       }).facts,
     );
   });
+
+  test('ED-3 IP-17 undoing a filing leaves its new list item in place when another live entry uses it by then, and the rest of the step still applies', async () => {
+    const io = undoIO(invoke);
+    const items = () =>
+      bible.model.get('lists', 'communities')!.items as { id: string; label: string }[];
+    // Route A: the box mints Hangzhou for its line.
+    const [line] = route(MOONCAKES).facts;
+    const local = await fileLocalDrafts(
+      invoke,
+      [
+        { op: 'listAdd', listId: 'communities', label: 'Hangzhou', ref: 'new:hangzhou' },
+        ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:hangzhou' } })),
+      ],
+      today,
+    );
+    const hangzhou = items().find((i) => i.label === 'Hangzhou')!;
+    const madeId = local.filed[0]!.id;
+    // Another entry takes up the new item before the writer undoes the filing.
+    const { entry: other } = await invoke('entry.create', {
+      collection: 'culturalEntries',
+      data: {
+        title: 'Tea houses',
+        communityId: hangzhou.id,
+        startYear: 2040,
+        endYear: 2050,
+        status: 'idea',
+      },
+    });
+    const undo = new UndoManager();
+    undo.record(local.command!);
+    expect(await undo.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.model.get('culturalEntries', madeId)?.deletedAt).toBeTruthy();
+    expect(items().some((i) => i.id === hangzhou.id)).toBe(true);
+    expect(bible.model.get('culturalEntries', other._id)).toMatchObject({
+      communityId: hangzhou.id,
+    });
+    // Redo puts the line back; the item was never taken out, so nothing is added twice.
+    expect(await undo.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.model.get('culturalEntries', madeId)?.deletedAt).toBeFalsy();
+    expect(items().filter((i) => i.label === 'Hangzhou')).toHaveLength(1);
+
+    // Routes B and C: the same for an approved new item (fileCapture).
+    const { turn } = await capture('Add culture for Jinan, 2045');
+    const [add, jinanLine] = proposalsOf(turn.proposalIds).map(asCapture);
+    const approved = await fileCapture(invoke, [add!, jinanLine!], []);
+    const jinan = items().find((i) => i.label === 'Jinan')!;
+    const { entry: user } = await invoke('entry.create', {
+      collection: 'culturalEntries',
+      data: {
+        title: 'Spring water',
+        communityId: jinan.id,
+        startYear: 2046,
+        endYear: 2050,
+        status: 'idea',
+      },
+    });
+    const undo2 = new UndoManager();
+    undo2.record(approved.command!);
+    expect(await undo2.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.model.get('culturalEntries', approved.filed[0]!.id)?.deletedAt).toBeTruthy();
+    expect(items().some((i) => i.id === jinan.id)).toBe(true);
+    // Leave the bible as the fixture had it.
+    for (const id of [other._id, user._id, madeId]) {
+      await invoke('entry.delete', { collection: 'culturalEntries', id });
+    }
+    for (const id of [hangzhou.id, jinan.id]) {
+      await invoke('lists.removeItem', { listId: 'communities', itemId: id });
+    }
+  });
 });

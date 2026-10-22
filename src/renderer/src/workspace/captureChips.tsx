@@ -39,7 +39,9 @@ export type FactStand =
   /** Re-routed by a chip to Route B or C, not sent yet. */
   | 'unsent'
   /** Sent to Claude with the text. */
-  | 'sent';
+  | 'sent'
+  /** KB-7 with no key: saved with the other sentences that need Claude as an open question. */
+  | 'question';
 
 const ROUTE_WORDS = {
   fast: 'fast file',
@@ -204,7 +206,13 @@ function Chips(props: {
   const { fact, choice, drafts, lists, index } = props;
   const open = openAsks(fact, choice);
   const off = props.locked !== null;
-  const common = { disabled: off, reason: props.locked ?? undefined, layout: 'inline' as const };
+  // A chip changes no stored value, so it shows no saved tick (quiet).
+  const common = {
+    disabled: off,
+    reason: props.locked ?? undefined,
+    layout: 'inline' as const,
+    quiet: true,
+  };
   const listOpts = (listId: string): EditableOption[] =>
     (lists.find((l) => l._id === listId)?.items ?? []).map((i) => ({
       value: i.id,
@@ -401,13 +409,17 @@ export function FactCard(props: {
   const locked =
     stand === 'sent'
       ? 'Sent to Claude with the text; these are the hints that went with it.'
-      : null;
+      : stand === 'question'
+        ? 'Saved as an open question.'
+        : null;
   const where =
     stand === 'local'
       ? 'Files here, without Claude.'
       : stand === 'sent'
         ? `Sent to Claude, ${ROUTE_WORDS[props.sentRoute ?? 'full']}.`
-        : `Needs Claude, ${ROUTE_WORDS[fact.route === 'fast' ? 'fast' : 'full']}: ${fact.reasons.join('; ') || 'the section is not clear'}.`;
+        : stand === 'question'
+          ? 'Needs Claude and no key is set, so it was saved as an open question.'
+          : `Needs Claude, ${ROUTE_WORDS[fact.route === 'fast' ? 'fast' : 'full']}: ${fact.reasons.join('; ') || 'the section is not clear'}.`;
   return (
     <article
       className={`capture-fact${waiting ? ' is-waiting' : ''}`}
@@ -460,7 +472,7 @@ export function FactCard(props: {
           capturedOn={props.capturedOn}
         />
       )}
-      {stand !== 'sent' && (
+      {(stand === 'local' || stand === 'unsent') && (
         <div className="row capture-fact-actions">
           {stand === 'unsent' && (
             <button

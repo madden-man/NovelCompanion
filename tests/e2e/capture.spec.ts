@@ -36,6 +36,8 @@ const RECIPE_MAYBE =
   'Meiling and Ruth kept the same recipe box, passed between the families, maybe?';
 /** Route B: the fast file's recording answers it with "cannot place". */
 const KESSLER = 'The Kessler crowd stops tipping by 2070.';
+/** Route B: the fast file's recording holds until Stop. */
+const HOLD = 'The Kessler crowd stops tipping HOLD-FAST-UNTIL-STOPPED by 2070.';
 const fixture = readFixture();
 
 test.describe.configure({ mode: 'serial' });
@@ -531,24 +533,28 @@ test('CR-9 CR-7 a two-sentence capture shows two cards; the Route A one files lo
   await expect(facts()).toHaveCount(2);
   const [fast, local] = [facts().nth(0), facts().nth(1)];
   await expect(local).toHaveAttribute('data-stand', 'local');
-  await expect(fast).toHaveAttribute('data-stand', 'sent');
   await expect(fast).toHaveAttribute('data-route', 'fast');
-  await expect(fast.getByTestId('capture-route')).toContainText('Sent to Claude, fast file.');
-  // The chips of a sent fact are the hints that went with the text: read-only.
-  await expect(chip(fast, 'section').locator('.editable')).toHaveClass(/is-disabled/);
   // The fast file's recording streams in and says it cannot place the fact, with why (CR-7).
   await expect(fast.getByTestId('capture-run')).toBeVisible();
   await expect(box()).toHaveAttribute('data-phase', 'routed');
   await expect(fast.getByTestId('capture-cannot-place')).toContainText(
     'Claude could not place this. The text names no community the bible has, so the fact needs the full capture.',
   );
+  // The fact comes back to the box, with Ask Claude instead (Route C) one click away.
+  await expect(fast).toHaveAttribute('data-stand', 'unsent');
   await expect(fast.getByTestId('capture-ask-claude')).toBeVisible();
   expect(await runCount('captureFast')).toBe(fastBefore + 1);
   expect(await runCount('capture')).toBe(fullBefore);
-  // File it writes the Route A line; the fast fact proposed nothing.
-  await expect(box().getByTestId('capture-file')).toContainText('File it');
+  // File it writes the Route A line and says the other sentence stays behind.
+  await expect(box().getByTestId('capture-file')).toContainText('File 1 of 2');
+  await expect(box().getByTestId('capture-stays')).toContainText(
+    'One sentence needs Claude and was not sent. File it leaves it in the box.',
+  );
   await page.keyboard.press('Meta+Enter');
   const filed = box().getByTestId('capture-filed');
+  await expect(filed.getByTestId('capture-left')).toContainText(
+    'One sentence was not filed and is back in the box.',
+  );
   await expect(
     filed.getByRole('button', { name: 'Teenagers in Portland begin to say yee haw ironically' }),
   ).toBeVisible();
@@ -558,6 +564,10 @@ test('CR-9 CR-7 a two-sentence capture shows two cards; the Route A one files lo
     endYear: 2100,
   });
   expect(await lineTitled('The Kessler crowd stops tipping')).toBeUndefined();
+  // Add another starts from the sentence that was not filed.
+  await filed.getByRole('button', { name: 'Add another' }).click();
+  await expect(input()).toHaveText(KESSLER);
+  await input().fill('');
   await page.keyboard.press('Escape');
 });
 
@@ -574,6 +584,8 @@ test('CR-6 Ask Claude instead sends the fact on Route C', async () => {
   await expect(recipe).toHaveAttribute('data-stand', 'sent');
   await expect(recipe).toHaveAttribute('data-route', 'full');
   await expect(recipe.getByTestId('capture-route')).toContainText('Sent to Claude, full capture.');
+  // The chips of a sent fact are the hints that went with the text: read-only.
+  await expect(chip(recipe, 'section').locator('.editable')).toHaveClass(/is-disabled/);
   // The full capture's recording streams its proposals into that fact's card.
   await expect(recipe.getByTestId('capture-card')).toHaveCount(2);
   await expect(recipe.getByTestId('capture-card').first()).toContainText(
@@ -627,6 +639,90 @@ test('CR-6 CR-9 ED-3 Cmd+Z undoes a mixed filing in one step', async () => {
   await expect.poll(recipeMoments).toBe(momentsBefore + 2);
 });
 
+test('CR-9 plain Enter sends a full-route fact to Claude with hints, and main runs only that fact; a failed run hands its sentence back, and Escape puts the unfiled sentences back in the box', async () => {
+  const before = await runCount('capture');
+  // The router sends TRAM to Route C (nothing scores); the fake has no recording for it, so the run fails.
+  await send(`${MOONCAKES} ${TRAM}`);
+  await expect(facts()).toHaveCount(2);
+  const tram = facts().nth(1);
+  await expect(facts().nth(0)).toHaveAttribute('data-stand', 'local');
+  await expect(tram).toHaveAttribute('data-route', 'full');
+  await expect(tram.getByTestId('claude-error')).toBeVisible();
+  await expect(tram).toHaveAttribute('data-stand', 'unsent');
+  await expect(tram.getByTestId('capture-ask-claude')).toBeVisible();
+  // One full capture ran, and main filed only the fact the hints left to it.
+  expect(await runCount('capture')).toBe(before + 1);
+  const newest = (await invoke('claude.runs', { feature: 'capture' })).runs[0]!;
+  const { run } = await invoke('claude.run', { id: newest.id });
+  const routing = (
+    run.input as { routing: { facts: { index: number; route: string; text: string }[] } }
+  ).routing;
+  expect(routing.facts.map((f) => [f.index, f.route, f.text])).toEqual([[1, 'full', TRAM]]);
+  await expect(box().getByTestId('capture-file')).toContainText('File 1 of 2');
+  // Escape writes nothing and keeps both sentences in the box.
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+  await page.keyboard.press('Meta+k');
+  await expect(input()).toHaveText(`${MOONCAKES} ${TRAM}`);
+  await input().fill('');
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+});
+
+test('KB-7 AI-7 CR-9 a mixed capture whose Claude run fails still files its Route A fact and puts the failed sentence back in the box', async () => {
+  await send(`${MOONCAKES} ${FERRY}`);
+  await expect(facts()).toHaveCount(2);
+  const ferry = facts().nth(1);
+  await expect(ferry).toHaveAttribute('data-stand', 'unsent');
+  // Route C with the recording: no network, so the run fails and the sentence stays.
+  await ferry.getByTestId('capture-ask-claude').click();
+  await expect(ferry.getByTestId('claude-error').last()).toContainText('could not reach Anthropic');
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  await expect(ferry).toHaveAttribute('data-stand', 'unsent');
+  // Nothing was saved as a question: the box still holds the sentence.
+  const questions = async () =>
+    (await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).entries.filter(
+      (e) => e.entry.title === FERRY,
+    ).length;
+  const questionsBefore = await questions();
+  await expect(box().getByTestId('capture-file')).toContainText('File 1 of 2');
+  await page.keyboard.press('Meta+Enter');
+  const filed = box().getByTestId('capture-filed');
+  await expect(
+    filed.getByRole('button', {
+      name: 'Teenagers in Guangzhou start to eat mooncakes with coffee',
+    }),
+  ).toBeVisible();
+  await expect(filed.getByTestId('capture-left')).toBeVisible();
+  expect(await questions()).toBe(questionsBefore);
+  await filed.getByRole('button', { name: 'Add another' }).click();
+  await expect(input()).toHaveText(FERRY);
+  await input().fill('');
+  await page.keyboard.press('Escape');
+});
+
+test('CR-9 AI-1 Stop stops a split capture the fake holds; its sentences come back and the Route A fact still files', async () => {
+  // HOLD goes to the fast file, whose recording waits for Stop; TRAM goes to the full capture.
+  await send(`${YEE_HAW} ${HOLD} ${TRAM}`);
+  await expect(facts()).toHaveCount(3);
+  await expect(box()).toHaveAttribute('data-phase', 'running');
+  await expect(facts().nth(1)).toHaveAttribute('data-route', 'fast');
+  await box().getByTestId('capture-stop').click();
+  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  await expect(facts().nth(1)).toHaveAttribute('data-stand', 'unsent');
+  await expect(facts().nth(2)).toHaveAttribute('data-stand', 'unsent');
+  await expect(box().getByTestId('capture-file')).toContainText('File 1 of 3');
+  await page.keyboard.press('Meta+Enter');
+  const filed = box().getByTestId('capture-filed');
+  await expect(filed.getByTestId('capture-left')).toContainText(
+    '2 sentences were not filed and are back in the box.',
+  );
+  await filed.getByRole('button', { name: 'Add another' }).click();
+  await expect(input()).toHaveText(`${HOLD} ${TRAM}`);
+  await input().fill('');
+  await page.keyboard.press('Escape');
+});
+
 test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, with a link', async () => {
   await sendAll(FERRY);
   const saved = box().getByTestId('capture-saved');
@@ -657,16 +753,33 @@ test('KB-7 with the key removed, Enter saves an open question and sends nothing'
   await expect(box()).toBeHidden();
 });
 
-test('CR-6 KB-7 with no key, a line the box can place still files without Claude, and the box says so', async () => {
+test('CR-6 KB-7 with no key, the Route A facts still file without Claude and only the rest is saved as the open question; Send it all to Claude waits for a key', async () => {
   // The key was removed in the row above.
-  await send(MASKS);
+  await page.keyboard.press('Meta+k');
+  await input().fill(`${MASKS} ${TRAM}`);
+  await expect(box().getByTestId('capture-send-all')).toBeDisabled();
+  await expect(box().getByTestId('capture-send-all')).toHaveAttribute(
+    'title',
+    'No Anthropic key is set. Add one in Settings to ask Claude.',
+  );
+  const tramQuestions = async () =>
+    (await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).entries.filter(
+      (e) => e.entry.title === TRAM,
+    ).length;
+  const before = await tramQuestions();
+  await input().press('Enter');
+  await expect(facts()).toHaveCount(2);
   const card = facts().first();
   await expect(card).toHaveAttribute('data-stand', 'local');
+  await expect(facts().nth(1)).toHaveAttribute('data-stand', 'question');
   await expect(box().getByTestId('capture-no-key')).toHaveText(
     'No Anthropic key is set, so these file here without Claude.',
   );
+  await expect(box().getByTestId('capture-asked')).toContainText(TRAM);
+  expect(await tramQuestions()).toBe(before + 1);
   await expect(card.getByTestId('capture-ask-claude')).toBeDisabled();
   await pick(card, 'community', 'guangzhou');
+  await expect(box().getByTestId('capture-file')).toContainText('File it');
   await page.keyboard.press('Meta+Enter');
   await expect(box().getByTestId('capture-filed')).toContainText(
     'Teenagers start to wear paper masks',
