@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StoryTimeValue } from './storyTime';
+import { CaptureHint } from './domain/captureRouter/types';
 
 /**
  * Claude in the app (ARCH-4, AI-1 to AI-7, DB-4): the five features, their
@@ -325,6 +326,11 @@ export const claudeContract = {
       runId: RunIdWire,
       text: z.string().trim().min(1).max(8000),
       storyTime: StoryTimeValue,
+      /**
+       * A48 (CR-7, CR-8): the box's routing choices per fact (a route forced, a
+       * chip changed). IDs and numbers only; main reruns the router on the text.
+       */
+      hints: z.array(CaptureHint).max(50).optional(),
     }),
     response: Started,
   },
