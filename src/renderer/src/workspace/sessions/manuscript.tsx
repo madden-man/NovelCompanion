@@ -9,6 +9,7 @@ import { useUndo } from '../undo';
 import { OpenSettingsButton, claudeNav } from '../claude';
 import { DriveDocumentPicker } from '../drive';
 import { useClaudeRun } from './claudeRun';
+import { ManuscriptDiff } from './Reimport';
 import { updateWithUndo } from './common';
 import { RichText } from '../richText/RichText';
 import type { OpenEntry } from './common';
@@ -219,21 +220,7 @@ function ChapterManuscript({
               ? `${read.added} lines added, ${read.removed} removed`
               : 'no change from the text in the bible'}
           </span>
-          {read.changed && (
-            <table className="diff-table" data-testid="manuscript-diff">
-              <tbody>
-                {read.diff
-                  .filter((d) => d.kind !== 'same')
-                  .map((d, i) => (
-                    <tr key={i} className={`ms-${d.kind}`} data-kind={d.kind}>
-                      <td className="num">{d.line}</td>
-                      <td>{d.kind === 'added' ? 'added' : 'removed'}</td>
-                      <td>{d.kind === 'removed' ? <del>{d.text}</del> : <ins>{d.text}</ins>}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          )}
+          {read.changed && <ManuscriptDiff diff={read.diff} />}
           {read.summaryOutOfDate && (
             <p className="callout warn">The summary will be marked as possibly out of date.</p>
           )}

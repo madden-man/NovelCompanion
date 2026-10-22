@@ -176,3 +176,64 @@ export function charactersChangeLabel(
   }
   return `Changed who is in ${chapterTitle}`;
 }
+
+/** A chapter strand as a screen reads it (IP-2, IP-3): every field typed, defaults filled. */
+export interface StrandView {
+  id: string;
+  label: string;
+  startYear: number | null;
+  endYear: number | null;
+  primary: boolean;
+  povCharacterId: string | null;
+  characterIds: string[];
+  placeIds: string[];
+}
+
+const ids = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
+/** One stored strand as a `StrandView`. */
+export function strandView(s: StrandDoc): StrandView {
+  return {
+    id: s.id,
+    label: typeof s.label === 'string' ? s.label : '',
+    startYear: typeof s.startYear === 'number' ? s.startYear : null,
+    endYear: typeof s.endYear === 'number' ? s.endYear : null,
+    primary: s.primary === true,
+    povCharacterId: typeof s.povCharacterId === 'string' ? s.povCharacterId : null,
+    characterIds: ids(s.characterIds),
+    placeIds: ids(s.placeIds),
+  };
+}
+
+/** The strands of a chapter as `StrandView`s, in stored order. */
+export function readStrands(chapter: Record<string, unknown> | null | undefined): StrandView[] {
+  return strandsOf(chapter).map(strandView);
+}
+
+/** One strand of a chapter by ID as a `StrandView`, or undefined. */
+export function findStrand(
+  chapter: Record<string, unknown> | null | undefined,
+  strandId: string,
+): StrandView | undefined {
+  const s = strandById(strandsOf(chapter), strandId);
+  return s ? strandView(s) : undefined;
+}
+
+/** IP-3: the strand's label ("present", "backstory"). */
+export function setStrandLabel(
+  strands: readonly StrandDoc[],
+  strandId: string,
+  label: string,
+): StrandDoc[] | null {
+  return change(strands, strandId, (s) => ({ ...s, label }));
+}
+
+/** IP-3: the strand's places, in the order given, each once. */
+export function setStrandPlaces(
+  strands: readonly StrandDoc[],
+  strandId: string,
+  placeIds: readonly string[],
+): StrandDoc[] | null {
+  return change(strands, strandId, (s) => ({ ...s, placeIds: [...new Set(placeIds)] }));
+}

@@ -76,7 +76,8 @@ export function BriefView({
         }
         if (live) setWritten(texts);
       } catch {
-        if (live) setWritten(null);
+        // Unknown history: warn rather than risk replacing edits unannounced (ED-7).
+        if (live) setWritten([]);
       }
     })();
     return () => {
@@ -84,10 +85,10 @@ export function BriefView({
     };
   }, [id, stamp]);
   const edited = written !== null && briefEdited(content, written);
-  // SB-9: the pending entries by title, never by ID (IP-2).
-  const pendingTitles = useLookup([...add, ...remove]);
   const manifest = useMemo(() => ids(brief?.entryIds), [brief?.entryIds]);
   const problems = useMemo(() => citationProblems(content, manifest), [content, manifest]);
+  // SB-9, IP-2: pending entries and stray citations by title, never by ID.
+  const pendingTitles = useLookup([...add, ...remove, ...problems]);
   // A47 (IP-14): the lead headings may be the bible's own.
   const headings = useBibleSettings().templates.briefHeadings;
   const missing = useMemo(() => missingLeadSections(content, headings), [content, headings]);
@@ -188,7 +189,8 @@ export function BriefView({
       </div>
       {problems.length > 0 && (
         <p className="callout crit" role="alert" data-testid="brief-problems">
-          These citations are not in the selection: {problems.join(', ')}. Check those lines.
+          These citations are not in the selection: {problems.map(titleOf).join(', ')}. Check those
+          lines.
         </p>
       )}
       {uncited.length > 0 && (

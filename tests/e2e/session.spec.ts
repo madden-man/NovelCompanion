@@ -518,6 +518,10 @@ const lastStep = async () => (await changes(page)).locator('li:not(.empty)').fir
 test('IP-2 IP-6 the heading renames the chapter and Undo renames it back', async () => {
   await page.getByTestId('top-relevant').click();
   const s = strand('CH6-present');
+  // IP-18: a chapter never imported has no Re-import.
+  await expect(s.getByTestId('scene-note')).toBeVisible();
+  expect((await entry('chapters', 'CH6')).manuscriptSource ?? null).toBeNull();
+  await expect(s.getByTestId('reimport')).toHaveCount(0);
   await fillEditable(s.getByTestId('relevant-title'), 'The Letter Home');
   await expect.poll(async () => (await entry('chapters', 'CH6')).title).toBe('The Letter Home');
   await expect(page.getByTestId('relevant-label')).toHaveText('The Letter Home');
@@ -557,6 +561,17 @@ test('IP-2 a tile edits name, birth and role in place, and the age follows the b
   const daniel = strand('CH6-present').locator(
     '[data-kind="characters"] [data-testid="sel-item"][data-id="H3"]',
   );
+  // IP-1: opening a field on one tile moves nothing: the next tile stays where it was.
+  const iris = strand('CH6-present').locator(
+    '[data-kind="characters"] [data-testid="sel-item"][data-id="H5"]',
+  );
+  const box0 = await daniel.boundingBox();
+  await openEditable(iris.getByTestId('tile-name'));
+  await expect(iris.getByTestId('tile-name').locator('input')).toBeFocused();
+  expect(await daniel.boundingBox()).toEqual(box0);
+  await page.keyboard.press('Escape');
+  await expect(iris.getByTestId('tile-name').locator('input')).toHaveCount(0);
+  expect(await daniel.boundingBox()).toEqual(box0);
   // The name is a field on the closed tile; the title follows it.
   await fillEditable(daniel.getByTestId('tile-name'), 'Dan Hale');
   await expect.poll(async () => (await entry('characters', 'H3')).title).toBe('Dan Hale');
@@ -564,6 +579,11 @@ test('IP-2 a tile edits name, birth and role in place, and the age follows the b
   await expect(daniel.getByTestId('tile-name-text')).toHaveText('Dan Hale');
   await fillEditable(daniel.getByTestId('tile-name'), 'Daniel Hale');
   await expect.poll(async () => (await entry('characters', 'H3')).title).toBe('Daniel Hale');
+  // The Chinese name too.
+  await fillEditable(daniel.getByTestId('tile-chinese'), '丹尼');
+  await expect
+    .poll(async () => (await entry('characters', 'H3')).names)
+    .toMatchObject({ full: 'Daniel Hale', chinese: '丹尼' });
 
   // The rest opens under it, without leaving the screen.
   await daniel.getByTestId('tile-toggle').click();
@@ -572,6 +592,8 @@ test('IP-2 a tile edits name, birth and role in place, and the age follows the b
   await expect(daniel.getByTestId('tile-age')).toHaveText('65');
   await fillEditable(daniel.getByTestId('tile-birth'), '1985', 'blur');
   await expect(daniel.getByTestId('tile-age')).toHaveText('60');
+  await fillEditable(daniel.getByTestId('tile-death'), '2090', 'blur');
+  await expect.poll(async () => (await entry('characters', 'H3')).death).toEqual({ year: 2090 });
 
   // In the story is the A44 box in place: Enter saves.
   await daniel.getByTestId('tile-role').locator('.editable-text').click();
@@ -584,7 +606,18 @@ test('IP-2 a tile edits name, birth and role in place, and the age follows the b
   await expect(daniel.getByTestId('tile-role')).toHaveText('The father who says nothing.');
   await expect(await lastStep()).toHaveText('Changed In the story on Daniel Hale');
   await page.keyboard.press('Escape');
-  await invoke('entry.update', { collection: 'characters', id: 'H3', patch: { role: '' } });
+  // Description, the same box.
+  await daniel.getByTestId('tile-description').locator('.editable-text').click();
+  await expect(daniel.getByTestId('tile-description').getByRole('textbox')).toBeFocused();
+  await page.keyboard.type('Tall, tired, kind.');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await entry('characters', 'H3')).body).toBe('Tall, tired, kind.');
+  await expect(daniel.getByTestId('tile-description')).toHaveText('Tall, tired, kind.');
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H3',
+    patch: { role: '', body: '', death: null, names: { full: 'Daniel Hale' } },
+  });
 });
 
 test('IP-2 Add a moment lands at the story year for that person and the tile shows it', async () => {
@@ -605,7 +638,17 @@ test('IP-2 Add a moment lands at the story year for that person and the tile sho
   await expect.poll(async () => (await made())?.year).toBe(2045);
   expect(await made()).toMatchObject({ characterId: 'H5', year: 2045 });
   await expect(iris.getByTestId('tile-moments')).toContainText('2045 Iris hides the letter');
-  await invoke('entry.delete', { collection: 'moments', id: (await made())!._id });
+  // Its year and its text edit in the tile.
+  const id = (await made())!._id;
+  const row = iris.getByTestId('tile-moments').locator(`li[data-id="${id}"]`);
+  await fillEditable(row.locator('[data-field="year"]'), '2044');
+  await expect.poll(async () => (await entry('moments', id)).year).toBe(2044);
+  await fillEditable(row.locator('[data-field="title"]'), 'Iris hides the letter in a book');
+  await expect
+    .poll(async () => (await entry('moments', id)).title)
+    .toBe('Iris hides the letter in a book');
+  await expect(row).toHaveText('2044 Iris hides the letter in a book');
+  await invoke('entry.delete', { collection: 'moments', id });
   await iris.getByTestId('tile-toggle').click();
 });
 
@@ -753,6 +796,60 @@ test('IP-2 SB-9 More shows no raw IDs, and Remove and Keep work before a brief i
   await expect(prev).toHaveCount(1);
 });
 
+test('IP-2 SB-9 removals are forgotten when the section changes and when the brief is generated', async () => {
+  const more = () => strand('CH6-present').getByTestId('relevant-more');
+  const prev = () =>
+    more().locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]');
+  const left = () => more().locator('[data-testid="omitted-item"][data-id="CH1"]');
+  // The desk may still be loading its selection when it opens, so open More until it stays open.
+  const openMore = async () => {
+    await expect(async () => {
+      if ((await more().getAttribute('open')) === null) await more().locator('summary').click();
+      await expect(prev().or(left())).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+  };
+  const removeCh1 = async () => {
+    const title = (await prev().getByRole('button').first().innerText()).trim();
+    await prev()
+      .getByRole('button', { name: `Remove ${title}` })
+      .click();
+    await expect(left()).toContainText('removed by you');
+  };
+  await page.getByTestId('top-relevant').click();
+  await openMore();
+  await removeCh1();
+  // Another section forgets it.
+  await writing().selectOption({ label: 'Chapter 2: Two Kitchens, present (2045)' });
+  await expect(page.getByTestId('relevant-label')).toHaveText('Two Kitchens');
+  await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  await expect(page.getByTestId('relevant-label')).toHaveText('The Letter');
+  await openMore();
+  await expect(prev()).toHaveCount(1);
+  await expect(left()).toHaveCount(0);
+  // Writing the brief takes the removal with it, then forgets it.
+  await removeCh1();
+  await page.getByTestId('top-start-session').click();
+  const view = page.getByTestId('start-session');
+  await expect(
+    page.getByTestId('start-selection').locator('[data-testid="omitted-item"][data-id="CH1"]'),
+  ).toHaveCount(1);
+  await view.getByTestId('start-session-go').click();
+  await expect(page.getByTestId('brief-view')).toBeVisible();
+  const made = (await invoke('entry.list', { collection: 'briefs', trash: 'exclude' })).entries[0]!
+    .entry;
+  expect(made.removed).toEqual(['CH1']);
+  await page.getByTestId('top-relevant').click();
+  await openMore();
+  await expect(prev()).toHaveCount(1);
+  await expect(left()).toHaveCount(0);
+  // Put the bible back as the next test expects it: no brief yet.
+  const log = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries
+    .map((e) => e.entry)
+    .find((l) => l.briefId === made._id)!;
+  await invoke('entry.delete', { collection: 'sessionLogs', id: log._id });
+  await invoke('entry.delete', { collection: 'briefs', id: made._id });
+});
+
 let briefId = '';
 
 test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured brief, a session log, the story time', async () => {
@@ -837,7 +934,9 @@ test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and
     '# My brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- A stray line. [[Z2]]\n';
   await brief.getByTestId('brief-text').fill(text);
   await expect(brief.getByTestId('autosave')).toHaveText('Saved');
-  await expect(brief.getByTestId('brief-problems')).toContainText('Z2');
+  // IP-2: the stray citation by title, never by ID.
+  await expect(brief.getByTestId('brief-problems')).toContainText('Zhou Wei');
+  await expect(brief.getByTestId('brief-problems')).not.toContainText('Z2');
   await brief.getByRole('button', { name: 'Show the brief' }).click();
   await expect(brief.locator('.cite.bad')).toHaveText('Z2 not in the selection');
   await brief.getByRole('button', { name: 'Export Markdown' }).click();

@@ -12,6 +12,7 @@ export const BRIEF_WRITTEN_NOTE = 'Brief written again from the selection';
 /** The brief fields a write of the brief writer sets; undoing it puts these back. */
 export const BRIEF_WRITTEN_FIELDS = [
   'title',
+  'status',
   'chapterId',
   'storyYear',
   'povCharacterId',

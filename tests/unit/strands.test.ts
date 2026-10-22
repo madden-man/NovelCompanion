@@ -3,8 +3,12 @@ import {
   addStrandCharacter,
   charactersChange,
   charactersChangeLabel,
+  findStrand,
+  readStrands,
   removeStrandCharacter,
   setStrandCharacters,
+  setStrandLabel,
+  setStrandPlaces,
   setStrandPov,
   setStrandYear,
   strandById,
@@ -90,5 +94,42 @@ describe('IP-2 strands.ts builds the patch over chapters.strands for the writing
     expect(charactersChangeLabel(['H2'], ['Z4'], nameOf, 'The Letter')).toBe(
       'Changed who is in The Letter',
     );
+  });
+});
+
+describe('IP-2 IP-3 strands.ts reads a strand for any screen that edits one', () => {
+  test('IP-3 readStrands and findStrand give every field typed, with defaults', () => {
+    const chapter = { strands: [...strands, { id: 'bare', startYear: 2050 }] };
+    expect(readStrands(chapter).map((s) => s.id)).toEqual(['CH6-present', 'CH6-back', 'bare']);
+    expect(findStrand(chapter, 'CH6-back')).toEqual({
+      id: 'CH6-back',
+      label: 'backstory',
+      startYear: 2030,
+      endYear: 2032,
+      primary: false,
+      povCharacterId: null,
+      characterIds: [],
+      placeIds: [],
+    });
+    expect(findStrand(chapter, 'bare')).toEqual({
+      id: 'bare',
+      label: '',
+      startYear: 2050,
+      endYear: null,
+      primary: false,
+      povCharacterId: null,
+      characterIds: [],
+      placeIds: [],
+    });
+    expect(findStrand(chapter, 'nope')).toBeUndefined();
+  });
+
+  test('IP-3 the label and the places are set on that strand only', () => {
+    expect(setStrandLabel(strands, 'CH6-back', 'childhood')?.[1]?.label).toBe('childhood');
+    const placed = setStrandPlaces(strands, 'CH6-present', ['P2', 'P1', 'P2']);
+    expect(placed?.[0]?.placeIds).toEqual(['P2', 'P1']);
+    expect(placed?.[1]).toBe(strands[1]);
+    expect(setStrandLabel(strands, 'nope', 'x')).toBeNull();
+    expect(setStrandPlaces(strands, 'nope', [])).toBeNull();
   });
 });
