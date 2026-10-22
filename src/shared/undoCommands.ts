@@ -1,5 +1,6 @@
 import type { Channel, Request, Response } from './ipc';
 import type { Op, UndoCommand } from './domain/undoRunner';
+import type { BibleNumbers, BibleTemplates, CultureUnit } from './schema/settings';
 
 /**
  * ED-3: undo commands for the writes that are not entry writes: tree
@@ -100,6 +101,9 @@ export interface ListItemRef {
   id: string;
   label: string;
   parentId: string | null;
+  /** a47-model: the colour and extra values an undo puts back with the item. */
+  color?: string | null;
+  extra?: Record<string, string | number>;
 }
 
 async function listItem(invoke: Invoke, listId: string, label: string) {
@@ -121,6 +125,8 @@ function addItemOp(invoke: Invoke, listLabel: string, listId: string, item: List
         label: item.label,
         parentId: item.parentId,
         id: item.id,
+        ...(item.color !== undefined ? { color: item.color } : {}),
+        ...(item.extra ? { extra: item.extra } : {}),
       });
     },
   };
@@ -317,5 +323,200 @@ export function claudeInstructionsCommand(
         : `Changed the instructions for ${featureLabel}`,
     undo: [settingOp(read, same, to, write, from, changed)],
     redo: [settingOp(read, same, from, write, to, changed)],
+  };
+}
+
+// ---------- a47-model: list order and parents, item looks, bible settings, era defaults ----------
+
+async function listItems(invoke: Invoke, listId: string) {
+  const { lists } = await invoke('lists.get', {});
+  return lists.find((l) => l._id === listId)?.items ?? [];
+}
+
+/** IP-8, ED-3: an item moved in its list; undo puts it back where it was. */
+export function listMoveCommand(
+  invoke: Invoke,
+  listLabel: string,
+  listId: string,
+  item: { id: string; label: string },
+  from: number,
+  to: number,
+): UndoCommand {
+  const op = (expect: number, index: number): Op => ({
+    kind: 'run',
+    check: async () => {
+      const at = (await listItems(invoke, listId)).findIndex((i) => i.id === item.id);
+      if (at < 0) return `${item.label} is no longer in ${listLabel}`;
+      return at === expect ? null : `${item.label} was moved since`;
+    },
+    apply: async () => {
+      await invoke('lists.move', { listId, itemId: item.id, index });
+    },
+  });
+  return {
+    label: `Moved ${item.label} in ${listLabel}`,
+    undo: [op(to, from)],
+    redo: [op(from, to)],
+  };
+}
+
+/** IP-8, ED-3: an item put under another (or at the top, null); undo puts it back. */
+export function listParentCommand(
+  invoke: Invoke,
+  listLabel: string,
+  listId: string,
+  item: { id: string; label: string },
+  from: string | null,
+  to: string | null,
+): UndoCommand {
+  const op = (expect: string | null, parentId: string | null): Op => ({
+    kind: 'run',
+    check: async () => {
+      const found = (await listItems(invoke, listId)).find((i) => i.id === item.id);
+      if (!found) return `${item.label} is no longer in ${listLabel}`;
+      return found.parentId === expect ? null : `${item.label} was moved since`;
+    },
+    apply: async () => {
+      await invoke('lists.setParent', { listId, itemId: item.id, parentId });
+    },
+  });
+  return {
+    label: `Moved ${item.label} in ${listLabel}`,
+    undo: [op(to, from)],
+    redo: [op(from, to)],
+  };
+}
+
+export interface ItemLook {
+  color: string | null;
+  extra: Record<string, string | number>;
+}
+
+/** IP-9, IP-10, ED-3: an item recoloured, or its kind or ages changed; undo puts the old look back. */
+export function listLookCommand(
+  invoke: Invoke,
+  listLabel: string,
+  listId: string,
+  item: { id: string; label: string },
+  before: ItemLook,
+  after: ItemLook,
+): UndoCommand {
+  const same = (a: ItemLook, b: ItemLook) => {
+    const ka = Object.keys(a.extra);
+    return (
+      a.color === b.color &&
+      ka.length === Object.keys(b.extra).length &&
+      ka.every((k) => Object.hasOwn(b.extra, k) && b.extra[k] === a.extra[k])
+    );
+  };
+  const op = (expect: ItemLook, to: ItemLook): Op => ({
+    kind: 'run',
+    check: async () => {
+      const found = (await listItems(invoke, listId)).find((i) => i.id === item.id);
+      if (!found) return `${item.label} is no longer in ${listLabel}`;
+      return same({ color: found.color, extra: found.extra }, expect)
+        ? null
+        : `${item.label} was changed since`;
+    },
+    apply: async () => {
+      // Keys the old look lacks are removed; the rest are set.
+      const extra: Record<string, string | number | null> = { ...to.extra };
+      for (const k of Object.keys(expect.extra)) if (!(k in to.extra)) extra[k] = null;
+      await invoke('lists.setItem', { listId, itemId: item.id, color: to.color, extra });
+    },
+  });
+  return {
+    label: `Changed ${item.label} in ${listLabel}`,
+    undo: [op(after, before)],
+    redo: [op(before, after)],
+  };
+}
+
+/** What each per-bible number is called in an undo label (IP-11). */
+export const NUMBER_LABELS: Record<keyof BibleNumbers, string> = {
+  timelineStart: 'the first year of the timeline',
+  timelineEnd: 'the last year of the timeline',
+  windowBefore: 'the years before the story year',
+  windowAfter: 'the years after the story year',
+  pickerReach: 'the reach of the events picker',
+  autosaveMs: 'the autosave delay',
+};
+
+/** IP-11, ED-3: one of the bible's numbers, one step per change. */
+export function numberSettingCommand(
+  invoke: Invoke,
+  field: keyof BibleNumbers,
+  before: number,
+  after: number,
+): UndoCommand {
+  const read = async () => (await invoke('settings.get', {})).numbers[field];
+  const write = (to: number) => invoke('settings.set', { numbers: { [field]: to } });
+  const what = NUMBER_LABELS[field];
+  const changed = `${what} changed since`;
+  return {
+    label: `Changed ${what}`,
+    undo: [settingOp(read, (a, b) => a === b, after, write, before, changed)],
+    redo: [settingOp(read, (a, b) => a === b, before, write, after, changed)],
+  };
+}
+
+/** IP-10, ED-3: the cultural time unit. */
+export function cultureUnitCommand(
+  invoke: Invoke,
+  before: CultureUnit,
+  after: CultureUnit,
+): UndoCommand {
+  const read = async () => (await invoke('settings.get', {})).cultureUnit;
+  const write = (to: CultureUnit) => invoke('settings.set', { cultureUnit: to });
+  const changed = 'the cultural time unit changed since';
+  return {
+    label: 'Changed the cultural time unit',
+    undo: [settingOp(read, (a, b) => a === b, after, write, before, changed)],
+    redo: [settingOp(read, (a, b) => a === b, before, write, after, changed)],
+  };
+}
+
+/** IP-14, ED-3: one template (a default title, a strand label, the brief headings, a link label). */
+export function templateCommand<K extends keyof BibleTemplates>(
+  invoke: Invoke,
+  field: K,
+  what: string,
+  before: BibleTemplates[K],
+  after: BibleTemplates[K],
+): UndoCommand {
+  const read = async () => (await invoke('settings.get', {})).templates[field];
+  const write = (to: BibleTemplates[K]) =>
+    invoke('settings.set', { templates: { [field]: to } as Partial<BibleTemplates> });
+  const same = (a: BibleTemplates[K], b: BibleTemplates[K]) =>
+    JSON.stringify(a) === JSON.stringify(b);
+  const changed = `${what} changed since`;
+  return {
+    label: `Changed ${what}`,
+    undo: [settingOp(read, same, after, write, before, changed)],
+    redo: [settingOp(read, same, before, write, after, changed)],
+  };
+}
+
+export interface EraDefaultRow {
+  name: string;
+  startYear: number;
+  endYear: number;
+}
+
+/** IP-12, ED-3: the default eras for a new bible, as one step per save. */
+export function eraDefaultsCommand(
+  invoke: Invoke,
+  before: readonly EraDefaultRow[],
+  after: readonly EraDefaultRow[],
+): UndoCommand {
+  const read = async () => (await invoke('eraDefaults.get', {})).rows;
+  const write = (rows: readonly EraDefaultRow[]) => invoke('eraDefaults.set', { rows: [...rows] });
+  const same = (a: readonly EraDefaultRow[], b: readonly EraDefaultRow[]) =>
+    JSON.stringify(a) === JSON.stringify(b);
+  const changed = 'the default eras changed since';
+  return {
+    label: 'Changed the default eras',
+    undo: [settingOp(read, same, after, write, before, changed)],
+    redo: [settingOp(read, same, before, write, after, changed)],
   };
 }

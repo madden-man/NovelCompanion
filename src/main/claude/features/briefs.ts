@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { GROUP_TITLES } from '../../../shared/domain/brief/selection';
 import type { GroupKind, Selection } from '../../../shared/domain/brief/selection';
-import { LEAD_SECTIONS } from '../../../shared/domain/brief/render';
+import { LEAD_SECTIONS, isCanon } from '../../../shared/domain/brief/render';
+import { STATUS_KINDS } from '../../../shared/schema/lists';
 import type { BriefMaterial } from '../../../shared/domain/brief/render';
 import type { EntryRefWire } from '../../../shared/claude';
 import { material } from '../prompts';
@@ -23,7 +24,9 @@ const Material = z.strictObject({
   group: z.string().max(64),
   strand: z.string().max(200).nullable(),
   title: z.string(),
-  status: z.string().max(32),
+  status: z.string().max(64),
+  /** A47 (IP-9): the status kind SB-5 reads; runs saved before A47 have none. */
+  kind: z.enum(STATUS_KINDS).optional(),
   note: z.string(),
   detail: z.string(),
   refs: z.array(z.string().max(64)),
@@ -73,7 +76,7 @@ Nothing that happens after the story year goes anywhere except "plannedAhead".
 When the section has more than one strand, set "strand" to the strand's label for strand material; otherwise null.`;
 
 function entryLine(m: BriefMaterial | z.infer<typeof Material>): string {
-  const head = `[${m.id}] ${m.title} (${GROUP_TITLES[m.group as GroupKind] ?? m.group}; ${m.status}${
+  const head = `[${m.id}] ${m.title} (${GROUP_TITLES[m.group as GroupKind] ?? m.group}; ${m.kind ?? m.status}${
     m.strand ? `; strand: ${m.strand}` : ''
   })`;
   const parts = [m.note, m.detail].map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
@@ -131,10 +134,10 @@ const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
  * ahead" moves under that heading, whatever section Claude put it in.
  */
 function guard(output: BriefsOutput, input: BriefsInput) {
-  const statusOf = new Map<string, string>();
+  const canonIds = new Set<string>();
   const groupsOf = new Map<string, Set<string>>();
   for (const m of input.material) {
-    statusOf.set(m.id, m.status);
+    if (isCanon(m)) canonIds.add(m.id);
     const g = groupsOf.get(m.id) ?? new Set<string>();
     g.add(m.group);
     groupsOf.set(m.id, g);
@@ -154,10 +157,7 @@ function guard(output: BriefsOutput, input: BriefsInput) {
       text,
       cites,
       // An ID with no material (such as a chapter ID) is not canon.
-      status:
-        it.status === 'canon' && cites.every((id) => statusOf.get(id) === 'canon')
-          ? 'canon'
-          : 'planned',
+      status: it.status === 'canon' && cites.every((id) => canonIds.has(id)) ? 'canon' : 'planned',
     };
   };
   const ahead: BriefItem[] = output.plannedAhead.map(fix);
@@ -224,7 +224,13 @@ function strandBody(items: BriefItem[], strands: string[]): string[] {
  * and always present, then Claude's other sections, then "Planned ahead",
  * and the over-budget and left-out notes from the selection.
  */
-export function renderBrief(output: BriefsOutput, input: BriefsInput, sel?: Selection): string {
+export function renderBrief(
+  output: BriefsOutput,
+  input: BriefsInput,
+  sel?: Selection,
+  /** A47 (IP-14): the bible's brief headings; the lead three are read from it. */
+  headings: readonly string[] = LEAD_SECTIONS.map((s) => s.heading),
+): string {
   const o = guard(output, input);
   const out: string[] = [
     `# Brief: ${input.label}`,
@@ -232,9 +238,9 @@ export function renderBrief(output: BriefsOutput, input: BriefsInput, sel?: Sele
     `Story year ${input.year}. Written by Claude from the ${input.manifest.length} entries in the manifest; every line cites its entries.`,
   ];
   const section = (heading: string, body: string[]) => out.push('', `## ${heading}`, ...body);
-  section(LEAD_SECTIONS[0].heading, byStrand(o.characters, input.strands));
-  section(LEAD_SECTIONS[1].heading, byStrand(o.worldEvents, input.strands));
-  section(LEAD_SECTIONS[2].heading, byStrand(o.culture, input.strands));
+  section(headings[0] ?? LEAD_SECTIONS[0].heading, byStrand(o.characters, input.strands));
+  section(headings[1] ?? LEAD_SECTIONS[1].heading, byStrand(o.worldEvents, input.strands));
+  section(headings[2] ?? LEAD_SECTIONS[2].heading, byStrand(o.culture, input.strands));
   let n = 4;
   for (const s of o.sections) {
     if (!s.items.length && !s.decided.length) continue;

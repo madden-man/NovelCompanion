@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react';
 import { describeState } from '../../../../shared/domain/ages';
 import { newNestedId } from '../../../../shared/domain/blank';
+import { useBibleSettings } from '../bibleSettings';
 import { placePath } from '../../../../shared/domain/culture';
 import { isPlainObject } from '../../../../shared/domain/paths';
 import type { Doc } from '../../../../shared/domain/paths';
@@ -41,6 +42,7 @@ export function StrandsEditor(props: {
   onChange: (next: Doc[]) => void;
 }) {
   const strands = (Array.isArray(props.value) ? props.value : []).filter(isPlainObject);
+  const { templates } = useBibleSettings();
   const set = (i: number, patch: Doc) =>
     props.onChange(strands.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const primary = (i: number) =>
@@ -57,7 +59,7 @@ export function StrandsEditor(props: {
       ...strands,
       {
         id: newNestedId(),
-        label: 'backstory',
+        label: templates.strandBackstory,
         startYear: props.storyYear,
         endYear: null,
         primary: strands.length === 0,

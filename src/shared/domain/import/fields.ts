@@ -23,6 +23,8 @@ const FILLABLE = new Set([
   'boolean',
   'enum',
   'listItem',
+  'listItems',
+  'color',
   'tags',
   'strings',
   'ref',

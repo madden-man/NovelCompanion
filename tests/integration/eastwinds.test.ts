@@ -218,12 +218,12 @@ describe('IM-1 IM-4 SM-12 A29 the East Winds import maps the workbook and docume
     expect((await open.snapshots!.list()).map((s) => s.reason)).toEqual(['import']);
 
     // World events: header 9 to 12 stands for 2009 to 2012, merged cells last across years, headings give
-    // categories, and a row label that names a region gives the region.
+    // categories, and a row label that names a region gives the region (A47: as a regions list item).
     const events = open.repo.list('worldEvents');
     expect(events.map((e) => [e.title, yearOf(e.start), yearOf(e.end), e.regions]).sort()).toEqual(
       [
         ['A bridge begins', 2010, 2012, []],
-        ['Blackouts', 2012, null, ['United States']],
+        ['Blackouts', 2012, null, ['united-states']],
         ['First robots', 2009, null, []],
         ['Robots everywhere', 2011, null, []],
         ['The first flood', 2010, null, []],

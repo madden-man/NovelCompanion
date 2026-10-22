@@ -17,6 +17,7 @@ import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
 import { SelectionBody } from './common';
 import type { OpenEntry, SelectionView } from './common';
+import { useBibleSettings } from '../bibleSettings';
 
 const ids = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
@@ -60,7 +61,9 @@ export function BriefView({
   const content = typeof brief?.content === 'string' ? brief.content : '';
   const manifest = useMemo(() => ids(brief?.entryIds), [brief?.entryIds]);
   const problems = useMemo(() => citationProblems(content, manifest), [content, manifest]);
-  const missing = useMemo(() => missingLeadSections(content), [content]);
+  // A47 (IP-14): the lead headings may be the bible's own.
+  const headings = useBibleSettings().templates.briefHeadings;
+  const missing = useMemo(() => missingLeadSections(content, headings), [content, headings]);
   // SB-4: a Claude-written brief must cite something on every line; the structured one does by construction.
   const synthesized = brief?.synthesized === true;
   const uncited = useMemo(() => (synthesized ? uncitedLines(content) : []), [synthesized, content]);

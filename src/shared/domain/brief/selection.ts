@@ -52,6 +52,8 @@ import { latestLog } from '../sessionLog';
 import { characterName, eraFor, eventSpans, eventsAhead, eventsUpTo, stateIn } from '../timeline';
 import type { EventSpan, TimelineData } from '../timeline';
 import { ENTRY_COLLECTIONS } from '../../schema';
+import type { StatusKind } from '../../schema/lists';
+import { statusKind } from '../lists';
 import { LIVES_IN_PREFIX, VOICE_MOMENT_TITLE } from '../../schema/moment';
 
 // ---------- inputs and settings ----------
@@ -74,6 +76,8 @@ export interface SelectionSettings {
   window: number;
   /** SB-6: the most characters of selected text a brief takes. */
   budget: number;
+  /** A47 (IP-11): years after the story year the window looks ahead; WINDOW_AHEAD when not given. */
+  ahead?: number;
 }
 
 export const DEFAULT_SELECTION_SETTINGS: SelectionSettings = { window: 3, budget: 40_000 };
@@ -182,8 +186,10 @@ export interface SelectedItem {
   id: string;
   collection: string;
   title: string;
-  /** canon, planned, or idea (SB-5 keeps them apart). */
+  /** The item ID in the statuses list (seeded canon, planned, idea). */
   status: string;
+  /** A47 (IP-9): what the status means to SB-5, from the item's `extra.kind`. Set on every selected item. */
+  kind?: StatusKind;
   /** Why it was selected, or the computed fact about it (an age, a year). */
   note: string;
   /** The entry's text as the brief shows it; its length is what SB-6 counts. */
@@ -290,6 +296,8 @@ export interface Selection {
   added: string[];
   removed: string[];
   window: number;
+  /** A47 (IP-11): years the window looks past the story year. */
+  ahead: number;
   budget: number;
   /** Characters of selected text after any drops (SB-6). */
   size: number;
@@ -621,6 +629,7 @@ export function selectForSession(
   overrides: SelectionOverrides = {},
 ): Selection {
   const section = resolveSection(data, input);
+  const ahead = settings.ahead ?? WINDOW_AHEAD;
   const characters = index(data, 'characters');
   const places = data.all('places');
   const placeById = index(data, 'places');
@@ -742,6 +751,9 @@ export function selectForSession(
   };
   const events = eventSpans(data);
   const eventDocs = index(data, 'worldEvents');
+  // A47 (IP-8): events store region item IDs; the brief names them by label.
+  const regionItems = (lists.get('regions')?.items ?? []) as { id: string; label: string }[];
+  const regionLabel = (id: string) => regionItems.find((i) => i.id === id)?.label ?? id;
 
   const eventItem = (e: EventSpan, note: string): SelectedItem => ({
     id: e.id,
@@ -749,7 +761,7 @@ export function selectForSession(
     title: e.title,
     status: e.status,
     note: joinText(eventDates(e) + (note ? ',' : ''), note),
-    detail: joinText(plain(eventDocs.get(e.id)?.body), e.regions.join(', ')),
+    detail: joinText(plain(eventDocs.get(e.id)?.body), e.regions.map(regionLabel).join(', ')),
     refs: [],
     year: e.startYear,
     endYear: e.endYear,
@@ -786,7 +798,7 @@ export function selectForSession(
         if (str(m._id) === str(voice?._id)) continue;
         const year = num(m.year) as number;
         if (year <= Y) push('moments', momentItem(m, c));
-        else if (year <= Y + WINDOW_AHEAD) push('plannedAhead', momentItem(m, c));
+        else if (year <= Y + ahead) push('plannedAhead', momentItem(m, c));
       }
     }
 
@@ -811,7 +823,7 @@ export function selectForSession(
       taken.add(e.id);
       push('eventsWindow', eventItem(e, ''));
     }
-    for (const e of eventsAhead(data, Y, WINDOW_AHEAD)) {
+    for (const e of eventsAhead(data, Y, ahead)) {
       taken.add(e.id);
       push('plannedAhead', eventItem(e, e.startYear === Y ? 'later this year' : 'next year'));
     }
@@ -990,6 +1002,10 @@ export function selectForSession(
     }
   }
 
+  // A47 (IP-9, SB-5): each item's status kind, read from the statuses list.
+  const listDocs = data.all('lists');
+  for (const g of all()) for (const it of g.items) it.kind = statusKind(listDocs, it.status);
+
   const ids = new Set<string>(section.chapters.map((c) => str(c._id)));
   for (const g of all()) {
     for (const it of g.items) {
@@ -1010,6 +1026,7 @@ export function selectForSession(
     added,
     removed: removed.sort(byText),
     window: settings.window,
+    ahead,
     budget: settings.budget,
     size,
     leadSize,

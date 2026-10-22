@@ -53,6 +53,19 @@ export async function exportBibleJson(
 
 /** Every entry and settings document of the current schema, checked one by one (BK-3). */
 function validateCollections(collections: Record<string, Record<string, unknown>[]>): void {
+  // a47-model (IP-8, IP-9): a status, a provenance and every region must be an item of the
+  // file's own list. A file without the statuses or provenance list has the seeded ones;
+  // a file without a regions list has no regions.
+  const itemIds = (listId: string, seeded: string[]) => {
+    const list = (collections.lists ?? []).find((l) => l._id === listId);
+    const items = Array.isArray(list?.items) ? (list.items as { id?: unknown }[]) : null;
+    return new Set<unknown>(items ? items.map((i) => i.id) : seeded);
+  };
+  const vocab: [string, Set<unknown>][] = [
+    ['status', itemIds('statuses', ['canon', 'planned', 'idea'])],
+    ['provenance', itemIds('provenance', ['researched', 'invented'])],
+  ];
+  const regions = itemIds('regions', []);
   for (const [name, docs] of Object.entries(collections)) {
     const schema = isEntryCollection(name)
       ? entrySchemas[name]
@@ -66,6 +79,19 @@ function validateCollections(collections: Record<string, Record<string, unknown>
         throw new BibleFileError(
           `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${z.prettifyError(r.error)}`,
         );
+      }
+      const fields: [string, unknown, Set<unknown>][] = isEntryCollection(name)
+        ? vocab.map(([f, ids]) => [f, doc[f], ids])
+        : [];
+      if (name === 'worldEvents' && Array.isArray(doc.regions)) {
+        for (const r of doc.regions as unknown[]) fields.push(['region', r, regions]);
+      }
+      for (const [field, v, ids] of fields) {
+        if (typeof v === 'string' && !ids.has(v)) {
+          throw new BibleFileError(
+            `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${field} ${v} is not in the list.`,
+          );
+        }
       }
     }
   }

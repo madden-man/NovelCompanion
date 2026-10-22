@@ -159,7 +159,12 @@ async function bibleList(): Promise<Response<'bible.list'>> {
 
 async function bibleCreate(slug: string, name: string): Promise<Response<'bible.create'>> {
   const s = await requireStore();
-  const { handle } = await createBibleWithDefaults(s, slug, name);
+  const { handle } = await createBibleWithDefaults(
+    s,
+    slug,
+    name,
+    current?.session.repo.eraDefaults(),
+  );
   const record = (await listBibles(s)).find((b) => b._id === handle.id);
   broadcast('bibles.changed', { current: currentSummary() });
   return { bible: { id: handle.id, name: record?.name ?? name } };
@@ -194,6 +199,10 @@ async function adopt(
     broadcast('storyTime.changed', { bible: slug }),
   );
   const offTree = session.repo.onTreeChange(() => broadcast('tree.changed', { bible: slug }));
+  // a47-model: the bible's settings changed.
+  const offSettings = session.repo.onSettingsChange(() =>
+    broadcast('settings.changed', { bible: slug }),
+  );
   const offReload = session.repo.onReload((message) =>
     broadcast('bible.reloaded', { bible: slug, message }),
   );
@@ -204,6 +213,7 @@ async function adopt(
     offProposals();
     offTime();
     offTree();
+    offSettings();
   };
   current = { session, name, unsubscribe, ...(readOnly ? { readOnly: true as const } : {}) };
   conn().lastBible = slug;

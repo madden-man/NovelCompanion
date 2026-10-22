@@ -2,8 +2,10 @@
  * Cultural entries and places by year (CU-1, CU-2, PC-1). Pure lookups over
  * plain entries: a year range with a missing start or end is open on that side.
  */
-import { DEMOGRAPHIC_IDS, DEMOGRAPHIC_OPTIONS } from '../schema/world';
+import { DEMOGRAPHIC_OPTIONS } from '../schema/world';
 import type { Demographic } from '../schema/world';
+import { CULTURE_UNIT_YEARS } from '../schema/settings';
+import type { CultureUnit } from '../schema/settings';
 import type { Doc } from './paths';
 
 interface Ranged {
@@ -35,30 +37,77 @@ export function entriesFor<T extends Doc>(
     );
 }
 
-/** A41: the decade a year falls in, as its first year (2047 is the 2040s). */
-export const decadeOf = (year: number): number => Math.floor(year / 10) * 10;
+/**
+ * A41, A47 (IP-10): the Cultural data screen steps over units of years: a
+ * decade, five years, or one year, as the bible's settings say. Every
+ * function takes the unit and defaults to the decade, so a unit is named by
+ * its first year (2047 is the 2040s, or 2045 in fives, or 2047 alone).
+ */
+const sizeOf = (unit: CultureUnit): number => CULTURE_UNIT_YEARS[unit] ?? 10;
 
-/** "2040s" */
-export const decadeLabel = (decade: number): string => `${decade}s`;
+/** The first year of the unit a year falls in. */
+export const unitOf = (year: number, unit: CultureUnit = 'decade'): number =>
+  Math.floor(year / sizeOf(unit)) * sizeOf(unit);
 
-/** The years a line added in a decade covers: that decade only. */
-export const decadeSpan = (decade: number): { startYear: number; endYear: number } => ({
-  startYear: decade,
-  endYear: decade + 9,
-});
-
-function overlaps(r: Doc, decade: number): boolean {
-  const start = typeof r.startYear === 'number' ? r.startYear : -Infinity;
-  const end = typeof r.endYear === 'number' ? r.endYear : Infinity;
-  return start <= decade + 9 && decade <= end;
+/** "2040s", "2045 to 2049", or "2047". */
+export function unitLabel(start: number, unit: CultureUnit = 'decade'): string {
+  if (unit === 'decade') return `${start}s`;
+  if (unit === 'one') return String(start);
+  return `${start} to ${start + sizeOf(unit) - 1}`;
 }
 
-/** An entry's age group; an entry made before A41 is about everyone. */
-export function demographicOf(e: Doc): Demographic {
+/** The years a line added in a unit covers: that unit only. */
+export const unitSpan = (
+  start: number,
+  unit: CultureUnit = 'decade',
+): { startYear: number; endYear: number } => ({
+  startYear: start,
+  endYear: start + sizeOf(unit) - 1,
+});
+
+/** A41: the decade a year falls in, as its first year (2047 is the 2040s). */
+export const decadeOf = (year: number): number => unitOf(year, 'decade');
+
+/** "2040s" */
+export const decadeLabel = (decade: number): string => unitLabel(decade, 'decade');
+
+/** The years a line added in a decade covers: that decade only. */
+export const decadeSpan = (decade: number): { startYear: number; endYear: number } =>
+  unitSpan(decade, 'decade');
+
+function overlaps(r: Doc, start: number, unit: CultureUnit): boolean {
+  const from = typeof r.startYear === 'number' ? r.startYear : -Infinity;
+  const to = typeof r.endYear === 'number' ? r.endYear : Infinity;
+  return from <= start + sizeOf(unit) - 1 && start <= to;
+}
+
+/** An age group a screen offers: the `ageGroups` list item ID and its label. */
+export interface AgeGroupOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * A47 (IP-10): the age groups of the bible's `ageGroups` list, in its order,
+ * or the six seeded bands when the list is missing or empty.
+ */
+export function ageGroupOptions(
+  list: { items?: readonly { id: string; label: string }[] } | undefined,
+): AgeGroupOption[] {
+  const items = list?.items ?? [];
+  return items.length ? items.map((i) => ({ value: i.id, label: i.label })) : DEMOGRAPHIC_OPTIONS;
+}
+
+/**
+ * An entry's age group; an entry made before A41, or one whose group is not
+ * among `groups`, is about everyone.
+ */
+export function demographicOf(
+  e: Doc,
+  groups: readonly AgeGroupOption[] = DEMOGRAPHIC_OPTIONS,
+): Demographic {
   const d = e.demographic;
-  return typeof d === 'string' && (DEMOGRAPHIC_IDS as readonly string[]).includes(d)
-    ? (d as Demographic)
-    : 'all';
+  return typeof d === 'string' && groups.some((g) => g.value === d) ? d : 'all';
 }
 
 export interface DecadeGroup<T> {
@@ -68,23 +117,26 @@ export interface DecadeGroup<T> {
 }
 
 /**
- * A41: the cultural lines of a community that touch a decade, one group per
- * age group in the fixed order (everyone first), earliest start first within
- * each. Every group is returned, empty or not, so each has a place to add to.
+ * A41: the cultural lines of a community that touch a unit of years, one
+ * group per age group in the list's order (everyone first when seeded),
+ * earliest start first within each. Every group is returned, empty or not,
+ * so each has a place to add to.
  */
 export function decadeGroups<T extends Doc>(
   entries: readonly T[],
   community: string,
-  decade: number,
+  start: number,
+  unit: CultureUnit = 'decade',
+  groups: readonly AgeGroupOption[] = DEMOGRAPHIC_OPTIONS,
 ): DecadeGroup<T>[] {
   const mine = entries.filter(
-    (e) => !e.deletedAt && e.communityId === community && overlaps(e, decade),
+    (e) => !e.deletedAt && e.communityId === community && overlaps(e, start, unit),
   );
-  return DEMOGRAPHIC_OPTIONS.map((o) => ({
+  return groups.map((o) => ({
     demographic: o.value,
     label: o.label,
     rows: mine
-      .filter((e) => demographicOf(e) === o.value)
+      .filter((e) => demographicOf(e, groups) === o.value)
       .sort(
         (a, b) =>
           ((a.startYear as number | null) ?? -Infinity) -
@@ -94,34 +146,37 @@ export function decadeGroups<T extends Doc>(
 }
 
 /**
- * The decades a community screen offers: every decade from the earliest year
- * any entry or era starts (or the story year) to the latest any ends, with a
- * decade either side so there is always somewhere to add to.
+ * The units a community screen offers: every unit from the earliest year any
+ * entry or era starts (or the story year) to the latest any ends, with a unit
+ * either side so there is always somewhere to add to.
  */
 export function decadesFor(
   entries: readonly Doc[],
   eras: readonly Doc[],
   storyYear: number,
+  unit: CultureUnit = 'decade',
 ): number[] {
-  let lo = decadeOf(storyYear);
+  const of = (y: number) => unitOf(y, unit);
+  let lo = of(storyYear);
   let hi = lo;
   for (const r of [...entries, ...eras]) {
     if (r.deletedAt) continue;
-    if (typeof r.startYear === 'number') lo = Math.min(lo, decadeOf(r.startYear));
-    if (typeof r.endYear === 'number') hi = Math.max(hi, decadeOf(r.endYear));
-    if (typeof r.startYear === 'number') hi = Math.max(hi, decadeOf(r.startYear));
-    if (typeof r.endYear === 'number') lo = Math.min(lo, decadeOf(r.endYear));
+    if (typeof r.startYear === 'number') lo = Math.min(lo, of(r.startYear));
+    if (typeof r.endYear === 'number') hi = Math.max(hi, of(r.endYear));
+    if (typeof r.startYear === 'number') hi = Math.max(hi, of(r.startYear));
+    if (typeof r.endYear === 'number') lo = Math.min(lo, of(r.endYear));
   }
+  const step = sizeOf(unit);
   const out: number[] = [];
-  for (let d = lo - 10; d <= hi + 10; d += 10) out.push(d);
+  for (let d = lo - step; d <= hi + step; d += step) out.push(d);
   return out;
 }
 
-/** How a line's years read inside a decade: nothing when it is that decade alone. */
-export function spanInDecade(e: Doc, decade: number): string | null {
+/** How a line's years read inside a unit: nothing when it is that unit alone. */
+export function spanInDecade(e: Doc, start: number, unit: CultureUnit = 'decade'): string | null {
   const s = typeof e.startYear === 'number' ? e.startYear : null;
   const en = typeof e.endYear === 'number' ? e.endYear : null;
-  if (s === decade && en === decade + 9) return null;
+  if (s === start && en === start + sizeOf(unit) - 1) return null;
   if (s === null && en === null) return 'every year';
   if (en === null) return `from ${s}`;
   if (s === null) return `until ${en}`;

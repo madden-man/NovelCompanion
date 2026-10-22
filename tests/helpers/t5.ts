@@ -45,6 +45,8 @@ export function valueFor(
   switch (spec.kind) {
     case 'text':
       return `${spec.label} ${v === 0 ? 'first' : 'second'}`;
+    case 'color':
+      return v === 0 ? '#2a78d6' : '#1baf7a';
     case 'longText':
       return v === 0
         ? `${spec.label}, first version.\nIt has two lines.`
@@ -72,6 +74,11 @@ export function valueFor(
       const items = ctx.listItems(spec.listId!);
       if (items.length < 2) throw new Error(`T-5 needs two items in ${spec.listId}`);
       return items[v];
+    }
+    case 'listItems': {
+      const items = ctx.listItems(spec.listId!);
+      if (items.length < 2) throw new Error(`T-5 needs two items in ${spec.listId}`);
+      return [items[v]];
     }
     case 'tags':
       return [`${spec.name} tag ${v === 0 ? 'one' : 'two'}`];
@@ -193,7 +200,7 @@ export async function t5Write(invoke: Invoke): Promise<T5Plan> {
   const listIds = new Set<string>();
   const visit = (specs: readonly FieldSpec[]) => {
     for (const s of specs) {
-      if (s.kind === 'listItem' && s.listId) listIds.add(s.listId);
+      if ((s.kind === 'listItem' || s.kind === 'listItems') && s.listId) listIds.add(s.listId);
       if (s.fields) visit(s.fields);
     }
   };

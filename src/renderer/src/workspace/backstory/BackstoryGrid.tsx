@@ -1,3 +1,4 @@
+import { familyColorCss } from '../../../../shared/domain/lists';
 import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import type { GridLine, YearScale, YearSpan, Zoom } from '../../../../shared/domain/worldGrid';
@@ -116,7 +117,7 @@ export function BackstoryGrid(props: {
               {line.group.id !== NO_FAMILY && (
                 <span
                   className="bs-swatch"
-                  style={{ background: fam?.color ? `var(--${fam.color})` : undefined }}
+                  style={{ background: familyColorCss(fam?.color) ?? undefined }}
                   aria-hidden="true"
                 />
               )}
@@ -201,7 +202,7 @@ function Lifespan(props: {
   }
   const solid = bar.dashFrom === null ? bar.width : bar.dashFrom - bar.x;
   const style = {
-    ['--bs-fam' as string]: props.color ? `var(--${props.color})` : 'var(--border-strong)',
+    ['--bs-fam' as string]: familyColorCss(props.color) ?? 'var(--border-strong)',
     left: bar.x,
     width: bar.width,
   } as CSSProperties;

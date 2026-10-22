@@ -8,7 +8,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "Hale",
     "notes": "Portland, Oregon.",
-    "color": "series-1"
+    "color": "#2a78d6"
   },
   {
     "_id": "FAM-ZHOU",
@@ -19,6 +19,6 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "Zhou",
     "notes": "Guangzhou, later Portland.",
-    "color": "series-3"
+    "color": "#1baf7a"
   }
 ]

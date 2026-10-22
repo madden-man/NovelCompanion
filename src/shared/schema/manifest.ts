@@ -24,6 +24,10 @@ export type FieldKind =
   | 'enum'
   /** The ID of an item in a user-editable list (ED-8). */
   | 'listItem'
+  /** A47 (IP-8): the IDs of several items in a user-editable list, for example regions. */
+  | 'listItems'
+  /** A47 (IP-12): a CSS hex colour such as `#2a78d6`. */
+  | 'color'
   /** Tag labels; they live in the `tags` list. */
   | 'tags'
   /** Free strings. */
@@ -58,7 +62,7 @@ export interface FieldSpec {
   nullable?: boolean;
   /** For `enum`. */
   options?: FieldOption[];
-  /** For `listItem` and `tags`. */
+  /** For `listItem`, `listItems` and `tags`. */
   listId?: string;
   /** For `ref`, `refs`, `refPair`: the collections a target may come from. */
   target?: string[];
@@ -99,10 +103,13 @@ export const f = {
   calendarDate: (name: string, label: string, extra?: Extra) =>
     spec('calendarDate', name, label, extra),
   boolean: (name: string, label: string, extra?: Extra) => spec('boolean', name, label, extra),
+  color: (name: string, label: string, extra?: Extra) => spec('color', name, label, extra),
   enum: (name: string, label: string, options: FieldOption[], extra?: Extra) =>
     spec('enum', name, label, { options, ...extra }),
   listItem: (name: string, label: string, listId: string, extra?: Extra) =>
     spec('listItem', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
+  listItems: (name: string, label: string, listId: string, extra?: Extra) =>
+    spec('listItems', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
   tags: (name: string, label: string, extra?: Extra) =>
     spec('tags', name, label, { listId: 'tags', ...extra }),
   strings: (name: string, label: string, extra?: Extra) => spec('strings', name, label, extra),
@@ -145,12 +152,14 @@ export function yearRange(
   ];
 }
 
+/** The statuses a bible is seeded with (A47: the `statuses` list holds the real items). */
 export const STATUS_OPTIONS: FieldOption[] = [
   { value: 'canon', label: 'Canon' },
   { value: 'planned', label: 'Planned' },
   { value: 'idea', label: 'Idea' },
 ];
 
+/** The provenance values a bible is seeded with (A47: the `provenance` list holds the real items). */
 export const PROVENANCE_OPTIONS: FieldOption[] = [
   { value: 'researched', label: 'Researched' },
   { value: 'invented', label: 'Invented' },
@@ -164,8 +173,8 @@ export const commonFields: FieldSpec[] = [
   f.system('_id', 'ID'),
   f.text('title', 'Title', { required: true }),
   f.longText('body', 'Body'),
-  f.enum('status', 'Status', STATUS_OPTIONS, { required: true }),
-  f.enum('provenance', 'Provenance', PROVENANCE_OPTIONS, { nullable: true }),
+  f.listItem('status', 'Status', 'statuses', { required: true }),
+  f.listItem('provenance', 'Provenance', 'provenance', { nullable: true }),
   f.longText('sourceNote', 'Source note'),
   f.text('sourceRef', 'Source location', {
     hint: 'Where an import found this entry. The importer sets it.',

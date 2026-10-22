@@ -52,6 +52,8 @@ export class SimBible {
       label: 'Event categories',
       items: [],
     });
+    // A47 (IP-8): world events store region item IDs; the import adds the regions it names.
+    sim.lists.set('regions', { _id: 'regions', label: 'Regions', items: [] });
     return sim;
   }
 

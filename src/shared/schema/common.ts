@@ -21,10 +21,15 @@ export const StoryDate = z.union([
 ]);
 export type StoryDate = z.infer<typeof StoryDate>;
 
-export const Status = z.enum(['canon', 'planned', 'idea']);
+/**
+ * A47 (IP-9): an item ID in the `statuses` list. The seeded IDs are `canon`,
+ * `planned` and `idea`; the write path refuses an ID the list does not hold.
+ */
+export const Status = z.string().min(1).max(64);
 export type Status = z.infer<typeof Status>;
 
-export const Provenance = z.enum(['researched', 'invented']);
+/** A47 (IP-9): an item ID in the `provenance` list (seeded `researched`, `invented`). */
+export const Provenance = z.string().min(1).max(64);
 export type Provenance = z.infer<typeof Provenance>;
 
 /** A link from this entry to another. Backlinks are derived in the read model. */

@@ -24,6 +24,8 @@ export const MIGRATION9_SNAPSHOT_LABEL = 'Before migration 9';
 
 /** A44: the label of the snapshot taken before migration 10 rewrites long text as Markdown. */
 export const MIGRATION10_SNAPSHOT_LABEL = 'Before migration 10';
+/** a47-model: the label of the snapshot taken before migration 11 (A47) runs. */
+export const MIGRATION11_SNAPSHOT_LABEL = 'Before migration 11';
 
 /** `manifest.json` of a snapshot (BK-1): what was dumped, when, why, and the schema version. */
 export const SnapshotManifest = z.strictObject({

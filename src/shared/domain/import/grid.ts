@@ -169,6 +169,16 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
     }
     return id;
   };
+  // A47 (IP-8): a region a row label names is stored as its `regions` list item, added when new.
+  const regionDraft = { items: (ctx.list('regions')?.items ?? []).map((i) => ({ ...i })) };
+  const regionId = (label: string): string => {
+    const hit = regionDraft.items.find((i) => i.label.toLowerCase() === label.toLowerCase());
+    if (hit) return hit.id;
+    const id = newItemId(regionDraft, label);
+    regionDraft.items.push({ id, label, parentId: null });
+    listAdds.push({ listId: 'regions', id, label, parentId: null });
+    return id;
+  };
   const counts = new Map<string, number>();
   let heading = '';
   let ordinal = 0;
@@ -236,7 +246,7 @@ export function mapGrid(sheet: ParsedSheet, mapping: GridMapping, ctx: MapContex
       if (endYear !== null && endYear !== y.start) fields.end = { year: endYear };
       if (mapping.regionsFromLabels) {
         const regions = regionsOfLabel(label);
-        if (regions.length) fields.regions = regions;
+        if (regions.length) fields.regions = [...new Set(regions.map(regionId))];
       }
       const built = buildEntry({
         target: mapping.target,

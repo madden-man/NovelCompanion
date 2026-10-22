@@ -111,7 +111,15 @@ export type BibleChannel =
   | SessionChannel
   | ContinuityChannel
   // a47-guard
-  | GuardChannel;
+  | GuardChannel
+  // a47-model
+  | 'lists.move'
+  | 'lists.setParent'
+  | 'lists.setItem'
+  | 'settings.get'
+  | 'settings.set'
+  | 'eraDefaults.get'
+  | 'eraDefaults.set';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -373,10 +381,12 @@ export function bibleHandlers(
         places: model.all('places'),
         categories: model.get('lists', 'eventCategories') as ListDoc | undefined,
       });
-      return { ...chart, coverage: eraCoverage(eraSpans(model)) };
+      const { numbers: n } = session().repo.bibleSettings(); // a47-model: IP-11
+      return { ...chart, coverage: eraCoverage(eraSpans(model), n.timelineStart, n.timelineEnd) };
     },
     'timeline.eraCoverage': () => {
-      const coverage = eraCoverage(eraSpans(session().model));
+      const { numbers: n } = session().repo.bibleSettings(); // a47-model: IP-11
+      const coverage = eraCoverage(eraSpans(session().model), n.timelineStart, n.timelineEnd);
       return { coverage, messages: coverageMessages(coverage) };
     },
     'outline.get': ({ order, cursorYear }) => {
@@ -487,7 +497,7 @@ export function bibleHandlers(
             strands: [
               {
                 id: newNestedId(),
-                label: 'present',
+                label: repo.bibleSettings().templates.strandPresent,
                 startYear: year,
                 endYear: null,
                 primary: true,
@@ -613,8 +623,8 @@ export function bibleHandlers(
     'lists.get': () => ({ lists: session().repo.lists() }),
     'lists.rename': ({ listId, itemId, label }) =>
       session().repo.renameListItem(listId, itemId, label),
-    'lists.addItem': async ({ listId, label, parentId, id }) => ({
-      item: await session().repo.addListItem(listId, label, parentId, id),
+    'lists.addItem': async ({ listId, label, parentId, id, color, extra }) => ({
+      item: await session().repo.addListItem(listId, label, parentId, id, { color, extra }),
     }),
     'lists.removeItem': async ({ listId, itemId }) => {
       await session().repo.removeListItem(listId, itemId);
@@ -675,6 +685,17 @@ export function bibleHandlers(
         },
       };
     },
+    // a47-model
+    'lists.move': ({ listId, itemId, index }) => session().repo.moveListItem(listId, itemId, index),
+    'lists.setParent': ({ listId, itemId, parentId }) =>
+      session().repo.setListItemParent(listId, itemId, parentId),
+    'lists.setItem': async ({ listId, itemId, color, extra }) => ({
+      item: await session().repo.setListItemLook(listId, itemId, { color, extra }),
+    }),
+    'settings.get': () => session().repo.bibleSettings(),
+    'settings.set': (patch) => session().repo.setBibleSettings(patch),
+    'eraDefaults.get': () => ({ rows: session().repo.eraDefaults() }),
+    'eraDefaults.set': async ({ rows }) => ({ rows: await session().repo.setEraDefaults(rows) }),
   };
 }
 

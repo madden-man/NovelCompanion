@@ -162,6 +162,12 @@ export const WRITE_CHANNELS = [
   'claude.conversation.rename',
   'claude.conversation.clear',
   'claude.conversation.delete',
+  // a47-model
+  'lists.move',
+  'lists.setParent',
+  'lists.setItem',
+  'settings.set',
+  'eraDefaults.set',
 ] as const;
 
 const WRITES: ReadonlySet<string> = new Set(WRITE_CHANNELS);

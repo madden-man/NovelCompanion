@@ -9,7 +9,8 @@ export const WorldEvent = entry({
   end: StoryDate.nullable().default(null),
   /** An item ID in the `eventCategories` list, which is a hierarchy. */
   categoryId: z.string().min(1),
-  regions: z.array(z.string()).default([]),
+  /** A47 (IP-8): item IDs in the `regions` list, so a rename reaches every event. */
+  regions: z.array(z.string().min(1)).default([]),
   characterIds: z.array(Id).default([]),
   formative: z.boolean().default(false),
 });
@@ -24,7 +25,7 @@ export const worldEventFields: FieldSpec[] = [
     hint: 'Leave blank for a single date or year.',
   }),
   f.listItem('categoryId', 'Category', 'eventCategories', { required: true }),
-  f.strings('regions', 'Regions'),
+  f.listItems('regions', 'Regions', 'regions'),
   f.refs('characterIds', 'Characters affected', ['characters']),
   f.boolean('formative', 'Formative', {
     hint: 'Formative events reach briefs for anyone who lived through them.',
@@ -48,12 +49,16 @@ export const eraStateFields: FieldSpec[] = [
   }).map((s) => ({ ...s, required: true })),
 ];
 
-/** Cultural entry (CU-1): a community list item ID and the years it applies to. */
-/** A41: who a cultural line is about: everyone in the community, or one age group. */
+/**
+ * A41: who a cultural line is about: everyone in the community, or one age
+ * group. A47 (IP-10): these are the seeded items of the `ageGroups` list, and
+ * a line stores an item ID of that list.
+ */
 export const DEMOGRAPHIC_IDS = ['all', '0-18', '18-30', '30-50', '50-70', '70+'] as const;
-export const Demographic = z.enum(DEMOGRAPHIC_IDS);
+/** An item ID in the `ageGroups` list (A47); `all` is everyone. */
+export const Demographic = z.string().min(1).max(64);
 export type Demographic = z.infer<typeof Demographic>;
-export const DEMOGRAPHIC_OPTIONS: { value: Demographic; label: string }[] = [
+export const DEMOGRAPHIC_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: 'Everyone' },
   { value: '0-18', label: 'Ages 0 to 18' },
   { value: '18-30', label: 'Ages 18 to 30' },
@@ -62,6 +67,7 @@ export const DEMOGRAPHIC_OPTIONS: { value: Demographic; label: string }[] = [
   { value: '70+', label: 'Ages 70 and over' },
 ];
 
+/** Cultural entry (CU-1): a community list item ID and the years it applies to. */
 export const CulturalEntry = entry({
   communityId: z.string().min(1),
   startYear: Year.nullable(),
@@ -74,7 +80,7 @@ export type CulturalEntry = z.infer<typeof CulturalEntry>;
 export const culturalEntryFields: FieldSpec[] = [
   ...commonFields,
   f.listItem('communityId', 'Community', 'communities', { required: true }),
-  f.enum('demographic', 'Age group', DEMOGRAPHIC_OPTIONS),
+  f.listItem('demographic', 'Age group', 'ageGroups'),
   ...yearRange('startYear', 'endYear', ['Applies from', 'Applies to']).map((s) => ({
     ...s,
     required: true,

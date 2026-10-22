@@ -4,7 +4,13 @@
  * The JSON file written beside it (BK-3) is the lossless copy; Markdown is
  * for reading.
  */
-import { collectionInfo, entryTitle, manifests } from '../../schema';
+import {
+  PROVENANCE_OPTIONS,
+  STATUS_OPTIONS,
+  collectionInfo,
+  entryTitle,
+  manifests,
+} from '../../schema';
 import type { EntryCollection, FieldSpec } from '../../schema';
 
 type Doc = Record<string, unknown> & { _id: string };
@@ -151,7 +157,16 @@ export function bibleMarkdown(input: MarkdownInput): MarkdownFolder[] {
       case 'refPair':
         return Array.isArray(v) ? v.map(refText).join(', ') : refText(v);
       case 'listItem':
-        return listLabel.get(spec.listId ?? '')?.get(String(v)) ?? String(v);
+        return (
+          listLabel.get(spec.listId ?? '')?.get(String(v)) ??
+          // A47: a status or provenance read with no lists keeps its seeded label.
+          [...STATUS_OPTIONS, ...PROVENANCE_OPTIONS].find((o) => o.value === v)?.label ??
+          String(v)
+        );
+      case 'listItems':
+        return (Array.isArray(v) ? v : [v])
+          .map((x) => listLabel.get(spec.listId ?? '')?.get(String(x)) ?? String(x))
+          .join(', ');
       case 'enum':
         return spec.options?.find((o) => o.value === v)?.label ?? String(v);
       case 'longText':

@@ -142,11 +142,12 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
     const chart = await invoke('timeline.chart', {
       filters: { familyId: null, placeId: null, status: null, categoryId: null },
     });
+    // A47 (IP-8): a region written by name is stored as the regions list item.
     expect(
       chart.events
         .filter((e) => e.id === 'W-DATE')
         .map((e) => [e.id, e.categoryPath, e.regions, e.formative]),
-    ).toEqual([['W-DATE', 'Climate', ['Guangdong'], true]]);
+    ).toEqual([['W-DATE', 'Climate', ['guangdong'], true]]);
     // SM-4: real or invented and places are not event fields any more.
     expect(bible.repo.get('worldEvents', 'W-DATE')).not.toHaveProperty('placeIds');
     expect(bible.repo.get('worldEvents', 'W-DATE')).not.toHaveProperty('reality');

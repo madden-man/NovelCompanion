@@ -44,6 +44,12 @@ export const REPOSITORY_WRITES = new Set([
   'setRomanization',
   'setTreePositions',
   'setBriefSettings',
+  // a47-model
+  'moveListItem',
+  'setListItemParent',
+  'setListItemLook',
+  'setBibleSettings',
+  'setEraDefaults',
 ]);
 
 const DRIVER_WRITES = new Set([

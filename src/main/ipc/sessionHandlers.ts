@@ -121,12 +121,12 @@ export function sessionHandlers(
 
   const select = (input: BriefInput, add: string[], remove: string[]) => {
     const { model, repo } = session();
-    return selectForSession(model, input, repo.briefSettings(), { add, remove });
+    return selectForSession(model, input, repo.selectionSettings(), { add, remove });
   };
 
   /** SB-4, SB-7, DB-4: write the brief's text from the selection. */
   const write = async (sel: Selection, runId?: string) => {
-    const structured = structuredBrief(sel);
+    const structured = structuredBrief(sel, session().repo.bibleSettings().templates.briefHeadings);
     const c = claude();
     if (!c.briefs) {
       return {
@@ -212,7 +212,8 @@ export function sessionHandlers(
   return {
     'session.relevant': ({ input, add, remove }) => {
       const selection = select(input, add, remove);
-      return { selection, structured: structuredBrief(selection) };
+      const headings = session().repo.bibleSettings().templates.briefHeadings;
+      return { selection, structured: structuredBrief(selection, headings) };
     },
     'brief.settings.get': () => settings(),
     'brief.settings.set': async (req) => {

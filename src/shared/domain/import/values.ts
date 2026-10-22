@@ -153,8 +153,22 @@ export function coerceCell(spec: FieldSpec, raw: Cell | undefined, env: CoerceEn
         ? { ok: true, value: hit.value }
         : fail(`${quoted(text)} is not one of ${options.map((o) => o.label).join(', ')}`);
     }
+    case 'color':
+      return /^#[0-9a-f]{6}$/i.test(text)
+        ? { ok: true, value: text.toLowerCase() }
+        : fail(`${quoted(text)} is not a hex colour such as #2a78d6`);
     case 'listItem':
       return listChoice(spec, text, env);
+    case 'listItems': {
+      // A47 (IP-8): each name becomes the item ID, added to the list when the import may add.
+      const ids: string[] = [];
+      for (const name of splitList(text)) {
+        const one = listChoice(spec, name, env);
+        if (one.ok !== true) return one;
+        if (!ids.includes(one.value as string)) ids.push(one.value as string);
+      }
+      return { ok: true, value: ids };
+    }
     case 'tags':
     case 'strings':
       return { ok: true, value: splitList(text) };
