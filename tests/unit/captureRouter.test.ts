@@ -13,6 +13,7 @@ import {
   resolve,
   routeCapture,
   splitSentences,
+  labelParts,
   titleFrom,
 } from '../../src/shared/domain/captureRouter';
 import type {
@@ -116,7 +117,7 @@ describe('CR-1 routing is local and pure', () => {
     const index = buildIndex(input);
     expect(index.characters.find((c) => c.name === 'Frank Sullivan')).toBeUndefined();
     const portland = index.communities.find((c) => c.id === 'portland')!;
-    expect(portland.aliases).toEqual(['portland, oregon']);
+    expect(portland.aliases).toEqual(['portland, oregon', 'portland', 'oregon']);
     expect(portland.demonyms).toEqual([]);
     const f = routeCapture('Families in Portland, Oregon start composting in 2070', index, OPTS)
       .facts[0]!;
@@ -445,8 +446,8 @@ describe('CR-5 three routes', () => {
     expect(decide({ ...base, share: 0.4, margin: 0 })).toBe('fast');
     expect(decide({ ...base, share: 0.39 })).toBe('full');
     expect(decide({ ...base, forcedRoute: 'full' })).toBe('full');
-    expect(decide({ ...base, share: 0.2, forcedSection: true })).toBe('fast');
-    expect(decide({ ...base, share: 0.2, forcedSection: true, reasons: ['x'] })).toBe('full');
+    expect(decide({ ...base, share: 0.2, forcedSection: true })).toBe('local');
+    expect(decide({ ...base, share: 0.2, forcedSection: true, reasons: ['x'] })).toBe('fast');
   });
 
   test('CR-5 the thresholds are constants and a caller may pass others', () => {
@@ -552,7 +553,7 @@ describe('CR-5 three routes', () => {
     expect(two[1]!.years.start).toBe(2064);
   });
 
-  test('CR-5 a forced section on a sentence with no flags goes to Route B rather than C', () => {
+  test('CR-5 a section the writer chose skips the thresholds: A with nothing flagged, else B', () => {
     expect(one('blue green').route).toBe('full');
     const f = one('blue green', {
       hints: [{ fact: 0, section: 'culturalEntries', communityId: 'san-francisco' }],
@@ -560,7 +561,27 @@ describe('CR-5 three routes', () => {
     expect(f.section).toBe('culturalEntries');
     expect(f.share).toBe(0);
     expect(f.reasons).toEqual([]);
-    expect(f.route).toBe('fast');
+    expect(f.route).toBe('local');
+    const yee =
+      'Chinese people in San Francisco begin to say yee haw ironically starting around 2065';
+    const asEvent = one(yee, { hints: [{ fact: 0, section: 'worldEvents' }] });
+    expect(asEvent.share).toBeLessThan(0.4);
+    expect(asEvent.reasons).toEqual(['category to choose from the event categories']);
+    expect(asEvent.route).toBe('fast');
+    const picked = one(yee, {
+      hints: [{ fact: 0, section: 'worldEvents', categoryId: 'culture' }],
+    });
+    expect(picked.reasons).toEqual([]);
+    expect(picked.route).toBe('local');
+    expect(one(yee, { hints: [{ fact: 0, section: 'worldEvents', route: 'full' }] }).route).toBe(
+      'full',
+    );
+    expect(decide({ share: 0, margin: 0, reasons: [], missing: [], forcedSection: true })).toBe(
+      'local',
+    );
+    expect(decide({ share: 0, margin: 0, reasons: ['x'], missing: [], forcedSection: true })).toBe(
+      'fast',
+    );
   });
 });
 
@@ -852,5 +873,54 @@ describe('A48 review fixes', () => {
       question: "Should Frank's church split over the Compact in 2075?",
       body: '',
     });
+  });
+});
+
+describe('A48 box fixes', () => {
+  const withPortland = () => {
+    const input = sliceInput();
+    const chars = input.entries.characters!;
+    const places = input.entries.places!;
+    chars.push({ ...chars[0], _id: 'zhou-lan', title: 'Zhou Lan', names: { full: 'Zhou Lan' } });
+    places.push({
+      ...places[0],
+      _id: 'pl-portland',
+      title: 'Portland, Oregon',
+      communityId: null,
+      parentId: 'pl-oregon',
+    });
+    return buildIndex(input);
+  };
+
+  test('CR-5 a move lives in the place after the move verb, not the first place named', () => {
+    const index = withPortland();
+    const f = routeCapture(
+      'Zhou Lan moved to Seattle when Portland started rationing water.',
+      index,
+      OPTS,
+    ).facts[0]!;
+    expect(f.section).toBe('moments');
+    expect(f.drafts[0]!.data).toMatchObject({ characterId: 'zhou-lan', title: 'Lives in Seattle' });
+    // With no place after the verb, the first place named.
+    const g = routeCapture('In Portland, Zhou Lan moves house in 2062', index, OPTS).facts[0]!;
+    expect(g.drafts[0]!.data?.title).toBe('Lives in Portland, Oregon');
+    const h = routeCapture('Zhou Lan settles in Jinan in 2062', index, OPTS).facts[0]!;
+    expect(h.drafts[0]!.data?.title).toBe('Lives in Jinan');
+  });
+
+  test('CR-3 a qualified label also matches its short names', () => {
+    expect(labelParts('Portland, Oregon')).toEqual(['Portland', 'Oregon']);
+    expect(labelParts('Jinan / Shandong')).toEqual(['Jinan', 'Shandong']);
+    expect(labelParts('Pacific States (CA / OR / WA)')).toEqual([]);
+    expect(labelParts('Shops, old and new')).toEqual(['Shops']);
+    const index = withPortland();
+    const portland = index.places.find((p) => p.id === 'pl-portland')!;
+    expect(portland.aliases).toEqual(expect.arrayContaining(['portland', 'oregon']));
+    expect(INDEX.communities.find((c) => c.id === 'jinan-shandong')!.aliases).toEqual(
+      expect.arrayContaining(['jinan', 'shandong']),
+    );
+    expect(resolve('Portland rations water', index).places.map((p) => p.id)).toEqual([
+      'pl-portland',
+    ]);
   });
 });

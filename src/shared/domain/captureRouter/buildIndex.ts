@@ -70,6 +70,28 @@ export function characterAliases(
   return aliasesOf(raw);
 }
 
+const QUALIFIER = /\s*(?:,|\s\/\s)\s*/;
+const PROPER = /^\p{Lu}/u;
+
+/**
+ * CR-3: the short names of a qualified label. "Portland, Oregon" gives
+ * "Portland" and "Oregon"; "Jinan / Shandong" gives "Jinan" and "Shandong".
+ * The part after is kept only when it is a proper name.
+ */
+export function labelParts(label: string, lexicon: Lexicon = LEXICON): string[] {
+  const plain = withoutParenthetical(label);
+  const parts = plain.split(QUALIFIER).filter(Boolean);
+  if (parts.length < 2) return [];
+  const [first, ...rest] = parts;
+  const out = first ? [first] : [];
+  for (const p of rest) {
+    const lower = p.toLowerCase();
+    const common = lexicon.stopWords.includes(lower) || lexicon.englishWords.includes(lower);
+    if (PROPER.test(p) && !common) out.push(p);
+  }
+  return out;
+}
+
 /** CR-1: build the router's index once per capture. */
 export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON): RouterIndex {
   const list = (id: string) => input.lists.find((l) => l._id === id)?.items ?? [];
@@ -103,7 +125,12 @@ export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON):
       id: d._id as string,
       name,
       communityId: str(d.communityId) || null,
-      aliases: aliasesOf([name, withoutParenthetical(name), ...(lexicon.places[key] ?? [])]),
+      aliases: aliasesOf([
+        name,
+        withoutParenthetical(name),
+        ...labelParts(name, lexicon),
+        ...(lexicon.places[key] ?? []),
+      ]),
       parentId: str(d.parentId) || null,
     };
   });
@@ -114,7 +141,12 @@ export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON):
       id: i.id,
       label: i.label,
       parentId: i.parentId ?? null,
-      aliases: aliasesOf([i.label, withoutParenthetical(i.label), ...(words?.aliases ?? [])]),
+      aliases: aliasesOf([
+        i.label,
+        withoutParenthetical(i.label),
+        ...labelParts(i.label, lexicon),
+        ...(words?.aliases ?? []),
+      ]),
       demonyms: aliasesOf(words?.demonyms ?? []),
     };
   });

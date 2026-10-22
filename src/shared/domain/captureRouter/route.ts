@@ -39,7 +39,8 @@ export interface DecideInput {
  * points, leads by `localMargin`, nothing needs judgment, and every missing
  * field can be asked for with a chip. Route B (fast) when it holds at least
  * `fastShare`. Route C (full) otherwise, or when the writer asks for it. A
- * section the writer chose that would go to C with nothing flagged goes to B.
+ * section the writer chose skips the thresholds: Route A with nothing
+ * flagged and every missing field askable, else Route B.
  */
 export function decide(
   input: DecideInput,
@@ -48,6 +49,8 @@ export function decide(
   if (input.forcedRoute) return input.forcedRoute;
   const judgment = input.reasons.length > 0;
   const canAsk = input.missing.every((m) => ASKABLE.has(m));
+  // A section the writer chose is not weighed against the thresholds.
+  if (input.forcedSection) return !judgment && canAsk ? 'local' : 'fast';
   let route: CaptureRoute;
   if (
     input.share >= thresholds.localShare &&
@@ -58,7 +61,6 @@ export function decide(
     route = 'local';
   } else if (input.share >= thresholds.fastShare) route = 'fast';
   else route = 'full';
-  if (input.forcedSection && route === 'full' && !judgment) route = 'fast';
   return route;
 }
 

@@ -7,7 +7,7 @@
 export * from './types';
 export { LEXICON } from './lexicon';
 export type { Adjustment, CommunityWords, Cue, CueSignal, DiasporaRule, Lexicon } from './lexicon';
-export { buildIndex, characterAliases } from './buildIndex';
+export { buildIndex, characterAliases, labelParts } from './buildIndex';
 export {
   YEAR_SOURCES,
   parse,

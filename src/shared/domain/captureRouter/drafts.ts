@@ -249,8 +249,12 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
         ? [{ id: ctx.characterId }]
         : momentSubjects(r, lexicon).flatMap((c) => (c.id ? [{ id: c.id }] : []));
       if (!subjects.length) need('characterId', 'Character');
-      const place = r.places[0];
-      const lives = !!place && lexiconPattern('move', lexicon).test(lower);
+      // The place a move goes to follows the move verb; else the first place named.
+      const move = lexiconPattern('move', lexicon).exec(lower);
+      const place = move
+        ? (r.places.find((p) => p.start >= move.index + move[0].length) ?? r.places[0])
+        : undefined;
+      const lives = !!place;
       const momentTitle = lives ? `${LIVES_IN_PREFIX}${place.label}` : title;
       for (const c of subjects.length ? subjects : [null]) {
         drafts.push({
