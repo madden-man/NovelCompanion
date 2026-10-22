@@ -5,12 +5,15 @@ import { collectionInfo, isEntryCollection, manifests } from '../../../shared/sc
 import type { EntryCollection } from '../../../shared/schema';
 import type { ProposalView } from '../../../shared/ipc';
 import { labelPath } from '../../../shared/domain/issues';
+import { getPath } from '../../../shared/domain/paths';
+import type { FieldSpec } from '../../../shared/schema/manifest';
 import { call, plainError } from '../api';
-import { useStore } from './data';
+import { useList, useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { formatTime } from './format';
 import { showValue } from './history';
+import { Editable, listOptions, patchForPath } from './editable';
 
 const OP_TEXT = {
   create: 'Create',
@@ -130,7 +133,7 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
           </button>
         </div>
       )}
-      <ProposalDiff view={view} />
+      <ProposalDiff view={view} edit="label" onEdited={onDone} />
       <WriteFieldset className="stack">
         {editing && (
           <form
@@ -204,11 +207,91 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
   );
 }
 
-/** ED-7: what a proposal would change, field by field, against the entry as it is now. */
-export function ProposalDiff({ view }: { view: ProposalView }) {
-  const { changes } = view;
-  const c = view.proposal.collection;
+/** The field spec at a dotted path such as `names.full`, or undefined inside a list or a missing field. */
+function specAt(manifest: readonly FieldSpec[], path: string): FieldSpec | undefined {
+  let specs: readonly FieldSpec[] | undefined = manifest;
+  let spec: FieldSpec | undefined;
+  for (const part of path.split('.')) {
+    if (/^\d+$/.test(part)) return undefined;
+    spec = specs?.find((s) => s.name === part);
+    specs = spec?.fields;
+  }
+  return spec;
+}
+
+/** The value kinds a proposed value edits in place (IP-17); anything else keeps the Edit form. */
+const EDITABLE_KINDS = new Set(['text', 'longText', 'year', 'int', 'number', 'enum', 'listItem']);
+
+/**
+ * Write a proposal's values again with one field changed, and read its diff
+ * back. Nothing in the bible changes until the proposal is approved (AI-3).
+ */
+async function editProposed(view: ProposalView, path: string, next: unknown) {
+  const data = view.proposal.data as Record<string, unknown>;
+  await call('proposal.edit', {
+    id: view.proposal._id,
+    data: { ...data, ...patchForPath(data, path, next) },
+  });
+}
+
+/** IP-17: rename the item a list item proposal adds, before approval. */
+async function editProposedLabel(view: ProposalView, label: string) {
+  await call('proposal.edit', { id: view.proposal._id, data: { label } });
+}
+
+/**
+ * ED-7: what a proposal would change, field by field, against the entry as it
+ * is now. IP-17: a new list item shows as a field ("Community: + Jinan").
+ * `edit` makes the proposed side fields while the proposal waits: `label`
+ * edits only a new list item's name (the review queue), `values` every
+ * simple value too (the capture box). `onEdited` hears each saved edit.
+ */
+export function ProposalDiff({
+  view,
+  edit,
+  onEdited,
+}: {
+  view: ProposalView;
+  edit?: 'label' | 'values';
+  onEdited?: () => Promise<void> | void;
+}) {
+  const { changes, proposal } = view;
+  const c = proposal.collection;
   const manifest = isEntryCollection(c) ? manifests[c] : [];
+  const pending = proposal.state === 'pending';
+  const editor = (path: string, after: unknown) => {
+    if (!edit || !pending) return null;
+    if (proposal.op === 'listAdd' && proposal.listAdd) {
+      const label = proposal.listAdd.label;
+      return (
+        <Editable
+          kind="text"
+          label={`Name of the new item for ${path}`}
+          allowEmpty={false}
+          value={label}
+          testId="proposal-label"
+          display={(t) => `+ ${t}`}
+          onSave={async (next) => {
+            await editProposedLabel(view, next);
+            await onEdited?.();
+          }}
+        />
+      );
+    }
+    if (edit !== 'values' || (proposal.op !== 'create' && proposal.op !== 'update')) return null;
+    const spec = specAt(manifest, path);
+    if (!spec || !EDITABLE_KINDS.has(spec.kind)) return null;
+    return (
+      <ProposedValue
+        view={view}
+        spec={spec}
+        path={path}
+        label={labelPath(manifest, path)}
+        after={after}
+        onEdited={onEdited}
+      />
+    );
+  };
   return (
     <>
       {changes.length === 0 ? (
@@ -223,20 +306,107 @@ export function ProposalDiff({ view }: { view: ProposalView }) {
             </tr>
           </thead>
           <tbody>
-            {changes.map((c) => (
-              <tr key={c.path}>
-                <th scope="row">{labelPath(manifest, c.path)}</th>
-                <td>
-                  <del>{showValue(c.before)}</del>
-                </td>
-                <td>
-                  <ins>{showValue(c.after)}</ins>
-                </td>
-              </tr>
-            ))}
+            {changes.map((ch) => {
+              const field = editor(ch.path, ch.after);
+              return (
+                <tr key={ch.path} data-path={ch.path}>
+                  <th scope="row">{labelPath(manifest, ch.path)}</th>
+                  <td>
+                    <del>{showValue(ch.before)}</del>
+                  </td>
+                  <td>{field ?? <ins>{showValue(ch.after)}</ins>}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
     </>
   );
+}
+
+/** One proposed value as a field (IP-1, IP-17): saves into the proposal, never the bible. */
+function ProposedValue(props: {
+  view: ProposalView;
+  spec: FieldSpec;
+  path: string;
+  label: string;
+  after: unknown;
+  onEdited?: () => Promise<void> | void;
+}) {
+  const { view, spec, path } = props;
+  const list = useList(spec.listId);
+  const raw = getPath(view.proposal.data as Record<string, unknown>, path);
+  const save = async (next: unknown) => {
+    await editProposed(view, path, next);
+    await props.onEdited?.();
+  };
+  const common = {
+    label: `Proposed ${props.label}`,
+    testId: 'proposed-value',
+    'data-field': path,
+  };
+  switch (spec.kind) {
+    case 'text':
+      return (
+        <Editable
+          {...common}
+          kind="text"
+          value={typeof raw === 'string' ? raw : ''}
+          allowEmpty={!spec.required}
+          onSave={save}
+        />
+      );
+    case 'longText':
+      return (
+        <Editable
+          {...common}
+          kind="rich"
+          layout="inline"
+          value={typeof raw === 'string' ? raw : ''}
+          onSave={save}
+        />
+      );
+    case 'year':
+      return (
+        <Editable
+          {...common}
+          kind="year"
+          value={typeof raw === 'number' ? raw : null}
+          allowEmpty={spec.nullable === true}
+          onSave={save}
+        />
+      );
+    case 'int':
+    case 'number':
+      return (
+        <Editable
+          {...common}
+          kind="number"
+          integer={spec.kind === 'int'}
+          value={typeof raw === 'number' ? raw : null}
+          allowEmpty={spec.nullable === true}
+          onSave={save}
+        />
+      );
+    default: {
+      // enum and listItem: the choices, with a new item this proposal set adds shown as "+ Name".
+      const options =
+        spec.kind === 'enum' ? (spec.options ?? []) : listOptions(list).map((o) => ({ ...o }));
+      const value = typeof raw === 'string' && raw !== '' ? raw : null;
+      if (value && !options.some((o) => o.value === value)) {
+        options.push({ value, label: showValue(props.after) });
+      }
+      return (
+        <Editable
+          {...common}
+          kind="select"
+          value={value}
+          options={options}
+          allowEmpty={spec.nullable === true}
+          onSave={save}
+        />
+      );
+    }
+  }
 }

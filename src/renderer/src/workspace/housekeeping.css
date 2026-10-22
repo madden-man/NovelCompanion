@@ -1,0 +1,54 @@
+/* a47-house, IP-16: confirmations drawn in place under the row or button they belong to. */
+.hk-confirm {
+  border: 1px solid var(--critical);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--fg);
+  background: var(--surface);
+}
+.hk-confirm label {
+  color: var(--fg);
+}
+.hk-word {
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+.hk-confirm-row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.hk-confirm-row input {
+  flex: 1 1 200px;
+  min-width: 140px;
+}
+.hk-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.hk-line .callout {
+  flex-basis: 100%;
+  margin: 0;
+}
+.hk-notice {
+  color: var(--fg);
+}
+@media (max-width: 400px) {
+  .hk-confirm-row,
+  .hk-line {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+.trash-list li > .hk-confirm {
+  flex-basis: 100%;
+}
+.revision-prune {
+  margin-bottom: 12px;
+}
+.revision-prune form {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}

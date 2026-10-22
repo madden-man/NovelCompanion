@@ -289,6 +289,21 @@ export function CaptureBox() {
   const loading = (proposalIds?.length ?? 0) > cards.length + unread.length;
   const shownPhase: Phase = phase === 'review' && loading ? 'running' : phase;
 
+  /**
+   * IP-17: after a proposed value or a new item's name is edited, every card
+   * reads its diff again, since a line shows the name of the item it uses.
+   */
+  const refreshCards = useCallback(async () => {
+    const ids = cards.map((c) => c.view.proposal._id);
+    const views = await Promise.all(ids.map((id) => call('proposal.diff', { id })));
+    setCards((cs) =>
+      cs.map((c) => ({
+        ...c,
+        view: views.find((v) => v.proposal._id === c.view.proposal._id) ?? c.view,
+      })),
+    );
+  }, [cards]);
+
   const send = async () => {
     const body = text.trim();
     if (!body || phase !== 'edit' || busy || ro.off) return;
@@ -374,6 +389,7 @@ export function CaptureBox() {
       setTicked={(id, ticked) =>
         setCards((cs) => cs.map((c) => (c.view.proposal._id === id ? { ...c, ticked } : c)))
       }
+      onEdited={refreshCards}
       streamed={phase === 'running' ? live?.text || 'Claude is looking up what you wrote.' : answer}
       runError={runError}
       filed={filed}
@@ -408,6 +424,8 @@ function CaptureDialog(props: {
   onAcknowledge(): Promise<void>;
   cards: Card[];
   setTicked(id: string, ticked: boolean): void;
+  /** A proposed value was edited: read every card's diff again. */
+  onEdited(): Promise<void>;
   streamed: string;
   runError: RunError | null;
   filed: FiledEntry[];
@@ -559,7 +577,9 @@ function CaptureDialog(props: {
                 <ProposalCheck
                   card={c}
                   first={i === 0}
+                  editable={phase === 'review' && !props.busy}
                   onTick={(t) => props.setTicked(c.view.proposal._id, t)}
+                  onEdited={props.onEdited}
                 />
               </li>
             ))}
@@ -691,7 +711,18 @@ function CaptureDialog(props: {
   );
 }
 
-function ProposalCheck(props: { card: Card; first: boolean; onTick(ticked: boolean): void }) {
+/**
+ * One proposal in the capture box: its tick, its reason, and its diff. While
+ * the box is in review, each proposed value is a field (IP-17): the edit goes
+ * into the proposal, and File it writes it.
+ */
+function ProposalCheck(props: {
+  card: Card;
+  first: boolean;
+  editable: boolean;
+  onTick(ticked: boolean): void;
+  onEdited(): Promise<void>;
+}) {
   const { view, ticked } = props.card;
   const id = useId();
   return (
@@ -712,7 +743,11 @@ function ProposalCheck(props: { card: Card; first: boolean; onTick(ticked: boole
         <span id={id}>{cardTitle(view)}</span>
       </label>
       {view.proposal.reason && <p className="capture-reason">{view.proposal.reason}</p>}
-      <ProposalDiff view={view} />
+      <ProposalDiff
+        view={view}
+        edit={props.editable ? 'values' : undefined}
+        onEdited={props.onEdited}
+      />
     </article>
   );
 }

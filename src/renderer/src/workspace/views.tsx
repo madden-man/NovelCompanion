@@ -27,6 +27,7 @@ import { Zh } from './Zh';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { EntryEditable } from './editable';
+import { TypedConfirm } from './housekeeping';
 
 type Listed = Response<'entry.list'>['entries'][number];
 
@@ -449,7 +450,11 @@ export function NewEntryForm(props: {
   );
 }
 
-/** Entries in the trash, newest first, each restorable with its links (ED-5). */
+/**
+ * Entries in the trash, newest first, each restorable with its links (ED-5).
+ * IP-16: Delete forever per entry (type its title) and Empty trash (type
+ * "empty"); both take the revisions with them and are not undo steps.
+ */
 export function TrashView(props: { onOpen: (collection: EntryCollection, id: string) => void }) {
   const { version } = useStore();
   const undo = useUndo();
@@ -457,6 +462,8 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   const [entries, setEntries] = useState<Response<'trash.list'>['entries'] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [asking, setAsking] = useState<string | null>(null);
+  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -466,7 +473,7 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     return () => {
       live = false;
     };
-  }, [version]);
+  }, [version, reloads]);
 
   const restore = async (collection: EntryCollection, id: string, title: string) => {
     setError(null);
@@ -482,14 +489,65 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     }
   };
 
+  const revisionsWord = (n: number) => (n === 1 ? '1 revision' : `${n} revisions`);
+  const purge = async (collection: EntryCollection, id: string, title: string) => {
+    const r = await call('entry.purge', { collection, id });
+    setAsking(null);
+    setDone(
+      `Deleted ${title} forever, with ${revisionsWord(r.revisions)}. This is not an undo step.`,
+    );
+    setReloads((n) => n + 1);
+  };
+  const empty = async () => {
+    const r = await call('trash.empty', {});
+    setAsking(null);
+    setDone(
+      `Emptied the trash: ${r.entries === 1 ? '1 entry' : `${r.entries} entries`} and ${revisionsWord(r.revisions)} deleted forever. This is not an undo step.`,
+    );
+    setReloads((n) => n + 1);
+  };
+  const count = entries?.length ?? 0;
+
   return (
-    <section className="ws-wide stack" aria-labelledby="trash-title">
+    <section className="ws-wide stack" aria-labelledby="trash-title" data-testid="trash-view">
       <h2 id="trash-title">Trash</h2>
       <p className="lede">
-        Deleted entries wait here with their links. Restore one to bring it back as it was.
+        Deleted entries wait here with their links. Restore one to bring it back as it was. Delete
+        forever removes it and its history for good; undo cannot bring it back.
       </p>
+      {count > 0 && (
+        <div className="stack tight">
+          <div className="row">
+            <button
+              type="button"
+              className="btn small danger"
+              disabled={ro.off || asking === 'empty'}
+              {...ro.tip}
+              data-testid="trash-empty-all"
+              onClick={() => {
+                setDone(null);
+                setAsking('empty');
+              }}
+            >
+              Empty trash
+            </button>
+          </div>
+          {asking === 'empty' && (
+            <TypedConfirm
+              word="empty"
+              action={`Delete all ${count === 1 ? '1 entry' : `${count} entries`} forever`}
+              testId="trash-empty-confirm"
+              onConfirm={empty}
+              onCancel={() => setAsking(null)}
+            >
+              {count === 1 ? '1 entry' : `${count} entries`} and every revision of{' '}
+              {count === 1 ? 'it' : 'them'} will be deleted forever. This is not an undo step.
+            </TypedConfirm>
+          )}
+        </div>
+      )}
       {done && (
-        <p className="callout" role="status">
+        <p className="callout" role="status" data-testid="trash-notice">
           {done}
         </p>
       )}
@@ -506,33 +564,61 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
         </p>
       ) : (
         <ul className="trash-list" data-testid="trash-list">
-          {entries.map(({ collection, entry }) => (
-            <li key={`${collection}:${entry._id}`}>
-              <span>
-                <span className="eyebrow">{collectionInfo[collection].singular}</span>{' '}
-                <strong>{entryTitle(entry)}</strong>{' '}
-                <span className="example-note">moved {formatTime(entry.deletedAt)}</span>
-              </span>
-              <span className="row tight">
-                <button
-                  type="button"
-                  className="btn small"
-                  onClick={() => props.onOpen(collection, entry._id)}
-                >
-                  Open
-                </button>
-                <button
-                  type="button"
-                  className="btn small primary"
-                  onClick={() => void restore(collection, entry._id, entryTitle(entry))}
-                  disabled={ro.off}
-                  {...ro.tip}
-                >
-                  Restore {entryTitle(entry)}
-                </button>
-              </span>
-            </li>
-          ))}
+          {entries.map(({ collection, entry }) => {
+            const key = `${collection}:${entry._id}`;
+            const title = entryTitle(entry);
+            return (
+              <li key={key} data-id={entry._id}>
+                <span>
+                  <span className="eyebrow">{collectionInfo[collection].singular}</span>{' '}
+                  <strong>{title}</strong>{' '}
+                  <span className="example-note">moved {formatTime(entry.deletedAt)}</span>
+                </span>
+                <span className="row tight">
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => props.onOpen(collection, entry._id)}
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small primary"
+                    onClick={() => void restore(collection, entry._id, title)}
+                    disabled={ro.off}
+                    {...ro.tip}
+                  >
+                    Restore {title}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn small danger"
+                    onClick={() => {
+                      setDone(null);
+                      setAsking(key);
+                    }}
+                    disabled={ro.off || asking === key}
+                    {...ro.tip}
+                  >
+                    Delete {title} forever
+                  </button>
+                </span>
+                {asking === key && (
+                  <TypedConfirm
+                    word={title}
+                    action={`Delete ${title} forever`}
+                    testId="trash-purge-confirm"
+                    onConfirm={() => purge(collection, entry._id, title)}
+                    onCancel={() => setAsking(null)}
+                  >
+                    {title} and every revision of it will be deleted forever. This is not an undo
+                    step.
+                  </TypedConfirm>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

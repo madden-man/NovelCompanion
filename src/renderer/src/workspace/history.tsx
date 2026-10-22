@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useWriteGuard } from '../connection';
 import { manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
@@ -9,6 +9,8 @@ import { formatStoryDate } from '../../../shared/domain/dates';
 import { isPlainObject } from '../../../shared/domain/paths';
 import { call, plainError } from '../api';
 import { formatTime } from './format';
+import { ConfirmLine } from './housekeeping';
+import { localDateString } from '../../../shared/domain/sessionLog';
 import { useUndo } from './undo';
 
 type Revision = Response<'revisions.list'>['revisions'][number];
@@ -129,9 +131,19 @@ export function HistoryDrawer(props: {
             Close
           </button>
         </header>
+        <PruneRevisions
+          collection={collection}
+          id={id}
+          title={props.title}
+          onPruned={() => {
+            setSelected(null);
+            setReloads((n) => n + 1);
+          }}
+        />
         <div className="drawer-body">
           <ol className="revision-list" aria-label="Revisions, newest first">
             {revisions === null && <li>Loading the history.</li>}
+            {revisions?.length === 0 && <li>No revisions are kept for this entry.</li>}
             {revisions?.map((r, i) => (
               <li key={r._id}>
                 <button
@@ -201,6 +213,114 @@ export function HistoryDrawer(props: {
           </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+const revisionsWord = (n: number) => (n === 1 ? '1 revision' : `${n} revisions`);
+
+/**
+ * IP-16: "Remove revisions older than" a day, for one entry. Count them
+ * first (a dry run), then confirm; the list reloads after. Not an undo step.
+ */
+function PruneRevisions(props: {
+  collection: EntryCollection;
+  id: string;
+  title: string;
+  onPruned: () => void;
+}) {
+  const ro = useWriteGuard();
+  const dateId = useId();
+  const [day, setDay] = useState(() => localDateString(new Date()));
+  const [counted, setCounted] = useState<{ day: string; count: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(day);
+
+  const count = async () => {
+    if (!valid) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await call('revisions.prune', {
+        collection: props.collection,
+        id: props.id,
+        before: day,
+        dryRun: true,
+      });
+      setCounted({ day, count: r.count });
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+
+  const remove = async (before: string) => {
+    const r = await call('revisions.prune', {
+      collection: props.collection,
+      id: props.id,
+      before,
+    });
+    setCounted(null);
+    setNotice(`Removed ${revisionsWord(r.count)} from before ${before}. This is not an undo step.`);
+    props.onPruned();
+  };
+
+  return (
+    <div className="stack tight revision-prune" data-testid="revision-prune">
+      <form
+        className="row tight"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void count();
+        }}
+      >
+        <div className="field">
+          <label htmlFor={dateId}>Remove revisions older than</label>
+          <input
+            id={dateId}
+            type="date"
+            value={day}
+            disabled={ro.off}
+            {...ro.tip}
+            onChange={(e) => {
+              setDay(e.target.value);
+              setCounted(null);
+            }}
+          />
+        </div>
+        <button type="submit" className="btn small" disabled={ro.off || !valid} {...ro.tip}>
+          Count them
+        </button>
+      </form>
+      {counted && counted.count === 0 && (
+        <p className="example-note" role="status" data-testid="revision-prune-count">
+          No revisions of {props.title} are older than {counted.day}.
+        </p>
+      )}
+      {counted && counted.count > 0 && (
+        <ConfirmLine
+          action={`Remove ${revisionsWord(counted.count)}`}
+          keep="Keep them"
+          testId="revision-prune-confirm"
+          onConfirm={() => remove(counted.day)}
+          onCancel={() => setCounted(null)}
+        >
+          <span data-testid="revision-prune-count">
+            {revisionsWord(counted.count)} of {props.title} {counted.count === 1 ? 'is' : 'are'}{' '}
+            older than {counted.day}. Removing them is not an undo step.
+          </span>
+        </ConfirmLine>
+      )}
+      {notice && (
+        <p className="callout" role="status" data-testid="revision-prune-notice">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
