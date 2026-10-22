@@ -1,0 +1,11 @@
+# A47 continuity brief: the cards edit the finding (IP-7)
+
+Read `docs/briefs/A47-common.md` first. Wave 0 and wave 1a have merged: `Editable` exists (API below your brief), the manuscript text is locked with `manuscript.reimport` and the desk's Re-import component (`sessions/` from `a47-desk`, reuse it). You own `src/renderer/src/workspace/sessions/alignment.tsx`, `manuscript.tsx`, `ContinuityView.tsx`, the rewrite tasks part of `SessionsView.tsx`, `src/shared/schema/story.ts` only for a `resolutionNote` field on findings, `tests/e2e/continuity.spec.ts`, `tests/integration/continuity.test.ts` where the field is asserted. Branch `a47-continuity`.
+
+Deliverables:
+
+1. **Finding cards.** Each card edits the finding's text, quote and "what must change" in place (`Editable` text or the A44 box for the long ones; the quote keeps its monospace or quote styling while open), links to the finding page ("Open"), and carries a resolution note field (`findings.resolutionNote`, the A44 box, placeholder "Why you chose this"), shown with the resolution chips. Each save is one step. The card's reading layout does not change when a field opens.
+2. **Manuscript tab.** The approved summary shows on the chapter row and edits there (the A44 box, one step); "Mark as written" gains "Not written after all" once set, which clears the flag as one step; the chapter's manuscript text is read-only (IP-18) with the Re-import button beside it (the desk's component).
+3. **Rewrite tasks on Sessions.** A task's text edits in place (`Editable` text), Done and Open chapter stay.
+4. **Change set.** Stays a system field (derived from the finding's prepared change) but the card shows it as a diff the writer can read before Apply; "Apply all or nothing" stays, with the reason in a title.
+5. **Tests**: `continuity.spec.ts` rows prefixed with IP-7: a card edits text, quote and what must change as one step each and Undo restores; the resolution note saves and shows beside the chips; Open goes to the finding page; the summary edits on the chapter row; Not written after all clears the flag; a rewrite task edits in place on Sessions; the manuscript text is read-only with Re-import beside it; NF-2 by keyboard in both themes.
