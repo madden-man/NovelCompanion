@@ -45,6 +45,9 @@ import { latestLog } from '../../shared/domain/sessionLog';
 import { compileFilters } from '../../shared/domain/searchFilters';
 import { entrySnippet } from '../search';
 import type { ListDoc } from '../../shared/schema';
+// a47-guard
+import { guardHandlers } from './guardHandlers';
+import type { GuardChannel } from './guardHandlers';
 
 /** Channels that act on the open bible. */
 export type BibleChannel =
@@ -106,7 +109,9 @@ export type BibleChannel =
   | 'community.notes.set'
   | ImportChannel
   | SessionChannel
-  | ContinuityChannel;
+  | ContinuityChannel
+  // a47-guard
+  | GuardChannel;
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose';
@@ -196,6 +201,8 @@ export function bibleHandlers(
     ...importHandlers(current, deps),
     ...sessionHandlers(current, deps),
     ...continuityHandlers(current),
+    // a47-guard
+    ...guardHandlers(current, deps),
     'proposal.list': ({ state }) => ({
       proposals: session()
         .repo.listProposals(state)

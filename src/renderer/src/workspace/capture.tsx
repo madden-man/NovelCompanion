@@ -117,9 +117,15 @@ const toProposal = (v: ProposalView): CaptureProposal => ({
   targetId: v.proposal.targetId,
 });
 
-const OP_TEXT = { create: 'New', update: 'Change to', delete: 'Move to trash:' } as const;
+const OP_TEXT = {
+  create: 'New',
+  update: 'Change to',
+  delete: 'Move to trash:',
+  listAdd: 'New list item:',
+} as const;
 
 function cardTitle(v: ProposalView): string {
+  if (v.proposal.listAdd) return `${OP_TEXT.listAdd} ${v.proposal.listAdd.label}`;
   const c = v.proposal.collection;
   const kind = isEntryCollection(c) ? collectionInfo[c].singular.toLowerCase() : c;
   const name = v.targetTitle ?? entryTitle(v.proposal.data);

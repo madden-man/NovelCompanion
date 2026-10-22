@@ -202,13 +202,13 @@ test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records
   await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
   const all = view().getByTestId('alignment-findings').getByTestId('finding');
   const before = await all.count();
-  // A marker in chapter 8's text selects the recording that waits for Stop.
+  // A marker in chapter 8's title (the text is locked, IP-18) selects the recording that waits for Stop.
   const ch8 = (await invoke('entry.get', { collection: 'chapters', id: 'CH8' })).entry;
-  const text = String(ch8.manuscriptText);
+  const title = String(ch8.title);
   await invoke('entry.update', {
     collection: 'chapters',
     id: 'CH8',
-    patch: { manuscriptText: `${text}<p>E2E-HOLD-UNTIL-STOPPED</p>` },
+    patch: { title: `${title} E2E-HOLD-UNTIL-STOPPED` },
   });
   await view().getByTestId('alignment-scope').selectOption('CH8');
   await view().getByTestId('alignment-run').click();
@@ -224,7 +224,7 @@ test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records
   await invoke('entry.update', {
     collection: 'chapters',
     id: 'CH8',
-    patch: { manuscriptText: text },
+    patch: { title },
   });
 });
 

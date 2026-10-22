@@ -72,6 +72,37 @@ export class RunStore {
     return parsed.success ? parsed.data : null;
   }
 
+  // ---------- a47-guard: IP-16 rename, clear and delete. Not undo steps (the A40 rule). ----------
+
+  /** Give a conversation a new title; its turns stay. */
+  async rename(id: string, title: string, at: string): Promise<ClaudeRun> {
+    const clean = title.replace(/\s+/g, ' ').trim();
+    if (!clean) throw new Error('A conversation needs a title.');
+    const doc = await this.collection().findOneAndUpdate(
+      { _id: id },
+      { $set: { title: clean, modifiedAt: at } },
+      { returnDocument: 'after' },
+    );
+    return this.remember(doc);
+  }
+
+  /** Take every message out of a conversation and its output; the title stays. */
+  async clear(id: string, at: string): Promise<ClaudeRun> {
+    const doc = await this.collection().findOneAndUpdate(
+      { _id: id },
+      { $set: { turns: [], modifiedAt: at }, $unset: { output: '' } },
+      { returnDocument: 'after' },
+    );
+    return this.remember(doc);
+  }
+
+  /** Delete a conversation and everything in it. The proposals it made stay in the review queue. */
+  async remove(id: string): Promise<void> {
+    const res = await this.collection().deleteOne({ _id: id });
+    if (res.deletedCount !== 1) throw new Error('That conversation is not saved.');
+    this.session.model.remove(COLLECTION, id);
+  }
+
   /** Newest first, matching the collection's index. */
   list(feature?: ClaudeFeature): ClaudeRun[] {
     return this.session.model

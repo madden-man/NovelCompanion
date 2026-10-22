@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
@@ -462,5 +462,64 @@ describe('DB-1 the dashboard', () => {
       }),
     ]);
     expect(d.recentLogs.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------- a47-guard: IP-18 Re-import ----------
+
+describe('IP-18 manuscript.reimport reads the linked file again and stores it in one call', () => {
+  const path = join(outDir, 'chapter-03.docx');
+
+  test('IP-18 MS-1 MS-4 Re-import of the fixture Word chapter returns the Manuscript tab diff and stores the text through the importer', async () => {
+    // The fixture's Word chapter, linked to CH3 through the MS-1 import.
+    copyFileSync(join(import.meta.dirname, '../../fixtures/files/chapter-03.docx'), path);
+    await expect(invoke('manuscript.reimport', { chapterId: 'CH3' })).rejects.toThrow(
+      'This chapter has no linked manuscript yet. Import it from a file first.',
+    );
+    picked = path;
+    const read = await invoke('manuscript.read', { chapterId: 'CH3', sourceId: 'word' });
+    await invoke('manuscript.apply', {
+      token: read.token!,
+      baseModifiedAt: String(bible.model.get('chapters', 'CH3')!.modifiedAt),
+    });
+    picked = null;
+    const linked = bible.model.get('chapters', 'CH3')!;
+    expect(linked.manuscriptSource).toBe(`word:${path}`);
+
+    // Unchanged file: nothing to store.
+    const same = await invoke('manuscript.reimport', { chapterId: 'CH3' });
+    expect(same).toMatchObject({ changed: false, applied: false, before: {} });
+    expect(same.diff.every((d) => d.kind === 'same')).toBe(true);
+    expect(bible.model.get('chapters', 'CH3')!.modifiedAt).toBe(linked.modifiedAt);
+
+    // The writer changes the Word file; Re-import is one call.
+    writeFileSync(
+      path,
+      await docx([
+        new Paragraph({ text: 'Wedding Weather', heading: HeadingLevel.HEADING_1 }),
+        new Paragraph({ text: 'It rained on the wedding, and nobody minded.' }),
+      ]),
+    );
+    const again = await invoke('manuscript.reimport', { chapterId: 'CH3' });
+    expect(again.changed).toBe(true);
+    expect(again.applied).toBe(true);
+    expect(again.source).toBe(`word:${path}`);
+    expect(again.name).toBe('chapter-03.docx');
+    expect(again.diff.filter((d) => d.kind === 'added').map((d) => d.text)).toEqual([
+      'Wedding Weather',
+      'It rained on the wedding, and nobody minded.',
+    ]);
+    expect(again.before).toMatchObject({ manuscriptText: linked.manuscriptText });
+    const stored = bible.model.get('chapters', 'CH3')!;
+    expect(stored.manuscriptText).toBe(again.body);
+    expect(again.entry).toMatchObject({ _id: 'CH3', manuscriptText: again.body });
+    // The same text may not be written any other way.
+    await expect(
+      invoke('entry.update', {
+        collection: 'chapters',
+        id: 'CH3',
+        patch: { manuscriptText: '<p>By hand.</p>' },
+      }),
+    ).rejects.toThrow('The manuscript text is imported, not edited here. Use Re-import.');
   });
 });

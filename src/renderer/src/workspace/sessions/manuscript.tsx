@@ -1,7 +1,6 @@
 import { WriteFieldset } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
-import { editCommand } from '../../../../shared/domain/undoRunner';
 import { entryTitle, isEntryCollection } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
 import { useEntries } from '../data';
@@ -122,19 +121,11 @@ function ChapterManuscript({
     try {
       const before = (await call('entry.get', { collection: 'chapters', id: chapter._id }))
         .entry as Entry;
-      const r = await call('manuscript.apply', {
+      // IP-18: only the importer writes the manuscript text, so an import is not an undo step (A40).
+      await call('manuscript.apply', {
         token: read.token,
         baseModifiedAt: String(before.modifiedAt),
       });
-      undo.record(
-        editCommand(
-          `Imported the manuscript of ${entryTitle(r.entry)}`,
-          'chapters',
-          chapter._id,
-          before,
-          r.entry as Entry,
-        ),
-      );
       setNote(
         read.summaryOutOfDate ? 'Imported. The summary may be out of date now.' : 'Imported.',
       );

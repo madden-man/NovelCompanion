@@ -555,7 +555,7 @@ test('ED-8 renaming a union type changes the name every union shows', async () =
 test('ED-6 generated content and imported content are edited like any other field', async () => {
   const cases: [EntryCollection, string][] = [
     ['chapters', 'summary'],
-    ['chapters', 'manuscriptText'],
+    // IP-18: the manuscript text is locked; only Re-import changes it.
     ['briefs', 'content'],
     ['findings', 'text'],
   ];

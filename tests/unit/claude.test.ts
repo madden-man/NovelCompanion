@@ -102,21 +102,29 @@ describe('AI-4 Claude never drafts prose', () => {
   test('AI-4 KB-6 only the panel question and the capture text carry free text to Claude; every other feature channel takes IDs', () => {
     const freeText: string[] = [];
     for (const [channel, spec] of Object.entries(claudeContract)) {
+      type Prop = { type?: string; maxLength?: number; enum?: unknown[]; anyOf?: Prop[] };
       const schema = z.toJSONSchema(spec.request, { io: 'input' }) as {
-        properties?: Record<string, { type?: string; maxLength?: number; enum?: unknown[] }>;
+        properties?: Record<string, Prop>;
       };
-      for (const [field, prop] of Object.entries(schema.properties ?? {})) {
+      for (const [field, top] of Object.entries(schema.properties ?? {})) {
+        // A nullable or optional field is an anyOf; every branch counts.
+        const props = top.anyOf ?? [top];
         // A choice from a fixed list, or an ID of at most 100 characters, is not free text.
-        if (prop.enum) continue;
-        if (prop.type === 'string' && (prop.maxLength === undefined || prop.maxLength > 100)) {
-          freeText.push(`${channel}.${field}`);
-        }
+        const free = props.some(
+          (prop) =>
+            !prop.enum &&
+            prop.type === 'string' &&
+            (prop.maxLength === undefined || prop.maxLength > 100),
+        );
+        if (free) freeText.push(`${channel}.${field}`);
       }
     }
-    // The key is pasted into settings; it is never sent to Claude.
+    // The key is pasted into settings; it is never sent to Claude. IP-15: the writer's
+    // instructions for a feature go into its system prompt, above the fixed AI-4 footer.
     expect(freeText.sort()).toEqual([
       'claude.ask.question',
       'claude.capture.text',
+      'claude.instructions.set.text',
       'claude.setKey.key',
     ]);
   });

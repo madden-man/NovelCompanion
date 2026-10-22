@@ -19,6 +19,8 @@ import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
 import { wordsContract } from './ipcWords';
 import type { EntryCollection } from './schema';
+// a47-guard
+import { guardContract } from './ipcGuard';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
 
@@ -1313,6 +1315,8 @@ export const contract = {
   ...claudeContract,
   /** M8 alignment check (src/shared/ipcContinuity.ts). */
   ...continuityContract,
+  // a47-guard: housekeeping (IP-16) and the manuscript lock (IP-18), src/shared/ipcGuard.ts.
+  ...guardContract,
 } as const;
 
 export type Channel = keyof typeof contract;
@@ -1333,7 +1337,7 @@ export const events = {
     bible: z.string(),
     collection: z.string(),
     id: z.string(),
-    op: z.enum(['create', 'update', 'softDelete', 'restore']),
+    op: z.enum(['create', 'update', 'softDelete', 'restore', 'purge']),
   }),
   /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),

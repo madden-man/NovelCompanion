@@ -582,7 +582,7 @@
     ]
   },
   {
-    "name": "alignment: a chapter whose text ends with the stop marker waits until Stop (AI-1)",
+    "name": "alignment: a chapter whose title carries the stop marker waits until Stop (AI-1)",
     "feature": "alignment",
     "match": "E2E-HOLD-UNTIL-STOPPED",
     "steps": [
@@ -755,6 +755,55 @@
     "steps": [
       {
         "fail": "network"
+      }
+    ]
+  },
+  {
+    "name": "capture: a place with no community yet proposes the community and a cultural line that uses it (IP-17, KB-6)",
+    "feature": "capture",
+    "match": "Add culture for Jinan, 2045",
+    "steps": [
+      {
+        "tool": "search_entries",
+        "input": {
+          "query": "Jinan"
+        }
+      },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "listAdd",
+          "listId": "communities",
+          "label": "Jinan",
+          "ref": "new:jinan",
+          "reason": "The capture names Jinan, and the Communities list has no item for it."
+        }
+      },
+      {
+        "tool": "propose_change",
+        "input": {
+          "op": "create",
+          "collection": "culturalEntries",
+          "data": {
+            "title": "Jinan in 2045",
+            "communityId": "new:jinan",
+            "startYear": 2045,
+            "endYear": 2045,
+            "status": "idea"
+          },
+          "reason": "The capture asks for culture in Jinan in 2045; the line uses the new community."
+        }
+      },
+      {
+        "text": "I proposed a new community, Jinan, and a cultural line for Jinan in 2045."
+      },
+      {
+        "result": {
+          "text": "I proposed a new community, Jinan, and a cultural line for Jinan in 2045.",
+          "structured": {
+            "summary": "I proposed a new community, Jinan, and a cultural line for Jinan in 2045."
+          }
+        }
       }
     ]
   }

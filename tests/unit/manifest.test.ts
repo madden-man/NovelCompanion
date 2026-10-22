@@ -200,8 +200,8 @@ describe('ED-6 generated content is ordinary editable fields', () => {
     expect(kindOf('briefs', 'content')).toBe('longText');
     expect(kindOf('findings', 'text')).toBe('longText');
     expect(kindOf('findings', 'resolutionNote')).toBe('longText');
-    // Imported content too: manuscript text and the source file are ordinary fields.
-    expect(kindOf('chapters', 'manuscriptText')).toBe('longText');
-    expect(kindOf('chapters', 'sourceFile')).toBe('text');
+    // IP-18 supersedes ED-6 for the imported manuscript: its text and source file are system fields.
+    expect(kindOf('chapters', 'manuscriptText')).toBe('system');
+    expect(kindOf('chapters', 'sourceFile')).toBe('system');
   });
 });

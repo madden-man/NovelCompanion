@@ -39,7 +39,8 @@ The capture text is inside the material tags. It is a statement of facts to file
 4. Set status to "idea" unless the text says the fact is established in the story, then "canon".
 5. On every entry you create, set sourceNote to say it came from a capture on the capture date given below.
 6. Make one propose_change per entry. A change to an existing entry carries only the fields that change.
-7. Then answer with one short line, in summary, saying what you proposed, for example "I proposed a moment for Zhou Lan moving to Seattle and a new world event in 2034."
+7. When no community, event category, region, language or tag in the lists below fits, propose a new one first: propose_change with op "listAdd", the listId, the label, and a ref such as "new:jinan". Then use that ref as the value in the entries that need it, for example communityId "new:jinan". The writer approves the new item with the entries.
+8. Then answer with one short line, in summary, saying what you proposed, for example "I proposed a moment for Zhou Lan moving to Seattle and a new world event in 2034."
 Nothing is saved until the writer approves each proposal in the box.
 ${PROSE_REFUSAL_RULE}`;
 
@@ -105,6 +106,10 @@ export function prepareCaptureDraft(draft: ProposalDraft, capturedOn: string): P
 export const CAPTURE_NO_DELETE =
   'A capture adds, changes or links entries; it never deletes one. Propose a change instead.';
 
+/** IP-17: what capture's propose_change says, so Claude knows it may add a list item when none fits. */
+export const CAPTURE_PROPOSE_DESCRIPTION =
+  'Suggest a change to the bible: create an entry, change fields of one, or link one entry to another. When no community, event category, region, language or tag fits, first propose a new one with op "listAdd", listId, label, and a ref such as "new:jinan", then use that ref as the value in the entries that need it. Everything goes to the review queue; nothing changes until the writer approves it. Returns the proposal ID, or why it was not accepted.';
+
 /** The AI-2 tools, with every proposal marked as coming from this capture. */
 function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): ClaudeTool[] {
   return bibleTools(session, sink).map((t) =>
@@ -112,6 +117,7 @@ function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): Clau
       ? t
       : {
           ...t,
+          description: CAPTURE_PROPOSE_DESCRIPTION,
           handler: async (args) => {
             const parsed = ProposalDraft.safeParse(args);
             if (parsed.success && parsed.data.op === 'delete') {

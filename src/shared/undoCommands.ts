@@ -289,3 +289,33 @@ export function communityRemoveCommand(
     redo: [...trash, removeItemOp(invoke, listLabel, listId, item)],
   };
 }
+
+// a47-guard
+
+/**
+ * IP-15, ED-3: one feature's Claude instructions, set or reset. `from` and
+ * `to` are the writer's text, or null for the default. A step is skipped when
+ * the instructions changed since.
+ */
+export function claudeInstructionsCommand(
+  invoke: Invoke,
+  feature: Request<'claude.instructions.set'>['feature'],
+  featureLabel: string,
+  from: string | null,
+  to: string | null,
+): UndoCommand {
+  const read = async () =>
+    (await invoke('claude.instructions.get', {})).instructions.find((i) => i.feature === feature)
+      ?.text ?? null;
+  const write = (text: string | null) => invoke('claude.instructions.set', { feature, text });
+  const same = (a: string | null, b: string | null) => (a ?? '').trim() === (b ?? '').trim();
+  const changed = `the instructions for ${featureLabel} changed since`;
+  return {
+    label:
+      to === null
+        ? `Reset the instructions for ${featureLabel}`
+        : `Changed the instructions for ${featureLabel}`,
+    undo: [settingOp(read, same, to, write, from, changed)],
+    redo: [settingOp(read, same, from, write, to, changed)],
+  };
+}

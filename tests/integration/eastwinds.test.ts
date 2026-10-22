@@ -521,15 +521,20 @@ describe('IM-1 IM-2 IM-3 the East Winds default mapping, checked through the imp
       number: 1,
       status: 'planned',
     } as never);
-    const own = await open.repo.create('chapters', {
-      title: '1: Laid the Foundation',
-      partId: part._id,
-      readingOrder: 1,
-      status: 'planned',
-      strands: [{ id: 'S1', label: 'present', startYear: 2000, primary: true }],
-      sourceFile: 'East_Winds.docx',
-      sourceRef: 'East_Winds.docx#p1',
-    } as never);
+    // A chapter an earlier import made: only the importer may set its source file (IP-18).
+    const own = await open.repo.create(
+      'chapters',
+      {
+        title: '1: Laid the Foundation',
+        partId: part._id,
+        readingOrder: 1,
+        status: 'planned',
+        strands: [{ id: 'S1', label: 'present', startYear: 2000, primary: true }],
+        sourceFile: 'East_Winds.docx',
+        sourceRef: 'East_Winds.docx#p1',
+      } as never,
+      { importer: true },
+    );
     const report = await importEastWinds(open, dir, { yes: true });
     const step = report.steps.find((st) =>
       st.step.endsWith('East_Winds.docx, 1: Laid the Foundation'),

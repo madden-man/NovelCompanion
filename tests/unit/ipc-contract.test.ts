@@ -304,6 +304,24 @@ const BAD: Record<string, unknown[]> = {
   'chapter.summarize': [{}, { chapterId: '' }, { chapterId: 'c', runId: 'short' }],
   'dashboard.get': [{ extra: 1 }],
   'drive.cancelConnect': [{ extra: 1 }, null, 'x'],
+  // a47-guard
+  'claude.instructions.get': [{ extra: 1 }],
+  'claude.instructions.set': [
+    {},
+    { feature: 'nope', text: null },
+    { feature: 'panel' },
+    { feature: 'panel', text: 'x'.repeat(20_001) },
+  ],
+  'claude.conversation.rename': [
+    {},
+    { id: 'c' },
+    { id: '', title: 'A title' },
+    { id: 'c', title: '   ' },
+    { id: 'c', title: LONG },
+  ],
+  'claude.conversation.clear': [{}, { id: '' }, { id: 'c', extra: 1 }],
+  'claude.conversation.delete': [{}, { id: '' }, { id: 'c', extra: 1 }],
+  'manuscript.reimport': [{}, { chapterId: '' }, { chapterId: 'c', sourceId: 'word' }],
 };
 
 describe('ARCH-1 every newer channel rejects bad input on the request side', () => {

@@ -153,6 +153,15 @@ export const WRITE_CHANNELS = [
   'drive.unlink',
   'drive.markSeen',
   'drive.export',
+  // a47-guard
+  'entry.purge',
+  'trash.empty',
+  'revisions.prune',
+  'manuscript.reimport',
+  'claude.instructions.set',
+  'claude.conversation.rename',
+  'claude.conversation.clear',
+  'claude.conversation.delete',
 ] as const;
 
 const WRITES: ReadonlySet<string> = new Set(WRITE_CHANNELS);

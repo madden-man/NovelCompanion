@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWriteGuard } from '../connection';
 import { WriteFieldset } from '../connection';
-import { collectionInfo, manifests } from '../../../shared/schema';
+import { collectionInfo, isEntryCollection, manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { ProposalView } from '../../../shared/ipc';
 import { labelPath } from '../../../shared/domain/issues';
@@ -12,7 +12,15 @@ import { Field } from './fields';
 import { formatTime } from './format';
 import { showValue } from './history';
 
-const OP_TEXT = { create: 'Create', update: 'Change', delete: 'Move to trash' } as const;
+const OP_TEXT = {
+  create: 'Create',
+  update: 'Change',
+  delete: 'Move to trash',
+  listAdd: 'Add',
+} as const;
+/** IP-17: a list item proposal's collection is `lists`, not a section. */
+const kindOf = (c: string) =>
+  isEntryCollection(c) ? collectionInfo[c].singular.toLowerCase() : 'list item';
 const SOURCE_TEXT = { import: 'Import', claude: 'Claude', bulk: 'Bulk action' } as const;
 
 /**
@@ -61,9 +69,7 @@ export function ReviewQueue() {
             {decided.map((v) => (
               <li key={v.proposal._id}>
                 <span>
-                  {OP_TEXT[v.proposal.op]}{' '}
-                  {collectionInfo[v.proposal.collection as EntryCollection].singular.toLowerCase()}{' '}
-                  {v.targetTitle ?? ''}
+                  {OP_TEXT[v.proposal.op]} {kindOf(v.proposal.collection)} {v.targetTitle ?? ''}
                 </span>
                 <span className="example-note">
                   {v.proposal.state === 'approved' ? 'Approved' : 'Rejected'}
@@ -81,10 +87,10 @@ export function ReviewQueue() {
 function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void }) {
   const { proposal, conflict, targetTitle } = view;
   const collection = proposal.collection as EntryCollection;
-  const manifest = manifests[collection];
+  const manifest = isEntryCollection(collection) ? manifests[collection] : [];
   const [editing, setEditing] = useState<Entry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const title = `${OP_TEXT[proposal.op]} ${collectionInfo[collection].singular.toLowerCase()}${targetTitle ? ` ${targetTitle}` : ''}`;
+  const title = `${OP_TEXT[proposal.op]} ${kindOf(collection)}${targetTitle ? ` ${targetTitle}` : ''}`;
 
   const ro = useWriteGuard();
   const act = async (fn: () => Promise<unknown>) => {
@@ -171,7 +177,7 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
           >
             Approve
           </button>
-          {proposal.op !== 'delete' && !editing && (
+          {proposal.op !== 'delete' && proposal.op !== 'listAdd' && !editing && (
             <button
               type="button"
               className="btn"
@@ -201,7 +207,8 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
 /** ED-7: what a proposal would change, field by field, against the entry as it is now. */
 export function ProposalDiff({ view }: { view: ProposalView }) {
   const { changes } = view;
-  const manifest = manifests[view.proposal.collection as EntryCollection];
+  const c = view.proposal.collection;
+  const manifest = isEntryCollection(c) ? manifests[c] : [];
   return (
     <>
       {changes.length === 0 ? (

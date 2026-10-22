@@ -397,7 +397,8 @@ export function sessionHandlers(
       const before = Object.fromEntries(
         Object.keys(patch).map((k) => [k, chapter[k] ?? (k === 'summaryOutOfDate' ? false : null)]),
       );
-      const entry = await repo.update('chapters', p.chapterId, patch);
+      // IP-18: the importer is the one writer of the manuscript fields.
+      const entry = await repo.update('chapters', p.chapterId, patch, { importer: true });
       pending.delete(token);
       return { entry: entry as unknown as Response<'manuscript.apply'>['entry'], before };
     },

@@ -12,6 +12,7 @@ import { FEATURES } from './features';
 import { recordAlignment } from '../continuity';
 import { textHash } from '../../shared/domain/continuity/lines';
 import { localDateString } from '../../shared/domain/sessionLog';
+import { instructionView, instructionViews } from './instructions';
 
 export type ClaudeChannel = keyof typeof claudeContract;
 export const CLAUDE_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
@@ -178,5 +179,41 @@ export function claudeHandlers(
         ...recorded,
       };
     },
+    // a47-guard
+    'claude.instructions.get': () => ({
+      instructions: instructionViews(session().repo.claudeInstructions()),
+    }),
+    'claude.instructions.set': async ({ feature, text }) => ({
+      instruction: instructionView(
+        feature,
+        await session().repo.setClaudeInstructions(feature, text),
+      ),
+    }),
+    'claude.conversation.rename': async ({ id, title }) => {
+      const store = idleConversation(id);
+      const run = await store.rename(id, title, new Date().toISOString());
+      return { run: summarize(run, (t) => runtime.isActive(t)) };
+    },
+    'claude.conversation.clear': async ({ id }) => {
+      const store = idleConversation(id);
+      const run = await store.clear(id, new Date().toISOString());
+      return { run: summarize(run, (t) => runtime.isActive(t)) };
+    },
+    'claude.conversation.delete': async ({ id }) => {
+      await idleConversation(id).remove(id);
+      return { ok: true as const };
+    },
   };
+
+  /** IP-16: a saved conversation with nothing streaming in it, ready to rename, clear or delete. */
+  function idleConversation(id: string): RunStore {
+    const store = new RunStore(session());
+    if (!store.get(id)) throw new Error('That conversation is not saved.');
+    if (runtime.activeIn(id).length) throw new Error(CONVERSATION_BUSY);
+    return store;
+  }
 }
+
+/** IP-16: a conversation Claude is still answering in cannot be renamed, cleared or deleted. */
+export const CONVERSATION_BUSY =
+  'Claude is still answering in this conversation. Stop it first, then try again.';
