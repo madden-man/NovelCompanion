@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { Store } from '../../src/main/db';
 import { openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
@@ -25,6 +25,26 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+import { routeCapture } from '../../src/shared/domain/captureRouter';
+import type * as CaptureRouter from '../../src/shared/domain/captureRouter';
+import type { CaptureFact, CaptureRouting } from '../../src/shared/domain/captureRouter';
+import { CAPTURE_FAST_INSTRUCTIONS } from '../../src/main/claude/features/captureFast';
+
+/**
+ * A48: the router is built on another branch, so these tests hand the
+ * handler a routing of their own; without one the placeholder's single full
+ * fact is used, which is today's capture.
+ */
+const routing = vi.hoisted(() => ({ next: null as null | ((text: string) => CaptureRouting) }));
+vi.mock('../../src/shared/domain/captureRouter', async (importOriginal) => {
+  const actual = await importOriginal<typeof CaptureRouter>();
+  return {
+    ...actual,
+    routeCapture: vi.fn((...args: Parameters<typeof actual.routeCapture>) =>
+      routing.next ? routing.next(args[0]) : actual.routeCapture(...args),
+    ),
+  };
+});
 
 /**
  * KB-6 and KB-7 through the same channels the capture box uses, with the
@@ -469,5 +489,195 @@ describe('IP-17 capture can mint a list item', () => {
     expect(communities()).not.toContain('Jinan');
     await invoke('proposal.reject', { id: line._id });
     await invoke('proposal.reject', { id: again.line._id });
+  });
+});
+
+// ---------- a48-fast: capture routing on main's side (CR-7, CR-8, CR-9) ----------
+
+const YEE_HAW = 'Teenagers in Portland begin to say yee haw ironically starting around 2065.';
+const KESSLER = 'The Kessler crowd stops tipping by 2070.';
+
+/** A routed fact by hand, with the fixture's IDs. */
+function routedFact(index: number, text: string, route: CaptureFact['route']): CaptureFact {
+  return {
+    index,
+    text,
+    years: { start: 2065, end: null, source: 'a year in the text' },
+    sentences: 1,
+    candidates: [
+      {
+        kind: 'place',
+        id: 'PLC1',
+        label: 'Portland',
+        matched: 'portland',
+        communityId: 'portland',
+      },
+    ],
+    scores: { culturalEntries: 60 },
+    cues: {},
+    ranked: [['culturalEntries', 60]],
+    section: 'culturalEntries',
+    share: 0.8,
+    margin: 40,
+    communities: [{ id: 'portland', why: 'the community of Portland, the place named' }],
+    missing: [],
+    asks: [],
+    reasons: ['the age group needs judgment'],
+    drafts: [],
+    route,
+  };
+}
+
+function routeAs(...facts: CaptureFact[]) {
+  routing.next = (text) => ({ text, storyYear: 2034, facts });
+}
+
+afterEach(() => {
+  routing.next = null;
+  vi.mocked(routeCapture).mockClear();
+});
+
+describe('CR-7 the fast file', () => {
+  test("CR-7 KB-6 AI-3 a fast fact goes to captureFast on Haiku with no tools and queues a cultural line of the place's community, writing nothing", async () => {
+    routeAs(routedFact(0, YEE_HAW, 'fast'));
+    const before = bible.model.all('culturalEntries').length;
+    const r = rig();
+    const id = runId();
+    const res = await r.call('claude.capture', {
+      runId: id,
+      text: YEE_HAW,
+      storyTime: { year: 2034 },
+    });
+    expect(res).toMatchObject({
+      runId: id,
+      started: true,
+      runs: [{ route: 'fast', runId: id, facts: [0] }],
+    });
+    expect(res.conversationId).toBe(res.runs[0]!.conversationId);
+    const run = await r.finished(id);
+    const turn = run.turns[0]!;
+    expect(run.feature).toBe('captureFast');
+    expect(turn.status).toBe('done');
+    const req = r.fake.requests[0]!;
+    expect(req.feature).toBe('captureFast');
+    expect(req.model).toBe('claude-haiku-4-5-20251001');
+    expect(req.tools).toEqual([]);
+    expect(req.system).toContain(PROSE_PROHIBITION);
+    expect(req.system.startsWith(CAPTURE_FAST_INSTRUCTIONS.split('\n')[0]!)).toBe(true);
+    expect(req.prompt).toContain(`<material source="fact 0">\n${YEE_HAW}\n</material>`);
+    // The community's existing lines are the titles nearby.
+    expect(req.prompt).toContain('CU3 Sunday ferry picnics (portland, 2000 to 2034)');
+    expect(turn.entries.map((e) => e.id)).toEqual(expect.arrayContaining(['CU3', 'CU4', 'PLC1']));
+    const [line] = proposalsOf(turn.proposalIds);
+    expect(turn.proposalIds).toHaveLength(1);
+    expect(line).toMatchObject({
+      source: 'claude',
+      state: 'pending',
+      op: 'create',
+      collection: 'culturalEntries',
+    });
+    expect(line!.data).toMatchObject({
+      communityId: 'portland',
+      demographic: '18-30',
+      startYear: 2065,
+      endYear: 2100,
+      status: 'idea',
+    });
+    expect(line!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
+    expect(line!.reason).toMatch(/\(Claude, capture, fast file, run /);
+    expect(bible.model.all('culturalEntries')).toHaveLength(before);
+  });
+
+  test('CR-7 a fact the fast file cannot place is answered with its reason and queues nothing', async () => {
+    routeAs(routedFact(0, KESSLER, 'fast'));
+    const r = rig();
+    const id = runId();
+    await r.call('claude.capture', { runId: id, text: KESSLER, storyTime: { year: 2034 } });
+    const run = await r.finished(id);
+    expect(run.turns[0]).toMatchObject({ status: 'done', proposalIds: [], rejected: [] });
+    expect(run.output).toMatchObject({
+      proposals: [],
+      cannotPlace: 'The text names no community the bible has, so the fact needs the full capture.',
+    });
+  });
+});
+
+describe('CR-9 the handler reruns the router with the hints', () => {
+  test('CR-9 CR-8 with hints, a fast fact goes to captureFast and a full fact to capture, one run each with IDs from the request', async () => {
+    routeAs(routedFact(0, YEE_HAW, 'fast'), { ...routedFact(1, MOVE, 'full'), section: 'moments' });
+    const r = rig();
+    const id = runId();
+    const hints = [
+      { fact: 0, communityId: 'portland', demographic: '18-30' },
+      { fact: 1, route: 'full' as const },
+    ];
+    const text = `${YEE_HAW} ${MOVE}`;
+    const res = await r.call('claude.capture', {
+      runId: id,
+      text,
+      storyTime: { year: 2034 },
+      hints,
+    });
+    // The router ran again in main, on the text, with the hints and the story year.
+    expect(vi.mocked(routeCapture)).toHaveBeenCalledWith(
+      text,
+      expect.objectContaining({ timelineEnd: 2100 }),
+      expect.objectContaining({ storyYear: 2034, hints, povCommunityId: null }),
+    );
+    expect(res).toMatchObject({
+      runId: `${id}-fast`,
+      started: true,
+      runs: [
+        { route: 'fast', runId: `${id}-fast`, facts: [0] },
+        { route: 'full', runId: `${id}-full`, facts: [1] },
+      ],
+    });
+    const [fast, full] = await Promise.all([r.finished(`${id}-fast`), r.finished(`${id}-full`)]);
+    expect([fast.feature, full.feature]).toEqual(['captureFast', 'capture']);
+    expect(r.fake.requests.map((q) => q.feature).sort()).toEqual(['capture', 'captureFast']);
+    const fastReq = r.fake.requests.find((q) => q.feature === 'captureFast')!;
+    const fullReq = r.fake.requests.find((q) => q.feature === 'capture')!;
+    // Each run sees only its own facts.
+    expect(fastReq.prompt).toContain(YEE_HAW);
+    expect(fastReq.prompt).not.toContain(MOVE);
+    expect(fullReq.prompt).toContain(`<material source="capture box">\n${MOVE}\n</material>`);
+    expect(fullReq.prompt).not.toContain('yee haw');
+    expect(fullReq.prompt).toContain(
+      'Skip search_entries for these; read one with get_entry only if you need a field.',
+    );
+    // Route C trimming: no world event scored, so the event categories are left out.
+    expect(fullReq.prompt).toContain('World event categories (categoryId): left out');
+    expect(fast.turns[0]!.proposalIds).toHaveLength(1);
+    expect(full.turns[0]!.proposalIds).toHaveLength(2);
+    // Stop under the request's run ID reaches both (nothing is running now, so nothing stops).
+    expect(await r.call('claude.stop', { runId: id })).toEqual({ stopped: false });
+  });
+
+  test('CR-8 the capture view of get_entry is what Claude reads in a capture run', async () => {
+    const { fake } = await capture(MOVE);
+    const reads = fake.toolResults.filter((t) => t.name === 'get_entry');
+    expect(reads).toHaveLength(1);
+    for (const t of reads) {
+      const out = JSON.parse(t.output.text) as { entry: Record<string, unknown> };
+      for (const k of Object.keys(out.entry)) {
+        expect(['id', 'title', 'status', 'years', 'links', 'body', 'backstory']).toContain(k);
+      }
+    }
+  });
+
+  test('CR-9 AI-4 a capture with only local facts starts no run and sends nothing', async () => {
+    routeAs(routedFact(0, YEE_HAW, 'local'));
+    const r = rig();
+    const id = runId();
+    const runsBefore = (await r.call('claude.runs', {})).runs.length;
+    const res = await r.call('claude.capture', {
+      runId: id,
+      text: YEE_HAW,
+      storyTime: { year: 2034 },
+    });
+    expect(res).toEqual({ runId: id, conversationId: null, started: false, runs: [] });
+    expect(r.fake.requests).toHaveLength(0);
+    expect(r.events).toEqual([]);
+    expect((await r.call('claude.runs', {})).runs).toHaveLength(runsBefore);
   });
 });

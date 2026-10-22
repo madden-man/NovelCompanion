@@ -838,6 +838,7 @@ describe('IP-15 Claude instructions per feature', () => {
       'importProposals',
       'panel',
       'capture',
+      'captureFast',
     ]);
     for (const i of instructions) {
       expect(i.text, i.feature).toBeNull();
@@ -848,6 +849,11 @@ describe('IP-15 Claude instructions per feature', () => {
     }
     expect(instructions.find((i) => i.feature === 'panel')!.footer).toContain(PROSE_REFUSAL_RULE);
     expect(instructions.find((i) => i.feature === 'panel')!.label).toBe('Question panel');
+    // CR-7: the fast file's instructions are editable too, and keep the refusal rule.
+    const fast = instructions.find((i) => i.feature === 'captureFast')!;
+    expect(fast.label).toBe('Capture, fast file');
+    expect(fast.default).toContain(PROSE_REFUSAL_RULE);
+    expect(fast.footer).toContain(PROSE_REFUSAL_RULE);
   });
 
   test('IP-15 a stored instruction replaces the default above the fixed footer, and Reset to default brings the default back', async () => {
