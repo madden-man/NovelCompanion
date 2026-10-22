@@ -366,9 +366,17 @@ export async function setField(
     case 'calendarDate':
       await f.locator(':scope > input').fill(value === null ? '' : String(value));
       return;
-    case 'longText':
-      await f.locator(':scope > .rich-text [role="textbox"]').fill(String(value ?? ''));
+    case 'longText': {
+      // A44: a single newline is a line break, typed with Shift+Enter (Enter starts a paragraph).
+      const box = f.locator(':scope > .rich-text [role="textbox"]');
+      const [first = '', ...rest] = String(value ?? '').split('\n');
+      await box.fill(first);
+      for (const line of rest) {
+        await box.press('Shift+Enter');
+        await box.pressSequentially(line);
+      }
       return;
+    }
     case 'boolean':
       await f.locator('input[type="checkbox"]').setChecked(value === true);
       return;
@@ -468,6 +476,9 @@ export async function setField(
     }
     case 'objectList': {
       const items = value as Record<string, unknown>[];
+      // KB-3, A40: a chapter's strands use the strand cards, not the generic list.
+      if ((await f.getByRole('button', { name: 'Add a strand', exact: true }).count()) > 0)
+        return setStrands(ctx, f, spec, path, items, root);
       const cards = f.locator(':scope > ol > li.item-card');
       const before = await cards.count();
       for (const [i, item] of items.entries()) {
@@ -490,6 +501,48 @@ export async function setField(
     case 'system':
       return;
   }
+}
+
+/**
+ * KB-3, PL-4, ED-1: set a chapter's strands through the strand cards. Adds a
+ * card per new strand and fills it (primary is a radio, the characters present
+ * and the places are add selects), then removes the cards that were there.
+ */
+async function setStrands(
+  ctx: UiContext,
+  f: Locator,
+  spec: FieldSpec,
+  path: string,
+  items: Record<string, unknown>[],
+  root: Record<string, unknown>,
+): Promise<void> {
+  const cards = f.locator('[data-testid="chapter-strand"]');
+  const before = await cards.count();
+  for (const [i, item] of items.entries()) {
+    await f.getByRole('button', { name: 'Add a strand', exact: true }).click();
+    await expect(cards).toHaveCount(before + i + 1);
+    const at = `${path}.${before + i}`;
+    const card = cards.nth(before + i);
+    for (const sub of spec.fields ?? []) {
+      if (sub.kind === 'system' || !(sub.name in item)) continue;
+      const v = item[sub.name];
+      if (sub.name === 'primary') {
+        if (v === true) await card.getByRole('radio', { name: 'Primary strand' }).check();
+      } else if (sub.name === 'characterIds' || sub.name === 'placeIds') {
+        const select = field(card, `${at}.${sub.name}`).locator('select');
+        for (const id of v as string[]) await select.selectOption(id);
+      } else {
+        await setField(ctx, f, sub, `${at}.${sub.name}`, v, root);
+      }
+    }
+  }
+  for (let i = 0; i < before; i++) {
+    await cards
+      .first()
+      .getByRole('button', { name: /^Remove the strand/ })
+      .click();
+  }
+  await expect(cards).toHaveCount(items.length);
 }
 
 /**
