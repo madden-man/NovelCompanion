@@ -13,8 +13,9 @@ export function defaultInstructions(feature: ClaudeFeature): string {
   return feature === 'panel' ? PANEL_INSTRUCTIONS : FEATURES[feature].instructions;
 }
 
-/** The panel and capture keep the AI-4 refusal rule in their footer. */
-const keepsRefusal = (feature: ClaudeFeature) => feature === 'panel' || feature === 'capture';
+/** The panel and both capture features keep the AI-4 refusal rule in their footer. */
+const keepsRefusal = (feature: ClaudeFeature) =>
+  feature === 'panel' || feature === 'capture' || feature === 'captureFast';
 
 /** One feature's instructions as Settings shows them. */
 export function instructionView(

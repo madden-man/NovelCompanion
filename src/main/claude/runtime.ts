@@ -60,7 +60,11 @@ export type DraftOrProblem = ProposalDraft | { summary: string; problem: string 
 export const featureSystemPrompt = (
   def: { feature?: string; instructions: string },
   custom?: string | null,
-): string => systemPrompt(custom ?? def.instructions, def.feature === 'capture');
+): string =>
+  systemPrompt(
+    custom ?? def.instructions,
+    def.feature === 'capture' || def.feature === 'captureFast',
+  );
 
 export const panelSystemPrompt = (custom?: string | null): string =>
   systemPrompt(custom ?? PANEL_INSTRUCTIONS, true);
