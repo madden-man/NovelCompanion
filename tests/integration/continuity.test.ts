@@ -334,11 +334,13 @@ describe('CC-4 the three resolutions', () => {
     expect(rerun).toMatchObject({ status: 'done', found: 1, hidden: 1 });
     expect((await open('CH5')).map((f) => f.id)).not.toContain(p1.id);
     const text = String(bible.model.get('chapters', 'CH5')!.manuscriptText);
-    await invoke('entry.update', {
-      collection: 'chapters',
-      id: 'CH5',
-      patch: { manuscriptText: text.replace('Sam held', 'Sam quietly held') },
-    });
+    // IP-18: the text changes only through the importer.
+    await bible.repo.update(
+      'chapters',
+      'CH5',
+      { manuscriptText: text.replace('Sam held', 'Sam quietly held') },
+      { importer: true },
+    );
     const after = await claude('claude.alignment', { runId: runId(), chapterId: 'CH5' });
     expect(after.hidden).toBe(0);
     expect(byCheck(await open('CH5'), 'CH5', 'age')).toMatchObject({ id: p1.id, state: 'open' });

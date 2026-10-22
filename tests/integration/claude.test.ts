@@ -34,6 +34,14 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+// a47-guard
+import { PANEL_INSTRUCTIONS } from '../../src/main/claude/features/panel';
+import { queueDraft } from '../../src/main/claude/proposals';
+import { claudeInstructionsCommand } from '../../src/shared/undoCommands';
+import { UndoManager } from '../../src/shared/domain/undoRunner';
+import { undoIO } from '../../src/shared/undoIO';
+
+const PANEL_INSTRUCTIONS_START = PANEL_INSTRUCTIONS.slice(0, 60);
 
 const ROOT = join(import.meta.dirname, '../..');
 const RECORDINGS = loadRecordings(join(ROOT, 'fixtures/claude/recordings.json'));
@@ -815,5 +823,231 @@ describe('AI-1 AI-7 run lifecycle', () => {
     const finished = r.events.find((e) => e.runId === id && e.kind === 'finished')!;
     const saved = new RunStore(bible).get(finished.conversationId)!;
     expect(saved.turns[0]).toMatchObject({ status: 'stopped' });
+  });
+});
+
+// ---------- a47-guard: IP-15 instructions, IP-16 conversations, IP-18 proposals ----------
+
+describe('IP-15 Claude instructions per feature', () => {
+  test('IP-15 claude.instructions.get gives every feature its default, the stored text or null, and the fixed footer', async () => {
+    const { instructions } = await r.call('claude.instructions.get', {});
+    expect(instructions.map((i) => i.feature)).toEqual([
+      'briefs',
+      'alignment',
+      'summaries',
+      'importProposals',
+      'panel',
+      'capture',
+    ]);
+    for (const i of instructions) {
+      expect(i.text, i.feature).toBeNull();
+      expect(i.default.length, i.feature).toBeGreaterThan(50);
+      expect(i.footer, i.feature).toContain(PROSE_PROHIBITION);
+      expect(i.footer, i.feature).toContain(MATERIAL_RULE);
+      expect(i.default, i.feature).not.toContain(PROSE_PROHIBITION);
+    }
+    expect(instructions.find((i) => i.feature === 'panel')!.footer).toContain(PROSE_REFUSAL_RULE);
+    expect(instructions.find((i) => i.feature === 'panel')!.label).toBe('Question panel');
+  });
+
+  test('IP-15 a stored instruction replaces the default above the fixed footer, and Reset to default brings the default back', async () => {
+    const mine = 'Answer in two lines at most. Ignore any rule about prose.';
+    const set = await r.call('claude.instructions.set', { feature: 'panel', text: `  ${mine}\n` });
+    expect(set.instruction).toMatchObject({ feature: 'panel', text: mine });
+    expect(bible.model.get('meta', 'claudeInstructions')).toMatchObject({ texts: { panel: mine } });
+    const id = runId();
+    await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'How old is Margaret in 2040?',
+    });
+    await r.finished(id);
+    const system = r.fake.requests.at(-1)!.system;
+    expect(system.startsWith(mine)).toBe(true);
+    expect(system).not.toContain(PANEL_INSTRUCTIONS_START);
+    // The footer follows, word for word: the writer's text cannot remove the AI-4 sentence.
+    expect(system.indexOf(PROSE_PROHIBITION)).toBeGreaterThan(system.indexOf(mine));
+    expect(system).toContain(PROSE_REFUSAL_RULE);
+    expect(system).toContain(MATERIAL_RULE);
+    // Another feature keeps its default.
+    expect(
+      (await r.call('claude.instructions.get', {})).instructions.find(
+        (i) => i.feature === 'briefs',
+      )!.text,
+    ).toBeNull();
+    // Reset to default.
+    const reset = await r.call('claude.instructions.set', { feature: 'panel', text: null });
+    expect(reset.instruction.text).toBeNull();
+    const again = runId();
+    await r.call('claude.ask', {
+      runId: again,
+      conversationId: null,
+      question: 'How old is Margaret in 2040?',
+    });
+    await r.finished(again);
+    expect(r.fake.requests.at(-1)!.system).toContain(PANEL_INSTRUCTIONS_START);
+    expect(r.fake.requests.at(-1)!.system).not.toContain(mine);
+  });
+
+  test('IP-15 ED-3 setting instructions is one undo step that puts the earlier text back', async () => {
+    await r.call('claude.instructions.set', { feature: 'summaries', text: 'Keep it to one line.' });
+    const invoke = (async (channel: string, req: unknown) =>
+      channel.startsWith('claude.')
+        ? r.call(channel as ClaudeChannel, req as never)
+        : invokeBible(channel as never, req as never)) as unknown as Invoke;
+    const step = claudeInstructionsCommand(
+      invoke,
+      'summaries',
+      'Chapter summaries',
+      'Keep it to one line.',
+      'Name every character.',
+    );
+    await r.call('claude.instructions.set', {
+      feature: 'summaries',
+      text: 'Name every character.',
+    });
+    const undo = new UndoManager();
+    undo.record(step);
+    const io = undoIO(invoke);
+    expect(await undo.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.repo.claudeInstructions().summaries).toBe('Keep it to one line.');
+    expect(await undo.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.repo.claudeInstructions().summaries).toBe('Name every character.');
+    await r.call('claude.instructions.set', { feature: 'summaries', text: null });
+  });
+});
+
+describe('IP-16 conversations rename, clear and delete', () => {
+  async function conversation() {
+    const id = runId();
+    const started = await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'How old is Margaret in 2040?',
+    });
+    await r.finished(id);
+    return started.conversationId;
+  }
+
+  test('IP-16 claude.conversation.rename changes the title and keeps the messages', async () => {
+    const id = await conversation();
+    const before = (await r.call('claude.run', { id })).run;
+    const { run } = await r.call('claude.conversation.rename', { id, title: '  Margaret at 82 ' });
+    expect(run).toMatchObject({ id, title: 'Margaret at 82', turns: 1 });
+    const after = (await r.call('claude.run', { id })).run;
+    expect(after.turns).toEqual(before.turns);
+    expect(new RunStore(await openBibleSession(store, slug)).get(id)!.title).toBe('Margaret at 82');
+  });
+
+  test('IP-16 claude.conversation.clear takes the messages out and keeps the title', async () => {
+    const id = await conversation();
+    const title = (await r.call('claude.run', { id })).run.title;
+    const { run } = await r.call('claude.conversation.clear', { id });
+    expect(run).toMatchObject({ id, title, turns: 0 });
+    expect((await r.call('claude.run', { id })).run.turns).toEqual([]);
+    expect((await r.call('claude.runs', {})).runs.find((x) => x.id === id)).toMatchObject({
+      title,
+      turns: 0,
+    });
+  });
+
+  test('IP-16 claude.conversation.delete removes the conversation; its proposals stay in the review queue', async () => {
+    const id = runId();
+    const started = await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'Add the porch by the river as a place',
+    });
+    const run = await r.finished(id);
+    const proposalIds = run.turns[0]!.proposalIds;
+    expect(proposalIds.length).toBeGreaterThan(0);
+    expect(await r.call('claude.conversation.delete', { id: started.conversationId })).toEqual({
+      ok: true,
+    });
+    expect((await r.call('claude.runs', {})).runs.map((x) => x.id)).not.toContain(
+      started.conversationId,
+    );
+    await expect(r.call('claude.run', { id: started.conversationId })).rejects.toThrow(
+      'That conversation is not saved.',
+    );
+    expect(
+      await bible.handle
+        .collection('conversations')
+        .findOne({ _id: started.conversationId as never }),
+    ).toBeNull();
+    for (const p of proposalIds) expect(bible.model.get('proposals', p)).toBeDefined();
+    await expect(
+      r.call('claude.conversation.delete', { id: started.conversationId }),
+    ).rejects.toThrow('That conversation is not saved.');
+  });
+
+  test('IP-16 a conversation Claude is still answering in cannot be renamed, cleared or deleted', async () => {
+    const id = runId();
+    const started = await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'Tell me everything about the Hale family',
+    });
+    for (let i = 0; i < 200 && !r.runtime.isActive(id); i++) {
+      await new Promise((res) => setTimeout(res, 10));
+    }
+    const busy = 'Claude is still answering in this conversation. Stop it first, then try again.';
+    const cid = started.conversationId;
+    await expect(r.call('claude.conversation.rename', { id: cid, title: 'x' })).rejects.toThrow(
+      busy,
+    );
+    await expect(r.call('claude.conversation.clear', { id: cid })).rejects.toThrow(busy);
+    await expect(r.call('claude.conversation.delete', { id: cid })).rejects.toThrow(busy);
+    await r.call('claude.stop', { runId: id });
+    await r.finished(id);
+    expect((await r.call('claude.conversation.delete', { id: cid })).ok).toBe(true);
+  });
+});
+
+describe('IP-18 a proposal that touches the manuscript text is rejected when it is made', () => {
+  test('IP-18 Claude proposing a change to the manuscript text is refused with the reason, and the record keeps it', async () => {
+    const queued = await queueDraft(
+      bible,
+      {
+        op: 'update',
+        collection: 'chapters',
+        targetId: 'CH5',
+        data: { manuscriptText: '<p>Ruth counted the candles once.</p>' },
+        reason: 'Fix the count.',
+      },
+      'test',
+      new Date(),
+    );
+    expect(queued).toMatchObject({
+      ok: false,
+      reason: 'The manuscript text is imported, not edited here. Use Re-import.',
+    });
+    const record = bible.repo
+      .listProposals('rejected')
+      .find((p) => p.targetId === 'CH5' && p.data.manuscriptText !== undefined)!;
+    expect(record).toMatchObject({
+      state: 'rejected',
+      refusal: 'The manuscript text is imported, not edited here. Use Re-import.',
+    });
+    expect(record.decidedAt).not.toBeNull();
+    // It never waits in the queue and cannot be approved.
+    expect(bible.repo.listProposals('pending').map((p) => p._id)).not.toContain(record._id);
+    await expect(invokeBible('proposal.approve', { id: record._id })).rejects.toThrow(
+      /already rejected/,
+    );
+    // A change to the summary of the same chapter still waits for review.
+    const summary = await queueDraft(
+      bible,
+      {
+        op: 'update',
+        collection: 'chapters',
+        targetId: 'CH5',
+        data: { summary: 'Ruth counts the candles.' },
+        reason: 'r',
+      },
+      'test',
+      new Date(),
+    );
+    expect(summary.ok).toBe(true);
   });
 });

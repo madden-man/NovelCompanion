@@ -328,3 +328,124 @@ describe('KB-7 capture offline', () => {
     expect(turn).toMatchObject({ status: 'failed', error: { kind: 'noKey' }, proposalIds: [] });
   });
 });
+
+// ---------- a47-guard: IP-17 capture can mint vocabulary ----------
+
+describe('IP-17 capture can mint a list item', () => {
+  const JINAN = 'Add culture for Jinan, 2045';
+  const communities = () =>
+    (bible.model.get('lists', 'communities')!.items as { id: string; label: string }[]).map(
+      (i) => i.label,
+    );
+
+  /** The recorded run: the new community, then the cultural line that uses it by its ref. */
+  async function jinan() {
+    const { turn, fake } = await capture(JINAN);
+    expect(turn.status).toBe('done');
+    expect(turn.rejected).toEqual([]);
+    const [add, line] = proposalsOf(turn.proposalIds) as unknown as {
+      _id: string;
+      op: string;
+      collection: string;
+      targetId: string | null;
+      state: string;
+      data: Record<string, unknown>;
+      listAdd: { listId: string; label: string; ref: string } | null;
+      uses: { ref: string; proposalId: string }[];
+    }[];
+    return { add: add!, line: line!, fake };
+  }
+
+  test('IP-17 KB-6 "Add culture for Jinan, 2045" proposes the community and the line, and the diff shows the item as a field', async () => {
+    const before = communities();
+    const { add, line, fake } = await jinan();
+    // The tool description tells Claude it may add a list item when none fits.
+    const propose = fake.requests.at(-1)!.tools.find((t) => t.name === 'propose_change')!;
+    expect(propose.description).toMatch(
+      /community, event category, region, language or tag fits, first propose a new one/,
+    );
+    expect(add).toMatchObject({
+      op: 'listAdd',
+      collection: 'lists',
+      state: 'pending',
+      listAdd: { listId: 'communities', label: 'Jinan', ref: 'new:jinan' },
+    });
+    expect(line).toMatchObject({
+      op: 'create',
+      collection: 'culturalEntries',
+      data: { communityId: 'new:jinan', startYear: 2045 },
+      uses: [{ ref: 'new:jinan', proposalId: add._id }],
+    });
+    // AI-3: nothing is written before approval.
+    expect(communities()).toEqual(before);
+    const diff = await invoke('proposal.diff', { id: add._id });
+    expect(diff.changes).toEqual([{ path: 'Community', before: null, after: '+ Jinan' }]);
+    const lineDiff = await invoke('proposal.diff', { id: line._id });
+    expect(lineDiff.changes).toContainEqual({
+      path: 'communityId',
+      before: undefined,
+      after: '+ Jinan',
+    });
+  });
+
+  test('IP-17 KB-6 ED-3 File it creates the item before the line that uses it, as one undo step', async () => {
+    const { add, line } = await jinan();
+    const filing = await fileCapture(invoke, [asCapture(line), asCapture(add)], []);
+    expect(filing.failed).toEqual([]);
+    expect(communities()).toContain('Jinan');
+    const item = (
+      bible.model.get('lists', 'communities')!.items as { id: string; label: string }[]
+    ).find((i) => i.label === 'Jinan')!;
+    expect(item.id).toBe('jinan');
+    const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
+    expect(made).toMatchObject({ communityId: 'jinan', startYear: 2045, status: 'idea' });
+    expect(bible.model.get('proposals', add._id)).toMatchObject({
+      state: 'approved',
+      appliedItemId: 'jinan',
+    });
+    expect(filing.command!.label).toBe('Filed a capture: Jinan in 2045 and Jinan');
+    const undo = new UndoManager();
+    undo.record(filing.command!);
+    const io = undoIO(invoke);
+    expect(await undo.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect(bible.model.get('culturalEntries', made._id)?.deletedAt).toBeTruthy();
+    expect(communities()).not.toContain('Jinan');
+    expect(await undo.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect(communities()).toContain('Jinan');
+    expect(bible.model.get('culturalEntries', made._id)?.deletedAt).toBeFalsy();
+    // Leave the list as the fixture had it for the tests that follow.
+    await undo.step('undo', io);
+  });
+
+  test('IP-17 approving the line alone creates the pending item first, in the same write', async () => {
+    const { add, line } = await jinan();
+    const { proposal } = await invoke('proposal.approve', { id: line._id });
+    expect(bible.model.get('culturalEntries', proposal.appliedEntryId!)!.communityId).toBe('jinan');
+    expect(proposal.data.communityId).toBe('jinan');
+    expect(bible.model.get('proposals', add._id)).toMatchObject({ state: 'approved' });
+    expect(communities()).toContain('Jinan');
+    await invoke('entry.delete', { collection: 'culturalEntries', id: proposal.appliedEntryId! });
+    const item = (
+      bible.model.get('lists', 'communities')!.items as { id: string; label: string }[]
+    ).find((i) => i.label === 'Jinan')!;
+    await invoke('lists.removeItem', { listId: 'communities', itemId: item.id });
+  });
+
+  test('IP-17 proposal.reject drops the item, and a line that uses it is then refused with a plain reason', async () => {
+    const { add, line } = await jinan();
+    await invoke('proposal.reject', { id: add._id });
+    expect(communities()).not.toContain('Jinan');
+    await expect(invoke('proposal.approve', { id: line._id })).rejects.toThrow(
+      /uses Jinan, a new item for Communities that was rejected/,
+    );
+    expect(bible.model.get('proposals', line._id)).toMatchObject({ state: 'pending' });
+    // In the capture box, an unticked item is rejected before the line, which then stays pending.
+    const again = await jinan();
+    const filing = await fileCapture(invoke, [asCapture(again.line)], [asCapture(again.add)]);
+    expect(filing.rejected).toEqual([again.add._id]);
+    expect(filing.failed.map((f) => f.id)).toEqual([again.line._id]);
+    expect(communities()).not.toContain('Jinan');
+    await invoke('proposal.reject', { id: line._id });
+    await invoke('proposal.reject', { id: again.line._id });
+  });
+});

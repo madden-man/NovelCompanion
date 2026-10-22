@@ -1890,7 +1890,11 @@ export class Repository {
     };
   }
 
-  /** IP-17: every new-item ref in a proposal's values, each tied to the proposal that adds the item. */
+  /**
+   * IP-17: every new-item ref in a proposal's values, each tied to the proposal
+   * that adds it: the newest one still waiting with that ref, which is the one
+   * made in the same run, since a run proposes the item before its entries.
+   */
   private usesIn(data: unknown, known: Proposal['uses'] = []): Proposal['uses'] {
     const refs = new Set<string>();
     collectRefs(data, refs);
@@ -1936,13 +1940,6 @@ export class Repository {
     }
     if (!ListRef.safeParse(add.ref).success) {
       throw new RepositoryError('A new list item ref looks like new:jinan.');
-    }
-    if (
-      this.listProposals('pending').some((p) => p.op === 'listAdd' && p.listAdd?.ref === add.ref)
-    ) {
-      throw new RepositoryError(
-        `Another proposal waiting for review already adds an item as ${add.ref}. Use a different ref.`,
-      );
     }
     const proposal = Proposal.parse({
       _id: newId(),
