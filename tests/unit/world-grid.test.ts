@@ -2,9 +2,17 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, test } from 'vitest';
 import { readFixture } from '../helpers/loadFixture';
 import {
+  bandGaps,
   buildGroups,
   categoryScope,
+  DEFAULT_SPAN,
   dragYears,
+  edgeAt,
+  HANDLE_W,
+  moveEdge,
+  moveSharedEdge,
+  neighbourAt,
+  snapEdge,
   GRID_METRICS,
   gridSpan,
   hitTest,
@@ -26,6 +34,7 @@ import {
   zoomPpy,
 } from '../../src/shared/domain/worldGrid';
 import type { CategoryItem, GridItem } from '../../src/shared/domain/worldGrid';
+import { DEFAULT_NUMBERS } from '../../src/shared/schema/settings';
 
 const fixture = readFixture();
 const categories = (fixture.lists!.find((l) => l._id === 'eventCategories')!.items ??
@@ -352,5 +361,102 @@ describe('WE-1 the category filter', () => {
     expect(groups.map((g) => [g.id, g.rows.map((r) => r.key)])).toEqual([
       ['technology', ['robotics']],
     ]);
+  });
+});
+
+describe('IP-4 span ends and era edges', () => {
+  const s = makeScale({ from: 2025, to: 2100 }, 10);
+
+  test('IP-4 a pointer within a handle of either edge finds that end; the middle of a bar finds none', () => {
+    const bar = { x: 100, width: 200 };
+    expect(edgeAt(bar, 100)).toBe('start');
+    expect(edgeAt(bar, 97)).toBe('start');
+    expect(edgeAt(bar, 107)).toBe('start');
+    expect(edgeAt(bar, 300)).toBe('end');
+    expect(edgeAt(bar, 293)).toBe('end');
+    expect(edgeAt(bar, 200)).toBeNull();
+    expect(edgeAt(bar, 90)).toBeNull();
+    expect(edgeAt(bar, 310)).toBeNull();
+    // A one-year bar narrower than two handles: the nearer edge wins.
+    expect(edgeAt({ x: 50, width: 10 }, 52)).toBe('start');
+    expect(edgeAt({ x: 50, width: 10 }, 58)).toBe('end');
+    expect(HANDLE_W).toBe(8);
+  });
+
+  test('IP-4 an edge dropped between columns snaps to the nearest year boundary, clamped to the axis', () => {
+    // The boundary at x = 50 is the left edge of 2030 and the right edge of 2029.
+    expect(snapEdge(s, 50, 'start')).toBe(2030);
+    expect(snapEdge(s, 54, 'start')).toBe(2030);
+    expect(snapEdge(s, 56, 'start')).toBe(2031);
+    expect(snapEdge(s, 50, 'end')).toBe(2029);
+    expect(snapEdge(s, 46, 'end')).toBe(2029);
+    expect(snapEdge(s, -40, 'start')).toBe(2025);
+    expect(snapEdge(s, 99999, 'end')).toBe(2100);
+    expect(dragYears(14, 10)).toBe(1);
+    expect(dragYears(16, 10)).toBe(2);
+  });
+
+  test('IP-4 one end moves by whole years and never passes the other, unless crossing is allowed', () => {
+    expect(moveEdge(2030, 2040, 'start', 3, s)).toEqual({ startYear: 2033, endYear: 2040 });
+    expect(moveEdge(2030, 2040, 'start', 30, s)).toEqual({ startYear: 2040, endYear: 2040 });
+    expect(moveEdge(2030, 2040, 'end', -30, s)).toEqual({ startYear: 2030, endYear: 2030 });
+    expect(moveEdge(2030, 2040, 'end', 100, s)).toEqual({ startYear: 2030, endYear: 2100 });
+    expect(moveEdge(2030, 2040, 'start', -100, s)).toEqual({ startYear: 2025, endYear: 2040 });
+    expect(moveEdge(2030, 2040, 'end', -15, s, true)).toEqual({ startYear: 2030, endYear: 2025 });
+  });
+
+  test('IP-4 eras that meet share an edge; moving it moves both ends and keeps each era a year long at least', () => {
+    const eras = [
+      { id: 'a', startYear: 2025, endYear: 2029 },
+      { id: 'b', startYear: 2030, endYear: 2039 },
+      { id: 'c', startYear: 2045, endYear: 2050 },
+    ];
+    expect(neighbourAt(eras, 'a', 'end')?.id).toBe('b');
+    expect(neighbourAt(eras, 'b', 'start')?.id).toBe('a');
+    expect(neighbourAt(eras, 'b', 'end')).toBeNull();
+    expect(neighbourAt(eras, 'c', 'start')).toBeNull();
+    expect(neighbourAt(eras, 'x', 'start')).toBeNull();
+    expect(moveSharedEdge(eras[0]!, eras[1]!, 2)).toEqual({
+      beforeEnd: 2031,
+      afterStart: 2032,
+      delta: 2,
+    });
+    expect(moveSharedEdge(eras[0]!, eras[1]!, -10)).toEqual({
+      beforeEnd: 2025,
+      afterStart: 2026,
+      delta: -4,
+    });
+    expect(moveSharedEdge(eras[0]!, eras[1]!, 20).delta).toBe(9);
+  });
+
+  test('IP-4 the band gaps are the stretches of the axis no era covers', () => {
+    expect(
+      bandGaps(
+        [
+          { startYear: 2030, endYear: 2039 },
+          { startYear: 2035, endYear: 2044 },
+          { startYear: 2050, endYear: 2060 },
+        ],
+        { from: 2025, to: 2100 },
+      ),
+    ).toEqual([
+      { startYear: 2025, endYear: 2029 },
+      { startYear: 2045, endYear: 2049 },
+      { startYear: 2061, endYear: 2100 },
+    ]);
+    expect(bandGaps([{ startYear: 2000, endYear: 2200 }], { from: 2025, to: 2100 })).toEqual([]);
+    expect(bandGaps([], { from: 2025, to: 2030 })).toEqual([{ startYear: 2025, endYear: 2030 }]);
+  });
+
+  test('IP-11 the default span and window come from the default bible numbers', () => {
+    expect(DEFAULT_SPAN).toEqual({
+      from: DEFAULT_NUMBERS.timelineStart,
+      to: DEFAULT_NUMBERS.timelineEnd,
+    });
+    expect(yearWindow(2040)).toEqual({
+      from: 2040 - DEFAULT_NUMBERS.windowBefore,
+      to: 2040 + DEFAULT_NUMBERS.windowAfter,
+    });
+    expect(gridSpan([], { from: 2000, to: 2150 })).toEqual({ from: 2000, to: 2150 });
   });
 });

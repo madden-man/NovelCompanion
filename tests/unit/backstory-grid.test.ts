@@ -6,21 +6,29 @@ import {
   NO_FAMILY,
   ageIn,
   ageText,
+  allMoments,
   backstoryGrid,
   buildFamilies,
   eventsNear,
   hitBackstory,
   insertEventTitle,
+  insertMention,
   layoutBackstory,
   lifespanBar,
   lifespanOf,
+  lifeProblem,
   momentItems,
   momentsOf,
+  moveLifeEnd,
+  PICKER_REACH,
   treeOrder,
+  withMentionLink,
+  withYear,
 } from '../../src/shared/domain/backstoryGrid';
 import { eventSpans, fromCollections, strandSpans } from '../../src/shared/domain/timeline';
 import { makeScale, writingBand, yearMid, yearX } from '../../src/shared/domain/worldGrid';
 import type { Doc } from '../../src/shared/domain/paths';
+import { DEFAULT_NUMBERS } from '../../src/shared/schema/settings';
 
 const fixture = readFixture();
 const input = {
@@ -337,5 +345,77 @@ describe('NF-1 the Backstory grid with a 5,000-moment bible', () => {
       expect(g.families.map((f) => f.id)).toContain(NO_FAMILY);
     }
     expect(Math.min(...runs)).toBeLessThan(100);
+  });
+});
+
+describe('IP-4 dragging a lifespan and the picker mention', () => {
+  const axis = { from: 2025, to: 2100 };
+
+  test('IP-4 the left end moves the birth, the right end the death; an open life ends at the axis end', () => {
+    const dead = lifespanOf({ birth: { year: 1958 }, death: { year: 2041 } });
+    expect(moveLifeEnd(dead, 'start', -2, { from: 1950, to: 2100 })).toEqual({
+      from: 1956,
+      to: 2041,
+    });
+    expect(moveLifeEnd(dead, 'end', 3, axis)).toEqual({ from: 1958, to: 2044 });
+    const alive = lifespanOf({ birth: { year: 1985 }, death: null });
+    expect(moveLifeEnd(alive, 'end', -10, axis)).toEqual({ from: 1985, to: 2090 });
+    expect(moveLifeEnd(alive, 'start', 1, axis)).toEqual({ from: 1986, to: null });
+    expect(moveLifeEnd(lifespanOf({ birth: { unknown: true }, death: null }), 'end', 1, axis)).toBe(
+      null,
+    );
+  });
+
+  test('IP-4 ED-10 a death dragged before the birth is refused with the reason', () => {
+    const life = lifespanOf({ birth: { year: 2030 }, death: { year: 2032 } });
+    const moved = moveLifeEnd(life, 'end', -5, axis)!;
+    expect(moved).toEqual({ from: 2030, to: 2027 });
+    expect(lifeProblem(moved.from, moved.to)).toBe(
+      'The death year 2027 is before the birth year 2030. Drag the death to 2030 or later.',
+    );
+    expect(lifeProblem(2030, 2030)).toBeNull();
+    expect(lifeProblem(2030, null)).toBeNull();
+  });
+
+  test('IP-4 a moved year keeps the month and day; an unknown date becomes the year', () => {
+    expect(withYear({ year: 1958, month: 3, day: 2 }, 1957)).toEqual({
+      year: 1957,
+      month: 3,
+      day: 2,
+    });
+    expect(withYear({ unknown: true }, 1990)).toEqual({ year: 1990 });
+    expect(withYear(null, 2050)).toEqual({ year: 2050 });
+  });
+
+  test('IP-4 ED-9 Pick events inserts an @ mention on its own line, once, and adds the link once', () => {
+    expect(insertMention('', 'Care robots')).toBe('@Care robots');
+    expect(insertMention('Rents doubled.', ' Care robots ')).toBe('Rents doubled.\n@Care robots');
+    expect(insertMention('Rents doubled.\n@Care robots', 'Care robots')).toBe(
+      'Rents doubled.\n@Care robots',
+    );
+    expect(insertMention('x', '  ')).toBe('x');
+    expect(withMentionLink([], 'E2')).toEqual([{ targetId: 'E2', kind: 'mention' }]);
+    expect(withMentionLink([{ targetId: 'E2', kind: 'mentions' }], 'E2')).toEqual([
+      { targetId: 'E2', kind: 'mentions' },
+    ]);
+  });
+
+  test('IP-13 every moment lists by year, then by the person’s name', () => {
+    const g = backstoryGrid({ ...input, base: axis });
+    const all = allMoments(g.moments, g.people);
+    expect(all.map((m) => m.id)).toEqual(['Z3-lives-0', 'Z3-lives-1', 'H1-voice-0', 'H5-voice-0']);
+    const tie = allMoments(
+      [
+        { ...g.moments[0]!, id: 'b', characterId: 'H1', year: 2030, endYear: null },
+        { ...g.moments[0]!, id: 'a', characterId: 'Z3', year: 2030, endYear: null },
+      ],
+      g.people,
+    );
+    // Margaret Hale before Zhou Lan.
+    expect(tie.map((m) => m.id)).toEqual(['b', 'a']);
+  });
+
+  test('IP-11 the picker reach defaults to the bible numbers', () => {
+    expect(PICKER_REACH).toBe(DEFAULT_NUMBERS.pickerReach);
   });
 });

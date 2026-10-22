@@ -8,6 +8,7 @@
  */
 import { ageAt, lifeState } from './ages';
 import { yearOf } from './dates';
+import { DEFAULT_NUMBERS } from '../schema/settings';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import { buildGraph, placeLayout } from './tree';
@@ -21,10 +22,12 @@ import {
   hitTest,
   inWindow,
   layoutGrid,
+  moveEdge,
   spanExtent,
   yearX,
 } from './worldGrid';
 import type {
+  EdgeSide,
   GridGroup,
   GridItem,
   GridLayout,
@@ -226,6 +229,42 @@ export function lifespanBar(life: Lifespan, s: YearScale, storyYear: number): Li
   return { x, width, dashFrom: cut < x + width ? Math.max(x, cut) : null };
 }
 
+// ---------- dragging a lifespan's ends (IP-4) ----------
+
+/**
+ * A lifespan with one end moved by whole years: the left end is the birth,
+ * the right end the death. A life with no death on record ends at the axis
+ * end, so its right end dragged in sets a death there. The moved end may
+ * pass the other; `lifeProblem` refuses that at release.
+ */
+export function moveLifeEnd(
+  life: Lifespan,
+  side: EdgeSide,
+  delta: number,
+  s: YearSpan,
+): { from: number; to: number | null } | null {
+  if (life.from === null) return null;
+  const end = life.to ?? s.to;
+  const moved = moveEdge(life.from, end, side, delta, s, true);
+  if (side === 'start') return { from: moved.startYear, to: life.to };
+  return { from: life.from, to: moved.endYear };
+}
+
+/** ED-10: why a lifespan cannot be stored as dragged, or null when it can. */
+export function lifeProblem(from: number, to: number | null): string | null {
+  if (to === null || to >= from) return null;
+  return `The death year ${to} is before the birth year ${from}. Drag the death to ${from} or later.`;
+}
+
+/**
+ * A story date with its year replaced, keeping its month and day; an unknown
+ * or missing date becomes the plain year.
+ */
+export function withYear(d: StoryDate | null, year: number): StoryDate {
+  if (d && 'year' in d) return { ...d, year };
+  return { year };
+}
+
 // ---------- moments ----------
 
 export interface BackstoryMoment {
@@ -286,6 +325,25 @@ export function momentsOf(
   return items.flatMap((i) => byId.get(i.id) ?? []);
 }
 
+/**
+ * IP-13: every moment as the table lists them when no person is picked: by
+ * year, then by the person's name, then by end year and title.
+ */
+export function allMoments(
+  moments: readonly BackstoryMoment[],
+  people: ReadonlyMap<string, { name: string }>,
+): BackstoryMoment[] {
+  const name = (m: BackstoryMoment) => people.get(m.characterId)?.name ?? '';
+  return [...moments].sort(
+    (a, b) =>
+      a.year - b.year ||
+      name(a).localeCompare(name(b)) ||
+      (a.endYear ?? a.year) - (b.endYear ?? b.year) ||
+      a.title.localeCompare(b.title) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+}
+
 /** TL-3: the age a moment's year gives, in words for the table. */
 export function ageText(p: { birth: StoryDate | null; death: StoryDate | null }, year: number) {
   const s = lifeState({ birth: p.birth, death: p.death }, year);
@@ -313,7 +371,7 @@ export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
 
 export interface BackstoryGridInput extends BackstoryRowsInput {
   moments: readonly Doc[];
-  /** IP-11: the bible's timeline span; 2025 to 2100 when not given. */
+  /** IP-11: the bible's timeline span; the default numbers' span when not given. */
   base?: YearSpan;
 }
 
@@ -321,7 +379,7 @@ export interface BackstoryGrid {
   families: BackstoryFamily[];
   people: Map<string, BackstoryPerson>;
   moments: BackstoryMoment[];
-  /** The axis the grid needs: the timeline span (2025 to 2100) widened to every birth, death and moment. */
+  /** The axis the grid needs: the timeline span widened to every birth, death and moment. */
   span: YearSpan;
 }
 
@@ -388,7 +446,7 @@ export function hitBackstory(
 // ---------- the "Relevant world events" picker (A33) ----------
 
 /** How many years either side of a moment's year the picker reaches, by default (IP-11: per bible). */
-export const PICKER_REACH = 1;
+export const PICKER_REACH = DEFAULT_NUMBERS.pickerReach;
 
 /**
  * The world events of a year plus or minus one: every event running at any
@@ -400,6 +458,30 @@ export function eventsNear<T extends { startYear: number; endYear: number }>(
   reach: number = PICKER_REACH,
 ): T[] {
   return inWindow(events, { from: year - reach, to: year + reach });
+}
+
+/**
+ * IP-4, ED-9: the text after inserting a mention of an event (`@Title`) on a
+ * line of its own after what is there, and not again when the text already
+ * mentions it.
+ */
+export function insertMention(text: string, title: string): string {
+  const t = title.trim();
+  if (!t) return text;
+  const at = `@${t}`;
+  const lines = text.split('\n').map((l) => l.trim());
+  if (lines.some((l) => l === at || l.includes(at))) return text;
+  const base = text.replace(/\s+$/, '');
+  return base ? `${base}\n${at}` : at;
+}
+
+/** The links an entry holds after it mentions another (ED-9): the mention added once. */
+export function withMentionLink(
+  links: readonly { targetId: string; kind: string }[],
+  targetId: string,
+): { targetId: string; kind: string }[] {
+  if (links.some((l) => l.targetId === targetId)) return [...links];
+  return [...links, { targetId, kind: 'mention' }];
 }
 
 /**

@@ -6,10 +6,15 @@
  * dated items can reuse them; only `buildGroups` reads a category list.
  */
 
+import { DEFAULT_NUMBERS } from '../schema/settings';
+
 // ---------- the year axis ----------
 
-/** The years a grid shows by default (SM-8): 2025 to 2100. */
-export const DEFAULT_SPAN = { from: 2025, to: 2100 } as const;
+/** The years a grid shows when the bible says nothing else (IP-11: its timeline span). */
+export const DEFAULT_SPAN = {
+  from: DEFAULT_NUMBERS.timelineStart,
+  to: DEFAULT_NUMBERS.timelineEnd,
+} as const;
 
 export interface YearSpan {
   from: number;
@@ -28,7 +33,7 @@ export const ZOOM_PPY: Record<Exclude<Zoom, 'fit'>, number> = { default: 18, clo
 /** The narrowest a year column gets when the whole span is fitted. */
 export const MIN_PPY = 3;
 
-/** The default span widened to take in every given year (an event before 2025 still shows). */
+/** The timeline span widened to take in every given year (an event before its start still shows). */
 export function gridSpan(years: Iterable<number>, base: YearSpan = DEFAULT_SPAN): YearSpan {
   let { from, to } = base;
   for (const y of years) {
@@ -514,11 +519,125 @@ export function shiftEnd(
   return clamp(endYear + delta, startYear, Math.max(startYear, span.to));
 }
 
+// ---------- span ends and edges (IP-4) ----------
+
+/** One end of a span: its first year (`start`) or its last (`end`). */
+export type EdgeSide = 'start' | 'end';
+
+/** The width of a grab handle at each end of a bar, in pixels. */
+export const HANDLE_W = 8;
+
+/**
+ * Which end of a bar a pointer is on: within a handle's width inside either
+ * edge. On a bar narrower than two handles the nearer edge wins.
+ */
+export function edgeAt(
+  ext: { x: number; width: number },
+  x: number,
+  handle: number = HANDLE_W,
+): EdgeSide | null {
+  const left = ext.x;
+  const right = ext.x + ext.width;
+  if (x < left - handle / 2 || x > right + handle / 2) return null;
+  const toLeft = Math.abs(x - left);
+  const toRight = Math.abs(x - right);
+  if (toLeft > handle && toRight > handle) return null;
+  return toLeft <= toRight ? 'start' : 'end';
+}
+
+/**
+ * The year an edge dropped at a pixel lands on, snapped to the nearest column
+ * boundary: a start edge takes the column to the boundary's right, an end
+ * edge the column to its left. Clamped to the axis.
+ */
+export function snapEdge(s: YearScale, x: number, side: EdgeSide): number {
+  const boundary = Math.round(x / s.ppy);
+  const year = side === 'start' ? s.from + boundary : s.from + boundary - 1;
+  return clamp(year, s.from, s.to);
+}
+
+/**
+ * One end of a span moved by whole years, the other end left where it is.
+ * The moved end stays on the axis and never passes the other end, unless
+ * `cross` lets it (a death dragged before the birth is refused later, at
+ * release, with the reason).
+ */
+export function moveEdge(
+  startYear: number,
+  endYear: number,
+  side: EdgeSide,
+  delta: number,
+  span: YearSpan,
+  cross = false,
+): { startYear: number; endYear: number } {
+  if (side === 'start') {
+    const hi = cross ? span.to : Math.min(endYear, span.to);
+    return { startYear: clamp(startYear + delta, Math.min(span.from, startYear), hi), endYear };
+  }
+  const lo = cross ? span.from : Math.max(startYear, span.from);
+  return { startYear, endYear: clamp(endYear + delta, lo, Math.max(span.to, endYear)) };
+}
+
+/** A span with an ID, such as an era. */
+export interface IdSpan {
+  id: string;
+  startYear: number;
+  endYear: number;
+}
+
+/**
+ * The era that meets an era's edge: the one ending the year before it starts
+ * (its start edge), or starting the year after it ends (its end edge).
+ */
+export function neighbourAt<T extends IdSpan>(spans: readonly T[], id: string, side: EdgeSide) {
+  const me = spans.find((e) => e.id === id);
+  if (!me) return null;
+  const meets = (e: T) =>
+    side === 'start' ? e.endYear + 1 === me.startYear : e.startYear === me.endYear + 1;
+  return spans.find((e) => e.id !== id && meets(e)) ?? null;
+}
+
+/**
+ * The shared edge between two eras that meet (`before` ends the year before
+ * `after` starts) moved by whole years: both ends move together, and neither
+ * era is left shorter than one year.
+ */
+export function moveSharedEdge(
+  before: { startYear: number; endYear: number },
+  after: { startYear: number; endYear: number },
+  delta: number,
+): { beforeEnd: number; afterStart: number; delta: number } {
+  const d = clamp(delta, before.startYear - before.endYear, after.endYear - after.startYear);
+  return { beforeEnd: before.endYear + d, afterStart: after.startYear + d, delta: d };
+}
+
+/** A stretch of the axis no era covers. */
+export interface BandGap {
+  startYear: number;
+  endYear: number;
+}
+
+/** IP-4: the stretches of the axis no era covers, left to right, for the era band. */
+export function bandGaps(spans: readonly { startYear: number; endYear: number }[], s: YearSpan) {
+  const sorted = [...spans]
+    .map((e) => ({ a: Math.min(e.startYear, e.endYear), b: Math.max(e.startYear, e.endYear) }))
+    .sort((x, y) => x.a - y.a);
+  const gaps: BandGap[] = [];
+  let next = s.from;
+  for (const e of sorted) {
+    if (e.a > next && next <= s.to)
+      gaps.push({ startYear: next, endYear: Math.min(e.a - 1, s.to) });
+    next = Math.max(next, e.b + 1);
+  }
+  if (next <= s.to) gaps.push({ startYear: next, endYear: s.to });
+  return gaps;
+}
+
 // ---------- the world around the story year ----------
 
-/** A33: three years before the story year through one after. */
-export const WINDOW_BEFORE = 3;
-export const WINDOW_AFTER = 1;
+/** A33: the years before the story year through the years after (IP-11: per bible). */
+export const WINDOW_BEFORE = DEFAULT_NUMBERS.windowBefore;
+export const WINDOW_AFTER = DEFAULT_NUMBERS.windowAfter;
 
 export function yearWindow(
   year: number,
