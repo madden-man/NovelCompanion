@@ -473,14 +473,13 @@ test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and g
   await expect(editor()).toContainText('团圆');
 });
 
-test('NF-2 SM-1 the character page from the keyboard: Edit name, each text box, and the relatives line opens the tree', async () => {
+test('NF-2 SM-1 IP-1 the character page from the keyboard: the name fields, each text box, and the relatives line opens the tree', async () => {
   await go('Characters');
   await press(page.getByTestId('entry-list').getByRole('button', { name: /^Keyboard Person/ }));
   const p = page.getByTestId('character-page');
-  await press(p.getByRole('button', { name: 'Edit name', exact: true }));
-  await tabTo(p.getByRole('textbox', { name: 'Name in Chinese characters' }));
+  await press(p.getByRole('button', { name: /^Name in Chinese characters/ }));
   await page.keyboard.type('键');
-  await press(p.getByRole('button', { name: 'Done', exact: true }));
+  await page.keyboard.press('Enter');
   await expect(p.getByTestId('char-chinese').locator('.zh-chars')).toHaveText('键');
   for (const [label, text] of [
     ['Description', 'Types fast.'],

@@ -18,6 +18,7 @@ import type { Op, UndoCommand } from '../../../../shared/domain/undoRunner';
 import type { FieldWarning } from '../../../../shared/domain/warnings';
 import { listAddCommand } from '../../../../shared/undoCommands';
 import { call } from '../../api';
+import { useReadOnly } from '../../connection';
 import { useList, useStore } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
@@ -260,8 +261,11 @@ export function useListAddNew(
 ): (label: string) => Promise<AddedItem> {
   const list = useList(listId);
   const listLabel = list?.label ?? listId;
+  // ARCH-6: the field never opens while read-only; this refuses too, with the reason.
+  const readOnly = useReadOnly();
   return useCallback(
     async (label: string) => {
+      if (readOnly) throw new EditableError(readOnly);
       const { item } = await call('lists.addItem', { listId, label, parentId });
       return {
         id: item.id,
@@ -269,7 +273,7 @@ export function useListAddNew(
         command: listAddCommand(call, listLabel, listId, item),
       };
     },
-    [listId, listLabel, parentId],
+    [listId, listLabel, parentId, readOnly],
   );
 }
 
@@ -281,8 +285,10 @@ export function useEntryAddNew(
   collection: EntryCollection,
   data: (label: string) => Doc,
 ): (label: string) => Promise<AddedItem> {
+  const readOnly = useReadOnly();
   return useCallback(
     async (label: string) => {
+      if (readOnly) throw new EditableError(readOnly);
       const { entry } = await call('entry.create', {
         collection,
         data: { ...blankEntry(manifests[collection]), ...data(label) },
@@ -294,6 +300,6 @@ export function useEntryAddNew(
         command: createCommand(collection, entry._id, title),
       };
     },
-    [collection, data],
+    [collection, data, readOnly],
   );
 }

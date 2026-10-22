@@ -319,10 +319,29 @@ export async function reveal(target: Locator): Promise<void> {
   });
 }
 
-/** SM-1: type a date into a character page date box ("2045", "2034-05-01", or blank) and leave it. */
+/** IP-1: open an `Editable` (its root, found by `data-field`) by clicking its text. */
+export async function openEditable(f: Locator): Promise<void> {
+  if ((await f.locator('input, select').count()) === 0) {
+    await f.locator('.editable-text').first().click();
+  }
+}
+
+/**
+ * IP-1: type into an `Editable` and save it with Enter (or leave it with
+ * `blur`), then wait until it has saved and closed.
+ */
+export async function fillEditable(f: Locator, text: string, how: 'Enter' | 'blur' = 'Enter') {
+  await openEditable(f);
+  const input = f.locator('input');
+  await input.fill(text);
+  if (how === 'Enter') await input.press('Enter');
+  else await input.blur();
+  await expect(f.locator('input')).toHaveCount(0);
+}
+
+/** SM-1, IP-1: type a date into a character page date field ("2045", "2034-05-01", or blank) and leave it. */
 export async function fillDateBox(f: Locator, text: string): Promise<void> {
-  await f.locator('input').fill(text);
-  await f.locator('input').blur();
+  await fillEditable(f, text, 'blur');
 }
 
 export async function setField(
@@ -351,12 +370,21 @@ export async function setField(
       return;
     case 'enum':
     case 'listItem':
+      if ((await f.getAttribute('data-editable')) === 'select') {
+        await openEditable(f);
+        const select = f.locator('select');
+        const want = value === null ? '' : String(value);
+        if ((await select.inputValue()) === want) await select.press('Escape');
+        else await select.selectOption(want);
+        await expect(select).toHaveCount(0);
+        return;
+      }
       await f.locator(':scope > select').selectOption(value === null ? '' : String(value));
       return;
     case 'storyDate': {
       const d = value as Record<string, number> | null;
       // SM-1: the character page has one box per date.
-      if ((await f.getAttribute('data-kind')) === 'dateText')
+      if ((await f.getAttribute('data-editable')) === 'date')
         return fillDateBox(f, dateText(d as never));
       const kind = f.getByLabel('Kind of date');
       if (d === null) return void (await kind.selectOption('none'));
@@ -386,15 +414,22 @@ export async function setField(
       }
       return;
     case 'refs':
-      await clearChips(f);
-      // SM-1: the character page's families are added through Add family.
-      if ((await f.getAttribute('data-kind')) === 'familyChips') {
+      // IP-1: a chip row adds through its picker; each add or remove saves at once.
+      if ((await f.getAttribute('data-editable')) === 'chips') {
+        const remove = f.locator('.chip-remove');
+        while ((await remove.count()) > 0) {
+          const n = await remove.count();
+          await remove.first().click();
+          await expect(remove).toHaveCount(n - 1);
+        }
         for (const id of value as string[]) {
-          await f.getByRole('button', { name: 'Add family' }).click();
-          await f.getByLabel('Family to add').selectOption(id);
+          await f.locator('.editable-add').click();
+          await f.locator(`[role="option"][data-value="${id}"]`).click();
+          await expect(f.getByRole('combobox')).toHaveCount(0);
         }
         return;
       }
+      await clearChips(f);
       for (const id of value as string[]) {
         if (anywhere(spec)) await pickBySearch(ctx, f, id, /^Add to/);
         else await f.locator(':scope > select').selectOption(id);

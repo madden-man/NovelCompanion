@@ -126,6 +126,32 @@ export type EditableKindProps =
 
 export type EditableProps = EditableCommonProps & EditableKindProps;
 
+/** Where every scrolled box above an element sits, to put back after a text undo. */
+function scrollSnapshot(el: Element): () => void {
+  const saved: [Element, number, number][] = [];
+  for (let e = el.parentElement; e; e = e.parentElement) {
+    if (e.scrollTop || e.scrollLeft || e.scrollHeight > e.clientHeight) {
+      saved.push([e, e.scrollTop, e.scrollLeft]);
+    }
+  }
+  return () => {
+    // Chromium reveals an undone text with a smooth scroll that starts a moment later:
+    // hold every box where it was for a short while, then let go.
+    const hold = () => {
+      for (const [e, top, left] of saved) {
+        if (e.scrollTop !== top || e.scrollLeft !== left) {
+          e.scrollTo({ top, left, behavior: 'instant' });
+        }
+      }
+    };
+    hold();
+    for (const [e] of saved) e.addEventListener('scroll', hold);
+    setTimeout(() => {
+      for (const [e] of saved) e.removeEventListener('scroll', hold);
+    }, 800);
+  };
+}
+
 /** Read what was typed into the value this kind stores. */
 function parse(p: EditableKindProps, text: string): Parsed<unknown> {
   switch (p.kind) {
@@ -205,6 +231,7 @@ export function Editable(props: EditableProps) {
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   /** Set while a save runs or after Escape, so the blur that follows does not save again. */
   const busy = useRef(false);
+  const restoreScroll = useRef<() => void>(() => undefined);
   const settled = useRef(false);
   const refocus = useRef<'display' | 'add' | null>(null);
   const mounted = useRef(true);
@@ -219,15 +246,25 @@ export function Editable(props: EditableProps) {
     if (open || addNew.step !== 'closed') return;
     const target = refocus.current;
     refocus.current = null;
-    if (target === 'display') displayRef.current?.focus();
-    if (target === 'add') addButtonRef.current?.focus();
+    // The focus comes back where it was; nothing scrolls (IP-1).
+    if (target === 'display') displayRef.current?.focus({ preventScroll: true });
+    if (target === 'add') addButtonRef.current?.focus({ preventScroll: true });
   }, [open, addNew.step]);
+
+  // An opened field takes the focus without scrolling the page (IP-1), so no autoFocus.
+  const typing = (open && kind !== 'select' && kind !== 'rich') || addNew.step === 'naming';
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!typing || !el || document.activeElement === el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [typing]);
 
   const selectOpen = kind === 'select' && open && addNew.step === 'closed';
   useEffect(() => {
     const el = selectRef.current;
     if (!selectOpen || !el) return;
-    el.focus();
+    el.focus({ preventScroll: true });
     try {
       el.showPicker();
     } catch {
@@ -294,7 +331,7 @@ export function Editable(props: EditableProps) {
     }
     const ok = await write(parsed.value, {});
     if (ok) close('saved', how === 'enter' ? 'display' : null);
-    else if (how === 'enter') inputRef.current?.focus();
+    else if (how === 'enter') inputRef.current?.focus({ preventScroll: true });
   };
 
   const cancel = () => {
@@ -419,7 +456,6 @@ export function Editable(props: EditableProps) {
         ref={inputRef}
         className="editable-input"
         value={inputProps.value}
-        autoFocus
         autoComplete="off"
         spellCheck={!inputProps.numeric}
         inputMode={inputProps.numeric ? 'numeric' : undefined}
@@ -431,6 +467,18 @@ export function Editable(props: EditableProps) {
         onChange={(e) => inputProps.onChange(e.target.value)}
         onKeyDown={inputProps.onKeyDown}
         onBlur={inputProps.onBlur}
+        onFocus={(e) => {
+          restoreScroll.current = scrollSnapshot(e.currentTarget);
+        }}
+        onKeyUp={(e) => {
+          restoreScroll.current = scrollSnapshot(e.currentTarget);
+        }}
+        onInput={(e) => {
+          // Chromium scrolls the pane when Cmd+Z steps the text back (ED-3); the page stays put.
+          const type = (e.nativeEvent as InputEvent).inputType;
+          if (!type.startsWith('history')) return;
+          restoreScroll.current();
+        }}
       />
     </span>
   );
@@ -730,7 +778,10 @@ function ChipRow(props: {
               }
               aria-describedby={props.errorId}
               placeholder={naming ? 'Name the new item' : 'Type to find'}
-              autoFocus
+              ref={(el) => {
+                // Takes the focus without scrolling the page (IP-1).
+                if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+              }}
               autoComplete="off"
               size={1}
               value={text}
@@ -773,10 +824,13 @@ function ChipRow(props: {
                   key={r.value}
                   id={`${optionId}-${i}`}
                   role="option"
+                  data-value={r.value === ADD_NEW ? undefined : r.value}
                   aria-selected={i === at}
                   className={`editable-option${i === at ? ' active' : ''}${r.value === ADD_NEW ? ' add-new' : ''}`}
                   onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(i)}
+                  onMouseMove={() => {
+                    if (i !== at) setActive(i);
+                  }}
                   onClick={() => pick(r.value)}
                 >
                   {r.label}
@@ -791,7 +845,10 @@ function ChipRow(props: {
           type="button"
           className="btn small editable-add"
           disabled={props.busy}
-          onClick={props.onOpen}
+          onClick={() => {
+            setActive(0);
+            props.onOpen();
+          }}
         >
           {addText}
         </button>
