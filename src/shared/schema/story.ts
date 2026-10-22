@@ -224,6 +224,13 @@ export const Dismissal = z.strictObject({
   entryHash: z.string().max(64),
 });
 
+/** IP-7, ED-7: the wording a run wrote for the fields a writer may edit on the card. */
+export const FindingWording = z.strictObject({
+  text: z.string(),
+  quote: z.string(),
+  mustChange: z.string(),
+});
+
 /** A continuity finding (CC-2, CC-3). Editable like anything else (ED-6). */
 export const Finding = entry({
   chapterId: Id.nullable().default(null),
@@ -250,6 +257,10 @@ export const Finding = entry({
   dismissal: Dismissal.nullable().default(null),
   /** The alignment run that produced it (AI-1). */
   runId: z.string().max(64).nullable().default(null),
+  /** IP-7, ED-7: what the last run wrote, so a re-run can tell a hand edit from its own words. */
+  generated: FindingWording.nullable().default(null),
+  /** IP-7, ED-7: what a re-run says now for a field the writer edited; shown on the card, never written over the edit. */
+  proposed: FindingWording.partial().nullable().default(null),
 });
 export type Finding = z.infer<typeof Finding>;
 
@@ -287,6 +298,8 @@ export const findingFields: FieldSpec[] = [
   f.system('rejectedChanges', 'Changes that failed the checks'),
   f.system('dismissal', 'Dismissed against'),
   f.system('runId', 'Alignment run'),
+  f.system('generated', 'Wording of the last run'),
+  f.system('proposed', 'What the check now says'),
 ];
 
 function yearRangeLines(): FieldSpec[] {

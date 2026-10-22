@@ -323,6 +323,72 @@ function QuoteLines(props: { f: FindingWire; editable: boolean; testId?: string 
   );
 }
 
+const WORDING_LABELS = {
+  text: 'Finding',
+  quote: 'Quoted passage',
+  mustChange: 'What must change',
+} as const;
+
+/**
+ * IP-7, ED-7: a re-run found new words for a field the writer edited. The
+ * edit stays; the card shows what the check says now, and Take the new text
+ * replaces the edit as one undo step.
+ */
+function ProposedWording(props: {
+  findingId: string;
+  doc: Record<string, unknown> | null;
+  field: keyof typeof WORDING_LABELS;
+}) {
+  const undo = useUndo();
+  const [error, setError] = useState<string | null>(null);
+  const proposed = props.doc?.proposed as Record<string, unknown> | null | undefined;
+  const now = proposed?.[props.field];
+  if (typeof now !== 'string' || now === props.doc?.[props.field]) return null;
+  const label = WORDING_LABELS[props.field];
+  const take = async () => {
+    setError(null);
+    try {
+      await saveEntryField(undo, {
+        collection: 'findings',
+        id: props.findingId,
+        path: props.field,
+        value: now,
+        label,
+      });
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
+  return (
+    <div
+      className="callout al-proposed stack tight"
+      data-testid="finding-proposed"
+      data-wording={props.field}
+    >
+      <span>
+        <strong>The check now says{props.field === 'text' ? '' : ` (${label})`}:</strong>{' '}
+        <span className="al-proposed-text">{now}</span>
+      </span>
+      <span>You edited this, so your words stay until you take the new text.</span>
+      <WriteFieldset className="row tight">
+        <button
+          type="button"
+          className="btn small"
+          aria-label={`Take the new text for ${label}`}
+          onClick={() => void take()}
+        >
+          Take the new text
+        </button>
+      </WriteFieldset>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** CC-4, IP-7: one finding with its quoted lines, citations, the three resolutions, and its fields. */
 function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
   const { f, onOpen } = props;
@@ -401,6 +467,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
         </button>
       </div>
       {f.lines.length > 0 && <QuoteLines f={f} editable testId="finding-quote" />}
+      <ProposedWording findingId={f.id} doc={doc} field="quote" />
       {f.textChanged && (
         <p className="callout warn">The chapter text changed since this check. Check it again.</p>
       )}
@@ -415,6 +482,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
         testId="finding-text"
         className="al-field"
       />
+      <ProposedWording findingId={f.id} doc={doc} field="text" />
       {f.entries.length > 0 && (
         <div className="row tight" aria-label="Cited entries">
           <span>Cites:</span>
@@ -450,6 +518,7 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           className="al-field"
         />
       )}
+      {f.kind === 'alignment' && <ProposedWording findingId={f.id} doc={doc} field="mustChange" />}
       {f.state === 'open' && (
         <WriteFieldset className="row tight">
           <div className="row tight" data-testid="finding-actions">

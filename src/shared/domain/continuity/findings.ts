@@ -5,7 +5,10 @@
  *
  * Re-run rules, by the finding's stable key:
  * - new key: a new open finding;
- * - open: its text, lines, and change set are refreshed;
+ * - open: its text, lines, and change set are refreshed, except a text,
+ *   quote or what must change the writer edited since the last run (IP-7,
+ *   ED-7): the edit stays, and what the check says now is kept in `proposed`
+ *   for the card to offer;
  * - dismissed: stays dismissed and hidden while the chapter text (or, for a
  *   structural finding, the chapter's strands and links) and
  *   every cited entry's revision are unchanged; otherwise it opens again;
@@ -150,10 +153,57 @@ function content(f: FreshFinding): Doc {
   };
 }
 
+/** IP-7, ED-7: the fields a writer may edit on the card, which a re-run never writes over. */
+export const WORDING_FIELDS = ['text', 'quote', 'mustChange'] as const;
+export type WordingField = (typeof WORDING_FIELDS)[number];
+type Wording = Record<WordingField, string>;
+
+const wordingOf = (f: FreshFinding): Wording => ({
+  text: f.text,
+  quote: f.quote,
+  mustChange: f.mustChange,
+});
+
+const storedWording = (v: unknown): Wording | null =>
+  v !== null &&
+  typeof v === 'object' &&
+  WORDING_FIELDS.every((k) => typeof (v as Doc)[k] === 'string')
+    ? (v as Wording)
+    : null;
+
+/**
+ * IP-7, ED-7: the patch a re-run makes to a stored finding. A wording field
+ * that differs from what the last run wrote was edited by the writer: it
+ * stays, and a new wording from this run goes to `proposed` (a proposal
+ * still pending stays). A finding stored before `generated` existed counts
+ * as untouched. Only the fields that change are in the patch.
+ */
+function refresh(s: Doc, f: FreshFinding): Doc {
+  const now = wordingOf(f);
+  const kept = new Set<string>();
+  const last = storedWording(s.generated);
+  const prior = (s.proposed && typeof s.proposed === 'object' ? s.proposed : {}) as Doc;
+  const proposed: Partial<Wording> = {};
+  for (const k of WORDING_FIELDS) {
+    const mine = typeof s[k] === 'string' ? (s[k] as string) : '';
+    if (last === null || mine === last[k]) continue;
+    kept.add(k);
+    if (now[k] !== mine && (now[k] !== last[k] || prior[k] === now[k])) proposed[k] = now[k];
+  }
+  const out: Doc = {
+    ...Object.fromEntries(Object.entries(content(f)).filter(([k]) => !kept.has(k))),
+    generated: now,
+    proposed: Object.keys(proposed).length ? proposed : null,
+  };
+  return Object.fromEntries(Object.entries(out).filter(([k, v]) => !same(s[k], v)));
+}
+
 /** The new entry for a fresh finding. */
 export function newFindingData(f: FreshFinding): Doc {
   return {
     ...content(f),
+    generated: wordingOf(f),
+    proposed: null,
     key: f.key,
     kind: f.kind,
     chapterId: f.chapterId,
@@ -216,8 +266,7 @@ export function reconcile(
       continue;
     }
     const id = String(s._id);
-    const changed = (): Doc =>
-      Object.fromEntries(Object.entries(content(f)).filter(([k, v]) => !same(s[k], v)));
+    const changed = (): Doc => refresh(s, f);
     switch (s.state as FindingState) {
       case 'open': {
         const patch = changed();

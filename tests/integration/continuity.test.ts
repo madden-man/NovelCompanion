@@ -536,3 +536,47 @@ describe('IP-7 a finding edits like any entry, and its resolution note stays', (
     });
   });
 });
+
+describe('IP-7 ED-7 a re-run never writes over a hand edit', () => {
+  test('IP-7 ED-7 a re-run keeps the edited finding text, records what the check now says, and taking it clears the proposal', async () => {
+    const check = 'character-present-while-dead';
+    const stored = async () =>
+      bible.model
+        .all('findings')
+        .find((x) => !x.deletedAt && x.chapterId === 'CH4' && x.check === check)!;
+    const death = bible.model.get('characters', 'H2')!.death;
+    await invoke('continuity.check', { chapterId: null });
+    const first = await stored();
+    expect(first.state).toBe('open');
+    expect(first.generated).toMatchObject({ text: first.text });
+
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: String(first._id),
+      patch: { text: 'My own words about Peter.' },
+    });
+    // The check's own words change with the cited entry.
+    await invoke('entry.update', {
+      collection: 'characters',
+      id: 'H2',
+      patch: { death: { year: 2031 } },
+    });
+    await invoke('continuity.check', { chapterId: null });
+    const kept = await stored();
+    expect(kept.text).toBe('My own words about Peter.');
+    expect((kept.proposed as { text: string }).text).toMatch(/died in 2031/);
+    expect((kept.generated as { text: string }).text).toMatch(/died in 2031/);
+
+    // Take the new text: the next run has nothing to propose.
+    const taken = (kept.proposed as { text: string }).text;
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: String(kept._id),
+      patch: { text: taken },
+    });
+    await invoke('continuity.check', { chapterId: null });
+    expect(await stored()).toMatchObject({ text: taken, proposed: null });
+
+    await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { death } });
+  });
+});

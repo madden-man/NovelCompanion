@@ -634,3 +634,52 @@ test('IP-7 NF-2 the card fields, Open, the summary and Not written after all wor
     else document.documentElement.setAttribute('data-theme', t);
   }, theme0);
 });
+
+test('IP-7 ED-7 a re-run keeps a hand-edited finding, the card shows what the check now says, and Take the new text replaces the edit as one undo step', async () => {
+  const check = 'character-present-while-dead';
+  const death = (await entryOf('characters', 'H2')).death;
+  // A change to Peter lifts the dismissal, and the run opens the finding in its own words.
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H2',
+    patch: { death: { year: 2031 } },
+  });
+  await invoke('continuity.check', { chapterId: null });
+  await alignmentTab();
+  const card = finding(check);
+  await expect(card).toContainText('Peter Hale died in 2031.');
+  const id = await findingId(check);
+
+  await fillRich(card.getByTestId('finding-text'), 'Peter should not be in this scene.');
+  await expect
+    .poll(async () => (await entryOf('findings', id)).text)
+    .toBe('Peter should not be in this scene.');
+
+  // The check finds new words; the writer's words stay and the card offers the new ones.
+  await invoke('entry.update', {
+    collection: 'characters',
+    id: 'H2',
+    patch: { death: { year: 2029 } },
+  });
+  await invoke('continuity.check', { chapterId: null });
+  const proposed = card.getByTestId('finding-proposed');
+  await expect(proposed).toContainText('The check now says:');
+  await expect(proposed).toContainText('Peter Hale died in 2029.');
+  await expect(card.getByTestId('finding-text')).toContainText(
+    'Peter should not be in this scene.',
+  );
+  expect((await entryOf('findings', id)).text).toBe('Peter should not be in this scene.');
+
+  await proposed.getByRole('button', { name: 'Take the new text for Finding' }).click();
+  await expect.poll(async () => String((await entryOf('findings', id)).text)).toMatch(/2029/);
+  await expect(card.getByTestId('finding-proposed')).toHaveCount(0);
+  await expect(card.getByTestId('finding-text')).toContainText('Peter Hale died in 2029.');
+  expect((await history())[0]).toMatch(/^Changed Finding on /);
+  await page.getByTestId('top-undo').click();
+  await expect
+    .poll(async () => (await entryOf('findings', id)).text)
+    .toBe('Peter should not be in this scene.');
+  await expect(card.getByTestId('finding-proposed')).toContainText('Peter Hale died in 2029.');
+
+  await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { death } });
+});
