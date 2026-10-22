@@ -47,6 +47,7 @@ ${PROSE_REFUSAL_RULE}`;
 const LISTS = [
   ['eventCategories', 'World event categories (categoryId)'],
   ['communities', 'Communities (communityId)'],
+  ['regions', 'Regions of world events (regions, item IDs)'],
   ['languages', 'Languages for glossary terms (language)'],
 ] as const;
 
