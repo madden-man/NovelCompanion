@@ -2,6 +2,8 @@ import { plainErrorMessage } from '../../shared/errors';
 import { z } from 'zod';
 import {
   ENTRY_COLLECTIONS,
+  ListRef,
+  MINTABLE_LISTS,
   entrySchemas,
   entryTitle,
   isEntryCollection,
@@ -16,8 +18,9 @@ import type { OpenBible } from '../db/session';
  * A draft that fails is reported with its reason, never silently dropped.
  */
 export const ProposalDraft = z.strictObject({
-  op: z.enum(['create', 'update', 'delete', 'link']),
-  collection: z.enum(ENTRY_COLLECTIONS as [EntryCollection, ...EntryCollection[]]),
+  op: z.enum(['create', 'update', 'delete', 'link', 'listAdd']),
+  /** The section of the entry. Every kind but listAdd needs it. */
+  collection: z.enum(ENTRY_COLLECTIONS as [EntryCollection, ...EntryCollection[]]).optional(),
   /** The entry to change, delete, or link from. Absent for a create. */
   targetId: z.string().min(1).max(64).nullable().optional(),
   /** Create: the new entry's fields. Update: only the fields to change. */
@@ -26,6 +29,14 @@ export const ProposalDraft = z.strictObject({
   link: z
     .strictObject({ targetId: z.string().min(1).max(64), kind: z.string().min(1).max(64) })
     .optional(),
+  /** IP-17, listAdd: the list to add an item to. */
+  listId: z.enum(MINTABLE_LISTS).optional(),
+  /** IP-17, listAdd: the new item's name. */
+  label: z.string().min(1).max(200).optional(),
+  /** IP-17, listAdd: the item it goes under, in a list with levels. */
+  parentId: z.string().min(1).max(64).nullable().optional(),
+  /** IP-17, listAdd: the ref the entries in the same set use for the new item, for example new:jinan. */
+  ref: ListRef.optional(),
   reason: z.string().max(2000),
   /** IM-6: where in the source the suggestion comes from, for an import proposal. */
   sourceRef: z.string().max(500).optional(),
@@ -37,18 +48,20 @@ const strip = (data: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries(data).filter(([k]) => !SYSTEM.has(k)));
 
 export function draftSummary(d: ProposalDraft): string {
+  if (d.op === 'listAdd') return `add to ${d.listId ?? 'a list'}: ${d.label ?? ''}`.trim();
   const what = d.op === 'create' ? entryTitle(d.data) : (d.targetId ?? 'an entry');
-  return `${d.op} ${d.collection}: ${what}`;
+  return `${d.op} ${d.collection ?? 'an unnamed section'}: ${what}`;
 }
 
 type Checked =
   | {
       ok: true;
       input: {
-        op: 'create' | 'update' | 'delete';
-        collection: EntryCollection;
+        op: 'create' | 'update' | 'delete' | 'listAdd';
+        collection: EntryCollection | 'lists';
         targetId: string | null;
         data: Record<string, unknown>;
+        listAdd?: { listId: string; label: string; parentId: string | null; ref: string };
       };
     }
   | { ok: false; reason: string };
@@ -63,8 +76,11 @@ function problems(error: z.ZodError): string {
 /** Check a draft against the schema and the read model. Pure apart from reading the model. */
 export function checkDraft(session: OpenBible, draft: ProposalDraft, now: Date): Checked {
   const { model } = session;
+  if (draft.op === 'listAdd') return checkListAdd(session, draft);
   const c = draft.collection;
-  if (!isEntryCollection(c)) return { ok: false, reason: `There is no section called ${c}.` };
+  if (!c || !isEntryCollection(c)) {
+    return { ok: false, reason: `There is no section called ${c ?? '(none given)'}.` };
+  }
   const stamp = now.toISOString();
   if (draft.op === 'create') {
     const data = strip(draft.data);
@@ -112,6 +128,35 @@ export function checkDraft(session: OpenBible, draft: ProposalDraft, now: Date):
   return { ok: true, input: { op: 'update', collection: c, targetId, data } };
 }
 
+/** IP-17: a new list item, checked against the list as it is now. */
+function checkListAdd(session: OpenBible, draft: ProposalDraft): Checked {
+  const { listId, ref } = draft;
+  const label = draft.label?.trim() ?? '';
+  if (!listId || !label || !ref) {
+    return { ok: false, reason: 'A new list item needs listId, label and ref.' };
+  }
+  const list = session.model.get('lists', listId);
+  if (!list) return { ok: false, reason: `This bible has no ${listId} list.` };
+  const items = Array.isArray(list.items) ? (list.items as { id: string; label: string }[]) : [];
+  const same = items.find((i) => i.label.toLowerCase() === label.toLowerCase());
+  if (same) {
+    return {
+      ok: false,
+      reason: `The list already has ${same.label} (ID ${same.id}). Use that ID instead.`,
+    };
+  }
+  return {
+    ok: true,
+    input: {
+      op: 'listAdd',
+      collection: 'lists',
+      targetId: null,
+      data: {},
+      listAdd: { listId, label, parentId: draft.parentId ?? null, ref },
+    },
+  };
+}
+
 /** Check and queue one draft. Returns the proposal ID, or why it was not queued. */
 export async function queueDraft(
   session: OpenBible,
@@ -127,6 +172,10 @@ export async function queueDraft(
       ...checked.input,
       reason: `${draft.reason.trim()} (Claude, ${label})`.trim(),
     });
+    // IP-18: a proposal refused as it was made is kept with its reason, not queued.
+    if (proposal.refusal) {
+      return { ok: false, summary: draftSummary(draft), reason: proposal.refusal };
+    }
     return { ok: true, proposalId: proposal._id };
   } catch (e) {
     return {

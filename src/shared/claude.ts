@@ -216,6 +216,20 @@ export const ClaudeStatusWire = z.strictObject({
 });
 export type ClaudeStatusWire = z.infer<typeof ClaudeStatusWire>;
 
+/**
+ * IP-15: one feature's instructions as Settings shows them: the default, the
+ * writer's text (null when the default is in use), and the fixed footer the
+ * writer cannot change (the shared rules and the AI-4 sentence).
+ */
+export const ClaudeInstructionWire = z.strictObject({
+  feature: ClaudeFeature,
+  label: z.string(),
+  default: z.string(),
+  text: z.string().nullable(),
+  footer: z.string(),
+});
+export type ClaudeInstructionWire = z.infer<typeof ClaudeInstructionWire>;
+
 /** Show only enough of the key to recognise it: never the whole key (ARCH-4). */
 export function maskKey(key: string): string {
   const trimmed = key.trim();
@@ -338,6 +352,38 @@ export const claudeContract = {
       /** Why a finished run recorded nothing (the chapter text changed while Claude read it), or null. */
       skipped: z.string().nullable(),
     }),
+  },
+  // a47-guard
+  /** IP-15: every feature's instructions: the default, the writer's text or null, and the fixed footer. */
+  'claude.instructions.get': {
+    request: z.strictObject({}),
+    response: z.strictObject({ instructions: z.array(ClaudeInstructionWire) }),
+  },
+  /** IP-15: replace one feature's instructions; null (or blank) resets it to the default. */
+  'claude.instructions.set': {
+    request: z.strictObject({
+      feature: ClaudeFeature,
+      text: z.string().max(20_000).nullable(),
+    }),
+    response: z.strictObject({ instruction: ClaudeInstructionWire }),
+  },
+  /** IP-16: rename a saved conversation or run. Not an undo step. */
+  'claude.conversation.rename': {
+    request: z.strictObject({
+      id: z.string().min(1).max(64),
+      title: z.string().trim().min(1, 'A conversation needs a title.').max(100),
+    }),
+    response: z.strictObject({ run: ClaudeRunSummary }),
+  },
+  /** IP-16: take every message out of a conversation; its title stays. Not an undo step. */
+  'claude.conversation.clear': {
+    request: z.strictObject({ id: z.string().min(1).max(64) }),
+    response: z.strictObject({ run: ClaudeRunSummary }),
+  },
+  /** IP-16: delete a conversation. Not an undo step. */
+  'claude.conversation.delete': {
+    request: z.strictObject({ id: z.string().min(1).max(64) }),
+    response: z.strictObject({ ok: z.literal(true) }),
   },
 } as const;
 

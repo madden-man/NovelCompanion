@@ -10,13 +10,15 @@ import type { Channel, Request, Response } from '../ipc';
 import { plainErrorMessage } from '../errors';
 import { patchBetween } from './diff';
 import type { Op, UndoCommand } from './undoRunner';
+import { listAddCommand } from '../undoCommands';
 
 type Invoke = <C extends Channel>(channel: C, request: Request<C>) => Promise<Response<C>>;
 
 /** A proposal as the box shows it: enough to approve it and undo the approval. */
 export interface CaptureProposal {
   id: string;
-  op: 'create' | 'update' | 'delete';
+  /** IP-17: `listAdd` adds a list item; its collection is `lists`. */
+  op: 'create' | 'update' | 'delete' | 'listAdd';
   collection: EntryCollection;
   targetId: string | null;
 }
@@ -25,7 +27,7 @@ export interface FiledEntry {
   collection: EntryCollection;
   id: string;
   title: string;
-  op: CaptureProposal['op'];
+  op: Exclude<CaptureProposal['op'], 'listAdd'>;
 }
 
 export interface Filing {
@@ -54,8 +56,42 @@ export async function fileCapture(
   const redo: Op[] = [];
   const get = async (collection: EntryCollection, id: string) =>
     (await invoke('entry.get', { collection, id })).entry;
+  const minted: string[] = [];
+  const rejected: string[] = [];
+  const reject = async (p: CaptureProposal) => {
+    try {
+      await invoke('proposal.reject', { id: p.id });
+      rejected.push(p.id);
+    } catch (e) {
+      failed.push({ id: p.id, message: plainErrorMessage(e) });
+    }
+  };
+  // IP-17: an unticked new list item is rejected first, so an entry that uses it is not filed with it.
+  for (const p of unticked) if (p.op === 'listAdd') await reject(p);
 
-  for (const p of ticked) {
+  // New list items are approved before the entries that use them.
+  const order = [
+    ...ticked.filter((p) => p.op === 'listAdd'),
+    ...ticked.filter((p) => p.op !== 'listAdd'),
+  ];
+  for (const p of order) {
+    if (p.op === 'listAdd') {
+      try {
+        const { proposal } = await invoke('proposal.approve', { id: p.id });
+        const add = proposal.listAdd;
+        if (!add || !proposal.appliedItemId) throw new Error('The approval did not add the item.');
+        const lists = (await invoke('lists.get', {})).lists;
+        const label = lists.find((l) => l._id === add.listId)?.label ?? add.listId;
+        const item = { id: proposal.appliedItemId, label: add.label, parentId: add.parentId };
+        const step = listAddCommand(invoke, label, add.listId, item);
+        undo.push(step.undo);
+        redo.push(...step.redo);
+        minted.push(add.label);
+      } catch (e) {
+        failed.push({ id: p.id, message: plainErrorMessage(e) });
+      }
+      continue;
+    }
     try {
       const before = p.targetId && p.op !== 'create' ? await get(p.collection, p.targetId) : null;
       const { proposal } = await invoke('proposal.approve', { id: p.id });
@@ -89,29 +125,21 @@ export async function fileCapture(
     }
   }
 
-  const rejected: string[] = [];
-  for (const p of unticked) {
-    try {
-      await invoke('proposal.reject', { id: p.id });
-      rejected.push(p.id);
-    } catch (e) {
-      failed.push({ id: p.id, message: plainErrorMessage(e) });
-    }
-  }
+  for (const p of unticked) if (p.op !== 'listAdd') await reject(p);
 
-  const command: UndoCommand | null = filed.length
-    ? {
-        label: filingLabel(filed),
-        // Undo in reverse, so a change to an entry made in this filing is undone before the entry goes.
-        undo: undo.reverse().flat(),
-        redo,
-      }
-    : null;
+  const command: UndoCommand | null =
+    filed.length || minted.length
+      ? {
+          label: filingLabel([...filed.map((f) => f.title), ...minted]),
+          // Undo in reverse, so a change to an entry made in this filing is undone before the entry goes.
+          undo: undo.reverse().flat(),
+          redo,
+        }
+      : null;
   return { filed, rejected, failed, command };
 }
 
-function filingLabel(filed: readonly FiledEntry[]): string {
-  const names = filed.map((f) => f.title);
+function filingLabel(names: readonly string[]): string {
   return names.length <= 2
     ? `Filed a capture: ${names.join(' and ')}`
     : `Filed a capture: ${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;

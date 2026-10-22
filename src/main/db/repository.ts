@@ -60,6 +60,11 @@ import {
   startsNewVersion,
 } from '../../shared/domain/sceneOutline';
 import type { SceneBreaks, SceneYears } from '../../shared/domain/sceneOutline';
+// a47-guard
+import { CLAUDE_FEATURES } from '../../shared/claude';
+import type { ClaudeFeature } from '../../shared/claude';
+import { ListRef, MINTABLE_LISTS } from '../../shared/schema';
+import type { ListAddProposal } from '../../shared/schema';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
@@ -67,7 +72,7 @@ export interface ChangeEvent {
   bible: string;
   collection: EntryCollection;
   id: string;
-  op: ChangeOp;
+  op: ChangeOp | 'purge';
 }
 
 export interface Revision {
@@ -429,7 +434,9 @@ export class Repository {
     c: EntryCollection,
     prior: StoredDoc,
     patch: Record<string, unknown>,
+    opts: WriteOptions = {},
   ): Change {
+    if (!opts.importer) this.refuseLocked(c, prior, patch);
     const doc = this.validate(c, {
       ...prior,
       ...this.stripSystem(patch),
@@ -480,10 +487,15 @@ export class Repository {
     return changes.map((ch) => ch.next);
   }
 
-  async update<C extends EntryCollection>(c: C, id: string, patch: Patch<C>): Promise<EntryOf<C>> {
+  async update<C extends EntryCollection>(
+    c: C,
+    id: string,
+    patch: Patch<C>,
+    opts: WriteOptions = {},
+  ): Promise<EntryOf<C>> {
     this.assertCollection(c);
     const prior = await this.current(c, id);
-    const change = this.buildUpdate(c, prior, patch as Record<string, unknown>);
+    const change = this.buildUpdate(c, prior, patch as Record<string, unknown>, opts);
     await this.commit([change]);
     return change.next as EntryOf<C>;
   }
@@ -659,6 +671,7 @@ export class Repository {
     const prior = await this.current(c, id);
     const doc = this.validate(c, {
       ...contentOf(revision.snapshot),
+      ...this.lockedValues(c, prior),
       _id: prior._id,
       createdAt: prior.createdAt,
       modifiedAt: this.stamp(prior),
@@ -854,7 +867,9 @@ export class Repository {
     targetId?: string | null;
     data?: Record<string, unknown>;
     reason?: string;
+    listAdd?: ListAddInput;
   }): Promise<Proposal> {
+    if (input.op === 'listAdd') return this.proposeListAdd(input);
     this.assertCollection(input.collection);
     const target = input.targetId ? this.model.get(input.collection, input.targetId) : undefined;
     if (input.op !== 'create' && !target) {
@@ -895,6 +910,7 @@ export class Repository {
       baseModifiedAt: target ? target.modifiedAt : null,
       reason: input.reason ?? '',
       createdAt: this.now().toISOString(),
+      ...this.proposalGuard(input, target),
     });
     await this.proposals().insertOne(proposal);
     this.model.put('proposals', proposal as unknown as StoredDoc);
@@ -911,10 +927,13 @@ export class Repository {
   /** What a proposal would change, against the entry as it is now. */
   proposalDiff(id: string): { proposal: Proposal; changes: FieldChange[]; conflict: boolean } {
     const proposal = this.proposal(id);
+    if (proposal.op === 'listAdd') return this.listAddDiff(proposal);
     const c = proposal.collection as EntryCollection;
     const current = proposal.targetId ? (this.model.get(c, proposal.targetId) ?? null) : null;
     const after =
-      proposal.op === 'delete' ? null : { ...(current ?? {}), ...this.stripSystem(proposal.data) };
+      proposal.op === 'delete'
+        ? null
+        : { ...(current ?? {}), ...this.shownRefs(proposal, this.stripSystem(proposal.data)) };
     const conflict =
       proposal.baseModifiedAt !== null && current?.modifiedAt !== proposal.baseModifiedAt;
     return { proposal, changes: diffEntries(current, after), conflict };
@@ -949,6 +968,7 @@ export class Repository {
   async editProposal(id: string, data: Record<string, unknown>): Promise<Proposal> {
     const proposal = this.pending(id);
     if (proposal.op === 'delete') throw new RepositoryError('A deletion has no values to edit.');
+    if (proposal.op === 'listAdd') throw new RepositoryError(LIST_ADD_NO_EDIT);
     const c = proposal.collection as EntryCollection;
     const clean = this.stripSystem(data);
     if (proposal.op === 'update') {
@@ -961,7 +981,12 @@ export class Repository {
         modifiedAt: this.now().toISOString(),
       });
     }
-    return this.saveProposal({ ...proposal, data: clean, edited: true });
+    return this.saveProposal({
+      ...proposal,
+      data: clean,
+      edited: true,
+      uses: this.usesIn(clean, proposal.uses),
+    });
   }
 
   /** Compare again: take the entry as it is now as the proposal's base, so it can be approved. */
@@ -980,10 +1005,12 @@ export class Repository {
    */
   async applyProposal(id: string): Promise<Proposal> {
     const proposal = this.pending(id);
+    if (proposal.op === 'listAdd') return this.applyListAdd(proposal);
     await this.bulkGuard('approved proposal');
     const c = proposal.collection as EntryCollection;
     this.assertCollection(c);
-    const data = proposal.data;
+    const minted = this.mintFor(proposal);
+    const data = minted.data;
     let change: Change;
     if (proposal.op === 'create') {
       change = this.buildCreate(c, { ...data, _id: proposal.targetId ?? data._id });
@@ -1008,12 +1035,18 @@ export class Repository {
       appliedEntryId: change.next._id,
       data,
     };
-    await this.commit([change], async (session) => {
-      const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided, {
-        session,
-      });
-      if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
-    });
+    await this.commit(
+      [change],
+      async (session) => {
+        const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided, {
+          session,
+        });
+        if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+        await this.saveDecided(minted.decided, session);
+      },
+      minted.lists,
+    );
+    for (const p of minted.decided) this.model.put('proposals', p as unknown as StoredDoc);
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
@@ -1081,7 +1114,10 @@ export class Repository {
           );
         }
         if (item.patch && Object.keys(item.patch).length > 0) {
-          changes.push({ ...this.buildUpdate(item.collection, prior, item.patch), note });
+          changes.push({
+            ...this.buildUpdate(item.collection, prior, item.patch, { importer: true }),
+            note,
+          });
           updated += 1;
         }
       }
@@ -1662,6 +1698,392 @@ export class Repository {
     this.emitter.emit('lists');
     return this.communityNotes();
   }
+
+  // ---------- a47-guard: Claude's instructions (IP-15), housekeeping (IP-16), list items in proposals (IP-17), the manuscript lock (IP-18) ----------
+
+  /** IP-15: the writer's instructions per Claude feature, from `meta`; a feature left out uses its default. */
+  claudeInstructions(): Partial<Record<ClaudeFeature, string>> {
+    const texts = this.model.get('meta', CLAUDE_INSTRUCTIONS_ID)?.texts;
+    const out: Partial<Record<ClaudeFeature, string>> = {};
+    if (!texts || typeof texts !== 'object') return out;
+    for (const f of CLAUDE_FEATURES) {
+      const t = (texts as Record<string, unknown>)[f];
+      if (typeof t === 'string' && t.trim()) out[f] = t;
+    }
+    return out;
+  }
+
+  /**
+   * IP-15: set one feature's instructions, or reset it to the default with
+   * null or blank text. A settings write like the brief settings: the meta
+   * document only, no entry revision; undo is a renderer command.
+   */
+  async setClaudeInstructions(
+    feature: ClaudeFeature,
+    text: string | null,
+  ): Promise<Partial<Record<ClaudeFeature, string>>> {
+    if (!CLAUDE_FEATURES.includes(feature)) {
+      throw new RepositoryError(`There is no Claude feature called ${String(feature)}.`);
+    }
+    const clean = (text ?? '').trim();
+    if (clean.length > CLAUDE_INSTRUCTIONS_MAX) {
+      throw new RepositoryError(
+        `Instructions are at most ${CLAUDE_INSTRUCTIONS_MAX.toLocaleString('en-US')} characters.`,
+      );
+    }
+    const texts: Partial<Record<ClaudeFeature, string>> = Object.fromEntries(
+      Object.entries(this.claudeInstructions()).filter(([f]) => f !== feature),
+    );
+    if (clean) texts[feature] = clean;
+    await this.writeMeta({ _id: CLAUDE_INSTRUCTIONS_ID, texts });
+    return this.claudeInstructions();
+  }
+
+  /**
+   * IP-16: delete one entry in the trash forever, with its revisions and its
+   * import record, in one transaction. Not an undo step (the A40 rule): a
+   * snapshot is taken first instead (BK-1). Links to it from other entries are
+   * left as they are, and the warnings report them as missing.
+   */
+  async purge(c: EntryCollection, id: string): Promise<PurgeCounts> {
+    this.assertCollection(c);
+    const prior = await this.current(c, id);
+    if (!prior.deletedAt) throw new RepositoryError(PURGE_NOT_IN_TRASH);
+    await this.bulkGuard('delete forever');
+    return this.purgeAll([{ collection: c, id }]);
+  }
+
+  /** IP-16: delete every entry in the trash forever, in one transaction. */
+  async emptyTrash(): Promise<PurgeCounts> {
+    const items = this.trash().map((t) => ({ collection: t.collection, id: t.entry._id }));
+    if (!items.length) return { entries: 0, revisions: 0 };
+    await this.bulkGuard('empty trash');
+    return this.purgeAll(items);
+  }
+
+  private async purgeAll(
+    items: { collection: EntryCollection; id: string }[],
+  ): Promise<PurgeCounts> {
+    const counts: PurgeCounts = { entries: 0, revisions: 0 };
+    await this.transact(async (session) => {
+      // A retried transaction counts again from nothing.
+      counts.entries = 0;
+      counts.revisions = 0;
+      const byCollection = new Map<EntryCollection, string[]>();
+      for (const it of items) {
+        byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
+      }
+      for (const [collection, ids] of byCollection) {
+        const gone = await this.collection(collection).deleteMany(
+          { _id: { $in: ids }, deletedAt: { $type: 'string' } } as Document,
+          { session },
+        );
+        if (gone.deletedCount !== ids.length) {
+          throw new RepositoryError(
+            'An entry left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
+          );
+        }
+        counts.entries += gone.deletedCount;
+        const revs = await this.bible
+          .collection<Revision>('revisions')
+          .deleteMany({ collection, entryId: { $in: ids } }, { session });
+        counts.revisions += revs.deletedCount;
+      }
+      await this.bible
+        .collection<StoredDoc>('importSources')
+        .deleteMany({ _id: { $in: items.map((i) => i.id) } }, { session });
+      await this.options.midTransaction?.(session);
+    });
+    for (const it of items) {
+      this.model.remove(it.collection, it.id);
+      this.model.remove('importSources', it.id);
+      this.index.remove(it.collection, it.id);
+    }
+    for (const it of items) {
+      this.emitter.emit('change', {
+        bible: this.bible.id,
+        collection: it.collection,
+        id: it.id,
+        op: 'purge',
+      } satisfies ChangeEvent);
+    }
+    return counts;
+  }
+
+  /**
+   * IP-16: remove revisions written before a date, for one entry or the whole
+   * bible. `dryRun` only counts them, for the count shown before confirming.
+   * Not an undo step; a snapshot is taken first (BK-1).
+   */
+  async pruneRevisions(opts: {
+    collection?: EntryCollection;
+    id?: string;
+    before: string;
+    dryRun?: boolean;
+  }): Promise<{ count: number }> {
+    const before = new Date(opts.before);
+    if (Number.isNaN(before.getTime())) {
+      throw new RepositoryError('Give the date as a day, for example 2026-01-31.');
+    }
+    if (opts.id && !opts.collection) {
+      throw new RepositoryError('Say which section the entry is in.');
+    }
+    const filter: Document = { at: { $lt: before.toISOString() } };
+    if (opts.collection) {
+      this.assertCollection(opts.collection);
+      filter.collection = opts.collection;
+      if (opts.id) {
+        if (!this.model.get(opts.collection, opts.id)) {
+          throw new RepositoryError(`No ${opts.collection} entry has the ID ${opts.id}.`);
+        }
+        filter.entryId = opts.id;
+      }
+    }
+    const revisions = this.bible.collection<Revision>('revisions');
+    if (opts.dryRun) return { count: await revisions.countDocuments(filter) };
+    if (!(await revisions.countDocuments(filter))) return { count: 0 };
+    await this.bulkGuard('remove old revisions');
+    const res = await revisions.deleteMany(filter);
+    return { count: res.deletedCount };
+  }
+
+  /**
+   * IP-18: a patch that changes the manuscript fields of a chapter is refused
+   * unless the importer writes it. A patch that repeats their stored values
+   * (a whole entry saved back) is not a change and passes.
+   */
+  private refuseLocked(c: EntryCollection, prior: StoredDoc, patch: Record<string, unknown>): void {
+    if (lockedTouched(c, prior, patch).length) throw new RepositoryError(MANUSCRIPT_LOCKED);
+  }
+
+  /** IP-18: the stored manuscript fields of an entry, kept when an older revision is restored. */
+  private lockedValues(c: EntryCollection, prior: StoredDoc): Record<string, unknown> {
+    const fields = LOCKED_FIELDS[c] ?? [];
+    return Object.fromEntries(fields.filter((k) => k in prior).map((k) => [k, prior[k]]));
+  }
+
+  /**
+   * What a proposal records beyond its kind when it is made: the new list
+   * items its values use (IP-17), and, when it touches the manuscript fields,
+   * its rejection with the reason (IP-18).
+   */
+  private proposalGuard(
+    input: { op: Proposal['op']; collection: string; data?: Record<string, unknown> },
+    target: StoredDoc | undefined,
+  ): Partial<Proposal> {
+    const data = input.data ?? {};
+    const uses = input.op === 'delete' ? [] : this.usesIn(data);
+    const touched =
+      input.op === 'update' && target
+        ? lockedTouched(input.collection as EntryCollection, target, data)
+        : input.op === 'create'
+          ? (LOCKED_FIELDS[input.collection as EntryCollection] ?? []).filter((k) =>
+              Boolean(data[k]),
+            )
+          : [];
+    if (!touched.length) return { uses };
+    return {
+      uses,
+      state: 'rejected',
+      decidedAt: this.now().toISOString(),
+      refusal: MANUSCRIPT_LOCKED,
+    };
+  }
+
+  /** IP-17: every new-item ref in a proposal's values, each tied to the proposal that adds the item. */
+  private usesIn(data: unknown, known: Proposal['uses'] = []): Proposal['uses'] {
+    const refs = new Set<string>();
+    collectRefs(data, refs);
+    return [...refs].map((ref) => {
+      const kept = known.find((u) => u.ref === ref);
+      if (kept) return kept;
+      const adds = this.listProposals()
+        .filter((p) => p.op === 'listAdd' && p.listAdd?.ref === ref && p.state !== 'rejected')
+        .sort((a, b) => b._id.localeCompare(a._id));
+      const add = adds.find((p) => p.state === 'pending') ?? adds[0];
+      if (!add) {
+        throw new RepositoryError(
+          `No proposal adds the list item ${ref}. Propose the new item first, then the entries that use it.`,
+        );
+      }
+      return { ref, proposalId: add._id };
+    });
+  }
+
+  /** IP-17: a proposal to add one item to a list. Nothing in the bible changes. */
+  private async proposeListAdd(input: {
+    source: Proposal['source'];
+    listAdd?: ListAddInput;
+    reason?: string;
+  }): Promise<Proposal> {
+    if (!input.listAdd) throw new RepositoryError('A list item proposal needs the item.');
+    const add = { ...input.listAdd, label: input.listAdd.label.trim() };
+    if (!(MINTABLE_LISTS as readonly string[]).includes(add.listId)) {
+      throw new RepositoryError(
+        `New items can be proposed only for communities, event categories, regions, languages and tags, not ${add.listId}.`,
+      );
+    }
+    const list = this.storedList(add.listId);
+    if (!add.label) throw new RepositoryError('A list item needs a name.');
+    const same = list.items.find((i) => i.label.toLowerCase() === add.label.toLowerCase());
+    if (same) {
+      throw new RepositoryError(
+        `The ${list.label} list already has ${same.label} (ID ${same.id}). Use it instead of adding it again.`,
+      );
+    }
+    if (add.parentId && !list.items.some((i) => i.id === add.parentId)) {
+      throw new RepositoryError('The parent item is not in this list.');
+    }
+    if (!ListRef.safeParse(add.ref).success) {
+      throw new RepositoryError('A new list item ref looks like new:jinan.');
+    }
+    if (
+      this.listProposals('pending').some((p) => p.op === 'listAdd' && p.listAdd?.ref === add.ref)
+    ) {
+      throw new RepositoryError(
+        `Another proposal waiting for review already adds an item as ${add.ref}. Use a different ref.`,
+      );
+    }
+    const proposal = Proposal.parse({
+      _id: newId(),
+      source: input.source,
+      op: 'listAdd',
+      collection: 'lists',
+      targetId: null,
+      data: {},
+      reason: input.reason ?? '',
+      createdAt: this.now().toISOString(),
+      listAdd: {
+        listId: add.listId,
+        label: add.label,
+        parentId: add.parentId ?? null,
+        ref: add.ref,
+      },
+    });
+    await this.proposals().insertOne(proposal);
+    this.model.put('proposals', proposal as unknown as StoredDoc);
+    this.emitter.emit('proposals');
+    return proposal;
+  }
+
+  /** IP-17: a list item proposal as a field in the diff, for example "Community: + Jinan". */
+  private listAddDiff(proposal: Proposal): {
+    proposal: Proposal;
+    changes: FieldChange[];
+    conflict: boolean;
+  } {
+    const add = proposal.listAdd as ListAddProposal;
+    return {
+      proposal,
+      changes: [{ path: listItemLabel(add.listId), before: null, after: `+ ${add.label}` }],
+      conflict: false,
+    };
+  }
+
+  /** IP-17: a proposal's values as the diff shows them, each new-item ref as "+ Label". */
+  private shownRefs(proposal: Proposal, data: Record<string, unknown>): Record<string, unknown> {
+    if (!proposal.uses.length) return data;
+    const shown = new Map<string, string>();
+    for (const u of proposal.uses) {
+      const add = this.model.get('proposals', u.proposalId) as unknown as Proposal | undefined;
+      if (add?.listAdd) shown.set(u.ref, `+ ${add.listAdd.label}`);
+    }
+    return replaceRefs(data, shown) as Record<string, unknown>;
+  }
+
+  /**
+   * IP-17: the new list items an entry proposal needs, made now when their
+   * own proposals are still pending (approving the entry approves the item
+   * first, in the same transaction), and its values with each ref replaced.
+   */
+  private mintFor(proposal: Proposal): {
+    data: Record<string, unknown>;
+    lists: ListDoc[];
+    decided: Proposal[];
+  } {
+    if (!proposal.uses.length) return { data: proposal.data, lists: [], decided: [] };
+    const values = new Map<string, string>();
+    const lists = new Map<string, ListDoc>();
+    const decided: Proposal[] = [];
+    for (const u of proposal.uses) {
+      const add = this.proposal(u.proposalId);
+      const item = add.listAdd as ListAddProposal;
+      const list = lists.get(item.listId) ?? this.storedList(item.listId);
+      if (add.state === 'rejected') {
+        throw new RepositoryError(
+          `This proposal uses ${item.label}, a new item for ${list.label} that was rejected. Reject this proposal too, or edit it to use an item the list has.`,
+        );
+      }
+      if (add.state === 'approved') {
+        const made = list.items.find((i) => i.id === add.appliedItemId);
+        if (!made) {
+          throw new RepositoryError(
+            `${item.label} is no longer in ${list.label}. Edit this proposal to use an item the list has.`,
+          );
+        }
+        values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+        continue;
+      }
+      const { made, next } = this.mintItem(list, item);
+      lists.set(item.listId, next);
+      values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+      decided.push({
+        ...add,
+        state: 'approved',
+        decidedAt: this.now().toISOString(),
+        appliedItemId: made.id,
+      });
+    }
+    return {
+      data: replaceRefs(proposal.data, values) as Record<string, unknown>,
+      lists: [...lists.values()],
+      decided,
+    };
+  }
+
+  /** The item a list item proposal makes, or the item of that name the list already has. */
+  private mintItem(list: ListDoc, add: ListAddProposal): { made: ListItem; next: ListDoc } {
+    const existing = list.items.find((i) => i.label === add.label);
+    if (existing) return { made: existing, next: list };
+    if (add.parentId && !list.items.some((i) => i.id === add.parentId)) {
+      throw new RepositoryError(
+        `The item ${add.label} was to go under is no longer in ${list.label}. Reject this proposal and add the item in Lists.`,
+      );
+    }
+    const made: ListItem = {
+      id: newItemId(list, add.label),
+      label: add.label,
+      parentId: add.parentId,
+    };
+    return { made, next: { ...list, items: [...list.items, made] } };
+  }
+
+  /** IP-17: approve a list item proposal: the item is added and the approval recorded together. */
+  private async applyListAdd(proposal: Proposal): Promise<Proposal> {
+    await this.bulkGuard('approved proposal');
+    const add = proposal.listAdd as ListAddProposal;
+    const { made, next } = this.mintItem(this.storedList(add.listId), add);
+    const decided: Proposal = {
+      ...proposal,
+      state: 'approved',
+      decidedAt: this.now().toISOString(),
+      appliedItemId: made.id,
+    };
+    await this.commit([], (session) => this.saveDecided([decided], session), [next]);
+    this.model.put('proposals', decided as unknown as StoredDoc);
+    this.emitter.emit('proposals');
+    return decided;
+  }
+
+  /** Record approvals made inside a transaction; each must still be pending. */
+  private async saveDecided(decided: Proposal[], session: ClientSession): Promise<void> {
+    for (const p of decided) {
+      const res = await this.proposals().replaceOne({ _id: p._id, state: 'pending' }, p, {
+        session,
+      });
+      if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    }
+  }
 }
 
 const STORY_TIME_ID = 'storyTime';
@@ -1689,3 +2111,83 @@ const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';
 const DRIVE_ID = 'drive';
+
+// ---------- a47-guard ----------
+
+/** Options for a write; `importer` is set only by the manuscript importer, never from IPC (IP-18). */
+export interface WriteOptions {
+  importer?: boolean;
+}
+
+/** What `propose` takes for a `listAdd` proposal (IP-17). */
+export interface ListAddInput {
+  listId: string;
+  label: string;
+  parentId?: string | null;
+  ref: string;
+}
+
+/** What a purge removed (IP-16). */
+export interface PurgeCounts {
+  entries: number;
+  revisions: number;
+}
+
+const CLAUDE_INSTRUCTIONS_ID = 'claudeInstructions';
+const CLAUDE_INSTRUCTIONS_MAX = 20_000;
+
+/** IP-18: the plain error for a write to the manuscript fields from anything but the importer. */
+export const MANUSCRIPT_LOCKED = 'The manuscript text is imported, not edited here. Use Re-import.';
+
+/** IP-16: Delete forever is only for an entry already in the trash. */
+export const PURGE_NOT_IN_TRASH =
+  'Only an entry in the trash can be deleted forever. Move it to the trash first.';
+
+/** IP-17: a list item proposal is approved or rejected as it stands. */
+export const LIST_ADD_NO_EDIT =
+  'A new list item cannot be edited here. Reject it, or approve it and rename the item in Lists.';
+
+/** IP-18: fields only the manuscript importer writes. */
+export const LOCKED_FIELDS: Partial<Record<EntryCollection, readonly string[]>> = {
+  chapters: ['manuscriptText', 'manuscriptSource', 'sourceFile'],
+};
+
+/** The locked fields a patch would change. Absent and empty count as the same. */
+export function lockedTouched(
+  c: EntryCollection,
+  prior: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): string[] {
+  const blank = (v: unknown) => (v === undefined || v === null || v === '' ? null : v);
+  return (LOCKED_FIELDS[c] ?? []).filter((k) => k in patch && blank(patch[k]) !== blank(prior[k]));
+}
+
+const LIST_ITEM_LABELS: Record<string, string> = {
+  communities: 'Community',
+  eventCategories: 'Event category',
+  regions: 'Region',
+  languages: 'Language',
+  tags: 'Tag',
+};
+
+/** A list's item in the singular, as the diff names it. */
+export const listItemLabel = (listId: string): string => LIST_ITEM_LABELS[listId] ?? listId;
+
+function collectRefs(value: unknown, out: Set<string>): void {
+  if (typeof value === 'string') {
+    if (ListRef.safeParse(value).success) out.add(value);
+  } else if (Array.isArray(value)) {
+    for (const v of value) collectRefs(v, out);
+  } else if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) collectRefs(v, out);
+  }
+}
+
+function replaceRefs(value: unknown, values: Map<string, string>): unknown {
+  if (typeof value === 'string') return values.get(value) ?? value;
+  if (Array.isArray(value)) return value.map((v) => replaceRefs(v, values));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replaceRefs(v, values)]));
+  }
+  return value;
+}

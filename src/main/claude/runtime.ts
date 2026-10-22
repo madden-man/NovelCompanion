@@ -31,7 +31,7 @@ import { bibleTools } from './tools';
  */
 export interface FeatureDefinition<I, O> {
   feature: Exclude<ClaudeFeature, 'panel'>;
-  /** Feature-specific system prompt text; the runtime prepends the shared rules, the AI-4 prohibition among them. */
+  /** The default system prompt text; the writer may replace it (IP-15). The runtime adds the fixed footer, the AI-4 prohibition among it. */
   instructions: string;
   /** The deterministic input, validated before anything is sent. */
   input: z.ZodType<I>;
@@ -52,11 +52,18 @@ export interface FeatureDefinition<I, O> {
 /** A proposal draft, or why one the output carries could not become a draft. */
 export type DraftOrProblem = ProposalDraft | { summary: string; problem: string };
 
-/** The system prompt a feature runs with (AI-4: the only way to build one). */
-export const featureSystemPrompt = (def: { instructions: string }): string =>
-  systemPrompt(def.instructions);
+/**
+ * The system prompt a feature runs with (AI-4: the only way to build one).
+ * IP-15: `custom` is the writer's text for the feature from Settings, which
+ * replaces the default instructions; the fixed footer follows either way.
+ */
+export const featureSystemPrompt = (
+  def: { feature?: string; instructions: string },
+  custom?: string | null,
+): string => systemPrompt(custom ?? def.instructions, def.feature === 'capture');
 
-export const panelSystemPrompt = (): string => systemPrompt(PANEL_INSTRUCTIONS);
+export const panelSystemPrompt = (custom?: string | null): string =>
+  systemPrompt(custom ?? PANEL_INSTRUCTIONS, true);
 
 /** Turn a zod schema into the JSON Schema the SDK's structured output takes. */
 export function jsonSchemaFor(schema: z.ZodType): Record<string, unknown> {
@@ -238,7 +245,7 @@ export class ClaudeRuntime {
       run,
       turn,
       feature: 'panel',
-      system: panelSystemPrompt(),
+      system: panelSystemPrompt(session.repo.claudeInstructions().panel),
       prompt: panelPrompt(earlier, req.question),
       tools: (sink) => bibleTools(session, sink),
       maxTurns: PANEL_MAX_TURNS,
@@ -275,7 +282,7 @@ export class ClaudeRuntime {
       run,
       turn,
       feature: def.feature,
-      system: featureSystemPrompt(def),
+      system: featureSystemPrompt(def, session.repo.claudeInstructions()[def.feature]),
       prompt,
       tools: (sink) => def.tools?.(input, session, sink) ?? [],
       outputSchema: jsonSchemaFor(def.output),

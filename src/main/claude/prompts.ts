@@ -1,7 +1,8 @@
 /**
- * System prompt pieces every Claude call shares (AI-4, AI-5). Features add
- * their own instructions after these; `systemPrompt` is the only way a
- * feature builds its prompt, so none can leave the prohibition out.
+ * System prompt pieces every Claude call shares (AI-4, AI-5). A feature's
+ * instructions come first and these follow as a fixed footer (IP-15);
+ * `systemPrompt` is the only way a feature builds its prompt, so none can
+ * leave the prohibition out.
  */
 
 /** AI-4: in every system prompt, word for word (docs/ARCHITECTURE.md, Claude). */
@@ -19,9 +20,31 @@ export const MATERIAL_RULE =
 const ROLE =
   'You work inside Novel Companion, a story bible app for one novelist. You read the bible and report what it holds. You never change the bible: any change you suggest goes to a review queue the writer approves item by item.';
 
-/** The one way to build a system prompt for any Claude call. */
-export function systemPrompt(featureInstructions: string): string {
-  return [ROLE, PROSE_PROHIBITION, MATERIAL_RULE, featureInstructions.trim()].join('\n\n');
+/**
+ * IP-15: the fixed footer under every feature's instructions: the shared
+ * rules and the AI-4 sentence. The writer can replace a feature's
+ * instructions in Settings, never this.
+ */
+export const PROMPT_FOOTER = [ROLE, PROSE_PROHIBITION, MATERIAL_RULE].join('\n\n');
+
+/**
+ * The footer one feature runs with. The panel and capture also keep the AI-4
+ * refusal rule, so instructions the writer wrote cannot take it away.
+ */
+export function promptFooter(keepsRefusal = false): string {
+  return keepsRefusal ? `${PROMPT_FOOTER}\n\n${PROSE_REFUSAL_RULE}` : PROMPT_FOOTER;
+}
+
+/**
+ * The one way to build a system prompt for any Claude call (AI-4, IP-15):
+ * the feature's instructions (the writer's text when set, else the default),
+ * then the fixed footer. The refusal rule is added to the footer only when
+ * the instructions do not already hold it, so a default prompt never says it twice.
+ */
+export function systemPrompt(featureInstructions: string, keepsRefusal = false): string {
+  const text = featureInstructions.trim();
+  const footer = promptFooter(keepsRefusal && !text.includes(PROSE_REFUSAL_RULE));
+  return text ? [text, footer].join('\n\n') : footer;
 }
 
 /**

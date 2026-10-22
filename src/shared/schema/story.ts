@@ -88,19 +88,21 @@ export const chapterFields: FieldSpec[] = [
     { required: true, minItems: 1, itemLabel: 'label', warnings: ['primary-strand-count'] },
   ),
   f.boolean('written', 'Written'),
-  f.longText('manuscriptText', 'Manuscript text', {
-    hint: 'Imported from the manuscript. The app never writes back to it.',
-  }),
+  // a47-guard, IP-18: only the importer writes the manuscript fields; editors show them read-only.
+  {
+    ...f.system('manuscriptText', 'Manuscript text'),
+    hint: 'Imported from the manuscript. Use Re-import to change it.',
+  },
   f.longText('summary', 'Summary'),
   f.boolean('summaryOutOfDate', 'Summary may be out of date', {
     hint: 'Set when a re-import changed the text after the summary was written.',
   }),
-  f.text('sourceFile', 'Source file', { nullable: true }),
+  f.system('sourceFile', 'Source file'),
   f.longText('sceneNote', 'What happens in this scene'),
-  f.text('manuscriptSource', 'Manuscript source', {
-    nullable: true,
+  {
+    ...f.system('manuscriptSource', 'Manuscript source'),
     hint: 'Where the manuscript is read from. The app only reads it, never writes to it.',
-  }),
+  },
 ];
 
 /** Open question (OQ-1). Linked entries are the shared links. */
