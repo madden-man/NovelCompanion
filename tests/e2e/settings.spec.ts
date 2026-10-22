@@ -68,8 +68,8 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await page.keyboard.press('Tab');
   // Romanization per language (GL-1): a select that saves on its pick (IP-8).
   const cantonese = view.getByTestId('settings-romanization-cantonese');
-  await openEditable(cantonese);
-  await cantonese.locator('select').selectOption('');
+  await cantonese.focus();
+  await cantonese.selectOption('');
   await expect(view.getByTestId('settings-romanization')).toContainText(
     'Saved the romanization system for Cantonese.',
   );
@@ -106,12 +106,36 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
     '7',
   );
   await expect(again.getByLabel('Size budget (characters)')).toHaveValue('12345');
-  await expect(again.getByTestId('settings-romanization-cantonese-text')).toHaveText('No system');
-  await expect(again.getByTestId('settings-romanization-mandarin-text')).not.toHaveText(
-    'No system',
-  );
+  await expect(again.getByTestId('settings-romanization-cantonese')).toHaveValue('');
+  await expect(again.getByTestId('settings-romanization-mandarin')).toHaveValue('mandarin');
   await expect(again.getByTestId('settings-snapshot-keep')).toHaveValue('12');
   await expect(again.getByTestId('appearance-dark')).toBeChecked();
+});
+
+test('ST-1 GL-1 the romanization system saved in Settings shows on the Cultural data Romanization tab', async () => {
+  const view = await openSettings();
+  const mandarin = view.getByTestId('settings-romanization-mandarin');
+  await mandarin.focus();
+  await mandarin.selectOption({ label: 'Jyutping' });
+  await expect(view.getByTestId('settings-romanization')).toContainText(
+    'Saved the romanization system for Mandarin.',
+  );
+  await rail(page, 'Romanization').click();
+  const roman = page.getByTestId('romanization-view');
+  await expect(roman.getByLabel('Mandarin', { exact: true })).toHaveValue('cantonese');
+  await expect(roman.getByLabel('Mandarin', { exact: true }).locator('option:checked')).toHaveText(
+    'Jyutping',
+  );
+  // Picked back on the Romanization screen, Settings follows.
+  await roman.getByLabel('Mandarin', { exact: true }).selectOption({ label: 'Hanyu Pinyin' });
+  await expect
+    .poll(
+      async () =>
+        (await invoke('romanization.get', {})).languages.find((l) => l.id === 'mandarin')?.systemId,
+    )
+    .toBe('mandarin');
+  await rail(page, 'Settings').click();
+  await expect(page.getByTestId('settings-romanization-mandarin')).toHaveValue('mandarin');
 });
 
 test('ST-1 appearance applies live, light, dark, or the system, without a reload', async () => {

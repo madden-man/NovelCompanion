@@ -20,8 +20,6 @@ import {
   communityNoteCommand,
   communityRemoveCommand,
   cultureUnitCommand,
-  listAddCommand,
-  romanizationCommand,
 } from '../../../shared/undoCommands';
 import type { Response } from '../../../shared/ipc';
 import { entryTitle, manifests } from '../../../shared/schema';
@@ -39,6 +37,8 @@ import { Zh } from './Zh';
 import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
+import { ListSelect } from './listSelect';
+import { RomanizationSystems } from './romanizationSystems';
 import { useBibleSettings, useDefaultStatus } from './bibleSettings';
 import {
   Editable,
@@ -173,7 +173,10 @@ export function CommunityView() {
   const items = communities?.items ?? [];
   const listLabel = communities?.label ?? 'Communities';
   const [picked, setPicked] = useState('');
-  const chosen = items.find((c) => c.id === picked) ?? items[0] ?? null;
+  /** The community shown before Add new picked a new one; undoing the add goes back to it. */
+  const [before, setBefore] = useState('');
+  const chosen =
+    items.find((c) => c.id === picked) ?? items.find((c) => c.id === before) ?? items[0] ?? null;
   /** A year inside the unit the stepper shows; null follows the story year. */
   const [at, setAt] = useState<number | null>(null);
   const storyUnit = unitOf(story.year, unit);
@@ -183,9 +186,8 @@ export function CommunityView() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const ids = { community: useId(), newName: useId() };
+  const ids = { community: useId() };
   const keepButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -218,22 +220,6 @@ export function CommunityView() {
     } catch (err) {
       setError(plainError(err));
     }
-  };
-
-  const addCommunity = (e: FormEvent) => {
-    e.preventDefault();
-    const label = newName.trim();
-    if (!label) return;
-    void run(async () => {
-      const { item } = await call('lists.addItem', {
-        listId: 'communities',
-        label,
-        parentId: null,
-      });
-      undo.record(listAddCommand(call, listLabel, 'communities', item));
-      setNewName('');
-      setPicked(item.id);
-    });
   };
 
   const renameCommunity = (next: string) =>
@@ -332,22 +318,21 @@ export function CommunityView() {
       <div className="tree-toolbar cu-toolbar">
         <div className="field">
           <label htmlFor={ids.community}>Community</label>
-          <select
+          <ListSelect
+            listId="communities"
             id={ids.community}
             value={chosen?.id ?? ''}
-            onChange={(e) => {
-              setPicked(e.target.value);
+            emptyLabel={items.length === 0 ? 'No communities yet' : undefined}
+            joinAdd
+            testId="community-select"
+            onChange={(next, added) => {
+              // IP-8: Add new made the community; recording it here keeps the add one step.
+              if (added) undo.record(added);
+              setBefore(added ? (chosen?.id ?? '') : '');
+              setPicked(next ?? '');
               setConfirmRemove(false);
             }}
-            disabled={items.length === 0}
-          >
-            {items.length === 0 && <option value="">No communities yet</option>}
-            {items.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         {chosen && (
           <div className="row tight cu-manage" role="group" aria-label={`Manage ${chosen.label}`}>
@@ -374,27 +359,6 @@ export function CommunityView() {
             </button>
           </div>
         )}
-        <form className="field cu-new-community" onSubmit={addCommunity}>
-          <label htmlFor={ids.newName}>New community</label>
-          <span className="row tight">
-            <input
-              id={ids.newName}
-              value={newName}
-              maxLength={200}
-              disabled={ro.off}
-              {...ro.tip}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <button
-              type="submit"
-              className="btn small"
-              disabled={ro.off || !newName.trim()}
-              {...ro.tip}
-            >
-              Add community
-            </button>
-          </span>
-        </form>
       </div>
       <div className="row tight cu-stepper" role="group" aria-label="Years shown">
         <button
@@ -1191,19 +1155,12 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
 
 /** GL-1: one romanization system per language, and the terms that do not follow it, each opening in place (A43). */
 export function RomanizationView() {
-  const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
-  const undo = useUndo();
   const { version } = useStore();
-  const [data, setData] = useState<Response<'romanization.get'> | null>(null);
   const [terms, setTerms] = useState<Response<'entry.list'>['entries']>([]);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    void call('romanization.get', {}).then((r) => {
-      if (live) setData(r);
-    });
     void call('entry.list', { collection: 'glossaryTerms', trash: 'exclude' }).then((r) => {
       if (live) setTerms(r.entries);
     });
@@ -1211,21 +1168,6 @@ export function RomanizationView() {
       live = false;
     };
   }, [version]);
-
-  const choose = async (languageId: string, systemId: string) => {
-    setError(null);
-    const language = data?.languages.find((l) => l.id === languageId);
-    const from = language?.systemId ?? null;
-    const to = systemId || null;
-    try {
-      setData(await call('romanization.set', { languageId, systemId: to }));
-      if ((from ?? '') !== (to ?? '')) {
-        undo.record(romanizationCommand(call, language?.label ?? languageId, languageId, from, to));
-      }
-    } catch (e) {
-      setError(plainError(e));
-    }
-  };
 
   const flagged = terms.filter((t) => t.warnings.some((w) => w.code === 'romanization-system'));
 
@@ -1238,40 +1180,9 @@ export function RomanizationView() {
       <h2 id="roman-title">Romanization</h2>
       <p className="lede">
         Each language uses one romanization system. Glossary terms that do not follow it are
-        flagged, and they still save.
+        flagged, and they still save. Add new... on a language&apos;s select adds a system.
       </p>
-      {error && (
-        <p className="callout crit" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="stack tight">
-        {(data?.languages ?? []).map((l) => (
-          <div className="field" key={l.id}>
-            <label htmlFor={`roman-${l.id}`}>{l.label}</label>
-            <select
-              id={`roman-${l.id}`}
-              value={l.systemId ?? ''}
-              disabled={ro.off}
-              {...ro.tip}
-              onChange={(e) => void choose(l.id, e.target.value)}
-            >
-              <option value="">No system</option>
-              {data?.systems.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            {l.note && (
-              <p className="callout" role="note" data-testid="romanization-no-checker">
-                {l.note}
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
-      <p className="example-note">Add or rename systems on the Lists screen.</p>
+      <RomanizationSystems testId="romanization-systems" />
       <h3>Terms that do not follow their system</h3>
       {flagged.length === 0 ? (
         <p className="example-note" data-testid="romanization-ok">
