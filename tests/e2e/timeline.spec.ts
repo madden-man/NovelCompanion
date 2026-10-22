@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { contrast } from '../helpers/contrast';
 import type { Rgba } from '../helpers/contrast';
-import { fileDb, invokeVia, launch, rail, screenTab } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab, seedFixtureLists } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -59,6 +59,8 @@ test.beforeAll(async () => {
       }[]
     ).map((i) => [i.id, i.parentId]),
   );
+  // The fixture's lists (IP-8): events store region item IDs and the grid shows the labels.
+  await seedFixtureLists(invoke);
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
@@ -901,4 +903,227 @@ test('SM-8 NF-2 the whole screen works from the keyboard and its labels use the 
   expect(Math.abs(lab.x - g.x)).toBeLessThan(2);
   const head = (await grid().locator('.wg-head').boundingBox())!;
   expect(Math.abs(head.y - g.y)).toBeLessThan(2);
+});
+
+const era = (id: string) => grid().getByTestId('era-band').locator(`.wg-era[data-id="${id}"]`);
+const getEra = async (id: string) =>
+  (await invoke('entry.get', { collection: 'eraStates', id })).entry as Record<string, unknown>;
+
+/** Drag an element from its middle sideways by a number of pixels, in steps. */
+async function dragBy(target: Locator, dx: number) {
+  const box = (await target.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx / 2, y, { steps: 4 });
+  await page.mouse.move(x + dx, y, { steps: 4 });
+}
+
+test('IP-4 an era edge drags to a new year as one step, shown live, and Undo restores it', async () => {
+  await zoomTo('Close');
+  await grid().evaluate((el) => {
+    el.scrollLeft = 0;
+    el.scrollTop = 0;
+  });
+  const { ppy } = await axis();
+  const handle = era('ERA-2025').getByTestId('era-handle-start');
+  await expect(handle).toHaveCSS('opacity', '0');
+  await era('ERA-2025').hover();
+  await expect(handle).toHaveCSS('opacity', '1');
+  await dragBy(handle, 2 * ppy);
+  await expect(grid().getByTestId('edge-year')).toHaveText('2027');
+  await page.mouse.up();
+  await expect(grid().getByTestId('edge-year')).toHaveCount(0);
+  await expect(era('ERA-2025')).toHaveAttribute('data-from', '2027');
+  expect((await getEra('ERA-2025')).startYear).toBe(2027);
+  // The click that ends a drag opens nothing.
+  await expect(inspector()).not.toHaveAttribute('data-entry-id', 'ERA-2025');
+  await blurAndUndo();
+  await expect(era('ERA-2025')).toHaveAttribute('data-from', '2025');
+  expect((await getEra('ERA-2025')).startYear).toBe(2025);
+});
+
+test('IP-4 a shared era edge moves both eras together as one step, by drag and by Shift with the arrows', async () => {
+  await zoomTo('Close');
+  await showYear(2040);
+  const { ppy } = await axis();
+  await era('ERA-2030').hover();
+  await dragBy(era('ERA-2030').getByTestId('era-handle-end'), 2 * ppy);
+  await expect(grid().getByTestId('edge-year')).toHaveText('2041');
+  await page.mouse.up();
+  await expect(era('ERA-2030')).toHaveAttribute('data-to', '2041');
+  await expect(era('ERA-2040')).toHaveAttribute('data-from', '2042');
+  expect([(await getEra('ERA-2030')).endYear, (await getEra('ERA-2040')).startYear]).toEqual([
+    2041, 2042,
+  ]);
+  // One step puts both back.
+  await blurAndUndo();
+  await expect(era('ERA-2030')).toHaveAttribute('data-to', '2039');
+  await expect(era('ERA-2040')).toHaveAttribute('data-from', '2040');
+  // From the keyboard: Shift with Left moves the focused era's start, and the era before follows.
+  await expect(era('ERA-2040')).toHaveAttribute(
+    'title',
+    /Shift with Left or Right moves its start/,
+  );
+  await era('ERA-2040').focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(era('ERA-2040')).toHaveAttribute('data-from', '2039');
+  await expect(era('ERA-2030')).toHaveAttribute('data-to', '2038');
+  await expect(era('ERA-2040')).toBeFocused();
+  // Shift and Alt with Right moves its end, and the era after follows.
+  await page.keyboard.press('Shift+Alt+ArrowRight');
+  await expect(era('ERA-2040')).toHaveAttribute('data-to', '2050');
+  await expect(era('ERA-2050')).toHaveAttribute('data-from', '2051');
+  await blurAndUndo();
+  await expect(era('ERA-2050')).toHaveAttribute('data-from', '2050');
+  await page.keyboard.press('Meta+z');
+  await expect(era('ERA-2030')).toHaveAttribute('data-to', '2039');
+  await expect(era('ERA-2040')).toHaveAttribute('data-from', '2040');
+  expect((await getEra('ERA-2040')).endYear).toBe(2049);
+});
+
+test('IP-4 IP-14 a double-click on a gap in the era band makes an era over it, named from the template, its name open as a field', async () => {
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2025',
+    patch: { startYear: 2028 },
+  });
+  await invoke('settings.set', { templates: { eraName: 'Unnamed years' } });
+  await zoomTo('Close');
+  await grid().evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  // The gap runs from the timeline start to 2027. The axis reaches further back (an event
+  // before the timeline widens it), but no gap shows outside the bible's span.
+  const from = 2025;
+  expect((await axis()).from).toBeLessThan(from);
+  await expect(grid().getByTestId('era-band').locator('.wg-gap')).toHaveCount(1);
+  const gap = grid().getByTestId('era-band').locator('.wg-gap[data-to="2027"]');
+  await expect(gap).toHaveAttribute('data-from', String(from));
+  await expect(gap).toHaveAccessibleName(
+    `No era from ${from} to 2027. Press Enter to add an era here`,
+  );
+  await gap.dblclick();
+  const field = grid().getByTestId('era-rename').locator('input');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Unnamed years');
+  const made = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries
+    .map((e) => e.entry as Record<string, unknown>)
+    .find((e) => e.endYear === 2027)!;
+  expect([made.name, made.title, made.startYear]).toEqual(['Unnamed years', 'Unnamed years', from]);
+  const id = String(made._id);
+  await field.fill('The quiet years');
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+  await expect(era(id)).toHaveText('The quiet years');
+  await expect(era(id)).toBeFocused();
+  expect([(await getEra(id)).name, (await getEra(id)).title]).toEqual([
+    'The quiet years',
+    'The quiet years',
+  ]);
+  // Two steps: the name, then the era itself.
+  await blurAndUndo();
+  await expect(era(id)).toHaveText('Unnamed years');
+  await page.keyboard.press('Meta+z');
+  await expect(era(id)).toHaveCount(0);
+  // NF-2: Enter on the focused gap does the same; Escape keeps the template's name.
+  await gap.focus();
+  await page.keyboard.press('Enter');
+  await expect(field).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+  const again = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries
+    .map((e) => e.entry as Record<string, unknown>)
+    .find((e) => e.endYear === 2027)!;
+  expect(again.name).toBe('Unnamed years');
+  await blurAndUndo();
+  await expect(era(String(again._id))).toHaveCount(0);
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2025',
+    patch: { startYear: 2025 },
+  });
+  await invoke('settings.set', { templates: { eraName: 'New era' } });
+  await expect(gap).toHaveCount(0);
+});
+
+test('IP-4 F2 renames a marker or an era in place as one step; a single click still opens the editor', async () => {
+  await zoomTo('Close');
+  await showYear(2090);
+  await marker('E10').focus();
+  await page.keyboard.press('F2');
+  const field = grid().getByTestId('marker-rename').locator('input');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Arctic summer sea ice is gone for good');
+  await field.fill('Arctic sea ice gone');
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+  await expect.poll(async () => (await getEvent('E10')).title).toBe('Arctic sea ice gone');
+  await expect(marker('E10')).toBeFocused();
+  await expect(marker('E10').locator('.wg-mlabel')).toHaveText('Arctic sea ice gone');
+  await blurAndUndo();
+  await expect
+    .poll(async () => (await getEvent('E10')).title)
+    .toBe('Arctic summer sea ice is gone for good');
+  // A single click opens the editor under the grid, as before; a double-click renames.
+  await marker('E10').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E10');
+  await marker('E10').dblclick();
+  await expect(field).toBeFocused();
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
+  // An era's name renames on F2 too.
+  await showYear(2040);
+  await era('ERA-2040').focus();
+  await page.keyboard.press('F2');
+  const name = grid().getByTestId('era-rename').locator('input');
+  await expect(name).toBeFocused();
+  await name.fill('The hard forties');
+  await name.press('Enter');
+  await expect(era('ERA-2040')).toHaveText('The hard forties');
+  expect((await getEra('ERA-2040')).title).toBe('The hard forties');
+  // NF-2: the open fields read in the primary text colour in both themes.
+  await era('ERA-2040').focus();
+  await page.keyboard.press('F2');
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    const [color, fg, bg] = await name.evaluate((el) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--fg)';
+      document.body.append(probe);
+      const f = getComputedStyle(probe).color;
+      probe.remove();
+      const box = el.closest('.wg-era-rename')!;
+      return [getComputedStyle(el).color, f, getComputedStyle(box).backgroundColor];
+    });
+    expect(color, theme).toBe(fg);
+    expect(contrast(parseRgb(color), parseRgb(bg)), theme).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+  await page.keyboard.press('Escape');
+  await blurAndUndo();
+  await expect(era('ERA-2040')).toHaveText('The forties');
+});
+
+test('IP-11 IP-4 the axis and the world around follow the bible’s numbers', async () => {
+  const year = Number(
+    await view()
+      .getByTestId('world-around')
+      .locator('[aria-current="date"]')
+      .getAttribute('data-year'),
+  );
+  await expect(grid()).toHaveAttribute('data-to', '2100');
+  await invoke('settings.set', { numbers: { timelineEnd: 2120, windowBefore: 5, windowAfter: 2 } });
+  await expect(grid()).toHaveAttribute('data-to', '2120');
+  await expect(view().getByTestId('world-around-strip')).toHaveAccessibleName(
+    `World events from ${year - 5} to ${year + 2}`,
+  );
+  // The gap after the last era shows in the band, ready to fill.
+  await expect(grid().locator('.wg-gap[data-from="2101"]')).toHaveAttribute('data-to', '2120');
+  await invoke('settings.set', { numbers: { timelineEnd: 2100, windowBefore: 3, windowAfter: 1 } });
+  await expect(grid()).toHaveAttribute('data-to', '2100');
+  await expect(view().getByTestId('world-around-strip')).toHaveAccessibleName(
+    `World events from ${year - 3} to ${year + 1}`,
+  );
 });

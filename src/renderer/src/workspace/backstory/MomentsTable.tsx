@@ -1,60 +1,73 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ageText, eventsNear, insertEventTitle } from '../../../../shared/domain/backstoryGrid';
+import { ageText, eventsNear } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment, BackstoryPerson } from '../../../../shared/domain/backstoryGrid';
 import { lifeYears } from '../../../../shared/domain/ages';
 import type { EventSpan } from '../../../../shared/domain/timeline';
 import { useWriteGuard } from '../../connection';
 import { TrashControls } from '../editor';
 import { span } from '../timeline/common';
-import { RichText } from '../richText/RichText';
-import { textBoxValue } from '../undo';
+import { Editable } from '../editable';
+import type { EditableOption } from '../editable';
 import { useBibleSettings } from '../bibleSettings';
+import { useLookup } from '../pickers';
 
-export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext';
-
-const FIELD_LABEL: Record<MomentField, string> = {
-  year: 'Year',
-  endYear: 'To',
-  title: 'What happens',
-  body: 'How they experience it',
-  worldContext: 'Relevant world events',
-};
+export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext' | 'characterId';
 
 /**
- * SM-9: the picked person's moments in year order, every cell editable in
- * place. A cell saves on blur or Enter (Shift+Enter starts a new line in the
- * longer cells), one write and one undo step per cell. Age is computed (TL-3).
- * Delete lists what links to the moment first (ED-5). While a snapshot is open
- * read-only (ARCH-6) every control is off with the reason.
+ * SM-9, IP-1, IP-13: moments in year order, every stored value an `Editable`
+ * in place: a cell opens on a click, Enter or Space, saves on Enter or blur as
+ * one write and one undo step, and Escape puts the stored value back. With a
+ * person picked the table lists theirs; with none it lists every moment, by
+ * year and then person, and New moment asks whose it is. "Whose moment" moves
+ * a moment to another person. Age is computed (TL-3). Delete lists what links
+ * to the moment first (ED-5). While a snapshot is open read-only (ARCH-6)
+ * every control is off with the reason.
  */
 export function MomentsTable(props: {
-  person: BackstoryPerson;
+  /** The picked person, or null for every moment (IP-13). */
+  person: BackstoryPerson | null;
+  /** Everyone, in the grid's order: the "Whose moment" choices and each row's age. */
+  people: readonly BackstoryPerson[];
   moments: BackstoryMoment[];
   events: EventSpan[];
   selectedId: string | null;
-  /** A row to focus on What happens once it shows, after it was made. */
+  /** A row whose What happens opens as a field once it shows, after it was made. */
   focusId: string | null;
   onFocused: () => void;
   onSelect: (id: string) => void;
-  onSave: (id: string, field: MomentField, value: string | number | null) => Promise<void>;
-  onAdd: () => Promise<void>;
+  onSave: (
+    id: string,
+    field: MomentField,
+    value: string | number | null,
+    mentioned?: readonly string[],
+  ) => Promise<void>;
+  /** IP-4, ED-9: a world event mentioned in the moment's Relevant world events. */
+  onMention: (id: string, event: { id: string; title: string }) => Promise<void>;
+  /** A new moment for the person at the story year. */
+  onAdd: (characterId: string) => Promise<void>;
   /** A moment went to the trash through the confirm; the view offers Undo. */
   onTrashed: (m: BackstoryMoment) => void;
+  /** Back to every moment (IP-13). */
+  onShowAll: () => void;
 }) {
   const { person, moments, focusId, onFocused } = props;
   const ro = useWriteGuard();
   const table = useRef<HTMLTableElement>(null);
   const headingId = useId();
+  const whoId = useId();
+  const [asking, setAsking] = useState(false);
+  const whoBox = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (asking) whoBox.current?.focus({ preventScroll: true });
+  }, [asking]);
+  const byId = new Map(props.people.map((p) => [p.id, p]));
+  const options: EditableOption[] = props.people.map((p) => ({
+    value: p.id,
+    label: p.chinese ? `${p.name} ${p.chinese}` : p.name,
+  }));
 
   useEffect(() => {
-    if (!focusId) return;
-    const cell = table.current?.querySelector<HTMLElement>(
-      `tr[data-id="${CSS.escape(focusId)}"] [data-field="title"] textarea`,
-    );
-    if (!cell) return;
-    cell.focus();
-    onFocused();
+    if (focusId && moments.some((m) => m.id === focusId)) onFocused();
   }, [focusId, moments, onFocused]);
 
   useEffect(() => {
@@ -65,31 +78,98 @@ export function MomentsTable(props: {
   }, [props.selectedId]);
 
   return (
-    <section className="panel stack tight bs-table-panel" aria-labelledby={headingId}>
+    <section
+      className="panel stack tight bs-table-panel"
+      aria-labelledby={headingId}
+      data-testid={person ? 'moments-panel' : 'all-moments'}
+    >
       <div className="list-head">
-        <h3 id={headingId} data-testid="moments-heading">
-          {person.name}
-          {person.chinese && (
-            <span className="bs-zh" lang="zh">
-              {' '}
-              {person.chinese}
+        {person ? (
+          <h3 id={headingId} data-testid="moments-heading">
+            {person.name}
+            {person.chinese && (
+              <span className="bs-zh" lang="zh">
+                {' '}
+                {person.chinese}
+              </span>
+            )}
+            <span className="bs-years">, {lifeYears(person)}</span>
+          </h3>
+        ) : (
+          <h3 id={headingId} data-testid="moments-heading">
+            Every moment
+            <span className="bs-years">
+              , {moments.length === 1 ? '1 moment' : `${moments.length} moments`}
             </span>
-          )}
-          <span className="bs-years">, {lifeYears(person)}</span>
-        </h3>
-        <button
-          type="button"
-          className="btn small primary"
-          disabled={ro.off}
-          {...ro.tip}
-          onClick={() => void props.onAdd()}
-        >
-          Add a moment
-        </button>
+          </h3>
+        )}
+        {person ? (
+          <span className="row tight">
+            <button
+              type="button"
+              className="btn small primary"
+              disabled={ro.off}
+              {...ro.tip}
+              onClick={() => void props.onAdd(person.id)}
+            >
+              Add a moment
+            </button>
+            <button type="button" className="btn small" onClick={props.onShowAll}>
+              Show every moment
+            </button>
+          </span>
+        ) : asking ? (
+          <span className="row tight bs-ask">
+            <label htmlFor={whoId}>Whose moment</label>
+            <select
+              id={whoId}
+              ref={whoBox}
+              defaultValue=""
+              disabled={ro.off}
+              onChange={(e) => {
+                const id = e.target.value;
+                if (!id) return;
+                setAsking(false);
+                void props.onAdd(id);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setAsking(false);
+                }
+              }}
+            >
+              <option value="" disabled>
+                Pick the person
+              </option>
+              {options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn small" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="btn small primary"
+            disabled={ro.off}
+            {...ro.tip}
+            onClick={() => setAsking(true)}
+          >
+            New moment
+          </button>
+        )}
       </div>
+      {!person && <p className="bs-empty">Pick a person in the grid to list only their moments.</p>}
       {moments.length === 0 ? (
         <p className="bs-empty">
-          No moments yet. Add one here, or click their row in the grid at a year.
+          {person
+            ? 'No moments yet. Add one here, or click their row in the grid at a year.'
+            : 'No moments yet. Make one with New moment, or click a row in the grid at a year.'}
         </p>
       ) : (
         <div className="bs-table-wrap">
@@ -101,6 +181,9 @@ export function MomentsTable(props: {
                 </th>
                 <th scope="col" className="bs-col-year">
                   To
+                </th>
+                <th scope="col" className="bs-col-who">
+                  Whose moment
                 </th>
                 <th scope="col" className="bs-col-age">
                   Age
@@ -118,11 +201,14 @@ export function MomentsTable(props: {
                 <MomentRow
                   key={m.id}
                   m={m}
-                  person={person}
+                  person={byId.get(m.characterId) ?? null}
+                  options={options}
                   events={props.events}
                   selected={props.selectedId === m.id}
+                  fresh={focusId === m.id}
                   onSelect={() => props.onSelect(m.id)}
-                  onSave={(field, value) => props.onSave(m.id, field, value)}
+                  onSave={(field, value, mentioned) => props.onSave(m.id, field, value, mentioned)}
+                  onMention={(e) => props.onMention(m.id, e)}
                   onTrashed={() => props.onTrashed(m)}
                 />
               ))}
@@ -136,76 +222,118 @@ export function MomentsTable(props: {
 
 function MomentRow(props: {
   m: BackstoryMoment;
-  person: BackstoryPerson;
+  person: BackstoryPerson | null;
+  options: EditableOption[];
   events: EventSpan[];
   selected: boolean;
+  /** Just made: What happens opens as a field. */
+  fresh: boolean;
   onSelect: () => void;
-  onSave: (field: MomentField, value: string | number | null) => Promise<void>;
+  onSave: (
+    field: MomentField,
+    value: string | number | null,
+    mentioned?: readonly string[],
+  ) => Promise<void>;
+  onMention: (e: { id: string; title: string }) => Promise<void>;
   onTrashed: () => void;
 }) {
   const { m } = props;
+  // ED-9: the linked entries' titles show as chips; an `@` pick links in the save that follows.
+  const found = useLookup(m.linkIds);
+  const titles = m.linkIds.flatMap((id) => found.get(id)?.title ?? []);
+  const picked = useRef<string[]>([]);
   const what = m.title.trim() || 'this moment';
   return (
     <tr
       data-id={m.id}
       data-year={m.year}
+      data-person={m.characterId}
       className={props.selected ? 'selected' : undefined}
       aria-current={props.selected ? 'true' : undefined}
       onFocusCapture={props.onSelect}
     >
       <td data-field="year" className="bs-col-year">
-        <Cell
+        <Editable
           kind="year"
+          className="bs-ed num"
+          data-field="year"
           label={`Year of ${what}`}
-          value={String(m.year)}
-          onSave={(v) => props.onSave('year', Number(v))}
+          value={m.year}
+          onSave={(v) => props.onSave('year', v)}
         />
       </td>
       <td data-field="endYear" className="bs-col-year">
-        <Cell
+        <Editable
           kind="year"
-          blank
+          className="bs-ed num"
+          data-field="endYear"
+          allowEmpty
+          placeholder="Same year"
           label={`To, the last year of ${what}, blank for a single year`}
-          value={m.endYear === null ? '' : String(m.endYear)}
-          onSave={(v) => props.onSave('endYear', v === '' ? null : Number(v))}
+          value={m.endYear}
+          onSave={(v) => props.onSave('endYear', v)}
+        />
+      </td>
+      <td data-field="characterId" className="bs-col-who">
+        <Editable
+          kind="select"
+          className="bs-ed"
+          data-field="characterId"
+          label={`Whose moment, ${what}`}
+          options={props.options}
+          value={m.characterId}
+          onSave={(v) => (v ? props.onSave('characterId', v) : Promise.resolve())}
         />
       </td>
       <td data-field="age" className="bs-col-age num" data-testid="moment-age">
-        {ageText(props.person, m.year)}
+        {props.person ? ageText(props.person, m.year) : 'Unknown'}
       </td>
       <td data-field="title">
-        <Cell
+        <Editable
           kind="text"
-          label={`${FIELD_LABEL.title}, ${span(m.year, m.endYear ?? m.year)}`}
+          className="bs-ed"
+          data-field="title"
+          label={`What happens, ${span(m.year, m.endYear ?? m.year)}`}
+          placeholder="Add what happens"
           value={m.title}
+          autoOpen={props.fresh}
           onSave={(v) => props.onSave('title', v)}
         />
       </td>
       <td data-field="body">
-        <Cell
+        <Editable
           kind="rich"
-          label={`${FIELD_LABEL.body}, ${what}`}
+          className="bs-ed"
+          data-field="body"
+          mode="inline"
+          size="quick"
+          label={`How they experience it, ${what}`}
+          placeholder="Add how they experience it"
           value={m.body}
           onSave={(v) => props.onSave('body', v)}
         />
       </td>
       <td data-field="worldContext">
         <div className="bs-world">
-          <Cell
+          <Editable
             kind="rich"
-            label={`${FIELD_LABEL.worldContext}, ${what}`}
+            className="bs-ed"
+            data-field="worldContext"
+            mode="inline"
+            size="quick"
+            label={`Relevant world events, ${what}`}
+            placeholder="Add the world events"
             value={m.worldContext}
-            onSave={(v) => props.onSave('worldContext', v)}
+            mentionTitles={titles}
+            onMention={(hit) => {
+              if (!picked.current.includes(hit.id)) picked.current.push(hit.id);
+            }}
+            onSave={async (v) => {
+              await props.onSave('worldContext', v, picked.current);
+              picked.current = [];
+            }}
           />
-          <EventPicker
-            year={m.year}
-            events={props.events}
-            what={what}
-            onPick={(title, typed) =>
-              // Into what the cell holds now, typed text included, then saved as one step.
-              props.onSave('worldContext', insertEventTitle(typed ?? m.worldContext, title))
-            }
-          />
+          <EventPicker year={m.year} events={props.events} what={what} onPick={props.onMention} />
         </div>
       </td>
       <td className="bs-col-act">
@@ -224,136 +352,14 @@ function MomentRow(props: {
 }
 
 /**
- * One editable cell: saves on blur or Enter, Escape puts the stored value back.
- * A `rich` cell is an inline rich text box (A44): bold, italic, strikethrough.
+ * A33, IP-4: the world events within the bible's picker reach of the moment's
+ * year; a click mentions the event (`@Title`, ED-9) in Relevant world events.
  */
-function Cell(props: {
-  kind: 'year' | 'text' | 'rich';
-  /** A year cell that may be left blank. */
-  blank?: boolean;
-  label: string;
-  value: string;
-  onSave: (v: string) => Promise<void>;
-}) {
-  const ro = useWriteGuard();
-  const [draft, setDraft] = useState(props.value);
-  const [error, setError] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
-  const errorId = useId();
-
-  // A stored change (a save, an undo, another screen) shows unless the cell is being edited.
-  // The value this cell last wrote, or the stored one when that changed since: a save is
-  // skipped only when the draft equals it, never against a stored value not yet reloaded.
-  const [committed, setCommitted] = useState(props.value);
-  const [shown, setShown] = useState(props.value);
-  if (props.value !== shown) {
-    setShown(props.value);
-    setCommitted(props.value);
-    if (!focused) setDraft(props.value);
-  }
-
-  const commit = async () => {
-    const value = props.kind === 'year' ? draft.trim() : draft;
-    if (value === committed) return;
-    if (props.kind === 'year' && !(props.blank && value === '') && !/^-?\d+$/.test(value)) {
-      setError(
-        props.blank
-          ? 'The year is a whole number, such as 2042, or leave it blank.'
-          : 'The year is a whole number, such as 2042.',
-      );
-      return;
-    }
-    setError(null);
-    setCommitted(value);
-    try {
-      await props.onSave(value);
-    } catch {
-      setCommitted(props.value);
-      // The screen shows why in plain words; the typed value stays here to try again.
-    }
-  };
-
-  const onKey = (e: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void commit();
-    } else if (e.key === 'Escape') {
-      setDraft(props.value);
-      setError(null);
-    }
-  };
-
-  const common = {
-    'aria-label': props.label,
-    'aria-invalid': error ? true : undefined,
-    'aria-describedby': error ? errorId : ro.tip['aria-describedby'],
-    title: ro.tip.title,
-    disabled: ro.off,
-    onFocus: () => setFocused(true),
-    onBlur: () => {
-      setFocused(false);
-      void commit();
-    },
-    onKeyDown: onKey,
-  };
-
-  return (
-    <>
-      {props.kind === 'rich' ? (
-        <RichText
-          mode="inline"
-          size="quick"
-          className="bs-cell-rich"
-          label={props.label}
-          value={draft}
-          onChange={setDraft}
-          onFocus={common.onFocus}
-          onBlur={common.onBlur}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-              void commit();
-              return true;
-            }
-            if (e.key === 'Escape') {
-              setDraft(props.value);
-              setError(null);
-            }
-            return false;
-          }}
-        />
-      ) : props.kind === 'year' ? (
-        <input
-          {...common}
-          className="bs-cell bs-cell-year num"
-          inputMode="numeric"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-      ) : (
-        <textarea
-          {...common}
-          className="bs-cell"
-          rows={Math.min(6, Math.max(2, draft.split('\n').length))}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-      )}
-      {error && (
-        <span className="bs-cell-error" id={errorId} role="alert">
-          {error}
-        </span>
-      )}
-    </>
-  );
-}
-
-/** A33: the world events of the moment's year plus or minus one; a click inserts a title. */
 function EventPicker(props: {
   year: number;
   events: EventSpan[];
   what: string;
-  /** The title picked, and the text the cell beside the picker holds now. */
-  onPick: (title: string, typed: string | undefined) => Promise<void>;
+  onPick: (e: { id: string; title: string }) => Promise<void>;
 }) {
   const ro = useWriteGuard();
   const [open, setOpen] = useState(false);
@@ -362,6 +368,9 @@ function EventPicker(props: {
   const { pickerReach } = useBibleSettings().numbers;
   const near = open ? eventsNear(props.events, props.year, pickerReach) : [];
   const listId = useId();
+  const from = props.year - pickerReach;
+  const to = props.year + pickerReach;
+  const years = span(from, to);
 
   useEffect(() => {
     if (open) list.current?.querySelector<HTMLElement>('button')?.focus();
@@ -380,7 +389,7 @@ function EventPicker(props: {
         className="btn small"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        aria-label={`Pick events from ${props.year - 1} to ${props.year + 1} for ${props.what}`}
+        aria-label={`Pick events from ${years} for ${props.what}`}
         disabled={ro.off}
         title={ro.tip.title}
         aria-describedby={ro.tip['aria-describedby']}
@@ -394,7 +403,7 @@ function EventPicker(props: {
           ref={list}
           className="bs-picker-list"
           role="group"
-          aria-label={`World events from ${props.year - 1} to ${props.year + 1}`}
+          aria-label={`World events from ${years}`}
           data-testid="event-picker"
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
@@ -407,9 +416,7 @@ function EventPicker(props: {
             if (!to || !e.currentTarget.parentElement?.contains(to)) close(false);
           }}
         >
-          <span className="bs-picker-head">
-            World events, {props.year - 1} to {props.year + 1}
-          </span>
+          <span className="bs-picker-head">World events, {years}</span>
           {near.length === 0 ? (
             <p className="bs-empty" tabIndex={-1}>
               No world events in these years.
@@ -422,8 +429,7 @@ function EventPicker(props: {
                 className="bs-picker-item"
                 data-id={e.id}
                 onClick={() => {
-                  const typed = textBoxValue(button.current?.closest('td'));
-                  void props.onPick(e.title, typed).catch(() => undefined);
+                  void props.onPick({ id: e.id, title: e.title }).catch(() => undefined);
                   close(true);
                 }}
               >

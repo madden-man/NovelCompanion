@@ -9,6 +9,7 @@ import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
 import { dateText } from '../../src/shared/domain/dates';
 import type { Invoke } from '../helpers/t5';
+import { readFixture } from '../helpers/loadFixture';
 import { EXECUTABLE } from '../package/paths';
 import { connect } from '../../src/main/db';
 import type { Store } from '../../src/main/db';
@@ -488,5 +489,38 @@ export async function setField(
     }
     case 'system':
       return;
+  }
+}
+
+/**
+ * A47 (IP-8): write the fixture's list items a new bible does not hold yet, so
+ * entries seeded with `test.seed` find their items (a region shows as
+ * "Oregon", not as an item made from its ID). Items whose ID the list already
+ * has are left as they are; parents come before their children in the fixture.
+ */
+export async function seedFixtureLists(invoke: Invoke): Promise<void> {
+  const lists = readFixture().lists ?? [];
+  const held = (await invoke('lists.get', {})).lists;
+  for (const list of lists) {
+    const have = new Set(held.find((l) => l._id === list._id)?.items.map((i) => i.id) ?? []);
+    const items = (list.items ?? []) as {
+      id: string;
+      label: string;
+      parentId: string | null;
+      color?: string | null;
+      extra?: Record<string, string | number>;
+    }[];
+    for (const i of items) {
+      if (have.has(i.id)) continue;
+      await invoke('lists.addItem', {
+        listId: String(list._id) as never,
+        label: i.label,
+        id: i.id,
+        parentId: i.parentId ?? null,
+        ...(i.color ? { color: i.color } : {}),
+        ...(i.extra && Object.keys(i.extra).length ? { extra: i.extra } : {}),
+      });
+      have.add(i.id);
+    }
   }
 }

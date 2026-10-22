@@ -2,7 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { entryTitle, manifests } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
-import { backstoryGrid, momentsOf } from '../../../../shared/domain/backstoryGrid';
+import {
+  allMoments,
+  backstoryGrid,
+  insertMention,
+  lifeProblem,
+  lifespanOf,
+  momentsOf,
+  moveLifeEnd,
+  withMentionLink,
+  withYear,
+} from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment } from '../../../../shared/domain/backstoryGrid';
 import {
   eraSpans,
@@ -11,7 +21,8 @@ import {
   strandSpans,
 } from '../../../../shared/domain/timeline';
 import { shiftEnd, shiftSpan, writingBand } from '../../../../shared/domain/worldGrid';
-import type { Zoom } from '../../../../shared/domain/worldGrid';
+import type { EdgeSide, Zoom } from '../../../../shared/domain/worldGrid';
+import type { StoryDate } from '../../../../shared/schema';
 import type { StoredPositions } from '../../../../shared/domain/tree';
 import { createCommand, editCommand, restoreCommand } from '../../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../../connection';
@@ -22,6 +33,7 @@ import { useUndo } from '../undo';
 import { BackstoryGrid } from './BackstoryGrid';
 import { MomentsTable } from './MomentsTable';
 import type { MomentField } from './MomentsTable';
+import { useEraEdits, useTitleRename } from '../timeline/gridShared';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
 import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
@@ -38,6 +50,7 @@ const FIELD_WORDS: Record<MomentField, string> = {
   title: 'what happens',
   body: 'how they experience it',
   worldContext: 'the relevant world events',
+  characterId: 'whose moment it is',
 };
 
 /**
@@ -128,10 +141,14 @@ export function BackstoryView(props: {
     [chapters, story.time?.chapterId, story.time?.strandId],
   );
   const person = picked ? grid.people.get(picked) : undefined;
+  // IP-13: with nobody picked, every moment, by year and then person.
   const rows = useMemo(
-    () => (picked ? momentsOf(grid.moments, picked) : []),
-    [grid.moments, picked],
+    () => (person ? momentsOf(grid.moments, person.id) : allMoments(grid.moments, grid.people)),
+    [grid.moments, grid.people, person],
   );
+  const everyone = useMemo(() => grid.families.flatMap((f) => f.people), [grid.families]);
+  const eraEdits = useEraEdits({ eras, span, readOnly: ro.off, onError: setError });
+  const renameMoment = useTitleRename('moments');
 
   const clearFocus = useCallback(() => setFocusId(null), []);
 
@@ -140,7 +157,8 @@ export function BackstoryView(props: {
     setSelected(null);
   };
 
-  const create = async (characterId: string, at: number) => {
+  /** `keepPick`: a moment made from the table of every moment leaves nobody picked (IP-13). */
+  const create = async (characterId: string, at: number, keepPick = false) => {
     setError(null);
     if (ro.off) return;
     const data: Record<string, unknown> = {
@@ -155,7 +173,7 @@ export function BackstoryView(props: {
       const { entry } = await call('entry.create', { collection: 'moments', data });
       const who = grid.people.get(characterId)?.name ?? 'someone';
       undo.record(createCommand('moments', entry._id, `a moment for ${who} in ${at}`));
-      setPicked(characterId);
+      if (!keepPick) setPicked(characterId);
       setSelected(entry._id);
       setFocusId(entry._id);
     } catch (e) {
@@ -178,7 +196,13 @@ export function BackstoryView(props: {
     return run;
   };
 
-  const save = (id: string, field: MomentField, value: string | number | null) => {
+  /** `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9). */
+  const save = (
+    id: string,
+    field: MomentField,
+    value: string | number | null,
+    mentioned: readonly string[] = [],
+  ) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -188,6 +212,13 @@ export function BackstoryView(props: {
         unknown
       >;
       const patch: Record<string, unknown> = { [field]: value };
+      if (mentioned.length) {
+        let links = Array.isArray(before.links)
+          ? (before.links as { targetId: string; kind: string }[])
+          : [];
+        for (const t of mentioned) links = withMentionLink(links, t);
+        patch.links = links;
+      }
       // A moment over several years keeps its length when its year changes.
       if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
         patch.endYear = before.endYear + (value - Number(before.year));
@@ -238,6 +269,79 @@ export function BackstoryView(props: {
       }
       const { entry } = await call('entry.update', { collection: 'moments', id, patch });
       undo.record(editCommand(label, 'moments', id, before, entry));
+    }).catch(() => undefined);
+  };
+
+  /**
+   * IP-4, ED-9: mention a world event in a moment's Relevant world events: the
+   * `@Title` on a line of its own and the link to the event, one step. It joins
+   * the queue, so a cell saved on its way out (the blur before the click) lands first.
+   */
+  const mention = (id: string, event: { id: string; title: string }) => {
+    setError(null);
+    if (ro.off) return Promise.resolve();
+    return queue(async () => {
+      const before = (await call('entry.get', { collection: 'moments', id })).entry as Record<
+        string,
+        unknown
+      >;
+      const text = typeof before.worldContext === 'string' ? before.worldContext : '';
+      const links = Array.isArray(before.links)
+        ? (before.links as { targetId: string; kind: string }[])
+        : [];
+      const worldContext = insertMention(text, event.title);
+      const nextLinks = withMentionLink(links, event.id);
+      if (worldContext === text && nextLinks.length === links.length) return;
+      const { entry } = await call('entry.update', {
+        collection: 'moments',
+        id,
+        patch: { worldContext, links: nextLinks },
+      });
+      const title = entryTitle(entry) || 'a moment';
+      undo.record(
+        editCommand(`Mentioned ${event.title} in ${title}`, 'moments', id, before, entry),
+      );
+    });
+  };
+
+  /**
+   * IP-4: a lifespan end dragged or keyed: the birth or the death moves by
+   * whole years through the write path, one step. A death before the birth is
+   * refused with the reason (ED-10) and the bar stays where it was.
+   */
+  const lifeEnd = (characterId: string, side: EdgeSide, delta: number) => {
+    setError(null);
+    if (ro.off) return Promise.resolve();
+    return queue(async () => {
+      const before = (await call('entry.get', { collection: 'characters', id: characterId }))
+        .entry as Record<string, unknown>;
+      const birth = (before.birth ?? null) as StoryDate | null;
+      const death = (before.death ?? null) as StoryDate | null;
+      const moved = moveLifeEnd(lifespanOf({ birth, death }), side, delta, span);
+      if (!moved) return;
+      const problem = lifeProblem(moved.from, moved.to, side);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      const name = grid.people.get(characterId)?.name ?? entryTitle(before as never);
+      let patch: Record<string, unknown>;
+      let label: string;
+      if (side === 'start') {
+        if (moved.from === lifespanOf({ birth, death }).from) return;
+        patch = { birth: withYear(birth, moved.from) };
+        label = `Moved the birth of ${name} to ${moved.from}`;
+      } else {
+        if (moved.to === null || moved.to === lifespanOf({ birth, death }).to) return;
+        patch = { death: withYear(death, moved.to) };
+        label = `Moved the death of ${name} to ${moved.to}`;
+      }
+      const { entry } = await call('entry.update', {
+        collection: 'characters',
+        id: characterId,
+        patch,
+      });
+      undo.record(editCommand(label, 'characters', characterId, before, entry));
     }).catch(() => undefined);
   };
 
@@ -302,9 +406,13 @@ export function BackstoryView(props: {
         </p>
       )}
       <p className="bs-help">
-        Pick a name to list their moments below. Click an empty spot in a row to add a moment at
-        that year. Drag a marker to change its year. From the keyboard, Tab to the markers, Up and
-        Down move between them, Enter picks one, and Left and Right change its year.
+        Pick a row to list that person&apos;s moments below; their name opens their page. Click an
+        empty spot in a row to add a moment at that year. Drag a marker to change its year, and
+        double-click it or press F2 to rename it. Drag either end of a lifespan to change the birth
+        or the death, and the end of an era to move it; double-click a gap in the era band to add an
+        era. From the keyboard, Tab to the markers, Up and Down move between them, Enter picks one,
+        and Left and Right change its year. On a lifespan or an era, Shift with Left or Right moves
+        the start a year, Shift and Alt with Left or Right the end.
       </p>
       <BackstoryGrid
         grid={grid}
@@ -324,6 +432,10 @@ export function BackstoryView(props: {
         onOpenEra={(id) => props.onOpen?.('eraStates', id)}
         onMove={move}
         onCreate={create}
+        onLifeEnd={lifeEnd}
+        onOpenPerson={props.onOpen ? (id) => props.onOpen?.('characters', id) : undefined}
+        onRename={renameMoment}
+        eraEdits={eraEdits}
       />
       <div className="legend" aria-label="Grid legend">
         <span>
@@ -365,24 +477,24 @@ export function BackstoryView(props: {
           </button>
         </p>
       )}
-      {person ? (
-        <MomentsTable
-          person={person}
-          moments={rows}
-          events={events}
-          selectedId={selected}
-          focusId={focusId}
-          onFocused={clearFocus}
-          onSelect={setSelected}
-          onSave={save}
-          onAdd={() => create(person.id, year)}
-          onTrashed={trashedOne}
-        />
-      ) : (
-        <p className="bs-empty" data-testid="backstory-none">
-          Pick a person in the grid to see and edit their moments.
-        </p>
-      )}
+      <MomentsTable
+        person={person ?? null}
+        people={everyone}
+        moments={rows}
+        events={events}
+        selectedId={selected}
+        focusId={focusId}
+        onFocused={clearFocus}
+        onSelect={setSelected}
+        onSave={save}
+        onMention={mention}
+        onAdd={(id) => create(id, year, !person)}
+        onTrashed={trashedOne}
+        onShowAll={() => {
+          setPicked(null);
+          setSelected(null);
+        }}
+      />
     </div>
   );
 }
