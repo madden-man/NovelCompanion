@@ -7,6 +7,7 @@ import type { Response } from '../../../shared/ipc';
 import type { Doc } from '../../../shared/domain/paths';
 import { call } from '../api';
 import { useEntries, useList, useStore } from './data';
+import type { Entry } from './data';
 import { Field } from './fields';
 import type { Messages } from './fields';
 import { formatMoment, useStoryTime } from './storyTime';
@@ -94,6 +95,8 @@ export function CharacterPage(props: {
   draft: Doc;
   messages: Messages;
   onChange: (name: string, value: unknown) => void;
+  /** IP-1: a field saved in place hands the stored entry to the page's autosave. */
+  onSaved?: (entry: Entry) => void;
   onMention: (targetId: string) => void;
   onOpen: (collection: EntryCollection, id: string) => void;
   /** Opens the family tree on this person. */
@@ -158,6 +161,7 @@ export function CharacterPage(props: {
     id: props.id,
     entry: draft,
     warnings: props.messages.warnings,
+    onSaved: props.onSaved,
   };
 
   return (

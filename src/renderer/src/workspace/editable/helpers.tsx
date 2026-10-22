@@ -24,7 +24,7 @@ import type { Entry } from '../data';
 import { useUndo } from '../undo';
 import { Editable } from './Editable';
 import type { EditableCommonProps, EditableKindProps } from './Editable';
-import { fieldLabel, mergeCommands, patchForPath } from './model';
+import { emptyMessage, fieldLabel, mergeCommands, patchForPath } from './model';
 import type { AddedItem, EditableKind, EditableOption, SaveInfo } from './model';
 
 type Undo = ReturnType<typeof useUndo>;
@@ -69,7 +69,13 @@ export async function saveEntryField(
       issues.find((i) => i.path === o.path) ??
       issues.find((i) => i.path === top || i.path.startsWith(`${top}.`)) ??
       issues[0];
-    throw new EditableError(mine?.message ?? 'This value cannot be stored.');
+    const said = mine?.message ?? 'This value cannot be stored.';
+    // "Full name cannot be empty." rather than a bare "Cannot be empty." (IP-1).
+    throw new EditableError(
+      said === 'Cannot be empty.'
+        ? emptyMessage(o.label ?? fieldLabel(o.collection, o.path))
+        : said,
+    );
   }
   const r = await call('entry.update', { collection: o.collection, id: o.id, patch });
   const after = r.entry as Entry;
@@ -90,11 +96,15 @@ export async function saveEntryField(
   return { entry: after, warnings: r.warnings as FieldWarning[] };
 }
 
-/** One entry, read through the write path and read again whenever the bible changes. */
-export function useEntryDoc(collection: EntryCollection, id: string): Entry | null {
+/**
+ * One entry, read through the write path and read again whenever the bible
+ * changes. `skip` reads nothing, for a host that already holds the entry.
+ */
+export function useEntryDoc(collection: EntryCollection, id: string, skip = false): Entry | null {
   const { version } = useStore();
   const [doc, setDoc] = useState<Entry | null>(null);
   useEffect(() => {
+    if (skip) return;
     let live = true;
     call('entry.get', { collection, id })
       .then((r) => {
@@ -106,7 +116,7 @@ export function useEntryDoc(collection: EntryCollection, id: string): Entry | nu
     return () => {
       live = false;
     };
-  }, [collection, id, version]);
+  }, [collection, id, version, skip]);
   return doc;
 }
 
@@ -155,7 +165,7 @@ export type EntryEditableProps = Omit<EditableCommonProps, 'label'> &
 export function EntryEditable(props: EntryEditableProps) {
   const { collection, id, path, entry: given, extraPatch, warnings, onSaved, ...rest } = props;
   const undo = useUndo();
-  const read = useEntryDoc(collection, id);
+  const read = useEntryDoc(collection, id, given != null);
   const doc = given ?? read;
   const [own, setOwn] = useState<FieldWarning[] | null>(null);
   const label = props.label ?? fieldLabel(collection, path);

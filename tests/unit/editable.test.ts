@@ -22,6 +22,10 @@ describe('IP-1 the value each kind reads from what was typed', () => {
     expect(parseText('Zhou Lan  ')).toEqual({ ok: true, value: 'Zhou Lan' });
     expect(parseText('')).toEqual({ ok: true, value: '' });
     expect(parseText('   ', false)).toEqual({ ok: false, message: 'Cannot be empty.' });
+    expect(parseText('', false, 'Full name')).toEqual({
+      ok: false,
+      message: 'Full name cannot be empty.',
+    });
   });
 
   test('IP-1 a year accepts digits only and refuses empty unless allowEmpty', () => {

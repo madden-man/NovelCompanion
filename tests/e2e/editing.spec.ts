@@ -490,7 +490,7 @@ test('ED-10 a value the schema cannot store is marked at the field and not sent'
   await openEditable(name);
   await name.locator('input').fill('');
   await name.locator('input').press('Enter');
-  await expect(name.getByRole('alert')).toHaveText('Not saved: Cannot be empty.');
+  await expect(name.getByRole('alert')).toHaveText('Not saved: Full name cannot be empty.');
   await expect(name).toHaveAttribute('data-save-state', 'error');
   expect(((await currentEntry('characters', 'Warned Hale')).names as { full: string }).full).toBe(
     'Warned Hale',

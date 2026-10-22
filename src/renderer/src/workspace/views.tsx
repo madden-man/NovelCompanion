@@ -156,12 +156,15 @@ export function EntryList(props: {
                     onClose={() => {
                       const id = entry._id;
                       setRenaming(null);
-                      // The row comes back under the caret, so the keyboard carries on from it.
-                      requestAnimationFrame(() =>
+                      // The row comes back under the caret, so the keyboard carries on from it,
+                      // unless the field closed because the writer clicked or tabbed elsewhere.
+                      requestAnimationFrame(() => {
+                        const at = document.activeElement;
+                        if (at && at !== document.body) return;
                         document
                           .querySelector<HTMLElement>(`.entry-row[data-entry-id="${id}"]`)
-                          ?.focus(),
-                      );
+                          ?.focus();
+                      });
                     }}
                   />
                 </div>

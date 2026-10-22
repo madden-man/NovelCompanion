@@ -126,8 +126,18 @@ export type EditableKindProps =
 
 export type EditableProps = EditableCommonProps & EditableKindProps;
 
-/** Where every scrolled box above an element sits, to put back after a text undo. */
-function scrollSnapshot(el: Element): () => void {
+/**
+ * Where every scrolled box above an element sits, and a function that holds
+ * them there for a moment. Traced (2026-10-22): when the text of an open
+ * field shrinks (Backspace, or Cmd+Z stepping typing back, ED-3), Chromium
+ * starts a smooth scroll of the editor pane to its foot. No script calls a
+ * scroll API (every scroll method and the scrollTop setter were logged), no
+ * element remounts, and a plain input in the same heading does not do it, so
+ * the cause sits in the browser. The hold puts the pane back and lets go
+ * after 800 ms, or at once when the writer scrolls, touches, or presses a key
+ * anywhere but in the field.
+ */
+function scrollHold(el: Element): () => void {
   const saved: [Element, number, number][] = [];
   for (let e = el.parentElement; e; e = e.parentElement) {
     if (e.scrollTop || e.scrollLeft || e.scrollHeight > e.clientHeight) {
@@ -135,8 +145,6 @@ function scrollSnapshot(el: Element): () => void {
     }
   }
   return () => {
-    // Chromium reveals an undone text with a smooth scroll that starts a moment later:
-    // hold every box where it was for a short while, then let go.
     const hold = () => {
       for (const [e, top, left] of saved) {
         if (e.scrollTop !== top || e.scrollLeft !== left) {
@@ -144,21 +152,31 @@ function scrollSnapshot(el: Element): () => void {
         }
       }
     };
+    const release = (e?: Event) => {
+      // Keys typed into the field itself never scroll the pane; any other key may.
+      if (e?.type === 'keydown' && e.target === el) return;
+      clearTimeout(timer);
+      for (const [e] of saved) e.removeEventListener('scroll', hold);
+      for (const t of ['wheel', 'touchstart', 'keydown'] as const) {
+        window.removeEventListener(t, release, true);
+      }
+    };
+    const timer = setTimeout(release, 800);
     hold();
     for (const [e] of saved) e.addEventListener('scroll', hold);
-    setTimeout(() => {
-      for (const [e] of saved) e.removeEventListener('scroll', hold);
-    }, 800);
+    for (const t of ['wheel', 'touchstart', 'keydown'] as const) {
+      window.addEventListener(t, release, true);
+    }
   };
 }
 
 /** Read what was typed into the value this kind stores. */
-function parse(p: EditableKindProps, text: string): Parsed<unknown> {
+function parse(p: EditableKindProps, text: string, label: string): Parsed<unknown> {
   switch (p.kind) {
     case 'text':
-      return parseText(text, p.allowEmpty ?? true);
+      return parseText(text, p.allowEmpty ?? true, label);
     case 'rich':
-      return parseText(text, p.allowEmpty ?? true);
+      return parseText(text, p.allowEmpty ?? true, label);
     case 'year':
       return parseYear(text, p.allowEmpty ?? false);
     case 'number':
@@ -231,7 +249,8 @@ export function Editable(props: EditableProps) {
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   /** Set while a save runs or after Escape, so the blur that follows does not save again. */
   const busy = useRef(false);
-  const restoreScroll = useRef<() => void>(() => undefined);
+  /** An item Add new made whose pick has not saved yet; a retry picks it again. */
+  const created = useRef<AddedItem | null>(null);
   const settled = useRef(false);
   const refocus = useRef<'display' | 'add' | null>(null);
   const mounted = useRef(true);
@@ -258,6 +277,23 @@ export function Editable(props: EditableProps) {
     if (!typing || !el || document.activeElement === el) return;
     el.focus({ preventScroll: true });
     el.setSelectionRange(el.value.length, el.value.length);
+  }, [typing]);
+
+  // Every edit of the open text keeps the pane where it was (see scrollHold).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!typing || !el) return;
+    let hold: () => void = () => undefined;
+    const before = () => {
+      hold = scrollHold(el);
+    };
+    const after = () => hold();
+    el.addEventListener('beforeinput', before);
+    el.addEventListener('input', after);
+    return () => {
+      el.removeEventListener('beforeinput', before);
+      el.removeEventListener('input', after);
+    };
   }, [typing]);
 
   const selectOpen = kind === 'select' && open && addNew.step === 'closed';
@@ -288,6 +324,10 @@ export function Editable(props: EditableProps) {
   };
 
   const close = (how: 'saved' | 'unchanged', focus: 'display' | 'add' | null) => {
+    // An item made on the way that the field never took keeps its own step, so it can be undone.
+    const orphan = created.current;
+    created.current = null;
+    if (orphan?.command) undo.record(orphan.command);
     settled.current = true;
     refocus.current = focus;
     setOpen(false);
@@ -319,7 +359,7 @@ export function Editable(props: EditableProps) {
   /** Save the typed text (text, year, number, rich, date). */
   const commit = async (how: 'enter' | 'blur') => {
     if (busy.current || settled.current) return;
-    const parsed = parse(props, draft);
+    const parsed = parse(props, draft, label);
     if (!parsed.ok) {
       setError(parsed.message);
       setSaveState('error');
@@ -351,33 +391,41 @@ export function Editable(props: EditableProps) {
   };
 
   /** Add new: make the item, then save the value that picks it, as one step for the writer. */
-  const addAndPick = async () => {
+  const addAndPick = async (how: 'enter' | 'blur' = 'enter') => {
     if (props.kind !== 'select' && props.kind !== 'chips') return;
     if (addNew.step !== 'naming' || busy.current) return;
     const name = addNew.label.trim();
     dispatch({ type: 'submit' });
     if (!name || !props.onAddNew) return;
     busy.current = true;
-    let added: AddedItem;
-    try {
-      added = await props.onAddNew(name);
-    } catch (e) {
-      busy.current = false;
-      dispatch({ type: 'failed', message: plainError(e) });
-      setSaveState('error');
-      return;
+    setError(null);
+    // A retry after a failed pick picks the item already made, and makes no second one.
+    let added = created.current;
+    if (!added) {
+      try {
+        added = await props.onAddNew(name);
+      } catch (e) {
+        busy.current = false;
+        dispatch({ type: 'failed', message: plainError(e) });
+        setSaveState('error');
+        return;
+      }
+      created.current = added;
     }
     dispatch({ type: 'added', added });
     const next = props.kind === 'select' ? added.id : [...chipIds, added.id];
     const ok = await write(next, { added });
     if (ok) {
+      created.current = null;
       dispatch({ type: 'saved' });
-      close('saved', props.kind === 'chips' ? 'add' : 'display');
+      // After a blur the focus stays where the writer put it.
+      close('saved', how === 'blur' ? null : props.kind === 'chips' ? 'add' : 'display');
       return;
     }
-    // The item exists though the field did not take it: keep its step so it can be undone.
-    if (added.command) undo.record(added.command);
-    dispatch({ type: 'failed', message: 'The new item was made, but the field did not take it.' });
+    dispatch({
+      type: 'failed',
+      message: `${added.label} was made, but the field did not take it. Press Enter to try again.`,
+    });
   };
 
   const onTextKey = (e: ReactKeyboardEvent<HTMLElement>) => {
@@ -467,18 +515,6 @@ export function Editable(props: EditableProps) {
         onChange={(e) => inputProps.onChange(e.target.value)}
         onKeyDown={inputProps.onKeyDown}
         onBlur={inputProps.onBlur}
-        onFocus={(e) => {
-          restoreScroll.current = scrollSnapshot(e.currentTarget);
-        }}
-        onKeyUp={(e) => {
-          restoreScroll.current = scrollSnapshot(e.currentTarget);
-        }}
-        onInput={(e) => {
-          // Chromium scrolls the pane when Cmd+Z steps the text back (ED-3); the page stays put.
-          const type = (e.nativeEvent as InputEvent).inputType;
-          if (!type.startsWith('history')) return;
-          restoreScroll.current();
-        }}
       />
     </span>
   );
@@ -517,7 +553,11 @@ export function Editable(props: EditableProps) {
         }}
         onBlurOut={() => {
           if (busy.current || addNew.step === 'adding' || addNew.step === 'saving') return;
-          if (addNew.step === 'naming' && addNew.label.trim()) return;
+          // A typed name saves on blur, as Enter does (IP-1).
+          if (addNew.step === 'naming' && addNew.label.trim()) {
+            void addAndPick('blur');
+            return;
+          }
           close('unchanged', null);
         }}
       />
@@ -590,7 +630,7 @@ export function Editable(props: EditableProps) {
       },
       onBlur: () => {
         if (busy.current || settled.current) return;
-        if (naming && naming.label.trim()) void addAndPick();
+        if (naming && naming.label.trim()) void addAndPick('blur');
         else close('unchanged', null);
       },
     });
@@ -608,7 +648,13 @@ export function Editable(props: EditableProps) {
         className="editable-rich-box"
         onBlur={() => void commit('blur')}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          // Cmd+Enter always saves; Enter saves too, except inside a list, where it
+          // starts the next item as the box does everywhere (A44); Shift+Enter is a new line.
+          const mod = e.metaKey || e.ctrlKey;
+          const inList = Boolean(
+            (window.getSelection()?.anchorNode?.parentElement ?? null)?.closest('li'),
+          );
+          if (e.key === 'Enter' && !e.shiftKey && !e.altKey && (mod || !inList)) {
             e.preventDefault();
             void commit('enter');
             return true;
@@ -671,11 +717,15 @@ export function Editable(props: EditableProps) {
       )}
       {body}
       {saveState === 'saved' && (
-        <span className="editable-tick">
-          <span aria-hidden="true">✓</span>
-          <span className="sr-only" role="status">
-            Saved
-          </span>
+        <span className="editable-tick" aria-hidden="true">
+          ✓
+        </span>
+      )}
+      {/* One live region per field, present while it is open or saving and for the tick,
+          so "Saved" is announced into a region that already exists; closed fields add none. */}
+      {(open || addNew.step !== 'closed' || saveState === 'saving' || saveState === 'saved') && (
+        <span className="sr-only" role="status" aria-live="polite">
+          {saveState === 'saved' ? 'Saved' : saveState === 'saving' ? 'Saving' : ''}
         </span>
       )}
       {message && (
@@ -719,6 +769,14 @@ function ChipRow(props: {
   const listId = useId();
   const optionId = useId();
   const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const opening = addNew.step === 'choosing';
+  // The picker takes the focus when it opens, without scrolling the page (IP-1). Only
+  // then: a later render must not pull the focus back from where the writer moved it.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (opening && el && document.activeElement !== el) el.focus({ preventScroll: true });
+  }, [opening]);
   const nameOf = (id: string) => options.find((o) => o.value === id)?.label ?? id;
   const addText = props.addLabel ?? `Add to ${label}`;
   const choosing = addNew.step === 'choosing' ? addNew : null;
@@ -778,10 +836,7 @@ function ChipRow(props: {
               }
               aria-describedby={props.errorId}
               placeholder={naming ? 'Name the new item' : 'Type to find'}
-              ref={(el) => {
-                // Takes the focus without scrolling the page (IP-1).
-                if (el && document.activeElement !== el) el.focus({ preventScroll: true });
-              }}
+              ref={inputRef}
               autoComplete="off"
               size={1}
               value={text}

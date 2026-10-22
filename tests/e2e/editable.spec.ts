@@ -112,16 +112,9 @@ test('IP-1 a text field opens on click, saves on Enter, reverts on Escape, and t
   expectSameBox(before.name, await box(name), 'the name while open');
   expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0)).toBe(0);
 
-  // Cmd+Z inside the open field undoes the typing, not the app's history (ED-3).
-  await page.keyboard.press('End');
-  await page.keyboard.type(' Junior');
-  await expect(input).toHaveValue('Zhou Jun Junior');
-  await page.keyboard.press('Meta+z');
-  await expect(input).toHaveValue('Zhou Jun');
-  await expect.poll(async () => (await character('Z4')).title).toBe('Zhou Jun');
-
   // Escape puts the old value back and writes nothing.
-  // Typed from the keyboard: Playwright's fill would scroll the pane itself.
+  // Typed from the keyboard: Playwright's fill scrolls the pane itself.
+  await page.keyboard.press('End');
   await page.keyboard.type('ior');
   await expect(input).toHaveValue('Zhou Junior');
   await input.press('Escape');
@@ -134,8 +127,11 @@ test('IP-1 a text field opens on click, saves on Enter, reverts on Escape, and t
 
   // Enter saves as one step; the title follows the name; a tick shows briefly.
   await name.locator('.editable-text').click();
-  await input.fill('Zhou J.');
-  await input.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('.');
+  await page.keyboard.press('Enter');
   await expect(input).toHaveCount(0);
   await expect(name).toHaveAttribute('data-save-state', 'saved');
   await expect(name.locator('.editable-tick')).toBeVisible();
@@ -153,6 +149,76 @@ test('IP-1 a text field opens on click, saves on Enter, reverts on Escape, and t
   await page.keyboard.press('Meta+z');
   await expect.poll(async () => (await character('Z4')).title).toBe('Zhou Jun');
   await expect(name.locator('.editable-text')).toHaveText('Zhou Jun');
+
+  // Cmd+Z inside the open field undoes the typing, not the app's history (ED-3).
+  // Last, with no box measured after it, so nothing here leans on the scroll hold.
+  await name.locator('.editable-text').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Junior');
+  await expect(input).toHaveValue('Zhou Jun Junior');
+  await page.keyboard.press('Meta+z');
+  await expect(input).toHaveValue('Zhou Jun');
+  await expect.poll(async () => (await character('Z4')).title).toBe('Zhou Jun');
+  await input.press('Escape');
+  await expect(input).toHaveCount(0);
+});
+
+test('IP-1 ED-3 a name saved in the heading while a box holds unsaved typing keeps the typing and undoes the name alone', async () => {
+  const p = await openCharacter('Zhou Wei');
+  const desc = p.getByLabel('Description', { exact: true });
+  const name = field(p, 'names.full');
+  // Typing waits in the box (the autosave is half a second away) when the name is saved.
+  await desc.click();
+  await page.keyboard.type('Quiet and kind.');
+  await name.locator('.editable-text').click();
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Zhou Wei Sr');
+  await page.keyboard.press('Enter');
+  await expect(name.locator('input')).toHaveCount(0);
+  await expect.poll(async () => (await character('Z2')).title).toBe('Zhou Wei Sr');
+  await expect(desc).toHaveText('Quiet and kind.');
+  expect((await character('Z2')).body).toBe('Quiet and kind.');
+  // More typing after the name lands is a step of its own that leaves the name alone.
+  await desc.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Always early.');
+  await expect(page.getByTestId('editor').getByTestId('autosave')).toHaveText('Saved');
+  await expect.poll(async () => (await character('Z2')).body).toBe('Quiet and kind. Always early.');
+  expect((await history()).slice(0, 3)).toEqual([
+    'Changed Body on Zhou Wei Sr',
+    'Changed Full name on Zhou Wei Sr',
+    'Changed Body on Zhou Wei',
+  ]);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await character('Z2')).body).toBe('Quiet and kind.');
+  expect((await character('Z2')).title).toBe('Zhou Wei Sr');
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await character('Z2')).title).toBe('Zhou Wei');
+  expect(await character('Z2')).toMatchObject({
+    body: 'Quiet and kind.',
+    names: { full: 'Zhou Wei', chinese: '周伟' },
+  });
+  await expect(desc).toHaveText('Quiet and kind.');
+});
+
+test('IP-1 rich, select and date fields open in place: the line after each does not move', async () => {
+  const g = await openGallery();
+  const dt = (t: string) => g.locator('dt', { hasText: new RegExp(`^${t}$`) });
+  for (const c of [
+    { id: 'g-rich', next: 'Select' },
+    { id: 'g-select', next: 'Chips' },
+    { id: 'g-date', next: 'Read only' },
+  ]) {
+    const f = g.getByTestId(c.id);
+    const before = await box(dt(c.next));
+    await f.locator('.editable-text').click();
+    await expect(f).toHaveClass(/is-open/);
+    expectSameBox(before, await box(dt(c.next)), `${c.next} while ${c.id} is open`);
+    await page.keyboard.press('Escape');
+    await expect(f).not.toHaveClass(/is-open/);
+    expectSameBox(before, await box(dt(c.next)), `${c.next} after ${c.id} closed`);
+  }
 });
 
 test('IP-1 a character list row renames in place with F2 or a double-click, and Enter saves', async () => {
@@ -372,8 +438,18 @@ test('IP-1 NF-2 every kind works from the keyboard and labels use the primary te
   await page.keyboard.type('1500');
   await page.keyboard.press('Enter');
   await expect(text('g-number')).toHaveText('1500');
-  // Rich text: Shift+Enter is a new line, Enter saves.
+  // Rich text: Enter inside a list starts the next item, Cmd+Enter saves.
   await text('g-rich').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('- One');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Two');
+  await page.keyboard.press('Meta+Enter');
+  await expect.poll(async () => (await event()).body).toMatch(/^[-*] One\n[-*] Two$/);
+  await expect(text('g-rich')).toBeFocused();
+  // Out of the list, Shift+Enter is a new line and Enter saves.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.keyboard.type('The ice is gone.');
   await page.keyboard.press('Shift+Enter');
@@ -381,7 +457,7 @@ test('IP-1 NF-2 every kind works from the keyboard and labels use the primary te
   await page.keyboard.press('Enter');
   await expect
     .poll(async () => (await event()).body)
-    .toMatch(/^The ice is gone\.[\s\\]+Ships cross the pole\.$/);
+    .toMatch(/^[-*] One\n[-*] Two\n\nThe ice is gone\.[\s\\]+Ships cross the pole\.$/);
   await expect(text('g-rich')).toBeFocused();
   // Select: Enter opens it focused; the arrows pick; the pick saves.
   await text('g-select').focus();

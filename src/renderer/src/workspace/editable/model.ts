@@ -54,10 +54,15 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
 export const ADD_NEW = '\u0000add-new';
 export const ADD_NEW_LABEL = 'Add new...';
 
+/** "Full name cannot be empty.", or "Cannot be empty." when there is no label. */
+export function emptyMessage(label?: string): string {
+  return label ? `${label} cannot be empty.` : 'Cannot be empty.';
+}
+
 /** Text: kept as typed, apart from trailing spaces; empty is refused when `allowEmpty` is false. */
-export function parseText(text: string, allowEmpty = true): Parsed<string> {
+export function parseText(text: string, allowEmpty = true, label?: string): Parsed<string> {
   const v = text.replace(/\s+$/u, '');
-  if (!allowEmpty && v.trim() === '') return { ok: false, message: 'Cannot be empty.' };
+  if (!allowEmpty && v.trim() === '') return { ok: false, message: emptyMessage(label) };
   return { ok: true, value: v };
 }
 
