@@ -24,7 +24,8 @@ import { call, plainError } from '../api';
 import { WriteFieldset, useWriteGuard } from '../connection';
 import { useStore } from './data';
 import { useUndo } from './undo';
-import { Editable, EntryEditable, saveEntryField, useListAddNew } from './editable';
+import { Editable, EntryEditable, mergeCommands, saveEntryField, useListAddNew } from './editable';
+import type { SaveInfo } from './editable';
 import { ListSelect } from './listSelect';
 import { ColourBox } from './colourBox';
 import './vocab.css';
@@ -160,11 +161,14 @@ function ListPanel({ list }: { list: WireList }) {
     return setLook(item, { extra });
   };
 
-  const setParent = async (item: Item, parentId: string | null) => {
+  /** The new parent; with Add new, the item it made joins this step (one undo for both). */
+  const setParent = async (item: Item, parentId: string | null, info: SaveInfo = {}) => {
     const r = await call('lists.setParent', { listId: list._id, itemId: item.id, parentId });
-    if (r.from !== r.to) {
-      undo.record(listParentCommand(call, list.label, list._id, item, r.from, r.to));
-    }
+    const step =
+      r.from !== r.to ? listParentCommand(call, list.label, list._id, item, r.from, r.to) : null;
+    const added = info.added?.command;
+    const both = step && added ? mergeCommands(step.label, added, step) : (step ?? added);
+    if (both) undo.record(both);
   };
 
   const remove = async (item: Item) => {
@@ -331,7 +335,7 @@ function ListPanel({ list }: { list: WireList }) {
                     testId="item-parent"
                     onAddNew={addParent}
                     display={(s) => (item.parentId ? `under ${s}` : s)}
-                    onSave={(next) => setParent(item, next)}
+                    onSave={(next, info) => setParent(item, next, info)}
                   />
                 )}
                 <span className="example-note vocab-usage">{usageText(item.usage)}</span>

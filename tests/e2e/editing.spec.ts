@@ -500,6 +500,20 @@ test('ED-10 a value the schema cannot store is marked at the field and not sent'
   await expect(name).toContainText('Warned Hale');
 });
 
+async function listItems(listId: string) {
+  const list = (await invoke('lists.get', {})).lists.find((l) => l._id === listId);
+  if (!list) throw new Error(`No list ${listId}`);
+  return list.items;
+}
+const listPanel = (listId: string) => page.locator(`[data-list="${listId}"]`);
+const itemRow = (listId: string, itemId: string) =>
+  listPanel(listId).locator(`[data-item="${itemId}"]`);
+/** Cmd+Z with nothing focused that holds text (ED-3). */
+async function undoStep() {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+}
+
 test('ED-8 renaming a tag on the Lists screen updates every entry that uses it', async () => {
   // SM-1: the character page has no tags box, so two open questions carry the tag.
   await openSection('openQuestions');
@@ -521,12 +535,13 @@ test('ED-8 renaming a tag on the Lists screen updates every entry that uses it',
   }
   await rail(page, 'Lists').click();
   const panel = page.locator('[data-list="tags"]');
-  const row = panel.locator('li', { hasText: 'harbor' });
+  // The row by its item ID: the open field holds the name as a value, not as text.
+  const tagId = (await listItems('tags')).find((i) => i.label === 'harbor')!.id;
+  const row = panel.locator(`[data-item="${tagId}"]`);
   await expect(row).toContainText('used 2 times');
-  await row.getByRole('button', { name: 'Rename harbor' }).click();
-  await panel.getByLabel('New name for harbor').fill('the harbor');
-  await panel.getByRole('button', { name: 'Save name' }).click();
-  await expect(panel.getByRole('status')).toHaveText('Renamed. 2 entries were updated.');
+  // IP-8: the name is a field; Enter renames.
+  await fillEditable(row.getByTestId('item-name'), 'the harbor');
+  await expect(panel.locator('p[role="status"]')).toHaveText('Renamed. 2 entries were updated.');
   for (const name of ['Temp question', 'Second question']) {
     expect((await currentEntry('openQuestions', name)).tags).toContain('the harbor');
     expect((await currentEntry('openQuestions', name)).tags).not.toContain('harbor');
@@ -541,9 +556,11 @@ test('ED-8 renaming a tag on the Lists screen updates every entry that uses it',
 test('ED-8 renaming a union type changes the name every union shows', async () => {
   await rail(page, 'Lists').click();
   const panel = page.locator('[data-list="unionTypes"]');
-  await panel.getByRole('button', { name: 'Rename Partnered' }).click();
-  await panel.getByLabel('New name for Partnered').fill('Domestic partners');
-  await panel.getByRole('button', { name: 'Save name' }).click();
+  const partnered = (await listItems('unionTypes')).find((i) => i.label === 'Partnered')!.id;
+  await fillEditable(
+    panel.locator(`[data-item="${partnered}"]`).getByTestId('item-name'),
+    'Domestic partners',
+  );
   await expect(panel).toContainText('Domestic partners');
   await openSection('unions');
   await page.getByTestId('entry-list').getByRole('button').first().click();
@@ -552,6 +569,205 @@ test('ED-8 renaming a union type changes the name every union shows', async () =
       hasText: 'Domestic partners',
     }),
   ).toHaveCount(1);
+});
+
+test('IP-8 a list item moves up and down by its buttons and by drag, each move one undo step, and selects show the stored order', async () => {
+  await rail(page, 'Lists').click();
+  const ids = async () => (await listItems('parentLinkTypes')).map((i) => i.id);
+  const start = await ids();
+  expect(start.length).toBeGreaterThanOrEqual(3);
+  const [a, b, c] = start as [string, string, string];
+  const second = (await listItems('parentLinkTypes'))[1]!;
+  await itemRow('parentLinkTypes', b)
+    .getByRole('button', { name: `Move ${second.label} up` })
+    .click();
+  await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
+  // The focus stays with the item: at the top its Up is off, so Down has it.
+  await expect(
+    itemRow('parentLinkTypes', b).getByRole('button', { name: `Move ${second.label} down` }),
+  ).toBeFocused();
+  // By keyboard: Enter on Down moves it back.
+  await page.keyboard.press('Enter');
+  await expect.poll(ids).toEqual(start);
+  await undoStep();
+  await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
+  await undoStep();
+  await expect.poll(ids).toEqual(start);
+
+  // By drag: the first item dropped on the third takes its place.
+  await itemRow('parentLinkTypes', a)
+    .getByTestId('drag-handle')
+    .dragTo(itemRow('parentLinkTypes', c));
+  await expect.poll(ids).toEqual([b, c, a, ...start.slice(3)]);
+  // A select over the list shows the stored order (the new parent link form).
+  const labels = (await listItems('parentLinkTypes')).map((i) => i.label);
+  await openSection('parentLinks');
+  await page.getByRole('button', { name: /^New / }).first().click();
+  const form = page.getByTestId('new-entry');
+  const options = await field(form, 'type').locator('select option').allTextContents();
+  expect(options.filter((o) => labels.includes(o))).toEqual(labels);
+  expect(options.at(-1)).toBe('Add new...');
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await undoStep();
+  await expect.poll(ids).toEqual(start);
+});
+
+test('IP-8 an event category takes a parent in place, never one under itself, and Add new makes the parent in the same step', async () => {
+  const harbor = (
+    await invoke('lists.addItem', { listId: 'eventCategories', label: 'Harbor works' })
+  ).item;
+  const cranes = (await invoke('lists.addItem', { listId: 'eventCategories', label: 'Cranes' }))
+    .item;
+  const parentOf = async (id: string) =>
+    (await listItems('eventCategories')).find((i) => i.id === id)?.parentId ?? null;
+  await rail(page, 'Lists').click();
+  const row = itemRow('eventCategories', cranes.id);
+  const under = row.getByTestId('item-parent');
+  await expect(row.getByTestId('item-parent-text')).toHaveText('At the top');
+  await openEditable(under);
+  await under.locator('select').selectOption(harbor.id);
+  await expect.poll(() => parentOf(cranes.id)).toBe(harbor.id);
+  await expect(row.getByTestId('item-parent-text')).toHaveText('under Harbor works');
+  await expect(row.getByTestId('item-name-text')).toHaveText('Harbor works > Cranes');
+  // Harbor works cannot go under Cranes, which sits under it.
+  const harborUnder = itemRow('eventCategories', harbor.id).getByTestId('item-parent');
+  await openEditable(harborUnder);
+  await expect(harborUnder.locator(`select option[value="${cranes.id}"]`)).toHaveCount(0);
+  await harborUnder.locator('select').press('Escape');
+  await undoStep();
+  await expect.poll(() => parentOf(cranes.id)).toBeNull();
+
+  // Add new from the Under select: the new item and the move are one step.
+  await openEditable(under);
+  await under.locator('select').selectOption({ label: 'Add new...' });
+  await under.locator('input').fill('Ports');
+  await under.locator('input').press('Enter');
+  await expect(row.getByTestId('item-parent-text')).toHaveText('under Ports');
+  const ports = (await listItems('eventCategories')).find((i) => i.label === 'Ports');
+  expect(ports).toBeDefined();
+  expect(await parentOf(cranes.id)).toBe(ports!.id);
+  await undoStep();
+  await expect.poll(() => parentOf(cranes.id)).toBeNull();
+  await expect
+    .poll(async () => (await listItems('eventCategories')).some((i) => i.label === 'Ports'))
+    .toBe(false);
+});
+
+test('IP-9 statuses and provenance recolour in place, a status changes kind, and a new status takes its kind when added', async () => {
+  await rail(page, 'Lists').click();
+  const item = async (listId: string, id: string) =>
+    (await listItems(listId)).find((i) => i.id === id);
+  await itemRow('statuses', 'idea').getByTestId('item-colour').fill('#aa3300');
+  await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#aa3300');
+  await undoStep();
+  await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#7a611b');
+  await itemRow('provenance', 'invented').getByTestId('item-colour').fill('#225588');
+  await expect.poll(async () => (await item('provenance', 'invented'))?.color).toBe('#225588');
+
+  const panel = listPanel('statuses');
+  await panel.getByLabel(/^New item for /).fill('Draft');
+  await panel.getByLabel('Kind', { exact: true }).selectOption('planned');
+  await panel.getByRole('button', { name: /^Add to / }).click();
+  await expect
+    .poll(async () => (await listItems('statuses')).find((i) => i.label === 'Draft')?.extra.kind)
+    .toBe('planned');
+  const draft = (await listItems('statuses')).find((i) => i.label === 'Draft')!;
+  const kind = itemRow('statuses', draft.id).getByTestId('item-kind');
+  await expect(itemRow('statuses', draft.id).getByTestId('item-kind-text')).toHaveText(
+    'kind planned',
+  );
+  await openEditable(kind);
+  await kind.locator('select').selectOption('canon');
+  await expect.poll(async () => (await item('statuses', draft.id))?.extra.kind).toBe('canon');
+  await undoStep();
+  await expect.poll(async () => (await item('statuses', draft.id))?.extra.kind).toBe('planned');
+  // The last status of a kind cannot change kind away: the reason shows at the field.
+  const ideaKind = itemRow('statuses', 'idea').getByTestId('item-kind');
+  await openEditable(ideaKind);
+  await ideaKind.locator('select').selectOption('canon');
+  await expect(ideaKind.getByRole('alert')).toContainText('idea');
+  await ideaKind.locator('select').press('Escape');
+  expect((await item('statuses', 'idea'))?.extra.kind).toBe('idea');
+});
+
+test('IP-8 renaming a region on the Lists screen renames it on every event that names it', async () => {
+  const cat = (await invoke('lists.addItem', { listId: 'eventCategories', label: 'Sea walls' }))
+    .item;
+  const { entry } = await invoke('entry.create', {
+    collection: 'worldEvents',
+    data: {
+      title: 'The harbor wall rises',
+      start: { year: 2041 },
+      categoryId: cat.id,
+      regions: ['Harbor Coast'],
+      status: 'canon',
+    },
+  });
+  const region = (await listItems('regions')).find((i) => i.label === 'Harbor Coast');
+  expect(region).toBeDefined();
+  expect(entry.regions).toEqual([region!.id]);
+  await rail(page, 'Lists').click();
+  await fillEditable(itemRow('regions', region!.id).getByTestId('item-name'), 'Harbour Coast');
+  await expect
+    .poll(async () => (await listItems('regions')).find((i) => i.id === region!.id)?.label)
+    .toBe('Harbour Coast');
+  const after = (await invoke('entry.get', { collection: 'worldEvents', id: entry._id })).entry;
+  expect(after.regions).toEqual([region!.id]);
+  await openSection('worldEvents');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /The harbor wall rises/ })
+    .click();
+  await expect(field(page.getByTestId('editor'), 'regions')).toContainText('Harbour Coast');
+});
+
+test('IP-10 an age group edits its from and to ages in place, one step each', async () => {
+  const ages = async () => (await listItems('ageGroups')).find((i) => i.id === '18-30')?.extra;
+  const was = await ages();
+  await rail(page, 'Lists').click();
+  const row = itemRow('ageGroups', '18-30');
+  await fillEditable(row.getByTestId('item-from'), '19');
+  await expect.poll(async () => (await ages())?.from).toBe(19);
+  await fillEditable(row.getByTestId('item-to'), '31');
+  await expect.poll(async () => (await ages())?.to).toBe(31);
+  await expect(row.getByTestId('item-to-text')).toHaveText('to 31');
+  await undoStep();
+  await expect.poll(async () => (await ages())?.to).toBe(was?.to);
+  await undoStep();
+  await expect.poll(async () => (await ages())?.from).toBe(was?.from);
+});
+
+test('IP-12 families take a colour and eras their years on the Lists screen', async () => {
+  const { entry: fam } = await invoke('entry.create', {
+    collection: 'families',
+    data: { title: 'Pierce', name: 'Pierce', color: '#2a78d6', status: 'canon' },
+  });
+  await rail(page, 'Lists').click();
+  await itemRow('families', fam._id).getByTestId('item-colour').fill('#336699');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'families', id: fam._id })).entry.color,
+    )
+    .toBe('#336699');
+  const [era] = await listItems('eraRanges');
+  if (!era) throw new Error('No eras in the bible');
+  const start = Number(
+    (await invoke('entry.get', { collection: 'eraStates', id: era.id })).entry.startYear,
+  );
+  await fillEditable(itemRow('eraRanges', era.id).getByTestId('era-start'), String(start + 1));
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'eraStates', id: era.id })).entry.startYear,
+    )
+    .toBe(start + 1);
+  await undoStep();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'eraStates', id: era.id })).entry.startYear,
+    )
+    .toBe(start);
 });
 
 test('ED-6 generated content and imported content are edited like any other field', async () => {
