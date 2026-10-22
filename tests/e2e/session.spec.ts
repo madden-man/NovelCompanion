@@ -7,7 +7,20 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { changes, field, fileDb, invokeVia, launch, rail, screenTab, sectionList } from './helpers';
+import {
+  changes,
+  field,
+  fileDb,
+  fillEditable,
+  invokeVia,
+  launch,
+  openEditable,
+  rail,
+  screenTab,
+  sectionList,
+} from './helpers';
+import { contrast } from '../helpers/contrast';
+import type { Rgba } from '../helpers/contrast';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -221,10 +234,17 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect(strand('CH2-present').getByTestId('sel-backstory')).toContainText(
     'Backstory backstory · 2032',
   );
-  // SM-10: the characters are tiles: name, age, and point of view.
-  await expect(
-    strand('CH2-present').locator('[data-kind="characters"] [data-testid="tile-toggle"]'),
-  ).toHaveText([/^Daniel Hale60point of view$/, /^Zhou Lan57$/, /^Iris Hale-Zhou14$/]);
+  // SM-10: the characters are tiles: name, age, and point of view. IP-2: the name is a field.
+  const ch2Tiles = strand('CH2-present').locator(
+    '[data-kind="characters"] [data-testid="sel-item"]',
+  );
+  await expect(ch2Tiles.getByTestId('tile-name-text')).toHaveText([
+    'Daniel Hale',
+    'Zhou Lan',
+    'Iris Hale-Zhou',
+  ]);
+  await expect(ch2Tiles.getByTestId('tile-age')).toHaveText(['60', '57', '14']);
+  await expect(ch2Tiles.nth(0)).toContainText('point of view');
   // SM-10: the scene note, the tiles, the world events strip, the cultural context; then
   // the backstory of the backstory years (A35), and the rest folded.
   await expect
@@ -263,7 +283,8 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect(cols.last()).toHaveAttribute('data-year', '2046');
   await expect(cols.nth(3)).toHaveAttribute('aria-current', 'date');
   await expect(groupIds(s, 'eventsWindow')).toHaveAttribute('data-id', 'E5');
-  await expect(groupIds(s, 'eventsWindow').getByRole('button')).toHaveText(
+  // IP-2: the title on the strip is a field, with Open beside it.
+  await expect(groupIds(s, 'eventsWindow').getByTestId('event-title-text')).toHaveText(
     'Grid batteries replace the last coal plant in Guangdong',
   );
   await expect(strip).not.toContainText('planned');
@@ -304,7 +325,8 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect(groupIds(s, 'plannedAhead')).toHaveCount(0);
 
   // Each item opens its entry.
-  await groupIds(s, 'culture').getByRole('button', { name: 'Flood memorial walk' }).click();
+  // IP-2: a cultural line opens its page from Open; a click on the line edits it in place.
+  await groupIds(s, 'culture').getByRole('button', { name: 'Open Flood memorial walk' }).click();
   await expect(page.getByTestId('editor')).toBeVisible();
   await expect(page.getByTestId('editor')).toContainText('Flood memorial walk');
   await page.getByTestId('top-relevant').click();
@@ -399,12 +421,13 @@ test('KB-6 SM-6 Cmd+K opens the capture box with the story time on Continuity ch
 test('SM-10 the tiles list the chapter characters with Chinese name and age, the point of view first and marked', async () => {
   const tiles = strand('CH6-present').locator('[data-kind="characters"] [data-testid="sel-item"]');
   await expect(tiles).toHaveCount(2);
-  await expect(tiles.getByTestId('tile-toggle')).toHaveText([
-    /^Iris Hale-Zhou14point of view$/,
-    /^Daniel Hale60$/,
-  ]);
+  await expect(tiles.getByTestId('tile-name-text')).toHaveText(['Iris Hale-Zhou', 'Daniel Hale']);
+  await expect(tiles.getByTestId('tile-age')).toHaveText(['14', '60']);
+  await expect(tiles.nth(0)).toContainText('point of view');
+  await expect(tiles.nth(1)).not.toContainText('point of view');
   await expect(tiles.nth(0).getByTestId('tile-chinese').locator('.zh-chars')).toHaveText('晓曦');
-  await expect(tiles.nth(1).getByTestId('tile-chinese')).toHaveCount(0);
+  // IP-2: with no Chinese name the field offers one.
+  await expect(tiles.nth(1).getByTestId('tile-chinese')).toHaveText('Add a Chinese name');
   await expect(tiles.nth(0)).toHaveClass(/pov/);
   for (const t of await tiles.getByTestId('tile-toggle').all()) {
     await expect(t).toHaveAttribute('aria-expanded', 'false');
@@ -444,11 +467,11 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
   await expect(detail.getByTestId('tile-description')).toHaveText(
     'Quiet, stubborn, draws on everything.',
   );
-  // The latest three at or before 2045: not 2040, not B5 in 2050.
+  // The latest three at or before 2045: not 2040, not B5 in 2050. IP-2: year and text are fields.
   await expect(iris.getByTestId('tile-moments').locator('li')).toHaveText([
     /^2043 Learns to make dumplings$/,
     /^2044 First year of high school$/,
-    /^2045 Iris finds the letter\. Iris finds an envelope in the attic\.$/,
+    /^2045 Iris finds the letter$/,
   ]);
   await expect(detail.getByTestId('tile-family')).toContainText('Parents: Daniel Hale, Zhou Lan.');
   await expect(detail.getByTestId('tile-family')).toContainText('Partner: Tomas Reyes');
@@ -459,6 +482,11 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(iris.getByTestId('tile-detail')).toHaveCount(0);
   await page.keyboard.press('Enter');
+  // IP-2: the family line opens the tree at the person.
+  await detail.getByTestId('tile-family').getByRole('button').click();
+  await expect(rail(page, 'Family tree')).toHaveAttribute('aria-current', 'page');
+  await page.getByTestId('top-relevant').click();
+  await iris.getByTestId('tile-toggle').click();
   await iris.getByRole('button', { name: 'Their page' }).click();
   await expect(page.getByTestId('character-page')).toContainText('Iris Hale-Zhou');
   await expect(rail(page, 'Characters')).toHaveAttribute('aria-current', 'page');
@@ -475,6 +503,254 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
     id: 'H5',
     patch: { role: '', body: '' },
   });
+});
+
+const undoButton = () =>
+  page.getByTestId('top-bar').getByRole('button', { name: 'Undo', exact: true });
+const entry = async (collection: string, id: string) =>
+  (await invoke('entry.get', { collection: collection as never, id })).entry;
+const strandOf = async (chapterId: string, strandId: string) =>
+  ((await entry('chapters', chapterId)).strands as Record<string, unknown>[]).find(
+    (x) => x.id === strandId,
+  )!;
+const lastStep = async () => (await changes(page)).locator('li:not(.empty)').first();
+
+test('IP-2 IP-6 the heading renames the chapter and Undo renames it back', async () => {
+  await page.getByTestId('top-relevant').click();
+  const s = strand('CH6-present');
+  await fillEditable(s.getByTestId('relevant-title'), 'The Letter Home');
+  await expect.poll(async () => (await entry('chapters', 'CH6')).title).toBe('The Letter Home');
+  await expect(page.getByTestId('relevant-label')).toHaveText('The Letter Home');
+  await expect(await lastStep()).toHaveText('Changed Chapter title on The Letter Home');
+  await page.keyboard.press('Escape');
+  await undoButton().click();
+  await expect.poll(async () => (await entry('chapters', 'CH6')).title).toBe('The Letter');
+  await expect(page.getByTestId('relevant-label')).toHaveText('The Letter');
+});
+
+test('IP-2 the story year and the point of view write the writing strand, and the story time follows the year', async () => {
+  const s = strand('CH6-present');
+  await fillEditable(s.getByTestId('relevant-year'), '2046');
+  await expect.poll(async () => (await strandOf('CH6', 'CH6-present')).startYear).toBe(2046);
+  await expect(page.getByTestId('top-year')).toHaveValue('2046');
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2046');
+  await expect(await lastStep()).toHaveText('Story year of The Letter');
+  await page.keyboard.press('Escape');
+  await expect(s.getByTestId('tile-age').first()).toHaveText('15');
+  await fillEditable(s.getByTestId('relevant-year'), '2045');
+  await expect.poll(async () => (await strandOf('CH6', 'CH6-present')).startYear).toBe(2045);
+  await expect(page.getByTestId('top-year')).toHaveValue('2045');
+
+  const pov = s.getByTestId('relevant-pov');
+  await openEditable(pov);
+  await pov.locator('select').selectOption('H3');
+  await expect.poll(async () => (await strandOf('CH6', 'CH6-present')).povCharacterId).toBe('H3');
+  await expect(pov.locator('.editable-text')).toHaveText('Daniel Hale');
+  await expect(await lastStep()).toHaveText('Point of view of The Letter');
+  await page.keyboard.press('Escape');
+  await undoButton().click();
+  await expect.poll(async () => (await strandOf('CH6', 'CH6-present')).povCharacterId).toBe('H5');
+  await expect(pov.locator('.editable-text')).toHaveText('Iris Hale-Zhou');
+});
+
+test('IP-2 a tile edits name, birth and role in place, and the age follows the birth', async () => {
+  const daniel = strand('CH6-present').locator(
+    '[data-kind="characters"] [data-testid="sel-item"][data-id="H3"]',
+  );
+  // The name is a field on the closed tile; the title follows it.
+  await fillEditable(daniel.getByTestId('tile-name'), 'Dan Hale');
+  await expect.poll(async () => (await entry('characters', 'H3')).title).toBe('Dan Hale');
+  expect((await entry('characters', 'H3')).names).toMatchObject({ full: 'Dan Hale' });
+  await expect(daniel.getByTestId('tile-name-text')).toHaveText('Dan Hale');
+  await fillEditable(daniel.getByTestId('tile-name'), 'Daniel Hale');
+  await expect.poll(async () => (await entry('characters', 'H3')).title).toBe('Daniel Hale');
+
+  // The rest opens under it, without leaving the screen.
+  await daniel.getByTestId('tile-toggle').click();
+  await fillEditable(daniel.getByTestId('tile-birth'), '1980', 'blur');
+  await expect.poll(async () => (await entry('characters', 'H3')).birth).toEqual({ year: 1980 });
+  await expect(daniel.getByTestId('tile-age')).toHaveText('65');
+  await fillEditable(daniel.getByTestId('tile-birth'), '1985', 'blur');
+  await expect(daniel.getByTestId('tile-age')).toHaveText('60');
+
+  // In the story is the A44 box in place: Enter saves.
+  await daniel.getByTestId('tile-role').locator('.editable-text').click();
+  await expect(daniel.getByTestId('tile-role').getByRole('textbox')).toBeFocused();
+  await page.keyboard.type('The father who says nothing.');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await entry('characters', 'H3')).role)
+    .toBe('The father who says nothing.');
+  await expect(daniel.getByTestId('tile-role')).toHaveText('The father who says nothing.');
+  await expect(await lastStep()).toHaveText('Changed In the story on Daniel Hale');
+  await page.keyboard.press('Escape');
+  await invoke('entry.update', { collection: 'characters', id: 'H3', patch: { role: '' } });
+});
+
+test('IP-2 Add a moment lands at the story year for that person and the tile shows it', async () => {
+  const iris = strand('CH6-present').locator(
+    '[data-kind="characters"] [data-testid="sel-item"][data-id="H5"]',
+  );
+  await iris.getByTestId('tile-toggle').click();
+  await iris.getByRole('button', { name: 'Add a moment in 2045' }).click();
+  const input = iris.getByTestId('tile-moments').locator('input');
+  await expect(input).toBeFocused();
+  await input.fill('Iris hides the letter');
+  await input.press('Enter');
+  await expect(input).toHaveCount(0);
+  const made = async () =>
+    (await invoke('entry.list', { collection: 'moments', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .find((m) => m.title === 'Iris hides the letter');
+  await expect.poll(async () => (await made())?.year).toBe(2045);
+  expect(await made()).toMatchObject({ characterId: 'H5', year: 2045 });
+  await expect(iris.getByTestId('tile-moments')).toContainText('2045 Iris hides the letter');
+  await invoke('entry.delete', { collection: 'moments', id: (await made())!._id });
+  await iris.getByTestId('tile-toggle').click();
+});
+
+test('IP-2 the In this scene chip row adds and removes a character and the tiles follow', async () => {
+  const s = strand('CH6-present');
+  const row = s.getByTestId('scene-characters');
+  const tiles = s.locator('[data-kind="characters"] [data-testid="sel-item"]');
+  const present = async () => (await strandOf('CH6', 'CH6-present')).characterIds;
+  await row.getByRole('button', { name: 'Add a character to this scene' }).click();
+  await row.getByLabel('Character to add to this scene').fill('Zhou Jun');
+  await row.getByRole('option', { name: 'Zhou Jun' }).click();
+  await expect.poll(present).toEqual(['H5', 'H3', 'Z4']);
+  await expect(tiles.locator('[data-testid="tile-name-text"]')).toHaveText([
+    'Iris Hale-Zhou',
+    'Daniel Hale',
+    'Zhou Jun',
+  ]);
+  await expect(await lastStep()).toHaveText('Added Zhou Jun to The Letter');
+  await page.keyboard.press('Escape');
+  await row.getByRole('button', { name: 'Remove Zhou Jun from In this scene' }).click();
+  await expect.poll(present).toEqual(['H5', 'H3']);
+  await expect(tiles).toHaveCount(2);
+  await expect(await lastStep()).toHaveText('Removed Zhou Jun from The Letter');
+  await page.keyboard.press('Escape');
+
+  // Add new makes the character and adds it, one step; Undo takes both back.
+  await row.getByRole('button', { name: 'Add a character to this scene' }).click();
+  await row.getByLabel('Character to add to this scene').fill('Mei Lin');
+  await row.getByRole('option', { name: 'Add new...' }).click();
+  const name = row.getByLabel('Name of the new item for In this scene');
+  await name.fill('Mei Lin');
+  await name.press('Enter');
+  const mei = async () =>
+    (await invoke('entry.list', { collection: 'characters', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .find((c) => c.title === 'Mei Lin');
+  await expect.poll(async () => (await mei())?._id).toBeTruthy();
+  const meiId = (await mei())!._id;
+  await expect.poll(present).toEqual(['H5', 'H3', meiId]);
+  await expect(tiles).toHaveCount(3);
+  await expect(await lastStep()).toHaveText('Added Mei Lin to The Letter');
+  await page.keyboard.press('Escape');
+  await undoButton().click();
+  await expect.poll(present).toEqual(['H5', 'H3']);
+  await expect.poll(mei).toBeUndefined();
+  await expect(tiles).toHaveCount(2);
+});
+
+test('IP-2 Add an event makes an event at the story year with its title typed on the strip', async () => {
+  const s = strand('CH6-present');
+  const strip = s.locator('[data-testid="sel-group"][data-kind="eventsWindow"]');
+  await strip.getByRole('button', { name: 'Add an event in 2045' }).click();
+  const input = strip.locator('input');
+  await expect(input).toBeFocused();
+  await input.fill('Typhoon closes the port');
+  await input.press('Enter');
+  await expect(input).toHaveCount(0);
+  const made = async () =>
+    (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .find((e) => e.title === 'Typhoon closes the port');
+  await expect.poll(async () => (await made())?.start).toEqual({ year: 2045 });
+  // The first category, and the first status of kind planned.
+  const first = (await invoke('lists.get', {})).lists.find((l) => l._id === 'eventCategories')!
+    .items[0]!.id;
+  expect(await made()).toMatchObject({ categoryId: first, status: 'planned' });
+  await expect(
+    strip.locator('.we-col[data-year="2045"] [data-testid="event-title-text"]'),
+  ).toContainText(['Typhoon closes the port']);
+  // A title on the strip edits in place.
+  const id = (await made())!._id;
+  await fillEditable(
+    strip.locator(`[data-testid="sel-item"][data-id="${id}"]`).getByTestId('event-title'),
+    'Typhoon shuts the port',
+  );
+  await expect
+    .poll(async () => (await entry('worldEvents', id)).title)
+    .toBe('Typhoon shuts the port');
+  await invoke('entry.delete', { collection: 'worldEvents', id });
+});
+
+test('IP-2 Write it yourself makes a cultural line in the community for the unit and age group all', async () => {
+  const s = strand('CH6-present');
+  await invoke('entry.delete', { collection: 'culturalEntries', id: 'CU4' });
+  const gap = s.getByTestId('culture-gap');
+  // The community is labelled as this bible's list has it (the seeded label is its ID).
+  await expect(gap).toContainText('Nothing covers portland in 2045.');
+  await expect(gap.getByRole('button', { name: /^Add culture for portland, 2045/ })).toBeVisible();
+  await gap.getByRole('button', { name: 'Write a line for portland, 2045 yourself' }).click();
+  const culture = s.locator('[data-testid="sel-group"][data-kind="culture"]');
+  const input = culture.locator('input');
+  await expect(input).toBeFocused();
+  await input.fill('Rice comes by ration card.');
+  await input.press('Enter');
+  await expect(input).toHaveCount(0);
+  const made = async () =>
+    (await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })).entries
+      .map((e) => e.entry)
+      .find((e) => e.title === 'Rice comes by ration card.');
+  await expect.poll(async () => (await made())?.communityId).toBe('portland');
+  expect(await made()).toMatchObject({ startYear: 2040, endYear: 2049, demographic: 'all' });
+  await expect(culture.getByTestId('culture-line-text')).toHaveText(['Rice comes by ration card.']);
+  await invoke('entry.delete', { collection: 'culturalEntries', id: (await made())!._id });
+  await invoke('entry.restore', { collection: 'culturalEntries', id: 'CU4' });
+  await expect(culture.getByTestId('culture-line-text')).toHaveText(['Flood memorial walk']);
+});
+
+test('IP-2 SB-9 More shows no raw IDs, and Remove and Keep work before a brief is generated', async () => {
+  const s = strand('CH6-present');
+  const more = s.getByTestId('relevant-more');
+  await more.locator('summary').click();
+  // No raw ID anywhere on the screen.
+  const ids = await relevant()
+    .locator('[data-id]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('data-id') ?? ''));
+  expect(ids).toContain('CH1');
+  const text = await relevant().innerText();
+  for (const id of new Set(ids)) expect(text).not.toMatch(new RegExp(`\\b${id}\\b`));
+  const prev = more.locator(
+    '[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]',
+  );
+  const title = (await prev.getByRole('button').first().innerText()).trim();
+  await prev.getByRole('button', { name: `Remove ${title}` }).click();
+  await expect(prev).toHaveCount(0);
+  const left = more.locator('[data-testid="omitted-item"][data-id="CH1"]');
+  await expect(left).toContainText('removed by you');
+  // Start session's preview shares the removal, with Keep beside it.
+  await page.getByTestId('top-start-session').click();
+  const preview = page.getByTestId('start-selection');
+  const leftThere = preview.locator('[data-testid="omitted-item"][data-id="CH1"]');
+  await expect(leftThere).toContainText('removed by you');
+  await expect(preview).not.toContainText(/\bCH1\b/);
+  await leftThere.getByRole('button', { name: `Keep ${title}` }).click();
+  await expect(
+    preview.locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]'),
+  ).toHaveCount(1);
+  // And Remove in the preview reaches the desk.
+  await preview
+    .locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]')
+    .getByRole('button', { name: `Remove ${title}` })
+    .click();
+  await page.getByTestId('top-relevant').click();
+  await strand('CH6-present').getByTestId('relevant-more').locator('summary').click();
+  await left.getByRole('button', { name: `Keep ${title}` }).click();
+  await expect(prev).toHaveCount(1);
 });
 
 let briefId = '';
@@ -537,8 +813,14 @@ test('SB-9 removing and adding entries in the brief view, then regenerating', as
     .click();
   await sel.getByPlaceholder('Add an entry to the selection').fill('Zhou Jun');
   await sel.getByRole('option').filter({ hasText: 'Zhou Jun' }).first().click();
-  await expect(brief.getByTestId('brief-pending')).toContainText('To add: Z4');
-  await expect(brief.getByTestId('brief-pending')).toContainText('To remove: E5');
+  // IP-2: the pending entries by title, never by ID.
+  await expect(brief.getByTestId('brief-pending')).toContainText('To add: Zhou Jun');
+  await expect(brief.getByTestId('brief-pending')).toContainText(
+    'To remove: Grid batteries replace the last coal plant in Guangdong',
+  );
+  await expect(brief.getByTestId('brief-pending')).not.toContainText('Z4');
+  // IP-6: a brief the app just wrote has nothing to lose.
+  await expect(brief.getByTestId('brief-regenerate-warning')).toHaveCount(0);
   await brief.getByTestId('brief-regenerate').click();
   await expect(brief.getByTestId('brief-note')).toBeVisible();
   const saved = (await invoke('entry.get', { collection: 'briefs', id: briefId })).entry;
@@ -568,6 +850,32 @@ test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and
   expect(readFileSync(pdf).subarray(0, 5).toString()).toBe('%PDF-');
 });
 
+test('IP-6 Regenerate on an edited brief says it replaces the edits, and is one undo step', async () => {
+  const brief = page.getByTestId('brief-view');
+  const edited =
+    '# My brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- A stray line. [[Z2]]\n';
+  const stored = async () => String((await entry('briefs', briefId)).content);
+  await expect.poll(stored).toBe(edited);
+  const warning = brief.getByTestId('brief-regenerate-warning');
+  await expect(warning).toHaveText('This replaces your edits');
+  await expect(brief.getByTestId('brief-regenerate')).toHaveAccessibleDescription(
+    'This replaces your edits',
+  );
+  await brief.getByTestId('brief-regenerate').click();
+  await expect.poll(stored).not.toBe(edited);
+  await expect(warning).toHaveCount(0);
+  await expect(await lastStep()).toHaveText(/^Regenerated Brief: Chapter 6/);
+  await page.keyboard.press('Escape');
+  await undoButton().click();
+  await expect.poll(stored).toBe(edited);
+  await expect(warning).toHaveText('This replaces your edits');
+  // Redo writes the regenerated text back; Undo again leaves the edits as they were.
+  await page.getByTestId('top-bar').getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect.poll(stored).not.toBe(edited);
+  await undoButton().click();
+  await expect.poll(stored).toBe(edited);
+});
+
 test('SM-11 SB-8 DB-2 Start session lives on Sessions; a saved brief opens there in place and Back to Sessions returns', async () => {
   await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'brief');
@@ -586,6 +894,34 @@ test('SM-11 SB-8 DB-2 Start session lives on Sessions; a saved brief opens there
   // Start session in the top bar unfolds the selection.
   await page.getByTestId('top-start-session').click();
   await expect(page.getByTestId('start-selection')).toHaveAttribute('open', '');
+});
+
+test('IP-6 SL-1 New log entry writes a log for today and the chapter being written, open under its row', async () => {
+  // On Sessions, opened at Start session by the test before.
+  await expect(page.getByTestId('sessions-view')).toBeVisible();
+  const log = page.getByTestId('session-log');
+  const before = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
+    .entries.length;
+  await page.getByTestId('new-log-entry').click();
+  const editor = page.getByTestId('session-row-editor');
+  await expect(editor).toBeVisible();
+  const logs = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
+    .entries;
+  expect(logs).toHaveLength(before + 1);
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const made = logs
+    .map((l) => l.entry)
+    .find((l) => !l.briefId && l.date === today && l.chapterId === 'CH6')!;
+  expect(made).toMatchObject({ date: today, chapterId: 'CH6', storyYear: 2045 });
+  // The editor opens inside the new row's list item, under its row.
+  const row = log.locator(`.entry-row[data-id="${made._id}"]`);
+  await expect(row).toHaveAttribute('aria-expanded', 'true');
+  await expect(row.locator('xpath=..').getByTestId('session-row-editor')).toBeVisible();
+  await expect(await lastStep()).toHaveText(`Created Session ${today}`);
+  await page.keyboard.press('Escape');
+  await undoButton().click();
+  await expect(log.locator(`.entry-row[data-id="${made._id}"]`)).toHaveCount(0);
 });
 
 test('SB-4 DB-4 with Claude available the brief is written by the brief model from the selection', async () => {
@@ -691,6 +1027,31 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   await expect(ch.getByTestId('summary-stale')).toBeVisible();
   // MS-5: reading never wrote to the manuscript.
   expect(readFileSync(docPath).equals(bytes)).toBe(true);
+});
+
+test('IP-18 Re-import on the desk reads the linked Word chapter again, shows the diff and applies it', async () => {
+  await writeDoc('Daniel cleared the plates in silence.');
+  await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  await page.getByTestId('top-relevant').click();
+  const re = strand('CH6-present').getByTestId('reimport');
+  await expect(re).toContainText('Manuscript: Chapter 6 The Letter.docx');
+  await re.getByRole('button', { name: 'Re-import' }).click();
+  const compare = re.getByTestId('reimport-compare');
+  await expect(compare.locator('tr[data-kind="removed"]')).toHaveText([
+    /Daniel left the table before dessert\./,
+  ]);
+  await expect(compare.locator('tr[data-kind="added"]')).toHaveText([
+    /Daniel cleared the plates in silence\./,
+  ]);
+  await compare.getByRole('button', { name: 'Apply' }).click();
+  await expect(re.getByTestId('reimport-note')).toContainText('Imported.');
+  await expect
+    .poll(async () => String((await entry('chapters', 'CH6')).manuscriptText))
+    .toContain('Daniel cleared the plates in silence.');
+  // Reading again finds nothing new.
+  await re.getByRole('button', { name: 'Re-import' }).click();
+  await expect(compare).toContainText('no change from the text in the bible');
+  await compare.getByRole('button', { name: 'Discard' }).click();
 });
 
 test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run through the Claude runtime: disclosure, streaming, Stop, saved runs', async () => {
@@ -821,8 +1182,22 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
     '2043Learns to make dumplings Her grandmother teaches her.',
   );
   await expect(rows.nth(1)).toContainText('2044First year of high school Lonely.');
-  // Each moment opens in the editor.
-  await rows.nth(1).getByRole('button', { name: 'First year of high school' }).click();
+  // IP-2: the year and what happens edit in place; one undo step each.
+  await fillEditable(rows.nth(0).getByTestId('backstory-title'), 'Learns to fold dumplings');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'moments', id: made[0]! })).entry.title,
+    )
+    .toBe('Learns to fold dumplings');
+  await fillEditable(rows.nth(0).getByTestId('backstory-year'), '2042');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'moments', id: made[0]! })).entry.year,
+    )
+    .toBe(2042);
+  await expect(rows.nth(0)).toContainText('2042Learns to fold dumplings');
+  // Each moment opens in the editor from Open.
+  await rows.nth(1).getByRole('button', { name: 'Open First year of high school' }).click();
   await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', made[1]!);
 
   // A35: the culture section names its setting.
@@ -879,4 +1254,129 @@ test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and pr
     'aria-selected',
     'true',
   );
+});
+
+const parseRgb = (c: string): Rgba => {
+  const p = (c.match(/[\d.]+/g) ?? []).map(Number);
+  return [p[0] ?? 0, p[1] ?? 0, p[2] ?? 0, p[3] ?? 1];
+};
+
+test('IP-2 NF-2 every control of the desk works from the keyboard, in both themes, at 1200x800 and 390 wide', async () => {
+  await writing().selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  await page.getByTestId('top-relevant').click();
+  const s = strand('CH6-present');
+  const resize = (w: number, h: number) =>
+    app.evaluate(
+      ({ BrowserWindow }, [w2, h2]) => {
+        BrowserWindow.getAllWindows()[0]?.setContentSize(w2!, h2!);
+      },
+      [w, h],
+    );
+  // Fields open with Enter and save with Enter; the focus comes back to the text.
+  const title = s.getByTestId('relevant-title-text');
+  // Reached by the keyboard, the field shows its focus ring; Tab goes on to the story year.
+  await title.focus();
+  await page.keyboard.press('Tab');
+  await expect(s.getByTestId('relevant-year-text')).toBeFocused();
+  await expect(s.getByTestId('relevant-year-text')).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Shift+Tab');
+  await expect(title).toBeFocused();
+  await expect(title).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Home');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await entry('chapters', 'CH6')).title).toBe('The Letter Home');
+  await expect(title).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('The Letter');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await entry('chapters', 'CH6')).title).toBe('The Letter');
+  // The tile toggle, the chip row's Add, Add an event and Write or Ask are buttons Tab reaches.
+  const iris = s.locator('[data-kind="characters"] [data-testid="sel-item"][data-id="H5"]');
+  await iris.getByTestId('tile-toggle').focus();
+  await page.keyboard.press('Enter');
+  await expect(iris.getByTestId('tile-toggle')).toHaveAttribute('aria-expanded', 'true');
+  // Shift+Tab goes back to the Chinese name, a field: Enter opens it, Escape leaves it as it was.
+  const zh = iris.getByRole('button', { name: /^Name in Chinese characters/ });
+  for (let i = 0; i < 6 && !(await zh.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press('Shift+Tab');
+  }
+  await expect(zh).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(iris.getByTestId('tile-chinese').locator('input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(zh).toBeFocused();
+  const add = s.getByTestId('scene-characters').getByRole('button', {
+    name: 'Add a character to this scene',
+  });
+  await add.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Zhou Jun');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await strandOf('CH6', 'CH6-present')).characterIds)
+    .toEqual(['H5', 'H3', 'Z4']);
+  await s.getByRole('button', { name: 'Remove Zhou Jun from In this scene' }).focus();
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await strandOf('CH6', 'CH6-present')).characterIds)
+    .toEqual(['H5', 'H3']);
+  await iris.getByTestId('tile-toggle').click();
+
+  // Labels and fields read in the primary text colour with 4.5:1 contrast, in both themes and at
+  // both sizes, and the desk never scrolls sideways.
+  const theme0 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  for (const [w, h] of [
+    [1200, 800],
+    [390, 800],
+  ] as const) {
+    await resize(w, h);
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(w);
+    expect(await relevant().evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+      const read = await s.evaluate((root) => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--fg)';
+        document.body.append(probe);
+        const fg = getComputedStyle(probe).color;
+        probe.remove();
+        const bgOf = (el: Element | null): string => {
+          for (let e = el; e; e = e.parentElement) {
+            const b = getComputedStyle(e).backgroundColor;
+            if (b && !/rgba\(0, 0, 0, 0\)|transparent/.test(b)) return b;
+          }
+          return getComputedStyle(document.body).backgroundColor;
+        };
+        return {
+          fg,
+          found: [
+            ...root.querySelectorAll(
+              '.editable-text, .editable-label, h4, .rel-tile-name, .rel-comm, .brief-warn',
+            ),
+          ].map((el) => ({
+            what: `${el.className} ${(el.textContent ?? '').slice(0, 30)}`,
+            color: getComputedStyle(el).color,
+            bg: bgOf(el),
+          })),
+        };
+      });
+      expect(read.found.length).toBeGreaterThan(10);
+      for (const f of read.found) {
+        expect(
+          contrast(parseRgb(f.color), parseRgb(f.bg)),
+          `${f.what} in ${theme} at ${w}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      const labels = read.found.filter((f) => /editable-(label|text)/.test(f.what));
+      for (const f of labels) expect(f.color, `${f.what} in ${theme}`).toBe(read.fg);
+    }
+  }
+  await page.evaluate((t) => {
+    if (t === null) document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+  }, theme0);
+  await resize(1200, 800);
 });

@@ -3,9 +3,12 @@ import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
 import { filterQuestions, questionCounts } from '../../../../shared/domain/questions';
 import type { QuestionFilter } from '../../../../shared/domain/questions';
-import { logsNewestFirst } from '../../../../shared/domain/sessionLog';
+import { localDateString, logsNewestFirst } from '../../../../shared/domain/sessionLog';
+import { createCommand } from '../../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../../connection';
-import { call } from '../../api';
+import { call, plainError } from '../../api';
+import { useDefaultStatus } from '../bibleSettings';
+import { useUndo } from '../undo';
 import { useEntries, useStore } from '../data';
 import { RowEditor } from '../rowEditor';
 import type { Picked } from '../rowEditor';
@@ -110,6 +113,10 @@ export function SessionsView(props: {
         <SessionLog
           open={picked?.collection === 'sessionLogs' ? picked : null}
           onPick={(id) => pick('sessionLogs', id)}
+          onCreated={(id) => {
+            setNewQuestion(false);
+            setPicked({ collection: 'sessionLogs', id });
+          }}
           onClose={close}
         />
         <Briefs onOpenBrief={(id) => props.onSub('brief', id)} />
@@ -260,20 +267,71 @@ function Overview(props: {
   );
 }
 
-/** SL-1: every session log, newest first. A row opens the log under it (A43). */
+/**
+ * SL-1: every session log, newest first. A row opens the log under it (A43).
+ * IP-6: New log entry writes one by hand, dated today, for the chapter being
+ * written, and opens it under its row.
+ */
 function SessionLog(props: {
   open: Picked | null;
   onPick: (id: string) => void;
+  onCreated: (id: string) => void;
   onClose: () => void;
 }) {
   const logs = useEntries('sessionLogs');
   const chapters = useEntries('chapters');
+  const story = useStoryTime();
+  const undo = useUndo();
+  const ro = useWriteGuard();
+  const statusOf = useDefaultStatus();
+  const [error, setError] = useState<string | null>(null);
   const rows = useMemo(() => logsNewestFirst(logs), [logs]);
   const chapterTitle = (id: unknown) =>
     typeof id === 'string' && id ? entryTitle(chapters.find((c) => c._id === id)) : '';
+  const time = story.time ?? { year: story.year };
+  const create = async () => {
+    setError(null);
+    try {
+      const date = localDateString(new Date());
+      const { entry } = await call('entry.create', {
+        collection: 'sessionLogs',
+        data: {
+          title: `Session ${date}`,
+          status: statusOf('canon'),
+          date,
+          chapterId: time.chapterId ?? null,
+          strandId: time.chapterId ? (time.strandId ?? null) : null,
+          storyYear: time.year,
+          stoppedAt: '',
+          notes: '',
+        },
+      });
+      undo.record(createCommand('sessionLogs', entry._id, entryTitle(entry)));
+      props.onCreated(entry._id);
+    } catch (e) {
+      setError(plainError(e));
+    }
+  };
   return (
     <section className="sessions-part stack tight" aria-labelledby="sessions-log">
-      <h3 id="sessions-log">Session log</h3>
+      <div className="list-head">
+        <h3 id="sessions-log">Session log</h3>
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={() => void create()}
+          disabled={ro.off}
+          {...ro.tip}
+          data-testid="new-log-entry"
+        >
+          New log entry
+        </button>
+      </div>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
       {rows.length === 0 ? (
         <p className="example-note">No sessions logged yet.</p>
       ) : (

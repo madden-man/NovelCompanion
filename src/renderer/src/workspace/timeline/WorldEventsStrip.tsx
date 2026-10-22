@@ -31,6 +31,8 @@ export function WorldEventsStrip(props: {
   onOpen: (id: string) => void;
   /** Something to show after an event's title, such as a Remove button in the brief view. */
   action?: (id: string) => ReactNode;
+  /** a47-desk (IP-2): draws an event's title, such as a field, in place of the link. */
+  renderTitle?: (e: StripEvent) => ReactNode;
   label: string;
   testid?: string;
 }) {
@@ -80,14 +82,16 @@ export function WorldEventsStrip(props: {
               <ul className="we-events">
                 {c.events.map((e) => (
                   <li key={e.id} data-testid="sel-item" data-id={e.id}>
-                    <button
-                      type="button"
-                      className={`link-btn we-event ${e.status}${e.formative ? ' formative' : ''}`}
-                      onClick={() => props.onOpen(e.id)}
-                      title={`${span(e.startYear, e.endYear)}${e.status ? `, ${e.status}` : ''}${e.formative ? ', formative' : ''}`}
-                    >
-                      {e.title}
-                    </button>
+                    {props.renderTitle?.(e) ?? (
+                      <button
+                        type="button"
+                        className={`link-btn we-event ${e.status}${e.formative ? ' formative' : ''}`}
+                        onClick={() => props.onOpen(e.id)}
+                        title={`${span(e.startYear, e.endYear)}${e.status ? `, ${e.status}` : ''}${e.formative ? ', formative' : ''}`}
+                      >
+                        {e.title}
+                      </button>
+                    )}
                     {props.action?.(e.id)}
                   </li>
                 ))}

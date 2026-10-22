@@ -224,7 +224,8 @@ export const sessionContract = {
   /** SB-9: change what the brief selects and write it again. The brief keeps its ID. */
   'brief.regenerate': {
     request: z.strictObject({ id: EntryId, ...Overrides, runId: RunId.optional() }),
-    response: BriefResult,
+    // a47-desk, IP-6: the brief as it stood before, for the undo step.
+    response: BriefResult.extend({ previous: Entry }),
   },
   /** SB-8: save a brief as Markdown or PDF where the person chooses. */
   'brief.export': {

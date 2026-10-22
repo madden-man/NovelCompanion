@@ -6,12 +6,12 @@ import {
   missingLeadSections,
   uncitedLines,
 } from '../../../../shared/domain/brief/render';
-import { editCommand } from '../../../../shared/domain/undoRunner';
+import { briefEdited, writtenRevisions } from '../../../../shared/domain/briefEdits';
+import { briefRegenerateCommand } from '../../../../shared/undoCommands';
 import { entryTitle } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
-import type { Entry } from '../data';
 import { SaveState, useAutosave } from '../editor';
-import { EntryPicker } from '../pickers';
+import { EntryPicker, useLookup } from '../pickers';
 import { useUndo } from '../undo';
 import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
@@ -57,8 +57,35 @@ export function BriefView({
     void call('brief.settings.get', {}).then((s) => setClaudeAvailable(s.claudeAvailable));
   }, []);
   const textId = useId();
+  const warnId = useId();
   const brief = ed.draft;
   const content = typeof brief?.content === 'string' ? brief.content : '';
+  // IP-6: the text the app wrote for this brief, to tell an edit by hand from it.
+  const [written, setWritten] = useState<string[] | null>(null);
+  const stamp = typeof brief?.modifiedAt === 'string' ? brief.modifiedAt : '';
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const { revisions } = await call('revisions.list', { collection: 'briefs', id });
+        const texts: string[] = [];
+        for (const r of writtenRevisions(revisions)) {
+          const d = await call('revisions.diff', { collection: 'briefs', id, revisionId: r._id });
+          const snap = d.revision.snapshot as Record<string, unknown>;
+          texts.push(typeof snap.content === 'string' ? snap.content : '');
+        }
+        if (live) setWritten(texts);
+      } catch {
+        if (live) setWritten(null);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [id, stamp]);
+  const edited = written !== null && briefEdited(content, written);
+  // SB-9: the pending entries by title, never by ID (IP-2).
+  const pendingTitles = useLookup([...add, ...remove]);
   const manifest = useMemo(() => ids(brief?.entryIds), [brief?.entryIds]);
   const problems = useMemo(() => citationProblems(content, manifest), [content, manifest]);
   // A47 (IP-14): the lead headings may be the bible's own.
@@ -75,6 +102,15 @@ export function BriefView({
   if (ed.status === 'missing') return <p className="callout warn">This brief no longer exists.</p>;
   if (!brief) return <p aria-live="polite">Loading the brief.</p>;
   const selection = brief.selection as SelectionView | null;
+  const selectedTitles = new Map<string, string>();
+  for (const st of selection?.strands ?? []) {
+    for (const g of st.groups) for (const it of g.items) selectedTitles.set(it.id, it.title);
+  }
+  for (const g of selection?.shared ?? []) {
+    for (const it of g.items) selectedTitles.set(it.id, it.title);
+  }
+  const titleOf = (x: string) =>
+    selectedTitles.get(x) ?? pendingTitles.get(x)?.title ?? 'an entry no longer in the bible';
 
   const regenerate = () => {
     setNote(null);
@@ -85,15 +121,21 @@ export function BriefView({
     setBusy(true);
     try {
       await ed.flush();
-      const before = (await call('entry.get', { collection: 'briefs', id })).entry as Entry;
       const r = await call('brief.regenerate', {
         id,
         add: [...ids(brief.added).filter((x) => !remove.includes(x)), ...add],
         remove: [...ids(brief.removed).filter((x) => !add.includes(x)), ...remove],
         runId,
       });
+      // IP-6: one step that puts the brief back as the handler found it, edits included.
       undo.record(
-        editCommand(`Regenerated ${entryTitle(r.brief)}`, 'briefs', id, before, r.brief as Entry),
+        briefRegenerateCommand(
+          call,
+          id,
+          entryTitle(r.brief),
+          r.previous as Record<string, unknown>,
+          r.brief as Record<string, unknown>,
+        ),
       );
       setAdd([]);
       setRemove([]);
@@ -230,17 +272,23 @@ export function BriefView({
             disabled={busy || claude.disclosure !== null || ro.off}
             {...ro.tip}
             onClick={regenerate}
+            aria-describedby={edited ? warnId : undefined}
             data-testid="brief-regenerate"
           >
             Regenerate
           </button>
+          {edited && (
+            <span id={warnId} className="brief-warn" data-testid="brief-regenerate-warning">
+              This replaces your edits
+            </span>
+          )}
           {claude.progress ?? (busy && <span role="status">Writing the brief.</span>)}
         </div>
         {claude.disclosure}
         {(add.length > 0 || remove.length > 0) && (
           <p data-testid="brief-pending">
-            {add.length > 0 && `To add: ${add.join(', ')}. `}
-            {remove.length > 0 && `To remove: ${remove.join(', ')}.`}
+            {add.length > 0 && `To add: ${add.map(titleOf).join(', ')}. `}
+            {remove.length > 0 && `To remove: ${remove.map(titleOf).join(', ')}.`}
           </p>
         )}
         {selection && Array.isArray(selection.strands) && (

@@ -9,6 +9,7 @@ import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { PovExtras } from './povPickers';
 import { RelevantBody } from './relevantBody';
+import { useOverrides } from './overrides';
 import type { OpenEntry, SelectionView } from './common';
 
 export type BriefInput = Request<'session.relevant'>['input'];
@@ -176,10 +177,13 @@ export function BriefSettings({
 export function RelevantView({
   onOpen,
   onBackstory,
+  onOpenTree,
 }: {
   onOpen: OpenEntry;
   /** SM-10: Their backstory on a tile opens Backstory with that person picked. */
   onBackstory: (characterId: string) => void;
+  /** IP-2: a tile's family line opens the tree at that person. */
+  onOpenTree?: (characterId: string) => void;
 }) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
@@ -189,7 +193,9 @@ export function RelevantView({
   const [placeIds, setPlaceIds] = useState<string[]>([]);
   const [characterIds, setCharacterIds] = useState<string[]>([]);
   const input = useSessionInput(pov, { placeIds, characterIds });
-  const { result, error } = useSelection(input, {}, bump);
+  // SB-9, IP-2: Remove and Keep before any brief is written, shared with Start session.
+  const { overrides, remove, keep } = useOverrides(input);
+  const { result, error } = useSelection(input, overrides, bump);
   const povId = useId();
   const sel: SelectionView | null = result?.selection ?? null;
 
@@ -238,6 +244,9 @@ export function RelevantView({
           selection={sel}
           onOpen={onOpen}
           onBackstory={onBackstory}
+          onOpenTree={onOpenTree}
+          onRemove={remove}
+          onKeep={keep}
           writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
         />
       )}

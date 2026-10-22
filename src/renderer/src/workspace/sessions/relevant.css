@@ -262,3 +262,44 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* a47-desk, IP-2: the writing desk. Fields read as text; the small Open links sit beside them. */
+.rel-head {
+  align-items: baseline;
+}
+.rel-head h3 {
+  margin: 0;
+}
+.rel-head-pov {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rel-tile-toggle {
+  margin-left: auto;
+}
+.rel-open {
+  font-size: 0.8rem;
+}
+.rel-present {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.rel-moment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.rel-event {
+  display: inline;
+}
+.rel-add-event {
+  margin-top: 6px;
+}
+.reimport {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}

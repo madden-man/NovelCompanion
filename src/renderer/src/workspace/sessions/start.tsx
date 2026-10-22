@@ -10,10 +10,11 @@ import { useEntries } from '../data';
 import { useStoryTime } from '../storyTime';
 import { useStrandOptions } from '../timeline/StoryTimeDialog';
 import { useUndo } from '../undo';
-import { SelectionBody } from './common';
+import { SelectionBody, removeAction } from './common';
 import type { OpenEntry } from './common';
 import { PovExtras } from './povPickers';
 import { useClaudeRun } from './claudeRun';
+import { useOverrides } from './overrides';
 import { useSelection } from './relevant';
 import type { BriefInput } from './relevant';
 
@@ -110,7 +111,9 @@ export function StartSessionView(props: {
     characterIds,
   ]);
 
-  const { result, error: selError } = useSelection(input);
+  // SB-9, IP-2: Remove and Keep before the brief is written, the same as on the desk.
+  const { overrides, remove, keep, clear } = useOverrides(input);
+  const { result, error: selError } = useSelection(input, overrides);
 
   const claude = useClaudeRun('the brief');
   const start = () => {
@@ -120,7 +123,13 @@ export function StartSessionView(props: {
       setBusy(true);
       try {
         await story.flush();
-        const r = await call('session.start', { input, add: [], remove: [], runId });
+        const r = await call('session.start', {
+          input,
+          add: overrides.add,
+          remove: overrides.remove,
+          runId,
+        });
+        clear();
         undo.record(createCommand('briefs', r.brief._id, entryTitle(r.brief)));
         undo.record(createCommand('sessionLogs', r.log._id, entryTitle(r.log)));
         props.onStarted(r.brief._id, r.note, r.needsSettings);
@@ -271,7 +280,12 @@ export function StartSessionView(props: {
             <span className="chip time">{result.selection.year}</span>
             <span>{result.selection.ids.length} entries</span>
           </summary>
-          <SelectionBody selection={result.selection} onOpen={props.onOpen} />
+          <SelectionBody
+            selection={result.selection}
+            onOpen={props.onOpen}
+            action={removeAction(remove)}
+            onKeep={keep}
+          />
         </details>
       )}
     </div>

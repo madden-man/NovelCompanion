@@ -652,7 +652,7 @@ export function Editable(props: EditableProps) {
           // starts the next item as the box does everywhere (A44); Shift+Enter is a new line.
           const mod = e.metaKey || e.ctrlKey;
           const inList = Boolean(
-            (window.getSelection()?.anchorNode?.parentElement ?? null)?.closest('li'),
+            (window.getSelection()?.anchorNode?.parentElement ?? null)?.closest('.ProseMirror li'),
           );
           if (e.key === 'Enter' && !e.shiftKey && !e.altKey && (mod || !inList)) {
             e.preventDefault();

@@ -311,6 +311,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               <RelevantView
                 onOpen={open}
                 onBackstory={(characterId) => setView({ kind: 'backstory', characterId })}
+                onOpenTree={(focus) => setView({ kind: 'tree', focus })}
               />
             )}
             {view.kind === 'continuity' && (
