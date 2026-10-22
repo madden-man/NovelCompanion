@@ -12,6 +12,9 @@ import { applyAppearance } from '../appearance';
 import { WriteFieldset, useConnection } from '../connection';
 import { romanizationCommand } from '../../../shared/undoCommands';
 import { useUndo } from './undo';
+import { Editable, mergeCommands, useListAddNew } from './editable';
+import type { SaveInfo } from './editable';
+import { BibleVocabularySettings, ClaudeInstructionsSettings } from './settingsGroups';
 
 type Models = Response<'claude.models'>;
 type ClaudeStatus = Response<'claude.status'>;
@@ -61,6 +64,7 @@ function BibleSettings() {
         <RomanizationSettings />
         <SnapshotSettings />
       </WriteFieldset>
+      <BibleVocabularySettings />
     </div>
   );
 }
@@ -84,19 +88,19 @@ function RomanizationSettings() {
     load();
     return window.api.on('lists.changed', load);
   }, []);
-  const set = async (languageId: string, label: string, systemId: string) => {
+  /** One step (A47: with the system Add new made on the way, when it made one). */
+  const set = async (languageId: string, label: string, systemId: string, info: SaveInfo = {}) => {
     setNote(null);
+    await undo.flush();
     const from = data?.languages.find((l) => l.id === languageId)?.systemId ?? null;
     const to = systemId || null;
-    try {
-      setData(await call('romanization.set', { languageId, systemId: to }));
-      if ((from ?? '') !== (to ?? '')) {
-        undo.record(romanizationCommand(call, label, languageId, from, to));
-      }
-      setNote({ text: `Saved the romanization system for ${label}.`, bad: false });
-    } catch (e) {
-      setNote({ text: plainError(e), bad: true });
-    }
+    setData(await call('romanization.set', { languageId, systemId: to }));
+    const step =
+      (from ?? '') !== (to ?? '') ? romanizationCommand(call, label, languageId, from, to) : null;
+    const added = info.added?.command;
+    const both = step && added ? mergeCommands(step.label, added, step) : (step ?? added);
+    if (both) undo.record(both);
+    setNote({ text: `Saved the romanization system for ${label}.`, bad: false });
   };
   if (!data && failed) {
     return (
@@ -124,7 +128,7 @@ function RomanizationSettings() {
           value={l.systemId ?? ''}
           systems={data.systems}
           languageId={l.id}
-          onChange={(v) => void set(l.id, l.label, v)}
+          onChange={(v) => set(l.id, l.label, v)}
         />
       ))}
       {note && (
@@ -136,30 +140,34 @@ function RomanizationSettings() {
   );
 }
 
+/** GL-1, IP-8: a language's system, a select that saves on pick, with Add new for a new system. */
 function LanguageSystem(props: {
   label: string;
   languageId: string;
   value: string;
   systems: { id: string; label: string }[];
-  onChange(systemId: string): void;
+  onChange(systemId: string, info: SaveInfo): Promise<void>;
 }) {
-  const id = useId();
+  const addNew = useListAddNew('romanizationSystems');
   return (
-    <div className="field">
-      <label htmlFor={id}>{props.label}</label>
-      <select
-        id={id}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        data-testid={`settings-romanization-${props.languageId}`}
-      >
-        <option value="">No system</option>
-        {props.systems.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
-      </select>
+    <div className="settings-grid">
+      <span className="settings-label" aria-hidden="true">
+        {props.label}
+      </span>
+      <span className="settings-value">
+        <Editable
+          kind="select"
+          label={`Romanization system for ${props.label}`}
+          value={props.value || null}
+          options={props.systems.map((s) => ({ value: s.id, label: s.label }))}
+          allowEmpty
+          emptyLabel="No system"
+          placeholder="No system"
+          onAddNew={addNew}
+          testId={`settings-romanization-${props.languageId}`}
+          onSave={(next, info) => props.onChange(next ?? '', info)}
+        />
+      </span>
     </div>
   );
 }
@@ -582,6 +590,7 @@ function ClaudeSettings() {
         )}
       </div>
       <BriefSettings variant="panel" key={status.models.briefs} />
+      <ClaudeInstructionsSettings />
       <Disclosure confirmedAt={status.acknowledgedAt} />
     </div>
   );

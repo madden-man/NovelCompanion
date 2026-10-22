@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { collectionInfo, entryTitle, isEntryCollection } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { blankItem } from '../../../shared/domain/blank';
-import { itemPath } from '../../../shared/domain/lists';
 import { isPlainObject, joinPath } from '../../../shared/domain/paths';
 import type { Doc } from '../../../shared/domain/paths';
 import { warningsAt } from '../../../shared/domain/warnings';
@@ -13,6 +12,7 @@ import { useEntries, useList } from './data';
 import { EntryPicker, useLookup } from './pickers';
 import { ZhMeaning } from './Zh';
 import { RichText } from './richText/RichText';
+import { ListSelect } from './listSelect';
 import { ZhPreview } from './richText/MarkdownView';
 
 export interface Messages {
@@ -389,25 +389,17 @@ function EnumField({ spec, value, onChange, path, messages }: FieldProps) {
 
 function ListItemField({ spec, value, onChange, path, messages }: FieldProps) {
   const id = useId();
-  const list = useList(spec.listId);
-  const items = list?.items ?? [];
   const v = asString(value);
-  const asDoc = list ? { _id: list._id, label: list.label, items } : null;
+  // A47 (IP-8): the list's items in the stored order, with Add new last (a47-vocab).
   return (
     <FieldShell spec={spec} path={path} messages={messages} htmlFor={id}>
-      <select
+      <ListSelect
         id={id}
+        listId={spec.listId ?? ''}
         value={v}
-        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-      >
-        {(spec.nullable || !v) && <option value="">{spec.nullable ? 'None' : 'Choose one'}</option>}
-        {v && !items.some((i) => i.id === v) && <option value={v}>{v} (not in the list)</option>}
-        {items.map((i) => (
-          <option key={i.id} value={i.id}>
-            {asDoc ? itemPath(asDoc, i.id) : i.label}
-          </option>
-        ))}
-      </select>
+        emptyLabel={spec.nullable ? 'None' : undefined}
+        onChange={onChange}
+      />
     </FieldShell>
   );
 }
@@ -450,20 +442,14 @@ function ListItemsField({ spec, value, onChange, path, messages }: FieldProps) {
           </span>
         ))}
       </div>
-      <select
+      <ListSelect
         id={id}
+        listId={spec.listId ?? ''}
         value=""
-        onChange={(e) => e.target.value && onChange([...values, e.target.value])}
-      >
-        <option value="">Add one</option>
-        {items
-          .filter((i) => !values.includes(i.id))
-          .map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.label}
-            </option>
-          ))}
-      </select>
+        emptyLabel="Add one"
+        exclude={values}
+        onChange={(v) => v && onChange([...values, v])}
+      />
     </FieldShell>
   );
 }

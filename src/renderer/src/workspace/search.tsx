@@ -29,6 +29,9 @@ export function SearchView(props: {
   const families = useEntries('families');
   const places = useEntries('places');
   const tags = useList('tags');
+  // A47 (IP-9): the filters show the bible's statuses and provenance, in the stored order.
+  const statuses = useList('statuses');
+  const provenances = useList('provenance');
   const [section, setSection] = useState('');
   const [status, setStatus] = useState('');
   const [provenance, setProvenance] = useState('');
@@ -59,8 +62,8 @@ export function SearchView(props: {
   const filters = useMemo(() => {
     const f: NonNullable<Request<'search.query'>['filters']> = {
       ...(section ? { sections: [section as EntryCollection] } : {}),
-      ...(status ? { status: [status as 'canon' | 'planned' | 'idea'] } : {}),
-      ...(provenance ? { provenance: [provenance as 'researched' | 'invented'] } : {}),
+      ...(status ? { status: [status] } : {}),
+      ...(provenance ? { provenance: [provenance] } : {}),
       ...(familyId ? { familyId } : {}),
       ...(placeId ? { placeId } : {}),
       ...(tag ? { tag } : {}),
@@ -138,17 +141,22 @@ export function SearchView(props: {
           <label htmlFor={ids.status}>Status</label>
           <select id={ids.status} value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Any status</option>
-            <option value="canon">Canon</option>
-            <option value="planned">Planned</option>
-            <option value="idea">Idea</option>
+            {(statuses?.items ?? []).map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.label}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field">
           <label htmlFor={ids.prov}>Provenance</label>
           <select id={ids.prov} value={provenance} onChange={(e) => setProvenance(e.target.value)}>
             <option value="">Any provenance</option>
-            <option value="researched">Researched</option>
-            <option value="invented">Invented</option>
+            {(provenances?.items ?? []).map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.label}
+              </option>
+            ))}
           </select>
         </div>
         <div className="field">
