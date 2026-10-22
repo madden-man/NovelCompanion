@@ -1450,7 +1450,11 @@ function ChapterBar(p: BarProps) {
     setStrandOpen(false);
     if (refocus) chip.current?.focus({ preventScroll: true });
   }, []);
-  const written = doc?.written === true;
+  const storedWritten = doc?.written === true;
+  // The toggle shows the click at once; the stored value takes over when it lands.
+  const [ticked, setTicked] = useState<{ was: boolean; now: boolean } | null>(null);
+  if (ticked && ticked.was !== storedWritten) setTicked(null);
+  const written = ticked ? ticked.now : storedWritten;
 
   /** The story year is the primary strand's start year; moving it moves that strand (TM-5). */
   const setYear = async (y: number): Promise<boolean> => {
@@ -1471,13 +1475,19 @@ function ChapterBar(p: BarProps) {
   };
 
   /** IP-3: the written flag, one undo step. */
-  const setWritten = (next: boolean) =>
-    void writes.edit(
-      'chapters',
-      row.id,
-      { written: next },
-      next ? `Marked ${title} as written` : `Marked ${title} as not written`,
-    );
+  const setWritten = (next: boolean) => {
+    setTicked({ was: storedWritten, now: next });
+    void writes
+      .edit(
+        'chapters',
+        row.id,
+        { written: next },
+        next ? `Marked ${title} as written` : `Marked ${title} as not written`,
+      )
+      .then((ok) => {
+        if (ok !== true) setTicked(null);
+      });
+  };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget || off) return;
