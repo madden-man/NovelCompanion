@@ -124,6 +124,7 @@ export const WRITE_CHANNELS = [
   'proposal.reject',
   'proposal.refresh',
   'test.propose',
+  'test.seed',
   'tree.savePositions',
   'storyTime.set',
   'sceneOutline.set',

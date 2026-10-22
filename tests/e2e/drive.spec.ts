@@ -163,7 +163,7 @@ test('GD-4 export asks for drive.file, makes a folder, and writes Markdown by se
 });
 
 test('MS-1 MS-5 a chapter is read from a Google Doc chosen in the Drive browser, keeping italics, and Drive is never written', async () => {
-  await invoke('entry.createMany', {
+  await invoke('test.seed', {
     items: [
       {
         collection: 'books',

@@ -66,7 +66,7 @@ test.beforeAll(async () => {
   await loadFixtureVia(invoke);
   await openBible(HAND);
   // The two families exist before the tree is built; the tree assigns people to them.
-  await invoke('entry.createMany', {
+  await invoke('test.seed', {
     items: fixture.families!.map((f) => ({ collection: 'families', data: strip(f) })),
   });
 });
@@ -85,7 +85,7 @@ async function loadFixtureVia(inv: Invoke) {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await inv('entry.createMany', {
+    await inv('test.seed', {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
@@ -1350,7 +1350,7 @@ test('FT-8 a tree of 200 people across six generations redraws in under 500 ms i
   await invoke('bible.create', { slug: 'tree-perf', name: 'Two hundred people' });
   await openBible('tree-perf');
   const { characters, unions, parentLinks } = generatedTree(200, 6);
-  await invoke('entry.createMany', {
+  await invoke('test.seed', {
     items: [
       ...characters.map((d) => ({ collection: 'characters' as const, data: strip(d) })),
       ...unions.map((d) => ({ collection: 'unions' as const, data: strip(d) })),

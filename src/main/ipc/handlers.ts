@@ -447,10 +447,9 @@ export function registerHandlers(): void {
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {
-    handle(
-      'test.propose',
-      guard('test.propose', testHandlers(() => current?.session ?? null)['test.propose']),
-    );
+    const tests = testHandlers(() => current?.session ?? null);
+    handle('test.propose', guard('test.propose', tests['test.propose']));
+    handle('test.seed', guard('test.seed', tests['test.seed']));
   }
 }
 

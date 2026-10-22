@@ -40,7 +40,7 @@ test.beforeAll(async () => {
   for (const e of seeded.entries) {
     await invoke('entry.delete', { collection: 'eraStates', id: e.entry._id });
   }
-  await invoke('entry.createMany', {
+  await invoke('test.seed', {
     items: [
       {
         collection: 'eraStates',

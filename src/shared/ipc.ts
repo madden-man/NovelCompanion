@@ -886,6 +886,21 @@ export const contract = {
     }),
     response: z.strictObject({ proposal: Proposal }),
   },
+  /**
+   * Development and test builds only: seed a fixture bible as the importer
+   * does, manuscript text included (IP-18 keeps `entry.createMany` from it).
+   */
+  'test.seed': {
+    request: z.strictObject({
+      items: z
+        .array(
+          z.strictObject({ collection: CollectionName, data: z.record(z.string(), z.unknown()) }),
+        )
+        .min(1)
+        .max(2000),
+    }),
+    response: z.strictObject({ entries: z.array(WithWarnings) }),
+  },
   /** The family tree from the read model: people, unions, parent links, FT-6 warnings. */
   'tree.get': {
     request: z.strictObject({}),

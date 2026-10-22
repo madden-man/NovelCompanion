@@ -83,14 +83,14 @@ test.beforeAll(async () => {
   }
   for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
   // The M7 brief supplement: moments, questions, session logs, and communities.
   for (const c of ['moments', 'openQuestions']) {
     const docs = supplement.entries[c]!;
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: docs.map((d) => {
         const { deletedAt: _d, ...rest } = strip(d);
         return { collection: c as never, data: rest };
@@ -102,7 +102,7 @@ test.beforeAll(async () => {
     }
   }
   for (const c of ['sessionLogs']) {
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: supplement.entries[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }

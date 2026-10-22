@@ -122,7 +122,7 @@ export type BibleChannel =
   | 'eraDefaults.set';
 
 /** Channels that exist only outside a packaged app. */
-export type TestChannel = 'test.propose';
+export type TestChannel = 'test.propose' | 'test.seed';
 
 export type BibleHandlers = { [C in BibleChannel]: Handler<C> };
 
@@ -706,6 +706,20 @@ export function testHandlers(current: () => OpenBible | null): { [C in TestChann
       const s = current();
       if (!s) throw new Error(NO_BIBLE);
       return { proposal: await s.repo.propose(req) };
+    },
+    'test.seed': async ({ items }) => {
+      const s = current();
+      if (!s) throw new Error(NO_BIBLE);
+      const created = await s.repo.createMany(items, { importer: true });
+      return {
+        entries: created.map((entry, i) => ({
+          entry: entry as unknown as WireEntry,
+          warnings: s.repo.warnings(
+            (items[i] as { collection: EntryCollection }).collection,
+            entry,
+          ),
+        })),
+      };
     },
   };
 }

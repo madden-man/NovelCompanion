@@ -51,7 +51,7 @@ test.beforeAll(async () => {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }

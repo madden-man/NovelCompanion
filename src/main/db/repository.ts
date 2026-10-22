@@ -492,12 +492,13 @@ export class Repository {
    */
   async createMany(
     items: { collection: EntryCollection; data: Record<string, unknown> }[],
+    opts: WriteOptions = {},
   ): Promise<StoredDoc[]> {
     const changes: Change[] = [];
     const ids = new Set<string>();
     for (const item of items) {
       this.assertCollection(item.collection);
-      const change = this.buildCreateUnchecked(item.collection, item.data);
+      const change = this.buildCreateWith(item.collection, item.data, false, opts);
       if (ids.has(change.next._id)) {
         throw new RepositoryError(`Two new entries share the ID ${change.next._id}.`);
       }

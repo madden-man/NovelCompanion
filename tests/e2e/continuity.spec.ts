@@ -46,14 +46,14 @@ test.beforeAll(async () => {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
   // The M7 supplement gives the chapters arcs and beats, so the stored plot is there to compare.
   for (const c of ['moments']) {
     const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
-    await invoke('entry.createMany', {
+    await invoke('test.seed', {
       items: docs.map((d) => ({ collection: c as never, data: strip(d) })),
     });
   }
