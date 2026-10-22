@@ -70,6 +70,8 @@ export interface EditableCommonProps {
   autoOpen?: boolean;
   /** Called when the field closes: after a save, or with nothing saved. */
   onClose?: (how: 'saved' | 'unchanged') => void;
+  /** a48-box: the save changes no stored value (a capture chip), so no tick and no "Saved". */
+  quiet?: boolean;
 }
 
 type Save<T> = (next: T, info: SaveInfo) => Promise<void>;
@@ -721,7 +723,7 @@ export function Editable(props: EditableProps) {
         </span>
       )}
       {body}
-      {saveState === 'saved' && (
+      {saveState === 'saved' && !props.quiet && (
         <span className="editable-tick" aria-hidden="true">
           ✓
         </span>
@@ -730,7 +732,7 @@ export function Editable(props: EditableProps) {
           so "Saved" is announced into a region that already exists; closed fields add none. */}
       {(open || addNew.step !== 'closed' || saveState === 'saving' || saveState === 'saved') && (
         <span className="sr-only" role="status" aria-live="polite">
-          {saveState === 'saved' ? 'Saved' : saveState === 'saving' ? 'Saving' : ''}
+          {saveState === 'saved' && !props.quiet ? 'Saved' : saveState === 'saving' ? 'Saving' : ''}
         </span>
       )}
       {message && (
