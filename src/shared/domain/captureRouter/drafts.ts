@@ -113,7 +113,7 @@ export function momentSubjects(r: Resolved, lexicon: Lexicon = LEXICON): Match[]
  */
 export function singleCategory(r: Resolved, index: RouterIndex): string | null {
   const parent = new Map(index.categories.map((c) => [c.id, c.parentId]));
-  const ids = r.categories.map((c) => c.id!);
+  const ids = r.categories.flatMap((c) => (c.id ? [c.id] : []));
   const isAncestor = (a: string, of: string) => {
     for (let p = parent.get(of); p; p = parent.get(p)) if (p === a) return true;
     return false;
@@ -133,13 +133,14 @@ function regionsFor(r: Resolved, index: RouterIndex): { values: string[]; adds: 
   const values: string[] = [];
   const adds: CaptureDraft[] = [];
   for (const m of r.places) {
-    let place = places.get(m.id!);
+    if (!m.id) continue;
+    let place = places.get(m.id);
     let found: string | undefined;
     for (let hops = 0; place && hops < 10 && !found; hops++) {
       found = byLabel.get(foldAlias(place.name));
       if (!found) place = place.parentId ? places.get(place.parentId) : undefined;
     }
-    const top = places.get(m.id!);
+    const top = places.get(m.id);
     if (!found && top && !top.parentId) {
       const ref = `new:${slug(top.name)}`;
       if (!adds.some((a) => a.ref === ref)) {
@@ -202,7 +203,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
     case 'moments': {
       const subjects = ctx.characterId
         ? [{ id: ctx.characterId }]
-        : momentSubjects(r, lexicon).map((c) => ({ id: c.id! }));
+        : momentSubjects(r, lexicon).flatMap((c) => (c.id ? [{ id: c.id }] : []));
       if (!subjects.length) need('characterId', 'Character');
       const place = r.places[0];
       const lives = !!place && lexiconPattern('move', lexicon).test(lower);

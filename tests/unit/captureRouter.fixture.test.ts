@@ -115,8 +115,12 @@ describe('CR-10 the routing fixture', () => {
         }
       }
     }
-    console.log(`Capture router fixture\n${rows.join('\n')}`);
-    if (mismatches.length) console.log(`Mismatches\n${mismatches.join('\n')}`);
+    // The table of what the router gave each fact, printed when anything differs.
+    if (mismatches.length) {
+      console.warn(
+        `Capture router fixture\n${rows.join('\n')}\nMismatches\n${mismatches.join('\n')}`,
+      );
+    }
     expect(mismatches).toEqual([]);
   });
 });

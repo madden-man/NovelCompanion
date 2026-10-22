@@ -16,34 +16,44 @@ export interface Scored {
   scores: Partial<Record<CaptureSection, number>>;
   cues: Partial<Record<CaptureSection, string[]>>;
   ranked: [CaptureSection, number][];
+  /** False when no cue fired and the fact got the fallback score only. */
+  matched: boolean;
 }
 
-/** Each cue's matcher, compiled once per lexicon. */
-const compiled = new WeakMap<Lexicon, Map<string, RegExp>>();
-function matchers(lexicon: Lexicon): Map<string, RegExp> {
-  let m = compiled.get(lexicon);
-  if (!m) {
-    m = new Map();
+type ListName = 'group' | 'life' | 'move' | 'role' | 'nickname';
+interface Compiled {
+  cues: Map<string, RegExp>;
+  lists: Record<ListName, RegExp>;
+}
+
+/** Each cue's matcher and the lexicon's word lists, compiled once per lexicon. */
+const compiled = new WeakMap<Lexicon, Compiled>();
+function matchers(lexicon: Lexicon): Compiled {
+  let c = compiled.get(lexicon);
+  if (!c) {
+    const cues = new Map<string, RegExp>();
     for (const cue of lexicon.cues) {
-      if (cue.words) m.set(cue.id, wordsPattern(cue.words));
-      else if (cue.pattern) m.set(cue.id, cue.pattern);
+      if (cue.words) cues.set(cue.id, wordsPattern(cue.words));
+      else if (cue.pattern) cues.set(cue.id, cue.pattern);
     }
-    m.set('#group', wordsPattern(lexicon.groupWords));
-    m.set('#life', wordsPattern(lexicon.lifeVerbs));
-    m.set('#move', wordsPattern(lexicon.moveVerbs));
-    m.set('#role', wordsPattern(lexicon.roleWords));
-    m.set('#nickname', wordsPattern(lexicon.nicknameWords));
-    compiled.set(lexicon, m);
+    c = {
+      cues,
+      lists: {
+        group: wordsPattern(lexicon.groupWords),
+        life: wordsPattern(lexicon.lifeVerbs),
+        move: wordsPattern(lexicon.moveVerbs),
+        role: wordsPattern(lexicon.roleWords),
+        nickname: wordsPattern(lexicon.nicknameWords),
+      },
+    };
+    compiled.set(lexicon, c);
   }
-  return m;
+  return c;
 }
 
 /** A compiled word list of the lexicon: life, move, role, nickname or group words. */
-export function lexiconPattern(
-  name: 'group' | 'life' | 'move' | 'role' | 'nickname',
-  lexicon: Lexicon = LEXICON,
-): RegExp {
-  return matchers(lexicon).get(`#${name}`)!;
+export function lexiconPattern(name: ListName, lexicon: Lexicon = LEXICON): RegExp {
+  return matchers(lexicon).lists[name];
 }
 
 const LEADING_THE = /^\s*(?:the\s+)?/;
@@ -69,10 +79,10 @@ export function signals(parsed: ParsedSentence, r: Resolved): Record<CueSignal, 
   };
 }
 
-function fires(cue: Cue, lower: string, sig: Record<CueSignal, boolean>, m: Map<string, RegExp>) {
+function fires(cue: Cue, lower: string, sig: Record<CueSignal, boolean>, m: Compiled) {
   if (cue.needsNoCharacter && sig.characterNamed) return false;
   if (cue.signal) return sig[cue.signal];
-  const re = m.get(cue.id);
+  const re = m.cues.get(cue.id);
   return !!re && re.test(lower);
 }
 
@@ -107,15 +117,28 @@ export function score(parsed: ParsedSentence, r: Resolved, lexicon: Lexicon = LE
   };
   if (sig.characterNamed) scale('worldEvents', 'characterSubject');
   else scale('moments', 'noCharacter');
-  if (m.get('#group')!.test(lower)) scale('moments', 'groupSubject');
+  if (m.lists.group.test(lower)) scale('moments', 'groupSubject');
   if (sig.questionMark) {
     for (const s of CAPTURE_SECTIONS) if (s !== 'openQuestions') scale(s, 'questionMark');
   }
-  for (const s of CAPTURE_SECTIONS) if (scores[s] === 0) delete scores[s];
-  if (!Object.keys(scores).length) {
+  const kept: Partial<Record<CaptureSection, number>> = {};
+  for (const s of CAPTURE_SECTIONS) {
+    const v = scores[s];
+    if (v) kept[s] = v;
+  }
+  return finish(kept, cues, lexicon);
+}
+
+function finish(
+  scores: Partial<Record<CaptureSection, number>>,
+  cues: Partial<Record<CaptureSection, string[]>>,
+  lexicon: Lexicon,
+): Scored {
+  const matched = Object.keys(scores).length > 0;
+  if (!matched) {
     const f = lexicon.fallback;
     scores[f.section] = f.weight;
     cues[f.section] = [f.label];
   }
-  return { scores, cues, ranked: rank(scores) };
+  return { scores, cues, ranked: rank(scores), matched };
 }

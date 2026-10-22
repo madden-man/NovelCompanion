@@ -82,9 +82,10 @@ function notInside(lower: string, matches: Match[], containers: Match[]): Match[
           (c) => !(c.kind === m.kind && c.id === m.id) && c.spans.some((cs) => inside(sp, cs)),
         ),
     );
-    if (!spans.length) continue;
+    const first = spans[0];
+    if (!first) continue;
     const longest = spans.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a));
-    out.push({ ...m, spans, start: spans[0]![0], matched: lower.slice(longest[0], longest[1]) });
+    out.push({ ...m, spans, start: first[0], matched: lower.slice(longest[0], longest[1]) });
   }
   return out;
 }
@@ -110,7 +111,8 @@ function unknownNames(t: FoldedText, covered: [number, number][], lexicon: Lexic
   const out: Match[] = [];
   let i = 0;
   while (i < words.length) {
-    const w = words[i]!;
+    const w = words[i];
+    if (!w) break;
     const start = w.index;
     // The word must start a word (not "LiNa" inside "xLiNa") and not open the sentence.
     if (start === firstWord || WORD.test(t.folded[start - 1] ?? '')) {
@@ -119,9 +121,12 @@ function unknownNames(t: FoldedText, covered: [number, number][], lexicon: Lexic
     }
     let end = start + w[0].length;
     let j = i + 1;
-    while (j < words.length && words[j]!.index === end + 1 && t.folded[end] === ' ' && j - i < 4) {
-      end = words[j]!.index + words[j]![0].length;
-      j++;
+    for (
+      let next = words[j];
+      next && next.index === end + 1 && t.folded[end] === ' ' && j - i < 4;
+    ) {
+      end = next.index + next[0].length;
+      next = words[++j];
     }
     const run: [number, number] = [start, end];
     const known = covered.some(([s, e]) => s < run[1] && run[0] < e);

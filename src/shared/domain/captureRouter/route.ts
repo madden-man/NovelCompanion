@@ -84,14 +84,15 @@ export function routeFact(
   const hint = hintFor(options.hints, factIndex);
   const parsed = parseSentence(sentence, factIndex, inherited);
   const resolved = resolve(sentence, index, lexicon);
-  const { scores, cues, ranked } = score(parsed, resolved, lexicon);
+  const { scores, cues, ranked, matched } = score(parsed, resolved, lexicon);
   const top = ranked[0] ?? ['openQuestions', 0];
   const section: CaptureSection = hint.section ?? top[0];
   const total = ranked.reduce((s, [, v]) => s + v, 0);
   const mine = scores[section] ?? 0;
   const best = ranked.find(([s]) => s !== section)?.[1] ?? 0;
-  const share = total ? mine / total : 0;
-  const margin = mine - best;
+  // With nothing matched the fallback section is a guess: no share, so Route C.
+  const share = total && matched ? mine / total : 0;
+  const margin = matched ? mine - best : 0;
 
   let communities = pickCommunity(resolved, index, options.povCommunityId, lexicon);
   if (hint.communityId) {
@@ -127,9 +128,10 @@ export function routeFact(
     },
     lexicon,
   );
-  if (!reasons.length && share < thresholds.localShare) {
+  // How sure the router is of the section; not asked when the writer chose it.
+  if (!hint.section && !reasons.length && share < thresholds.localShare) {
     reasons.push(`section only ${pct(share)}% sure`);
-  } else if (!reasons.length && margin < thresholds.localMargin) {
+  } else if (!hint.section && !reasons.length && margin < thresholds.localMargin) {
     reasons.push(`section leads the next by only ${margin} points`);
   }
   const route = decide(
