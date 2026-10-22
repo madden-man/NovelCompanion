@@ -99,7 +99,7 @@ const NUMBER_FIELDS: {
     label: 'Autosave delay in milliseconds',
     min: 100,
     max: 750,
-    hint: 'How long a box waits after the last key before it saves.',
+    hint: 'How long a box waits after the last key before it saves. At most 750, so a forced quit loses less than a second of typing.',
   },
 ];
 
@@ -567,6 +567,12 @@ export function PruneRevisionsSettings() {
   const ids = { date: useId(), word: useId() };
   const [date, setDate] = useState('');
   const [count, setCount] = useState<number | null>(null);
+  /**
+   * The cutoff the count was taken at, which the confirm sends again: a day
+   * still to come is cut at the moment of counting, so a save made after the
+   * count is never removed and the confirm removes exactly what was counted.
+   */
+  const [cutoff, setCutoff] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [word, setWord] = useState('');
   const [busy, setBusy] = useState(false);
@@ -575,15 +581,19 @@ export function PruneRevisionsSettings() {
   const pickDate = (next: string) => {
     setDate(next);
     setCount(null);
+    setCutoff(null);
     setAsking(false);
     setWord('');
   };
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
     let live = true;
-    call('revisions.prune', { before: date, dryRun: true }).then(
+    const before = new Date(Math.min(new Date(date).getTime(), Date.now())).toISOString();
+    call('revisions.prune', { before, dryRun: true }).then(
       (r) => {
-        if (live) setCount(r.count);
+        if (!live) return;
+        setCutoff(before);
+        setCount(r.count);
       },
       (e: unknown) => {
         if (live) setNote({ text: plainError(e), bad: true });
@@ -595,12 +605,13 @@ export function PruneRevisionsSettings() {
   }, [date]);
 
   const prune = async () => {
+    if (!cutoff) return;
     setBusy(true);
     setNote(null);
     try {
-      const r = await call('revisions.prune', { before: date, dryRun: false });
+      const r = await call('revisions.prune', { before: cutoff, dryRun: false });
       setNote({
-        text: `Removed ${r.count} ${r.count === 1 ? 'revision' : 'revisions'} written before ${date}.`,
+        text: `Removed ${r.count} ${r.count === 1 ? 'revision' : 'revisions'} written before ${date}. This is not an undo step.`,
         bad: false,
       });
       setAsking(false);
@@ -620,7 +631,7 @@ export function PruneRevisionsSettings() {
       <h4>Revisions</h4>
       <p className="example-note">
         Every change keeps the entry as it was before. Old revisions can go once you no longer need
-        them. This cannot be undone; a snapshot is taken first.
+        them. Removing them is not an undo step, and a snapshot is taken first.
       </p>
       <div className="prune-row">
         <div className="field">

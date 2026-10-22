@@ -400,16 +400,22 @@ test('IP-16 Remove revisions older than a date shows the count from a dry run, t
   await expect(confirm).toBeDisabled();
   // Nothing was removed while the word was not typed.
   expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(count);
+  // A save made after the count is kept: the confirm removes exactly what was counted.
+  await invoke('entry.update', {
+    collection: 'openQuestions',
+    id: entry._id,
+    patch: { title: 'Who keeps the harbor tide log?' },
+  });
   await prune.getByLabel(`Type remove to remove ${things} for good`).fill('remove');
   await confirm.click();
   await expect(prune.getByTestId('prune-note')).toHaveText(
-    `Removed ${things} written before ${before}.`,
+    `Removed ${things} written before ${before}. This is not an undo step.`,
   );
-  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(0);
+  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(1);
   // The entry itself is untouched.
   expect(
     (await invoke('entry.get', { collection: 'openQuestions', id: entry._id })).entry.title,
-  ).toBe('Who keeps the tide log?');
+  ).toBe('Who keeps the harbor tide log?');
 });
 
 /** WCAG contrast of two `rgb()` colours. */

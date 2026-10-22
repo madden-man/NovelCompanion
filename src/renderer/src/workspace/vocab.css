@@ -158,6 +158,15 @@
   width: 22px;
   height: 16px;
 }
+/*
+ * IP-12: a family colour the writer picked can be close to the node's own
+ * fill in either theme, so its stripe carries an outline in the border token
+ * and stays visible however pale or dark the colour is.
+ */
+.tnode-fam.fam-hex {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
 
 @media (max-width: 400px) {
   .settings-grid {

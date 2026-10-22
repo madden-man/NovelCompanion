@@ -57,7 +57,7 @@ import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
-import { Editable, saveEntryField } from '../editable';
+import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
 
@@ -193,7 +193,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       {stripes.map((c, i) => (
         <rect
           key={i}
-          className={c.startsWith('#') ? 'tnode-fam' : `tnode-fam fam-${c}`}
+          className={c.startsWith('#') ? 'tnode-fam fam-hex' : `tnode-fam fam-${c}`}
           style={c.startsWith('#') ? { fill: c } : undefined}
           x={0}
           y={i * h}
@@ -1485,21 +1485,28 @@ function FamilyList(props: {
   const name = (id: string) => graph.byId.get(id)?.name ?? id;
   const rel = relativesOf(graph, person.id);
 
-  const setType = async (collection: 'unions' | 'parentLinks', id: string, type: string) => {
+  /** IP-8: a type Add new made on the way joins the change as one undo step. */
+  const setType = async (
+    collection: 'unions' | 'parentLinks',
+    id: string,
+    type: string,
+    added?: UndoCommand,
+  ) => {
     setError(null);
     try {
       const before = (await call('entry.get', { collection, id })).entry;
       const { entry } = await call('entry.update', { collection, id, patch: { type } });
-      undo.record(
-        editCommand(
-          `Changed the type of ${String(before.title ?? 'a link')} to ${type}`,
-          collection,
-          id,
-          before,
-          entry,
-        ),
+      const step = editCommand(
+        `Changed the type of ${String(before.title ?? 'a link')} to ${type}`,
+        collection,
+        id,
+        before,
+        entry,
       );
+      undo.record(added ? mergeCommands(step.label, added, step) : step);
     } catch (e) {
+      // The new type is in the list even though the link kept its old one: undo can take it out.
+      if (added) undo.record(added);
       setError(plainError(e));
     }
   };
@@ -1618,7 +1625,9 @@ function FamilyList(props: {
                       types={r.link.collection === 'unions' ? unionTypes : linkTypes}
                       listId={r.link.collection === 'unions' ? 'unionTypes' : 'parentLinkTypes'}
                       ro={ro}
-                      onType={(type) => r.link && void setType(r.link.collection, r.id, type)}
+                      onType={(type, added) =>
+                        r.link && void setType(r.link.collection, r.id, type, added)
+                      }
                       onEdit={() =>
                         r.link && props.onEdit({ collection: r.link.collection, id: r.id })
                       }
@@ -1659,7 +1668,7 @@ function FamilyRowControls(props: {
   /** IP-8: the list the types come from, for Add new. */
   listId: 'unionTypes' | 'parentLinkTypes';
   ro: ReturnType<typeof useWriteGuard>;
-  onType: (type: string) => void;
+  onType: (type: string, added?: UndoCommand) => void;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -1674,8 +1683,9 @@ function FamilyRowControls(props: {
         listId={props.listId}
         value={row.link.type}
         disabled={ro.off}
-        onChange={(v) => {
-          if (v) props.onType(v);
+        joinAdd
+        onChange={(v, added) => {
+          if (v) props.onType(v, added);
         }}
       />
       <button

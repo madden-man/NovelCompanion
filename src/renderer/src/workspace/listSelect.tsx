@@ -15,6 +15,7 @@ import { useList } from './data';
 import { useUndo } from './undo';
 import { ADD_NEW_LABEL, useListAddNew } from './editable';
 import type { EditableOption } from './editable';
+import type { UndoCommand } from '../../../shared/domain/undoRunner';
 
 const ADD = '\u0000add-new';
 
@@ -30,7 +31,13 @@ export function useListChoices(listId: string): EditableOption[] {
 export function ListSelect(props: {
   listId: string;
   value: string;
-  onChange: (value: string | null) => void;
+  /**
+   * The pick. With `joinAdd`, a pick Add new made also passes the add's undo
+   * command, for a caller that saves at once to record with its write as one step.
+   */
+  onChange: (value: string | null, added?: UndoCommand) => void;
+  /** The caller saves on pick and records the add with it (IP-8): one step, not two. */
+  joinAdd?: boolean;
   /** The select's own ID, for a label outside it. */
   id?: string;
   'aria-label'?: string;
@@ -85,8 +92,8 @@ export function ListSelect(props: {
     setError(null);
     try {
       const made = await addNew(label);
-      if (made.command) undo.record(made.command);
-      props.onChange(made.id);
+      if (made.command && !props.joinAdd) undo.record(made.command);
+      props.onChange(made.id, props.joinAdd ? made.command : undefined);
       close();
     } catch (e) {
       setError(plainError(e));
