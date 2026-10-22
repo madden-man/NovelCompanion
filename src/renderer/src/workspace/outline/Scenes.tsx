@@ -46,7 +46,7 @@ import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
-import { useUndo } from '../undo';
+import { registerTextTarget, useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
@@ -142,6 +142,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const split = useRef<{ id: string | null; change: (f: Flow, id: string) => Flow } | null>(null);
   /** IP-6: the outline as it was before the typing not yet recorded as an undo step. */
   const typedFrom = useRef<SceneOutlineState | null>(null);
+  /** The typing Cmd+Z in the box took back, for Shift+Cmd+Z to put again. */
+  const undoneTyping = useRef<{ from: SceneOutlineState; to: SceneOutlineState } | null>(null);
 
   const stored = () =>
     current.current === null ? null : composeFlow(current.current, orderRef.current);
@@ -272,6 +274,9 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const orderKey = order?.join('\n') ?? null;
   useEffect(() => {
     if (order === null || loaded === null) return;
+    // Typing before a new reading order is its own step, composed in the order it was
+    // typed in: the run closes before the new order is taken.
+    closeTyping();
     const before = orderRef.current;
     orderRef.current = order;
     if (current.current === null) {
@@ -279,8 +284,6 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       setFlow(current.current);
       return;
     }
-    // Typing before a new reading order is its own step, in the order it was typed in.
-    closeTyping();
     const waiting = pending.current;
     pending.current = null;
     current.current = waiting
@@ -416,8 +419,36 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   /** IP-6: typing in a section; the run becomes one undo step at the next pause. */
   const type = (change: (f: Flow) => Flow) => {
     if (readOnly) return;
+    undoneTyping.current = null;
     typedFrom.current ??= stored();
     edit(change);
+  };
+
+  /**
+   * IP-6, A44: Cmd+Z in a scene box with typing not yet a step puts the
+   * outline back to where that typing began, never further, so it cannot
+   * overshoot into the step before it the way the browser's own text undo
+   * can when it joins typing from both sides of a pause. True when it did.
+   */
+  const undoTyping = (): boolean => {
+    const from = typedFrom.current;
+    const now = stored();
+    if (readOnly || !from || !now || !typedSince(from, now)) return false;
+    typedFrom.current = null;
+    undoneTyping.current = { from, to: now };
+    edit(() => splitFlow(from, orderRef.current));
+    markFocused();
+    return true;
+  };
+  /** Shift+Cmd+Z right after: the typing comes back, unsaved again. */
+  const redoTyping = (): boolean => {
+    const u = undoneTyping.current;
+    undoneTyping.current = null;
+    const now = stored();
+    if (readOnly || !u || !now || typedSince(u.from, now)) return false;
+    typedFrom.current = u.from;
+    edit(() => splitFlow(u.to, orderRef.current));
+    return true;
   };
 
   /** After a restore the stored state is the new truth. */
@@ -456,6 +487,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     saves,
     edit,
     type,
+    undoTyping,
+    redoTyping,
     step,
     save,
     replace,
@@ -1036,6 +1069,8 @@ export function SceneOutline(props: { onOpen: Open }) {
       if (next) focusSection(next, by < 0 ? 'end' : 'start');
     },
     onNewChapter: (key, line) => void newChapterAt(key, line),
+    undoTyping: scene.undoTyping,
+    redoTyping: scene.redoTyping,
   };
 
   const moving = grab?.mode === 'move' ? grab : null;
@@ -1620,6 +1655,9 @@ interface SectionHandlers {
   onBlur: () => void;
   onLeave: (key: string, by: -1 | 1) => void;
   onNewChapter: (key: string, line: number) => void;
+  /** Cmd+Z and Shift+Cmd+Z in the box over typing that is not yet a step (IP-6). */
+  undoTyping: () => boolean;
+  redoTyping: () => boolean;
 }
 
 interface SectionProps {
@@ -1662,6 +1700,21 @@ function SectionText(p: SectionProps) {
 
   const h = p.handlers;
   const key = p.sectionKey;
+
+  // ED-3, IP-6: Cmd+Z in the box steps the outline's own typing run, not the browser's text undo.
+  const typing = useRef(h);
+  useLayoutEffect(() => {
+    typing.current = h;
+  });
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    return registerTextTarget(el, {
+      value: () => el.value,
+      undo: () => typing.current.undoTyping(),
+      redo: () => typing.current.redoTyping(),
+    });
+  }, []);
   const apply = (value: string, start: number, end: number) => {
     caret.current = { start, end };
     h.onLines(key, asLines(value));

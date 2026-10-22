@@ -16,7 +16,7 @@ import { entryTitle } from '../../../../shared/schema';
 import { useBibleSettings } from '../bibleSettings';
 import { useEntries } from '../data';
 import type { Entry } from '../data';
-import { EntryEditable, entryOptions, useEntryAddNew } from '../editable';
+import { EditableError, EntryEditable, entryOptions, useEntryAddNew } from '../editable';
 import type { OutlineWrites } from './actions';
 
 const newCharacter = (label: string) => ({ title: label, names: { full: label } });
@@ -29,13 +29,21 @@ export function strandChipText(strands: unknown): string {
   return `${w.label || 'Strand'}, ${w.startYear}`;
 }
 
-/** One strand field's stored strands, patched by the strand's ID so a reordered list never hits the wrong one. */
+/** Said when the strand a field was opened on is gone from the stored chapter. */
+const STRAND_GONE = 'This strand is no longer on the chapter. Close this and open it again.';
+
+/**
+ * One strand field's stored strands, patched by the strand's ID so a reordered
+ * list never hits the wrong one. A strand gone since the popover opened is
+ * refused, so the index in the field's path never writes another strand.
+ */
 const byId =
   (strandId: string, patch: (next: unknown, s: BarStrand) => Partial<BarStrand>) =>
   (next: unknown, entry: Doc): Doc => {
     const stored = Array.isArray(entry.strands) ? (entry.strands as unknown[]) : [];
     const s = barStrands(stored).find((x) => x.id === strandId);
-    return s ? { strands: patchStrand(stored, strandId, patch(next, s)) } : {};
+    if (!s) throw new EditableError(STRAND_GONE);
+    return { strands: patchStrand(stored, strandId, patch(next, s)) };
   };
 
 /**
@@ -219,8 +227,10 @@ export function StrandPopover(props: {
                 testId="strand-backstory-year"
                 extraPatch={(next, entry) => {
                   const stored = Array.isArray(entry.strands) ? (entry.strands as object[]) : [];
-                  const shift = typeof next === 'number' ? shiftStrand(stored, b.id, next) : null;
-                  return shift ? { strands: shift.next } : {};
+                  if (typeof next !== 'number') return {};
+                  const shift = shiftStrand(stored, b.id, next);
+                  if (!shift) throw new EditableError(STRAND_GONE);
+                  return { strands: shift.next };
                 }}
               />
             ) : (

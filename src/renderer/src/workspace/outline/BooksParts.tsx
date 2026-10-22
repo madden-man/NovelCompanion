@@ -9,6 +9,11 @@ import type { OutlineWrites } from './actions';
 
 const live = (e: Entry) => e.deletedAt === undefined;
 const numberOf = (e: Entry) => (typeof e.number === 'number' ? e.number : 0);
+/** "Part 3", unless the title already starts with it, as the default "Part {n}" does. */
+const kindTag = (kind: string, e: Entry) => {
+  const tag = `${kind} ${numberOf(e) || ''}`.trim();
+  return entryTitle(e).toLowerCase().startsWith(tag.toLowerCase()) ? null : tag;
+};
 const byNumber = (a: Entry, b: Entry) =>
   numberOf(a) - numberOf(b) || entryTitle(a).localeCompare(entryTitle(b));
 
@@ -59,7 +64,7 @@ export function BooksParts(props: { writes: OutlineWrites }) {
           return (
             <li key={book._id} className="bp-book" data-testid="bp-book" data-book={book._id}>
               <div className="bp-head">
-                <span className="bp-kind">Book {numberOf(book) || ''}</span>
+                {kindTag('Book', book) && <span className="bp-kind">{kindTag('Book', book)}</span>}
                 <EntryEditable
                   collection="books"
                   id={book._id}
@@ -76,7 +81,9 @@ export function BooksParts(props: { writes: OutlineWrites }) {
                 {mine.map((part) => (
                   <li key={part._id} className="bp-part" data-testid="bp-part" data-part={part._id}>
                     <div className="bp-head">
-                      <span className="bp-kind">Part {numberOf(part) || ''}</span>
+                      {kindTag('Part', part) && (
+                        <span className="bp-kind">{kindTag('Part', part)}</span>
+                      )}
                       <EntryEditable
                         collection="parts"
                         id={part._id}

@@ -3,7 +3,16 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoClient } from 'mongodb';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { field, fileDb, fillEditable, invokeVia, launch, rail, sectionList } from './helpers';
+import {
+  changes,
+  field,
+  fileDb,
+  fillEditable,
+  invokeVia,
+  launch,
+  rail,
+  sectionList,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -930,6 +939,86 @@ test('IP-6 typing in the scene outline is one undo step per pause and two across
   await undo();
   await expect(notice()).toHaveText('Undid: Typed in the scene outline');
   await expect(seven).toHaveValue(was);
+});
+
+test('IP-6 Cmd+Z inside the scene box with unsaved typing undoes the typing first, then the recorded typing step', async () => {
+  // The longest pause the settings allow, so the second run is still unsaved when Cmd+Z comes.
+  await invoke('settings.set', { numbers: { autosaveMs: 750 } });
+  const history = async () => {
+    const list = await (await changes(page)).locator('li').allTextContents();
+    await page.getByTestId('top-changes').click();
+    return list;
+  };
+  const listBefore = await history();
+  const seven = section('CH7');
+  const was = await seven.inputValue();
+  const textBefore = (await stored()).text;
+  await seven.click();
+  await seven.press('Meta+ArrowDown');
+  await seven.pressSequentially(' one');
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  await expect.poll(async () => (await stored()).text).toContain('Rain in Guangzhou one');
+  // Typed on the other side of the pause: Chromium could join both runs as one native step.
+  await seven.pressSequentially(' two');
+  await seven.press('Meta+z');
+  await expect(seven).toHaveValue(`${was} one`);
+  await expect(seven).toBeFocused();
+  await expect(view().getByTestId('scene-autosave')).toHaveText('Saved');
+  expect((await stored()).text).toContain('Rain in Guangzhou one');
+  expect((await stored()).text).not.toContain(' two');
+  // The second Cmd+Z is the recorded typing step.
+  await seven.press('Meta+z');
+  await expect(seven).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).toBe(textBefore);
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  // Past the longest autosave wait, no reverse "Typed" step has been recorded.
+  await page.waitForTimeout(1000);
+  const listAfter = await history();
+  const done = (l: string[]) => l.filter((t) => !t.startsWith('Undone: '));
+  expect(listAfter[0]).toBe('Undone: Typed in the scene outline');
+  expect(listAfter.filter((t) => t.startsWith('Undone: '))).toEqual([
+    'Undone: Typed in the scene outline',
+  ]);
+  expect(done(listAfter)).toEqual(done(listBefore));
+  await invoke('settings.set', { numbers: { autosaveMs: 500 } });
+});
+
+test('IP-6 a chapter bar drag or a keyboard move right after typing closes the typing step first, so each is its own step', async () => {
+  const six = section('CH6');
+  const was = await six.inputValue();
+  const order = await chapterIds();
+  // From the keyboard: type, then at once move the bar down.
+  await six.click();
+  await six.press('Meta+ArrowDown');
+  await six.pressSequentially(' y');
+  await bar('CH6').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH7', 'CH6', 'CH8']);
+  await expect(six).toHaveValue(`${was} y`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Moved The Letter down');
+  await expect.poll(chapterIds).toEqual(order);
+  await expect(six).toHaveValue(`${was} y`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(six).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).not.toContain(' y');
+  // By pointer: type, then at once drag the bar below the next one.
+  await six.click();
+  await six.press('Meta+ArrowDown');
+  await six.pressSequentially(' z');
+  const target = await box(bar('CH7'));
+  await dragBar('CH6', { y: target.y + target.height * 0.75 });
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH7', 'CH6', 'CH8']);
+  await expect(six).toHaveValue(`${was} z`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Moved The Letter');
+  await expect.poll(chapterIds).toEqual(order);
+  await expect(six).toHaveValue(`${was} z`);
+  await undo();
+  await expect(notice()).toHaveText('Undid: Typed in the scene outline');
+  await expect(six).toHaveValue(was);
+  await expect.poll(async () => (await stored()).text).not.toContain(' z');
 });
 
 test('IP-13 Books and parts under the track lists every book and part, renames in place in step with the divider, edits a part summary, and New part and New book are one step each', async () => {
