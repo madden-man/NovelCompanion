@@ -309,3 +309,35 @@ export function familyColorCss(color: unknown): string | null {
   if (token) return `var(--${token})`;
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : null;
 }
+
+type ListDocs = readonly { _id?: unknown; items?: unknown }[];
+
+const itemsOf = (lists: ListDocs, listId: string): Partial<ListItem>[] => {
+  const list = lists.find((l) => l._id === listId);
+  return Array.isArray(list?.items) ? (list.items as Partial<ListItem>[]) : [];
+};
+
+/**
+ * IP-9: the status to write when code means "a status of this kind": the
+ * first status item of that kind, else the item whose ID is the kind (a list
+ * without kinds), else the first status, else the kind word itself (no list).
+ */
+export function defaultStatus(lists: ListDocs, kind: StatusKind): string {
+  const items = itemsOf(lists, 'statuses');
+  const hit =
+    items.find((i) => i.extra?.kind === kind) ??
+    items.find((i) => i.id === kind && i.extra?.kind === undefined) ??
+    items[0];
+  return typeof hit?.id === 'string' ? hit.id : kind;
+}
+
+/**
+ * IP-9: the provenance to write when code means a seeded one (`researched`,
+ * `invented`): that item while the list holds it, else none (provenance may
+ * be blank). With no list at all, the ID itself.
+ */
+export function defaultProvenance(lists: ListDocs, id: string): string | null {
+  const list = lists.find((l) => l._id === 'provenance');
+  if (!list) return id;
+  return itemsOf(lists, 'provenance').some((i) => i.id === id) ? id : null;
+}

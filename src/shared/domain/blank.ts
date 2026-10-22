@@ -49,12 +49,19 @@ export function blankItem(fields: readonly FieldSpec[], today = new Date()): Doc
   return out;
 }
 
-/** A new top-level entry for the create form: required fields only, status preset to idea. */
-export function blankEntry(manifest: readonly FieldSpec[], today = new Date()): Doc {
+/**
+ * A new top-level entry for the create form: required fields only, status
+ * preset to an idea (A47: the bible's first status of kind idea, `defaultStatus`).
+ */
+export function blankEntry(
+  manifest: readonly FieldSpec[],
+  today = new Date(),
+  ideaStatus = 'idea',
+): Doc {
   const out: Doc = {};
   for (const f of manifest) {
     if (f.kind === 'system' || !f.required) continue;
-    out[f.name] = f.name === 'status' ? 'idea' : blankValue(f, today);
+    out[f.name] = f.name === 'status' ? ideaStatus : blankValue(f, today);
   }
   return out;
 }

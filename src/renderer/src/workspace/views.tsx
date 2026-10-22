@@ -160,14 +160,17 @@ export function EntryList(props: {
   );
 }
 
-/** WE-2: gaps and overlaps in the eras from 2025 to 2100. A flag, never a block. */
+/** WE-2: gaps and overlaps in the eras across the bible's timeline (IP-11). A flag, never a block. */
 export function EraCoverage() {
   const { version } = useStore();
   const [messages, setMessages] = useState<string[] | null>(null);
+  const [span, setSpan] = useState({ from: 2025, to: 2100 }); // a47-model
   useEffect(() => {
     let live = true;
     void call('timeline.eraCoverage', {}).then((r) => {
-      if (live) setMessages(r.messages);
+      if (!live) return;
+      setMessages(r.messages);
+      setSpan({ from: r.coverage.from, to: r.coverage.to });
     });
     return () => {
       live = false;
@@ -177,7 +180,7 @@ export function EraCoverage() {
   if (messages.length === 0) {
     return (
       <p className="example-note" data-testid="era-coverage-ok">
-        The eras cover 2025 to 2100 with no gaps or overlaps.
+        The eras cover {span.from} to {span.to} with no gaps or overlaps.
       </p>
     );
   }

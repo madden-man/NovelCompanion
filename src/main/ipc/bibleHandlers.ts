@@ -374,10 +374,12 @@ export function bibleHandlers(
         places: model.all('places'),
         categories: model.get('lists', 'eventCategories') as ListDoc | undefined,
       });
-      return { ...chart, coverage: eraCoverage(eraSpans(model)) };
+      const { numbers: n } = session().repo.bibleSettings(); // a47-model: IP-11
+      return { ...chart, coverage: eraCoverage(eraSpans(model), n.timelineStart, n.timelineEnd) };
     },
     'timeline.eraCoverage': () => {
-      const coverage = eraCoverage(eraSpans(session().model));
+      const { numbers: n } = session().repo.bibleSettings(); // a47-model: IP-11
+      const coverage = eraCoverage(eraSpans(session().model), n.timelineStart, n.timelineEnd);
       return { coverage, messages: coverageMessages(coverage) };
     },
     'outline.get': ({ order, cursorYear }) => {

@@ -325,7 +325,7 @@ export interface EraCoverage {
   backwards: { id: string; name: string }[];
 }
 
-/** The default span the eras should cover (WE-2). */
+/** The default span the eras should cover (WE-2). A47 (IP-11): a bible's timeline span replaces it. */
 export const ERA_SPAN = { from: 2025, to: 2100 } as const;
 
 /**

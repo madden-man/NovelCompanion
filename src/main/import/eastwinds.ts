@@ -1,3 +1,4 @@
+import { defaultProvenance, defaultStatus } from '../../shared/domain/lists';
 import { join } from 'node:path';
 import {
   blocksToBody,
@@ -98,7 +99,12 @@ function labelRow(sheet: ParsedSheet, re: RegExp): number | null {
   return i < 0 ? null : i + 1;
 }
 
-const PLANNED = { status: 'planned', provenance: 'invented' } as const;
+/** A47 (IP-9): planned and invented, as the bible's own status and provenance items. */
+type ListDocs = Parameters<typeof defaultStatus>[0];
+const plannedFor = (lists: ListDocs) => ({
+  status: defaultStatus(lists, 'planned'),
+  provenance: defaultProvenance(lists, 'invented'),
+});
 
 /**
  * The default mappings for the East Winds workbook (A39). Columns are found
@@ -114,7 +120,8 @@ const PLANNED = { status: 'planned', provenance: 'invented' } as const;
  * - Plot v1: Book Two's chapters. Book One's rows are left out while the High
  *   Level sheet plans that book (A29).
  */
-export function defaultMappings(wb: ParsedWorkbook): Mapping[] {
+export function defaultMappings(wb: ParsedWorkbook, lists: ListDocs = []): Mapping[] {
+  const PLANNED = plannedFor(lists);
   const out: Mapping[] = [];
   const high = wb.sheets.find((s) => s.name === 'High Level');
   let plansBookOne = false;
@@ -490,7 +497,7 @@ export async function importEastWinds(
 
   // The workbook: Book One's chapters, moments, world events, then Book Two's chapters.
   const wb = await parseWorkbookFile(join(dir, EAST_WINDS_FILES.workbook));
-  const mappings = defaultMappings(wb);
+  const mappings = defaultMappings(wb, open.model.all('lists'));
   // New chapters read after every chapter already planned, in this run too.
   let lastOrder = Math.max(0, ...open.repo.list('chapters').map((c) => c.readingOrder));
   for (const mapping of mappings) {
@@ -521,8 +528,7 @@ export async function importEastWinds(
         title: name,
         names: { full: name },
         birth: { unknown: true },
-        status: 'planned',
-        provenance: 'invented',
+        ...plannedFor(open.model.all('lists')),
         sourceRef: `${file}#p1`,
       } as never);
       id = made._id;
@@ -735,13 +741,13 @@ export async function partForManuscript(open: OpenBible, dryRun: boolean): Promi
     (await open.repo.create('books', {
       title: 'East Winds',
       number: 1,
-      status: 'planned',
+      status: defaultStatus(open.model.all('lists'), 'planned'),
     } as never));
   const part = await open.repo.create('parts', {
     title: 'Manuscript',
     bookId: book._id,
     number: 1,
-    status: 'planned',
+    status: defaultStatus(open.model.all('lists'), 'planned'),
   } as never);
   return part._id;
 }

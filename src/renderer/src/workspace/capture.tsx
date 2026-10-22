@@ -1,3 +1,4 @@
+import { useDefaultStatus } from './bibleSettings';
 import {
   useCallback,
   useEffect,
@@ -132,6 +133,7 @@ function cardTitle(v: ProposalView): string {
  * still saved as an open question (KB-7).
  */
 export function CaptureBox() {
+  const statusOf = useDefaultStatus();
   const open = useBoxOpen();
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -211,7 +213,12 @@ export function CaptureBox() {
     async (body: string) => {
       setBusy(true);
       try {
-        const data = captureQuestionData(body, time.words, localDateString(new Date()));
+        const data = captureQuestionData(
+          body,
+          time.words,
+          localDateString(new Date()),
+          statusOf('idea'),
+        );
         const { entry } = await call('entry.create', { collection: 'openQuestions', data });
         undo.record(createCommand('openQuestions', entry._id, entryTitle(entry)));
         setSaved({ id: entry._id, title: entryTitle(entry) });
@@ -225,7 +232,7 @@ export function CaptureBox() {
         setBusy(false);
       }
     },
-    [time.words, undo],
+    [time.words, undo, statusOf],
   );
 
   // Each proposal shows as it arrives, with its diff against the entry as it is now.

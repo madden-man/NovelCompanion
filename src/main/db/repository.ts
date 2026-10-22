@@ -26,6 +26,7 @@ import type {
   EntryOf,
   ListItem,
   ListItemInput,
+  StatusKind,
   StoredListItem,
 } from '../../shared/schema';
 import type { BibleSettings } from '../../shared/schema';
@@ -36,6 +37,8 @@ import { StoryTimeValue } from '../../shared/storyTime';
 import {
   countListUsage,
   derivedRename,
+  defaultProvenance,
+  defaultStatus,
   moveItem,
   newItemId,
   parentProblem,
@@ -44,6 +47,7 @@ import {
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
 import type { SelectionSettings } from '../../shared/domain/brief/selection';
+import { familyHexFrom, regionIdsFrom } from './migrations/011-vocabulary';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
@@ -309,6 +313,7 @@ export class Repository {
       if (i >= 0) listUpdates[i] = merged;
       else listUpdates.push(merged);
     }
+    this.settleRegions(changes, listUpdates); // a47-model
     await this.transact(async (session) => {
       await this.writeChanges(changes, session);
       for (const list of listUpdates) {
@@ -669,12 +674,14 @@ export class Repository {
     const revision = await this.revision(c, id, revisionId);
     const prior = await this.current(c, id);
     const doc = this.validate(c, {
-      ...contentOf(revision.snapshot),
+      // a47-model: a revision from before migration 11 holds region names and colour tokens.
+      ...this.fromBeforeMigration11(c, contentOf(revision.snapshot)),
       _id: prior._id,
       createdAt: prior.createdAt,
       modifiedAt: this.stamp(prior),
       ...(prior.deletedAt ? { deletedAt: prior.deletedAt } : {}),
     });
+    this.checkVocabulary(doc as StoredDoc, prior); // a47-model
     await this.commit([
       {
         collection: c,
@@ -859,8 +866,11 @@ export class Repository {
     if (list.items.some((i) => i.parentId === itemId)) {
       throw new RepositoryError(`${item.label} has items under it. Move or remove them first.`);
     }
-    if (listId === 'statuses' && list.items.length === 1) {
-      throw new RepositoryError(`${item.label} is the last status. A bible keeps at least one.`);
+    if (listId === 'statuses') {
+      this.keepEveryKind(
+        list.items,
+        list.items.filter((i) => i.id !== itemId),
+      );
     }
     await this.commit([], undefined, [
       { ...list, items: list.items.filter((i) => i.id !== itemId) },
@@ -1159,7 +1169,7 @@ export class Repository {
             title: q.title,
             question: q.question,
             state: 'open',
-            status: 'planned',
+            status: defaultStatus(this.model.all('lists'), 'planned'),
             sourceRef: item.ref,
             links: [{ targetId: item.entryId, kind: 'conflict' }],
           }),
@@ -1372,8 +1382,8 @@ export class Repository {
       ...this.buildCreate('eraStates', {
         title: r.name,
         name: r.name,
-        status: 'planned',
-        provenance: 'invented',
+        status: defaultStatus(this.model.all('lists'), 'planned'),
+        provenance: defaultProvenance(this.model.all('lists'), 'invented'),
         startYear: r.startYear,
         endYear: r.endYear,
       }),
@@ -1703,6 +1713,9 @@ export class Repository {
    * A47 (IP-9): a status or provenance ID the list does not hold is refused,
    * with the field named. Only a value that changes is checked, so an entry
    * restored from the trash with an item removed since can still be edited.
+   * A seeded word the list no longer holds (code that writes `idea`, `planned`
+   * or `invented`) is settled to the bible's own: the first status of that
+   * kind (`defaultStatus`), or no provenance.
    */
   private checkVocabulary(doc: StoredDoc, prior: StoredDoc | null): void {
     const fields: [string, string, string][] = [
@@ -1714,10 +1727,86 @@ export class Repository {
       if (typeof v !== 'string' || (prior && prior[field] === v)) continue;
       const list = this.model.get('lists', listId) as ListDoc | undefined;
       if (!list || list.items.some((i) => i.id === v)) continue;
+      const lists = this.model.all('lists');
+      if (field === 'status' && (STATUS_KINDS as readonly string[]).includes(v)) {
+        doc.status = defaultStatus(lists, v as StatusKind);
+        continue;
+      }
+      if (field === 'provenance' && ['researched', 'invented'].includes(v)) {
+        doc.provenance = defaultProvenance(lists, v);
+        continue;
+      }
       const message = `${label} ${v} is not in the ${listId} list.`;
       throw new ValidationError(message, [
         { code: 'custom', message, path: [field], input: v } as z.core.$ZodIssue,
       ]);
+    }
+  }
+
+  /**
+   * A47 (IP-8, IP-12): an entry's content as migration 11 would have left it,
+   * for restoring a revision written before it: region names become region
+   * item IDs and a family colour token becomes its hex.
+   */
+  private fromBeforeMigration11<T extends Record<string, unknown>>(
+    c: EntryCollection,
+    content: T,
+  ): T {
+    if (c === 'worldEvents' && Array.isArray(content.regions)) {
+      const regions = this.model.get('lists', 'regions') as ListDoc | undefined;
+      return { ...content, regions: regionIdsFrom(content.regions, regions?.items ?? []) };
+    }
+    if (c === 'families' && 'color' in content) {
+      return { ...content, color: familyHexFrom(content.color) };
+    }
+    return content;
+  }
+
+  /**
+   * A47 (IP-8): world events hold region item IDs. A region written by name
+   * (an approved proposal, a restored revision) becomes the item with that
+   * label, and a name the list lacks becomes a new item in the same write,
+   * as a new tag does. `listUpdates` gains the regions list when it grows.
+   */
+  private settleRegions(changes: Change[], listUpdates: ListDoc[]): void {
+    const at = listUpdates.findIndex((l) => l._id === 'regions');
+    const base =
+      listUpdates[at] ??
+      (this.model.get('lists', 'regions') as ListDoc | undefined) ??
+      ({ _id: 'regions', label: 'Regions', items: [] } as ListDoc);
+    const items = [...base.items];
+    for (const ch of changes) {
+      if (ch.collection !== 'worldEvents' || !Array.isArray(ch.next.regions)) continue;
+      for (const r of ch.next.regions as unknown[]) {
+        const name = typeof r === 'string' ? r.trim() : '';
+        if (!name || regionIdsFrom([name], items)[0] !== name) continue;
+        if (items.some((i) => i.id === name)) continue;
+        items.push({
+          id: newItemId({ items }, name),
+          label: name,
+          parentId: null,
+          color: null,
+          extra: {},
+        });
+      }
+      ch.next.regions = regionIdsFrom(ch.next.regions, items);
+    }
+    if (items.length === base.items.length) return;
+    const grown = { ...base, items };
+    if (at >= 0) listUpdates[at] = grown;
+    else listUpdates.push(grown);
+  }
+
+  /** IP-9: every kind the statuses had keeps at least one status. */
+  private keepEveryKind(
+    before: readonly Pick<ListItem, 'extra'>[],
+    after: readonly Pick<ListItem, 'extra'>[],
+  ): void {
+    for (const kind of STATUS_KINDS) {
+      const had = before.some((i) => i.extra?.kind === kind);
+      if (had && !after.some((i) => i.extra?.kind === kind)) {
+        throw new RepositoryError(`Keep at least one status of kind ${kind}.`);
+      }
     }
   }
 
@@ -1733,14 +1822,16 @@ export class Repository {
     if (listId === 'statuses') {
       extra.kind ??= 'idea';
       if (!(STATUS_KINDS as readonly unknown[]).includes(extra.kind)) {
-        throw new RepositoryError('A status is canon, planned or idea to the brief rules.');
+        throw new RepositoryError('A status has the kind canon, planned or idea.');
       }
     }
     if (listId === 'ageGroups') {
       for (const k of ['from', 'to'] as const) {
         const v = extra[k];
         if (v !== undefined && (typeof v !== 'number' || !Number.isInteger(v) || v < 0)) {
-          throw new RepositoryError('An age group runs from and to whole years of age.');
+          throw new RepositoryError(
+            'An age group starts and ends at a whole number of years of age.',
+          );
         }
       }
       if (typeof extra.from === 'number' && typeof extra.to === 'number' && extra.to < extra.from) {
@@ -1828,6 +1919,7 @@ export class Repository {
       }),
     };
     const items = list.items.map((i) => (i.id === itemId ? next : i));
+    if (listId === 'statuses') this.keepEveryKind(list.items, items);
     await this.commit([], undefined, [{ ...list, items }]);
     return next;
   }

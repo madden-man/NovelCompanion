@@ -34,6 +34,14 @@ const regionLabel = new Map(
 );
 const TOKEN: Record<string, string> = { '#2a78d6': 'series-1', '#1baf7a': 'series-3' };
 const TRASHED = '2026-02-01T00:00:00.000Z';
+const LEGACY_REVISION = {
+  _id: 'REV-A46',
+  collection: 'worldEvents',
+  entryId: 'E2',
+  op: 'update',
+  at: '2026-01-20T09:00:00.000Z',
+  prior: { _id: 'E2', title: 'Old', regions: ['Oregon', 'China'], color: 'series-2' },
+};
 
 /**
  * The fixture as a version 10 bible stored it: region names on the events
@@ -78,6 +86,8 @@ async function v10Bible(label: string): Promise<BibleHandle> {
   await bible
     .collection('meta')
     .insertOne({ _id: 'briefSettings' as never, window: 5, budget: 9000 });
+  // History from before A47: a revision keeps the region names and colour token it held.
+  await bible.collection('revisions').insertOne({ ...LEGACY_REVISION } as never);
   return bible;
 }
 
@@ -166,6 +176,11 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
   test('IP-11 the brief window stored before A47 becomes the bible window before, and the budget stays', async () => {
     expect(open.repo.bibleSettings().numbers.windowBefore).toBe(5);
     expect(open.repo.briefSettings()).toEqual({ window: 5, budget: 9000 });
+  });
+
+  test('A47 migration 11 leaves revisions as they were', async () => {
+    const revisions = await open.handle.collection('revisions').find({}).toArray();
+    expect(revisions).toEqual([LEGACY_REVISION]);
   });
 
   test('A47 the summary in meta counts the regions made, the events rewritten and the families recoloured', async () => {

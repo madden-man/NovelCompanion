@@ -129,6 +129,8 @@ export function captureQuestionData(
   text: string,
   storyTime: string,
   capturedOn: string,
+  /** A47 (IP-9): the bible's first status of kind idea (`defaultStatus`). */
+  status = 'idea',
 ): Record<string, unknown> {
   const trimmed = text.trim();
   const first = (trimmed.split('\n')[0] ?? '').trim();
@@ -140,7 +142,7 @@ export function captureQuestionData(
     .map((l) => `<p>${escape(l)}</p>`);
   return {
     title,
-    status: 'idea',
+    status,
     question: trimmed,
     body: [...paragraphs, `<p>${escape(storyTime)}</p>`].join(''),
     tags: ['capture'],

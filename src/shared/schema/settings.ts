@@ -17,9 +17,9 @@ export const CULTURE_UNIT_YEARS: Record<CultureUnit, number> = { decade: 10, fiv
 
 const Whole = (min: number, max: number, what: string) =>
   z
-    .int(`${what} is a whole number.`)
-    .min(min, `${what} is at least ${min}.`)
-    .max(max, `${what} is at most ${max}.`);
+    .int(`${what} is a whole number of years.`)
+    .min(min, `${what} is ${min} or more.`)
+    .max(max, `${what} is ${max} or fewer.`);
 
 /** IP-11: the per-bible numbers. */
 export const BibleNumbers = z
@@ -29,16 +29,22 @@ export const BibleNumbers = z
     /** The last year of both grids (default 2100). */
     timelineEnd: Year,
     /** Years before the story year the world window and the brief take in (default 3). */
-    windowBefore: Whole(0, 200, 'The years before'),
+    windowBefore: Whole(0, 200, 'Years before'),
     /** Years after the story year the world window and the brief look ahead (default 1). */
-    windowAfter: Whole(0, 200, 'The years after'),
+    windowAfter: Whole(0, 200, 'Years after'),
     /** Years either side of a moment the Relevant world events picker reaches (default 1). */
     pickerReach: Whole(0, 100, 'The picker reach'),
     /**
      * Milliseconds after the last keystroke before a field saves (default 500).
      * At most 750, so the longest wait stays under a second (BK-4).
      */
-    autosaveMs: Whole(100, 750, 'The autosave delay'),
+    autosaveMs: z
+      .int('The autosave delay is a whole number of milliseconds.')
+      .min(100, 'The autosave delay is at least 100 milliseconds.')
+      .max(
+        750,
+        'The autosave delay is at most 750 milliseconds, so a change saves within a second.',
+      ),
   })
   .refine((n) => n.timelineEnd > n.timelineStart, {
     message: 'The last year of the timeline comes after the first.',
@@ -83,7 +89,11 @@ export const DEFAULT_LINK_TYPE_LABELS: Record<string, string> = {
   guardian: 'Guardian parent',
 };
 
-const Name = z.string().trim().min(1, 'A default name cannot be empty.').max(200);
+const Name = z
+  .string()
+  .trim()
+  .min(1, 'A default name cannot be empty.')
+  .max(200, 'A default name is 200 characters or fewer.');
 
 /** IP-14: the names everything that creates a thing starts it with. `{n}` is its number. */
 export const BibleTemplates = z.strictObject({

@@ -24,7 +24,7 @@ import { MomentsTable } from './MomentsTable';
 import type { MomentField } from './MomentsTable';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
-import { useBibleSettings } from '../bibleSettings';
+import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -60,6 +60,7 @@ export function BackstoryView(props: {
   const characters = useEntries('characters');
   const families = useEntries('families');
   const { numbers } = useBibleSettings();
+  const statusOf = useDefaultStatus();
   const unions = useEntries('unions');
   const parentLinks = useEntries('parentLinks');
   const momentEntries = useEntries('moments');
@@ -145,7 +146,7 @@ export function BackstoryView(props: {
     const data: Record<string, unknown> = {
       ...blankEntry(manifests.moments),
       title: '',
-      status: 'idea',
+      status: statusOf('idea'),
       characterId,
       year: at,
       endYear: null,

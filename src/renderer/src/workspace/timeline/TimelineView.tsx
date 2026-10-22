@@ -32,7 +32,7 @@ import { WorldEventsStrip } from './WorldEventsStrip';
 import { WorldEventsGrid } from './WorldEventsGrid';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
-import { useBibleSettings } from '../bibleSettings';
+import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -58,6 +58,7 @@ export function TimelineView() {
   const categories = useList('eventCategories');
   // A47: the bible's numbers (IP-11) and its regions list, in its order, by label (IP-8).
   const { numbers } = useBibleSettings();
+  const statusOf = useDefaultStatus();
   const regionItems = useList('regions')?.items;
   const [selected, setSelected] = useState<{ collection: EntryCollection; id: string } | null>(
     null,
@@ -71,7 +72,10 @@ export function TimelineView() {
 
   const spans = useMemo(() => eventSpans(fromCollections({ worldEvents: entries })), [entries]);
   const eras = useMemo(() => eraSpans(fromCollections({ eraStates: eraEntries })), [eraEntries]);
-  const coverage = useMemo(() => coverageMessages(eraCoverage(eras)), [eras]);
+  const coverage = useMemo(
+    () => coverageMessages(eraCoverage(eras, numbers.timelineStart, numbers.timelineEnd)),
+    [eras, numbers],
+  );
   const span = useMemo(
     () =>
       gridSpan(spans.flatMap((e) => [e.startYear, e.endYear]).concat(year), {
@@ -193,7 +197,7 @@ export function TimelineView() {
     const data: Record<string, unknown> = {
       ...base,
       title: n.title,
-      status: 'idea',
+      status: statusOf('idea'),
       start: { year: n.year },
       end: n.endYear !== null && n.endYear !== n.year ? { year: n.endYear } : null,
       categoryId: n.categoryId,

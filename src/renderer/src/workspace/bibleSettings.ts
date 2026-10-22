@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_BIBLE_SETTINGS } from '../../../shared/schema/settings';
 import type { BibleSettings } from '../../../shared/schema/settings';
 import { call } from '../api';
+import { defaultStatus } from '../../../shared/domain/lists';
+import type { StatusKind } from '../../../shared/schema/lists';
+import { useStore } from './data';
 
 /**
  * A47 (IP-10, IP-11, IP-14): the open bible's settings, the defaults until
@@ -28,4 +31,13 @@ export function useBibleSettings(): BibleSettings {
     };
   }, []);
   return settings;
+}
+
+/**
+ * A47 (IP-9): the status a new entry of a kind is written with: the first
+ * status item of that kind in the open bible (`defaultStatus`).
+ */
+export function useDefaultStatus(): (kind: StatusKind) => string {
+  const { lists } = useStore();
+  return useCallback((kind: StatusKind) => defaultStatus(lists, kind), [lists]);
 }

@@ -71,6 +71,42 @@ export const FAMILY_TOKEN_SEED: Record<string, string> = {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
+/**
+ * A family colour as migration 11 leaves it: a hex stays, one of the four
+ * tokens becomes its hex, anything else becomes the first colour. Also used
+ * when a revision from before migration 11 is restored.
+ */
+export function familyHexFrom(color: unknown): string {
+  if (typeof color === 'string' && HEX.test(color)) return color;
+  return (
+    (typeof color === 'string' ? FAMILY_TOKEN_SEED[color] : undefined) ??
+    (FAMILY_TOKEN_SEED['series-1'] as string)
+  );
+}
+
+/**
+ * Region names or IDs as region item IDs: an item ID stays, a name becomes
+ * the ID of the item with that label (exact, then ignoring case), and a name
+ * the list does not hold stays as it is (a field warning). Duplicates go.
+ */
+export function regionIdsFrom(
+  regions: unknown,
+  items: readonly { id: string; label: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const r of Array.isArray(regions) ? (regions as unknown[]) : []) {
+    if (typeof r !== 'string' || !r.trim()) continue;
+    const name = r.trim();
+    const hit =
+      items.find((i) => i.id === name) ??
+      items.find((i) => i.label === name) ??
+      items.find((i) => i.label.toLowerCase() === name.toLowerCase());
+    const id = hit?.id ?? name;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 /** A region item ID from its name, unique within the list (as `newItemId` does). */
 function regionId(taken: readonly Item[], label: string): string {
   const base =
@@ -170,13 +206,7 @@ export const vocabulary: Migration = {
     for (const e of events) {
       if (!Array.isArray(e.regions)) continue;
       const before = e.regions as unknown[];
-      const after = [
-        ...new Set(
-          before
-            .filter((r): r is string => typeof r === 'string' && r.trim() !== '')
-            .map((r) => idFor.get(r.trim()) ?? r),
-        ),
-      ];
+      const after = regionIdsFrom(before, regions.items);
       if (after.length === before.length && after.every((r, i) => r === before[i])) continue;
       await bible
         .collection<Document>('worldEvents')
@@ -203,11 +233,8 @@ export const vocabulary: Migration = {
     if (existing.has('families')) {
       const families = bible.collection<Document>('families');
       for (const f of await families.find({}).toArray()) {
-        const c = f.color;
-        if (typeof c === 'string' && HEX.test(c)) continue;
-        const hex =
-          (typeof c === 'string' ? FAMILY_TOKEN_SEED[c] : undefined) ??
-          (FAMILY_TOKEN_SEED['series-1'] as string);
+        const hex = familyHexFrom(f.color);
+        if (hex === f.color) continue;
         await families.updateOne({ _id: f._id }, { $set: { color: hex } });
         familiesRecoloured++;
       }

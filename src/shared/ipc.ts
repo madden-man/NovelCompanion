@@ -1010,7 +1010,7 @@ export const contract = {
       coverage: CoverageWire,
     }),
   },
-  /** WE-2: era gaps and overlaps across 2025 to 2100, in plain words. Never blocking. */
+  /** WE-2: era gaps and overlaps across the bible's timeline span (IP-11), in plain words. Never blocking. */
   'timeline.eraCoverage': {
     request: z.strictObject({}),
     response: z.strictObject({ coverage: CoverageWire, messages: z.array(z.string()) }),

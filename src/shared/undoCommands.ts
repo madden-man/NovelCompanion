@@ -371,8 +371,14 @@ export function listLookCommand(
   before: ItemLook,
   after: ItemLook,
 ): UndoCommand {
-  const same = (a: ItemLook, b: ItemLook) =>
-    a.color === b.color && JSON.stringify(a.extra) === JSON.stringify(b.extra);
+  const same = (a: ItemLook, b: ItemLook) => {
+    const ka = Object.keys(a.extra);
+    return (
+      a.color === b.color &&
+      ka.length === Object.keys(b.extra).length &&
+      ka.every((k) => Object.hasOwn(b.extra, k) && b.extra[k] === a.extra[k])
+    );
+  };
   const op = (expect: ItemLook, to: ItemLook): Op => ({
     kind: 'run',
     check: async () => {

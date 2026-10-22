@@ -35,7 +35,7 @@ import { Zh } from './Zh';
 import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
-import { useBibleSettings } from './bibleSettings';
+import { useBibleSettings, useDefaultStatus } from './bibleSettings';
 
 function YearField(props: {
   id: string;
@@ -127,6 +127,7 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
  * (ED-3), and Undo is in the top bar (A43).
  */
 export function CommunityView() {
+  const statusOf = useDefaultStatus();
   const story = useStoryTime();
   const communities = useList('communities');
   const entries = useEntries('culturalEntries');
@@ -252,7 +253,7 @@ export function CommunityView() {
         collection: 'culturalEntries',
         data: {
           title,
-          status: 'idea',
+          status: statusOf('idea'),
           communityId: chosen.id,
           demographic: group.demographic,
           ...decadeSpan(decade),
@@ -685,6 +686,7 @@ function LineRow(props: {
 function ErasView() {
   const eras = useEntries('eraStates');
   const { templates } = useBibleSettings();
+  const statusOf = useDefaultStatus();
   const story = useStoryTime();
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -744,7 +746,7 @@ function ErasView() {
           name: templates.eraName,
           startYear: start,
           endYear: end,
-          status: 'idea',
+          status: statusOf('idea'),
         },
       });
       undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));

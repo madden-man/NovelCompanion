@@ -49,7 +49,7 @@ import { useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { useBibleSettings } from '../bibleSettings';
+import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
 import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings';
 import { NumberField } from './NumberField';
 import { InlineName } from './InlineName';
@@ -61,8 +61,6 @@ type BookRow = Extract<Outline['rows'][number], { kind: 'book' }>;
 type VersionSummary = Response<'sceneOutline.versions'>['versions'][number];
 type Version = Response<'sceneOutline.version'>;
 type Open = (collection: EntryCollection, id: string) => void;
-
-/** Autosave timing for the scene outline, the same as an entry (ED-2). */
 
 /** How long an undo step waits for a restored chapter to reach the reading order. */
 const ADOPT_WAIT_MS = 10_000;
@@ -448,6 +446,7 @@ const SCROLL_STEP = 14;
 export function SceneOutline(props: { onOpen: Open }) {
   const { version } = useStore();
   const { templates } = useBibleSettings();
+  const statusOf = useDefaultStatus();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
   const story = useStoryTime();
@@ -544,11 +543,11 @@ export function SceneOutline(props: { onOpen: Open }) {
       (await writes.create('books', {
         title: fillTemplate(templates.bookTitle, 1),
         number: 1,
-        status: 'idea',
+        status: statusOf('idea'),
       }));
     if (!bookId) return undefined;
     const title = fillTemplate(templates.partTitle, 1);
-    return writes.create('parts', { title, bookId, number: 1, status: 'idea' });
+    return writes.create('parts', { title, bookId, number: 1, status: statusOf('idea') });
   };
 
   /**
@@ -698,7 +697,7 @@ export function SceneOutline(props: { onOpen: Open }) {
           title: fillTemplate(templates.sectionTitle, n + 1),
           bookId: part.bookId,
           number: n + 1,
-          status: 'idea',
+          status: statusOf('idea'),
         },
       });
       steps.push(createCommand('parts', entry._id, entryTitle(entry)));

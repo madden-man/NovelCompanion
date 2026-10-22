@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
   countListUsage,
+  defaultProvenance,
+  defaultStatus,
   familyColorCss,
   familyToken,
   isUnder,
@@ -113,7 +115,7 @@ describe('IP-8 list items carry a colour and extra values, move, and take parent
     expect(countListUsage('regions', { id: 'mars', label: 'Mars' }, all)).toBe(0);
   });
 
-  test('IP-8 a region ID that is not in the list is a field warning on that region, never a refusal', () => {
+  test('IP-8 a region ID that is not in the list is a field warning on that region', () => {
     const event = WorldEvent.parse({
       ...fixture.worldEvents![0],
       regions: ['oregon', 'atlantis'],
@@ -152,6 +154,30 @@ describe('IP-9 statuses and provenance are lists with colours, and a status has 
     ];
     expect(statusKind(own, 'settled')).toBe('canon');
     expect(statusKind(own, 'canon')).toBe('planned');
+  });
+
+  test('IP-9 defaultStatus gives the first status of a kind, then the item named for it, then the first', () => {
+    const own = [
+      {
+        _id: 'statuses',
+        items: [
+          { id: 'settled', label: 'Settled', extra: { kind: 'canon' } },
+          { id: 'notion', label: 'Notion', extra: { kind: 'idea' } },
+          { id: 'whim', label: 'Whim', extra: { kind: 'idea' } },
+        ],
+      },
+    ];
+    expect(defaultStatus(own, 'idea')).toBe('notion');
+    expect(defaultStatus(own, 'canon')).toBe('settled');
+    expect(defaultStatus(own, 'planned')).toBe('settled');
+    expect(defaultStatus(lists, 'planned')).toBe('planned');
+    expect(
+      defaultStatus([{ _id: 'statuses', items: [{ id: 'idea', label: 'Idea' }] }], 'idea'),
+    ).toBe('idea');
+    expect(defaultStatus([], 'idea')).toBe('idea');
+    expect(defaultProvenance(lists, 'invented')).toBe('invented');
+    expect(defaultProvenance([{ _id: 'provenance', items: [] }], 'invented')).toBeNull();
+    expect(defaultProvenance([], 'invented')).toBe('invented');
   });
 
   test('IP-9 a status with no kind reads by its seeded ID, and anything unknown is never canon', () => {
