@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { fileDb, fillEditable, invokeVia, launch, rail } from './helpers';
+import { fileDb, fillEditable, invokeVia, launch, rail, seedFixture } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -55,9 +55,10 @@ test.beforeAll(async () => {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
 });
 

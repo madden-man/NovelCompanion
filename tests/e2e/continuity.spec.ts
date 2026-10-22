@@ -9,7 +9,7 @@ import type { Rgba } from '../helpers/contrast';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
-import { fileDb, fillEditable, invokeVia, launch, rail, screenTab } from './helpers';
+import { fileDb, fillEditable, invokeVia, launch, rail, screenTab, seedFixture } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -52,16 +52,18 @@ test.beforeAll(async () => {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   // The M7 supplement gives the chapters arcs and beats, so the stored plot is there to compare.
   for (const c of ['moments']) {
     const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
-    await invoke('test.seed', {
-      items: docs.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      docs.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   for (const [id, patch] of Object.entries(supplement.patches.chapters ?? {})) {
     await invoke('entry.update', { collection: 'chapters', id, patch });
@@ -485,23 +487,21 @@ test('IP-7 IP-18 the manuscript text shows read-only with Re-import beside it, a
       ),
     );
   await write(['The tide came in over the seawall.', 'Iris counted the boats.']);
-  await invoke('test.seed', {
-    items: [
-      {
-        collection: 'chapters',
-        // A copy of chapter 8 (its part, strands and status), linked to a Word file.
-        data: {
-          ...strip(fixture.chapters!.find((c) => c._id === 'CH8')!),
-          _id: 'CH9',
-          title: 'Tide',
-          readingOrder: 9,
-          manuscriptText: 'The tide came in over the seawall.\nIris counted the gulls.',
-          manuscriptSource: `word:${docPath}`,
-          sourceFile: 'Chapter 9 Tide.docx',
-        },
+  await seedFixture(invoke, [
+    {
+      collection: 'chapters',
+      // A copy of chapter 8 (its part, strands and status), linked to a Word file.
+      data: {
+        ...strip(fixture.chapters!.find((c) => c._id === 'CH8')!),
+        _id: 'CH9',
+        title: 'Tide',
+        readingOrder: 9,
+        manuscriptText: 'The tide came in over the seawall.\nIris counted the gulls.',
+        manuscriptSource: `word:${docPath}`,
+        sourceFile: 'Chapter 9 Tide.docx',
       },
-    ],
-  });
+    },
+  ]);
   await screenTab(page, 'Continuity checker', 'Manuscript');
   const ms = page.getByTestId('manuscript-view');
   await ms.locator('[data-chapter="CH9"]').click();

@@ -18,6 +18,7 @@ import {
   rail,
   screenTab,
   sectionList,
+  seedFixture,
 } from './helpers';
 import { contrast } from '../helpers/contrast';
 import type { Rgba } from '../helpers/contrast';
@@ -96,28 +97,31 @@ test.beforeAll(async () => {
   }
   for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   // The M7 brief supplement: moments, questions, session logs, and communities.
   for (const c of ['moments', 'openQuestions']) {
     const docs = supplement.entries[c]!;
-    await invoke('test.seed', {
-      items: docs.map((d) => {
+    await seedFixture(
+      invoke,
+      docs.map((d) => {
         const { deletedAt: _d, ...rest } = strip(d);
         return { collection: c as never, data: rest };
       }),
-    });
+    );
     // Entries in the trash go there the way a person puts them there.
     for (const d of docs.filter((x) => x.deletedAt)) {
       await invoke('entry.delete', { collection: c as never, id: d._id });
     }
   }
   for (const c of ['sessionLogs']) {
-    await invoke('test.seed', {
-      items: supplement.entries[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      supplement.entries[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   for (const [c, byId] of Object.entries(supplement.patches)) {
     for (const [id, patch] of Object.entries(byId)) {
@@ -734,10 +738,14 @@ test('IP-2 Write it yourself makes a cultural line in the community for the unit
   const s = strand('CH6-present');
   await invoke('entry.delete', { collection: 'culturalEntries', id: 'CU4' });
   const gap = s.getByTestId('culture-gap');
-  // The community is labelled as this bible's list has it (the seeded label is its ID).
-  await expect(gap).toContainText('Nothing covers portland in 2045.');
-  await expect(gap.getByRole('button', { name: /^Add culture for portland, 2045/ })).toBeVisible();
-  await gap.getByRole('button', { name: 'Write a line for portland, 2045 yourself' }).click();
+  // The community is labelled as this bible's list has it.
+  await expect(gap).toContainText('Nothing covers Portland, Oregon in 2045.');
+  await expect(
+    gap.getByRole('button', { name: /^Add culture for Portland, Oregon, 2045/ }),
+  ).toBeVisible();
+  await gap
+    .getByRole('button', { name: 'Write a line for Portland, Oregon, 2045 yourself' })
+    .click();
   const culture = s.locator('[data-testid="sel-group"][data-kind="culture"]');
   const input = culture.locator('input');
   await expect(input).toBeFocused();

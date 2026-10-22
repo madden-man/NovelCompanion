@@ -4,7 +4,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { contrast } from '../helpers/contrast';
 import type { Rgba } from '../helpers/contrast';
-import { fileDb, invokeVia, launch, rail, screenTab, seedFixtureLists } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab, seedFixture } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -59,14 +59,14 @@ test.beforeAll(async () => {
       }[]
     ).map((i) => [i.id, i.parentId]),
   );
-  // The fixture's lists (IP-8): events store region item IDs and the grid shows the labels.
-  await seedFixtureLists(invoke);
+  // seedFixture brings the fixture's lists (IP-8): events store region item IDs and the grid shows the labels.
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
 });
 

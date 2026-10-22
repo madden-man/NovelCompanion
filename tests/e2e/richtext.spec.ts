@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
-import { fileDb, invokeVia, launch, rail, screenTab, waitSaved } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab, waitSaved, seedFixture } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -40,22 +40,20 @@ test.beforeAll(async () => {
   for (const e of seeded.entries) {
     await invoke('entry.delete', { collection: 'eraStates', id: e.entry._id });
   }
-  await invoke('test.seed', {
-    items: [
-      {
-        collection: 'eraStates',
-        data: {
-          _id: 'ERA-A44',
-          title: 'The battery years',
-          name: 'The battery years',
-          startYear: 2040,
-          endYear: 2049,
-          body: ERA_HTML,
-          status: 'planned',
-        },
+  await seedFixture(invoke, [
+    {
+      collection: 'eraStates',
+      data: {
+        _id: 'ERA-A44',
+        title: 'The battery years',
+        name: 'The battery years',
+        startYear: 2040,
+        endYear: 2049,
+        body: ERA_HTML,
+        status: 'planned',
       },
-    ],
-  });
+    },
+  ]);
   await invoke('storyTime.set', { time: { year: 2045 } });
 });
 

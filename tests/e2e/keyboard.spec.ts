@@ -10,7 +10,15 @@ import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
 import type { Invoke } from '../helpers/t5';
-import { APP_MENU_ITEMS, RAIL_SCREENS, fileDb, invokeVia, launch, rail } from './helpers';
+import {
+  APP_MENU_ITEMS,
+  RAIL_SCREENS,
+  fileDb,
+  invokeVia,
+  launch,
+  rail,
+  seedFixture,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -69,9 +77,10 @@ test.beforeAll(async () => {
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
 });
 
@@ -360,7 +369,9 @@ test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to win
 test('NF-2 SM-8 the world events grid by keyboard', async () => {
   await go('World events');
   const grid = page.getByTestId('world-grid');
-  const category = page.getByRole('group', { name: 'Categories' }).getByLabel('Category');
+  const category = page
+    .getByRole('group', { name: 'Categories' })
+    .getByLabel('Category', { exact: true });
   await tabTo(category);
   await page.keyboard.type('Technology');
   await expect(category).toHaveValue('technology');
@@ -422,8 +433,6 @@ test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and 
 });
 
 test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and glossary table in the App menu answer the keyboard', async () => {
-  // This bible starts with no communities; the screen needs one to pick.
-  await invoke('lists.addItem', { listId: 'communities', label: 'Portland', parentId: null });
   await go('Cultural data');
   const tabs = page.getByRole('tablist', { name: 'Cultural data' });
   const tab = (name: string) => tabs.getByRole('tab', { name, exact: true });
@@ -432,7 +441,7 @@ test('NF-2 SM-11 CU-2 GL-1 Cultural data, its Eras tab, and the place tree and g
   await typeInto(culture.getByLabel('Community', { exact: true }), 'Portland');
   await expect(culture.getByLabel('Community', { exact: true })).toHaveValue('portland');
   // The description, then a line under an age group, each by keyboard (A41).
-  await tabTo(culture.getByLabel('About Portland'));
+  await tabTo(culture.getByLabel('About Portland, Oregon'));
   await page.keyboard.type('Rain and bridges.');
   await tabTo(culture.getByLabel(/^New line for everyone/));
   await expect
@@ -723,9 +732,10 @@ test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its di
   const supplement = readSupplement();
   for (const c of ['moments']) {
     const docs = supplement.entries[c]!.filter((d) => !d.deletedAt);
-    await invoke('test.seed', {
-      items: docs.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      docs.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   for (const [id, patch] of Object.entries(supplement.patches.chapters ?? {})) {
     await invoke('entry.update', { collection: 'chapters', id, patch });

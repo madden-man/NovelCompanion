@@ -502,7 +502,10 @@ export async function seedFixtureLists(invoke: Invoke): Promise<void> {
   const lists = readFixture().lists ?? [];
   const held = (await invoke('lists.get', {})).lists;
   for (const list of lists) {
-    const have = new Set(held.find((l) => l._id === list._id)?.items.map((i) => i.id) ?? []);
+    const heldItems = held.find((l) => l._id === list._id)?.items ?? [];
+    const have = new Set(heldItems.map((i) => i.id));
+    // A spec may have added an item by hand under the same name; a list refuses a second one.
+    const names = new Set(heldItems.map((i) => i.label));
     const items = (list.items ?? []) as {
       id: string;
       label: string;
@@ -511,7 +514,7 @@ export async function seedFixtureLists(invoke: Invoke): Promise<void> {
       extra?: Record<string, string | number>;
     }[];
     for (const i of items) {
-      if (have.has(i.id)) continue;
+      if (have.has(i.id) || names.has(i.label)) continue;
       await invoke('lists.addItem', {
         listId: String(list._id) as never,
         label: i.label,
@@ -521,6 +524,23 @@ export async function seedFixtureLists(invoke: Invoke): Promise<void> {
         ...(i.extra && Object.keys(i.extra).length ? { extra: i.extra } : {}),
       });
       have.add(i.id);
+      names.add(i.label);
     }
   }
+}
+
+type SeedItems = Request<'test.seed'>['items'];
+
+/**
+ * Seed entries the way `test.seed` does, after the fixture's list items
+ * (`seedFixtureLists`), so a seeded entry's region, status, provenance or age
+ * group shows its label, never its ID. Every spec seeds through this; the
+ * lists go first because a write that meets an unknown item ID keeps the ID.
+ */
+export async function seedFixture(
+  invoke: Invoke,
+  items: SeedItems,
+): Promise<Response<'test.seed'>> {
+  await seedFixtureLists(invoke);
+  return invoke('test.seed', { items });
 }

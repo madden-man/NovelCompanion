@@ -15,7 +15,7 @@ import {
   launch,
   openEditable,
   rail,
-  seedFixtureLists,
+  seedFixture,
 } from './helpers';
 import type { TestDb } from './helpers';
 
@@ -48,12 +48,12 @@ test.beforeAll(async () => {
   for (const e of seeded.entries) {
     await invoke('entry.delete', { collection: 'eraStates', id: e.entry._id });
   }
-  await seedFixtureLists(invoke);
   for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
   await invoke('storyTime.set', { time: { year: 2040 } });
 });
