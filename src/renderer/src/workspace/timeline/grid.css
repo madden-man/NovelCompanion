@@ -268,3 +268,91 @@
   gap: 6px;
   color: var(--fg);
 }
+
+/* a47-grids, IP-4: grab handles at the ends of a span, the gaps in the era band, renaming in place. */
+.wg-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  z-index: 2;
+  width: 8px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  background: var(--fg);
+  border: 1px solid var(--chart-surface);
+  cursor: ew-resize;
+  touch-action: none;
+  opacity: 0;
+}
+.wg-handle.start {
+  left: -1px;
+}
+.wg-handle.end {
+  right: -1px;
+}
+.wg-era:hover .wg-handle,
+.wg-era:focus-visible .wg-handle,
+.wg-era.dragging .wg-handle {
+  opacity: 1;
+}
+.wg-era-name {
+  pointer-events: none;
+}
+.wg-era.dragging {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 2;
+}
+.wg-gap {
+  all: unset;
+  position: absolute;
+  top: 0;
+  height: 22px;
+  box-sizing: border-box;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  cursor: cell;
+}
+.wg-gap:hover {
+  border-color: var(--border-strong);
+  background: color-mix(in oklab, var(--accent-soft) 50%, transparent);
+}
+.wg-gap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--border-strong);
+}
+.wg-edge-year {
+  bottom: auto;
+  top: -2px;
+  z-index: 6;
+  pointer-events: none;
+}
+.wg-era-rename {
+  position: absolute;
+  top: 0;
+  z-index: 6;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  box-sizing: border-box;
+  font-size: 0.75rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+.wg-rename {
+  position: absolute;
+  z-index: 7;
+  transform: translateY(-50%);
+  padding: 1px 4px;
+  font-size: 0.75rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}

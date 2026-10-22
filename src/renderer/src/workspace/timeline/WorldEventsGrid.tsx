@@ -17,7 +17,7 @@ import {
   useGridMarkers,
   useGridViewport,
 } from './gridShared';
-import type { GridBand, GridEra, MovePart } from './gridShared';
+import type { EraEdits, GridBand, GridEra, MovePart } from './gridShared';
 
 export type { GridEra } from './gridShared';
 
@@ -56,7 +56,9 @@ interface Draft {
  * formative. The era band runs under the sticky year header, the story year
  * is a line, the chapter being written a band. Clicking an empty spot in a
  * row opens a small form to add an event there; a marker opens on click,
- * drags along its row, and moves with the arrow keys (Shift for the end).
+ * drags along its row, and moves with the arrow keys (Shift for the end);
+ * F2 or a double-click renames its label in place (IP-4). The era band's
+ * edges drag and its gaps make eras (`GridHeader`).
  * The axis, header, lines and markers are shared with Backstory (`gridShared.tsx`).
  */
 export function WorldEventsGrid(props: {
@@ -74,6 +76,10 @@ export function WorldEventsGrid(props: {
   /** Move an event by whole years: the whole span, or only its end. */
   onMove: (id: string, delta: number, part: MovePart) => Promise<void>;
   onCreate: (e: NewEvent) => Promise<void>;
+  /** IP-4: the era band's edges, gaps and names. */
+  eraEdits?: EraEdits;
+  /** IP-4: a marker's label renamed in place (F2 or a double-click). */
+  onRename?: (id: string, title: string) => Promise<void>;
 }) {
   const { events, storyYear } = props;
   const vp = useGridViewport(props.span, props.zoom, storyYear);
@@ -150,6 +156,7 @@ export function WorldEventsGrid(props: {
       .filter(Boolean)
       .join(', ');
 
+  const rename = props.onRename;
   const markers = (line: Parameters<typeof lineMarkers>[0]) =>
     lineMarkers(line).map((m) => {
       const e = byId.get(m.id);
@@ -163,6 +170,8 @@ export function WorldEventsGrid(props: {
           label={describe(e)}
           selected={props.selectedId === m.id}
           onActivate={() => props.onOpen(m.id)}
+          title={e.title}
+          onRename={rename ? (t) => rename(m.id, t) : undefined}
         />
       );
     });
@@ -177,6 +186,7 @@ export function WorldEventsGrid(props: {
         corner="Category"
         eras={props.eras}
         onOpenEra={props.onOpenEra}
+        edits={props.eraEdits}
       />
       {layout.lines.map((line) =>
         line.kind === 'group' ? (

@@ -1,7 +1,13 @@
 import { familyColorCss } from '../../../../shared/domain/lists';
-import { useMemo } from 'react';
-import type { CSSProperties } from 'react';
-import type { GridLine, YearScale, YearSpan, Zoom } from '../../../../shared/domain/worldGrid';
+import { useMemo, useState } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type {
+  EdgeSide,
+  GridLine,
+  YearScale,
+  YearSpan,
+  Zoom,
+} from '../../../../shared/domain/worldGrid';
 import {
   NO_FAMILY,
   ageText,
@@ -9,7 +15,9 @@ import {
   lifespanBar,
   lifespanOf,
   momentLabel,
+  moveLifeEnd,
 } from '../../../../shared/domain/backstoryGrid';
+import type { Lifespan as Life } from '../../../../shared/domain/backstoryGrid';
 import type {
   BackstoryGrid as Grid,
   BackstoryMoment,
@@ -26,11 +34,13 @@ import {
   GridTrack,
   GroupLine,
   lineMarkers,
+  edgeKey,
   useClosedGroups,
+  useEdgeDrag,
   useGridMarkers,
   useGridViewport,
 } from '../timeline/gridShared';
-import type { GridBand, GridEra, MovePart } from '../timeline/gridShared';
+import type { EdgeDrag, EraEdits, GridBand, GridEra, MovePart } from '../timeline/gridShared';
 import './backstory.css';
 
 /**
@@ -54,6 +64,13 @@ export function BackstoryGrid(props: {
   onOpenEra: (id: string) => void;
   onMove: (momentId: string, delta: number, part: MovePart) => Promise<void>;
   onCreate: (characterId: string, year: number) => Promise<void>;
+  /** IP-4: a lifespan end moved by whole years: the birth (start) or the death (end). */
+  onLifeEnd?: (characterId: string, side: EdgeSide, delta: number) => Promise<void>;
+  /** IP-4: the person's page, from the name. */
+  onOpenPerson?: (characterId: string) => void;
+  /** IP-4: a moment's label renamed in place. */
+  onRename?: (momentId: string, title: string) => Promise<void>;
+  eraEdits?: EraEdits;
 }) {
   const { grid, storyYear } = props;
   const vp = useGridViewport(props.span, props.zoom, storyYear);
@@ -73,6 +90,7 @@ export function BackstoryGrid(props: {
     onMove: props.onMove,
   });
 
+  const rename = props.onRename;
   const markers = (line: GridLine) =>
     lineMarkers(line).map((m) => {
       const mo = byId.get(m.id);
@@ -88,11 +106,51 @@ export function BackstoryGrid(props: {
           className="bs-marker"
           data={{ person: mo.characterId }}
           onActivate={() => props.onPickMoment(m.id, mo.characterId)}
+          title={mo.title}
+          onRename={rename && !props.readOnly ? (t) => rename(m.id, t) : undefined}
         />
       );
     });
 
   const tipMoment = ctl.tip ? byId.get(ctl.tip.id) : undefined;
+
+  // IP-4: the lifespan bars drag at their ends and are one Tab stop, Up and Down between them.
+  const canEdit = !props.readOnly && props.onLifeEnd !== undefined;
+  const lifeDrag = useEdgeDrag(scale.ppy, !canEdit, (id, side, delta) => {
+    void props.onLifeEnd?.(id, side, delta);
+  });
+  const bars = useMemo(
+    () =>
+      layout.lines.flatMap((l) => {
+        if (l.kind !== 'row') return [];
+        const p = grid.people.get(l.row.key);
+        return p && lifespanBar(lifespanOf(p), scale, storyYear) ? [p.id] : [];
+      }),
+    [layout, grid.people, scale, storyYear],
+  );
+  const [lifeStop, setLifeStop] = useState<string | null>(null);
+  const activeBar = lifeStop !== null && bars.includes(lifeStop) ? lifeStop : bars[0];
+  const lifeKey = (ev: ReactKeyboardEvent<HTMLElement>, id: string) => {
+    const i = bars.indexOf(id);
+    const to =
+      ev.key === 'ArrowDown' && !ev.shiftKey
+        ? bars[Math.min(bars.length - 1, i + 1)]
+        : ev.key === 'ArrowUp' && !ev.shiftKey
+          ? bars[Math.max(0, i - 1)]
+          : undefined;
+    if (to !== undefined) {
+      ev.preventDefault();
+      setLifeStop(to);
+      (ev.currentTarget.closest('.wg-scroll') ?? document)
+        .querySelector<HTMLElement>(`.bs-life[data-person="${CSS.escape(to)}"]`)
+        ?.focus();
+      return;
+    }
+    const k = edgeKey(ev);
+    if (!k) return;
+    ev.preventDefault();
+    if (canEdit) void props.onLifeEnd?.(id, k.side, k.delta);
+  };
 
   return (
     <GridFrame vp={vp} layout={layout} testid="backstory-grid" className="bs-scroll">
@@ -102,6 +160,7 @@ export function BackstoryGrid(props: {
         corner="Character"
         eras={props.eras}
         onOpenEra={props.onOpenEra}
+        edits={props.eraEdits}
       />
       {layout.lines.map((line) => {
         if (line.kind === 'group') {
@@ -141,20 +200,39 @@ export function BackstoryGrid(props: {
             data-birth={life.from ?? ''}
             data-death={life.to ?? ''}
           >
-            <button
-              type="button"
-              className="wg-label wg-row-label bs-row-label"
-              aria-pressed={picked}
-              aria-label={`${p.name}${p.chinese ? ` ${p.chinese}` : ''}, ${lifeYears(p)}, show their moments`}
-              onClick={() => props.onPick(p.id)}
-            >
-              <span className="bs-name">{p.name}</span>
-              {p.chinese && (
-                <span className="bs-zh" lang="zh">
-                  {p.chinese}
-                </span>
-              )}
-            </button>
+            {/* IP-4: the name opens the person's page; anywhere else in the cell picks them. */}
+            <div className={`wg-label wg-row-label bs-row-cell${picked ? ' picked' : ''}`}>
+              <button
+                type="button"
+                className="bs-row-label"
+                aria-pressed={picked}
+                aria-label={`${p.name}${p.chinese ? ` ${p.chinese}` : ''}, ${lifeYears(p)}, show their moments`}
+                onClick={() => props.onPick(p.id)}
+              />
+              <span className="bs-row-text">
+                {props.onOpenPerson ? (
+                  <a
+                    className="bs-name bs-name-link"
+                    href={`#characters/${encodeURIComponent(p.id)}`}
+                    aria-label={`Open the page of ${p.name}`}
+                    title={`Open the page of ${p.name}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      props.onOpenPerson?.(p.id);
+                    }}
+                  >
+                    {p.name}
+                  </a>
+                ) : (
+                  <span className="bs-name">{p.name}</span>
+                )}
+                {p.chinese && (
+                  <span className="bs-zh" lang="zh">
+                    {p.chinese}
+                  </span>
+                )}
+              </span>
+            </div>
             <GridTrack
               layout={layout}
               onEmptyClick={props.readOnly ? undefined : (year) => void props.onCreate(p.id, year)}
@@ -164,6 +242,11 @@ export function BackstoryGrid(props: {
                 scale={scale}
                 storyYear={storyYear}
                 color={families.get(p.familyId)?.color ?? null}
+                drag={lifeDrag}
+                canEdit={canEdit}
+                tabbable={activeBar === p.id}
+                onFocus={() => setLifeStop(p.id)}
+                onKeyDown={(ev) => lifeKey(ev, p.id)}
               />
               {markers(line)}
             </GridTrack>
@@ -184,14 +267,43 @@ export function BackstoryGrid(props: {
   );
 }
 
-/** The lifespan along the foot of a row: solid in the family colour, dashed past the story year. */
+/** The life a drag shows: the dragged end where it would land, in order for drawing. */
+function draggedLife(life: Life, drag: EdgeDrag, id: string, s: YearSpan) {
+  for (const side of ['start', 'end'] as const) {
+    const d = drag.deltaFor(id, side);
+    if (d === 0) continue;
+    const moved = moveLifeEnd(life, side, d, s);
+    if (!moved) return { life, side, refused: false };
+    const refused = moved.to !== null && moved.to < moved.from;
+    const from = refused ? (moved.to as number) : moved.from;
+    const to = refused ? moved.from : moved.to;
+    const shown: Life = { kind: to === null ? 'alive' : 'dead', from, to };
+    return { life: shown, side, year: side === 'start' ? moved.from : moved.to, refused };
+  }
+  return { life, side: null, refused: false };
+}
+
+/**
+ * The lifespan along the foot of a row: solid in the family colour, dashed
+ * past the story year. IP-4: a grab handle at each end drags the birth or the
+ * death; from the keyboard the bar takes Shift with Left or Right for the
+ * birth, and Shift and Alt with Left or Right for the death.
+ */
 function Lifespan(props: {
   person: BackstoryPerson;
   scale: YearScale;
   storyYear: number;
   color: string | null;
+  drag: EdgeDrag;
+  canEdit: boolean;
+  tabbable: boolean;
+  onFocus: () => void;
+  onKeyDown: (ev: ReactKeyboardEvent<HTMLElement>) => void;
 }) {
-  const life = lifespanOf(props.person);
+  const { person: p } = props;
+  const stored = lifespanOf(p);
+  const shown = draggedLife(stored, props.drag, p.id, props.scale);
+  const life = shown.life;
   const bar = lifespanBar(life, props.scale, props.storyYear);
   if (!bar) {
     return (
@@ -206,20 +318,58 @@ function Lifespan(props: {
     left: bar.x,
     width: bar.width,
   } as CSSProperties;
+  const years =
+    stored.to === null
+      ? `born ${stored.from}, no death on record`
+      : `${stored.from} to ${stored.to}`;
+  const keys = props.canEdit
+    ? ' Shift with Left or Right moves the birth a year; Shift and Alt with Left or Right move the death.'
+    : '';
   return (
     <span
-      className="bs-life"
+      className={`bs-life${shown.side ? ' dragging' : ''}${shown.refused ? ' refused' : ''}`}
       data-testid="lifespan"
-      data-kind={life.kind}
-      data-from={life.from ?? ''}
-      data-to={life.to ?? ''}
+      data-person={p.id}
+      data-kind={stored.kind}
+      data-from={stored.from ?? ''}
+      data-to={stored.to ?? ''}
       data-dash-from={bar.dashFrom === null ? '' : props.storyYear + 1}
       style={style}
-      aria-hidden="true"
+      role="group"
+      tabIndex={props.tabbable ? 0 : -1}
+      aria-label={`Lifespan of ${p.name}, ${years}`}
+      title={`Lifespan of ${p.name}, ${years}.${keys}`}
+      onFocus={props.onFocus}
+      onKeyDown={props.onKeyDown}
     >
       {solid > 0 && <span className="bs-life-solid" style={{ width: solid }} />}
       {bar.dashFrom !== null && (
         <span className="bs-life-dash" style={{ left: solid, width: bar.width - solid }} />
+      )}
+      {props.canEdit && (
+        <>
+          <span
+            className="wg-handle start bs-handle"
+            aria-hidden="true"
+            data-testid="life-handle-start"
+            {...props.drag.handle(p.id, 'start')}
+          />
+          <span
+            className="wg-handle end bs-handle"
+            aria-hidden="true"
+            data-testid="life-handle-end"
+            {...props.drag.handle(p.id, 'end')}
+          />
+        </>
+      )}
+      {shown.side && 'year' in shown && (
+        <span
+          className={`wg-drag-year bs-life-year num ${shown.side}`}
+          data-testid="drag-year"
+          aria-live="polite"
+        >
+          {shown.side === 'start' ? 'Birth' : 'Death'} {shown.year}
+        </span>
       )}
     </span>
   );

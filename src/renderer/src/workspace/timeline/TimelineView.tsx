@@ -30,6 +30,7 @@ import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { WorldEventsStrip } from './WorldEventsStrip';
 import { WorldEventsGrid } from './WorldEventsGrid';
+import { useEraEdits, useTitleRename } from './gridShared';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
 import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
@@ -148,6 +149,10 @@ export function TimelineView() {
       })),
     [spans, win],
   );
+
+  // IP-4: the era band's edges, gaps and names, and the markers' labels, edit in place.
+  const eraEdits = useEraEdits({ eras, span, readOnly: ro.off, onError: setError });
+  const renameEvent = useTitleRename('worldEvents');
 
   const openEvent = (id: string) => setSelected({ collection: 'worldEvents', id });
 
@@ -328,9 +333,12 @@ export function TimelineView() {
         )}
         <p className="example-note">
           Click an empty spot in a row, or a row name, to add an event there. Click a marker, an
-          era, or a title above to edit it under the grid. Drag a marker to change its year. From
-          the keyboard, Tab to the markers, Up and Down move between them, Enter opens one, Left and
-          Right change its year, and Shift with Left or Right changes the end year.
+          era, or a title above to edit it under the grid. Drag a marker to change its year, and
+          double-click it or press F2 to rename it. Drag the end of an era to move it, and
+          double-click a gap in the era band to add an era there. From the keyboard, Tab to the
+          markers, Up and Down move between them, Enter opens one, Left and Right change its year,
+          and Shift with Left or Right changes the end year. On an era, Shift with Left or Right
+          moves its start, Shift and Alt with Left or Right its end.
         </p>
         {/* A43: one coverage problem shows as it is; several fold under a count, so the grid stays in view. */}
         {coverage.length === 1 && (
@@ -365,6 +373,8 @@ export function TimelineView() {
             onOpenEra={(id) => setSelected({ collection: 'eraStates', id })}
             onMove={move}
             onCreate={create}
+            eraEdits={eraEdits}
+            onRename={ro.off ? undefined : renameEvent}
           />
         ) : (
           <p aria-live="polite">Loading the categories.</p>
