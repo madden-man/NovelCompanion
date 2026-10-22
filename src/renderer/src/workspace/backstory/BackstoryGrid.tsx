@@ -280,6 +280,8 @@ function draggedLife(life: Life, drag: EdgeDrag, id: string, s: YearSpan) {
     if (d === 0) continue;
     const moved = moveLifeEnd(life, side, d, s);
     if (!moved) return { life, side, refused: false };
+    // An open life's end pushed out stays open: nothing to show or write.
+    if (side === 'end' && moved.to === null) return { life, side: null, refused: false };
     const refused = moved.to !== null && moved.to < moved.from;
     const from = refused ? (moved.to as number) : moved.from;
     const to = refused ? moved.from : moved.to;

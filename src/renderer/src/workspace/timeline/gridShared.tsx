@@ -748,7 +748,17 @@ export function GridHeader(props: {
   });
   const [renaming, setRenaming] = useState<string | null>(null);
   const shown = previewEras(props.eras, drag, scale);
-  const gaps = useMemo(() => bandGaps(props.eras, scale), [props.eras, scale]);
+  // Gaps count only inside the bible's timeline span, as the coverage check does (WE-2,
+  // IP-11): an axis widened by an early event or a birth is not a stretch to fill with an era.
+  const { numbers } = useBibleSettings();
+  const gaps = useMemo(
+    () =>
+      bandGaps(props.eras, {
+        from: Math.max(scale.from, numbers.timelineStart),
+        to: Math.min(scale.to, numbers.timelineEnd),
+      }),
+    [props.eras, scale, numbers.timelineStart, numbers.timelineEnd],
+  );
 
   const startRename = (id: string) => {
     if (canEdit) setRenaming(id);

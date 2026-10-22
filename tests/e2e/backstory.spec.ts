@@ -8,7 +8,15 @@ import { connect } from '../../src/main/db';
 import { READ_ONLY_REASON } from '../../src/shared/ipcApp';
 import { loadFixture, readFixture } from '../helpers/loadFixture';
 import { openBackstory } from '../../src/renderer/src/workspace/backstory/nav';
-import { fileDb, fillEditable, invokeVia, launch, openEditable, rail } from './helpers';
+import {
+  fileDb,
+  fillEditable,
+  invokeVia,
+  launch,
+  openEditable,
+  rail,
+  seedFixtureLists,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -40,6 +48,7 @@ test.beforeAll(async () => {
   for (const e of seeded.entries) {
     await invoke('entry.delete', { collection: 'eraStates', id: e.entry._id });
   }
+  await seedFixtureLists(invoke);
   for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
     await invoke('test.seed', {
@@ -537,6 +546,10 @@ test('SM-9 A33 IP-4 ED-9 Pick events lists the events within the reach and inser
   await expect(cellText('H1-voice-0', 'worldContext')).toHaveText(
     '@Care robots licensed for home use in Oregon',
   );
+  // ED-9: the closed cell shows the mention as a chip, as the open box does.
+  await expect(cellText('H1-voice-0', 'worldContext').locator('.mention-chip')).toHaveText(
+    '@Care robots licensed for home use in Oregon',
+  );
   // Picking it again adds nothing; Escape closes the list.
   await pickButton.click();
   await page.keyboard.press('Escape');
@@ -974,6 +987,44 @@ test('IP-13 with nobody picked the table lists every moment by year then person,
   await blurAndUndo();
   await expect(tableRow(id)).toHaveCount(0);
   expect((await getMoment(id)).deletedAt).toBeTruthy();
+});
+
+test('IP-4 the era band on Backstory drags an edge and makes an era in the gap it leaves, one step each', async () => {
+  const era = (id: string) => grid().getByTestId('era-band').locator(`.wg-era[data-id="${id}"]`);
+  await zoomTo('Close');
+  await showYear(2027);
+  const { ppy } = await axis();
+  // No gap inside the timeline span while the fixture's eras cover it.
+  await expect(grid().locator('.wg-gap')).toHaveCount(0);
+  await era('ERA-2025').hover();
+  await dragBy(era('ERA-2025').getByTestId('era-handle-start'), 2 * ppy);
+  await expect(grid().getByTestId('edge-year')).toHaveText('2027');
+  await page.mouse.up();
+  await expect(era('ERA-2025')).toHaveAttribute('data-from', '2027');
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2025' })).entry.startYear,
+    )
+    .toBe(2027);
+  // The drag left 2025 to 2026 bare: a double-click there makes an era, its name open.
+  const gap = grid().locator('.wg-gap[data-from="2025"]');
+  await expect(gap).toHaveAttribute('data-to', '2026');
+  await gap.dblclick();
+  const name = grid().getByTestId('era-rename').locator('input');
+  await expect(name).toBeFocused();
+  await name.fill('The first years');
+  await name.press('Enter');
+  const made = grid().locator('.wg-era[data-from="2025"]');
+  await expect(made).toHaveText('The first years');
+  // Three steps back: the name, the new era, the drag.
+  await blurAndUndo();
+  await expect(made).toHaveText('New era');
+  await page.keyboard.press('Meta+z');
+  await expect(made).toHaveCount(0);
+  await page.keyboard.press('Meta+z');
+  await expect(era('ERA-2025')).toHaveAttribute('data-from', '2025');
+  await expect(grid().locator('.wg-gap')).toHaveCount(0);
 });
 
 test('IP-11 IP-4 the axis follows the bible’s timeline span', async () => {

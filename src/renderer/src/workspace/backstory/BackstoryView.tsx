@@ -196,7 +196,13 @@ export function BackstoryView(props: {
     return run;
   };
 
-  const save = (id: string, field: MomentField, value: string | number | null) => {
+  /** `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9). */
+  const save = (
+    id: string,
+    field: MomentField,
+    value: string | number | null,
+    mentioned: readonly string[] = [],
+  ) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -206,6 +212,13 @@ export function BackstoryView(props: {
         unknown
       >;
       const patch: Record<string, unknown> = { [field]: value };
+      if (mentioned.length) {
+        let links = Array.isArray(before.links)
+          ? (before.links as { targetId: string; kind: string }[])
+          : [];
+        for (const t of mentioned) links = withMentionLink(links, t);
+        patch.links = links;
+      }
       // A moment over several years keeps its length when its year changes.
       if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
         patch.endYear = before.endYear + (value - Number(before.year));
@@ -306,7 +319,7 @@ export function BackstoryView(props: {
       const death = (before.death ?? null) as StoryDate | null;
       const moved = moveLifeEnd(lifespanOf({ birth, death }), side, delta, span);
       if (!moved) return;
-      const problem = lifeProblem(moved.from, moved.to);
+      const problem = lifeProblem(moved.from, moved.to, side);
       if (problem) {
         setError(problem);
         return;

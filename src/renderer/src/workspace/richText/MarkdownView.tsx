@@ -65,9 +65,14 @@ const isRun = (n: El | string) =>
   typeof n !== 'string' && (INLINE_BLOCKS.has(n.tag) || n.tag === 'hr' || n.tag === '#fragment');
 
 /** Children in order; in a line of text, a space between two blocks that run on. */
-function children(nodes: readonly (El | string)[], key: string, inline: boolean): ReactNode[] {
+function children(
+  nodes: readonly (El | string)[],
+  key: string,
+  inline: boolean,
+  m: readonly string[] = [],
+): ReactNode[] {
   return nodes.map((k, i) => {
-    const r = render(k, `${key}.${i}`, inline);
+    const r = render(k, `${key}.${i}`, inline, m);
     const prev = nodes[i - 1];
     return inline && prev !== undefined && isRun(prev) && isRun(k) ? (
       <Fragment key={`${key}.${i}`}> {r}</Fragment>
@@ -77,9 +82,29 @@ function children(nodes: readonly (El | string)[], key: string, inline: boolean)
   });
 }
 
-function render(node: El | string, key: string, inline: boolean): ReactNode {
-  if (typeof node === 'string') return <Zh key={key} text={node} />;
-  const kids = children(node.kids, key, inline);
+/** ED-9 (a47-grids): `@Title` of a linked entry shows as a chip, as the box does. */
+function chips(text: string, key: string, m: readonly string[]): ReactNode {
+  const hit = [...m]
+    .sort((a, b) => b.length - a.length)
+    .map((t) => ({ t, at: text.indexOf(`@${t}`) }))
+    .filter((h) => h.t && h.at >= 0)
+    .sort((a, b) => a.at - b.at)[0];
+  if (!hit) return <Zh key={key} text={text} />;
+  const end = hit.at + hit.t.length + 1;
+  return (
+    <Fragment key={key}>
+      {hit.at > 0 && <Zh text={text.slice(0, hit.at)} />}
+      <span className="mention-chip" data-mention="">
+        {text.slice(hit.at, end)}
+      </span>
+      {end < text.length && chips(text.slice(end), `${key}+`, m)}
+    </Fragment>
+  );
+}
+
+function render(node: El | string, key: string, inline: boolean, m: readonly string[] = []) {
+  if (typeof node === 'string') return chips(node, key, m);
+  const kids = children(node.kids, key, inline, m);
   if (node.tag === '#fragment') return <Fragment key={key}>{kids}</Fragment>;
   if (inline) {
     if (node.tag === 'br') return ' ';
@@ -108,10 +133,16 @@ function render(node: El | string, key: string, inline: boolean): ReactNode {
  * A stored long text, formatted. `inline` keeps it inside a line (a table
  * cell, a list row): bold, italic and strikethrough stay, blocks run on.
  */
-export function MarkdownView(props: { text: string; inline?: boolean; className?: string }) {
+export function MarkdownView(props: {
+  text: string;
+  inline?: boolean;
+  className?: string;
+  /** ED-9: titles of linked entries, shown as chips where the text says `@Title`. */
+  mentionTitles?: readonly string[];
+}) {
   const { text, inline = false } = props;
   const root = useMemo(() => tree(text), [text]);
-  const kids = children(root.kids, 'md', inline);
+  const kids = children(root.kids, 'md', inline, props.mentionTitles);
   if (inline) return <span className={props.className}>{kids}</span>;
   return <div className={`md-body${props.className ? ` ${props.className}` : ''}`}>{kids}</div>;
 }

@@ -234,8 +234,9 @@ export function lifespanBar(life: Lifespan, s: YearScale, storyYear: number): Li
 /**
  * A lifespan with one end moved by whole years: the left end is the birth,
  * the right end the death. A life with no death on record ends at the axis
- * end, so its right end dragged in sets a death there. The moved end may
- * pass the other; `lifeProblem` refuses that at release.
+ * end, so its right end dragged in sets a death there, and pushed out keeps
+ * it open. The moved end may pass the other; `lifeProblem` refuses that at
+ * release.
  */
 export function moveLifeEnd(
   life: Lifespan,
@@ -247,13 +248,25 @@ export function moveLifeEnd(
   const end = life.to ?? s.to;
   const moved = moveEdge(life.from, end, side, delta, s, true);
   if (side === 'start') return { from: moved.startYear, to: life.to };
+  // An open life's end pushed further out stays open: no death is written at the axis end.
+  if (life.to === null && moved.endYear === end) return { from: life.from, to: null };
   return { from: life.from, to: moved.endYear };
 }
 
-/** ED-10: why a lifespan cannot be stored as dragged, or null when it can. */
-export function lifeProblem(from: number, to: number | null): string | null {
+/**
+ * ED-10: why a lifespan cannot be stored as dragged, or null when it can. The
+ * advice names the end that was moved: the death (`end`) or the birth (`start`).
+ */
+export function lifeProblem(
+  from: number,
+  to: number | null,
+  moved: EdgeSide = 'end',
+): string | null {
   if (to === null || to >= from) return null;
-  return `The death year ${to} is before the birth year ${from}. Drag the death to ${from} or later.`;
+  const why = `The death year ${to} is before the birth year ${from}.`;
+  return moved === 'start'
+    ? `${why} Drag the birth to ${to} or earlier.`
+    : `${why} Drag the death to ${from} or later.`;
 }
 
 /**
@@ -275,6 +288,8 @@ export interface BackstoryMoment {
   title: string;
   body: string;
   worldContext: string;
+  /** The entries the moment links to (ED-9), by ID. */
+  linkIds: string[];
 }
 
 /** Live moments with a year, as plain rows. */
@@ -293,6 +308,11 @@ export function momentRows(moments: readonly Doc[]): BackstoryMoment[] {
       title: str(m.title),
       body: str(m.body),
       worldContext: str(m.worldContext),
+      linkIds: Array.isArray(m.links)
+        ? m.links.flatMap((l) =>
+            isPlainObject(l) && typeof l.targetId === 'string' ? [l.targetId] : [],
+          )
+        : [],
     });
   }
   return out;

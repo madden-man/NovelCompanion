@@ -9,6 +9,7 @@ import { span } from '../timeline/common';
 import { Editable } from '../editable';
 import type { EditableOption } from '../editable';
 import { useBibleSettings } from '../bibleSettings';
+import { useLookup } from '../pickers';
 
 export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext' | 'characterId';
 
@@ -34,7 +35,12 @@ export function MomentsTable(props: {
   focusId: string | null;
   onFocused: () => void;
   onSelect: (id: string) => void;
-  onSave: (id: string, field: MomentField, value: string | number | null) => Promise<void>;
+  onSave: (
+    id: string,
+    field: MomentField,
+    value: string | number | null,
+    mentioned?: readonly string[],
+  ) => Promise<void>;
   /** IP-4, ED-9: a world event mentioned in the moment's Relevant world events. */
   onMention: (id: string, event: { id: string; title: string }) => Promise<void>;
   /** A new moment for the person at the story year. */
@@ -201,7 +207,7 @@ export function MomentsTable(props: {
                   selected={props.selectedId === m.id}
                   fresh={focusId === m.id}
                   onSelect={() => props.onSelect(m.id)}
-                  onSave={(field, value) => props.onSave(m.id, field, value)}
+                  onSave={(field, value, mentioned) => props.onSave(m.id, field, value, mentioned)}
                   onMention={(e) => props.onMention(m.id, e)}
                   onTrashed={() => props.onTrashed(m)}
                 />
@@ -223,11 +229,19 @@ function MomentRow(props: {
   /** Just made: What happens opens as a field. */
   fresh: boolean;
   onSelect: () => void;
-  onSave: (field: MomentField, value: string | number | null) => Promise<void>;
+  onSave: (
+    field: MomentField,
+    value: string | number | null,
+    mentioned?: readonly string[],
+  ) => Promise<void>;
   onMention: (e: { id: string; title: string }) => Promise<void>;
   onTrashed: () => void;
 }) {
   const { m } = props;
+  // ED-9: the linked entries' titles show as chips; an `@` pick links in the save that follows.
+  const found = useLookup(m.linkIds);
+  const titles = m.linkIds.flatMap((id) => found.get(id)?.title ?? []);
+  const picked = useRef<string[]>([]);
   const what = m.title.trim() || 'this moment';
   return (
     <tr
@@ -310,7 +324,14 @@ function MomentRow(props: {
             label={`Relevant world events, ${what}`}
             placeholder="Add the world events"
             value={m.worldContext}
-            onSave={(v) => props.onSave('worldContext', v)}
+            mentionTitles={titles}
+            onMention={(hit) => {
+              if (!picked.current.includes(hit.id)) picked.current.push(hit.id);
+            }}
+            onSave={async (v) => {
+              await props.onSave('worldContext', v, picked.current);
+              picked.current = [];
+            }}
           />
           <EventPicker year={m.year} events={props.events} what={what} onPick={props.onMention} />
         </div>

@@ -361,6 +361,8 @@ describe('IP-4 dragging a lifespan and the picker mention', () => {
     const alive = lifespanOf({ birth: { year: 1985 }, death: null });
     expect(moveLifeEnd(alive, 'end', -10, axis)).toEqual({ from: 1985, to: 2090 });
     expect(moveLifeEnd(alive, 'start', 1, axis)).toEqual({ from: 1986, to: null });
+    // Pushed past the axis end, an open life stays open: no death in the last year.
+    expect(moveLifeEnd(alive, 'end', 1, axis)).toEqual({ from: 1985, to: null });
     expect(moveLifeEnd(lifespanOf({ birth: { unknown: true }, death: null }), 'end', 1, axis)).toBe(
       null,
     );
@@ -372,6 +374,12 @@ describe('IP-4 dragging a lifespan and the picker mention', () => {
     expect(moved).toEqual({ from: 2030, to: 2027 });
     expect(lifeProblem(moved.from, moved.to)).toBe(
       'The death year 2027 is before the birth year 2030. Drag the death to 2030 or later.',
+    );
+    // The birth dragged past the death: the advice is about the birth.
+    const late = moveLifeEnd(life, 'start', 5, axis)!;
+    expect(late).toEqual({ from: 2035, to: 2032 });
+    expect(lifeProblem(late.from, late.to, 'start')).toBe(
+      'The death year 2032 is before the birth year 2035. Drag the birth to 2032 or earlier.',
     );
     expect(lifeProblem(2030, 2030)).toBeNull();
     expect(lifeProblem(2030, null)).toBeNull();

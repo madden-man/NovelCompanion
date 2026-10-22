@@ -4,7 +4,7 @@ import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { contrast } from '../helpers/contrast';
 import type { Rgba } from '../helpers/contrast';
-import { fileDb, invokeVia, launch, rail, screenTab } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab, seedFixtureLists } from './helpers';
 import type { TestDb } from './helpers';
 
 let db: TestDb;
@@ -59,14 +59,8 @@ test.beforeAll(async () => {
       }[]
     ).map((i) => [i.id, i.parentId]),
   );
-  // The fixture's regions list (IP-8): events store these item IDs and the grid shows the labels.
-  const regions = fixture.lists!.find((l) => l._id === 'regions')!.items as {
-    id: string;
-    label: string;
-  }[];
-  for (const r of regions) {
-    await invoke('lists.addItem', { listId: 'regions', label: r.label, id: r.id, parentId: null });
-  }
+  // The fixture's lists (IP-8): events store region item IDs and the grid shows the labels.
+  await seedFixtureLists(invoke);
   const order = ['customSections', ...Object.keys(fixture).filter((c) => c !== 'customSections')];
   for (const c of order) {
     if (c === 'lists' || !fixture[c]?.length) continue;
@@ -1000,8 +994,11 @@ test('IP-4 IP-14 a double-click on a gap in the era band makes an era over it, n
   await grid().evaluate((el) => {
     el.scrollLeft = 0;
   });
-  // The gap runs from the start of the axis (an event before the timeline widens it) to 2027.
-  const from = (await axis()).from;
+  // The gap runs from the timeline start to 2027. The axis reaches further back (an event
+  // before the timeline widens it), but no gap shows outside the bible's span.
+  const from = 2025;
+  expect((await axis()).from).toBeLessThan(from);
+  await expect(grid().getByTestId('era-band').locator('.wg-gap')).toHaveCount(1);
   const gap = grid().getByTestId('era-band').locator('.wg-gap[data-to="2027"]');
   await expect(gap).toHaveAttribute('data-from', String(from));
   await expect(gap).toHaveAccessibleName(
