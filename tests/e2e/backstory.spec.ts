@@ -790,6 +790,205 @@ test('SM-9 NF-2 the screen works from the keyboard and its labels use the primar
   expect(Math.abs(head.y - g.y)).toBeLessThan(2);
 });
 
+const getCharacter = async (id: string) =>
+  (await invoke('entry.get', { collection: 'characters', id })).entry as Record<string, unknown>;
+
+/** Drag an element from its middle sideways by a number of pixels, in steps. */
+async function dragBy(target: Locator, dx: number) {
+  const box = (await target.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx / 2, y, { steps: 4 });
+  await page.mouse.move(x + dx, y, { steps: 4 });
+}
+
+test('IP-4 a lifespan end drags to set the birth as one step, shown live, and Undo restores it', async () => {
+  await zoomTo('Close');
+  await showRow('H1');
+  await showYear(1958);
+  const { ppy } = await axis();
+  const handle = row('H1').getByTestId('life-handle-start');
+  // The handles show while the pointer is over the row.
+  await expect(handle).toHaveCSS('opacity', '0');
+  await handle.hover({ force: true });
+  await expect(handle).toHaveCSS('opacity', '1');
+  expect((await handle.boundingBox())!.width).toBeCloseTo(8, 0);
+  await dragBy(handle, -2 * ppy);
+  await expect(grid().getByTestId('drag-year')).toHaveText('Birth 1956');
+  await page.mouse.up();
+  await expect(grid().getByTestId('drag-year')).toHaveCount(0);
+  await expect(row('H1')).toHaveAttribute('data-birth', '1956');
+  expect((await getCharacter('H1')).birth).toEqual({ year: 1956 });
+  await blurAndUndo();
+  await expect(row('H1')).toHaveAttribute('data-birth', '1958');
+  expect((await getCharacter('H1')).birth).toEqual({ year: 1958 });
+  // The right end sets the death the same way.
+  await showYear(2041);
+  await row('H1').getByTestId('life-handle-end').hover({ force: true });
+  await dragBy(row('H1').getByTestId('life-handle-end'), 3 * ppy);
+  await expect(grid().getByTestId('drag-year')).toHaveText('Death 2044');
+  await page.mouse.up();
+  await expect(row('H1')).toHaveAttribute('data-death', '2044');
+  expect((await getCharacter('H1')).death).toEqual({ year: 2044 });
+  await blurAndUndo();
+  await expect(row('H1')).toHaveAttribute('data-death', '2041');
+});
+
+test('IP-4 NF-2 Shift with the arrows on the focused lifespan moves the birth, Shift and Alt the death, one step each', async () => {
+  const life = row('H1').getByTestId('lifespan');
+  // The lifespans are one Tab stop; the tooltip says which keys move which end.
+  await expect(grid().locator('.bs-life[tabindex="0"]')).toHaveCount(1);
+  await expect(life).toHaveAttribute(
+    'title',
+    /Shift with Left or Right moves the birth a year; Shift and Alt with Left or Right move the death/,
+  );
+  await life.focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(row('H1')).toHaveAttribute('data-birth', '1957');
+  await expect(life).toBeFocused();
+  await page.keyboard.press('Shift+Alt+ArrowRight');
+  await expect(row('H1')).toHaveAttribute('data-death', '2042');
+  expect([(await getCharacter('H1')).birth, (await getCharacter('H1')).death]).toEqual([
+    { year: 1957 },
+    { year: 2042 },
+  ]);
+  await blurAndUndo();
+  await expect(row('H1')).toHaveAttribute('data-death', '2041');
+  await page.keyboard.press('Meta+z');
+  await expect(row('H1')).toHaveAttribute('data-birth', '1958');
+  // Down walks to the next person's lifespan; a month and day on record stay with the year.
+  await life.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(row('H2').getByTestId('lifespan')).toBeFocused();
+  await row('H5').getByTestId('lifespan').focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(row('H5')).toHaveAttribute('data-birth', '2032');
+  expect((await getCharacter('H5')).birth).toEqual({ year: 2032, month: 3, day: 14 });
+  await blurAndUndo();
+  await expect(row('H5')).toHaveAttribute('data-birth', '2031');
+});
+
+test('IP-4 ED-10 a death dragged before the birth is refused with the reason and the bar snaps back', async () => {
+  await zoomTo('Whole span');
+  const { ppy } = await axis();
+  await showRow('H1');
+  await row('H1').getByTestId('life-handle-end').hover({ force: true });
+  await dragBy(row('H1').getByTestId('life-handle-end'), -(2041 - 1956 + 4) * ppy);
+  await expect(row('H1').getByTestId('lifespan')).toHaveClass(/refused/);
+  await page.mouse.up();
+  await expect(view().getByRole('alert')).toHaveText(
+    'The death year 1956 is before the birth year 1958. Drag the death to 1958 or later.',
+  );
+  await expect(row('H1')).toHaveAttribute('data-death', '2041');
+  await expect(row('H1').getByTestId('lifespan')).not.toHaveClass(/refused/);
+  expect((await getCharacter('H1')).death).toEqual({ year: 2041 });
+});
+
+test('IP-4 F2 on a moment marker renames its label in place as one step; Escape leaves it', async () => {
+  await marker('H5-voice-0').focus();
+  await page.keyboard.press('F2');
+  const field = grid().getByTestId('marker-rename').locator('input');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Voice');
+  await field.fill('Her voice');
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+  await expect.poll(async () => (await getMoment('H5-voice-0')).title).toBe('Her voice');
+  await expect(marker('H5-voice-0')).toBeFocused();
+  await expect(marker('H5-voice-0')).toHaveAccessibleName(/^Her voice, 2060/);
+  await page.keyboard.press('F2');
+  await field.fill('Something else');
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
+  expect((await getMoment('H5-voice-0')).title).toBe('Her voice');
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment('H5-voice-0')).title).toBe('Voice');
+  // A double-click opens it too.
+  await marker('H5-voice-0').dblclick();
+  await expect(field).toBeFocused();
+  await field.press('Escape');
+});
+
+test('IP-4 the name opens the person’s page; a click elsewhere in the row still picks them', async () => {
+  await pickRow('Z1');
+  await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('character-page')).toHaveCount(0);
+  await rowCell('H1').getByRole('link', { name: 'Open the page of Margaret Hale' }).click();
+  await expect(page.getByTestId('character-page')).toBeVisible();
+  await expect(page.getByTestId('character-page')).toContainText('Margaret Hale');
+  await showBackstory();
+});
+
+test('IP-4 a moment moves to another person through Whose moment as one step; the grid redraws', async () => {
+  await pickRow('Z3');
+  const who = cell('Z3-lives-1', 'characterId');
+  await openEditable(who);
+  await who.locator('select').selectOption('H1');
+  await expect.poll(async () => (await getMoment('Z3-lives-1')).characterId).toBe('H1');
+  await expect(row('H1').locator('.bs-marker[data-id="Z3-lives-1"]')).toHaveCount(1);
+  await expect(row('Z3').locator('.bs-marker[data-id="Z3-lives-1"]')).toHaveCount(0);
+  // Zhou Lan's table no longer lists it.
+  await expect(tableRow('Z3-lives-1')).toHaveCount(0);
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment('Z3-lives-1')).characterId).toBe('Z3');
+  await expect(row('Z3').locator('.bs-marker[data-id="Z3-lives-1"]')).toHaveCount(1);
+  await expect(tableRow('Z3-lives-1')).toHaveCount(1);
+});
+
+test('IP-13 with nobody picked the table lists every moment by year then person, and New moment asks whose it is', async () => {
+  await view().getByRole('button', { name: 'Show every moment' }).click();
+  await expect(view().getByTestId('moments-heading')).toHaveText('Every moment, 4 moments');
+  await expect(grid().locator('.bs-row-label[aria-pressed="true"]')).toHaveCount(0);
+  expect(
+    await table()
+      .locator('tbody tr')
+      .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id)),
+  ).toEqual(['Z3-lives-0', 'Z3-lives-1', 'H1-voice-0', 'H5-voice-0']);
+  // Each row is in place: its person and age.
+  await expect(cellText('H1-voice-0', 'characterId')).toHaveText('Margaret Hale');
+  await expect(tableRow('H1-voice-0').getByTestId('moment-age')).toHaveText('70');
+  // The cells edit here as they do for one person.
+  await fillEditable(cell('H5-voice-0', 'title'), 'Voice, low and even');
+  await expect.poll(async () => (await getMoment('H5-voice-0')).title).toBe('Voice, low and even');
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment('H5-voice-0')).title).toBe('Voice');
+  // New moment asks for the person, makes it at the story year, and leaves nobody picked.
+  const before = (await liveMoments()).length;
+  await view().getByRole('button', { name: 'New moment' }).click();
+  const whose = view().getByLabel('Whose moment', { exact: true });
+  await expect(whose).toBeFocused();
+  await whose.selectOption('X1');
+  await expect.poll(async () => (await liveMoments()).length).toBe(before + 1);
+  const made = (await liveMoments()).find((m) => m.characterId === 'X1')!;
+  expect([made.year, made.title]).toEqual([2040, '']);
+  const id = String(made._id);
+  await expect(view().getByTestId('moments-heading')).toHaveText('Every moment, 5 moments');
+  await expect(cell(id, 'title').locator('input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(row('X1').locator(`.bs-marker[data-id="${id}"]`)).toHaveCount(1);
+  await blurAndUndo();
+  await expect(tableRow(id)).toHaveCount(0);
+  expect((await getMoment(id)).deletedAt).toBeTruthy();
+});
+
+test('IP-11 IP-4 the axis follows the bible’s timeline span', async () => {
+  expect((await axis()).to).toBe(2100);
+  await invoke('settings.set', { numbers: { timelineEnd: 2110 } });
+  await expect(grid()).toHaveAttribute('data-to', '2110');
+  // A life with no death runs to the end of the axis.
+  await expect(row('H3').getByTestId('lifespan')).toHaveAttribute('data-kind', 'alive');
+  const { ppy } = await axis();
+  expect(
+    Math.abs(
+      (await row('H3').getByTestId('lifespan').boundingBox())!.width - (2110 - 1985 + 1) * ppy,
+    ),
+  ).toBeLessThan(1.5);
+  await invoke('settings.set', { numbers: { timelineEnd: 2100 } });
+  await expect(grid()).toHaveAttribute('data-to', '2100');
+});
+
 test("SM-9 ARCH-6 read-only: Add a moment, the cells, the picker, Delete, drags, keys and the trash notice's Undo are all off with the reason", async () => {
   test.setTimeout(240_000);
   // A server of its own, stopped mid-session so the snapshot opens read-only (as offline.spec.ts does).
