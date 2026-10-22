@@ -45,6 +45,8 @@ export function valueFor(
   switch (spec.kind) {
     case 'text':
       return `${spec.label} ${v === 0 ? 'first' : 'second'}`;
+    case 'color':
+      return v === 0 ? '#2a78d6' : '#1baf7a';
     case 'longText':
       return v === 0
         ? `${spec.label}, first version.\nIt has two lines.`

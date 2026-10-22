@@ -32,7 +32,7 @@ export const familyFields: FieldSpec[] = [
   ...commonFields,
   f.text('name', 'Family name', { required: true }),
   f.longText('notes', 'Notes'),
-  f.text('color', 'Display color', { hint: 'A hex colour such as #2a78d6.' }),
+  f.color('color', 'Display color'),
 ];
 
 /** Union types are a user-editable list; the value is a list item ID. */

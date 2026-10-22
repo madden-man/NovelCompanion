@@ -153,6 +153,10 @@ export function coerceCell(spec: FieldSpec, raw: Cell | undefined, env: CoerceEn
         ? { ok: true, value: hit.value }
         : fail(`${quoted(text)} is not one of ${options.map((o) => o.label).join(', ')}`);
     }
+    case 'color':
+      return /^#[0-9a-f]{6}$/i.test(text)
+        ? { ok: true, value: text.toLowerCase() }
+        : fail(`${quoted(text)} is not a hex colour such as #2a78d6`);
     case 'listItem':
       return listChoice(spec, text, env);
     case 'listItems': {

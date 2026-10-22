@@ -150,6 +150,8 @@ export function Field(props: FieldProps) {
       return <ListItemField {...props} />;
     case 'listItems':
       return <ListItemsField {...props} />;
+    case 'color':
+      return <ColorField {...props} />;
     case 'tags':
       return <StringsField {...props} />;
     case 'strings':
@@ -406,6 +408,21 @@ function ListItemField({ spec, value, onChange, path, messages }: FieldProps) {
           </option>
         ))}
       </select>
+    </FieldShell>
+  );
+}
+
+/** A47 (IP-12): a hex colour, picked with the system colour picker. */
+function ColorField({ spec, value, onChange, path, messages }: FieldProps) {
+  const id = useId();
+  return (
+    <FieldShell spec={spec} path={path} messages={messages} htmlFor={id}>
+      <input
+        id={id}
+        type="color"
+        value={asString(value)}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </FieldShell>
   );
 }

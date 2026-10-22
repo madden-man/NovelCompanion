@@ -53,6 +53,16 @@ export async function exportBibleJson(
 
 /** Every entry and settings document of the current schema, checked one by one (BK-3). */
 function validateCollections(collections: Record<string, Record<string, unknown>[]>): void {
+  // a47-model (IP-9): a status or provenance must be an item of the file's own list.
+  const itemIds = (listId: string) => {
+    const list = (collections.lists ?? []).find((l) => l._id === listId);
+    const items = Array.isArray(list?.items) ? (list.items as { id?: unknown }[]) : null;
+    return items ? new Set(items.map((i) => i.id)) : null;
+  };
+  const vocab: [string, Set<unknown> | null][] = [
+    ['status', itemIds('statuses')],
+    ['provenance', itemIds('provenance')],
+  ];
   for (const [name, docs] of Object.entries(collections)) {
     const schema = isEntryCollection(name)
       ? entrySchemas[name]
@@ -66,6 +76,14 @@ function validateCollections(collections: Record<string, Record<string, unknown>
         throw new BibleFileError(
           `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${z.prettifyError(r.error)}`,
         );
+      }
+      for (const [field, ids] of isEntryCollection(name) ? vocab : []) {
+        const v = doc[field];
+        if (ids && typeof v === 'string' && !ids.has(v)) {
+          throw new BibleFileError(
+            `The entry ${String(doc._id)} in ${name} is not valid, so nothing was imported: ${field} ${v} is not in the list.`,
+          );
+        }
       }
     }
   }

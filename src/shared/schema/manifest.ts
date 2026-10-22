@@ -26,6 +26,8 @@ export type FieldKind =
   | 'listItem'
   /** A47 (IP-8): the IDs of several items in a user-editable list, for example regions. */
   | 'listItems'
+  /** A47 (IP-12): a CSS hex colour such as `#2a78d6`. */
+  | 'color'
   /** Tag labels; they live in the `tags` list. */
   | 'tags'
   /** Free strings. */
@@ -101,6 +103,7 @@ export const f = {
   calendarDate: (name: string, label: string, extra?: Extra) =>
     spec('calendarDate', name, label, extra),
   boolean: (name: string, label: string, extra?: Extra) => spec('boolean', name, label, extra),
+  color: (name: string, label: string, extra?: Extra) => spec('color', name, label, extra),
   enum: (name: string, label: string, options: FieldOption[], extra?: Extra) =>
     spec('enum', name, label, { options, ...extra }),
   listItem: (name: string, label: string, listId: string, extra?: Extra) =>

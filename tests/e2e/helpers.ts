@@ -336,6 +336,9 @@ export async function setField(
   const f = field(scope, path);
   await reveal(f);
   switch (spec.kind) {
+    case 'color':
+      await f.locator(':scope > input').fill(String(value));
+      return;
     case 'text':
     case 'int':
     case 'number':

@@ -24,6 +24,7 @@ const FILLABLE = new Set([
   'enum',
   'listItem',
   'listItems',
+  'color',
   'tags',
   'strings',
   'ref',

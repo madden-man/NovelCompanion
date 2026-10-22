@@ -57,7 +57,7 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
     put('families', {
       ...base(`FAM${i}`, `Family ${i}`, i),
       name: `Family ${i}`,
-      color: `series-${(i % 4) + 1}`,
+      color: ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7'][i % 4],
     });
   }
   put('books', { ...base('BK1', 'The long river', 0), number: 1 });

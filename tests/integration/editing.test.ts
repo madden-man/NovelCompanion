@@ -383,7 +383,13 @@ describe('ED-8 editable lists', () => {
   test('ED-8 items can be added; an item in use cannot be removed and the message says why', async () => {
     const { repo } = fixture;
     const item = await repo.addListItem('communities', 'Jinan, Shandong');
-    expect(item).toEqual({ id: 'jinan-shandong', label: 'Jinan, Shandong', parentId: null });
+    expect(item).toEqual({
+      id: 'jinan-shandong',
+      label: 'Jinan, Shandong',
+      parentId: null,
+      color: null,
+      extra: {},
+    });
     await expect(repo.addListItem('communities', 'Jinan, Shandong')).rejects.toThrow(/already has/);
     await expect(repo.removeListItem('communities', 'guangzhou')).rejects.toThrow(
       /entries use Guangzhou/,
