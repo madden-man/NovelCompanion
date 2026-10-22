@@ -1178,9 +1178,14 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     expect(set.failed).toEqual([]);
     const events = set.items.filter((i) => i.collection === 'worldEvents').map((i) => i.data!);
     expect(events.map((e) => [e.title, (e.start as { year: number }).year, e.regions])).toEqual([
-      ['Fracking declines', 2050, ['United States']],
-      ['Relief loans', 2053, ['United States', 'China']],
+      ['Fracking declines', 2050, ['united-states']],
+      ['Relief loans', 2053, ['united-states', 'china']],
       ['Grain spikes', 2054, []],
+    ]);
+    // A47 (IP-8): regions are items of the regions list, added with the names the labels give.
+    expect(set.listAdds.filter((a) => a.listId === 'regions').map((a) => a.label)).toEqual([
+      'United States',
+      'China',
     ]);
     const path = (id: unknown) => {
       const label = (x: string) => set.listAdds.find((a) => a.id === x)!;
@@ -1214,7 +1219,7 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     const { set } = sim.plan(wb, mappingFor(wb, 'worldEvents'));
     expect(set.items).toHaveLength(1);
     expect(set.items[0]!.deltas).toMatchObject([
-      { label: 'Regions', before: ['Texas'], after: ['Texas', 'United States'] },
+      { label: 'Regions', before: ['Texas'], after: ['Texas', 'united-states'] },
     ]);
     sim.apply(set);
     expect(sim.plan(wb, mappingFor(wb, 'worldEvents')).set.items).toEqual([]);

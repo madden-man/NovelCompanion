@@ -153,6 +153,12 @@ export const WRITE_CHANNELS = [
   'drive.unlink',
   'drive.markSeen',
   'drive.export',
+  // a47-model
+  'lists.move',
+  'lists.setParent',
+  'lists.setItem',
+  'settings.set',
+  'eraDefaults.set',
 ] as const;
 
 const WRITES: ReadonlySet<string> = new Set(WRITE_CHANNELS);

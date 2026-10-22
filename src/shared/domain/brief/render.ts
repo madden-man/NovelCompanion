@@ -9,13 +9,24 @@
  */
 import { GROUP_TITLES, allGroups } from './selection';
 import type { GroupKind, Selection, SelectedItem, SelectionGroup } from './selection';
+import { DEFAULT_BRIEF_HEADINGS } from '../../schema/settings';
+import { statusKind } from '../lists';
 
-/** DB-2: the three sections every brief opens with, in this order. */
+/**
+ * DB-2: the three sections every brief opens with, in this order. A47
+ * (IP-14): the headings are the bible's `templates.briefHeadings`; these are
+ * the defaults.
+ */
 export const LEAD_SECTIONS = [
-  { key: 'characters', heading: '1. Characters and their ages', match: /character/i },
-  { key: 'events', heading: '2. World events ongoing', match: /world event|era/i },
-  { key: 'culture', heading: '3. Cultural expectations', match: /cultur/i },
+  { key: 'characters', heading: DEFAULT_BRIEF_HEADINGS[0], match: /character/i },
+  { key: 'events', heading: DEFAULT_BRIEF_HEADINGS[1], match: /world event|era/i },
+  { key: 'culture', heading: DEFAULT_BRIEF_HEADINGS[2], match: /cultur/i },
 ] as const;
+
+/** A47 (IP-9, SB-5): canon by the status item's kind, never by its ID. */
+export function isCanon(it: { status: string; kind?: string }): boolean {
+  return (it.kind ?? statusKind([], it.status)) === 'canon';
+}
 
 const CITE = /\[\[([A-Za-z0-9_-]{1,64})\]\]/g;
 
@@ -87,13 +98,24 @@ function appNoteLines(content: string): Set<number> {
   return out;
 }
 
-/** DB-2: the lead sections a brief is missing or has out of order, by heading text. */
-export function missingLeadSections(content: string): string[] {
+/**
+ * DB-2: the lead sections a brief is missing or has out of order, by heading
+ * text. A heading matches when it reads as the default one does, or is the
+ * bible's own heading for that place (IP-14).
+ */
+export function missingLeadSections(
+  content: string,
+  names: readonly string[] = DEFAULT_BRIEF_HEADINGS,
+): string[] {
   const headings = content
     .split('\n')
     .filter((l) => /^##\s/.test(l))
     .map((l) => l.replace(/^##\s+/, ''));
-  return LEAD_SECTIONS.filter((s, i) => !s.match.test(headings[i] ?? '')).map((s) => s.heading);
+  return LEAD_SECTIONS.flatMap((s, i) => {
+    const h = headings[i] ?? '';
+    const own = names[i] ?? s.heading;
+    return s.match.test(h) || h === own ? [] : [own];
+  });
 }
 
 /** A line of the brief, with what it cites. */
@@ -107,8 +129,8 @@ function line(it: SelectedItem): string {
 
 /** SB-5: canon first, then planned and idea material under its own label. */
 function canonSplit(items: SelectedItem[]): string[] {
-  const canon = items.filter((it) => it.status === 'canon');
-  const rest = items.filter((it) => it.status !== 'canon');
+  const canon = items.filter(isCanon);
+  const rest = items.filter((it) => !isCanon(it));
   const out: string[] = [];
   if (canon.length) out.push('Canon:', ...canon.map(line));
   if (rest.length) out.push('Planned or idea:', ...rest.map(line));
@@ -135,7 +157,11 @@ function sharedGroup(sel: Selection, kind: GroupKind): SelectionGroup | undefine
  * sections come first; canon and planned material are kept apart (SB-5);
  * events after the story year appear only under "Planned ahead".
  */
-export function structuredBrief(sel: Selection): string {
+export function structuredBrief(
+  sel: Selection,
+  headings: readonly string[] = DEFAULT_BRIEF_HEADINGS,
+): string {
+  const h = (i: number) => headings[i] ?? DEFAULT_BRIEF_HEADINGS[i] ?? '';
   const out: string[] = [];
   out.push(`# Brief: ${sel.label}`);
   out.push('');
@@ -145,19 +171,16 @@ export function structuredBrief(sel: Selection): string {
   const section = (heading: string, body: string[]) => {
     out.push('', `## ${heading}`, ...body);
   };
-  section(LEAD_SECTIONS[0].heading, strandGroups(sel, ['characters'], 'characters'));
-  section(
-    LEAD_SECTIONS[1].heading,
-    strandGroups(sel, ['era', 'eventsWindow', 'eventsFormative'], 'world events'),
-  );
-  section(LEAD_SECTIONS[2].heading, strandGroups(sel, ['culture'], 'this community and year'));
-  section('4. Places', strandGroups(sel, ['places'], 'places'));
-  section('5. Backstory', strandGroups(sel, ['moments'], 'backstory up to this year'));
+  section(h(0), strandGroups(sel, ['characters'], 'characters'));
+  section(h(1), strandGroups(sel, ['era', 'eventsWindow', 'eventsFormative'], 'world events'));
+  section(h(2), strandGroups(sel, ['culture'], 'this community and year'));
+  section(h(3), strandGroups(sel, ['places'], 'places'));
+  section(h(4), strandGroups(sel, ['moments'], 'backstory up to this year'));
   const numbered: [string, GroupKind[]][] = [
-    ['6. Previous chapters', ['previousChapters']],
-    ['7. Glossary and open questions', ['glossary', 'openQuestions']],
-    ['8. Last session note', ['sessionNote']],
-    ['9. Added by you', ['added']],
+    [h(5), ['previousChapters']],
+    [h(6), ['glossary', 'openQuestions']],
+    [h(7), ['sessionNote']],
+    [h(8), ['added']],
   ];
   for (const [heading, kinds] of numbered) {
     const items = kinds.flatMap((k) => sharedGroup(sel, k)?.items ?? []);
@@ -205,6 +228,8 @@ export interface BriefMaterial {
   strand: string | null;
   title: string;
   status: string;
+  /** A47 (IP-9): the status kind SB-5 reads; absent on runs saved before A47. */
+  kind?: 'canon' | 'planned' | 'idea';
   note: string;
   detail: string;
   refs: string[];
@@ -228,6 +253,7 @@ export function briefMaterial(sel: Selection): BriefMaterial[] {
     strand: m.strand,
     title: m.title,
     status: m.status,
+    ...(m.kind ? { kind: m.kind } : {}),
     note: m.note,
     detail: m.detail,
     refs: m.refs,

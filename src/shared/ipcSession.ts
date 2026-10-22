@@ -64,6 +64,8 @@ const ItemWire = z.strictObject({
   collection: z.string(),
   title: z.string(),
   status: z.string(),
+  /** a47-model (IP-9): the status kind SB-5 reads. */
+  kind: z.enum(['canon', 'planned', 'idea']).optional(),
   note: z.string(),
   detail: z.string(),
   refs: z.array(z.string()),
@@ -144,6 +146,8 @@ export const SelectionWire = z.strictObject({
   added: z.array(z.string()),
   removed: z.array(z.string()),
   window: z.number(),
+  /** a47-model (IP-11): years the window looks past the story year. */
+  ahead: z.number().optional(),
   budget: z.number(),
   size: z.number(),
   leadSize: z.number(),

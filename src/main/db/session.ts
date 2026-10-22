@@ -4,6 +4,7 @@ import { createBible, migrate, openBible, schemaVersion } from './bibles';
 import { LATEST_SCHEMA_VERSION } from './migrations';
 import {
   MIGRATION10_SNAPSHOT_LABEL,
+  MIGRATION11_SNAPSHOT_LABEL,
   MIGRATION9_SNAPSHOT_LABEL,
   needsDailySnapshot,
 } from '../../shared/domain/snapshots';
@@ -17,6 +18,8 @@ import { SnapshotService } from '../backup/snapshots';
 const SIMPLIFIED_MODEL_VERSION = 9;
 /** The schema version of migration 10 (A44), the one that rewrites long text as Markdown. */
 const MARKDOWN_TEXT_VERSION = 10;
+/** The schema version of migration 11 (A47), the one that turns regions and family colours into list IDs and hex. */
+const VOCABULARY_VERSION = 11;
 
 /** The bible's snapshot keep setting (BK-1), read straight from `meta` before the read model exists. */
 async function storedSnapshotKeep(handle: BibleHandle): Promise<number> {
@@ -69,16 +72,21 @@ export async function openBibleSession(
       );
     }
   } else {
-    // SM-2: migration 9 drops whole collections, and A44: migration 10 rewrites every long
-    // text, so the bible is snapshotted as it is first. One snapshot covers both.
+    // SM-2: migration 9 drops whole collections, A44: migration 10 rewrites every long
+    // text, and A47: migration 11 rewrites regions and family colours, so the bible is
+    // snapshotted as it is first. One snapshot covers them all.
     const have = options.snapshotRoot ? await schemaVersion(handle) : LATEST_SCHEMA_VERSION;
-    if (options.snapshotRoot && have < MARKDOWN_TEXT_VERSION) {
+    if (options.snapshotRoot && have < VOCABULARY_VERSION) {
       // A migration snapshot is never pruned; the keep setting applies to the others.
       const keep = await storedSnapshotKeep(handle);
       const before = new SnapshotService(handle, options.snapshotRoot, () => keep, options.now);
       await before.take(
         'migration',
-        have < SIMPLIFIED_MODEL_VERSION ? MIGRATION9_SNAPSHOT_LABEL : MIGRATION10_SNAPSHOT_LABEL,
+        have < SIMPLIFIED_MODEL_VERSION
+          ? MIGRATION9_SNAPSHOT_LABEL
+          : have < MARKDOWN_TEXT_VERSION
+            ? MIGRATION10_SNAPSHOT_LABEL
+            : MIGRATION11_SNAPSHOT_LABEL,
       );
     }
     await migrate(handle);
@@ -113,9 +121,12 @@ export async function createBibleWithDefaults(
   store: Store,
   id: string,
   name: string,
+  /** IP-12: the default eras to copy (the open bible's, edited in Settings); the seeded ones when absent. */
+  eraDefaults?: readonly { name: string; startYear: number; endYear: number }[],
 ): Promise<OpenBible> {
   await createBible(store, id, name);
   const session = await openBibleSession(store, id);
+  if (eraDefaults) await session.repo.setEraDefaults(eraDefaults);
   await session.repo.seedDefaultEras();
   return session;
 }

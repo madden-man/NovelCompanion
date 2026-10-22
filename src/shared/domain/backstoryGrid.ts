@@ -313,13 +313,15 @@ export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
 
 export interface BackstoryGridInput extends BackstoryRowsInput {
   moments: readonly Doc[];
+  /** IP-11: the bible's timeline span; 2025 to 2100 when not given. */
+  base?: YearSpan;
 }
 
 export interface BackstoryGrid {
   families: BackstoryFamily[];
   people: Map<string, BackstoryPerson>;
   moments: BackstoryMoment[];
-  /** The axis the grid needs: 2025 to 2100 widened to every birth, death and moment. */
+  /** The axis the grid needs: the timeline span (2025 to 2100) widened to every birth, death and moment. */
   span: YearSpan;
 }
 
@@ -336,7 +338,7 @@ export function backstoryGrid(input: BackstoryGridInput): BackstoryGrid {
     if (d !== null) years.push(d);
   }
   for (const m of moments) years.push(m.year, m.endYear ?? m.year);
-  return { families, people, moments, span: gridSpan(years, DEFAULT_SPAN) };
+  return { families, people, moments, span: gridSpan(years, input.base ?? DEFAULT_SPAN) };
 }
 
 /** Lay the grid out on a scale through the World events grid's layout. */
@@ -385,7 +387,7 @@ export function hitBackstory(
 
 // ---------- the "Relevant world events" picker (A33) ----------
 
-/** How many years either side of a moment's year the picker reaches. */
+/** How many years either side of a moment's year the picker reaches, by default (IP-11: per bible). */
 export const PICKER_REACH = 1;
 
 /**

@@ -9,6 +9,7 @@ import { TrashControls } from '../editor';
 import { span } from '../timeline/common';
 import { RichText } from '../richText/RichText';
 import { textBoxValue } from '../undo';
+import { useBibleSettings } from '../bibleSettings';
 
 export type MomentField = 'year' | 'endYear' | 'title' | 'body' | 'worldContext';
 
@@ -358,7 +359,8 @@ function EventPicker(props: {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const near = open ? eventsNear(props.events, props.year) : [];
+  const { pickerReach } = useBibleSettings().numbers;
+  const near = open ? eventsNear(props.events, props.year, pickerReach) : [];
   const listId = useId();
 
   useEffect(() => {

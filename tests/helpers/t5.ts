@@ -73,6 +73,11 @@ export function valueFor(
       if (items.length < 2) throw new Error(`T-5 needs two items in ${spec.listId}`);
       return items[v];
     }
+    case 'listItems': {
+      const items = ctx.listItems(spec.listId!);
+      if (items.length < 2) throw new Error(`T-5 needs two items in ${spec.listId}`);
+      return [items[v]];
+    }
     case 'tags':
       return [`${spec.name} tag ${v === 0 ? 'one' : 'two'}`];
     case 'strings':
@@ -193,7 +198,7 @@ export async function t5Write(invoke: Invoke): Promise<T5Plan> {
   const listIds = new Set<string>();
   const visit = (specs: readonly FieldSpec[]) => {
     for (const s of specs) {
-      if (s.kind === 'listItem' && s.listId) listIds.add(s.listId);
+      if ((s.kind === 'listItem' || s.kind === 'listItems') && s.listId) listIds.add(s.listId);
       if (s.fields) visit(s.fields);
     }
   };

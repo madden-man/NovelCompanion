@@ -27,12 +27,18 @@ import { CharacterPage } from './character';
 import { ChapterAlignment } from './sessions/alignment';
 import { ChapterStrands } from './outline/ChapterPage';
 import { Zh } from './Zh';
+import { useBibleSettings } from './bibleSettings';
+import { autosaveMaxMs } from '../../../shared/schema/settings';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
 
 type Backlink = Response<'entry.get'>['backlinks'][number];
 
-/** Debounce for autosave, and the longest a change may wait while typing goes on (ED-2). */
+/**
+ * Debounce for autosave, and the longest a change may wait while typing goes
+ * on (ED-2), by default. A47 (IP-11): the bible's `numbers.autosaveMs` and
+ * `autosaveMaxMs` replace them; both stay under a second (BK-4).
+ */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 export const AUTOSAVE_MAX_WAIT_MS = 700;
 
@@ -42,6 +48,7 @@ export const AUTOSAVE_MAX_WAIT_MS = 700;
  * the first unsaved one. Each save becomes one undo command (ED-3).
  */
 export function useAutosave(collection: EntryCollection, id: string) {
+  const { numbers } = useBibleSettings();
   const undo = useUndo();
   const [draft, setDraft] = useState<Entry | null>(null);
   const [warnings, setWarnings] = useState<FieldWarning[]>([]);
@@ -155,11 +162,12 @@ export function useAutosave(collection: EntryCollection, id: string) {
       const now = Date.now();
       firstPending.current ??= now;
       const waited = now - firstPending.current;
-      const delay = Math.max(0, Math.min(AUTOSAVE_DEBOUNCE_MS, AUTOSAVE_MAX_WAIT_MS - waited));
+      // IP-11: the bible's autosave delay, and the longest wait it allows.
+      const delay = Math.max(0, Math.min(numbers.autosaveMs, autosaveMaxMs(numbers) - waited));
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => void save(), delay);
     },
-    [save],
+    [save, numbers],
   );
 
   const flush = useCallback(async () => {

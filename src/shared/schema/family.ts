@@ -3,14 +3,28 @@ import { Id, Year, entry } from './common';
 import { commonFields, f, yearRange } from './manifest';
 import type { FieldSpec } from './manifest';
 
-/** Display colors are series tokens from the theme. */
+/**
+ * The four series tokens families used before A47, in order, with the hex
+ * value each token has in the light theme (`theme.css`). Migration 11 stores
+ * the hex; the renderer keeps drawing these four through their tokens, so
+ * they still change with the theme (IP-12).
+ */
 export const FAMILY_COLORS = ['series-1', 'series-2', 'series-3', 'series-4'] as const;
+export const FAMILY_TOKEN_HEX: Record<(typeof FAMILY_COLORS)[number], string> = {
+  'series-1': '#2a78d6',
+  'series-2': '#eb6834',
+  'series-3': '#1baf7a',
+  'series-4': '#4a3aa7',
+};
 
 export const Family = entry({
   name: z.string().min(1),
   notes: z.string().default(''),
-  /** A series token name from the theme, for example `series-1`. */
-  color: z.enum(FAMILY_COLORS).default('series-1'),
+  /** A47 (IP-12): any CSS hex colour, for example `#2a78d6`. */
+  color: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i, 'A family colour is a hex value such as #2a78d6.')
+    .default(FAMILY_TOKEN_HEX['series-1']),
 });
 export type Family = z.infer<typeof Family>;
 
@@ -18,11 +32,7 @@ export const familyFields: FieldSpec[] = [
   ...commonFields,
   f.text('name', 'Family name', { required: true }),
   f.longText('notes', 'Notes'),
-  f.enum(
-    'color',
-    'Display color',
-    FAMILY_COLORS.map((c, i) => ({ value: c, label: `Color ${i + 1}` })),
-  ),
+  f.text('color', 'Display color', { hint: 'A hex colour such as #2a78d6.' }),
 ];
 
 /** Union types are a user-editable list; the value is a list item ID. */

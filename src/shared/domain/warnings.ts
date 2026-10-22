@@ -93,6 +93,18 @@ function manifestChecks(
         });
       }
     }
+    if (s.kind === 'listItems' && Array.isArray(v) && s.listId) {
+      const list = ctx.list(s.listId);
+      v.forEach((item, i) => {
+        if (list && typeof item === 'string' && !list.items.some((x) => x.id === item)) {
+          out.push({
+            path: joinPath(path, i),
+            code: 'unknown-list-item',
+            message: `"${item}" is not in the ${list.label} list. Add it there or pick another.`,
+          });
+        }
+      });
+    }
     if (s.kind === 'refPair' && Array.isArray(v) && v.length === 2 && v[0] === v[1]) {
       out.push({ path, code: 'same-twice', message: 'The same entry is chosen twice.' });
     }

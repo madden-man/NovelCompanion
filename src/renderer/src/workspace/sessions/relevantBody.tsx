@@ -511,7 +511,7 @@ export function RelevantBody(props: {
       g.kind === 'plannedAhead'
         ? {
             ...g,
-            items: g.items.filter((it) => !onEventStrip(it, strand.year)),
+            items: g.items.filter((it) => !onEventStrip(it, strand.year, sel.ahead)),
           }
         : g,
     );
@@ -543,7 +543,13 @@ export function RelevantBody(props: {
         />
       )}
       {events && (
-        <EventsWindow strand={strand} group={events} window={sel.window} onOpen={onOpen} />
+        <EventsWindow
+          strand={strand}
+          group={events}
+          window={sel.window}
+          ahead={sel.ahead}
+          onOpen={onOpen}
+        />
       )}
       {culture && (
         <Culture key={strand.strandId ?? ''} strand={strand} group={culture} onOpen={onOpen} />

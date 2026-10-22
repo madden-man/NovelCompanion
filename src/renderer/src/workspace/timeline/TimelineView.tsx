@@ -32,6 +32,7 @@ import { WorldEventsStrip } from './WorldEventsStrip';
 import { WorldEventsGrid } from './WorldEventsGrid';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
+import { useBibleSettings } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -55,6 +56,9 @@ export function TimelineView() {
   const eraEntries = useEntries('eraStates');
   const chapters = useEntries('chapters');
   const categories = useList('eventCategories');
+  // A47: the bible's numbers (IP-11) and its regions list, in its order, by label (IP-8).
+  const { numbers } = useBibleSettings();
+  const regionItems = useList('regions')?.items;
   const [selected, setSelected] = useState<{ collection: EntryCollection; id: string } | null>(
     null,
   );
@@ -69,13 +73,22 @@ export function TimelineView() {
   const eras = useMemo(() => eraSpans(fromCollections({ eraStates: eraEntries })), [eraEntries]);
   const coverage = useMemo(() => coverageMessages(eraCoverage(eras)), [eras]);
   const span = useMemo(
-    () => gridSpan(spans.flatMap((e) => [e.startYear, e.endYear]).concat(year)),
-    [spans, year],
+    () =>
+      gridSpan(spans.flatMap((e) => [e.startYear, e.endYear]).concat(year), {
+        from: numbers.timelineStart,
+        to: numbers.timelineEnd,
+      }),
+    [spans, year, numbers],
   );
-  const allRegions = useMemo(
-    () => [...new Set(spans.flatMap((e) => e.regions))].sort((a, b) => a.localeCompare(b)),
-    [spans],
+  const regionLabel = useMemo(
+    () => new Map((regionItems ?? []).map((i) => [i.id, i.label])),
+    [regionItems],
   );
+  const allRegions = useMemo(() => {
+    const used = new Set(spans.flatMap((e) => e.regions));
+    const order = (regionItems ?? []).map((i) => i.id);
+    return [...order.filter((r) => used.has(r)), ...[...used].filter((r) => !order.includes(r))];
+  }, [spans, regionItems]);
   // WE-1: the category filter narrows the rows, and the events with them.
   const categoryItems = useMemo(() => categories?.items ?? [], [categories]);
   const groups = useMemo(() => categoryItems.filter((i) => !i.parentId), [categoryItems]);
@@ -99,9 +112,9 @@ export function TimelineView() {
           startYear: e.startYear,
           endYear: e.endYear,
           formative: e.formative,
-          regions: e.regions,
+          regions: e.regions.map((r) => regionLabel.get(r) ?? r),
         })),
-    [spans, regions, scope],
+    [spans, regions, scope, regionLabel],
   );
 
   // The chapter being written: the strand the Writing picker holds (A27), else its primary strand.
@@ -115,7 +128,10 @@ export function TimelineView() {
     [story.time?.chapterId, story.time?.strandId, chapters],
   );
 
-  const win = useMemo(() => yearWindow(year), [year]);
+  const win = useMemo(
+    () => yearWindow(year, numbers.windowBefore, numbers.windowAfter),
+    [year, numbers],
+  );
   const around = useMemo(
     () =>
       inWindow(spans, win).map((e) => ({
@@ -296,7 +312,7 @@ export function TimelineView() {
                 data-region={r}
                 onClick={() => toggleRegion(r)}
               >
-                {r}
+                {regionLabel.get(r) ?? r}
               </button>
             ))}
           </div>

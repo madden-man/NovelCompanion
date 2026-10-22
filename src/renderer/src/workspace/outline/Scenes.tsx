@@ -49,6 +49,8 @@ import { useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
+import { useBibleSettings } from '../bibleSettings';
+import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings';
 import { NumberField } from './NumberField';
 import { InlineName } from './InlineName';
 
@@ -61,8 +63,6 @@ type Version = Response<'sceneOutline.version'>;
 type Open = (collection: EntryCollection, id: string) => void;
 
 /** Autosave timing for the scene outline, the same as an entry (ED-2). */
-const SCENE_DEBOUNCE_MS = 500;
-const SCENE_MAX_WAIT_MS = 700;
 
 /** How long an undo step waits for a restored chapter to reach the reading order. */
 const ADOPT_WAIT_MS = 10_000;
@@ -115,6 +115,7 @@ function outlineOp(expect: SceneOutlineState, to: SceneOutlineState): Op {
  */
 function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const undo = useUndo();
+  const { numbers } = useBibleSettings();
   const [loaded, setLoaded] = useState<SceneOutlineState | null>(null);
   const [flow, setFlow] = useState<Flow | null>(null);
   const [status, setStatus] = useState<SceneStatus>('loading');
@@ -212,12 +213,13 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     if (timer.current) clearTimeout(timer.current);
     const now = Date.now();
     firstPending.current ??= now;
+    // IP-11: the bible's autosave delay, and the longest wait it allows.
     const wait = Math.max(
       0,
-      Math.min(SCENE_DEBOUNCE_MS, firstPending.current + SCENE_MAX_WAIT_MS - now),
+      Math.min(numbers.autosaveMs, firstPending.current + autosaveMaxMs(numbers) - now),
     );
     timer.current = setTimeout(() => void save(), wait);
-  }, [save, readOnly]);
+  }, [save, readOnly, numbers]);
 
   /** Move the waiting lines into the new chapter once it is in the reading order. */
   const takeSplit = () => {
@@ -445,6 +447,7 @@ const SCROLL_STEP = 14;
  */
 export function SceneOutline(props: { onOpen: Open }) {
   const { version } = useStore();
+  const { templates } = useBibleSettings();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
   const story = useStoryTime();
@@ -538,9 +541,14 @@ export function SceneOutline(props: { onOpen: Open }) {
     if (last) return last.id;
     const bookId =
       books.at(-1)?.id ??
-      (await writes.create('books', { title: 'Book 1', number: 1, status: 'idea' }));
+      (await writes.create('books', {
+        title: fillTemplate(templates.bookTitle, 1),
+        number: 1,
+        status: 'idea',
+      }));
     if (!bookId) return undefined;
-    return writes.create('parts', { title: 'Part 1', bookId, number: 1, status: 'idea' });
+    const title = fillTemplate(templates.partTitle, 1);
+    return writes.create('parts', { title, bookId, number: 1, status: 'idea' });
   };
 
   /**
@@ -559,7 +567,7 @@ export function SceneOutline(props: { onOpen: Open }) {
       const moved = sliceSection(from, line);
       return withSection(withSection(f, key, keep), id, moved);
     });
-    const madeId = await writes.newChapter(partId, 'New chapter', year, row?.id);
+    const madeId = await writes.newChapter(partId, templates.chapterTitle, year, row?.id);
     arrived(madeId ?? null);
     if (madeId) setRefocus(madeId);
   };
@@ -570,7 +578,7 @@ export function SceneOutline(props: { onOpen: Open }) {
     const partId = chapters.at(-1)?.partId ?? (await ensurePart());
     if (!partId) return;
     const year = chapters.at(-1)?.storyYear ?? story.year;
-    const id = await writes.newChapter(partId, 'New chapter', year);
+    const id = await writes.newChapter(partId, templates.chapterTitle, year);
     if (id) setFocusText(id);
   };
 
@@ -686,7 +694,12 @@ export function SceneOutline(props: { onOpen: Open }) {
       }
       const { entry } = await call('entry.create', {
         collection: 'parts',
-        data: { title: 'New section', bookId: part.bookId, number: n + 1, status: 'idea' },
+        data: {
+          title: fillTemplate(templates.sectionTitle, n + 1),
+          bookId: part.bookId,
+          number: n + 1,
+          status: 'idea',
+        },
       });
       steps.push(createCommand('parts', entry._id, entryTitle(entry)));
       for (const c of moving) steps.push(await update('chapters', c.id, { partId: entry._id }));

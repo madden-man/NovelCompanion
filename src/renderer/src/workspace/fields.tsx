@@ -35,7 +35,15 @@ export interface FieldProps {
 }
 
 /** Kinds whose parts are not separate fields, so their messages show on them. */
-const OWNS_CHILD_MESSAGES = new Set(['refs', 'refPair', 'links', 'tags', 'strings', 'storyDate']);
+const OWNS_CHILD_MESSAGES = new Set([
+  'refs',
+  'refPair',
+  'links',
+  'tags',
+  'strings',
+  'listItems',
+  'storyDate',
+]);
 
 function messagesFor(spec: FieldSpec, path: string, m: Messages) {
   const deep = OWNS_CHILD_MESSAGES.has(spec.kind);
@@ -140,6 +148,8 @@ export function Field(props: FieldProps) {
       return <EnumField {...props} />;
     case 'listItem':
       return <ListItemField {...props} />;
+    case 'listItems':
+      return <ListItemsField {...props} />;
     case 'tags':
       return <StringsField {...props} />;
     case 'strings':
@@ -395,6 +405,47 @@ function ListItemField({ spec, value, onChange, path, messages }: FieldProps) {
             {asDoc ? itemPath(asDoc, i.id) : i.label}
           </option>
         ))}
+      </select>
+    </FieldShell>
+  );
+}
+
+/** A47 (IP-8): several items of one list, such as regions: chips by label and a select to add. */
+function ListItemsField({ spec, value, onChange, path, messages }: FieldProps) {
+  const id = useId();
+  const items = useList(spec.listId)?.items ?? [];
+  const values = asArray(value).map(String);
+  const label = (v: string) => items.find((i) => i.id === v)?.label ?? `${v} (not in the list)`;
+  return (
+    <FieldShell spec={spec} path={path} messages={messages} htmlFor={id}>
+      <div className="chips">
+        {values.map((v) => (
+          <span key={v} className="chip">
+            {label(v)}
+            <button
+              type="button"
+              className="chip-remove"
+              aria-label={`Remove ${label(v)} from ${spec.label}`}
+              onClick={() => onChange(values.filter((x) => x !== v))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <select
+        id={id}
+        value=""
+        onChange={(e) => e.target.value && onChange([...values, e.target.value])}
+      >
+        <option value="">Add one</option>
+        {items
+          .filter((i) => !values.includes(i.id))
+          .map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.label}
+            </option>
+          ))}
       </select>
     </FieldShell>
   );

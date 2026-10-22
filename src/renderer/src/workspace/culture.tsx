@@ -35,6 +35,7 @@ import { Zh } from './Zh';
 import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
+import { useBibleSettings } from './bibleSettings';
 
 function YearField(props: {
   id: string;
@@ -683,6 +684,7 @@ function LineRow(props: {
  */
 function ErasView() {
   const eras = useEntries('eraStates');
+  const { templates } = useBibleSettings();
   const story = useStoryTime();
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -737,7 +739,13 @@ function ErasView() {
     try {
       const { entry } = await call('entry.create', {
         collection: 'eraStates',
-        data: { title: 'New era', name: 'New era', startYear: start, endYear: end, status: 'idea' },
+        data: {
+          title: templates.eraName,
+          name: templates.eraName,
+          startYear: start,
+          endYear: end,
+          status: 'idea',
+        },
       });
       undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));
       setFresh(entry._id);

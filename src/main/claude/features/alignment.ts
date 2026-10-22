@@ -42,7 +42,7 @@ export const alignment: FeatureDefinition<AlignmentInput, AlignmentOutput> = {
     return `Alignment check of Chapter ${String(ch.readingOrder ?? '?')}: ${entryTitle(ch)}`;
   },
   build(input, session) {
-    const m = alignmentMaterial(session.model, input.chapterId, session.repo.briefSettings());
+    const m = alignmentMaterial(session.model, input.chapterId, session.repo.selectionSettings());
     if (!m.lines.length)
       throw new Error('This chapter has no manuscript text to check. Import it first.');
     const chapter = session.model.get('chapters', input.chapterId);

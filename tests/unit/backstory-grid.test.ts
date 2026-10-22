@@ -55,7 +55,8 @@ describe('SM-9 FT-1 rows: families in tree order, people in each', () => {
   test('SM-9 the row label carries the name and the Chinese name; the family carries its colour', () => {
     expect([person('Z1').name, person('Z1').chinese]).toEqual(['Zhou Meiling', '周美玲']);
     expect([person('H1').name, person('H1').chinese]).toEqual(['Margaret Hale', '']);
-    expect(grid.families.map((f) => f.color)).toEqual(['series-1', 'series-3', null]);
+    // A47 (IP-12): a family's colour is a hex value.
+    expect(grid.families.map((f) => f.color)).toEqual(['#2a78d6', '#1baf7a', null]);
   });
 
   test('SM-9 FT-11 stored tree positions set the order: Daniel dragged left of Ruth comes first', () => {

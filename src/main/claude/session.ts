@@ -80,7 +80,8 @@ export function runtimeSessionClaude(
         req.signal,
       );
       const { turn, output } = outcome(run, runId);
-      const content = renderBrief(output as BriefsOutput, input, req.selection);
+      const headings = session().repo.bibleSettings().templates.briefHeadings;
+      const content = renderBrief(output as BriefsOutput, input, req.selection, headings);
       req.onText?.(content);
       return { content, model: turn.model };
     },

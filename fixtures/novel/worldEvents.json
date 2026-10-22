@@ -10,7 +10,7 @@
     "start": { "year": 2008, "month": 8, "day": 8 },
     "end": { "year": 2008, "month": 8, "day": 24 },
     "categoryId": "culture",
-    "regions": ["China"],
+    "regions": ["china"],
     "characterIds": ["Z3"],
     "formative": true
   },
@@ -23,7 +23,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2027 },
     "categoryId": "robotics",
-    "regions": ["Oregon"]
+    "regions": ["oregon"]
   },
   {
     "_id": "E3",
@@ -34,7 +34,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2034, "month": 1 },
     "categoryId": "climate",
-    "regions": ["Oregon"],
+    "regions": ["oregon"],
     "characterIds": ["H3", "Z3", "H5"],
     "formative": true
   },
@@ -47,7 +47,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2036 },
     "categoryId": "geopolitics",
-    "regions": ["Pacific"]
+    "regions": ["pacific"]
   },
   {
     "_id": "E5",
@@ -58,7 +58,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2042 },
     "categoryId": "energy",
-    "regions": ["Guangdong"]
+    "regions": ["guangdong"]
   },
   {
     "_id": "E6",
@@ -70,7 +70,7 @@
     "start": { "year": 2048 },
     "end": { "year": 2051 },
     "categoryId": "climate",
-    "regions": ["Guangdong"]
+    "regions": ["guangdong"]
   },
   {
     "_id": "E7",
@@ -81,7 +81,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2057 },
     "categoryId": "geopolitics",
-    "regions": ["China", "United States"],
+    "regions": ["china", "united-states"],
     "characterIds": ["H5"]
   },
   {
@@ -93,7 +93,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2063 },
     "categoryId": "economy",
-    "regions": ["Oregon", "Washington"]
+    "regions": ["oregon", "washington"]
   },
   {
     "_id": "E9",
@@ -104,7 +104,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2072 },
     "categoryId": "robotics",
-    "regions": ["Oregon"]
+    "regions": ["oregon"]
   },
   {
     "_id": "E10",
@@ -115,7 +115,7 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2090 },
     "categoryId": "climate",
-    "regions": ["Arctic"],
+    "regions": ["arctic"],
     "formative": true
   },
   {
@@ -127,6 +127,6 @@
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2081 },
     "categoryId": "technology",
-    "regions": ["Guangdong"]
+    "regions": ["guangdong"]
   }
 ]

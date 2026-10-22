@@ -4,7 +4,9 @@
  * the changes in one transaction.
  */
 import type { FieldSpec } from '../schema/manifest';
-import type { ListDoc, ListItem } from '../schema/lists';
+import { STATUS_KINDS } from '../schema/lists';
+import type { ListItem, StatusKind } from '../schema/lists';
+import { FAMILY_COLORS, FAMILY_TOKEN_HEX } from '../schema/family';
 import { deepEqual, isPlainObject } from './paths';
 import type { Doc } from './paths';
 
@@ -50,9 +52,15 @@ function visitAll(
 }
 
 /** True when the field holds an item of this list: by ID for list fields, by label for tags. */
-function usesItem(spec: FieldSpec, value: unknown, listId: string, item: ListItem): boolean {
+function usesItem(
+  spec: FieldSpec,
+  value: unknown,
+  listId: string,
+  item: Pick<ListItem, 'id' | 'label'>,
+): boolean {
   if (spec.listId !== listId) return false;
   if (spec.kind === 'listItem') return value === item.id;
+  if (spec.kind === 'listItems') return Array.isArray(value) && value.includes(item.id);
   if (spec.kind === 'tags') return Array.isArray(value) && value.includes(item.label);
   return false;
 }
@@ -66,7 +74,7 @@ export interface CollectionDocs {
 /** How many entries use an item, so a rename or a removal can say so first. */
 export function countListUsage(
   listId: string,
-  item: ListItem,
+  item: Pick<ListItem, 'id' | 'label'> & Partial<ListItem>,
   all: readonly CollectionDocs[],
 ): number {
   let n = 0;
@@ -135,7 +143,10 @@ export function tagsUsed(manifest: readonly FieldSpec[], doc: Doc): string[] {
 }
 
 /** The label path of a hierarchical item, for example "Technology > Robotics". */
-export function itemPath(list: ListDoc, itemId: string): string {
+export function itemPath(
+  list: { items: readonly Pick<ListItem, 'id' | 'label' | 'parentId'>[] },
+  itemId: string,
+): string {
   const parts: string[] = [];
   const seen = new Set<string>();
   let cur = list.items.find((i) => i.id === itemId);
@@ -149,7 +160,7 @@ export function itemPath(list: ListDoc, itemId: string): string {
 }
 
 /** A new item ID from its label, unique within the list. */
-export function newItemId(list: ListDoc, label: string): string {
+export function newItemId(list: { items: readonly { id: string }[] }, label: string): string {
   const base =
     label
       .normalize('NFKD')
@@ -180,4 +191,121 @@ export function derivedRename(
     patch.title = doc.title.split(oldName).join(label);
   }
   return { collection, id: String(doc._id), patch };
+}
+
+// ---------- A47: order, parents, colours and kinds (IP-8, IP-9, IP-12) ----------
+
+type Items = readonly Pick<ListItem, 'id' | 'parentId'>[];
+
+/** True when `candidate` is `itemId` or sits anywhere under it. */
+export function isUnder(items: Items, candidate: string, itemId: string): boolean {
+  const seen = new Set<string>();
+  let cur: string | null = candidate;
+  while (cur && !seen.has(cur)) {
+    if (cur === itemId) return true;
+    seen.add(cur);
+    cur = items.find((i) => i.id === cur)?.parentId ?? null;
+  }
+  return false;
+}
+
+/**
+ * IP-8: the items with one moved to `index` in the stored order, which is the
+ * order every select and list shows. The index is the item's place in the
+ * whole list after the move, clamped to the ends. Null when the item is not
+ * in the list.
+ */
+export function moveItem<T extends { id: string }>(
+  items: readonly T[],
+  itemId: string,
+  index: number,
+): T[] | null {
+  const from = items.findIndex((i) => i.id === itemId);
+  if (from < 0) return null;
+  const rest = items.filter((_, i) => i !== from);
+  const to = Math.max(0, Math.min(rest.length, Math.trunc(index)));
+  rest.splice(to, 0, items[from] as T);
+  return rest;
+}
+
+/**
+ * IP-8: why an item cannot take a parent, in plain words, or null when it
+ * can. An item cannot sit under itself or anything under it.
+ */
+export function parentProblem(
+  items: readonly Pick<ListItem, 'id' | 'label' | 'parentId'>[],
+  itemId: string,
+  parentId: string | null,
+): string | null {
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return `The list has no item ${itemId}.`;
+  if (parentId === null) return null;
+  const parent = items.find((i) => i.id === parentId);
+  if (!parent) return 'The parent item is not in this list.';
+  if (isUnder(items, parentId, itemId)) {
+    return parentId === itemId
+      ? `${item.label} cannot sit under itself.`
+      : `${item.label} cannot sit under ${parent.label}, which is already under it.`;
+  }
+  return null;
+}
+
+/** The fallback kind of a status ID with no `extra.kind`: the seeded IDs mean themselves. */
+const isKind = (v: unknown): v is StatusKind =>
+  typeof v === 'string' && (STATUS_KINDS as readonly string[]).includes(v);
+
+/**
+ * IP-9, SB-5: what a status means to the brief rules: canon, planned or idea,
+ * read from the item's `extra.kind`. `lists` is the bible's list documents
+ * (or anything with `_id` and `items`). A status with no kind is read by its
+ * ID when that is one of the three, and as idea otherwise, so nothing unknown
+ * ever counts as canon.
+ */
+export function statusKind(
+  lists: readonly { _id?: unknown; items?: unknown }[],
+  id: unknown,
+): StatusKind {
+  const list = lists.find((l) => l._id === 'statuses');
+  const items = Array.isArray(list?.items) ? (list.items as Partial<ListItem>[]) : [];
+  const kind = items.find((i) => i.id === id)?.extra?.kind;
+  if (isKind(kind)) return kind;
+  return isKind(id) ? id : 'idea';
+}
+
+/**
+ * The CSS colours the seeded items carry, by their light theme hex, with the
+ * token that draws them in both themes. The renderer draws a known hex through
+ * its token, so it follows the theme; any other hex is drawn as it is.
+ */
+export const THEME_HEX_TOKENS: Record<string, string> = {
+  '#1b705f': 'canon',
+  '#7a611b': 'idea',
+  '#b84f25': 'serious-ink',
+  ...Object.fromEntries(FAMILY_COLORS.map((t) => [FAMILY_TOKEN_HEX[t], t])),
+};
+
+/** A stored colour as CSS: `var(--token)` for a seeded colour, the hex for any other, or null. */
+export function listColorCss(color: string | null | undefined): string | null {
+  if (!color) return null;
+  const token = THEME_HEX_TOKENS[color.toLowerCase()];
+  return token ? `var(--${token})` : color;
+}
+
+/**
+ * IP-12: the series token (`series-1` to `series-4`) a family colour is drawn
+ * with, for the four colours families had before A47 (as a hex or, before
+ * migration 11, as the token name). Null for any other colour, which the
+ * renderer draws as the hex itself.
+ */
+export function familyToken(color: unknown): (typeof FAMILY_COLORS)[number] | null {
+  if (typeof color !== 'string') return null;
+  const c = color.toLowerCase();
+  return FAMILY_COLORS.find((t) => t === c || FAMILY_TOKEN_HEX[t] === c) ?? null;
+}
+
+/** A family colour as CSS: its token for the four known colours, else the hex. */
+export function familyColorCss(color: unknown): string | null {
+  const token = familyToken(color);
+  if (token) return `var(--${token})`;
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : null;
 }

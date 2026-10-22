@@ -1,3 +1,4 @@
+import { familyToken } from '../../../../shared/domain/lists';
 import { useEffect, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
 import { describeState } from '../../../../shared/domain/ages';
@@ -44,7 +45,7 @@ export function useFamilies(): Map<string, { name: string; color: string }> {
           f._id,
           {
             name: typeof f.name === 'string' ? f.name : f._id,
-            color: typeof f.color === 'string' ? f.color : 'series-4',
+            color: familyToken(f.color) ?? 'series-4',
           },
         ]),
       ),

@@ -1,3 +1,4 @@
+import { familyToken } from '../../../../shared/domain/lists';
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
 import type {
@@ -406,7 +407,7 @@ export function TreeView(props: {
 
   const colorOf = useMemo(() => {
     const m = new Map(
-      families.map((f) => [f._id, typeof f.color === 'string' ? f.color : 'series-1']),
+      families.map((f): [string, string] => [f._id, familyToken(f.color) ?? 'series-1']),
     );
     return (ids: string[]) => ids.map((id) => m.get(id)).filter((c): c is string => Boolean(c));
   }, [families]);
@@ -878,7 +879,7 @@ export function TreeView(props: {
             families={families.map((f) => ({
               id: f._id,
               name: String(f.name),
-              color: String(f.color),
+              color: familyToken(f.color) ?? 'series-1',
             }))}
           />
         </div>

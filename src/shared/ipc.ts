@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import { BibleName, BibleSlug } from './bible';
 import {
+  BibleSettings,
+  BibleSettingsPatch,
   ENTRY_COLLECTIONS,
+  HexColor,
   ListIdParam,
   Proposal,
   Provenance,
@@ -122,10 +125,16 @@ function checkPatch(
 
 const EntryRef = z.strictObject({ collection: CollectionName, id: EntryId });
 
+const ItemExtra = z.record(z.string(), z.union([z.string(), z.number()]));
+
 export const WireListItem = z.strictObject({
   id: z.string(),
   label: z.string(),
   parentId: z.string().nullable(),
+  /** A47 (IP-8): the item's colour as a hex, or null. */
+  color: z.string().nullable().default(null),
+  /** A47 (IP-8): extra values, such as a status's `kind` or an age group's `from` and `to`. */
+  extra: ItemExtra.default({}),
   usage: z.int().min(0),
   detail: z.string().optional(),
 });
@@ -138,6 +147,22 @@ export const WireList = z.strictObject({
   items: z.array(WireListItem),
 });
 export type WireList = z.output<typeof WireList>;
+
+/** A list item as a write returns it (A47: with its colour and extra values). */
+const WireItem = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  parentId: z.string().nullable(),
+  color: z.string().nullable().default(null),
+  extra: ItemExtra.default({}),
+});
+
+/** IP-12: one default era a new bible copies. */
+const EraDefaultRow = z.strictObject({
+  name: z.string().trim().min(1, 'A default era needs a name.').max(200),
+  startYear: z.int(),
+  endYear: z.int(),
+});
 
 /** A proposal with what it would change against the entry as it is now. */
 const ProposalView = z.strictObject({
@@ -751,10 +776,12 @@ export const contract = {
       parentId: z.string().min(1).nullable().default(null),
       /** ED-3: an undo step puts an item back under the ID the entries still hold, when that ID is free. */
       id: z.string().min(1).max(64).optional(),
+      /** A47 (IP-9): the item's colour. */
+      color: HexColor.nullable().optional(),
+      /** A47 (IP-9, IP-10): extra values; a status takes `kind` (canon, planned or idea; idea when left out). */
+      extra: ItemExtra.optional(),
     }),
-    response: z.strictObject({
-      item: z.strictObject({ id: z.string(), label: z.string(), parentId: z.string().nullable() }),
-    }),
+    response: z.strictObject({ item: WireItem }),
   },
   'lists.removeItem': {
     request: z.strictObject({ listId: ListIdParam, itemId: z.string().min(1) }),
@@ -1313,6 +1340,55 @@ export const contract = {
   ...claudeContract,
   /** M8 alignment check (src/shared/ipcContinuity.ts). */
   ...continuityContract,
+  // a47-model
+  /** IP-8: move a list item to `index` in the stored order (the order every list and select shows). */
+  'lists.move': {
+    request: z.strictObject({
+      listId: ListIdParam,
+      itemId: z.string().min(1),
+      index: z.int().min(0),
+    }),
+    response: z.strictObject({ from: z.int().min(0), to: z.int().min(0) }),
+  },
+  /** IP-8: put a list item under another, or at the top level with null. */
+  'lists.setParent': {
+    request: z.strictObject({
+      listId: ListIdParam,
+      itemId: z.string().min(1),
+      parentId: z.string().min(1).nullable(),
+    }),
+    response: z.strictObject({ from: z.string().nullable(), to: z.string().nullable() }),
+  },
+  /** IP-9, IP-10: recolour an item, or change its extra values (null removes a key). */
+  'lists.setItem': {
+    request: z.strictObject({
+      listId: ListIdParam,
+      itemId: z.string().min(1),
+      color: HexColor.nullable().optional(),
+      extra: z.record(z.string(), z.union([z.string(), z.number(), z.null()])).optional(),
+    }),
+    response: z.strictObject({ item: WireItem }),
+  },
+  /** IP-10, IP-11, IP-14: the bible's settings, defaults filled in. */
+  'settings.get': {
+    request: z.strictObject({}),
+    response: BibleSettings,
+  },
+  /** Change any part of the bible's settings; the response is the whole settings after the change. */
+  'settings.set': {
+    request: BibleSettingsPatch,
+    response: BibleSettings,
+  },
+  /** IP-12: the default eras a new bible copies, in order. */
+  'eraDefaults.get': {
+    request: z.strictObject({}),
+    response: z.strictObject({ rows: z.array(EraDefaultRow) }),
+  },
+  /** IP-12: replace the default eras. */
+  'eraDefaults.set': {
+    request: z.strictObject({ rows: z.array(EraDefaultRow).max(200) }),
+    response: z.strictObject({ rows: z.array(EraDefaultRow) }),
+  },
 } as const;
 
 export type Channel = keyof typeof contract;
@@ -1350,6 +1426,9 @@ export const events = {
   'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
   ...claudeEvents,
   ...appEvents,
+  // a47-model
+  /** The bible's settings changed (A47: numbers, the culture unit, templates). */
+  'settings.changed': z.strictObject({ bible: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;

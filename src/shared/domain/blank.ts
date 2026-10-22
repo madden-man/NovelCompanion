@@ -24,6 +24,7 @@ export function blankValue(spec: FieldSpec, today = new Date()): unknown {
       return spec.nullable ? null : (spec.options?.[0]?.value ?? null);
     case 'tags':
     case 'strings':
+    case 'listItems':
     case 'refs':
     case 'links':
     case 'objectList':

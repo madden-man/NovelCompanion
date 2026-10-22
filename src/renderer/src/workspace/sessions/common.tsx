@@ -100,11 +100,9 @@ export function GroupBlock(props: {
  * a world event up to the year after the story year. Everything else under
  * Planned ahead, moments included (SB-5), stays in the Planned ahead list.
  */
-export function onEventStrip(it: Item, strandYear: number): boolean {
+export function onEventStrip(it: Item, strandYear: number, ahead = WINDOW_AHEAD): boolean {
   return (
-    it.collection === 'worldEvents' &&
-    typeof it.year === 'number' &&
-    it.year <= strandYear + WINDOW_AHEAD
+    it.collection === 'worldEvents' && typeof it.year === 'number' && it.year <= strandYear + ahead
   );
 }
 
@@ -133,12 +131,14 @@ export function EventsWindow(props: {
   strand: SelectionView['strands'][number];
   group: Group;
   window: number;
+  /** IP-11: years the window looks past the story year. */
+  ahead?: number;
   onOpen: OpenEntry;
   action?: (item: Item) => ReactNode;
 }) {
   const { strand, group } = props;
   const from = strand.year - props.window;
-  const to = strand.year + WINDOW_AHEAD;
+  const to = strand.year + (props.ahead ?? WINDOW_AHEAD);
   const events = stripEvents(strand.groups, from, to);
   const items = new Map<string, Item>();
   for (const g of strand.groups) for (const it of g.items) items.set(it.id, it);
@@ -215,6 +215,7 @@ export function SelectionBody(props: {
                     strand={s}
                     group={g}
                     window={sel.window}
+                    ahead={sel.ahead}
                     onOpen={onOpen}
                     action={props.action}
                   />
@@ -224,7 +225,7 @@ export function SelectionBody(props: {
                 g.kind === 'plannedAhead'
                   ? {
                       ...g,
-                      items: g.items.filter((it) => !onEventStrip(it, s.year)),
+                      items: g.items.filter((it) => !onEventStrip(it, s.year, sel.ahead)),
                     }
                   : g;
               return (

@@ -353,6 +353,11 @@ export async function setField(
     case 'listItem':
       await f.locator(':scope > select').selectOption(value === null ? '' : String(value));
       return;
+    case 'listItems': {
+      await clearChips(f);
+      for (const s of value as string[]) await f.locator(':scope > select').selectOption(s);
+      return;
+    }
     case 'storyDate': {
       const d = value as Record<string, number> | null;
       // SM-1: the character page has one box per date.

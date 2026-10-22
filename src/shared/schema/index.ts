@@ -43,6 +43,7 @@ export * from './story';
 export * from './lists';
 export * from './manifest';
 export * from './proposal';
+export * from './settings';
 
 /**
  * Every collection written through the one write path, and its schema. These

@@ -4,6 +4,7 @@
  * chapter establishes. Pure functions; nothing here writes anywhere, and no
  * code path in the app writes to a manuscript file or document (MS-5, A4).
  */
+import { statusKind } from './lists';
 import { plain } from './brief/selection';
 import { characterName } from './timeline';
 import type { TimelineData } from './timeline';
@@ -140,9 +141,11 @@ export function establishedPlanned(data: TimelineData, chapterId: string): Estab
   ]) {
     for (const d of data.all(c)) if (live(d)) all.set(str(d._id), { collection: c, doc: d });
   }
+  const lists = data.all('lists');
   const add = (id: string, why: string) => {
     const e = all.get(id);
-    if (!e || e.doc.status !== 'planned') return;
+    // A47 (IP-9): planned by the status item's kind.
+    if (!e || statusKind(lists, e.doc.status) !== 'planned') return;
     if (e.collection === 'worldEvents') {
       const start = isPlainObject(e.doc.start) ? num(e.doc.start.year) : null;
       if (start !== null && start > latestYear) return;
