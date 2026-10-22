@@ -12,6 +12,7 @@ import {
   openEditable,
   rail,
   screenTab,
+  seedFixture,
 } from './helpers';
 import type { TestDb } from './helpers';
 
@@ -50,9 +51,10 @@ test.beforeAll(async () => {
   }
   for (const c of Object.keys(fixture)) {
     if (c === 'lists' || !fixture[c]?.length) continue;
-    await invoke('test.seed', {
-      items: fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    });
+    await seedFixture(
+      invoke,
+      fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
+    );
   }
 });
 

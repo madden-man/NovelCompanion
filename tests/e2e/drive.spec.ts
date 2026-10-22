@@ -5,7 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
 import { FILE, READONLY, startFakeGoogle } from '../helpers/fakeGoogle';
 import type { FakeGoogle } from '../helpers/fakeGoogle';
-import { fileDb, invokeVia, launch, rail, screenTab } from './helpers';
+import { fileDb, invokeVia, launch, rail, screenTab, seedFixture } from './helpers';
 import type { TestDb } from './helpers';
 
 const FIXTURES = join(import.meta.dirname, '../../fixtures/files');
@@ -163,40 +163,38 @@ test('GD-4 export asks for drive.file, makes a folder, and writes Markdown by se
 });
 
 test('MS-1 MS-5 a chapter is read from a Google Doc chosen in the Drive browser, keeping italics, and Drive is never written', async () => {
-  await invoke('test.seed', {
-    items: [
-      {
-        collection: 'books',
-        data: { _id: 'BKW', title: 'Tide Lines', status: 'planned', number: 1 },
+  await seedFixture(invoke, [
+    {
+      collection: 'books',
+      data: { _id: 'BKW', title: 'Tide Lines', status: 'planned', number: 1 },
+    },
+    {
+      collection: 'parts',
+      data: { _id: 'PTW', title: 'High Water', status: 'planned', bookId: 'BKW', number: 1 },
+    },
+    {
+      collection: 'chapters',
+      data: {
+        _id: 'CHW',
+        title: 'Wedding Weather',
+        status: 'planned',
+        partId: 'PTW',
+        readingOrder: 3,
+        strands: [
+          {
+            id: 'CHW-present',
+            label: 'present',
+            startYear: 2031,
+            endYear: null,
+            primary: true,
+            povCharacterId: null,
+            characterIds: [],
+            placeIds: [],
+          },
+        ],
       },
-      {
-        collection: 'parts',
-        data: { _id: 'PTW', title: 'High Water', status: 'planned', bookId: 'BKW', number: 1 },
-      },
-      {
-        collection: 'chapters',
-        data: {
-          _id: 'CHW',
-          title: 'Wedding Weather',
-          status: 'planned',
-          partId: 'PTW',
-          readingOrder: 3,
-          strands: [
-            {
-              id: 'CHW-present',
-              label: 'present',
-              startYear: 2031,
-              endYear: null,
-              primary: true,
-              povCharacterId: null,
-              characterIds: [],
-              placeIds: [],
-            },
-          ],
-        },
-      },
-    ],
-  });
+    },
+  ]);
   const writesBefore = fake.calls.filter((c) => /^(PATCH|PUT|DELETE) /.test(c)).length;
   const uploadsBefore = fake.uploads.length;
   await screenTab(page, 'Continuity checker', 'Manuscript');
