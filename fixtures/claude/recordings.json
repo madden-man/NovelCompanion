@@ -582,7 +582,7 @@
     ]
   },
   {
-    "name": "alignment: a chapter whose text ends with the stop marker waits until Stop (AI-1)",
+    "name": "alignment: a chapter whose title carries the stop marker waits until Stop (AI-1)",
     "feature": "alignment",
     "match": "E2E-HOLD-UNTIL-STOPPED",
     "steps": [

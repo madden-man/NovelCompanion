@@ -408,8 +408,12 @@ export class Repository {
     return rest;
   }
 
-  private buildCreate<C extends EntryCollection>(c: C, input: Record<string, unknown>): Change {
-    return this.buildCreateWith(c, input, true);
+  private buildCreate<C extends EntryCollection>(
+    c: C,
+    input: Record<string, unknown>,
+    opts: WriteOptions = {},
+  ): Change {
+    return this.buildCreateWith(c, input, true, opts);
   }
 
   /** A create whose shape checks run later, against the whole batch. */
@@ -421,7 +425,9 @@ export class Repository {
     c: EntryCollection,
     input: Record<string, unknown>,
     shape: boolean,
+    opts: WriteOptions = {},
   ): Change {
+    if (!opts.importer) this.refuseLocked(c, {}, input);
     const at = this.now().toISOString();
     const rest = this.stripSystem(input);
     const id = typeof input._id === 'string' && input._id ? input._id : newId();
@@ -452,9 +458,13 @@ export class Repository {
     return { collection: c, op: 'softDelete', next: doc as StoredDoc, prior };
   }
 
-  async create<C extends EntryCollection>(c: C, input: CreateInput<C>): Promise<EntryOf<C>> {
+  async create<C extends EntryCollection>(
+    c: C,
+    input: CreateInput<C>,
+    opts: WriteOptions = {},
+  ): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const change = this.buildCreate(c, input as Record<string, unknown>);
+    const change = this.buildCreate(c, input as Record<string, unknown>, opts);
     await this.commit([change]);
     return change.next as EntryOf<C>;
   }
@@ -670,7 +680,7 @@ export class Repository {
     const revision = await this.revision(c, id, revisionId);
     const prior = await this.current(c, id);
     const doc = this.validate(c, {
-      ...contentOf(revision.snapshot),
+      ...withoutLocked(c, contentOf(revision.snapshot)),
       ...this.lockedValues(c, prior),
       _id: prior._id,
       createdAt: prior.createdAt,
@@ -974,6 +984,7 @@ export class Repository {
     if (proposal.op === 'update') {
       this.buildUpdate(c, await this.current(c, String(proposal.targetId)), clean);
     } else {
+      this.refuseLocked(c, {}, clean);
       this.validate(c, {
         ...clean,
         _id: 'CHECK',
@@ -1103,7 +1114,7 @@ export class Repository {
           ...(item.data as Record<string, unknown>),
           _id: item.entryId,
         };
-        const change = this.buildCreate(item.collection, data);
+        const change = this.buildCreate(item.collection, data, { importer: true });
         changes.push({ ...change, note });
         created += 1;
       } else {
@@ -1852,7 +1863,11 @@ export class Repository {
    * unless the importer writes it. A patch that repeats their stored values
    * (a whole entry saved back) is not a change and passes.
    */
-  private refuseLocked(c: EntryCollection, prior: StoredDoc, patch: Record<string, unknown>): void {
+  private refuseLocked(
+    c: EntryCollection,
+    prior: Record<string, unknown>,
+    patch: Record<string, unknown>,
+  ): void {
     if (lockedTouched(c, prior, patch).length) throw new RepositoryError(MANUSCRIPT_LOCKED);
   }
 
@@ -2021,14 +2036,15 @@ export class Repository {
         values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
         continue;
       }
-      const { made, next } = this.mintItem(list, item);
-      lists.set(item.listId, next);
+      const { made, next, existed } = this.mintItem(list, item);
+      if (!existed) lists.set(item.listId, next);
       values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
       decided.push({
         ...add,
         state: 'approved',
         decidedAt: this.now().toISOString(),
         appliedItemId: made.id,
+        appliedItemExisted: existed,
       });
     }
     return {
@@ -2039,9 +2055,13 @@ export class Repository {
   }
 
   /** The item a list item proposal makes, or the item of that name the list already has. */
-  private mintItem(list: ListDoc, add: ListAddProposal): { made: ListItem; next: ListDoc } {
-    const existing = list.items.find((i) => i.label === add.label);
-    if (existing) return { made: existing, next: list };
+  private mintItem(
+    list: ListDoc,
+    add: ListAddProposal,
+  ): { made: ListItem; next: ListDoc; existed: boolean } {
+    // The same rule as when the item was proposed: a label matches whatever its case.
+    const existing = list.items.find((i) => i.label.toLowerCase() === add.label.toLowerCase());
+    if (existing) return { made: existing, next: list, existed: true };
     if (add.parentId && !list.items.some((i) => i.id === add.parentId)) {
       throw new RepositoryError(
         `The item ${add.label} was to go under is no longer in ${list.label}. Reject this proposal and add the item in Lists.`,
@@ -2052,21 +2072,22 @@ export class Repository {
       label: add.label,
       parentId: add.parentId,
     };
-    return { made, next: { ...list, items: [...list.items, made] } };
+    return { made, next: { ...list, items: [...list.items, made] }, existed: false };
   }
 
   /** IP-17: approve a list item proposal: the item is added and the approval recorded together. */
   private async applyListAdd(proposal: Proposal): Promise<Proposal> {
     await this.bulkGuard('approved proposal');
     const add = proposal.listAdd as ListAddProposal;
-    const { made, next } = this.mintItem(this.storedList(add.listId), add);
+    const { made, next, existed } = this.mintItem(this.storedList(add.listId), add);
     const decided: Proposal = {
       ...proposal,
       state: 'approved',
       decidedAt: this.now().toISOString(),
       appliedItemId: made.id,
+      appliedItemExisted: existed,
     };
-    await this.commit([], (session) => this.saveDecided([decided], session), [next]);
+    await this.commit([], (session) => this.saveDecided([decided], session), existed ? [] : [next]);
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
@@ -2148,6 +2169,12 @@ export const LIST_ADD_NO_EDIT =
 export const LOCKED_FIELDS: Partial<Record<EntryCollection, readonly string[]>> = {
   chapters: ['manuscriptText', 'manuscriptSource', 'sourceFile'],
 };
+
+/** A document without its locked fields, so an older revision cannot bring them back (IP-18). */
+function withoutLocked(c: EntryCollection, doc: Record<string, unknown>): Record<string, unknown> {
+  const fields = LOCKED_FIELDS[c] ?? [];
+  return Object.fromEntries(Object.entries(doc).filter(([k]) => !fields.includes(k)));
+}
 
 /** The locked fields a patch would change. Absent and empty count as the same. */
 export function lockedTouched(

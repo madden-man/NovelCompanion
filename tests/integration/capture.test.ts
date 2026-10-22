@@ -431,6 +431,28 @@ describe('IP-17 capture can mint a list item', () => {
     await invoke('lists.removeItem', { listId: 'communities', itemId: item.id });
   });
 
+  test('IP-17 an item added to the list meanwhile, in any case, is used as it is and undo leaves it there', async () => {
+    const { add, line } = await jinan();
+    const { item } = await invoke('lists.addItem', { listId: 'communities', label: 'JINAN' });
+    const filing = await fileCapture(invoke, [asCapture(add), asCapture(line)], []);
+    expect(filing.failed).toEqual([]);
+    expect(communities().filter((l) => l.toLowerCase() === 'jinan')).toEqual(['JINAN']);
+    expect(bible.model.get('proposals', add._id)).toMatchObject({
+      state: 'approved',
+      appliedItemId: item.id,
+      appliedItemExisted: true,
+    });
+    const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
+    expect(made.communityId).toBe(item.id);
+    const undo = new UndoManager();
+    undo.record(filing.command!);
+    expect(await undo.step('undo', undoIO(invoke))).toMatchObject({ status: 'applied' });
+    expect(bible.model.get('culturalEntries', made._id)?.deletedAt).toBeTruthy();
+    // The item was the writer's, not the capture's: it stays.
+    expect(communities()).toContain('JINAN');
+    await invoke('lists.removeItem', { listId: 'communities', itemId: item.id });
+  });
+
   test('IP-17 proposal.reject drops the item, and a line that uses it is then refused with a plain reason', async () => {
     const { add, line } = await jinan();
     await invoke('proposal.reject', { id: add._id });

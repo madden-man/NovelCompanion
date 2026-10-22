@@ -59,6 +59,8 @@ export const Proposal = z.strictObject({
   uses: z.array(z.strictObject({ ref: ListRef, proposalId: Id })).default([]),
   /** IP-17: the ID of the list item an approved `listAdd` proposal created. */
   appliedItemId: z.string().nullable().default(null),
+  /** IP-17: true when the list already had the item at approval, so nothing was added (and undo removes nothing). */
+  appliedItemExisted: z.boolean().default(false),
   /** IP-18: why the proposal was rejected as it was made, or null. */
   refusal: z.string().nullable().default(null),
 });

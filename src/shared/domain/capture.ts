@@ -80,6 +80,8 @@ export async function fileCapture(
         const { proposal } = await invoke('proposal.approve', { id: p.id });
         const add = proposal.listAdd;
         if (!add || !proposal.appliedItemId) throw new Error('The approval did not add the item.');
+        // The list had this item already: nothing was added, so undo must not take it out.
+        if (proposal.appliedItemExisted) continue;
         const lists = (await invoke('lists.get', {})).lists;
         const label = lists.find((l) => l._id === add.listId)?.label ?? add.listId;
         const item = { id: proposal.appliedItemId, label: add.label, parentId: add.parentId };

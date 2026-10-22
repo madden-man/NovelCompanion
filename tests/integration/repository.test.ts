@@ -349,3 +349,107 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
     expect(restored.entry.manuscriptText).toBe(next);
   });
 });
+
+describe('IP-18 the manuscript lock on the create paths', () => {
+  let fx: OpenBible;
+  let invoke: Invoke;
+  const chapter = (title: string, extra: Record<string, unknown> = {}) => ({
+    title,
+    partId: 'PT1',
+    readingOrder: 90,
+    status: 'idea',
+    strands: [{ id: 'S1', label: 'present', startYear: 2040, primary: true }],
+    ...extra,
+  });
+
+  beforeAll(async () => {
+    fx = await openBibleSession(store, (await loadFixture(store, freshSlug('guardnew'))).id);
+    invoke = ipcFor(() => fx);
+  });
+
+  test('IP-18 entry.create, entry.createMany, a batch create and an edited create proposal cannot set the manuscript fields', async () => {
+    const before = fx.model.all('chapters').length;
+    for (const extra of [
+      { manuscriptText: '<p>Typed here.</p>' },
+      { manuscriptSource: 'word:/tmp/x.docx' },
+      { sourceFile: 'x.docx' },
+    ]) {
+      await expect(
+        invoke('entry.create', { collection: 'chapters', data: chapter('New', extra) }),
+      ).rejects.toThrow(MANUSCRIPT_LOCKED);
+      await expect(
+        invoke('entry.createMany', {
+          items: [{ collection: 'chapters', data: chapter('New', extra) }],
+        }),
+      ).rejects.toThrow(MANUSCRIPT_LOCKED);
+      await expect(
+        fx.repo.writeBatch([{ op: 'create', collection: 'chapters', data: chapter('New', extra) }]),
+      ).rejects.toThrow(MANUSCRIPT_LOCKED);
+    }
+    // A pending chapter create cannot be edited into one that carries text.
+    const proposal = await fx.repo.propose({
+      source: 'claude',
+      op: 'create',
+      collection: 'chapters',
+      data: chapter('Proposed'),
+    });
+    expect(proposal.state).toBe('pending');
+    await expect(
+      invoke('proposal.edit', {
+        id: proposal._id,
+        data: chapter('Proposed', { manuscriptText: '<p>Typed here.</p>' }),
+      }),
+    ).rejects.toThrow(MANUSCRIPT_LOCKED);
+    // Blank manuscript fields are the defaults, not a change.
+    const blank = await invoke('entry.create', {
+      collection: 'chapters',
+      data: chapter('Blank', { manuscriptText: '', sourceFile: null }),
+    });
+    expect(blank.entry.manuscriptText).toBe('');
+    expect(fx.model.all('chapters').length).toBe(before + 1);
+  });
+
+  test('IP-18 the importer still creates a chapter with its manuscript text', async () => {
+    const made = await fx.repo.create(
+      'chapters',
+      chapter('Imported', {
+        manuscriptText: '<p>From Word.</p>',
+        sourceFile: 'imported.docx',
+      }) as never,
+      { importer: true },
+    );
+    expect(made).toMatchObject({
+      manuscriptText: '<p>From Word.</p>',
+      sourceFile: 'imported.docx',
+    });
+  });
+
+  test('IP-18 restoring a revision that holds a manuscript field the entry no longer has does not bring it back', async () => {
+    const made = await fx.repo.create(
+      'chapters',
+      chapter('Restored', { sourceFile: 'old.docx', manuscriptSource: 'word:/old.docx' }) as never,
+      { importer: true },
+    );
+    await invoke('entry.update', {
+      collection: 'chapters',
+      id: made._id,
+      patch: { summary: 'A.' },
+    });
+    // The stored entry loses the keys (as a document written before they existed would lack them).
+    await fx.handle
+      .collection('chapters')
+      .updateOne({ _id: made._id as never }, { $unset: { sourceFile: '', manuscriptSource: '' } });
+    const { sourceFile: _s, manuscriptSource: _m, ...bare } = fx.model.get('chapters', made._id)!;
+    fx.model.put('chapters', bare as never);
+    const history = await invoke('revisions.list', { collection: 'chapters', id: made._id });
+    const oldest = history.revisions.at(-1)!;
+    const restored = await invoke('revisions.restore', {
+      collection: 'chapters',
+      id: made._id,
+      revisionId: oldest._id,
+    });
+    expect(restored.entry.sourceFile).toBeNull();
+    expect(restored.entry.manuscriptSource).toBeNull();
+    expect(restored.entry.summary).toBe('');
+  });
+});
