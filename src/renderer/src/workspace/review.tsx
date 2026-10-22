@@ -392,7 +392,7 @@ function ProposedValue(props: {
     default: {
       // enum and listItem: the choices, with a new item this proposal set adds shown as "+ Name".
       const options =
-        spec.kind === 'enum' ? (spec.options ?? []) : listOptions(list).map((o) => ({ ...o }));
+        spec.kind === 'enum' ? [...(spec.options ?? [])] : listOptions(list).map((o) => ({ ...o }));
       const value = typeof raw === 'string' && raw !== '' ? raw : null;
       if (value && !options.some((o) => o.value === value)) {
         options.push({ value, label: showValue(props.after) });

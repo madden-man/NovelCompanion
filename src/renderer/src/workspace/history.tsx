@@ -232,7 +232,10 @@ function PruneRevisions(props: {
   const ro = useWriteGuard();
   const dateId = useId();
   const [day, setDay] = useState(() => localDateString(new Date()));
-  const [counted, setCounted] = useState<{ day: string; count: number } | null>(null);
+  /** The day shown, the cutoff counted against, and the count; the confirm removes exactly these. */
+  const [counted, setCounted] = useState<{ day: string; before: string; count: number } | null>(
+    null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(day);
@@ -241,27 +244,32 @@ function PruneRevisions(props: {
     if (!valid) return;
     setError(null);
     setNotice(null);
+    // A day still to come is cut at the moment of counting, so a save made before
+    // the confirm is not removed with the revisions that were counted.
     try {
+      const before = new Date(Math.min(new Date(day).getTime(), Date.now())).toISOString();
       const r = await call('revisions.prune', {
         collection: props.collection,
         id: props.id,
-        before: day,
+        before,
         dryRun: true,
       });
-      setCounted({ day, count: r.count });
+      setCounted({ day, before, count: r.count });
     } catch (e) {
       setError(plainError(e));
     }
   };
 
-  const remove = async (before: string) => {
+  const remove = async (shown: { day: string; before: string }) => {
     const r = await call('revisions.prune', {
       collection: props.collection,
       id: props.id,
-      before,
+      before: shown.before,
     });
     setCounted(null);
-    setNotice(`Removed ${revisionsWord(r.count)} from before ${before}. This is not an undo step.`);
+    setNotice(
+      `Removed ${revisionsWord(r.count)} from before ${shown.day}. This is not an undo step.`,
+    );
     props.onPruned();
   };
 
@@ -302,7 +310,7 @@ function PruneRevisions(props: {
           action={`Remove ${revisionsWord(counted.count)}`}
           keep="Keep them"
           testId="revision-prune-confirm"
-          onConfirm={() => remove(counted.day)}
+          onConfirm={() => remove(counted)}
           onCancel={() => setCounted(null)}
         >
           <span data-testid="revision-prune-count">

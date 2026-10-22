@@ -707,10 +707,15 @@ function ConversationTools(props: {
   const ro = useWriteGuard();
   const [asking, setAsking] = useState<'clear' | 'delete' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const read = useCallback(
-    async () => (await call('claude.run', { id: run._id })).run.title,
-    [run._id],
-  );
+  // A deleted conversation reads as no title, so an undo step over it is skipped
+  // with a plain notice instead of throwing (a throw would stop every later undo).
+  const read = useCallback(async () => {
+    try {
+      return (await call('claude.run', { id: run._id })).run.title;
+    } catch {
+      return '';
+    }
+  }, [run._id]);
   const write = useCallback((title: string) => renameConversation(run._id, title), [run._id]);
   const command = useCallback(
     (before: string, after: string) =>
@@ -722,7 +727,7 @@ function ConversationTools(props: {
             write,
             before,
             after,
-            changed: 'The conversation was renamed since',
+            changed: 'the conversation was renamed or deleted since',
           }),
     [read, write],
   );
@@ -751,6 +756,7 @@ function ConversationTools(props: {
             className="btn small"
             disabled={off || asking === 'clear'}
             title={why}
+            aria-label={`Clear the messages of ${run.title}`}
             data-testid="claude-clear"
             onClick={() => {
               setNotice(null);
@@ -764,6 +770,7 @@ function ConversationTools(props: {
             className="btn small danger"
             disabled={off || asking === 'delete'}
             title={why}
+            aria-label={`Delete ${run.title}`}
             data-testid="claude-delete"
             onClick={() => {
               setNotice(null);
