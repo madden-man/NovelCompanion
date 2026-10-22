@@ -61,7 +61,6 @@ function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) =
         )}
         <StatusChip status={item.status} />
         {item.note && <span data-testid="sel-note">{item.note}</span>}
-        <code className="id">{item.id}</code>
         {props.action?.(item)}
       </div>
       {item.detail && <p className="sel-detail">{item.detail}</p>}
@@ -135,6 +134,10 @@ export function EventsWindow(props: {
   ahead?: number;
   onOpen: OpenEntry;
   action?: (item: Item) => ReactNode;
+  /** IP-2: draws an event's title, such as a field, in place of the link. */
+  renderTitle?: (e: StripEvent) => ReactNode;
+  /** IP-2: what follows the strip, such as Add an event. */
+  footer?: ReactNode;
 }) {
   const { strand, group } = props;
   const from = strand.year - props.window;
@@ -163,8 +166,10 @@ export function EventsWindow(props: {
             return it ? action(it) : null;
           })
         }
+        renderTitle={props.renderTitle}
         label={`World events ${span(from, to)}`}
       />
+      {props.footer}
     </section>
   );
 }
@@ -180,6 +185,8 @@ export function SelectionBody(props: {
   /** The strand being written, marked in the list. */
   writing?: { chapterId?: string; strandId?: string } | null;
   action?: (item: Item) => ReactNode;
+  /** SB-9: put back an entry removed from the selection, shown on its Left out row. */
+  onKeep?: (id: string) => void;
 }) {
   const { selection: sel, onOpen } = props;
   return (
@@ -256,18 +263,59 @@ export function SelectionBody(props: {
       {sel.omitted.length > 0 && (
         <section className="panel stack tight" data-testid="sel-omitted" aria-label="Left out">
           <h3>Left out</h3>
-          <ul className="plain-list">
-            {sel.omitted.map((o) => (
-              <li key={`${o.kind}|${o.id}`}>
-                {o.title} ({GROUP_TITLES[o.kind].toLowerCase()}):{' '}
-                {o.reason === 'removed'
-                  ? 'removed by you'
-                  : `over the size budget of ${sel.budget} characters`}
-              </li>
-            ))}
-          </ul>
+          <OmittedList selection={sel} onKeep={props.onKeep} />
         </section>
       )}
     </div>
   );
+}
+
+/**
+ * SB-9, IP-2: what the selection left out, by title; an entry removed by the
+ * writer has Keep, which puts it back before the brief is written.
+ */
+export function OmittedList(props: { selection: SelectionView; onKeep?: (id: string) => void }) {
+  const sel = props.selection;
+  return (
+    <ul className="plain-list stack tight">
+      {sel.omitted.map((o) => (
+        <li key={`${o.kind}|${o.id}`} data-testid="omitted-item" data-id={o.id}>
+          {o.title} ({GROUP_TITLES[o.kind].toLowerCase()}):{' '}
+          {o.reason === 'removed'
+            ? 'removed by you'
+            : `over the size budget of ${sel.budget} characters`}
+          {o.reason === 'removed' && props.onKeep && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="btn small"
+                aria-label={`Keep ${o.title}`}
+                onClick={() => props.onKeep?.(o.id)}
+              >
+                Keep
+              </button>
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** SB-9, IP-2: Remove on an item of a selection no brief has been written from yet. */
+export function removeAction(onRemove: (id: string) => void) {
+  function RemoveAction(item: Item) {
+    return (
+      <button
+        type="button"
+        className="btn small"
+        aria-label={`Remove ${item.title}`}
+        onClick={() => onRemove(item.id)}
+      >
+        Remove
+      </button>
+    );
+  }
+  return RemoveAction;
 }

@@ -33,6 +33,7 @@ import { latestLog, localDateString, logsNewestFirst } from '../../shared/domain
 import { chapterYear, currentPositionChapter } from '../../shared/domain/position';
 import { questionCounts } from '../../shared/domain/questions';
 import { entryTitle } from '../../shared/schema';
+import { BRIEF_WRITTEN_NOTE } from '../../shared/domain/briefEdits';
 import type { StoryTimeValue } from '../../shared/storyTime';
 import { SUMMARY_MODEL_SETTING, briefModel, sessionClaude } from '../session/claude';
 import type { SessionClaude } from '../session/claude';
@@ -276,11 +277,18 @@ export function sessionHandlers(
       const { repo, model } = session();
       const brief = model.get('briefs', id);
       if (!brief || brief.deletedAt) throw new Error('That brief is not in the bible.');
+      const prior = structuredClone(brief);
       const sel = select(inputOf(brief), add, remove);
       const text = await write(sel, runId);
-      const next = await repo.update('briefs', id, briefData(sel, text) as never);
+      // IP-6: the note marks the text as the app's, so a later edit by hand is told apart, and
+      // the brief as it stood goes back so the renderer records the step that puts it back.
+      const [next] = await repo.writeBatch(
+        [{ op: 'update', collection: 'briefs', id, patch: briefData(sel, text) }],
+        { note: BRIEF_WRITTEN_NOTE },
+      );
       return {
         brief: next as unknown as Response<'brief.regenerate'>['brief'],
+        previous: prior as unknown as Response<'brief.regenerate'>['previous'],
         synthesized: text.synthesized,
         note: text.note,
         needsSettings: text.needsSettings,

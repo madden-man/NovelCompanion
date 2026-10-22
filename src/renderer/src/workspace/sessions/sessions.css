@@ -29,3 +29,9 @@
 .continuity .screen-tabs {
   margin-bottom: 4px;
 }
+
+/* a47-desk, IP-6: Regenerate says when it would replace the writer's own edits. */
+.brief-warn {
+  color: var(--warning-ink);
+  font-weight: 600;
+}

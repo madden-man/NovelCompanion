@@ -6,6 +6,7 @@ import { DataProvider } from './data';
 import { EntryPane } from './editor';
 import { StopPrompt } from './session';
 import { RelevantView } from './sessions/relevant';
+import { OverridesBible } from './sessions/overrides';
 import { SessionsView } from './sessions/SessionsView';
 import type { SessionsSub } from './sessions/SessionsView';
 import { ContinuityView } from './sessions/ContinuityView';
@@ -129,6 +130,7 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
     <DataProvider key={props.bibleId}>
       <UndoProvider key={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
+          <OverridesBible id={props.bibleId} />
           <Frame bibles={props.bibles} />
         </StoryTimeProvider>
       </UndoProvider>
@@ -313,6 +315,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               <RelevantView
                 onOpen={open}
                 onBackstory={(characterId) => setView({ kind: 'backstory', characterId })}
+                onOpenTree={(focus) => setView({ kind: 'tree', focus })}
               />
             )}
             {view.kind === 'continuity' && (
