@@ -256,7 +256,7 @@ test('SM-11 MS-1 CC-1 the Continuity checker holds the manuscript it reads as it
   await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
 });
 
-// ---- IP-7 (a47-continuity): the cards edit the finding ----
+// IP-7 (a47-continuity): the cards edit the finding.
 
 const entryOf = async (collection: string, id: string) =>
   (await invoke('entry.get', { collection: collection as never, id })).entry as Record<
