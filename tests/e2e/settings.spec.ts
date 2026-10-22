@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Invoke } from '../helpers/t5';
-import { fileDb, invokeVia, launch, rail } from './helpers';
+import { fileDb, fillEditable, invokeVia, launch, openEditable, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 const SLUG = 'settings';
@@ -65,8 +65,10 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await page.keyboard.press('Tab');
   await briefs.getByLabel('Size budget (characters)').fill('12345');
   await page.keyboard.press('Tab');
-  // Romanization per language (GL-1).
-  await view.getByTestId('settings-romanization-cantonese').selectOption('');
+  // Romanization per language (GL-1): a select that saves on its pick (IP-8).
+  const cantonese = view.getByTestId('settings-romanization-cantonese');
+  await openEditable(cantonese);
+  await cantonese.locator('select').selectOption('');
   await expect(view.getByTestId('settings-romanization')).toContainText(
     'Saved the romanization system for Cantonese.',
   );
@@ -103,8 +105,10 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
     '7',
   );
   await expect(again.getByLabel('Size budget (characters)')).toHaveValue('12345');
-  await expect(again.getByTestId('settings-romanization-cantonese')).toHaveValue('');
-  await expect(again.getByTestId('settings-romanization-mandarin')).not.toHaveValue('');
+  await expect(again.getByTestId('settings-romanization-cantonese-text')).toHaveText('No system');
+  await expect(again.getByTestId('settings-romanization-mandarin-text')).not.toHaveText(
+    'No system',
+  );
   await expect(again.getByTestId('settings-snapshot-keep')).toHaveValue('12');
   await expect(again.getByTestId('appearance-dark')).toBeChecked();
 });
@@ -180,6 +184,290 @@ test('ST-1 NF-3 a setting that cannot be read, or a key that cannot be removed, 
     await app?.close();
     await start();
   }
+});
+
+/** Cmd+Z with nothing focused, as the writer presses it after a change (ED-3). */
+async function undoStep(): Promise<void> {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+}
+
+test('IP-11 a number saves on Enter as one undo step, the World events grid span follows, and Reset goes back to the default', async () => {
+  const view = await openSettings();
+  const numbers = view.getByTestId('settings-numbers');
+  await fillEditable(numbers.getByTestId('number-timelineEnd'), '2120');
+  await expect.poll(async () => (await invoke('settings.get', {})).numbers.timelineEnd).toBe(2120);
+  await rail(page, 'World events').click();
+  const grid = page.getByTestId('timeline-view').getByTestId('world-grid');
+  await expect(grid).toHaveAttribute('data-to', '2120');
+  // One step: Cmd+Z puts the last year back, and the grid follows.
+  await undoStep();
+  await expect.poll(async () => (await invoke('settings.get', {})).numbers.timelineEnd).toBe(2100);
+  await expect(grid).toHaveAttribute('data-to', '2100');
+
+  // A value the bible cannot keep is refused at the field in plain words.
+  const again = await openSettings();
+  const reach = again.getByTestId('number-autosaveMs');
+  await openEditable(reach);
+  await reach.locator('input').fill('5000');
+  await reach.locator('input').press('Enter');
+  await expect(reach.getByRole('alert')).toBeVisible();
+  await reach.locator('input').press('Escape');
+  expect((await invoke('settings.get', {})).numbers.autosaveMs).toBe(500);
+
+  // Reset puts the default back; the default shows beside the field.
+  await fillEditable(again.getByTestId('number-windowBefore'), '6');
+  await expect.poll(async () => (await invoke('settings.get', {})).numbers.windowBefore).toBe(6);
+  await expect(again.getByTestId('settings-numbers')).toContainText('Default 3.');
+  await again.getByRole('button', { name: 'Reset world window, years before to 3' }).click();
+  await expect.poll(async () => (await invoke('settings.get', {})).numbers.windowBefore).toBe(3);
+  await expect(
+    again.getByRole('button', { name: 'Reset world window, years before to 3' }),
+  ).toBeDisabled();
+});
+
+test('IP-10 the cultural time unit is a select in Settings, one step per pick', async () => {
+  const view = await openSettings();
+  const unit = view.getByTestId('culture-unit');
+  await expect(view.getByTestId('culture-unit-text')).toHaveText('A decade');
+  await openEditable(unit);
+  await unit.locator('select').selectOption('five');
+  await expect.poll(async () => (await invoke('settings.get', {})).cultureUnit).toBe('five');
+  await expect(view.getByTestId('culture-unit-text')).toHaveText('Five years');
+  await undoStep();
+  await expect.poll(async () => (await invoke('settings.get', {})).cultureUnit).toBe('decade');
+});
+
+test('IP-14 templates edit in place: a legend label from Settings shows in the tree, and the brief headings save one by one', async () => {
+  const view = await openSettings();
+  const templates = view.getByTestId('settings-templates');
+  await fillEditable(templates.getByTestId('template-link-married'), 'Wed');
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).templates.linkTypeLabels.married)
+    .toBe('Wed');
+  await fillEditable(templates.getByTestId('template-heading-4'), '4. Where it happens');
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).templates.briefHeadings[3])
+    .toBe('4. Where it happens');
+  expect((await invoke('settings.get', {})).templates.briefHeadings[0]).toBe(
+    '1. Characters and their ages',
+  );
+  await fillEditable(templates.getByTestId('template-chapterTitle'), 'Untitled chapter');
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).templates.chapterTitle)
+    .toBe('Untitled chapter');
+  // An empty template is refused at the field.
+  const part = templates.getByTestId('template-partTitle');
+  await openEditable(part);
+  await part.locator('input').fill('');
+  await part.locator('input').press('Enter');
+  await expect(part.getByRole('alert')).toBeVisible();
+  await part.locator('input').press('Escape');
+
+  await rail(page, 'Family tree').click();
+  await page.getByRole('button', { name: 'Legend', exact: true }).click();
+  const legend = page.getByRole('region', { name: 'Tree legend' });
+  await expect(legend).toContainText('Wed');
+  await page.getByRole('button', { name: 'Hide legend' }).click();
+  await invoke('settings.set', {
+    templates: {
+      linkTypeLabels: { married: 'Married' },
+      chapterTitle: 'New chapter',
+      briefHeadings: (await invoke('settings.get', {})).templates.briefHeadings.map((h, i) =>
+        i === 3 ? '4. Places' : h,
+      ),
+    },
+  });
+});
+
+test('IP-12 an era default added and named in Settings is copied into a new bible', async () => {
+  const view = await openSettings();
+  const eras = view.getByTestId('settings-era-defaults');
+  const before = (await invoke('eraDefaults.get', {})).rows;
+  await eras.getByRole('button', { name: /^Add a default era from / }).click();
+  await expect(eras.getByTestId('era-default-row')).toHaveCount(before.length + 1);
+  const row = eras.getByTestId('era-default-row').last();
+  await fillEditable(row.getByTestId('era-default-name'), 'Harbor years');
+  await expect
+    .poll(async () => (await invoke('eraDefaults.get', {})).rows.at(-1)?.name)
+    .toBe('Harbor years');
+  const start = (await invoke('eraDefaults.get', {})).rows.at(-1)!.startYear;
+  await fillEditable(row.getByTestId('era-default-end'), String(start + 4));
+  await expect
+    .poll(async () => (await invoke('eraDefaults.get', {})).rows.at(-1)?.endYear)
+    .toBe(start + 4);
+
+  // New bible copies the defaults of the bible open now.
+  await invoke('bible.create', { slug: 'settings-eras', name: 'Settings eras' });
+  await invoke('bible.open', { slug: 'settings-eras' });
+  await expect(page.getByTestId('current-bible')).toHaveText('Settings eras');
+  const made = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries;
+  const harbor = made.find((e) => e.entry.name === 'Harbor years');
+  expect(harbor?.entry).toMatchObject({ startYear: start, endYear: start + 4 });
+  expect(made).toHaveLength(before.length + 1);
+
+  // Remove takes the row out again (one step).
+  const back = await openSettings();
+  const rows = back.getByTestId('settings-era-defaults').getByTestId('era-default-row');
+  await back.getByRole('button', { name: 'Remove Harbor years' }).click();
+  await expect(rows).toHaveCount(before.length);
+  expect((await invoke('eraDefaults.get', {})).rows).toEqual(before);
+});
+
+test('IP-15 an instruction saves from its box, Reset to default puts the default back, and the fixed footer stays under it', async () => {
+  const view = await openSettings();
+  const [first] = (await invoke('claude.instructions.get', {})).instructions;
+  if (!first) throw new Error('No Claude features');
+  const card = view.locator(`[data-feature="${first.feature}"]`);
+  const footer = card.getByTestId(`instructions-footer-${first.feature}`);
+  await expect(footer).toHaveText(first.footer);
+  // The footer is read-only text in the primary text colour.
+  await expect(footer.locator('input, textarea, [contenteditable="true"]')).toHaveCount(0);
+  const fg = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--fg').trim(),
+  );
+  expect(fg).not.toBe('');
+  const text = card.getByTestId(`instructions-${first.feature}-text`);
+  await text.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Meta+a');
+  await page.keyboard.type('Write the brief in short plain lines.');
+  await page.keyboard.press('Meta+Enter');
+  await expect
+    .poll(
+      async () =>
+        (await invoke('claude.instructions.get', {})).instructions.find(
+          (i) => i.feature === first.feature,
+        )?.text,
+    )
+    .toBe('Write the brief in short plain lines.');
+  await expect(card).toContainText('Your own');
+  await expect(footer).toHaveText(first.footer);
+  await card.getByRole('button', { name: `Reset ${first.label} to default` }).click();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('claude.instructions.get', {})).instructions.find(
+          (i) => i.feature === first.feature,
+        )?.text ?? null,
+    )
+    .toBeNull();
+  await expect(card).toContainText('Default');
+  await expect(
+    card.getByRole('button', { name: `Reset ${first.label} to default` }),
+  ).toBeDisabled();
+  await expect(footer).toHaveText(first.footer);
+  // The reset is a step too: Cmd+Z brings the writer's text back.
+  await undoStep();
+  await expect
+    .poll(
+      async () =>
+        (await invoke('claude.instructions.get', {})).instructions.find(
+          (i) => i.feature === first.feature,
+        )?.text,
+    )
+    .toBe('Write the brief in short plain lines.');
+  await invoke('claude.instructions.set', { feature: first.feature, text: null });
+});
+
+test('IP-16 Remove revisions older than a date shows the count from a dry run, then asks for the word', async () => {
+  await invoke('bible.open', { slug: SLUG });
+  const { entry } = await invoke('entry.create', {
+    collection: 'openQuestions',
+    data: { title: 'Who keeps the harbor log?', status: 'idea' },
+  });
+  for (const t of ['Who keeps the log?', 'Who keeps the tide log?']) {
+    await invoke('entry.update', {
+      collection: 'openQuestions',
+      id: entry._id,
+      patch: { title: t },
+    });
+  }
+  const view = await openSettings();
+  const prune = view.getByTestId('settings-prune');
+  const before = '2999-01-01';
+  const { count } = await invoke('revisions.prune', { before, dryRun: true });
+  expect(count).toBeGreaterThan(0);
+  await prune.getByTestId('prune-date').fill(before);
+  await expect(prune.getByTestId('prune-count')).toHaveText(
+    `${count} ${count === 1 ? 'revision was' : 'revisions were'} written before ${before}.`,
+  );
+  const things = `${count} ${count === 1 ? 'revision' : 'revisions'}`;
+  await prune.getByRole('button', { name: `Remove ${things}`, exact: true }).click();
+  const confirm = prune.getByRole('button', { name: `Remove ${things} for good` });
+  await expect(confirm).toBeDisabled();
+  await prune.getByLabel(`Type remove to remove ${things} for good`).fill('remov');
+  await expect(confirm).toBeDisabled();
+  // Nothing was removed while the word was not typed.
+  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(count);
+  await prune.getByLabel(`Type remove to remove ${things} for good`).fill('remove');
+  await confirm.click();
+  await expect(prune.getByTestId('prune-note')).toHaveText(
+    `Removed ${things} written before ${before}.`,
+  );
+  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(0);
+  // The entry itself is untouched.
+  expect(
+    (await invoke('entry.get', { collection: 'openQuestions', id: entry._id })).entry.title,
+  ).toBe('Who keeps the tide log?');
+});
+
+/** WCAG contrast of two `rgb()` colours. */
+function contrast(a: string, b: string): number {
+  const lum = (c: string) => {
+    const [r, g, bl] = (c.match(/\d+(\.\d+)?/g) ?? ['0', '0', '0']).slice(0, 3).map((v) => {
+      const x = Number(v) / 255;
+      return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    }) as [number, number, number];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+test('NF-2 IP-11 IP-15 the new Settings fields work from the keyboard and read clearly in both themes', async () => {
+  for (const theme of ['light', 'dark'] as const) {
+    await invoke('appearance.set', { appearance: theme });
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    const view = await openSettings();
+    // A number opens with Enter, takes typing, and saves with Enter; the focus comes back to it.
+    const reach = view.getByTestId('number-pickerReach-text');
+    await reach.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Meta+a');
+    await page.keyboard.type(theme === 'light' ? '2' : '1');
+    await page.keyboard.press('Enter');
+    await expect(reach).toBeFocused();
+    await expect
+      .poll(async () => (await invoke('settings.get', {})).numbers.pickerReach)
+      .toBe(theme === 'light' ? 2 : 1);
+    // The focus ring shows on the field's text.
+    const ring = await reach.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(ring).not.toBe('none');
+    // Labels, the footer and the hints read at 4.5 to 1 or better against the page.
+    for (const el of [
+      view.locator('.settings-label').first(),
+      view.locator('.instruction-footer').first(),
+      view.locator('.settings-default').first(),
+      view.getByTestId('settings-prune').getByText('Remove revisions older than'),
+    ]) {
+      const [color, bg] = await el.evaluate((e) => {
+        // The first box behind the text with a background of its own.
+        let at: Element | null = e;
+        while (at) {
+          const b = getComputedStyle(at).backgroundColor;
+          if (b && b !== 'rgba(0, 0, 0, 0)' && b !== 'transparent') break;
+          at = at.parentElement;
+        }
+        return [
+          getComputedStyle(e).color,
+          getComputedStyle(at ?? document.body).backgroundColor,
+        ] as const;
+      });
+      expect(contrast(color, bg), `${theme}: ${color} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+  await invoke('appearance.set', { appearance: 'system' });
 });
 
 test('ST-1 Test connection reports success and failure plainly; Replace switches only after the test passes', async () => {

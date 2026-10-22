@@ -50,7 +50,7 @@ function NoteLine({ note, testId }: { note: Note; testId?: string }) {
   );
 }
 
-// ---------- IP-11: numbers ----------
+// IP-11: numbers
 
 const NUMBER_FIELDS: {
   key: keyof BibleNumbers;
@@ -197,7 +197,7 @@ function NumberRow(props: {
   );
 }
 
-// ---------- IP-10: the cultural time unit ----------
+// IP-10: the cultural time unit
 
 const UNIT_LABELS: Record<CultureUnit, string> = {
   decade: 'A decade',
@@ -240,7 +240,7 @@ export function CultureUnitSettings() {
   );
 }
 
-// ---------- IP-14: templates ----------
+// IP-14: templates
 
 type TextTemplate = Exclude<keyof BibleTemplates, 'briefHeadings' | 'linkTypeLabels'>;
 
@@ -364,7 +364,7 @@ function TemplateRow(props: {
   );
 }
 
-// ---------- IP-12: default eras for a new bible ----------
+// IP-12: default eras for a new bible
 
 export function EraDefaultSettings() {
   const undo = useUndo();
@@ -478,7 +478,7 @@ export function EraDefaultSettings() {
   );
 }
 
-// ---------- IP-15: Claude's instructions ----------
+// IP-15: Claude's instructions
 
 export function ClaudeInstructionsSettings() {
   const undo = useUndo();
@@ -558,7 +558,7 @@ export function ClaudeInstructionsSettings() {
   );
 }
 
-// ---------- IP-16: remove old revisions for the whole bible ----------
+// IP-16: remove old revisions for the whole bible
 
 const CONFIRM_WORD = 'remove';
 
