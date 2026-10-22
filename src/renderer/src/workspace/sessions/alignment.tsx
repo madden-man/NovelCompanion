@@ -450,37 +450,6 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           className="al-field"
         />
       )}
-      {hasDiff && (
-        <div className="sunken stack tight al-diff" data-testid="finding-diff">
-          <span className="eyebrow" id={diffCaptionId}>
-            If the manuscript wins, the bible changes like this
-          </span>
-          <table className="diff-table" aria-labelledby={diffCaptionId}>
-            <thead>
-              <tr>
-                <th scope="col">Entry</th>
-                <th scope="col">Field</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.changes.map((c, i) => (
-                <tr key={i}>
-                  <th scope="row">{c.entry}</th>
-                  <td>{c.label}</td>
-                  <td>
-                    <del>{c.before}</del>
-                  </td>
-                  <td>
-                    <ins>{c.after}</ins>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
       {f.state === 'open' && (
         <WriteFieldset className="row tight">
           <div className="row tight" data-testid="finding-actions">
@@ -525,24 +494,55 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           No change set was prepared, so the bible cannot be updated from here.
         </p>
       )}
-      {showApply && hasDiff && (
-        <WriteFieldset className="row tight">
-          <div id={applyId} className="row tight" data-testid="finding-apply-row">
-            <button
-              type="button"
-              className="btn primary small"
-              title={ALL_OR_NOTHING}
-              onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
-              data-testid="finding-apply"
-            >
-              Apply all
-            </button>
-            <span>
-              Changes the bible to match the chapter, every change or none. Nothing in the
-              manuscript changes.
-            </span>
-          </div>
-        </WriteFieldset>
+      {hasDiff && (
+        <div className="sunken stack tight al-diff" data-testid="finding-diff">
+          <span className="eyebrow" id={diffCaptionId}>
+            If the manuscript wins, the bible changes like this
+          </span>
+          <table className="diff-table" aria-labelledby={diffCaptionId}>
+            <thead>
+              <tr>
+                <th scope="col">Entry</th>
+                <th scope="col">Field</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
+              </tr>
+            </thead>
+            <tbody>
+              {f.changes.map((c, i) => (
+                <tr key={i}>
+                  <th scope="row">{c.entry}</th>
+                  <td>{c.label}</td>
+                  <td>
+                    <del>{c.before}</del>
+                  </td>
+                  <td>
+                    <ins>{c.after}</ins>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {showApply && (
+            <WriteFieldset className="row tight">
+              <div id={applyId} className="row tight" data-testid="finding-apply-row">
+                <button
+                  type="button"
+                  className="btn primary small"
+                  title={ALL_OR_NOTHING}
+                  onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
+                  data-testid="finding-apply"
+                >
+                  Apply all
+                </button>
+                <span>
+                  Changes the bible to match the chapter, every change or none. Nothing in the
+                  manuscript changes.
+                </span>
+              </div>
+            </WriteFieldset>
+          )}
+        </div>
       )}
       {f.rejectedChanges.length > 0 && (
         <div className="stack tight" data-testid="finding-rejected">
