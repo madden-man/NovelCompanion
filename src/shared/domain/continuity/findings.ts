@@ -248,6 +248,7 @@ export function reconcile(
     let s = byKey.get(f.key);
     // A live model may cite a different set or order, which makes a new key. A
     // dismissed finding of the same chapter and kind on the same quoted lines is the same finding.
+    // The quote the check wrote decides, so a hand edit to the quote (IP-7) does not bring it back.
     if (!s && f.kind === 'alignment') {
       const qh = textHash(f.quote);
       s = live.find(
@@ -256,8 +257,9 @@ export function reconcile(
           d.kind === 'alignment' &&
           d.chapterId === f.chapterId &&
           d.check === f.check &&
-          typeof d.quote === 'string' &&
-          textHash(d.quote) === qh,
+          [storedWording(d.generated)?.quote, d.quote].some(
+            (q) => typeof q === 'string' && textHash(q) === qh,
+          ),
       );
       if (s) found.add(String(s.key));
     }

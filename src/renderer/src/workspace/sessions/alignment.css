@@ -64,6 +64,14 @@
 .al-diff .diff-table {
   width: 100%;
 }
+.al-diff-body {
+  max-height: 14rem;
+  overflow: auto;
+}
+.al-diff-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .ms-text-row {
   display: flex;
   flex-direction: column;

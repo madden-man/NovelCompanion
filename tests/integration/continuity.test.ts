@@ -580,3 +580,20 @@ describe('IP-7 ED-7 a re-run never writes over a hand edit', () => {
     await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { death } });
   });
 });
+
+describe('IP-7 a hand edit to the quote is not a change to the chapter', () => {
+  test('IP-7 CC-3 editing a quoted line shows the edit and does not warn that the chapter text changed', async () => {
+    const f = (await open()).find((x) => x.kind === 'alignment' && !x.textChanged)!;
+    expect(f).toBeDefined();
+    const quote = String(bible.model.get('findings', f.id)!.quote);
+    await invoke('entry.update', {
+      collection: 'findings',
+      id: f.id,
+      patch: { quote: `${quote} (checked)` },
+    });
+    const shown = (await open()).find((x) => x.id === f.id)!;
+    expect(shown.lines.at(-1)!.text).toMatch(/\(checked\)$/);
+    expect(shown.textChanged).toBe(false);
+    await invoke('entry.update', { collection: 'findings', id: f.id, patch: { quote } });
+  });
+});

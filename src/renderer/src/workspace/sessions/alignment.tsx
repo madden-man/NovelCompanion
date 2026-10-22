@@ -568,30 +568,33 @@ function FindingCard(props: { f: FindingWire; onOpen: OpenEntry }) {
           <span className="eyebrow" id={diffCaptionId}>
             If the manuscript wins, the bible changes like this
           </span>
-          <table className="diff-table" aria-labelledby={diffCaptionId}>
-            <thead>
-              <tr>
-                <th scope="col">Entry</th>
-                <th scope="col">Field</th>
-                <th scope="col">Before</th>
-                <th scope="col">After</th>
-              </tr>
-            </thead>
-            <tbody>
-              {f.changes.map((c, i) => (
-                <tr key={i}>
-                  <th scope="row">{c.entry}</th>
-                  <td>{c.label}</td>
-                  <td>
-                    <del>{c.before}</del>
-                  </td>
-                  <td>
-                    <ins>{c.after}</ins>
-                  </td>
+          {/* Bounded, so a long change set does not push the next findings down the screen. */}
+          <div className="al-diff-body" tabIndex={0} role="region" aria-labelledby={diffCaptionId}>
+            <table className="diff-table" aria-labelledby={diffCaptionId}>
+              <thead>
+                <tr>
+                  <th scope="col">Entry</th>
+                  <th scope="col">Field</th>
+                  <th scope="col">Before</th>
+                  <th scope="col">After</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {f.changes.map((c, i) => (
+                  <tr key={i}>
+                    <th scope="row">{c.entry}</th>
+                    <td>{c.label}</td>
+                    <td>
+                      <del>{c.before}</del>
+                    </td>
+                    <td>
+                      <ins>{c.after}</ins>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {showApply && (
             <WriteFieldset className="row tight">
               <div id={applyId} className="row tight" data-testid="finding-apply-row">
