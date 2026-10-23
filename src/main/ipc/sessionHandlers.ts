@@ -2,57 +2,37 @@ import { needsSettings } from '../../shared/claude';
 import { plainErrorMessage } from '../../shared/errors';
 import { RunEnded } from '../claude/session';
 /**
- * Handlers for sessions, briefs, the dashboard, and the manuscript (M7).
- * Independent of Electron: the host passes dialogs, the PDF printer, and the
- * Claude services in `SessionDeps`, so the integration suite drives the same
- * code through the same zod contract.
+ * Handlers for the session selection and the manuscript (M7). Independent of
+ * Electron: the host passes dialogs and the Claude services in `SessionDeps`,
+ * so the integration suite drives the same code through the same zod
+ * contract.
  */
-import { writeFile } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
 import { monotonicFactory } from 'ulid';
 import type { Channel, Response } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
-import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
 import { selectForSession } from '../../shared/domain/brief/selection';
-import type { BriefInput, Selection } from '../../shared/domain/brief/selection';
-import {
-  briefFileName,
-  briefMaterial,
-  briefPrintPage,
-  citationProblems,
-  structuredBrief,
-  uncitedLines,
-} from '../../shared/domain/brief/render';
+import type { BriefInput } from '../../shared/domain/brief/selection';
 import {
   establishedPlanned,
   manuscriptChange,
   manuscriptLines,
 } from '../../shared/domain/manuscript';
-import { latestLog, localDateString, logsNewestFirst } from '../../shared/domain/sessionLog';
-import { chapterYear, currentPositionChapter } from '../../shared/domain/position';
-import { questionCounts } from '../../shared/domain/questions';
 import { entryTitle } from '../../shared/schema';
-import { BRIEF_WRITTEN_NOTE } from '../../shared/domain/briefEdits';
-import type { StoryTimeValue } from '../../shared/storyTime';
-import { SUMMARY_MODEL_SETTING, briefModel, sessionClaude } from '../session/claude';
+import { SUMMARY_MODEL_SETTING, sessionClaude } from '../session/claude';
 import type { SessionClaude } from '../session/claude';
-import { parseLocator, registeredSources, wordSource } from '../session/sources';
+import { parseLocator, wordSource } from '../session/sources';
 import type { ManuscriptSource } from '../session/sources';
 
 export type SessionChannel =
   | 'session.relevant'
   | 'brief.settings.get'
   | 'brief.settings.set'
-  | 'session.start'
-  | 'brief.regenerate'
-  | 'brief.export'
   | 'manuscript.sources'
   | 'manuscript.read'
   | 'manuscript.apply'
   | 'chapter.establishes'
-  | 'chapter.summarize'
-  | 'dashboard.get';
+  | 'chapter.summarize';
 
 export type SessionHandlers = { [C in SessionChannel]: Handler<C & Channel> };
 
@@ -60,22 +40,15 @@ export type SessionHandlers = { [C in SessionChannel]: Handler<C & Channel> };
 export interface SessionDeps {
   /** The Claude services (M6). Defaults to whatever M6 registered, which starts as none. */
   claude?: () => SessionClaude;
-  /** Manuscript sources (MS-1). Defaults to Word plus any registered (Google Docs, M9). */
+  /** Manuscript sources (MS-1). Defaults to Word. */
   sources?: ManuscriptSource[];
   /** Ask for a Word document; used by the default Word source. */
-  pickFile?: (kind: 'workbook' | 'document') => Promise<string | null>;
-  /** Ask where to save an exported brief. Null when cancelled. */
-  pickExportPath?: (defaultName: string, format: 'markdown' | 'pdf') => Promise<string | null>;
-  /** Print a standalone HTML page to PDF bytes (SB-8). */
-  printPdf?: (html: string) => Promise<Buffer>;
-  now?: () => Date;
+  pickFile?: (kind: 'document') => Promise<string | null>;
 }
 
 const NO_BIBLE = 'Open a bible first.';
 const newId = monotonicFactory();
 
-const UNAVAILABLE =
-  'No Anthropic API key is stored, so this is the structured brief: the selected entries with no synthesis. Add a key in Settings to have Claude write it.';
 const NO_KEY_SUMMARY =
   'No Anthropic API key is stored, so write the summary yourself, or add a key in Settings. Nothing is saved until you approve it.';
 
@@ -84,14 +57,6 @@ const needsSettingsFor = (e: unknown) =>
   e instanceof RunEnded && e.kind !== undefined && needsSettings(e.kind);
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-
-function storyTimeFor(sel: Selection): StoryTimeValue {
-  const s = sel.strands[0];
-  if (sel.input.kind === 'pov' || !s?.chapterId) return { year: sel.year };
-  return s.strandId
-    ? { year: sel.year, chapterId: s.chapterId, strandId: s.strandId }
-    : { year: sel.year, chapterId: s.chapterId };
-}
 
 export function sessionHandlers(
   current: () => OpenBible | null,
@@ -103,231 +68,33 @@ export function sessionHandlers(
     return s;
   };
   const claude = () => (deps.claude ?? sessionClaude)();
-  const now = () => (deps.now ?? (() => new Date()))();
   const sources = (): ManuscriptSource[] => {
     if (deps.sources) return deps.sources;
-    const word = wordSource(async () => (deps.pickFile ? deps.pickFile('document') : null));
-    return [word, ...registeredSources().filter((s) => s.id !== 'word')];
+    return [wordSource(async () => (deps.pickFile ? deps.pickFile('document') : null))];
   };
   const pending = new Map<
     string,
     { chapterId: string; body: string; name: string; source: string; outOfDate: boolean }
   >();
 
-  const settings = () => {
-    const { repo } = session();
-    const c = claude();
-    return { ...repo.briefSettings(), model: briefModel(c), claudeAvailable: c.briefs !== null };
-  };
+  const settings = () => session().repo.briefSettings();
 
   const select = (input: BriefInput, add: string[], remove: string[]) => {
     const { model, repo } = session();
     return selectForSession(model, input, repo.selectionSettings(), { add, remove });
   };
 
-  /** SB-4, SB-7, DB-4: write the brief's text from the selection. */
-  const write = async (sel: Selection, runId?: string) => {
-    const structured = structuredBrief(sel, session().repo.bibleSettings().templates.briefHeadings);
-    const c = claude();
-    if (!c.briefs) {
-      return {
-        content: structured,
-        synthesized: false,
-        model: '',
-        note: UNAVAILABLE,
-        needsSettings: true,
-      };
-    }
-    try {
-      const r = await c.briefs.synthesize({
-        model: briefModel(c),
-        ...(runId ? { runId } : {}),
-        selection: sel,
-        material: briefMaterial(sel),
-        structured,
-      });
-      return {
-        content: r.content,
-        synthesized: true,
-        model: r.model,
-        note: null,
-        needsSettings: false,
-      };
-    } catch (e) {
-      const why = plainErrorMessage(e).replace(/\.$/, '');
-      return {
-        content: structured,
-        synthesized: false,
-        model: '',
-        note: `Claude could not write the brief (${why}). This is the structured brief: the selected entries with no synthesis.`,
-        needsSettings: needsSettingsFor(e),
-      };
-    }
-  };
-
-  const briefData = (sel: Selection, text: Awaited<ReturnType<typeof write>>) => {
-    const input = sel.input;
-    const first = sel.strands[0];
-    return {
-      title: `Brief: ${sel.label}`,
-      status: 'planned',
-      chapterId: sel.chapterIds[0] ?? null,
-      storyYear: sel.year,
-      povCharacterId: first?.povCharacterId ?? null,
-      entryIds: sel.ids,
-      content: text.content,
-      sectionKind: input.kind,
-      strandId: input.kind === 'strand' ? input.strandId : null,
-      partId: input.kind === 'part' ? input.partId : null,
-      placeIds: input.kind === 'pov' ? (input.placeIds ?? []) : [],
-      characterIds: input.kind === 'pov' ? (input.characterIds ?? []) : [],
-      added: sel.added,
-      removed: sel.removed,
-      model: text.model,
-      synthesized: text.synthesized,
-      selection: JSON.parse(JSON.stringify(sel)) as Record<string, unknown>,
-    };
-  };
-
-  const inputOf = (brief: StoredDoc): BriefInput => {
-    const sel = brief.selection as { input?: BriefInput } | null;
-    if (sel?.input) return sel.input;
-    // A brief made by hand: rebuild the input from its fields.
-    if (str(brief.partId)) return { kind: 'part', partId: str(brief.partId) };
-    if (str(brief.chapterId) && str(brief.strandId)) {
-      return { kind: 'strand', chapterId: str(brief.chapterId), strandId: str(brief.strandId) };
-    }
-    if (str(brief.chapterId)) return { kind: 'chapter', chapterId: str(brief.chapterId) };
-    if (typeof brief.storyYear === 'number' && str(brief.povCharacterId)) {
-      return {
-        kind: 'pov',
-        year: brief.storyYear,
-        povCharacterId: str(brief.povCharacterId),
-        placeIds: Array.isArray(brief.placeIds) ? (brief.placeIds as string[]) : [],
-        characterIds: Array.isArray(brief.characterIds) ? (brief.characterIds as string[]) : [],
-      };
-    }
-    throw new Error('This brief has no chapter, part, or year and point of view to select for.');
-  };
-
   return {
-    'session.relevant': ({ input, add, remove }) => {
-      const selection = select(input, add, remove);
-      const headings = session().repo.bibleSettings().templates.briefHeadings;
-      return { selection, structured: structuredBrief(selection, headings) };
-    },
+    'session.relevant': ({ input, add, remove }) => ({ selection: select(input, add, remove) }),
     'brief.settings.get': () => settings(),
     'brief.settings.set': async (req) => {
       await session().repo.setBriefSettings(req);
       return settings();
     },
-    'session.start': async ({ input, add, remove, runId }) => {
-      const { repo } = session();
-      const sel = select(input, add, remove);
-      const text = await write(sel, runId);
-      const briefId = newId();
-      // DB-3 as one step: the story time first (a settings write), then the brief and the log
-      // in one transaction. If that transaction fails, the story time goes back as it was.
-      const before = repo.storyTime();
-      const time = await repo.setStoryTime(storyTimeFor(sel));
-      const date = localDateString(now());
-      const first = sel.strands[0];
-      let created: StoredDoc[];
-      try {
-        created = await repo.createMany([
-          { collection: 'briefs', data: { _id: briefId, ...briefData(sel, text) } },
-          {
-            collection: 'sessionLogs',
-            data: {
-              title: `Session ${date}`,
-              status: 'canon',
-              date,
-              chapterId: sel.chapterIds[0] ?? null,
-              partId: input.kind === 'part' ? input.partId : null,
-              strandId: input.kind === 'strand' ? input.strandId : null,
-              storyYear: sel.year,
-              povCharacterId: first?.povCharacterId ?? null,
-              briefId,
-              // Left empty: SL-1 and step 10 show notes you write, not this record of the start.
-              stoppedAt: '',
-              notes: '',
-            },
-          },
-        ]);
-      } catch (e) {
-        await repo.setStoryTime(before);
-        throw new Error(
-          `The session was not started, and nothing was saved: ${plainErrorMessage(e).replace(/\.$/, '')}.`,
-          { cause: e },
-        );
-      }
-      const [brief, log] = created;
-      return {
-        brief: brief as Response<'session.start'>['brief'],
-        log: log as Response<'session.start'>['log'],
-        synthesized: text.synthesized,
-        note: text.note,
-        needsSettings: text.needsSettings,
-        problems: citationProblems(text.content, sel.ids),
-        uncited: text.synthesized ? uncitedLines(text.content) : [],
-        time,
-      };
-    },
-    'brief.regenerate': async ({ id, add, remove, runId }) => {
-      const { repo, model } = session();
-      const brief = model.get('briefs', id);
-      if (!brief || brief.deletedAt) throw new Error('That brief is not in the bible.');
-      const prior = structuredClone(brief);
-      const sel = select(inputOf(brief), add, remove);
-      const text = await write(sel, runId);
-      // IP-6: the note marks the text as the app's, so a later edit by hand is told apart, and
-      // the brief as it stood goes back so the renderer records the step that puts it back.
-      const [next] = await repo.writeBatch(
-        [{ op: 'update', collection: 'briefs', id, patch: briefData(sel, text) }],
-        { note: BRIEF_WRITTEN_NOTE },
-      );
-      return {
-        brief: next as unknown as Response<'brief.regenerate'>['brief'],
-        previous: prior as unknown as Response<'brief.regenerate'>['previous'],
-        synthesized: text.synthesized,
-        note: text.note,
-        needsSettings: text.needsSettings,
-        problems: citationProblems(text.content, sel.ids),
-        uncited: text.synthesized ? uncitedLines(text.content) : [],
-      };
-    },
-    'brief.export': async ({ id, format }) => {
-      const brief = session().model.get('briefs', id);
-      if (!brief || brief.deletedAt) throw new Error('That brief is not in the bible.');
-      const name = briefFileName(entryTitle(brief));
-      const ext = format === 'pdf' ? 'pdf' : 'md';
-      const path = deps.pickExportPath ? await deps.pickExportPath(`${name}.${ext}`, format) : null;
-      if (!path) return { saved: false, path: null };
-      // MS-5: an export never lands on a manuscript.
-      const target = resolve(path);
-      const linked = session()
-        .model.all('chapters')
-        .map((c) => parseLocator(str(c.manuscriptSource)))
-        .filter((l): l is NonNullable<typeof l> => l !== null && l.sourceId === 'word')
-        .map((l) => resolve(l.locator));
-      if (linked.includes(target) || ['.docx', '.doc'].includes(extname(target).toLowerCase())) {
-        throw new Error(
-          'That file is a manuscript. The app never writes to a manuscript, so choose another name for the export.',
-        );
-      }
-      const content = str(brief.content);
-      if (format === 'markdown') {
-        await writeFile(path, content, 'utf8');
-      } else {
-        if (!deps.printPdf) throw new Error('PDF export is not available here.');
-        await writeFile(path, await deps.printPdf(briefPrintPage(entryTitle(brief), content)));
-      }
-      return { saved: true, path };
-    },
     'manuscript.sources': () => ({
-      sources: sources().map((s) => ({ id: s.id, label: s.label, picker: s.picker ?? 'dialog' })),
+      sources: sources().map((s) => ({ id: s.id, label: s.label, picker: 'dialog' as const })),
     }),
-    'manuscript.read': async ({ chapterId, sourceId, locator: chosen }) => {
+    'manuscript.read': async ({ chapterId, sourceId }) => {
       const { model } = session();
       const chapter = model.get('chapters', chapterId);
       if (!chapter || chapter.deletedAt) throw new Error('That chapter is not in the bible.');
@@ -337,8 +104,7 @@ export function sessionHandlers(
       if (sourceId) {
         source = list.find((s) => s.id === sourceId);
         if (!source) throw new Error('That manuscript source is not available.');
-        // A Google Doc is chosen in the page (the Drive browser); a Word file in a dialog here.
-        locator = source.picker === 'drive' ? (chosen ?? null) : await source.pick();
+        locator = await source.pick();
       } else {
         const linked = parseLocator(str(chapter.manuscriptSource));
         if (!linked) {
@@ -463,64 +229,6 @@ export function sessionHandlers(
           needsSettings: needsSettingsFor(e),
         };
       }
-    },
-    'dashboard.get': () => {
-      const { model } = session();
-      const chapters = model.all('chapters').filter((c) => !c.deletedAt);
-      const chapterTitle = (id: unknown) => {
-        const c = typeof id === 'string' && id ? model.get('chapters', id) : undefined;
-        return c && !c.deletedAt ? entryTitle(c) : null;
-      };
-      const logs = model.all('sessionLogs').filter((l) => !l.deletedAt);
-      const last = latestLog(logs);
-      const pos = currentPositionChapter(chapters);
-      return {
-        lastLog: last
-          ? {
-              id: str(last._id),
-              date: str(last.date),
-              chapter: chapterTitle(last.chapterId),
-              stoppedAt: str(last.stoppedAt),
-              notes: str(last.notes),
-              briefId: str(last.briefId) || null,
-            }
-          : null,
-        position: pos
-          ? {
-              chapterId: str(pos._id),
-              title: entryTitle(pos),
-              readingOrder: Number(pos.readingOrder ?? 0),
-              year: chapterYear(pos),
-            }
-          : null,
-        openQuestions: questionCounts(model.all('openQuestions').filter((q) => !q.deletedAt)).open,
-        rewriteTasks: model
-          .all('findings')
-          .filter((f) => !f.deletedAt && f.state === 'rewrite')
-          .sort((a, b) => str(a.createdAt).localeCompare(str(b.createdAt)))
-          .map((f) => ({
-            id: str(f._id),
-            chapterId: str(f.chapterId) || null,
-            chapter: chapterTitle(f.chapterId),
-            text: str(f.text),
-            quote: str(f.quote),
-            lines:
-              typeof f.lineStart === 'number'
-                ? typeof f.lineEnd === 'number' && f.lineEnd !== f.lineStart
-                  ? `lines ${f.lineStart} to ${f.lineEnd}`
-                  : `line ${f.lineStart}`
-                : '',
-          })),
-        recentLogs: logsNewestFirst(logs)
-          .slice(0, 8)
-          .map((l) => ({
-            id: str(l._id),
-            date: str(l.date),
-            chapter: chapterTitle(l.chapterId),
-            text: str(l.stoppedAt) || str(l.notes) || (str(l.briefId) ? 'Started a session' : ''),
-            briefId: str(l.briefId) || null,
-          })),
-      };
     },
   };
 }

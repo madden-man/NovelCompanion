@@ -4,8 +4,8 @@ import type { Channel, WireEntry } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
-import { importHandlers } from './importHandlers';
-import type { ImportChannel, ImportDeps } from './importHandlers';
+import { backupHandlers } from './backupHandlers';
+import type { BackupChannel, BackupDeps } from './backupHandlers';
 import { sessionHandlers } from './sessionHandlers';
 import type { SessionChannel, SessionDeps } from './sessionHandlers';
 import { continuityHandlers } from './continuityHandlers';
@@ -41,7 +41,6 @@ import {
 import { newNestedId } from '../../shared/domain/blank';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
-import { latestLog } from '../../shared/domain/sessionLog';
 import { compileFilters } from '../../shared/domain/searchFilters';
 import { entrySnippet } from '../search';
 import type { ListDoc } from '../../shared/schema';
@@ -70,7 +69,6 @@ export type BibleChannel =
   | 'lists.addItem'
   | 'lists.removeItem'
   | 'search.query'
-  | 'sessionLog.latest'
   | 'proposal.list'
   | 'proposal.diff'
   | 'proposal.approve'
@@ -107,7 +105,7 @@ export type BibleChannel =
   | 'romanization.check'
   | 'community.notes.get'
   | 'community.notes.set'
-  | ImportChannel
+  | BackupChannel
   | SessionChannel
   | ContinuityChannel
   // a47-guard
@@ -144,7 +142,7 @@ const isFullMoment = (m: {
  */
 export function bibleHandlers(
   current: () => OpenBible | null,
-  deps: ImportDeps & SessionDeps = {},
+  deps: BackupDeps & SessionDeps = {},
 ): BibleHandlers {
   const session = (): OpenBible => {
     const s = current();
@@ -206,7 +204,7 @@ export function bibleHandlers(
   };
 
   return {
-    ...importHandlers(current, deps),
+    ...backupHandlers(current, deps),
     ...sessionHandlers(current, deps),
     ...continuityHandlers(current),
     // a47-guard
@@ -667,23 +665,6 @@ export function bibleHandlers(
         };
       });
       return { hits, total: matched.length };
-    },
-    'sessionLog.latest': () => {
-      const { model } = session();
-      const log = latestLog(model.all('sessionLogs'));
-      if (!log) return { log: null };
-      const chapterId = typeof log.chapterId === 'string' && log.chapterId ? log.chapterId : null;
-      const chapter = chapterId ? model.get('chapters', chapterId) : undefined;
-      return {
-        log: {
-          id: String(log._id),
-          date: String(log.date ?? ''),
-          chapterId,
-          chapter: chapter && !chapter.deletedAt ? entryTitle(chapter) : null,
-          stoppedAt: String(log.stoppedAt ?? ''),
-          notes: String(log.notes ?? ''),
-        },
-      };
     },
     // a47-model
     'lists.move': ({ listId, itemId, index }) => session().repo.moveListItem(listId, itemId, index),

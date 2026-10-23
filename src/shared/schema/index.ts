@@ -16,19 +16,15 @@ import {
 } from './world';
 import {
   Book,
-  Brief,
   Chapter,
   Finding,
   OpenQuestion,
   Part,
-  SessionLog,
   bookFields,
-  briefFields,
   chapterFields,
   findingFields,
   openQuestionFields,
   partFields,
-  sessionLogFields,
 } from './story';
 import { ListDoc } from './lists';
 import { Proposal } from './proposal';
@@ -47,8 +43,8 @@ export * from './settings';
 
 /**
  * Every collection written through the one write path, and its schema. These
- * are every entity in SPEC section 4 as cut by A39 (SM-1 to SM-4), plus briefs
- * and findings (generated content, ED-6).
+ * are every entity in SPEC section 4 as cut by A39 (SM-1 to SM-4), plus findings
+ * (generated content, ED-6).
  */
 export const entrySchemas = {
   characters: Character,
@@ -65,8 +61,6 @@ export const entrySchemas = {
   places: Place,
   glossaryTerms: GlossaryTerm,
   openQuestions: OpenQuestion,
-  sessionLogs: SessionLog,
-  briefs: Brief,
   findings: Finding,
 } as const;
 
@@ -92,8 +86,6 @@ export const manifests: Record<EntryCollection, FieldSpec[]> = {
   places: placeFields,
   glossaryTerms: glossaryTermFields,
   openQuestions: openQuestionFields,
-  sessionLogs: sessionLogFields,
-  briefs: briefFields,
   findings: findingFields,
 };
 
@@ -129,8 +121,6 @@ export const collectionInfo: Record<EntryCollection, CollectionInfo> = {
   places: { singular: 'Place', plural: 'Places', group: 'World' },
   glossaryTerms: { singular: 'Glossary term', plural: 'Glossary', group: 'World' },
   openQuestions: { singular: 'Open question', plural: 'Open questions', group: 'Knowledge' },
-  sessionLogs: { singular: 'Session log', plural: 'Session log', group: 'Sessions' },
-  briefs: { singular: 'Brief', plural: 'Briefs', group: 'Sessions' },
   findings: { singular: 'Finding', plural: 'Continuity findings', group: 'Sessions' },
 };
 

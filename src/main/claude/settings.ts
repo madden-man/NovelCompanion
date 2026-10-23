@@ -28,12 +28,24 @@ export function modelsWithDefaults(s: ClaudeSettings): Record<ClaudeFeature, str
   ) as Record<ClaudeFeature, string>;
 }
 
+/**
+ * A53: a saved file can name a feature the app no longer has (`briefs`,
+ * `importProposals`). Its model is dropped so the rest of the file still reads.
+ */
+function knownFeaturesOnly(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const models = (raw as { models?: unknown }).models;
+  if (!models || typeof models !== 'object' || Array.isArray(models)) return raw;
+  const known = Object.entries(models).filter(([k]) => ClaudeFeature.safeParse(k).success);
+  return { ...raw, models: Object.fromEntries(known) };
+}
+
 export class FileSettingsStore implements SettingsStore {
   constructor(private readonly path: string) {}
 
   read(): ClaudeSettings {
     try {
-      return ClaudeSettings.parse(JSON.parse(readFileSync(this.path, 'utf8')));
+      return ClaudeSettings.parse(knownFeaturesOnly(JSON.parse(readFileSync(this.path, 'utf8'))));
     } catch {
       return ClaudeSettings.parse({});
     }

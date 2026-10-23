@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import {
   CULTURE_UNITS,
-  DEFAULT_BRIEF_HEADINGS,
   DEFAULT_LINK_TYPE_LABELS,
   DEFAULT_NUMBERS,
   DEFAULT_TEMPLATES,
@@ -78,14 +77,14 @@ const NUMBER_FIELDS: {
     label: 'World window, years before',
     min: 0,
     max: 200,
-    hint: 'Years before the story year the world window and the brief take in.',
+    hint: 'Years before the story year the world window and the session selection take in.',
   },
   {
     key: 'windowAfter',
     label: 'World window, years after',
     min: 0,
     max: 200,
-    hint: 'Years after the story year the world window and the brief look ahead.',
+    hint: 'Years after the story year the world window and the session selection look ahead.',
   },
   {
     key: 'pickerReach',
@@ -242,7 +241,7 @@ export function CultureUnitSettings() {
 
 // IP-14: templates
 
-type TextTemplate = Exclude<keyof BibleTemplates, 'briefHeadings' | 'linkTypeLabels'>;
+type TextTemplate = Exclude<keyof BibleTemplates, 'linkTypeLabels'>;
 
 const TEXT_TEMPLATES: { key: TextTemplate; label: string; what: string }[] = [
   { key: 'chapterTitle', label: 'New chapter title', what: 'the new chapter title' },
@@ -294,25 +293,6 @@ export function TemplateSettings() {
             fallback={DEFAULT_TEMPLATES[f.key]}
             testId={`template-${f.key}`}
             onSave={(next) => save(f.key, f.what, next)}
-          />
-        ))}
-      </div>
-      <h5>Brief section headings</h5>
-      <div className="settings-grid" data-testid="template-brief-headings">
-        {t.briefHeadings.map((h, i) => (
-          <TemplateRow
-            key={i}
-            label={`Brief heading ${i + 1}`}
-            value={h}
-            fallback={DEFAULT_BRIEF_HEADINGS[i] ?? ''}
-            testId={`template-heading-${i + 1}`}
-            onSave={(next) =>
-              save(
-                'briefHeadings',
-                'the brief headings',
-                t.briefHeadings.map((x, j) => (j === i ? next : x)),
-              )
-            }
           />
         ))}
       </div>

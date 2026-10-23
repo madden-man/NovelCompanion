@@ -6,8 +6,7 @@ import { call, plainError } from '../../api';
 import { useEntries } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
-import { OpenSettingsButton, claudeNav } from '../claude';
-import { DriveDocumentPicker } from '../drive';
+import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
 import { ManuscriptDiff, Reimport } from './Reimport';
 import { EntryEditable } from '../editable';
@@ -21,10 +20,8 @@ type Read = Response<'manuscript.read'>;
 type Establishment = Response<'chapter.establishes'>['items'][number];
 
 /**
- * The manuscript (MS-1 to MS-5): import a chapter from a Word file or a
- * Google Doc (chosen with the Drive browser), read a linked file again and
- * see the text diff,
- * and mark a chapter as written: a summary to approve and the planned
+ * The manuscript (MS-1 to MS-5): import a chapter from a Word file, read a
+ * linked file again and see the text diff, and mark a chapter as written: a summary to approve and the planned
  * entries it establishes to promote. The app only reads manuscripts; it
  * never writes to one.
  */
@@ -97,7 +94,6 @@ function ChapterManuscript({
 }) {
   const undo = useUndo();
   const [sources, setSources] = useState<Response<'manuscript.sources'>['sources']>([]);
-  const [picking, setPicking] = useState<string | null>(null);
   const [read, setRead] = useState<Read | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -108,12 +104,11 @@ function ChapterManuscript({
     void call('manuscript.sources', {}).then((r) => setSources(r.sources));
   }, []);
 
-  const doRead = async (sourceId?: string, locator?: string) => {
+  const doRead = async (sourceId?: string) => {
     setError(null);
     setNote(null);
-    setPicking(null);
     try {
-      const r = await call('manuscript.read', { chapterId: chapter._id, sourceId, locator });
+      const r = await call('manuscript.read', { chapterId: chapter._id, sourceId });
       setRead(r.token ? r : null);
     } catch (e) {
       setError(plainError(e));
@@ -205,13 +200,7 @@ function ChapterManuscript({
       )}
       <WriteFieldset className="row">
         {sources.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className="btn small"
-            aria-expanded={s.picker === 'drive' ? picking === s.id : undefined}
-            onClick={() => (s.picker === 'drive' ? setPicking(s.id) : void doRead(s.id))}
-          >
+          <button key={s.id} type="button" className="btn small" onClick={() => void doRead(s.id)}>
             Import from a {s.label}
           </button>
         ))}
@@ -244,13 +233,6 @@ function ChapterManuscript({
         <p className="callout" role="status" data-testid="ms-note">
           {note}
         </p>
-      )}
-      {picking && (
-        <DriveDocumentPicker
-          onPick={(item) => void doRead(picking, item.id)}
-          onCancel={() => setPicking(null)}
-          onOpenSettings={claudeNav.openSettings}
-        />
       )}
       {read && (
         <div className="sunken stack" data-testid="ms-compare">
@@ -337,8 +319,8 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
     });
     // MS-2: offer a generated summary as soon as the chapter is written (after the AI-6
     // disclosure on the first use in this bible). Without Claude, it is written by hand.
-    void call('brief.settings.get', {}).then((s) => {
-      if (live) summarize(s.claudeAvailable);
+    void call('claude.status', {}).then((s) => {
+      if (live) summarize(s.key.set);
     });
     return () => {
       live = false;

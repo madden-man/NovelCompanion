@@ -844,7 +844,7 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
   );
 }
 
-/** CC-1: the alignment check screen, opened by Check alignment on the dashboard. */
+/** CC-1: the alignment check screen, the Continuity checker's first tab. */
 export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | null }) {
   const chapters = useEntries('chapters');
   const [scope, setScope] = useState<Scope>(props.chapterId ?? null);

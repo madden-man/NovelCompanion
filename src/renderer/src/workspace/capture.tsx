@@ -13,7 +13,7 @@ import {
 } from '../../../shared/domain/capture';
 import type { CaptureProposal, FiledEntry, Filing } from '../../../shared/domain/capture';
 import type { CaptureFact, CaptureHint } from '../../../shared/domain/captureRouter';
-import { localDateString } from '../../../shared/domain/sessionLog';
+import { localDateString } from '../../../shared/domain/dates';
 import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { ClaudeErrorNote, Disclosure, claudeNav, newRunId, useRunStream, watchRun } from './claude';

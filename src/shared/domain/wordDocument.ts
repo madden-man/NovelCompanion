@@ -1,12 +1,10 @@
 /**
- * Word documents (IM-4, MS-1): the HTML mammoth makes from a .docx becomes
- * the body format the editor stores. Headings, italics, bold, lists, and
- * scene breaks survive; everything else is plain text. Since A44 the bodies
- * the editor stores are Markdown (`blocksToMarkdown`); the manuscript text of
- * a chapter stays the HTML of `blocksToBody`, read only, since its line
- * numbers and finding hashes are taken from it (CC-3, CC-4).
+ * Word documents (MS-1): the HTML mammoth makes from a .docx becomes the
+ * manuscript text of a chapter. Headings, italics, bold, lists, and scene
+ * breaks survive; everything else is plain text. The manuscript text stays
+ * the HTML of `blocksToBody`, read only, since its line numbers and finding
+ * hashes are taken from it (CC-3, CC-4).
  */
-import { htmlToMarkdown } from '../markdown';
 
 export interface DocBlock {
   /** The paragraph number in the document, from 1, counting every paragraph, heading, and list item. */
@@ -34,7 +32,7 @@ const ENTITIES: Record<string, string> = {
   '&nbsp;': '\xa0',
 };
 
-export function decodeEntities(s: string): string {
+function decodeEntities(s: string): string {
   return s
     .replace(/&(?:amp|lt|gt|quot|apos|nbsp|#39);/g, (m) => ENTITIES[m] ?? m)
     .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
@@ -224,59 +222,4 @@ export function blocksToBody(blocks: DocBlock[]): string {
   closeList();
   while (out[out.length - 1] === '<hr>') out.pop();
   return out.join('');
-}
-
-/** A44: the body as an editable field stores it, Markdown: `##` and `###` headings, lists, `---` scene breaks. */
-export function blocksToMarkdown(blocks: DocBlock[]): string {
-  return htmlToMarkdown(blocksToBody(blocks));
-}
-
-/** Body HTML for mammoth's output (IM-4). */
-export function htmlToBody(html: string): string {
-  return blocksToBody(parseBlocks(html));
-}
-
-/** The first and last paragraph numbers of a run of blocks. */
-export function spanOf(blocks: DocBlock[]): { first: number; last: number } {
-  return { first: blocks[0]?.index ?? 1, last: blocks[blocks.length - 1]?.index ?? 1 };
-}
-
-/** A document's own title: its first heading, or its file name without the extension. */
-export function documentTitle(blocks: DocBlock[], fileName: string): string {
-  const heading = blocks.find((b) => b.kind === 'heading' && b.text);
-  if (heading) return heading.text;
-  return (
-    fileName
-      .replace(/\.[^.]+$/, '')
-      .replace(/[_]+/g, ' ')
-      .trim() || fileName
-  );
-}
-
-export interface DocSection {
-  /** The heading that opens the section, or null for text before the first heading. */
-  heading: DocBlock | null;
-  blocks: DocBlock[];
-}
-
-/** Split a document at every heading of the given level or higher (a smaller number is higher). */
-export function sectionsAt(blocks: DocBlock[], maxLevel: number): DocSection[] {
-  const out: DocSection[] = [];
-  let cur: DocSection = { heading: null, blocks: [] };
-  for (const b of blocks) {
-    if (b.kind === 'heading' && b.level <= maxLevel) {
-      if (cur.heading || cur.blocks.length) out.push(cur);
-      cur = { heading: b, blocks: [] };
-    } else cur.blocks.push(b);
-  }
-  if (cur.heading || cur.blocks.length) out.push(cur);
-  return out;
-}
-
-/** Plain text of blocks, for reports and searching. */
-export function textOf(blocks: DocBlock[]): string {
-  return blocks
-    .filter((b) => b.kind !== 'scene')
-    .map((b) => b.text)
-    .join('\n');
 }

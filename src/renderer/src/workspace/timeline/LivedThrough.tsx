@@ -45,7 +45,7 @@ export function LivedThrough({
     <div className="stack tight" data-testid="lived-through">
       <p className="example-note">
         World events inside the character&rsquo;s lifetime up to {year}, with their age at each.
-        Formative events reach every brief for that character.
+        Formative events reach every session selection for that character.
       </p>
       <div className="row tight year-person-pick">
         <div className="field">

@@ -71,26 +71,6 @@ body {
   min-height: 620px;
   overflow: hidden;
 }
-/*
- * GD-3 launch notice: one compact row above the frame. While it shows, the
- * panes give up its height, so the status bar (story time, Ask Claude) stays
- * in the window at 1280x800.
- */
-.launch-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  padding: 8px 14px;
-  margin-bottom: 12px;
-}
-.launch-panel p {
-  margin: 0;
-  flex: 1 1 320px;
-}
-body:has(.launch-panel) .ws-frame {
-  --ws-chrome: 249px;
-}
 .ws-rail {
   grid-area: rail;
   overflow-y: auto;
@@ -1785,17 +1765,6 @@ tr.is-story-year td {
   width: 100%;
   box-sizing: border-box;
 }
-.stop-dialog {
-  width: min(520px, 100%);
-  margin-top: 8vh;
-}
-.stop-dialog textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
-.launch-panel {
-  margin-bottom: 12px;
-}
 .search-results .entry-row {
   border: 1px solid var(--border);
 }
@@ -1921,23 +1890,7 @@ label.check {
   margin-left: auto;
 }
 
-/* M7: dashboard, Relevant to Session, Start session, briefs, manuscript. */
-.dash-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-.tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-.tile-num {
-  font-size: 1.6rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
+/* M7: Relevant to Session and the manuscript. */
 .sel-group h4 {
   margin: 6px 0 2px;
   font-size: 0.95rem;
@@ -1946,36 +1899,6 @@ label.check {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
 }
-.brief-body h1 {
-  font-size: 1.3rem;
-}
-.brief-body h2 {
-  font-size: 1.1rem;
-  margin-top: 14px;
-}
-.brief-body .cite {
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-.brief-body .cite.bad {
-  border-color: var(--critical);
-  color: var(--fg);
-  background: color-mix(in oklab, var(--critical) 14%, var(--surface));
-  font-weight: 700;
-}
-.brief-body .uncited {
-  background: color-mix(in oklab, var(--critical) 12%, var(--surface));
-}
-.brief-body .uncited-flag {
-  font-size: 0.8rem;
-  border: 1px solid var(--critical);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-
 /* ARCH-6: a group of write controls, disabled together while a snapshot is open read-only. */
 fieldset.write-group {
   border: 0;

@@ -14,8 +14,8 @@ const LIMIT = 50;
 const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
 
 /**
- * SR-1, SR-2: one search box over every entry, chapter text, and saved
- * briefs, in English and Chinese, with filters by section, status,
+ * SR-1, SR-2: one search box over every entry and chapter text, in
+ * English and Chinese, with filters by section, status,
  * provenance, family, place, tag, and a year range.
  */
 export function SearchView(props: {
@@ -230,7 +230,7 @@ export function SearchView(props: {
         data-query-key={queryKey}
       >
         {!query.trim() ? (
-          <p className="example-note">Type to search every entry, chapter text, and brief.</p>
+          <p className="example-note">Type to search every entry and chapter text.</p>
         ) : shown.length === 0 ? (
           <p className="example-note" data-testid="search-empty" role="status">
             Nothing matches.

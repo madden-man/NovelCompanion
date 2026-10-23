@@ -1,14 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
 import { EntryPane } from './editor';
-import { StopPrompt } from './session';
 import { RelevantView } from './sessions/relevant';
 import { OverridesBible } from './sessions/overrides';
-import { SessionsView } from './sessions/SessionsView';
-import type { SessionsSub } from './sessions/SessionsView';
+import { QuestionsView } from './sessions/SessionsView';
 import { ContinuityView } from './sessions/ContinuityView';
 import type { ContinuityTab } from './sessions/ContinuityView';
 import { TopBar } from './TopBar';
@@ -29,12 +27,11 @@ import { EntryList, ListsView, NewEntryForm, TrashView } from './views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from './culture';
 import type { CultureTab } from './culture';
 import { WritingToolsScreen } from './words';
-import { ImportView } from './importer';
 import { BackupsView } from './backups';
-import { DriveLaunchNotice, DriveView } from './drive';
 import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude';
 import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
+import { call } from '../api';
 import { AppMenu } from './AppMenu';
 import { EditableGallery } from './editable/Gallery';
 import './shell.css';
@@ -55,14 +52,8 @@ type View =
   /** SM-9: one row per character; SM-10's Their backstory picks the person. */
   /** SM-11: the alignment check (CC-1 to CC-5) with the manuscript (MS-1 to MS-5) as a second tab. */
   | { kind: 'continuity'; tab: ContinuityTab; chapterId?: string; openFlow?: boolean }
-  /** SM-11: the screen the app opens on (DB-1), Start session, the log, briefs and questions. */
-  | {
-      kind: 'sessions';
-      sub: SessionsSub;
-      briefId?: string;
-      note?: string | null;
-      noteSettings?: boolean;
-    }
+  /** SM-11: the open questions (OQ-1). */
+  | { kind: 'questions' }
   /** SM-11: cultural entries by community, and the era states. */
   | { kind: 'culture'; tab: CultureTab }
   /** A42, WT-1: synonyms, rhymes and related words. */
@@ -72,9 +63,7 @@ type View =
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
-  | { kind: 'import' }
   | { kind: 'backups' }
-  | { kind: 'drive' }
   | { kind: 'settings' }
   | { kind: 'bibles' }
   /** PC-1, GL-1, GL-3: the reference views that left the rail, in the App menu. */
@@ -86,9 +75,7 @@ type Simple = Extract<
   View['kind'],
   | 'search'
   | 'review'
-  | 'import'
   | 'backups'
-  | 'drive'
   | 'lists'
   | 'trash'
   | 'bibles'
@@ -105,9 +92,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
     items: [
       { label: 'Search and filters', kind: 'search' },
       { label: 'Review queue', kind: 'review' },
-      { label: 'Import', kind: 'import' },
       { label: 'Backups', kind: 'backups' },
-      { label: 'Google Drive', kind: 'drive' },
       { label: 'Lists', kind: 'lists' },
       { label: 'Trash', kind: 'trash' },
       { label: 'Bibles', kind: 'bibles' },
@@ -144,7 +129,12 @@ function everyoneOnBackstory(): View {
 }
 
 function Frame({ bibles }: { bibles: ReactNode }) {
-  const [view, setView] = useState<View>({ kind: 'sessions', sub: 'home' });
+  const [view, setView] = useState<View>({
+    kind: 'section',
+    collection: 'characters',
+    selected: null,
+    creating: false,
+  });
   const [query, setQuery] = useState('');
 
   // A50: moments have one door, Backstory. A moment opens there on its person with its dialog
@@ -179,16 +169,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
 
   return (
     <ZhNavProvider value={open}>
-      <DriveLaunchNotice onReview={() => setView({ kind: 'drive' })} />
-      <StopPrompt />
+      <CloseFlush />
       <CaptureBox />
       <div className="ws-frame" data-testid="workspace">
         <TopBar
           relevantActive={view.kind === 'relevant'}
           onRelevant={() => setView({ kind: 'relevant' })}
-          onStartSession={() => setView({ kind: 'sessions', sub: 'start' })}
         />
-        <nav className="rail ws-rail" aria-label="Sections">
+        <nav className="rail ws-rail" aria-label="Sections" data-testid="rail">
           <div className="field rail-search">
             <label className="sr-only" htmlFor="rail-search">
               Search the bible
@@ -223,8 +211,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Continuity checker', view.kind === 'continuity', () =>
               setView({ kind: 'continuity', tab: 'alignment' }),
             )}
-            {railButton('Sessions', view.kind === 'sessions', () =>
-              setView({ kind: 'sessions', sub: 'home' }),
+            {railButton('Questions', view.kind === 'questions', () =>
+              setView({ kind: 'questions' }),
             )}
             {railButton('Cultural data', view.kind === 'culture', () =>
               setView({ kind: 'culture', tab: 'communities' }),
@@ -316,20 +304,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
           />
         ) : view.kind === 'outline' ? (
           <OutlineView onOpen={open} />
-        ) : view.kind === 'sessions' ? (
-          <SessionsView
-            key={view.sub === 'brief' ? `brief:${view.briefId ?? ''}` : 'home'}
-            sub={view.sub}
-            briefId={view.briefId}
-            note={view.note ?? null}
-            noteSettings={view.noteSettings === true}
-            onOpen={open}
-            onSub={(sub, briefId, note, noteSettings) =>
-              setView({ kind: 'sessions', sub, briefId, note, noteSettings })
-            }
-            onCheckAlignment={() => setView({ kind: 'continuity', tab: 'alignment' })}
-            onDone={() => openSection('characters')}
-          />
+        ) : view.kind === 'questions' ? (
+          <QuestionsView />
         ) : view.kind === 'culture' ? (
           <CulturalDataView tab={view.tab} onTab={(tab) => setView({ kind: 'culture', tab })} />
         ) : view.kind === 'words' ? (
@@ -341,9 +317,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {view.kind === 'trash' && <TrashView onOpen={open} />}
             {view.kind === 'lists' && <ListsView />}
             {view.kind === 'review' && <ReviewQueue />}
-            {view.kind === 'import' && <ImportView />}
             {view.kind === 'backups' && <BackupsView />}
-            {view.kind === 'drive' && <DriveView />}
             {view.kind === 'settings' && <SettingsView />}
             {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}
             {view.kind === 'relevant' && (
@@ -372,6 +346,24 @@ function Frame({ bibles }: { bibles: ReactNode }) {
       </div>
     </ZhNavProvider>
   );
+}
+
+/**
+ * When the window closes or the app quits, main asks the page to save its
+ * pending edits first; `app.flushed` tells main it may close.
+ */
+function CloseFlush() {
+  const { flush } = useUndo();
+  useEffect(
+    () =>
+      window.api.on('app.closeRequested', () => {
+        void flush()
+          .catch(() => undefined)
+          .finally(() => void call('app.flushed', {}));
+      }),
+    [flush],
+  );
+  return null;
 }
 
 /** PC-1, GL-1, GL-3: the place tree, romanization and glossary table; a picked row opens in place (A43). */

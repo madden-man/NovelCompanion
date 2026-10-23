@@ -34,8 +34,6 @@ const BODY_FIELDS = [
   'worldContext',
   'question',
   'decision',
-  'stoppedAt',
-  'content',
   'text',
   'quote',
   'sceneNote',

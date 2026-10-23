@@ -996,7 +996,7 @@ function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: 
  * tiles, the five-year world events strip, the cultural context of the
  * setting in that year, and the backstory of the chapter's backstory years.
  * Everything else in the SB-2 selection folds under "More", where an entry
- * can be removed (and kept again) before a brief is written (SB-9). Every
+ * can be removed (and kept again) (SB-9). Every
  * stored value is a field (IP-1); the manuscript has Re-import (IP-18).
  */
 export function RelevantBody(props: {
@@ -1085,10 +1085,7 @@ export function RelevantBody(props: {
               <OmittedList selection={sel} onKeep={props.onKeep} />
             </section>
           )}
-          <p className="example-note">
-            {sel.ids.length} entries, selected the same way the brief selects them.
-            {props.onRemove && ' Remove one here and Start session leaves it out of the brief.'}
-          </p>
+          <p className="example-note">{sel.ids.length} entries.</p>
         </div>
       </details>
       {chapter && <Reimport chapter={chapter} />}

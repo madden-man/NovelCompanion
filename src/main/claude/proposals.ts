@@ -38,8 +38,6 @@ export const ProposalDraft = z.strictObject({
   /** IP-17, listAdd: the ref the entries in the same set use for the new item, for example new:jinan. */
   ref: ListRef.optional(),
   reason: z.string().max(2000),
-  /** IM-6: where in the source the suggestion comes from, for an import proposal. */
-  sourceRef: z.string().max(500).optional(),
 });
 export type ProposalDraft = z.infer<typeof ProposalDraft>;
 
@@ -86,7 +84,6 @@ export function checkDraft(session: OpenBible, draft: ProposalDraft, now: Date):
     const data = strip(draft.data);
     if (entryTitle(data) === 'Untitled') return { ok: false, reason: 'A new entry needs a title.' };
     if (data.status === undefined) data.status = 'idea';
-    if (draft.sourceRef && data.sourceRef === undefined) data.sourceRef = draft.sourceRef;
     const result = entrySchemas[c].safeParse({
       ...data,
       _id: 'CHECK',

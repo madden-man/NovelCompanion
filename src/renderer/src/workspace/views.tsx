@@ -16,7 +16,6 @@ import { fieldIssues } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import { filterQuestions, questionCounts } from '../../../shared/domain/questions';
 import type { QuestionFilter } from '../../../shared/domain/questions';
-import { logsNewestFirst } from '../../../shared/domain/sessionLog';
 import { call, plainError } from '../api';
 import { useStore } from './data';
 import { ListChip } from './listChip';
@@ -71,10 +70,6 @@ export function EntryList(props: {
       rows = rows.filter((r) => keep.has(r.entry._id));
     }
     rows = rows.filter((e) => !q || entryTitle(e.entry).toLowerCase().includes(q));
-    if (collection === 'sessionLogs') {
-      const order = new Map(logsNewestFirst(rows.map((r) => r.entry)).map((e, i) => [e._id, i]));
-      return rows.sort((a, b) => (order.get(a.entry._id) ?? 0) - (order.get(b.entry._id) ?? 0));
-    }
     return rows.sort((a, b) => entryTitle(a.entry).localeCompare(entryTitle(b.entry)));
   }, [entries, filter, state, collection]);
 

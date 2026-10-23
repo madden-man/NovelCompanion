@@ -1,18 +1,16 @@
 /**
- * IPC channels for sessions, briefs, the dashboard, and the manuscript (M7:
- * MS-1 to MS-5, SB-1 to SB-9, DB-1 to DB-4). Kept apart from `ipc.ts` so
+ * IPC channels for the session selection and the manuscript (M7: MS-1 to
+ * MS-5, SB-1 to SB-9). Kept apart from `ipc.ts` so
  * other milestones can add channels there without touching these; `ipc.ts`
  * spreads this object into its contract, so every rule there (zod on both
  * sides, preload validation) applies.
  */
 import { z } from 'zod';
 import { Year } from './schema/common';
-import { StoryTimeValue } from './storyTime';
 
 const EntryId = z.string().min(1).max(64);
 /**
- * AI-1: a run ID the renderer picks before a Claude-written brief or summary
- * starts, so it follows the stream (`claude.stream`) and can stop the run
+ * AI-1: a run ID the renderer picks before a Claude-written summary starts, so it follows the stream (`claude.stream`) and can stop the run
  * (`claude.stop`). The same shape as `RUN_ID` in src/main/claude/runtime.ts.
  */
 const RunId = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);
@@ -48,7 +46,6 @@ const GROUP_KINDS = [
   'glossary',
   'openQuestions',
   'decidedQuestions',
-  'sessionNote',
   'added',
 ] as const;
 
@@ -160,27 +157,9 @@ const Overrides = {
   remove: z.array(EntryId).max(5000).default([]),
 };
 
-const BriefResult = z.strictObject({
-  brief: Entry,
-  /** True when Claude wrote it (SB-4); false for the structured brief (SB-7). */
-  synthesized: z.boolean(),
-  /** Why the brief is the structured one, in plain words, or null. */
-  note: z.string().nullable(),
-  /** ARCH-4: the note is about a missing or rejected key, so the screen links to Settings. */
-  needsSettings: z.boolean(),
-  /** SB-4: cited IDs that are not in the manifest. */
-  problems: z.array(z.string()),
-  /** SB-4: lines of a Claude-written brief that cite nothing. */
-  uncited: z.array(z.string()),
-});
-
 const BriefSettings = z.strictObject({
   window: z.int().min(0).max(200),
   budget: z.int().min(0).max(10_000_000),
-  /** DB-4: the model briefs are written with (M6 owns the setting). */
-  model: z.string(),
-  /** False until the Claude runtime registers a brief writer. */
-  claudeAvailable: z.boolean(),
 });
 
 const DiffLineWire = z.strictObject({
@@ -192,14 +171,13 @@ const DiffLineWire = z.strictObject({
 export const sessionContract = {
   /**
    * The "Relevant to Session" view and SB-2: the deterministic selection for
-   * a chapter, a strand, a part, or a year and point of view, and the
-   * structured brief made from it (SB-7).
+   * a chapter, a strand, a part, or a year and point of view.
    */
   'session.relevant': {
     request: z.strictObject({ input: BriefInputWire, ...Overrides }),
-    response: z.strictObject({ selection: SelectionWire, structured: z.string() }),
+    response: z.strictObject({ selection: SelectionWire }),
   },
-  /** SB-2 window and SB-6 budget, plus the brief model (DB-4). */
+  /** SB-2 window and SB-6 budget. */
   'brief.settings.get': {
     request: z.strictObject({}),
     response: BriefSettings,
@@ -211,27 +189,6 @@ export const sessionContract = {
     }),
     response: BriefSettings,
   },
-  /**
-   * DB-2, DB-3: start a session for a section. Runs the selection, writes the
-   * brief (Claude when available, else the structured brief), saves it, makes
-   * a session log entry linked to the section and the brief, and sets the
-   * story time to the section's year.
-   */
-  'session.start': {
-    request: z.strictObject({ input: BriefInputWire, ...Overrides, runId: RunId.optional() }),
-    response: BriefResult.extend({ log: Entry, time: StoryTimeValue.nullable() }),
-  },
-  /** SB-9: change what the brief selects and write it again. The brief keeps its ID. */
-  'brief.regenerate': {
-    request: z.strictObject({ id: EntryId, ...Overrides, runId: RunId.optional() }),
-    // a47-desk, IP-6: the brief as it stood before, for the undo step.
-    response: BriefResult.extend({ previous: Entry }),
-  },
-  /** SB-8: save a brief as Markdown or PDF where the person chooses. */
-  'brief.export': {
-    request: z.strictObject({ id: EntryId, format: z.enum(['markdown', 'pdf']) }),
-    response: z.strictObject({ saved: z.boolean(), path: z.string().nullable() }),
-  },
   /** MS-1: where chapters can be imported from. */
   'manuscript.sources': {
     request: z.strictObject({}),
@@ -240,8 +197,8 @@ export const sessionContract = {
         z.strictObject({
           id: z.string(),
           label: z.string(),
-          /** Where the document is chosen: a file dialog in main, or the Drive browser in the page. */
-          picker: z.enum(['dialog', 'drive']),
+          /** Where the document is chosen: a file dialog in main. */
+          picker: z.enum(['dialog']),
         }),
       ),
     }),
@@ -255,8 +212,6 @@ export const sessionContract = {
     request: z.strictObject({
       chapterId: EntryId,
       sourceId: z.string().min(1).max(32).optional(),
-      /** For a source picked in the page (Google Docs): the document chosen there. */
-      locator: z.string().min(1).max(256).optional(),
     }),
     response: z.strictObject({
       token: z.string().nullable(),
@@ -299,50 +254,6 @@ export const sessionContract = {
       model: z.string().nullable(),
       message: z.string().nullable(),
       needsSettings: z.boolean(),
-    }),
-  },
-  /** DB-1: what the dashboard shows. */
-  'dashboard.get': {
-    request: z.strictObject({}),
-    response: z.strictObject({
-      lastLog: z
-        .strictObject({
-          id: z.string(),
-          date: z.string(),
-          chapter: z.string().nullable(),
-          stoppedAt: z.string(),
-          notes: z.string(),
-          briefId: z.string().nullable(),
-        })
-        .nullable(),
-      position: z
-        .strictObject({
-          chapterId: z.string(),
-          title: z.string(),
-          readingOrder: z.number(),
-          year: z.number().nullable(),
-        })
-        .nullable(),
-      openQuestions: z.int().min(0),
-      rewriteTasks: z.array(
-        z.strictObject({
-          id: z.string(),
-          chapterId: z.string().nullable(),
-          chapter: z.string().nullable(),
-          text: z.string(),
-          quote: z.string(),
-          lines: z.string(),
-        }),
-      ),
-      recentLogs: z.array(
-        z.strictObject({
-          id: z.string(),
-          date: z.string(),
-          chapter: z.string().nullable(),
-          text: z.string(),
-          briefId: z.string().nullable(),
-        }),
-      ),
     }),
   },
 } as const;

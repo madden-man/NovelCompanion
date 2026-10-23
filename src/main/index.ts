@@ -2,17 +2,14 @@ import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
 import { testDatabaseHonoured } from './secrets';
-import { resetOnNavigation } from './promptReset';
 import {
   applyStoredAppearance,
   closeStore,
   hasOpenBible,
-  onCloseDecision,
-  onClosePromptShown,
+  onFlushed,
   openExternal,
   registerHandlers,
 } from './ipc/handlers';
-import { STOP_PROMPT_TIMEOUT_MS, stopPromptOutcome } from '../shared/domain/sessionLog';
 import { wireEvent } from '../shared/ipc';
 
 const APP_NAME = 'Novel Companion';
@@ -53,8 +50,6 @@ function lockDownSession(): void {
   );
 }
 
-/** Tests turn the prompt off so closing the app does not wait on a person. */
-const skipStopPrompt = !app.isPackaged && process.env.NOVEL_COMPANION_SKIP_STOP_PROMPT === '1';
 /**
  * Tests run the app hidden: no dock icon, no window on screen, the page
  * rendered offscreen and driven only through the automation protocol, so a
@@ -71,18 +66,9 @@ if (hidden && process.platform === 'darwin') {
 }
 let closeApproved = false;
 let quitPending = false;
-let stopTimer: ReturnType<typeof setTimeout> | null = null;
-/** True while the page is showing the stop prompt and a person is answering it. */
-let promptShown = false;
-
-/**
- * SL-1: how long to wait for the page to show the stop prompt. Tests may
- * shorten it; a packaged app always waits the full 10 seconds.
- */
-const stopPromptTimeout = (() => {
-  const raw = Number(process.env.NOVEL_COMPANION_STOP_PROMPT_TIMEOUT_MS);
-  return !app.isPackaged && Number.isFinite(raw) && raw > 0 ? raw : STOP_PROMPT_TIMEOUT_MS;
-})();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long main waits for the page to flush its pending edits before it closes anyway. */
+const FLUSH_TIMEOUT_MS = 2000;
 
 function createWindow(): BrowserWindow {
   closeApproved = false;
@@ -107,55 +93,26 @@ function createWindow(): BrowserWindow {
   win.once('ready-to-show', () => {
     if (!hidden) win.show();
   });
-  // SL-1: closing the window or quitting asks "Where did you stop?" first. The
-  // page answers through `app.confirmClose`; an empty answer still closes.
-  win.on('close', (event) => {
-    if (closeApproved || skipStopPrompt || !hasOpenBible()) return;
-    const wc = win.webContents;
-    if (wc.isDestroyed() || wc.isCrashed() || wc.isLoading()) return;
-    event.preventDefault();
-    if (stopTimer || promptShown) return; // already asking
-    win.webContents.send(wireEvent('app.closeRequested'), {
-      hasBible: true,
-      quitting: quitPending,
-    });
-    // A page that never shows the prompt cannot trap the window: close without a log.
-    const asked = Date.now();
-    stopTimer = setTimeout(() => {
-      stopTimer = null;
-      const outcome = stopPromptOutcome(
-        { shown: false, decision: null, elapsedMs: Date.now() - asked },
-        stopPromptTimeout,
-      );
-      if (outcome === 'close') finishClose();
-    }, stopPromptTimeout);
-  });
-  const clearStopTimer = () => {
-    if (stopTimer) clearTimeout(stopTimer);
-    stopTimer = null;
-  };
+  // Closing the window or quitting first asks the page to save its pending edits. The page
+  // answers through `app.flushed`; a page that does not answer within two seconds (it hung
+  // or crashed) does not hold the window open.
   const finishClose = () => {
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = null;
     closeApproved = true;
     if (quitPending) app.quit();
     else if (!win.isDestroyed()) win.close();
   };
-  // A reload or navigation removes the prompt, so the flag must not outlive it.
-  resetOnNavigation(win.webContents, () => {
-    promptShown = false;
+  win.on('close', (event) => {
+    if (closeApproved || !hasOpenBible()) return;
+    const wc = win.webContents;
+    if (wc.isDestroyed() || wc.isCrashed() || wc.isLoading()) return;
+    event.preventDefault();
+    if (flushTimer) return; // already flushing
+    wc.send(wireEvent('app.closeRequested'), { hasBible: true, quitting: quitPending });
+    flushTimer = setTimeout(finishClose, FLUSH_TIMEOUT_MS);
   });
-  onClosePromptShown(() => {
-    promptShown = true;
-    clearStopTimer();
-  });
-  onCloseDecision((proceed) => {
-    promptShown = false;
-    clearStopTimer();
-    if (!proceed) {
-      quitPending = false;
-      return;
-    }
-    finishClose();
-  });
+  onFlushed(finishClose);
   // ED-3: undo and redo are the app's own command stacks, replayed through
   // the write path. Catch the keys here, before the page or the Edit menu,
   // so one key press is one app-level undo everywhere, text fields included.

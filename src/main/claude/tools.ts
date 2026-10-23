@@ -96,7 +96,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
     {
       name: 'search_entries',
       description:
-        'Search every entry, chapter text, and brief in the bible, in English or Chinese. Returns section, ID, title, status, and a short snippet for each hit. Read one in full with get_entry or get_chapter.',
+        'Search every entry and chapter text in the bible, in English or Chinese. Returns section, ID, title, status, and a short snippet for each hit. Read one in full with get_entry or get_chapter.',
       shape: {
         query: z.string().min(1).max(200),
         section: Section.optional(),

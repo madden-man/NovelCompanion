@@ -1,7 +1,6 @@
 import type { Channel, Request, Response } from './ipc';
 import type { Op, UndoCommand } from './domain/undoRunner';
 import type { BibleNumbers, BibleTemplates, CultureUnit } from './schema/settings';
-import { BRIEF_WRITTEN_FIELDS } from './domain/briefEdits';
 
 /**
  * ED-3: undo commands for the writes that are not entry writes: tree
@@ -477,7 +476,7 @@ export function cultureUnitCommand(
   };
 }
 
-/** IP-14, ED-3: one template (a default title, a strand label, the brief headings, a link label). */
+/** IP-14, ED-3: one template (a default title, a strand label, a link label). */
 export function templateCommand<K extends keyof BibleTemplates>(
   invoke: Invoke,
   field: K,
@@ -520,40 +519,4 @@ export function eraDefaultsCommand(
     undo: [settingOp(read, same, after, write, before, changed)],
     redo: [settingOp(read, same, before, write, after, changed)],
   };
-}
-
-// ---------- a47-desk: a brief written again (IP-6) ----------
-
-/**
- * IP-6, SB-9: Regenerate as one step. Undo puts the brief back as it was
- * before it was written again (its text and its selection), redo writes the
- * new one back; each first checks the text is still what the step left, so an
- * edit made since is never overwritten.
- */
-export function briefRegenerateCommand(
-  invoke: Invoke,
-  id: string,
-  title: string,
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-): UndoCommand {
-  const pick = (d: Record<string, unknown>) =>
-    Object.fromEntries(BRIEF_WRITTEN_FIELDS.filter((k) => k in d).map((k) => [k, d[k]] as const));
-  const op = (expect: Record<string, unknown>, to: Record<string, unknown>): Op => ({
-    kind: 'run',
-    check: async () => {
-      const current = (await invoke('entry.get', { collection: 'briefs', id })).entry as Record<
-        string,
-        unknown
-      >;
-      if (current.deletedAt) return `${title} is in the trash`;
-      return String(current.content ?? '') === String(expect.content ?? '')
-        ? null
-        : `the text of ${title} changed since`;
-    },
-    apply: async () => {
-      await invoke('entry.update', { collection: 'briefs', id, patch: pick(to) });
-    },
-  });
-  return { label: `Regenerated ${title}`, undo: [op(after, before)], redo: [op(before, after)] };
 }

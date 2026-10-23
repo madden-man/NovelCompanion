@@ -1,7 +1,7 @@
 import { basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import { parseBlocks } from '../../shared/domain/import';
-import type { DocBlock } from '../../shared/domain/import';
+import { parseBlocks } from '../../shared/domain/wordDocument';
+import type { DocBlock } from '../../shared/domain/wordDocument';
 
 export interface ParsedDocument {
   fileName: string;
@@ -11,7 +11,7 @@ export interface ParsedDocument {
   blocks: DocBlock[];
 }
 
-/** Word to HTML, keeping headings, italics, and empty paragraphs so numbering matches Word (IM-4). */
+/** Word to HTML, keeping headings, italics, and empty paragraphs so numbering matches Word (MS-1). */
 export async function parseDocxBuffer(
   data: Buffer,
   source: { fileName: string; modifiedAt: string },

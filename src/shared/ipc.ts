@@ -15,9 +15,7 @@ import {
 import { StoryTimeValue } from './storyTime';
 import { sessionContract } from './ipcSession';
 import { claudeContract, claudeEvents } from './claude';
-import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
-import { driveContract } from './ipcDrive';
 import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
 import { wordsContract } from './ipcWords';
@@ -537,88 +535,7 @@ const RevisionSummary = z.strictObject({
   proposalId: z.string().nullable(),
 });
 
-// ---------- import, snapshots, and backup (M5) ----------
-
-/** A file the person picked. Main keeps the path; the page holds only this ID. */
-export const ImportFileWire = z.strictObject({
-  id: z.string().min(1).max(64),
-  name: z.string().min(1),
-  kind: z.enum(['workbook', 'document']),
-  modifiedAt: z.iso.datetime({ offset: true }),
-});
-
-const ImportSheetWire = z.strictObject({
-  name: z.string(),
-  rows: z.int().min(0),
-  columns: z.int().min(0),
-  shape: z.enum(['table', 'grid']),
-  headerRow: z.int().min(1),
-  /** The first rows and columns, for choosing a shape and a header row. */
-  preview: z.array(z.array(Cell)),
-});
-
-const ImportRowWire = z.strictObject({
-  where: z.string(),
-  ok: z.boolean(),
-  reason: z.string().optional(),
-  title: z.string(),
-  values: z.array(z.strictObject({ label: z.string(), text: z.string() })),
-});
-
-const ConflictWire = z.strictObject({
-  winner: z.enum(['incoming', 'existing']),
-  claims: z.array(
-    z.strictObject({ ref: z.string(), at: z.string(), value: z.string(), kept: z.boolean() }),
-  ),
-});
-
-const ChangeItemWire = z.strictObject({
-  id: z.string(),
-  kind: z.enum(['new', 'changed']),
-  collection: CollectionName,
-  title: z.string(),
-  ref: z.string(),
-  note: z.string().optional(),
-  /** IDs of the new items this one points at (a part, a book, a character stub). Approving it approves them too. */
-  needs: z.array(z.string()).optional(),
-  deltas: z.array(
-    z.strictObject({
-      path: z.string(),
-      label: z.string(),
-      before: z.string(),
-      after: z.string(),
-      outcome: z.enum(['apply', 'keep']),
-      conflict: ConflictWire.optional(),
-    }),
-  ),
-});
-
-const FailedRowWire = z.strictObject({ where: z.string(), ref: z.string(), reason: z.string() });
-
-export const ImportPlanWire = z.strictObject({
-  planId: z.string().min(1),
-  file: z.string(),
-  created: z.int().min(0),
-  changed: z.int().min(0),
-  unchanged: z.int().min(0),
-  conflicts: z.int().min(0),
-  listAdds: z.array(z.string()),
-  failed: z.array(FailedRowWire),
-  items: z.array(ChangeItemWire),
-  notes: z.array(z.string()),
-});
-
-const DocumentTargetWire = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('backstory'), characterId: EntryId }),
-  z.strictObject({
-    kind: z.literal('chapter'),
-    chapterId: EntryId.nullable(),
-    title: z.string().max(500).optional(),
-    partId: EntryId.optional(),
-    year: z.int().min(-10000).max(10000).optional(),
-  }),
-  z.strictObject({ kind: z.literal('note'), title: z.string().trim().min(1).max(500) }),
-]);
+// ---------- snapshots and backup (M5) ----------
 
 export const SnapshotWire = SnapshotManifest.extend({ id: z.string().min(1) });
 
@@ -817,29 +734,8 @@ export const contract = {
       total: z.int().min(0).default(0),
     }),
   },
-  /** SL-1: the newest session log with a note, for the launch panel. */
-  'sessionLog.latest': {
-    request: z.strictObject({}),
-    response: z.strictObject({
-      log: z
-        .strictObject({
-          id: z.string(),
-          date: z.string(),
-          chapterId: z.string().nullable(),
-          chapter: z.string().nullable(),
-          stoppedAt: z.string(),
-          notes: z.string(),
-        })
-        .nullable(),
-    }),
-  },
-  /** SL-1: the stop prompt is answered (or skipped); main closes the window (or quits) when `proceed` is true, and stays open when it is false. */
-  'app.confirmClose': {
-    request: z.strictObject({ proceed: z.boolean() }),
-    response: z.strictObject({ ok: z.literal(true) }),
-  },
-  /** SL-1: the page is showing the stop prompt, so main stops its 10 second wait and waits for the answer. */
-  'app.closePromptShown': {
+  /** The page flushed its pending edits after `app.closeRequested`; main closes the window (or quits). */
+  'app.flushed': {
     request: z.strictObject({}),
     response: z.strictObject({ ok: z.literal(true) }),
   },
@@ -1221,90 +1117,6 @@ export const contract = {
     }),
     response: z.strictObject({ notes: z.record(z.string(), z.string()) }),
   },
-  /** IM-1: open the file picker for a workbook or a Word document. Null when cancelled. */
-  'import.pickFile': {
-    request: z.strictObject({ kind: z.enum(['workbook', 'document']) }),
-    response: z.strictObject({ file: ImportFileWire.nullable() }),
-  },
-  /** IM-1: the sheets of a picked workbook and the mappings saved for this file. */
-  'import.workbook': {
-    request: z.strictObject({ fileId: z.string().min(1) }),
-    response: z.strictObject({
-      file: ImportFileWire,
-      sheets: z.array(ImportSheetWire),
-      saved: z.array(z.strictObject({ sheet: z.string(), mapping: Mapping })),
-    }),
-  },
-  /** IM-1: a starting mapping for a sheet, columns matched to fields by their headers. */
-  'import.guess': {
-    request: z.strictObject({
-      fileId: z.string().min(1),
-      sheet: z.string().min(1),
-      shape: z.enum(['table', 'grid']),
-      collection: CollectionName,
-    }),
-    response: z.strictObject({ mapping: Mapping }),
-  },
-  /** IM-1: the fields a column can fill in a section. */
-  'import.fields': {
-    request: z.strictObject({ collection: CollectionName }),
-    response: z.strictObject({
-      fields: z.array(z.strictObject({ path: z.string(), label: z.string() })),
-    }),
-  },
-  /** IM-1, IM-2: the first rows of a sheet as the mapping would import them, each with its result. */
-  'import.preview': {
-    request: z.strictObject({
-      fileId: z.string().min(1),
-      mapping: Mapping,
-      limit: z.int().min(1).max(200).default(12),
-    }),
-    response: z.strictObject({
-      rows: z.array(ImportRowWire),
-      total: z.int().min(0),
-      ok: z.int().min(0),
-      failed: z.int().min(0),
-      notes: z.array(z.string()),
-    }),
-  },
-  /** IM-3: compare the sheet with the bible. Nothing is written. */
-  'import.plan': {
-    request: z.strictObject({ fileId: z.string().min(1), mapping: Mapping }),
-    response: ImportPlanWire,
-  },
-  /** ED-7, IM-3: write the changes the person approved, after a snapshot (BK-1). */
-  'import.apply': {
-    request: z.strictObject({
-      planId: z.string().min(1),
-      approved: z.array(z.string().min(1)).max(100000),
-      saveMapping: z.boolean().default(true),
-    }),
-    response: z.strictObject({
-      created: z.int().min(0),
-      updated: z.int().min(0),
-      unchanged: z.int().min(0),
-      questions: z.int().min(0),
-      failed: z.array(FailedRowWire),
-      snapshot: z.string().nullable(),
-    }),
-  },
-  /** IM-4: a Word document as the editor will store it, with its headings. */
-  'import.document': {
-    request: z.strictObject({ fileId: z.string().min(1) }),
-    response: z.strictObject({
-      file: ImportFileWire,
-      title: z.string(),
-      headings: z.array(z.strictObject({ level: z.int(), text: z.string(), index: z.int() })),
-      paragraphs: z.int().min(0),
-      sceneBreaks: z.int().min(0),
-      body: z.string(),
-    }),
-  },
-  /** IM-4, IM-3: what importing the document into an entry would change. */
-  'import.documentPlan': {
-    request: z.strictObject({ fileId: z.string().min(1), target: DocumentTargetWire }),
-    response: ImportPlanWire,
-  },
   /** BK-1: the snapshots of the open bible, newest first, and how many are kept. */
   'snapshot.list': {
     request: z.strictObject({}),
@@ -1347,12 +1159,10 @@ export const contract = {
       z.strictObject({ ok: z.literal(false), message: z.string() }),
     ]),
   },
-  /** Google Drive (M9): see `ipcDrive.ts`. */
-  ...driveContract,
   ...appContract,
   /** WT-1 writing tools over Datamuse (src/shared/ipcWords.ts). */
   ...wordsContract,
-  /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
+  /** M7 sessions and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
   /** M8 alignment check (src/shared/ipcContinuity.ts). */
@@ -1432,7 +1242,7 @@ export const events = {
   }),
   /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),
-  /** SL-1: the window is closing or the app is quitting; ask "Where did you stop?" first. */
+  /** The window is closing or the app is quitting; the page flushes pending edits and answers `app.flushed`. */
   'app.closeRequested': z.strictObject({ hasBible: z.boolean(), quitting: z.boolean() }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
   /** A list changed: an item added, renamed, or removed, or a new tag. */

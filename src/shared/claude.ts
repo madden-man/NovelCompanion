@@ -8,12 +8,10 @@ import { CaptureHint } from './domain/captureRouter/types';
  * main (the runtime) and the renderer (the panel, settings, and feature panes).
  */
 
-/** Every Claude feature. The question panel is one; the other four are started by named controls. */
+/** Every Claude feature. The question panel is one; the others are started by named controls. */
 export const CLAUDE_FEATURES = [
-  'briefs',
   'alignment',
   'summaries',
-  'importProposals',
   'panel',
   'capture',
   'captureFast',
@@ -23,17 +21,15 @@ export type ClaudeFeature = z.infer<typeof ClaudeFeature>;
 
 /**
  * Model IDs from Anthropic's current models page (checked 2026-10-11) and the
- * live `GET /v1/models` list. Briefs and alignment checks default to Opus
- * (DB-4, CC-3). Chapter summaries, import proposals, and the question panel
- * default to Sonnet 5.5: they read and condense rather than reason across the
- * whole bible, and Sonnet is the faster and cheaper current model for that.
+ * live `GET /v1/models` list. Alignment checks default to Opus (DB-4,
+ * CC-3). Chapter summaries, capture, and the question panel default to
+ * Sonnet 5.5: they read and condense rather than reason across the whole
+ * bible, and Sonnet is the faster and cheaper current model for that.
  * Every one is a setting.
  */
 export const DEFAULT_MODELS: Record<ClaudeFeature, string> = {
-  briefs: 'claude-opus-5-5',
   alignment: 'claude-opus-5-5',
   summaries: 'claude-sonnet-5-5',
-  importProposals: 'claude-sonnet-5-5',
   panel: 'claude-sonnet-5-5',
   capture: 'claude-sonnet-5-5',
   /** A48 (CR-7): the fast file is one small call with no tools, so the newest Haiku. */
@@ -54,10 +50,6 @@ export const FEATURE_INFO: Record<ClaudeFeature, { label: string; sends: string 
     sends:
       'your question, earlier questions in the same conversation, and the entries Claude looks up to answer',
   },
-  briefs: {
-    label: 'Session briefs',
-    sends: 'the entries selected for the brief',
-  },
   alignment: {
     label: 'Alignment checks',
     sends: 'the chapter text, the entries selected for it, and the stored plot',
@@ -65,11 +57,6 @@ export const FEATURE_INFO: Record<ClaudeFeature, { label: string; sends: string 
   summaries: {
     label: 'Chapter summaries',
     sends: 'the chapter text',
-  },
-  importProposals: {
-    label: 'Import proposals',
-    sends:
-      'the text of the imported document and the section, ID and title of up to 600 existing entries from every section',
   },
   capture: {
     label: 'Capture',
@@ -367,11 +354,6 @@ export const claudeContract = {
       hints: z.array(CaptureHint).max(50).optional(),
     }),
     response: CaptureStarted,
-  },
-  /** IM-5: Claude reads a Word document picked in Import and proposes entries for review. */
-  'claude.importProposals': {
-    request: z.strictObject({ runId: RunIdWire, fileId: z.string().min(1).max(64) }),
-    response: Started,
   },
   /**
    * CC-3: Claude reads one chapter against its selected entries and the stored

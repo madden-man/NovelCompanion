@@ -5,12 +5,11 @@ import type { EntryCollection } from '../../../shared/schema';
 import type { Response } from '../../../shared/ipc';
 import { editCommand } from '../../../shared/domain/undoRunner';
 import { labelPath } from '../../../shared/domain/issues';
-import { formatStoryDate } from '../../../shared/domain/dates';
+import { formatStoryDate, localDateString } from '../../../shared/domain/dates';
 import { isPlainObject } from '../../../shared/domain/paths';
 import { call, plainError } from '../api';
 import { formatTime } from './format';
 import { ConfirmLine } from './housekeeping';
-import { localDateString } from '../../../shared/domain/sessionLog';
 import { useUndo } from './undo';
 
 type Revision = Response<'revisions.list'>['revisions'][number];

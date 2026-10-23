@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CalendarDate, Id, Year, entry } from './common';
+import { Id, Year, entry } from './common';
 import { ANY, commonFields, f, yearRange } from './manifest';
 import type { FieldSpec } from './manifest';
 
@@ -121,87 +121,6 @@ export const openQuestionFields: FieldSpec[] = [
     { value: 'decided', label: 'Decided' },
   ]),
   f.longText('decision', 'Decision', { warnings: ['decided-without-decision'] }),
-];
-
-/** Session log (SL-1). The date is a real calendar date. */
-export const SessionLog = entry({
-  date: CalendarDate,
-  chapterId: Id.nullable().default(null),
-  stoppedAt: z.string().default(''),
-  notes: z.string().default(''),
-  /** DB-3: the section the session was started for, and its brief. */
-  partId: Id.nullable().default(null),
-  strandId: z.string().max(64).nullable().default(null),
-  storyYear: Year.nullable().default(null),
-  povCharacterId: Id.nullable().default(null),
-  briefId: Id.nullable().default(null),
-});
-export type SessionLog = z.infer<typeof SessionLog>;
-
-export const sessionLogFields: FieldSpec[] = [
-  ...commonFields,
-  f.calendarDate('date', 'Date', { required: true }),
-  f.ref('chapterId', 'Chapter worked on', ['chapters'], { nullable: true }),
-  f.longText('stoppedAt', 'Where I stopped'),
-  f.longText('notes', 'Notes'),
-  f.ref('partId', 'Part worked on', ['parts'], { nullable: true }),
-  f.text('strandId', 'Strand worked on', { nullable: true }),
-  f.year('storyYear', 'Story year', { nullable: true }),
-  f.ref('povCharacterId', 'Point of view', ['characters'], { nullable: true }),
-  f.ref('briefId', 'Brief', ['briefs'], { nullable: true }),
-];
-
-/** A saved session brief (SB-8). Generated content is an ordinary editable field (ED-6). */
-export const Brief = entry({
-  chapterId: Id.nullable().default(null),
-  storyYear: Year.nullable().default(null),
-  povCharacterId: Id.nullable().default(null),
-  entryIds: z.array(Id).default([]),
-  content: z.string().default(''),
-  /** SB-1, DB-2: the kind of section the brief is for, and its other inputs. */
-  sectionKind: z.enum(['chapter', 'strand', 'part', 'pov']).nullable().default(null),
-  strandId: z.string().max(64).nullable().default(null),
-  partId: Id.nullable().default(null),
-  placeIds: z.array(Id).default([]),
-  characterIds: z.array(Id).default([]),
-  /** SB-9: entries the person added to or removed from the selection. */
-  added: z.array(Id).default([]),
-  removed: z.array(Id).default([]),
-  /** DB-4: the model that wrote it; empty for a structured brief (SB-7). */
-  model: z.string().max(200).default(''),
-  synthesized: z.boolean().default(false),
-  /** SB-3: the saved selection the brief was written from. Set by the app. */
-  selection: z.record(z.string(), z.unknown()).nullable().default(null),
-});
-export type Brief = z.infer<typeof Brief>;
-
-export const briefFields: FieldSpec[] = [
-  ...commonFields,
-  f.ref('chapterId', 'Chapter', ['chapters'], { nullable: true }),
-  f.year('storyYear', 'Story year', { nullable: true }),
-  f.ref('povCharacterId', 'Point of view', ['characters'], { nullable: true }),
-  f.refs('entryIds', 'Selected entries', ANY),
-  f.longText('content', 'Brief'),
-  f.enum(
-    'sectionKind',
-    'Section',
-    [
-      { value: 'chapter', label: 'A chapter' },
-      { value: 'strand', label: 'A chapter strand' },
-      { value: 'part', label: 'A part' },
-      { value: 'pov', label: 'A story year and point of view' },
-    ],
-    { nullable: true },
-  ),
-  f.text('strandId', 'Strand', { nullable: true }),
-  f.ref('partId', 'Part', ['parts'], { nullable: true }),
-  f.refs('placeIds', 'Places', ['places']),
-  f.refs('characterIds', 'Other characters present', ['characters']),
-  f.refs('added', 'Entries you added', ANY),
-  f.refs('removed', 'Entries you removed', ANY),
-  f.text('model', 'Model', { hint: 'Empty when the brief was not written by Claude.' }),
-  f.boolean('synthesized', 'Written by Claude'),
-  f.system('selection', 'Selection'),
 ];
 
 /**

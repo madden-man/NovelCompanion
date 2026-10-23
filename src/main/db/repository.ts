@@ -52,12 +52,9 @@ import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/romanization';
-import type { DriveKnown, DriveLink, DriveSeen } from '../../shared/domain/drive';
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
-import { conflictQuestion, questionCovers, questionWithConflict } from '../../shared/domain/import';
-import type { ChangeItem, Conflict, ListAdd, SourceRecord } from '../../shared/domain/import';
 import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
@@ -1119,155 +1116,6 @@ export class Repository {
     return decided;
   }
 
-  // ---------- import (IM-3, IM-7) ----------
-
-  /** What earlier imports recorded about where each field's value came from. */
-  sourceRecords(entryId: string): SourceRecord[] {
-    const doc = this.model.get('importSources', entryId);
-    return Array.isArray(doc?.fields) ? (doc.fields as SourceRecord[]) : [];
-  }
-
-  /**
-   * Write the approved changes of an import in one transaction (ED-7, IM-3):
-   * new entries, changes to entries already imported, the list choices they
-   * need, the record of where each field came from, and an open question for
-   * every field where two sources disagreed (IM-7). Either all of it is
-   * written or none. Entries changed since the plan was made are refused.
-   */
-  async applyImport(input: {
-    file: { fileName: string; modifiedAt: string };
-    items: ChangeItem[];
-    listAdds: ListAdd[];
-  }): Promise<{ created: number; updated: number; questions: number }> {
-    await this.bulkGuard('import');
-    const note = `Imported from ${input.file.fileName}`;
-    const changes: Change[] = [];
-    let created = 0;
-    let updated = 0;
-    let questions = 0;
-    const touched = new Map<string, { collection: EntryCollection; records: SourceRecord[] }>();
-    for (const item of input.items) {
-      this.assertCollection(item.collection);
-      if (item.kind === 'new') {
-        const data: Record<string, unknown> = {
-          ...(item.data as Record<string, unknown>),
-          _id: item.entryId,
-        };
-        const change = this.buildCreate(item.collection, data, { importer: true });
-        changes.push({ ...change, note });
-        created += 1;
-      } else {
-        const prior = await this.current(item.collection, item.entryId);
-        if (item.baseModifiedAt !== undefined && prior.modifiedAt !== item.baseModifiedAt) {
-          throw new RepositoryError(
-            `${entryTitle(prior)} changed after the import was compared, so nothing was written. Compare again.`,
-          );
-        }
-        if (item.patch && Object.keys(item.patch).length > 0) {
-          changes.push({
-            ...this.buildUpdate(item.collection, prior, item.patch, { importer: true }),
-            note,
-          });
-          updated += 1;
-        }
-      }
-      if (item.records.length) {
-        touched.set(item.entryId, { collection: item.collection, records: item.records });
-      }
-      // An open question about this entry that already lists a field is brought up to date, not asked again.
-      const askedAbout = this.model
-        .all('openQuestions')
-        .filter(
-          (q) =>
-            !q.deletedAt &&
-            q.state === 'open' &&
-            Array.isArray(q.links) &&
-            (q.links as { targetId?: unknown; kind?: unknown }[]).some(
-              (l) => l.targetId === item.entryId && l.kind === 'conflict',
-            ),
-        );
-      const fresh: Conflict[] = [];
-      const reworded = new Map<string, string>();
-      for (const c of item.deltas.flatMap((d) => (d.conflict ? [d.conflict] : []))) {
-        let handled = false;
-        for (const q of askedAbout) {
-          const text = reworded.get(String(q._id)) ?? String(q.question ?? '');
-          if (questionCovers(text, c)) {
-            handled = true;
-            break;
-          }
-          if (text.split('\n').some((l, i) => i > 0 && l.startsWith(`${c.label}: `))) {
-            const next = questionWithConflict(text, c);
-            if (next !== null) reworded.set(String(q._id), next);
-            handled = true;
-            break;
-          }
-        }
-        if (!handled) fresh.push(c);
-      }
-      for (const [id, text] of reworded) {
-        const prior = askedAbout.find((q) => String(q._id) === id);
-        if (!prior) continue;
-        changes.push({ ...this.buildUpdate('openQuestions', prior, { question: text }), note });
-      }
-      const conflicts = fresh;
-      if (conflicts.length) {
-        const q = conflictQuestion(item.title, conflicts);
-        changes.push({
-          ...this.buildCreate('openQuestions', {
-            title: q.title,
-            question: q.question,
-            state: 'open',
-            status: defaultStatus(this.model.all('lists'), 'planned'),
-            sourceRef: item.ref,
-            links: [{ targetId: item.entryId, kind: 'conflict' }],
-          }),
-          note,
-        });
-        questions += 1;
-      }
-    }
-    const lists = this.listsWithAdds(input.listAdds);
-    const sourceDocs = [...touched].map(([entryId, t]) => {
-      const prior = this.sourceRecords(entryId);
-      const fields = [
-        ...prior.filter((r) => !t.records.some((n) => n.path === r.path)),
-        ...t.records,
-      ];
-      return { _id: entryId, collection: t.collection, fields };
-    });
-    await this.commit(
-      changes,
-      async (session) => {
-        for (const doc of sourceDocs) {
-          await this.bible
-            .collection<StoredDoc>('importSources')
-            .replaceOne({ _id: doc._id }, doc, { session, upsert: true });
-        }
-      },
-      lists,
-    );
-    for (const doc of sourceDocs) this.model.put('importSources', doc as unknown as StoredDoc);
-    return { created, updated, questions };
-  }
-
-  /** The lists with the import's new choices added, ready to write. */
-  private listsWithAdds(adds: ListAdd[]): ListDoc[] {
-    const out = new Map<string, ListDoc>();
-    for (const add of adds) {
-      const base =
-        out.get(add.listId) ??
-        (this.model.get('lists', add.listId) as ListDoc | undefined) ??
-        ({ _id: add.listId, label: add.listId, items: [] } as ListDoc);
-      if (base.items.some((i) => i.id === add.id)) continue;
-      out.set(add.listId, {
-        ...base,
-        items: [...base.items, { id: add.id, label: add.label, parentId: add.parentId }],
-      });
-    }
-    return [...out.values()];
-  }
-
   // ---------- backup settings (BK-1) ----------
 
   /** How many snapshots to keep; 30 unless the person changed it. */
@@ -1282,73 +1130,6 @@ export class Repository {
     }
     await this.writeMeta({ _id: SNAPSHOT_SETTINGS_ID, keep });
     return keep;
-  }
-
-  /** Saved column mappings, keyed by file name and sheet (IM-1). Stored in `meta`. */
-  savedMappings(): Record<string, unknown> {
-    const doc = this.model.get('meta', IMPORT_MAPPINGS_ID);
-    const list = (Array.isArray(doc?.mappings) ? doc.mappings : []) as {
-      key: string;
-      mapping: unknown;
-    }[];
-    return Object.fromEntries(list.map((m) => [m.key, m.mapping]));
-  }
-
-  async saveMapping(key: string, mapping: unknown): Promise<void> {
-    // A list, not an object, because file names and sheet names contain dots.
-    const kept = Object.entries(this.savedMappings())
-      .filter(([k]) => k !== key)
-      .map(([k, m]) => ({ key: k, mapping: m }));
-    await this.writeMeta({
-      _id: IMPORT_MAPPINGS_ID,
-      mappings: [...kept, { key, mapping }],
-    });
-  }
-
-  // ---------- Google Drive links (GD-2, GD-3; stored in meta, never a token) ----------
-
-  /** The Drive files and folders linked to this bible, and the version of each file last brought in. */
-  driveState(): { links: DriveLink[]; seen: DriveSeen[]; known: DriveKnown[] } {
-    const doc = this.model.get('meta', DRIVE_ID);
-    // Read through shape checks: a hand-edited or older meta document cannot reach the screens as a cast.
-    const rows = <T>(value: unknown, ok: (r: Record<string, unknown>) => boolean): T[] =>
-      (Array.isArray(value) ? value : []).filter(
-        (r): r is T => !!r && typeof r === 'object' && ok(r as Record<string, unknown>),
-      );
-    const text = (v: unknown) => typeof v === 'string' && v.length > 0;
-    return {
-      links: rows<DriveLink>(
-        doc?.links,
-        (r) =>
-          text(r.id) &&
-          text(r.name) &&
-          text(r.mimeType) &&
-          (r.kind === 'folder' || r.kind === 'workbook' || r.kind === 'document'),
-      ),
-      seen: rows<DriveSeen>(doc?.seen, (r) => text(r.fileId) && text(r.modifiedTime)),
-      known: rows<DriveKnown>(
-        doc?.known,
-        (r) =>
-          text(r.fileId) &&
-          text(r.linkId) &&
-          text(r.name) &&
-          text(r.mimeType) &&
-          (r.kind === 'workbook' || r.kind === 'document'),
-      ),
-    };
-  }
-
-  async setDriveState(state: {
-    links: DriveLink[];
-    seen: DriveSeen[];
-    known?: DriveKnown[];
-  }): Promise<void> {
-    await this.writeMeta({
-      _id: DRIVE_ID,
-      links: state.links,
-      seen: state.seen,
-      known: state.known ?? this.driveState().known,
-    });
   }
 
   /** Tell views that the whole bible was replaced, after a restore or a file import. */
@@ -1846,14 +1627,10 @@ export class Repository {
           .deleteMany({ collection, entryId: { $in: ids } }, { session });
         counts.revisions += revs.deletedCount;
       }
-      await this.bible
-        .collection<StoredDoc>('importSources')
-        .deleteMany({ _id: { $in: items.map((i) => i.id) } }, { session });
       await this.options.midTransaction?.(session);
     });
     for (const it of items) {
       this.model.remove(it.collection, it.id);
-      this.model.remove('importSources', it.id);
       this.index.remove(it.collection, it.id);
     }
     for (const it of items) {
@@ -2506,9 +2283,7 @@ const BRIEF_SETTINGS_ID = 'briefSettings';
 export const BIBLE_SETTINGS_ID = 'bibleSettings';
 const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
-const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';
-const DRIVE_ID = 'drive';
 
 // ---------- a47-guard ----------
 

@@ -11,7 +11,7 @@ import { RunStore, summarize } from './store';
 import { FEATURES } from './features';
 import { recordAlignment } from '../continuity';
 import { textHash } from '../../shared/domain/continuity/lines';
-import { localDateString } from '../../shared/domain/sessionLog';
+import { localDateString } from '../../shared/domain/dates';
 import { plainErrorMessage } from '../../shared/errors';
 import { instructionView, instructionViews } from './instructions';
 import { routeForCapture, routingFor } from './features/captureIndex';
@@ -156,15 +156,6 @@ export function claudeHandlers(
       const run = new RunStore(session()).get(id);
       if (!run) throw new Error('That conversation is not saved.');
       return { run, active: run.turns.filter((t) => runtime.isActive(t.id)).map((t) => t.id) };
-    },
-    'claude.importProposals': async ({ runId, fileId }) => {
-      const start = await runtime.runFeature(
-        session(),
-        FEATURES.importProposals,
-        { fileId },
-        runId,
-      );
-      return { runId: start.runId, conversationId: start.conversationId };
     },
     'claude.capture': async ({ runId, text, storyTime, hints }): Promise<CaptureStarted> => {
       // CR-9: rerun the router with the box's hints, so main sees the box's facts.

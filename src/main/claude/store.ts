@@ -1,5 +1,5 @@
-import { ClaudeRun, ClaudeTurn } from '../../shared/claude';
-import type { ClaudeFeature, ClaudeRunSummary } from '../../shared/claude';
+import { ClaudeFeature, ClaudeRun, ClaudeTurn } from '../../shared/claude';
+import type { ClaudeRunSummary } from '../../shared/claude';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 
@@ -25,6 +25,8 @@ export class RunStore {
 
   private remember(doc: ClaudeRun | null): ClaudeRun {
     if (!doc) throw new Error('That conversation is not saved.');
+    // A53: a run of a removed feature (a saved `briefs` run) is skipped, not an error.
+    if (!ClaudeFeature.safeParse(doc.feature).success) return doc;
     const parsed = ClaudeRun.parse(doc);
     this.session.model.put(COLLECTION, parsed as unknown as StoredDoc);
     return parsed;
