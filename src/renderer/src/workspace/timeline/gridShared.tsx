@@ -299,7 +299,9 @@ export function useGridMarkers(opts: {
 
 /**
  * One marker: a dot at its year or a bar across its years, in its lane,
- * larger when big, its title beside it when the lane leaves room.
+ * larger when big, its title beside it when the lane leaves room. F2 renames
+ * the label in place (IP-4); so does a double-click, unless `onDoubleClick`
+ * is given, which then runs instead (Backstory opens the moment, A49).
  */
 export function GridMarker(props: {
   m: PlacedMarker;
@@ -313,6 +315,8 @@ export function GridMarker(props: {
   /** IP-4: the title as stored, and its save, for renaming the label in place. */
   title?: string;
   onRename?: (title: string) => Promise<void>;
+  /** In place of the double-click rename. */
+  onDoubleClick?: () => void;
 }) {
   const { m, ctl, layout } = props;
   const metrics = layout.metrics;
@@ -341,7 +345,8 @@ export function GridMarker(props: {
           props.onActivate();
         }}
         onDoubleClick={() => {
-          if (props.onRename) ctl.startRename(m.id);
+          if (props.onDoubleClick) props.onDoubleClick();
+          else if (props.onRename) ctl.startRename(m.id);
         }}
         onPointerDown={(ev) => ctl.onPointerDown(ev, m.id)}
         onPointerMove={ctl.onPointerMove}

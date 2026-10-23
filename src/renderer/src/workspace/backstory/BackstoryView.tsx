@@ -84,6 +84,7 @@ export function BackstoryView(props: {
   const [picked, setPicked] = useState<string | null>(props.characterId ?? null);
   const [selected, setSelected] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [freshKey, setFreshKey] = useState(0);
   const [zoom, setZoom] = useState<Zoom>('fit');
   const [error, setError] = useState<string | null>(null);
   const [trashed, setTrashed] = useState<{ title: string; id: string } | null>(null);
@@ -170,6 +171,13 @@ export function BackstoryView(props: {
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [openId]);
   const closeDialog = useCallback(() => show(null), [show]);
+  /** A49: a double-click on a marker opens its moment with What happens open, as a new one does. */
+  const openTitle = (id: string, characterId: string) => {
+    setPicked(characterId);
+    setSelected(id);
+    setFocusId(id);
+    setFreshKey((k) => k + 1);
+  };
 
   const pick = (id: string) => {
     setPicked(id);
@@ -448,6 +456,7 @@ export function BackstoryView(props: {
           setPicked(characterId);
           setSelected(id);
         }}
+        onOpenMoment={openTitle}
         onOpenEra={(id) => props.onOpen?.('eraStates', id)}
         onMove={move}
         onCreate={create}
@@ -503,6 +512,8 @@ export function BackstoryView(props: {
           people={everyone}
           events={events}
           fresh={fresh}
+          freshKey={freshKey}
+          onOpenTitle={() => openTitle(open.id, open.characterId)}
           onSave={(field, value, mentioned) => save(open.id, field, value, mentioned)}
           onMention={(e) => mention(open.id, e)}
           onTrashed={() => trashedOne(open)}

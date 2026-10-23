@@ -19,9 +19,6 @@ type SaveField = (
   mentioned?: readonly string[],
 ) => Promise<void>;
 
-/** How soon after the dialog opens a second press still counts as the marker's double-click. */
-const DOUBLE_CLICK_MS = 800;
-
 /** "Name 中文", the way the "Whose moment" choices and the dialog's head name a person. */
 export function personLabel(p: BackstoryPerson): string {
   return p.chinese ? `${p.name} ${p.chinese}` : p.name;
@@ -60,14 +57,21 @@ export function MomentDialog(props: {
   /** The person's moment before and after this one by year, or null at either end. */
   onPrev: (() => void) | null;
   onNext: (() => void) | null;
-  /** Just made: What happens opens as a field on the first render. */
+  /** Just made, or double-clicked: What happens opens as a field on the first render. */
   fresh: boolean;
+  /** Counts the opens with What happens open; a new count starts the fields again. */
+  freshKey: number;
+  /** A49: the marker's double-click ended in the dialog; open What happens as it would. */
+  onOpenTitle: () => void;
 }) {
   const { moment: m, person, onClose } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  /** Whether the dialog has had a press yet, and whether the click that ends one is dropped. */
+  const pressed = useRef(false);
+  const swallow = useRef(false);
   useFocusTrap(dialogRef);
   // Read while rendering the first time, before a field that opens at once takes the focus.
   const [opener] = useState(() => document.activeElement);
@@ -79,9 +83,7 @@ export function MomentDialog(props: {
     closeRef.current = onClose;
   });
 
-  const openedAt = useRef(0);
   useEffect(() => {
-    openedAt.current = performance.now();
     const root = dialogRef.current;
     // A fresh moment's What happens has the focus already; otherwise start on it, closed.
     if (root && !root.contains(document.activeElement)) {
@@ -129,16 +131,24 @@ export function MomentDialog(props: {
     <div
       className="overlay"
       onMouseDownCapture={(e) => {
-        // IP-4: a double-click on a marker renames it. Its first press opened the dialog, so the
-        // second lands here, on whatever of the dialog is drawn over the marker; it goes to the
-        // marker instead, and the dialog closes.
-        if (e.detail < 2 || !(opener instanceof HTMLElement) || !opener.isConnected) return;
-        if (!opener.classList.contains('wg-marker')) return;
-        if (performance.now() - openedAt.current > DOUBLE_CLICK_MS) return;
+        // A49: a double-click on a marker opens What happens. Its first press opened the dialog,
+        // so its second (the press count says so) lands on whatever of the dialog lies over the
+        // marker. As the dialog's first press it opens What happens instead; the click it ends
+        // in is dropped below. A double-click made later in the dialog is the dialog's own.
+        const first = !pressed.current;
+        pressed.current = true;
+        swallow.current = false;
+        if (!first || e.detail < 2) return;
+        swallow.current = true;
         e.preventDefault();
         e.stopPropagation();
-        closeRef.current();
-        opener.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        props.onOpenTitle();
+      }}
+      onClickCapture={(e) => {
+        if (!swallow.current) return;
+        swallow.current = false;
+        e.preventDefault();
+        e.stopPropagation();
       }}
       onMouseDown={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -196,8 +206,9 @@ export function MomentDialog(props: {
             </button>
           </span>
         </header>
-        {/* Keyed by the moment, so Previous and Next start every field closed on the new one. */}
-        <MomentFields key={m.id} {...props} />
+        {/* Keyed by the moment, so Previous and Next start every field closed on the new one,
+            and by the open count, so a double-click on the marker opens What happens anew. */}
+        <MomentFields key={`${m.id}:${props.freshKey}`} {...props} />
         <footer className="row bs-dialog-foot">
           <TrashControls
             collection="moments"

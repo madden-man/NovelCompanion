@@ -1059,7 +1059,7 @@ test('IP-4 ED-10 a death dragged before the birth is refused with the reason and
   expect((await getCharacter('H1')).death).toEqual({ year: 2041 });
 });
 
-test('IP-4 F2 on a moment marker renames its label in place as one step; Escape leaves it', async () => {
+test('IP-4 A49 F2 on a moment marker renames its label in place as one step; Escape leaves it; a double-click opens the moment with What happens open', async () => {
   await marker('H5-voice-0').focus();
   await page.keyboard.press('F2');
   const field = grid().getByTestId('marker-rename').locator('input');
@@ -1078,14 +1078,28 @@ test('IP-4 F2 on a moment marker renames its label in place as one step; Escape 
   expect((await getMoment('H5-voice-0')).title).toBe('Her voice');
   await blurAndUndo();
   await expect.poll(async () => (await getMoment('H5-voice-0')).title).toBe('Voice');
-  // A double-click opens it too: its first press opens the moment's dialog, the second closes
-  // it again and goes to the marker, and nothing is made where the press lands (A49).
+  // A49: a double-click opens the moment with What happens open as a field, and makes nothing
+  // where the presses land.
   const before = (await liveMoments()).length;
   await marker('H5-voice-0').dblclick();
-  await expect(field).toBeFocused();
+  const d = momentDialog('H5-voice-0');
+  await expect(d).toBeVisible();
+  await expect(cell('H5-voice-0', 'title').locator('input')).toBeFocused();
+  await expect(cell('H5-voice-0', 'title').locator('input')).toHaveValue('Voice');
+  await expect(d.locator('input, [role="textbox"], select')).toHaveCount(1);
+  await expect(field).toHaveCount(0);
+  expect((await liveMoments()).length).toBe(before);
+  await page.keyboard.press('Escape');
+  await expect(cell('H5-voice-0', 'title').locator('input')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(dialog()).toHaveCount(0);
-  await field.press('Escape');
   await expect(marker('H5-voice-0')).toBeFocused();
+  // The marker's own dblclick, when it reaches the marker, does the same.
+  await marker('H5-voice-0').dispatchEvent('dblclick');
+  await expect(cell('H5-voice-0', 'title').locator('input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(dialog()).toHaveCount(0);
   expect((await liveMoments()).length).toBe(before);
 });
 
