@@ -29,9 +29,9 @@ afterAll(async () => {
 const make = async (collection: string, data: Record<string, unknown>) =>
   await invoke('entry.create', { collection: collection as never, data });
 
-describe('OQ-1, SL-1 questions and the log', () => {
+describe('OQ-1 questions', () => {
   beforeAll(async () => {
-    // A person and a chapter to link and log against.
+    // A person and a chapter for a question to be about.
     const part = (await make('parts', { title: 'Part', number: 1 })).entry;
     const who = (
       await make('characters', {

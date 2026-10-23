@@ -306,7 +306,7 @@ const idList = (v: unknown): string[] =>
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Plain text of a stored long text, for briefs and the budget: Markdown since
+ * Plain text of a stored long text, for the selection and its budget: Markdown since
  * A44, and the HTML stored before it reads the same way.
  */
 export function plain(text: unknown): string {

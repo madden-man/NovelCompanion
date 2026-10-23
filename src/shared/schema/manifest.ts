@@ -58,7 +58,7 @@ export interface FieldSpec {
   nullable?: boolean;
   /** For `enum`. */
   options?: FieldOption[];
-  /** For `listItem`, `listItems` and `tags`. */
+  /** For `listItem` and `listItems`. */
   listId?: string;
   /** For `ref`, `refs`, `refPair`: the collections a target may come from. */
   target?: string[];

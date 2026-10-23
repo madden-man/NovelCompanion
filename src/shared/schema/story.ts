@@ -91,7 +91,7 @@ export const chapterFields: FieldSpec[] = [
   },
 ];
 
-/** Open question (OQ-1). Linked entries are the shared links. */
+/** Open question (OQ-1): what it asks, what it is about, and the decision. */
 export const OpenQuestion = entry({
   question: z.string().default(''),
   /** A52, A53 (OQ-1): the entries this question is about. */

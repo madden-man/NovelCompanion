@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { contentOf, diffEntries } from '../../src/shared/domain/diff';
 
-describe('ED-4 revision comparison', () => {
-  test('ED-4 the diff lists each changed field by path with its old and new value', () => {
+describe('ED-7 ED-3 entry comparison (proposal diffs and undo patches)', () => {
+  test('ED-7 ED-3 the diff lists each changed field by path with its old and new value', () => {
     const before = {
       _id: 'H1',
       modifiedAt: '2026-01-01T00:00:00.000Z',
@@ -27,12 +27,12 @@ describe('ED-4 revision comparison', () => {
     ]);
   });
 
-  test('ED-4 identical versions have no differences, and bookkeeping fields are ignored', () => {
+  test('ED-7 ED-3 identical versions have no differences, and bookkeeping fields are ignored', () => {
     const a = { _id: 'A', createdAt: 'x', modifiedAt: 'y', title: 'T' };
     expect(diffEntries(a, { ...a, modifiedAt: 'z' })).toEqual([]);
   });
 
-  test('ED-4 content leaves out identity, timestamps, and trash state', () => {
+  test('ED-7 ED-3 content leaves out identity, timestamps, and trash state', () => {
     expect(
       contentOf({
         _id: 'A',

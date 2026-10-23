@@ -110,8 +110,8 @@ export function dismissalFor(
       ? typeof chapter.manuscriptText === 'string'
         ? chapter.manuscriptText
         : ''
-      : // The empty middle slot held facts in play before A39; kept so earlier dismissals still match.
-        JSON.stringify([chapter.strands ?? [], [], chapter.links ?? []]);
+      : // The empty slots held facts in play (before A39) and links (before A53); kept so earlier dismissals still match.
+        JSON.stringify([chapter.strands ?? [], [], []]);
   const stamps = [...new Set(f.entryIds)]
     .sort()
     .map((id) => {

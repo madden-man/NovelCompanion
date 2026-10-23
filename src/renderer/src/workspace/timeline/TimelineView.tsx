@@ -205,7 +205,7 @@ export function TimelineView() {
       categoryId: n.categoryId,
       formative: n.formative,
     };
-    // Real or invented is provenance once the model drops `reality` (SM-4); until then, invented.
+    // SM-4: an event made from the grid is invented.
     if ('reality' in base) data.reality = 'invented';
     try {
       const { entry } = await call('entry.create', { collection: 'worldEvents', data });
