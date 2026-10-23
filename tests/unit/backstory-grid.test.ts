@@ -15,7 +15,6 @@ import {
   eventsNear,
   hitBackstory,
   insertEventTitle,
-  insertMention,
   layoutBackstory,
   layoutPerson,
   lifespanBar,
@@ -26,7 +25,6 @@ import {
   moveLifeEnd,
   PICKER_REACH,
   treeOrder,
-  withMentionLink,
   withYear,
 } from '../../src/shared/domain/backstoryGrid';
 import { eventSpans, fromCollections, strandSpans } from '../../src/shared/domain/timeline';
@@ -526,6 +524,7 @@ describe('SM-9 A33 the Relevant world events picker', () => {
         'Pacific Rim trade accord signed',
       ),
     ).toBe('The floods.\nPacific Rim trade accord signed');
+    expect(insertEventTitle('x', '  ')).toBe('x');
   });
 });
 
@@ -643,19 +642,6 @@ describe('IP-4 dragging a lifespan and the picker mention', () => {
     });
     expect(withYear({ unknown: true }, 1990)).toEqual({ year: 1990 });
     expect(withYear(null, 2050)).toEqual({ year: 2050 });
-  });
-
-  test('IP-4 ED-9 Pick events inserts an @ mention on its own line, once, and adds the link once', () => {
-    expect(insertMention('', 'Care robots')).toBe('@Care robots');
-    expect(insertMention('Rents doubled.', ' Care robots ')).toBe('Rents doubled.\n@Care robots');
-    expect(insertMention('Rents doubled.\n@Care robots', 'Care robots')).toBe(
-      'Rents doubled.\n@Care robots',
-    );
-    expect(insertMention('x', '  ')).toBe('x');
-    expect(withMentionLink([], 'E2')).toEqual([{ targetId: 'E2', kind: 'mention' }]);
-    expect(withMentionLink([{ targetId: 'E2', kind: 'mentions' }], 'E2')).toEqual([
-      { targetId: 'E2', kind: 'mentions' },
-    ]);
   });
 
   test('IP-13 every moment lists by year, then by the person’s name', () => {

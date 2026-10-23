@@ -2,49 +2,24 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { ageText, eventsNear, kindOf } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment, BackstoryPerson } from '../../../../shared/domain/backstoryGrid';
 import type { EventSpan } from '../../../../shared/domain/timeline';
-import { fieldByName, manifests } from '../../../../shared/schema';
-import type { FieldSpec } from '../../../../shared/schema';
-import type { Doc } from '../../../../shared/domain/paths';
-import { WriteFieldset, useWriteGuard } from '../../connection';
+import { useWriteGuard } from '../../connection';
 import { TrashControls } from '../editor';
 import { span } from '../timeline/common';
 import { Editable, listOptions, useListAddNew } from '../editable';
 import type { AddedItem, EditableOption } from '../editable';
 import { useBibleSettings } from '../bibleSettings';
-import { useLookup } from '../pickers';
 import { useFocusTrap } from '../focusTrap';
 import { useList } from '../data';
-import { Field } from '../fields';
-import type { Messages } from '../fields';
-import { HistoryDrawer } from '../history';
 import { KindSwatch } from './KindSwatch';
 
 export type MomentField =
-  | 'year'
-  | 'endYear'
-  | 'title'
-  | 'body'
-  | 'worldContext'
-  | 'characterId'
-  | 'kind'
-  | 'status'
-  | 'provenance'
-  | 'sourceNote'
-  | 'sourceRef'
-  | 'tags'
-  | 'links';
+  'year' | 'endYear' | 'title' | 'body' | 'worldContext' | 'characterId' | 'kind';
 
 /**
- * One field saved as one write and one undo step. `mentioned`: entries picked
- * with `@`, linked in the same step (ED-9); `added`: the list item Add new
- * made on the way, joined to the step.
+ * One field saved as one write and one undo step. `added`: the list item Add
+ * new made on the way, joined to the step.
  */
-type SaveField = (
-  field: MomentField,
-  value: unknown,
-  mentioned?: readonly string[],
-  added?: AddedItem,
-) => Promise<void>;
+type SaveField = (field: MomentField, value: unknown, added?: AddedItem) => Promise<void>;
 
 /** "Name 中文", the way the "Whose moment" choices and the dialog's head name a person. */
 export function personLabel(p: BackstoryPerson): string {
@@ -64,25 +39,21 @@ function ageWords(p: BackstoryPerson, year: number): string {
  * back. An Escape that no open field takes closes the dialog, and the focus
  * goes back to where it was (the marker). Previous and Next walk the person's
  * moments in year order without closing. "Whose moment" moves the moment to
- * another person; the age is computed (TL-3). Delete lists what links to the
- * moment first (ED-5). A50: More, at the foot, holds the rest of the entry
- * (status, provenance, source note and location, tags, links) and its
- * History, so the dialog is the moment's whole editor (ED-1). While a
- * snapshot is open read-only (ARCH-6) the fields and Delete are off with the
- * reason; Previous, Next, Close, More and History still work.
+ * another person; the age is computed (TL-3). Delete asks once (ED-5). The
+ * dialog is the only moment editor (ED-1). While a snapshot is open read-only
+ * (ARCH-6) the fields and Delete are off with the reason; Previous, Next and
+ * Close still work.
  */
 export function MomentDialog(props: {
   moment: BackstoryMoment;
-  /** A50: the stored moment, for the fields under More; null while it loads. */
-  entry: Doc | null;
   /** The moment's person, or null when the character is gone. */
   person: BackstoryPerson | null;
   /** Everyone, in the grid's order: the "Whose moment" choices. */
   people: readonly BackstoryPerson[];
   events: EventSpan[];
   onSave: SaveField;
-  /** IP-4, ED-9: a world event mentioned in the moment's Relevant world events. */
-  onMention: (event: { id: string; title: string }) => Promise<void>;
+  /** IP-4: a world event's title picked into the moment's Relevant world events. */
+  onPickEvent: (event: { id: string; title: string }) => Promise<void>;
   /** The moment went to the trash through the confirm; the view offers Undo. */
   onTrashed: () => void;
   onClose: () => void;
@@ -101,15 +72,6 @@ export function MomentDialog(props: {
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const moreId = useId();
-  // A50: More stays as it was while the dialog is open, through Previous and Next.
-  const [more, setMore] = useState(false);
-  const [history, setHistory] = useState(false);
-  const historyOpen = useRef(false);
-  const historyButton = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => {
-    historyOpen.current = history;
-  });
   /** Whether the dialog has had a press yet, and whether the click that ends one is dropped. */
   const pressed = useRef(false);
   const swallow = useRef(false);
@@ -134,12 +96,6 @@ export function MomentDialog(props: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       e.preventDefault();
-      // The History drawer over the dialog takes the Escape first.
-      if (historyOpen.current) {
-        setHistory(false);
-        historyButton.current?.focus();
-        return;
-      }
       closeRef.current();
     };
     window.addEventListener('keydown', onKey);
@@ -267,33 +223,6 @@ export function MomentDialog(props: {
         {/* Keyed by the moment, so Previous and Next start every field closed on the new one,
             and by the open count, so a double-click on the marker opens What happens anew. */}
         <MomentFields key={`${m.id}:${props.freshKey}`} {...props} />
-        <div className="stack tight bs-more">
-          <button
-            type="button"
-            className="btn small bs-more-toggle"
-            aria-expanded={more}
-            aria-controls={more ? moreId : undefined}
-            onClick={() => setMore((o) => !o)}
-          >
-            <span className="bs-more-caret" aria-hidden="true" />
-            More
-          </button>
-          {more && (
-            <div id={moreId} className="bs-more-body" data-testid="moment-more">
-              <MoreFields key={m.id} moment={m} entry={props.entry} onSave={props.onSave} />
-              <div className="row">
-                <button
-                  ref={historyButton}
-                  type="button"
-                  className="btn small"
-                  onClick={() => setHistory(true)}
-                >
-                  History
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
         <footer className="row bs-dialog-foot">
           <TrashControls
             collection="moments"
@@ -308,156 +237,7 @@ export function MomentDialog(props: {
             Close
           </button>
         </footer>
-        {history && (
-          <HistoryDrawer
-            collection="moments"
-            id={m.id}
-            title={m.title.trim() || 'Untitled moment'}
-            beforeRestore={async () => undefined}
-            onClose={() => {
-              setHistory(false);
-              historyButton.current?.focus();
-            }}
-          />
-        )}
       </div>
-    </div>
-  );
-}
-
-const NO_MESSAGES: Messages = { warnings: [], issues: [] };
-const spec = (name: string): FieldSpec => {
-  const s = fieldByName(manifests.moments, name);
-  if (!s) throw new Error(`The moment manifest has no ${name}`);
-  return s;
-};
-const TAGS = spec('tags');
-const LINKS = spec('links');
-const text = (v: unknown): string => (typeof v === 'string' ? v : '');
-
-/**
- * The value a chip row shows: what the writer just made it until the stored
- * value catches up, so a second add right after the first builds on it.
- */
-function useShown(stored: unknown): [unknown, (v: unknown) => void] {
-  const [pending, setPending] = useState<unknown>(undefined);
-  if (pending !== undefined && JSON.stringify(pending) === JSON.stringify(stored ?? [])) {
-    setPending(undefined);
-  }
-  return [pending === undefined ? (stored ?? []) : pending, setPending];
-}
-
-/**
- * A50, ED-1: the rest of the moment under More. Status and Provenance are
- * selects over their lists with Add new; Source note and Source location are
- * text; Tags and Links are the entry editor's chip row and link panel. Each
- * change is one write and one undo step through the dialog's save.
- */
-function MoreFields(props: { moment: BackstoryMoment; entry: Doc | null; onSave: SaveField }) {
-  const { moment: m } = props;
-  const doc = props.entry ?? {};
-  const what = m.title.trim() || 'this moment';
-  const statuses = listOptions(useList('statuses'));
-  const provenance = listOptions(useList('provenance'));
-  const addStatus = useListAddNew('statuses');
-  const addProvenance = useListAddNew('provenance');
-  const [tags, setTags] = useShown(doc.tags);
-  const [links, setLinks] = useShown(doc.links);
-  const chips = (field: 'tags' | 'links', set: (v: unknown) => void) => (v: unknown) => {
-    set(v);
-    props.onSave(field, v).catch(() => set(undefined));
-  };
-  return (
-    <div className="stack bs-more-fields">
-      <div className="bs-when">
-        <div className="bs-field">
-          <span className="bs-field-title" aria-hidden="true">
-            Status
-          </span>
-          <Editable
-            kind="select"
-            className="bs-ed"
-            data-field="status"
-            label={`Status of ${what}`}
-            options={statuses}
-            value={text(doc.status) || null}
-            onAddNew={addStatus}
-            onSave={(v, info) =>
-              v ? props.onSave('status', v, [], info.added) : Promise.resolve()
-            }
-          />
-        </div>
-        <div className="bs-field">
-          <span className="bs-field-title" aria-hidden="true">
-            Provenance
-          </span>
-          <Editable
-            kind="select"
-            className="bs-ed"
-            data-field="provenance"
-            label={`Provenance of ${what}`}
-            options={provenance}
-            allowEmpty
-            emptyLabel="None"
-            placeholder="None"
-            value={text(doc.provenance) || null}
-            onAddNew={addProvenance}
-            onSave={(v, info) => props.onSave('provenance', v, [], info.added)}
-          />
-        </div>
-        <div className="bs-field">
-          <span className="bs-field-title" aria-hidden="true">
-            Source location
-          </span>
-          <Editable
-            kind="text"
-            className="bs-ed"
-            data-field="sourceRef"
-            allowEmpty
-            label={`Source location of ${what}`}
-            placeholder="Add where it came from"
-            value={text(doc.sourceRef)}
-            onSave={(v) => props.onSave('sourceRef', v)}
-          />
-        </div>
-      </div>
-      <div className="bs-field">
-        <span className="bs-field-title" aria-hidden="true">
-          Source note
-        </span>
-        <Editable
-          kind="rich"
-          className="bs-ed"
-          data-field="sourceNote"
-          mode="inline"
-          size="notes"
-          allowEmpty
-          label={`Source note of ${what}`}
-          placeholder="Add a source note"
-          value={text(doc.sourceNote)}
-          onSave={(v) => props.onSave('sourceNote', v)}
-        />
-      </div>
-      <WriteFieldset className="bs-more-group">
-        <Field
-          spec={TAGS}
-          value={tags}
-          path="tags"
-          messages={NO_MESSAGES}
-          root={doc}
-          onMention={() => undefined}
-          onChange={chips('tags', setTags)}
-        />
-        <Field
-          spec={LINKS}
-          value={links}
-          path="links"
-          messages={NO_MESSAGES}
-          root={doc}
-          onMention={() => undefined}
-          onChange={chips('links', setLinks)}
-        />
-      </WriteFieldset>
     </div>
   );
 }
@@ -469,13 +249,9 @@ function MomentFields(props: {
   events: EventSpan[];
   fresh: boolean;
   onSave: SaveField;
-  onMention: (event: { id: string; title: string }) => Promise<void>;
+  onPickEvent: (event: { id: string; title: string }) => Promise<void>;
 }) {
   const { moment: m } = props;
-  // ED-9: the linked entries' titles show as chips; an `@` pick links in the save that follows.
-  const found = useLookup(m.linkIds);
-  const titles = m.linkIds.flatMap((id) => found.get(id)?.title ?? []);
-  const picked = useRef<string[]>([]);
   const what = m.title.trim() || 'this moment';
   const options: EditableOption[] = props.people.map((p) => ({
     value: p.id,
@@ -552,7 +328,7 @@ function MomentFields(props: {
             placeholder="No kind"
             value={m.kind}
             onAddNew={addKind}
-            onSave={(v, info) => props.onSave('kind', v, [], info.added)}
+            onSave={(v, info) => props.onSave('kind', v, info.added)}
           />
         </div>
       </div>
@@ -600,16 +376,9 @@ function MomentFields(props: {
           label={`Relevant world events, ${what}`}
           placeholder="Add the world events"
           value={m.worldContext}
-          mentionTitles={titles}
-          onMention={(hit) => {
-            if (!picked.current.includes(hit.id)) picked.current.push(hit.id);
-          }}
-          onSave={async (v) => {
-            await props.onSave('worldContext', v, picked.current);
-            picked.current = [];
-          }}
+          onSave={(v) => props.onSave('worldContext', v)}
         />
-        <EventPicker year={m.year} events={props.events} what={what} onPick={props.onMention} />
+        <EventPicker year={m.year} events={props.events} what={what} onPick={props.onPickEvent} />
       </div>
     </>
   );
@@ -617,7 +386,7 @@ function MomentFields(props: {
 
 /**
  * A33, IP-4: the world events within the bible's picker reach of the moment's
- * year; a click mentions the event (`@Title`, ED-9) in Relevant world events.
+ * year; a click inserts the event's title in Relevant world events as plain text.
  */
 function EventPicker(props: {
   year: number;
