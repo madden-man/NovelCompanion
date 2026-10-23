@@ -193,6 +193,17 @@ export function BackstoryView(props: {
     () => (open ? momentsOf(grid.moments, open.characterId) : []),
     [grid.moments, open],
   );
+  // A50: the open moment moved to another person (Whose moment, or its undo): the pick and the
+  // person's timeline follow it, so Previous and Next walk the row on screen.
+  const [owner, setOwner] = useState<{ id: string; characterId: string } | null>(null);
+  if (!open && owner) setOwner(null);
+  if (open && (owner?.id !== open.id || owner.characterId !== open.characterId)) {
+    if (owner?.id === open.id) {
+      setPicked(open.characterId);
+      if (viewing !== null) setPerson(open.characterId);
+    }
+    setOwner({ id: open.id, characterId: open.characterId });
+  }
   const place = open ? theirs.findIndex((m) => m.id === open.id) : -1;
   const prev = place > 0 ? theirs[place - 1] : undefined;
   const next = place >= 0 && place < theirs.length - 1 ? theirs[place + 1] : undefined;

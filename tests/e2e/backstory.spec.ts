@@ -1380,7 +1380,7 @@ test('IP-4 A50 the name opens the person’s page; a click elsewhere in the cell
   await expect(personView()).toHaveCount(0);
 });
 
-test('IP-4 a moment moves to another person through Whose moment in the dialog as one step; the grid redraws', async () => {
+test('IP-4 A50 a moment moves to another person through Whose moment in the dialog as one step; the grid redraws, and in the person view the view follows the moment', async () => {
   const d = await openMoment(page, 'Z3-lives-1');
   const who = cell('Z3-lives-1', 'characterId');
   await openEditable(who);
@@ -1396,6 +1396,35 @@ test('IP-4 a moment moves to another person through Whose moment in the dialog a
   await expect(row('Z3').locator('.bs-marker[data-id="Z3-lives-1"]')).toHaveCount(1);
   await expect(d.getByTestId('moment-who')).toHaveText('Zhou Lan 周兰, 2027, age 39');
   await closeMoment();
+
+  // A50: in Zhou Lan's timeline the move takes the view to Margaret Hale, and Previous walks hers.
+  await openPerson('Z3');
+  await expect(personView()).toHaveCount(1);
+  const d2 = await openMoment(page, 'Z3-lives-1');
+  await openEditable(cell('Z3-lives-1', 'characterId'));
+  await cell('Z3-lives-1', 'characterId').locator('select').selectOption('H1');
+  await expect.poll(async () => (await getMoment('Z3-lives-1')).characterId).toBe('H1');
+  await expect(personView()).toHaveCount(1);
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
+  await expect(row('H1')).toHaveCount(1);
+  await expect(row('Z3')).toHaveCount(0);
+  await expect(label('H1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(picked()).toHaveText(/^Margaret Hale/);
+  await expect(row('H1').locator('.bs-marker[data-id="Z3-lives-1"]')).toHaveCount(1);
+  // Margaret's moments by year: this one (2027), then her voice (2028).
+  await d2.getByRole('button', { name: 'Next' }).click();
+  await expect(d2).toHaveAttribute('data-id', 'H1-voice-0');
+  await expect(row('H1').locator('.bs-marker[data-id="H1-voice-0"]')).toHaveCount(1);
+  await d2.getByRole('button', { name: 'Previous' }).click();
+  await expect(d2).toHaveAttribute('data-id', 'Z3-lives-1');
+  // Undo moves it back, and the view follows it home.
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment('Z3-lives-1')).characterId).toBe('Z3');
+  await expect(row('Z3')).toHaveCount(1);
+  await expect(row('H1')).toHaveCount(0);
+  await closeMoment();
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
 });
 
 test('IP-13 with nobody picked, New moment asks whose it is and the dialog opens on the new moment', async () => {
