@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
+  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
@@ -347,6 +348,8 @@ export function GridMarker(props: {
   selected: boolean;
   className?: string;
   data?: Record<string, string>;
+  /** More style for the button, such as a custom property its grid's CSS reads (A51). */
+  style?: CSSProperties;
   onActivate: () => void;
   /** IP-4: the title as stored, and its save, for renaming the label in place. */
   title?: string;
@@ -368,7 +371,7 @@ export function GridMarker(props: {
       <button
         type="button"
         className={`wg-marker${m.bar ? ' bar' : ' dot'}${m.big ? ' big' : ''}${props.selected ? ' selected' : ''}${dragging ? ' dragging' : ''}${props.className ? ` ${props.className}` : ''}`}
-        style={{ left: m.x + shift, top, width: m.width, height: size }}
+        style={{ ...props.style, left: m.x + shift, top, width: m.width, height: size }}
         data-id={m.id}
         data-year={m.startYear}
         data-end-year={m.endYear}

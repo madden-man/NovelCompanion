@@ -26,10 +26,11 @@ import type { StoredPositions } from '../../../../shared/domain/tree';
 import { createCommand, editCommand, restoreCommand } from '../../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
-import { useEntries, useStore } from '../data';
+import { useEntries, useList, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { BackstoryGrid } from './BackstoryGrid';
+import { KindSwatch } from './KindSwatch';
 import { MomentDialog } from './MomentDialog';
 import type { MomentField } from './MomentDialog';
 import { MomentCreate } from './MomentCreate';
@@ -53,6 +54,7 @@ const FIELD_WORDS: Record<MomentField, string> = {
   body: 'how they experience it',
   worldContext: 'the relevant world events',
   characterId: 'whose moment it is',
+  kind: 'the kind',
   status: 'the status',
   provenance: 'the provenance',
   sourceNote: 'the source note',
@@ -91,6 +93,9 @@ export function BackstoryView(props: {
   const worldEvents = useEntries('worldEvents');
   const eraEntries = useEntries('eraStates');
   const chapters = useEntries('chapters');
+  // A51: the moment kinds colour and size the markers and key the legend.
+  const kindList = useList('momentKinds');
+  const kinds = useMemo(() => kindList?.items ?? [], [kindList]);
   const [positions, setPositions] = useState<StoredPositions | null>(null);
   const [picked, setPicked] = useState<string | null>(props.characterId ?? null);
   // A50: the person whose timeline fills the section, or null for everyone.
@@ -150,8 +155,9 @@ export function BackstoryView(props: {
         moments: momentEntries,
         positions,
         base: { from: numbers.timelineStart, to: numbers.timelineEnd },
+        kinds,
       }),
-    [characters, families, unions, parentLinks, momentEntries, positions, numbers],
+    [characters, families, unions, parentLinks, momentEntries, positions, numbers, kinds],
   );
   // A50: a moment opened from elsewhere (search, the desk, Claude) opens on its person's timeline
   // with its dialog open, as a marker click does; a moment not in the grid opens nobody.
@@ -572,9 +578,16 @@ export function BackstoryView(props: {
           <span className="bs-key life dash" aria-hidden="true" />
           Alive past the story year
         </span>
-        <span>
-          <span className="wg-key dot" aria-hidden="true" />
-          Moment
+        {/* A51: a key per moment kind in the list's order, then no kind, the ink dot. */}
+        {kinds.map((k) => (
+          <span key={k.id} data-testid="legend-kind" data-kind={k.id}>
+            <KindSwatch kind={k} />
+            {k.label}
+          </span>
+        ))}
+        <span data-testid="legend-kind" data-kind="">
+          <KindSwatch kind={undefined} />
+          No kind
         </span>
         <span>
           <span className="wg-key bar" aria-hidden="true" />

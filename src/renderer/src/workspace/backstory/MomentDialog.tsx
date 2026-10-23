@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { ageText, eventsNear } from '../../../../shared/domain/backstoryGrid';
+import { ageText, eventsNear, kindOf } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment, BackstoryPerson } from '../../../../shared/domain/backstoryGrid';
 import type { EventSpan } from '../../../../shared/domain/timeline';
 import { fieldByName, manifests } from '../../../../shared/schema';
@@ -17,6 +17,7 @@ import { useList } from '../data';
 import { Field } from '../fields';
 import type { Messages } from '../fields';
 import { HistoryDrawer } from '../history';
+import { KindSwatch } from './KindSwatch';
 
 export type MomentField =
   | 'year'
@@ -25,6 +26,7 @@ export type MomentField =
   | 'body'
   | 'worldContext'
   | 'characterId'
+  | 'kind'
   | 'status'
   | 'provenance'
   | 'sourceNote'
@@ -170,6 +172,8 @@ export function MomentDialog(props: {
     stepped.current = null;
   }, [m.id, props.onPrev, props.onNext]);
 
+  const kinds = useList('momentKinds')?.items;
+  const kind = kinds ? kindOf(m, kinds) : undefined;
   const years = span(m.year, m.endYear ?? m.year);
   const who = person ? `${personLabel(person)}, ${years}, ${ageWords(person, m.year)}` : years;
   return (
@@ -217,8 +221,17 @@ export function MomentDialog(props: {
             <h2 id={titleId} data-testid="moment-title">
               {m.title.trim() || 'Untitled moment'}
             </h2>
-            <span className="bs-dialog-who" data-testid="moment-who">
-              {who}
+            <span className="row tight bs-dialog-whokind">
+              <span className="bs-dialog-who" data-testid="moment-who">
+                {who}
+              </span>
+              {/* A51: the kind beside the person, its swatch and its name; nothing for no kind. */}
+              {kind && (
+                <span className="chip bs-kind-chip" data-testid="moment-kind" data-kind={kind.id}>
+                  <KindSwatch kind={kind} />
+                  {kind.label}
+                </span>
+              )}
             </span>
           </div>
           <span className="row tight">
@@ -468,9 +481,11 @@ function MomentFields(props: {
     value: p.id,
     label: personLabel(p),
   }));
+  const kinds = listOptions(useList('momentKinds'));
+  const addKind = useListAddNew('momentKinds');
   return (
     <>
-      <div className="bs-when">
+      <div className="bs-when bs-when-who">
         <div className="bs-field" data-field="year">
           <span className="bs-field-title" aria-hidden="true">
             Year
@@ -519,6 +534,25 @@ function MomentFields(props: {
             options={options}
             value={m.characterId}
             onSave={(v) => (v ? props.onSave('characterId', v) : Promise.resolve())}
+          />
+        </div>
+        {/* A51: the kind, from the momentKinds list; Add new makes one in the same step. */}
+        <div className="bs-field" data-field="kind">
+          <span className="bs-field-title" aria-hidden="true">
+            Kind
+          </span>
+          <Editable
+            kind="select"
+            className="bs-ed"
+            data-field="kind"
+            label={`Kind of ${what}`}
+            options={kinds}
+            allowEmpty
+            emptyLabel="No kind"
+            placeholder="No kind"
+            value={m.kind}
+            onAddNew={addKind}
+            onSave={(v, info) => props.onSave('kind', v, [], info.added)}
           />
         </div>
       </div>

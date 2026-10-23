@@ -12,6 +12,7 @@ import {
   NO_FAMILY,
   PERSON_METRICS,
   ageText,
+  kindOf,
   layoutBackstory,
   layoutPerson,
   lifespanBar,
@@ -22,6 +23,7 @@ import {
 import type { Lifespan as Life } from '../../../../shared/domain/backstoryGrid';
 import type {
   BackstoryGrid as Grid,
+  BackstoryKind,
   BackstoryMoment,
   BackstoryPerson,
 } from '../../../../shared/domain/backstoryGrid';
@@ -43,6 +45,7 @@ import {
   useGridViewport,
 } from '../timeline/gridShared';
 import type { EdgeDrag, EraEdits, GridBand, GridEra, MovePart } from '../timeline/gridShared';
+import { KindSwatch, kindStyle } from './KindSwatch';
 import './backstory.css';
 
 /**
@@ -131,16 +134,18 @@ export function BackstoryGrid(props: {
     lineMarkers(line).map((m) => {
       const mo = byId.get(m.id);
       if (!mo) return null;
+      const kind = kindOf(mo, grid.kinds);
       return (
         <GridMarker
           key={m.id}
           m={m}
           ctl={ctl}
           layout={layout}
-          label={describe(mo, grid.people.get(mo.characterId))}
+          label={describe(mo, grid.people.get(mo.characterId), kind)}
           selected={props.selectedMomentId === m.id}
           className="bs-marker"
-          data={{ person: mo.characterId }}
+          data={{ person: mo.characterId, ...m.data }}
+          style={kindStyle(kind)}
           onActivate={() => props.onPickMoment(m.id, mo.characterId)}
           title={mo.title}
           onRename={rename && !props.readOnly ? (t) => rename(m.id, t) : undefined}
@@ -150,6 +155,7 @@ export function BackstoryGrid(props: {
     });
 
   const tipMoment = ctl.tip ? byId.get(ctl.tip.id) : undefined;
+  const tipKind = tipMoment ? kindOf(tipMoment, grid.kinds) : undefined;
 
   // IP-4: the lifespan bars drag at their ends and are one Tab stop, Up and Down between them.
   const canEdit = !props.readOnly && props.onLifeEnd !== undefined;
@@ -352,6 +358,13 @@ export function BackstoryGrid(props: {
           </strong>
           <br />
           {describeWho(grid.people.get(tipMoment.characterId), tipMoment.year)}
+          {tipKind && (
+            <>
+              {' · '}
+              <KindSwatch kind={tipKind} />
+              <span data-testid="tip-kind">{tipKind.label}</span>
+            </>
+          )}
         </GridTip>
       )}
     </GridFrame>
@@ -468,12 +481,17 @@ function Lifespan(props: {
   );
 }
 
-function describe(m: BackstoryMoment, p: BackstoryPerson | undefined): string {
+function describe(
+  m: BackstoryMoment,
+  p: BackstoryPerson | undefined,
+  kind: BackstoryKind | undefined,
+): string {
   const age = p ? ageText(p, m.year) : '';
   return [
     momentLabel(m),
     span(m.year, m.endYear ?? m.year),
     p ? `${p.name}${/^\d+$/.test(age) ? `, age ${age}` : ''}` : '',
+    kind?.label ?? '',
   ]
     .filter(Boolean)
     .join(', ');
