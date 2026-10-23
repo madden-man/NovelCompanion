@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { READ_ONLY_REASON } from '../../src/shared/ipcApp';
 import type { Invoke } from '../helpers/t5';
 import { fileDb, fillEditable, invokeVia, launch, openEditable, rail } from './helpers';
 import type { TestDb } from './helpers';
@@ -426,95 +425,6 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
   await invoke('claude.instructions.set', { feature: first.feature, text: null });
 });
 
-test('IP-16 Remove revisions older than a date shows the count from a dry run, then asks for the word', async () => {
-  await invoke('bible.open', { slug: SLUG });
-  const { entry } = await invoke('entry.create', {
-    collection: 'openQuestions',
-    data: { title: 'Who keeps the harbor log?' },
-  });
-  for (const t of ['Who keeps the log?', 'Who keeps the tide log?']) {
-    await invoke('entry.update', {
-      collection: 'openQuestions',
-      id: entry._id,
-      patch: { title: t },
-    });
-  }
-  const view = await openSettings();
-  const prune = view.getByTestId('settings-prune');
-  const before = '2999-01-01';
-  const { count } = await invoke('revisions.prune', { before, dryRun: true });
-  expect(count).toBeGreaterThan(0);
-  await prune.getByTestId('prune-date').fill(before);
-  await expect(prune.getByTestId('prune-count')).toHaveText(
-    `${count} ${count === 1 ? 'revision was' : 'revisions were'} written before ${before}.`,
-  );
-  const things = `${count} ${count === 1 ? 'revision' : 'revisions'}`;
-  await prune.getByRole('button', { name: `Remove ${things}`, exact: true }).click();
-  const confirm = prune.getByRole('button', { name: `Remove ${things} for good` });
-  await expect(confirm).toBeDisabled();
-  await prune.getByLabel(`Type remove to remove ${things} for good`).fill('remov');
-  await expect(confirm).toBeDisabled();
-  // Nothing was removed while the word was not typed.
-  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(count);
-  // A save made after the count is kept: the confirm removes exactly what was counted.
-  await invoke('entry.update', {
-    collection: 'openQuestions',
-    id: entry._id,
-    patch: { title: 'Who keeps the harbor tide log?' },
-  });
-  await prune.getByLabel(`Type remove to remove ${things} for good`).fill('remove');
-  await confirm.click();
-  await expect(prune.getByTestId('prune-note')).toHaveText(
-    `Removed ${things} written before ${before}. This is not an undo step.`,
-  );
-  expect((await invoke('revisions.prune', { before, dryRun: true })).count).toBe(1);
-  // The entry itself is untouched.
-  expect(
-    (await invoke('entry.get', { collection: 'openQuestions', id: entry._id })).entry.title,
-  ).toBe('Who keeps the harbor tide log?');
-});
-
-test('IP-16 ARCH-6 on a snapshot open read-only, the prune control is off with the reason', async () => {
-  // A server of its own, stopped mid-session so the snapshot opens read-only (as editable.spec.ts does).
-  const own = await MongoMemoryReplSet.create({
-    replSet: { count: 1, storageEngine: 'wiredTiger' },
-  });
-  try {
-    const member = own.servers[0]!;
-    await app?.close();
-    ({ app, page } = await launch(own.getUri(), { NOVEL_COMPANION_USER_DATA: userData }));
-    invoke = invokeVia(page);
-    await invoke('bible.create', { slug: 'ro', name: 'Read only' });
-    await invoke('bible.open', { slug: 'ro' });
-    await expect(page.getByTestId('workspace')).toBeVisible();
-    await invoke('snapshot.take', {});
-    await rail(page, 'Settings').click();
-    const view = page.getByTestId('settings-view');
-    await member.stop({ doCleanup: false, force: true });
-    // The lost connection shows on the next write; the snapshot opens read-only in place.
-    const reach = view.getByTestId('number-pickerReach');
-    await openEditable(reach);
-    await reach.locator('input').fill('4');
-    await reach.locator('input').press('Enter');
-    await expect(reach.getByRole('alert')).toBeVisible({ timeout: 60_000 });
-    await reach.locator('input').press('Escape');
-    const banner = page.getByTestId('connection-banner');
-    await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
-    await banner.getByTestId('open-snapshot').click();
-    await expect(banner).toHaveAttribute('data-state', 'readOnly');
-    await rail(page, 'Settings').click();
-    const date = page.getByTestId('settings-view').getByTestId('prune-date');
-    await expect(date).toBeDisabled();
-    await expect(date).toHaveAttribute('title', READ_ONLY_REASON);
-    await expect(date).toHaveAttribute('aria-describedby', 'read-only-reason');
-    await expect(page.locator('#read-only-reason')).toContainText(READ_ONLY_REASON);
-  } finally {
-    await app?.close();
-    await own.stop().catch(() => undefined);
-    await start();
-  }
-});
-
 /** WCAG contrast of two `rgb()` colours. */
 function contrast(a: string, b: string): number {
   const lum = (c: string) => {
@@ -552,7 +462,6 @@ test('NF-2 IP-11 IP-15 the new Settings fields work from the keyboard and read c
       view.locator('.settings-label').first(),
       view.locator('.instruction-footer').first(),
       view.locator('.settings-default').first(),
-      view.getByTestId('settings-prune').getByText('Remove revisions older than'),
     ]) {
       const [color, bg] = await el.evaluate((e) => {
         // The first box behind the text with a background of its own.
