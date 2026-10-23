@@ -271,8 +271,8 @@ test('NF-2 SM-6 every section list opens from Search and filters by keyboard, op
     const left = await unreachable();
     if (left.length) missed[info.plural] = left;
   }
-  // A50: one fewer than before, the moments, whose list is now Backstory.
-  expect(opened).toBeGreaterThan(11);
+  // A50: one fewer than before, the moments, whose list is now Backstory. A53: one fewer again, books.
+  expect(opened).toBeGreaterThan(10);
   expect(missed).toEqual({});
 });
 
