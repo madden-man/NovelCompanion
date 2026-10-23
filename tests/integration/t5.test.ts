@@ -38,13 +38,7 @@ describe('T-5 editing coverage through the IPC layer', () => {
   });
 
   test('T-5 SM-3 the walk reaches every manifest the cut model keeps: moments, questions, places, glossary, culture', () => {
-    const m4 = [
-      'moments',
-      'openQuestions',
-      'places',
-      'glossaryTerms',
-      'culturalEntries',
-    ] as const;
+    const m4 = ['moments', 'openQuestions', 'places', 'glossaryTerms', 'culturalEntries'] as const;
     for (const c of m4) {
       const item = plan.items.find((i) => i.collection === c);
       expect(item, `${c} is in the T-5 plan`).toBeDefined();
