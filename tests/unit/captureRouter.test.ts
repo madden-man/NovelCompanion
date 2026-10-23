@@ -639,6 +639,31 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
     valid(h);
   });
 
+  test('CR-5 SM-3 A51 a move drafts its Lives in moment with the kind move, when the bible has that kind', () => {
+    const input = sliceInput();
+    input.lists.push({
+      _id: 'momentKinds',
+      items: [
+        { id: 'move', label: 'Moves' },
+        { id: 'life', label: 'Life event' },
+      ],
+    });
+    const withKinds = buildIndex(input);
+    const text = 'Mark moves to Seattle in 2061 for a job at a Compact logistics firm';
+    const [f] = routeCapture(text, withKinds, OPTS).facts;
+    expect(f!.drafts[0]!.data).toMatchObject({ title: 'Lives in Seattle', kind: 'move' });
+    valid(f!);
+    // Not a move: no kind.
+    const [g] = routeCapture(
+      'Dawn and Mark argue about whether to raise LiNa bilingual',
+      withKinds,
+      OPTS,
+    ).facts;
+    expect(g!.drafts.every((d) => d.data?.kind === undefined)).toBe(true);
+    // A bible with no Moves kind drafts the move with no kind.
+    expect(one(text).drafts[0]!.data?.kind).toBeUndefined();
+  });
+
   test('CR-5 a world event has start, end, the one category cued, and regions as item IDs or new items', () => {
     const f = one('In 2063 the second crash hits');
     expect(f.drafts[0]!.data).toMatchObject({
