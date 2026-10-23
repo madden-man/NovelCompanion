@@ -208,6 +208,12 @@
 .bs-dialog .editable-rich > .editable-text {
   max-width: none;
 }
+/* A50: a moment asked for that is not on the grid. */
+.bs-missing {
+  margin: 0;
+  color: var(--fg);
+  font-weight: 500;
+}
 /* A50: More, the rest of the moment, at the foot of the dialog. */
 .bs-more {
   align-items: flex-start;

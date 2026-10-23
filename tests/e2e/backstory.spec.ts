@@ -815,6 +815,17 @@ test('SM-9 ED-5 Delete in the dialog lists what links to the moment, then moves 
   await expect(marker('Z3-lives-1')).toHaveCount(1);
   expect((await getMoment('Z3-lives-1')).deletedAt).toBeUndefined();
   await expect(notice).toHaveCount(0);
+  // A50: in the Trash a moment offers Restore and no Open, since only live moments open.
+  await invoke('entry.delete', { collection: 'moments', id: 'Z3-lives-1' });
+  await rail(page, 'Trash').click();
+  const trashed = page.getByTestId('trash-list').locator('li[data-id="Z3-lives-1"]');
+  await expect(trashed).toBeVisible();
+  await expect(trashed.getByRole('button', { name: 'Open', exact: true })).toHaveCount(0);
+  await trashed.getByRole('button', { name: 'Restore Lives in Portland, Oregon' }).click();
+  await expect(trashed).toHaveCount(0);
+  expect((await getMoment('Z3-lives-1')).deletedAt).toBeUndefined();
+  await showBackstory();
+  await expect(marker('Z3-lives-1')).toHaveCount(1);
 });
 
 test('SM-9 A33 IP-4 ED-9 Pick events in the dialog lists the events within the reach and inserts a mention with its link into Relevant world events', async () => {
@@ -1021,6 +1032,15 @@ test('SM-9 A50 a moment opened from search lands on Backstory in that person’s
   await expect(picked()).toHaveCount(0);
   await expect(dialog()).toHaveCount(0);
   await expect(view().getByRole('alert')).toHaveCount(0);
+  // It says why, in the head, as a plain line.
+  await expect(view().getByTestId('moment-missing')).toHaveText(
+    'That moment is not on the grid. It may be in the trash.',
+  );
+  // The next request clears it.
+  await page.evaluate(openBackstory, 'Z3');
+  await expect(personView()).toHaveCount(1);
+  await expect(view().getByTestId('moment-missing')).toHaveCount(0);
+  await showEveryone().click();
 });
 
 test('SM-9 NF-2 the screen works from the keyboard and its labels use the primary text colour in both themes', async () => {

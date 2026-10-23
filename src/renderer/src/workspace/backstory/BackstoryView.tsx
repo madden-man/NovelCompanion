@@ -103,6 +103,8 @@ export function BackstoryView(props: {
   const [trashed, setTrashed] = useState<{ title: string; id: string } | null>(null);
   // A50: a moment asked for, until the moments and the people are loaded to find it in.
   const [wanted, setWanted] = useState<string | null>(props.momentId ?? null);
+  // A50: a moment asked for that is not on the grid (in the trash, or gone) says so in the head.
+  const [missing, setMissing] = useState(false);
   const store = useStore();
   const loaded =
     store.entries('moments') !== undefined && store.entries('characters') !== undefined;
@@ -125,6 +127,7 @@ export function BackstoryView(props: {
   const [openedFor, setOpenedFor] = useState(props.openedAt);
   if (props.openedAt !== openedFor) {
     setOpenedFor(props.openedAt);
+    setMissing(false);
     if (props.momentId) {
       setWanted(props.momentId);
     } else if (props.characterId) {
@@ -156,6 +159,7 @@ export function BackstoryView(props: {
     setPerson(m ? m.characterId : null);
     setSelected(m ? m.id : null);
     setFocusId(null);
+    setMissing(!m);
   }
   const span = useMemo(() => {
     const s = grid.span;
@@ -214,6 +218,7 @@ export function BackstoryView(props: {
 
   /** A50: the name cell opens the person's timeline, and in it goes back to everyone. */
   const pick = (id: string) => {
+    setMissing(false);
     if (viewing === id) {
       setPerson(null);
       return;
@@ -508,6 +513,11 @@ export function BackstoryView(props: {
           }}
         />
       </div>
+      {missing && (
+        <p className="bs-missing" data-testid="moment-missing">
+          That moment is not on the grid. It may be in the trash.
+        </p>
+      )}
       {error && (
         <p className="callout crit" role="alert">
           {error}
