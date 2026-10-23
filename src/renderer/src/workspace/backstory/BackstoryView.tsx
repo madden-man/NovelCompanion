@@ -26,7 +26,7 @@ import type { StoredPositions } from '../../../../shared/domain/tree';
 import { createCommand, editCommand, restoreCommand } from '../../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
-import { useEntries } from '../data';
+import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { BackstoryGrid } from './BackstoryGrid';
@@ -62,6 +62,8 @@ const FIELD_WORDS: Record<MomentField, string> = {
  */
 export function BackstoryView(props: {
   characterId?: string;
+  /** A50: a moment to open, on its person's timeline; whose it is comes from the grid. */
+  momentId?: string;
   /** When the request to open on that person was made: every new request picks them again. */
   openedAt?: number;
   /** Opens an entry in its section: an era picked in the era band. */
@@ -91,6 +93,11 @@ export function BackstoryView(props: {
   const [zoom, setZoom] = useState<Zoom>('fit');
   const [error, setError] = useState<string | null>(null);
   const [trashed, setTrashed] = useState<{ title: string; id: string } | null>(null);
+  // A50: a moment asked for, until the moments and the people are loaded to find it in.
+  const [wanted, setWanted] = useState<string | null>(props.momentId ?? null);
+  const store = useStore();
+  const loaded =
+    store.entries('moments') !== undefined && store.entries('characters') !== undefined;
 
   // The tree's stored places set the order of the rows (FT-10, FT-11).
   useEffect(() => {
@@ -110,7 +117,9 @@ export function BackstoryView(props: {
   const [openedFor, setOpenedFor] = useState(props.openedAt);
   if (props.openedAt !== openedFor) {
     setOpenedFor(props.openedAt);
-    if (props.characterId) {
+    if (props.momentId) {
+      setWanted(props.momentId);
+    } else if (props.characterId) {
       setPicked(props.characterId);
       setPerson(props.characterId);
       setSelected(null);
@@ -130,6 +139,16 @@ export function BackstoryView(props: {
       }),
     [characters, families, unions, parentLinks, momentEntries, positions, numbers],
   );
+  // A50: a moment opened from elsewhere (search, the desk, Claude) opens on its person's timeline
+  // with its dialog open, as a marker click does; a moment not in the grid opens nobody.
+  if (wanted !== null && loaded) {
+    const m = grid.moments.find((x) => x.id === wanted);
+    setWanted(null);
+    setPicked(m ? m.characterId : null);
+    setPerson(m ? m.characterId : null);
+    setSelected(m ? m.id : null);
+    setFocusId(null);
+  }
   const span = useMemo(() => {
     const s = grid.span;
     return { from: Math.min(s.from, year), to: Math.max(s.to, year) };

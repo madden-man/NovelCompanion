@@ -956,6 +956,39 @@ test('SM-9 SM-10 A50 Backstory opens on a person given to it: that person’s ti
   await expect(grid().locator('.bs-row')).toHaveCount(1);
 });
 
+test('SM-9 A50 a moment opened from search lands on Backstory in that person’s view with the dialog open; a moment not in the grid opens the plain screen', async () => {
+  await page.locator('#rail-search').fill('Lives in Portland');
+  const hit = page.getByTestId('search-results').locator('[data-hit="Z3-lives-1"]');
+  await expect(hit).toBeVisible();
+  await hit.click();
+  await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
+  await expect(personView()).toHaveCount(1);
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
+  await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
+  await expect(picked()).toHaveText('Zhou Lan 周兰, 1988');
+  const d = momentDialog('Z3-lives-1');
+  await expect(d.getByRole('heading')).toHaveText('Lives in Portland, Oregon');
+  // The focus is where a marker click puts it: on What happens, closed.
+  await expect(cellText('Z3-lives-1', 'title')).toBeFocused();
+  await expect(marker('Z3-lives-1')).toHaveAttribute('aria-current', 'true');
+  await page.keyboard.press('Escape');
+  await expect(dialog()).toHaveCount(0);
+  await expect(marker('Z3-lives-1')).toBeFocused();
+  // A moment that is not in the grid opens Backstory with nobody picked, and no error.
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent('nc:open-backstory', {
+        detail: { momentId: 'no-such-moment', at: Date.now() },
+      }),
+    ),
+  );
+  await expect(personView()).toHaveCount(0);
+  await expect(grid().locator('.bs-row')).toHaveCount(13);
+  await expect(picked()).toHaveCount(0);
+  await expect(dialog()).toHaveCount(0);
+  await expect(view().getByRole('alert')).toHaveCount(0);
+});
+
 test('SM-9 NF-2 the screen works from the keyboard and its labels use the primary text colour in both themes', async () => {
   await rail(page, 'Family tree').click();
   await showBackstory();
