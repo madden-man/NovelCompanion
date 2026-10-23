@@ -599,7 +599,7 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
     }
   };
 
-  test('CR-5 cultural data drafts carry title, community, age group, years, body and status idea', () => {
+  test('CR-5 cultural data drafts carry title, community, age group, years and body', () => {
     const f = one('Teenagers in Jinan treat an American college degree as a joke by the 2070s');
     expect(f.drafts).toEqual([
       {

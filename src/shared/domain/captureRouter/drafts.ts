@@ -2,7 +2,7 @@
  * Capture routing (A48, CR-5, CR-6): what a fact would write, per section,
  * in the shape of main's `ProposalDraft`; the required fields it could not
  * fill; the chips the box must ask for; and the judgment flags that keep it
- * off Route A. The source note is not set here: the box and main add it.
+ * off Route A.
  */
 import { LIVES_IN_PREFIX } from '../../schema/moment';
 import { LEXICON } from './lexicon';
