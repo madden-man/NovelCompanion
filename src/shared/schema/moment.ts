@@ -17,6 +17,8 @@ export const Moment = entry({
   body: z.string().default(''),
   /** Relevant world events, as text. */
   worldContext: z.string().default(''),
+  /** A51: an item ID of the `momentKinds` list (Moves, Life event, ...), or null for no kind. */
+  kind: z.string().nullable().default(null),
 });
 export type Moment = z.infer<typeof Moment>;
 
@@ -45,4 +47,5 @@ export const momentFields: FieldSpec[] = [
     warnings: [...s.warnings, 'outside-lifetime'],
   })),
   f.longText('worldContext', 'Relevant world events'),
+  f.listItem('kind', 'Kind', 'momentKinds', { nullable: true }),
 ];

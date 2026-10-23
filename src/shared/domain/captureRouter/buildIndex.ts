@@ -188,6 +188,7 @@ export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON):
   }));
 
   const regions = list('regions').map((i) => ({ id: i.id, label: i.label }));
+  const momentKinds = list('momentKinds').map((i) => i.id);
 
   return {
     characters,
@@ -200,5 +201,6 @@ export function buildIndex(input: RouterIndexInput, lexicon: Lexicon = LEXICON):
     moments,
     timelineEnd: input.timelineEnd,
     regions,
+    momentKinds,
   };
 }

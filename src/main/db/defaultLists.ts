@@ -65,6 +65,20 @@ export function defaultLists(): ListDoc[] {
         item('english', 'English'),
       ],
     },
+    /**
+     * A51 (SM-3): what kind of moment a moment is. The colours are the light
+     * theme values of the `--kind-*` tokens; Voice has none and draws in `--fg-2`.
+     */
+    {
+      _id: 'momentKinds',
+      label: 'Moment kinds',
+      items: [
+        { ...item('move', 'Moves'), color: '#008300' },
+        { ...item('life', 'Life event'), color: '#e34948' },
+        { ...item('work', 'Work and study'), color: '#4a3aa7' },
+        item('voice', 'Voice'),
+      ],
+    },
     /** Tags are added as entries use them, and renamed here (ED-8). */
     { _id: 'tags', label: 'Tags', items: [] },
   ];

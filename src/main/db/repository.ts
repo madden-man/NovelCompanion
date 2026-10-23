@@ -446,7 +446,7 @@ export class Repository {
     const rest = this.stripSystem(input);
     const id = typeof input._id === 'string' && input._id ? input._id : newId();
     const doc = this.validate(c, { ...rest, _id: id, createdAt: at, modifiedAt: at }, shape);
-    this.checkVocabulary(doc as StoredDoc, null);
+    this.checkVocabulary(c, doc as StoredDoc, null);
     if (this.model.get(c, id)) throw new RepositoryError(`An entry with the ID ${id} exists.`);
     return { collection: c, op: 'create', next: doc as StoredDoc, prior: null };
   }
@@ -463,7 +463,7 @@ export class Repository {
       ...this.stripSystem(patch),
       modifiedAt: this.stamp(prior),
     });
-    this.checkVocabulary(doc as StoredDoc, prior);
+    this.checkVocabulary(c, doc as StoredDoc, prior);
     return { collection: c, op: 'update', next: doc as StoredDoc, prior };
   }
 
@@ -706,7 +706,7 @@ export class Repository {
       modifiedAt: this.stamp(prior),
       ...(prior.deletedAt ? { deletedAt: prior.deletedAt } : {}),
     });
-    this.checkVocabulary(doc as StoredDoc, prior); // a47-model
+    this.checkVocabulary(c, doc as StoredDoc, prior); // a47-model
     await this.commit([
       {
         collection: c,
@@ -2156,12 +2156,14 @@ export class Repository {
    * restored from the trash with an item removed since can still be edited.
    * A seeded word the list no longer holds (code that writes `idea`, `planned`
    * or `invented`) is settled to the bible's own: the first status of that
-   * kind (`defaultStatus`), or no provenance.
+   * kind (`defaultStatus`), or no provenance. A51: a moment's kind is checked
+   * against the `momentKinds` list the same way.
    */
-  private checkVocabulary(doc: StoredDoc, prior: StoredDoc | null): void {
+  private checkVocabulary(c: EntryCollection, doc: StoredDoc, prior: StoredDoc | null): void {
     const fields: [string, string, string][] = [
       ['status', 'statuses', 'Status'],
       ['provenance', 'provenance', 'Provenance'],
+      ...(c === 'moments' ? [['kind', 'momentKinds', 'Kind'] as [string, string, string]] : []),
     ];
     for (const [field, listId, label] of fields) {
       const v = doc[field];

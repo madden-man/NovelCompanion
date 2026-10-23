@@ -7,6 +7,12 @@ import type { FieldSpec } from '../schema/manifest';
 import { STATUS_KINDS } from '../schema/lists';
 import type { ListItem, StatusKind } from '../schema/lists';
 import { FAMILY_COLORS, FAMILY_TOKEN_HEX } from '../schema/family';
+import {
+  CHART_SURFACE_DARK,
+  CHART_SURFACE_LIGHT,
+  MIN_MARKER_CONTRAST,
+  contrastRatio,
+} from './colour';
 import { deepEqual, isPlainObject } from './paths';
 import type { Doc } from './paths';
 
@@ -273,14 +279,28 @@ export function statusKind(
 }
 
 /**
+ * A51: the colours of the seeded moment kinds (Moves, Life event, Work and
+ * study), by their light theme hex, with the `--kind-*` token that draws them.
+ */
+export const KIND_HEX_TOKENS: Record<string, string> = {
+  '#008300': 'kind-move',
+  '#e34948': 'kind-life',
+  '#4a3aa7': 'kind-work',
+};
+
+/**
  * The CSS colours the seeded items carry, by their light theme hex, with the
  * token that draws them in both themes. The renderer draws a known hex through
  * its token, so it follows the theme; any other hex is drawn as it is.
+ * The kind violet `#4a3aa7` is also series-4 and the planned status; the
+ * family entry comes last, so outside a moment kind it stays `series-4`
+ * (the two tokens hold the same values in both themes).
  */
 export const THEME_HEX_TOKENS: Record<string, string> = {
   '#1b705f': 'canon',
   '#7a611b': 'idea',
   '#b84f25': 'serious-ink',
+  ...KIND_HEX_TOKENS,
   ...Object.fromEntries(FAMILY_COLORS.map((t) => [FAMILY_TOKEN_HEX[t], t])),
 };
 
@@ -340,4 +360,92 @@ export function defaultProvenance(lists: ListDocs, id: string): string | null {
   const list = lists.find((l) => l._id === 'provenance');
   if (!list) return id;
   return itemsOf(lists, 'provenance').some((i) => i.id === id) ? id : null;
+}
+
+// ---------- A51: moment kinds (SM-3, SM-9, IP-9) ----------
+
+/** A51: how large a kind's markers draw on the Backstory grid, from the item's `extra.weight`. */
+export const MOMENT_KIND_WEIGHTS = ['plain', 'big'] as const;
+export type MomentKindWeight = (typeof MOMENT_KIND_WEIGHTS)[number];
+
+/**
+ * A51: a moment kind item as the grid draws it, or undefined for no kind or
+ * an ID the list does not hold. `lists` is the bible's list documents.
+ */
+export function momentKindItem(
+  lists: ListDocs,
+  kind: string | null | undefined,
+): Partial<ListItem> | undefined {
+  if (!kind) return undefined;
+  return itemsOf(lists, 'momentKinds').find((i) => i.id === kind);
+}
+
+/** A51: an item's weight; anything but `big` reads as plain. */
+export function kindWeight(
+  item: Pick<Partial<ListItem>, 'extra'> | null | undefined,
+): MomentKindWeight {
+  return item?.extra?.weight === 'big' ? 'big' : 'plain';
+}
+
+/**
+ * A51: the CSS colour a moment kind's marker draws in: the token for a seeded
+ * hex (so it follows the theme), the hex for a colour the writer picked, and
+ * null for a kind with no colour (Voice) or no kind at all. The caller picks
+ * the fallback: `--fg-2` for a kind with no colour, `--fg` for no kind.
+ */
+export function kindColorCss(
+  item: Pick<Partial<ListItem>, 'color'> | null | undefined,
+): string | null {
+  const color = item?.color;
+  if (!color) return null;
+  const token = KIND_HEX_TOKENS[color.toLowerCase()];
+  return token ? `var(--${token})` : listColorCss(color);
+}
+
+/**
+ * A51: the dark theme value of each seeded kind's `--kind-*` token, by the
+ * light hex the list stores (as in `theme.css`). A seeded colour is drawn
+ * through its token, so in the dark theme it is this hex, not the stored one.
+ */
+export const KIND_DARK_HEX: Record<string, string> = {
+  '#008300': '#008300',
+  '#e34948': '#e66767',
+  '#4a3aa7': '#9085e9',
+};
+
+/**
+ * A51: the hex a kind colour is drawn in, in each theme. A seeded colour
+ * takes its token's dark value; a colour the writer picked is drawn as its
+ * hex in both themes.
+ */
+export function kindDrawnHex(color: string): { light: string; dark: string } {
+  const light = color.toLowerCase();
+  return { light, dark: KIND_DARK_HEX[light] ?? light };
+}
+
+/** A51 (NF-2): a kind colour's contrast against the light and the dark chart surface. */
+export interface KindContrast {
+  light: number;
+  dark: number;
+  /** True when the marker is under 3:1 on that surface. */
+  hardOnLight: boolean;
+  hardOnDark: boolean;
+}
+
+/**
+ * A51 (NF-2, IP-9): the Lists screen's check of a kind colour against both
+ * chart surfaces, by the colour it is drawn in there. Null for a kind with no
+ * colour (Voice) or a value that is not a `#rrggbb` hex.
+ */
+export function kindContrast(color: string | null | undefined): KindContrast | null {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return null;
+  const drawn = kindDrawnHex(color);
+  const light = contrastRatio(drawn.light, CHART_SURFACE_LIGHT);
+  const dark = contrastRatio(drawn.dark, CHART_SURFACE_DARK);
+  return {
+    light,
+    dark,
+    hardOnLight: light < MIN_MARKER_CONTRAST,
+    hardOnDark: dark < MIN_MARKER_CONTRAST,
+  };
 }

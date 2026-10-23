@@ -96,6 +96,8 @@ export interface RouterIndex {
   timelineEnd: number;
   /** a48-router: the `regions` list, so a world event's regions are item IDs (IP-8) or new items (IP-17). */
   regions?: { id: string; label: string }[];
+  /** A51: the `momentKinds` list's item IDs, so a move is drafted as a move only when the list holds it. */
+  momentKinds?: string[];
 }
 
 export type CandidateKind =

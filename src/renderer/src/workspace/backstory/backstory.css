@@ -126,12 +126,20 @@
 }
 
 /* Markers sit over the lifespan bar in the primary text color, ringed so they read on any family color. */
-.bs-marker {
-  background: var(--fg);
+/* A51: a marker takes its kind's colour through --bs-kind (set on the marker): a kind with no
+   colour draws in --fg-2, no kind in the ink. A bar with no kind stays --fg-2, as before kinds.
+   The 2px ring of the chart surface stays, big or not, so the fill never has to contrast with
+   the family bar under it. */
+.bs-marker,
+.bs-marker.big {
+  background: var(--bs-kind, var(--fg));
   border: 2px solid var(--chart-surface);
 }
 .bs-marker.bar {
-  background: var(--fg-2);
+  background: var(--bs-kind, var(--fg-2));
+}
+.bs-marker:hover {
+  border-color: var(--fg);
 }
 /* IP-4: a click within 6px of a marker lands on it, not on the empty track that makes a moment.
    The inset counts from inside the 2px ring, so 8px reaches 6px past the drawn edge. */
@@ -156,6 +164,23 @@
 .bs-key.life.dash {
   background: repeating-linear-gradient(to right, var(--series-1) 0 6px, transparent 6px 10px);
 }
+/* A51: a kind's swatch, in the legend, the tooltip and the dialog chip: 10px with a 1px edge,
+   so a light colour still has an edge on the light surface. No kind is the ink dot. */
+.bs-kind-sw {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bs-kind, var(--fg));
+  vertical-align: middle;
+}
+.legend .bs-kind-sw,
+.wg-tip .bs-kind-sw {
+  margin-right: 6px;
+}
 
 /* A49: the moment dialog. Field titles in the primary text colour (NF-2). */
 .bs-dialog {
@@ -174,10 +199,30 @@
   color: var(--fg);
   font-weight: 500;
 }
+.bs-dialog-whokind {
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* A51: the moment's kind beside the person: its swatch and its label in the text colour. */
+.bs-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
 .bs-when {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 12px;
+}
+/* A51: the When and who row holds Kind too. */
+.bs-when.bs-when-who {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.4fr) minmax(0, 1.1fr);
+}
+@media (max-width: 640px) {
+  .bs-when.bs-when-who {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 .bs-field {
   display: flex;
@@ -254,7 +299,8 @@
   color: var(--fg);
 }
 @media (max-width: 400px) {
-  .bs-when {
+  .bs-when,
+  .bs-when.bs-when-who {
     grid-template-columns: minmax(0, 1fr);
   }
 }

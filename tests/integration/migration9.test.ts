@@ -330,8 +330,8 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
 
   test('SM-3 every beat, voice note, and place lived becomes a moment, the trash carried over', async () => {
     expect(await schemaVersion(bible)).toBe(LATEST_SCHEMA_VERSION);
-    // A44 and A47: migrations 10 and 11 run after it.
-    expect(LATEST_SCHEMA_VERSION).toBe(11);
+    // A44, A47 and A51: migrations 10, 11 and 12 run after it.
+    expect(LATEST_SCHEMA_VERSION).toBe(12);
     const moments = await open.handle.collection('moments').find({}).sort({ _id: 1 }).toArray();
     expect(
       moments.map((m) => [m._id, m.characterId, m.year, m.endYear, m.title, !!m.deletedAt]),

@@ -40,6 +40,8 @@ import type {
   YearSpan,
 } from './worldGrid';
 import type { StoryDate } from '../schema/common';
+import type { ListItem } from '../schema/lists';
+import { kindWeight } from './lists';
 
 /** The group for characters with no family, always last. */
 export const NO_FAMILY = '__nofamily';
@@ -293,7 +295,12 @@ export interface BackstoryMoment {
   worldContext: string;
   /** The entries the moment links to (ED-9), by ID. */
   linkIds: string[];
+  /** A51: the moment's kind, an item ID of the momentKinds list, or null. */
+  kind: string | null;
 }
+
+/** A51: a momentKinds item as the grid reads it. */
+export type BackstoryKind = Pick<Partial<ListItem>, 'id' | 'label' | 'color' | 'extra'>;
 
 /** Live moments with a year, as plain rows. */
 export function momentRows(moments: readonly Doc[]): BackstoryMoment[] {
@@ -316,6 +323,7 @@ export function momentRows(moments: readonly Doc[]): BackstoryMoment[] {
             isPlainObject(l) && typeof l.targetId === 'string' ? [l.targetId] : [],
           )
         : [],
+      kind: str(m.kind) || null,
     });
   }
   return out;
@@ -326,15 +334,38 @@ export function momentLabel(m: { title: string }): string {
   return m.title.trim() || 'Untitled moment';
 }
 
-/** The grid items for moments: one per moment, in its character's row, a bar to its end year. */
-export function momentItems(moments: readonly BackstoryMoment[]): GridItem[] {
-  return moments.map((m) => ({
-    id: m.id,
-    row: m.characterId,
-    startYear: m.year,
-    endYear: m.endYear === null ? m.year : Math.max(m.year, m.endYear),
-    label: momentLabel(m),
-  }));
+/** A51: the moment's kind as the list holds it, or undefined for no kind or an ID it lacks. */
+export function kindOf(
+  m: { kind: string | null },
+  kinds: readonly BackstoryKind[],
+): BackstoryKind | undefined {
+  return m.kind ? kinds.find((k) => k.id === m.kind) : undefined;
+}
+
+/**
+ * The grid items for moments: one per moment, in its character's row, a bar to its end year.
+ * A51: a kind the list holds rides on the item as `data.kind`, and a kind weighted big draws
+ * the item big; a kind the list lacks draws as no kind.
+ */
+export function momentItems(
+  moments: readonly BackstoryMoment[],
+  kinds: readonly BackstoryKind[] = [],
+): GridItem[] {
+  return moments.map((m) => {
+    const kind = kindOf(m, kinds);
+    const item: GridItem = {
+      id: m.id,
+      row: m.characterId,
+      startYear: m.year,
+      endYear: m.endYear === null ? m.year : Math.max(m.year, m.endYear),
+      label: momentLabel(m),
+    };
+    if (kind?.id) {
+      item.data = { kind: kind.id };
+      if (kindWeight(kind) === 'big') item.big = true;
+    }
+    return item;
+  });
 }
 
 /** One person's moments in year order, as the table lists them. */
@@ -428,6 +459,8 @@ export interface BackstoryGridInput extends BackstoryRowsInput {
   moments: readonly Doc[];
   /** IP-11: the bible's timeline span; the default numbers' span when not given. */
   base?: YearSpan;
+  /** A51: the momentKinds list's items, in list order. */
+  kinds?: readonly BackstoryKind[];
 }
 
 export interface BackstoryGrid {
@@ -436,6 +469,8 @@ export interface BackstoryGrid {
   moments: BackstoryMoment[];
   /** The axis the grid needs: the timeline span widened to every birth, death and moment. */
   span: YearSpan;
+  /** A51: the moment kinds, in list order. */
+  kinds: readonly BackstoryKind[];
 }
 
 /** Rows, people and moments, and the span that holds them. */
@@ -451,7 +486,13 @@ export function backstoryGrid(input: BackstoryGridInput): BackstoryGrid {
     if (d !== null) years.push(d);
   }
   for (const m of moments) years.push(m.year, m.endYear ?? m.year);
-  return { families, people, moments, span: gridSpan(years, input.base ?? DEFAULT_SPAN) };
+  return {
+    families,
+    people,
+    moments,
+    span: gridSpan(years, input.base ?? DEFAULT_SPAN),
+    kinds: input.kinds ?? [],
+  };
 }
 
 /** Lay the grid out on a scale through the World events grid's layout. */
@@ -463,7 +504,7 @@ export function layoutBackstory(
 ): GridLayout {
   return layoutGrid(
     gridGroups(g.families, closed),
-    momentItems(g.moments),
+    momentItems(g.moments, g.kinds),
     s,
     opts,
     BACKSTORY_METRICS,
@@ -493,7 +534,10 @@ export function layoutPerson(
   const person = g.people.get(personId) ?? null;
   const layout = placeRow(
     personId,
-    momentItems(g.moments.filter((m) => m.characterId === personId)),
+    momentItems(
+      g.moments.filter((m) => m.characterId === personId),
+      g.kinds,
+    ),
     s,
     PERSON_MARKERS,
   );

@@ -386,11 +386,13 @@ test('SM-9 TL-3 A50 a click on a name opens that person’s timeline: only their
     'Year',
     'To',
     'Whose moment',
+    'Kind',
     'What happens',
     'How they experience it',
     'Relevant world events',
   ]);
   await expect(d.getByTestId('moment-who')).toHaveText('Zhou Lan 周兰, 1988 to 2027, age 0');
+  await expect(d.getByTestId('moment-kind')).toHaveText('Moves');
   await expect(cellText('Z3-lives-0', 'year')).toHaveText('1988');
   await expect(cellText('Z3-lives-0', 'endYear')).toHaveText('2027');
   await expect(d.getByTestId('moment-age')).toHaveText('0');
@@ -1199,7 +1201,7 @@ test('SM-9 NF-2 the screen works from the keyboard and its labels use the primar
   await expect(
     dialog().locator('.bs-dialog-head').getByRole('button', { name: 'Close' }),
   ).toBeFocused();
-  for (const f of ['year', 'endYear', 'characterId', 'title']) {
+  for (const f of ['year', 'endYear', 'characterId', 'kind', 'title']) {
     await page.keyboard.press('Tab');
     await expect(cellText('H5-voice-0', f)).toBeFocused();
   }
@@ -1228,6 +1230,9 @@ test('SM-9 NF-2 the screen works from the keyboard and its labels use the primar
     '.bs-age',
     '[data-testid="moment-age"]',
     '.legend',
+    // A51: the legend's kind keys and the dialog's kind chip name the kind in the text colour.
+    '[data-testid="legend-kind"]',
+    '[data-testid="moment-kind"]',
   ];
   // The dialog's field titles and the age are labels too.
   await openMoment(page, 'H5-voice-0');
@@ -1522,6 +1527,191 @@ test('IP-4 A50 a moment moves to another person through Whose moment in the dial
   await expect(personView()).toHaveCount(0);
 });
 
+/** A51: a colour token as the browser computes it in the current theme, `rgb(...)`. */
+const tokenRgb = (token: string) =>
+  page.evaluate((t) => {
+    const p = document.createElement('span');
+    p.style.color = `var(--${t})`;
+    document.body.append(p);
+    const c = getComputedStyle(p).color;
+    p.remove();
+    return c;
+  }, token);
+const fill = (id: string) =>
+  marker(id).evaluate((el) => getComputedStyle(el as HTMLElement).backgroundColor);
+const kindItems = async () =>
+  (await invoke('lists.get', {})).lists.find((l) => l._id === 'momentKinds')!.items;
+const legendKeys = () => view().getByTestId('legend-kind');
+
+test('SM-9 A51 NF-2 markers take their kind’s colour in both themes, the legend keys the kinds in list order, the tooltip and the label name the kind', async () => {
+  await showBackstory();
+  await zoomTo('Close');
+  // The legend: every kind in the list's order, then No kind; the text in the text colour.
+  await expect(legendKeys()).toHaveText([
+    'Moves',
+    'Life event',
+    'Work and study',
+    'Voice',
+    'No kind',
+  ]);
+  expect(
+    await legendKeys()
+      .first()
+      .evaluate((el) => getComputedStyle(el).color),
+  ).toBe(await tokenRgb('fg'));
+  const swatch = legendKeys().first().locator('.bs-kind-sw');
+  expect(await swatch.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(
+    await tokenRgb('kind-move'),
+  );
+  const box = (await swatch.boundingBox())!;
+  expect(box.width).toBeCloseTo(10, 0);
+  expect(
+    await legendKeys()
+      .last()
+      .locator('.bs-kind-sw')
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe(await tokenRgb('fg'));
+  // A move draws in the kind's colour, its bar too; Voice has no colour and draws in --fg-2.
+  await expect(marker('Z3-lives-1')).toHaveAttribute('data-kind', 'move');
+  expect(await fill('Z3-lives-1')).toBe(await tokenRgb('kind-move'));
+  expect(await fill('Z3-lives-0')).toBe(await tokenRgb('kind-move'));
+  expect(await fill('H1-voice-0')).toBe(await tokenRgb('fg-2'));
+  // The 2px ring of the chart surface stays.
+  expect(
+    await marker('Z3-lives-1').evaluate((el) => [
+      getComputedStyle(el).borderTopWidth,
+      getComputedStyle(el).borderTopColor,
+    ]),
+  ).toEqual(['2px', await tokenRgb('chart-surface')]);
+  // The tooltip and the marker's label name the kind.
+  await showRow('Z3');
+  await showYear(2027);
+  await marker('Z3-lives-1').hover();
+  const tip = grid().getByTestId('grid-tip');
+  await expect(tip).toContainText('2027 Lives in Portland, Oregon');
+  await expect(tip).toContainText('Zhou Lan, age 39 · Moves');
+  await expect(marker('Z3-lives-1')).toHaveAttribute(
+    'aria-label',
+    'Lives in Portland, Oregon, 2027, Zhou Lan, age 39, Moves',
+  );
+  await marker('H1-voice-0').hover();
+  await expect(tip).toContainText('Margaret Hale, age 70 · Voice');
+  await page.mouse.move(0, 0);
+
+  // The dark theme draws the seeded kinds through their dark tokens.
+  const theme0 = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  const lifeLight = await tokenRgb('kind-life');
+  try {
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+    expect(await tokenRgb('kind-life')).toBe('rgb(230, 103, 103)');
+    expect(await tokenRgb('kind-work')).toBe('rgb(144, 133, 233)');
+    expect(await fill('Z3-lives-1')).toBe(await tokenRgb('kind-move'));
+    expect(await fill('H1-voice-0')).toBe(await tokenRgb('fg-2'));
+    expect(
+      await legendKeys()
+        .first()
+        .evaluate((el) => getComputedStyle(el).color),
+    ).toBe(await tokenRgb('fg'));
+  } finally {
+    await page.evaluate((t) => {
+      if (t === null) document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', t);
+    }, theme0);
+  }
+  expect(lifeLight).toBe('rgb(227, 73, 72)');
+});
+
+test('SM-3 A51 ED-3 the dialog’s Kind saves as one step and the marker and the chip follow; No kind draws in the ink; Add new makes a kind in the same step', async () => {
+  const id = 'Z3-lives-1';
+  const d = await openMoment(page, id);
+  // The chip beside the person: the swatch and the label in the text colour.
+  const chip = d.getByTestId('moment-kind');
+  await expect(chip).toHaveText('Moves');
+  expect(await chip.evaluate((el) => getComputedStyle(el).color)).toBe(await tokenRgb('fg'));
+  await expect(cellText(id, 'kind')).toHaveText('Moves');
+  const kind = cell(id, 'kind');
+  await openEditable(kind);
+  await kind.locator('select').selectOption('life');
+  await expect.poll(async () => (await getMoment(id)).kind).toBe('life');
+  await expect(cellText(id, 'kind')).toHaveText('Life event');
+  await expect(chip).toHaveText('Life event');
+  await expect(marker(id)).toHaveAttribute('data-kind', 'life');
+  await expect.poll(() => fill(id)).toBe(await tokenRgb('kind-life'));
+  // One step: Cmd+Z puts Moves back.
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment(id)).kind).toBe('move');
+  await expect(chip).toHaveText('Moves');
+  await expect.poll(() => fill(id)).toBe(await tokenRgb('kind-move'));
+  // No kind: the ink dot, and no chip.
+  await openEditable(kind);
+  await kind.locator('select').selectOption({ label: 'No kind' });
+  await expect.poll(async () => (await getMoment(id)).kind).toBeNull();
+  await expect(chip).toHaveCount(0);
+  await expect(cellText(id, 'kind')).toHaveText('No kind');
+  await expect.poll(() => marker(id).getAttribute('data-kind')).toBeNull();
+  await expect.poll(() => fill(id)).toBe(await tokenRgb('fg'));
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment(id)).kind).toBe('move');
+  // Add new makes the kind and picks it; one undo takes both back.
+  await openEditable(kind);
+  await kind.locator('select').selectOption({ label: 'Add new...' });
+  const name = kind.getByRole('textbox');
+  await name.fill('Childhood');
+  await name.press('Enter');
+  await expect(cellText(id, 'kind')).toHaveText('Childhood');
+  const made = (await kindItems()).find((i) => i.label === 'Childhood')!;
+  expect((await getMoment(id)).kind).toBe(made.id);
+  await expect(legendKeys().last()).toHaveText('No kind');
+  await expect(legendKeys().nth(4)).toHaveText('Childhood');
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment(id)).kind).toBe('move');
+  await expect.poll(async () => (await kindItems()).map((i) => i.label)).not.toContain('Childhood');
+  await expect(legendKeys()).toHaveCount(5);
+  await closeMoment();
+});
+
+test('SM-9 A51 IP-9 a kind renamed on the Lists screen renames its legend key; a kind weighted big draws the 16px marker', async () => {
+  await rail(page, 'Lists').click();
+  const move = page.locator('[data-list="momentKinds"] [data-item="move"]');
+  await fillEditable(move.getByTestId('item-name'), 'Moves house');
+  await expect
+    .poll(async () => (await kindItems()).find((i) => i.id === 'move')!.label)
+    .toBe('Moves house');
+  await showBackstory();
+  await expect(legendKeys().first()).toHaveText('Moves house');
+  await zoomTo('Close');
+  await showRow('Z3');
+  await showYear(2027);
+  await expect(marker('Z3-lives-1')).toHaveAttribute('aria-label', /, Moves house$/);
+  // Big: the grid's big dot, in the kind's colour with the ring kept.
+  const plain = (await marker('Z3-lives-1').boundingBox())!;
+  expect(plain.width).toBeCloseTo(10, 0);
+  await invoke('lists.setItem', {
+    listId: 'momentKinds',
+    itemId: 'move',
+    extra: { weight: 'big' },
+  });
+  await expect(marker('Z3-lives-1')).toHaveClass(/\bbig\b/);
+  const big = (await marker('Z3-lives-1').boundingBox())!;
+  expect(big.width).toBeCloseTo(16, 0);
+  expect(big.height).toBeCloseTo(16, 0);
+  expect(await fill('Z3-lives-1')).toBe(await tokenRgb('kind-move'));
+  expect(await marker('Z3-lives-1').evaluate((el) => getComputedStyle(el).borderTopColor)).toBe(
+    await tokenRgb('chart-surface'),
+  );
+  // Voice stays plain.
+  await expect(marker('H1-voice-0')).not.toHaveClass(/\bbig\b/);
+  // Back as the fixture had it.
+  await invoke('lists.setItem', {
+    listId: 'momentKinds',
+    itemId: 'move',
+    extra: { weight: 'plain' },
+  });
+  await invoke('lists.rename', { listId: 'momentKinds', itemId: 'move', label: 'Moves' });
+  await expect(marker('Z3-lives-1')).not.toHaveClass(/\bbig\b/);
+  await expect(legendKeys().first()).toHaveText('Moves');
+});
+
 test('IP-13 with nobody picked, New moment asks whose it is and the dialog opens on the new moment', async () => {
   await pickRow('Z3');
   await view().getByRole('button', { name: 'Clear pick' }).click();
@@ -1693,7 +1883,7 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
     await showEveryone().click();
     await expect(personView()).toHaveCount(0);
     await openMoment(page, 'Z3-lives-0');
-    for (const f of ['year', 'endYear', 'characterId', 'title', 'body', 'worldContext']) {
+    for (const f of ['year', 'endYear', 'characterId', 'kind', 'title', 'body', 'worldContext']) {
       await off(cellText('Z3-lives-0', f));
     }
     await off(d.getByRole('button', { name: /^Pick events/ }));

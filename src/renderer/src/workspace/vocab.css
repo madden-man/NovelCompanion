@@ -32,6 +32,19 @@
 .vocab-actions {
   margin-left: auto;
 }
+/* A51: a moment kind colour's contrast on the two grids, in the text tokens, never the colour. */
+.vocab-contrast {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  font-size: 0.85rem;
+  color: var(--fg-2);
+}
+.vocab-contrast-note {
+  color: var(--critical-ink);
+  font-weight: 600;
+}
 .drag-handle {
   cursor: grab;
   color: var(--fg-2);
@@ -193,4 +206,9 @@
   height: 9px;
   border-radius: 50%;
   border: 1px solid var(--border-strong);
+}
+
+.vocab-contrast-word {
+  font-weight: 600;
+  color: var(--fg);
 }

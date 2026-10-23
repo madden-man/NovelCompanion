@@ -1237,6 +1237,41 @@ describe('IM-1 SM-12 A29 the East Winds mappings write chapters, moments, and wo
     expect(set.items[0]!.ref).toBe('East_Winds_World.xlsx#High Level!H9');
   });
 
+  test('SM-3 A51 a grid cell that says where someone lives is a new move; a kind the writer changes stays on import again', () => {
+    const sheet = highLevel();
+    sheet.cells[8] = [
+      'Mark',
+      ...years.map((y) => (y === 55 ? 'Goes to USC' : y === 56 ? 'Lives in Los Angeles' : null)),
+    ];
+    const wb = workbook([sheet]);
+    const kinds = {
+      _id: 'momentKinds',
+      label: 'Moment kinds',
+      items: [] as { id: string; label: string; parentId: string | null }[],
+    };
+    kinds.items.push({ id: 'move', label: 'Moves', parentId: null });
+    const sim = SimBible.empty();
+    sim.lists.set('momentKinds', kinds);
+    sim.docs.set('characters', [person('M1', 'Mark Sullivan')]);
+    const { set } = sim.plan(wb, mappingFor(wb, 'moments'));
+    expect(set.failed).toEqual([]);
+    expect(set.items.map((i) => [i.data!.title, i.data!.kind])).toEqual([
+      ['Goes to USC', null],
+      ['Lives in Los Angeles', 'move'],
+    ]);
+    sim.apply(set);
+    const move = sim.entries('moments').find((m) => m.title === 'Lives in Los Angeles')!;
+    move.kind = 'life';
+    expect(sim.plan(wb, mappingFor(wb, 'moments')).set.items).toEqual([]);
+
+    // A bible whose kinds no longer hold Moves gets no kind, so the moment still imports.
+    const bare = SimBible.empty();
+    bare.docs.set('characters', [person('M1', 'Mark Sullivan')]);
+    const plain = bare.plan(wb, mappingFor(wb, 'moments')).set;
+    expect(plain.failed).toEqual([]);
+    expect(plain.items.map((i) => i.data!.kind)).toEqual([null, null]);
+  });
+
   test('SM-3 a Sullivan row is a moment: the character, the year, what happens, how they experience it, and the world around it', () => {
     const wb = workbook([
       momentSheet('Sullivan', [

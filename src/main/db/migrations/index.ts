@@ -9,6 +9,7 @@ import { findingKeys } from './008-finding-keys';
 import { simplifiedModel } from './009-simplified-model';
 import { markdownText } from './010-markdown-text';
 import { vocabulary } from './011-vocabulary';
+import { momentKinds } from './012-moment-kinds';
 import type { Migration } from './types';
 
 export type { Migration } from './types';
@@ -26,6 +27,7 @@ export const migrations: readonly Migration[] = [
   simplifiedModel,
   markdownText,
   vocabulary,
+  momentKinds,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.length;

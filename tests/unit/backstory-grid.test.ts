@@ -42,6 +42,7 @@ import {
   yearX,
 } from '../../src/shared/domain/worldGrid';
 import type { Doc } from '../../src/shared/domain/paths';
+import type { BackstoryKind } from '../../src/shared/domain/backstoryGrid';
 import { DEFAULT_NUMBERS } from '../../src/shared/schema/settings';
 
 const fixture = readFixture();
@@ -185,6 +186,66 @@ describe('SM-9 SM-3 moments on the grid', () => {
     });
     expect(momentsOf(g.moments, 'Z3').map((m) => m.id)).toEqual(['NEW', 'Z3-lives-1']);
     expect(momentItems(momentsOf(g.moments, 'Z3'))[0]!.label).toBe('Untitled moment');
+  });
+
+  test('A51 SM-9 the kind rides on the item; a kind weighted big draws big, in the grid and the person view', () => {
+    const kinds = fixture.lists!.find((l) => l._id === 'momentKinds')!.items as BackstoryKind[];
+    expect(grid.moments.map((m) => [m.id, m.kind])).toEqual([
+      ['H1-voice-0', 'voice'],
+      ['H5-voice-0', 'voice'],
+      ['Z3-lives-0', 'move'],
+      ['Z3-lives-1', 'move'],
+    ]);
+    // Without the list nothing rides; with it, each item carries its kind, all plain as seeded.
+    expect(momentItems(grid.moments).map((i) => i.data)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    const plain = momentItems(grid.moments, kinds);
+    expect(plain.map((i) => [i.id, i.data?.kind, i.big === true])).toEqual([
+      ['H1-voice-0', 'voice', false],
+      ['H5-voice-0', 'voice', false],
+      ['Z3-lives-0', 'move', false],
+      ['Z3-lives-1', 'move', false],
+    ]);
+    // Moves reweighted big: its moments draw big; a kind the list lacks draws as no kind.
+    const big = kinds.map((k) => (k.id === 'move' ? { ...k, extra: { weight: 'big' } } : k));
+    const moments = [
+      ...input.moments,
+      { ...input.moments[0]!, _id: 'ODD', kind: 'gone', year: 2030 } as Doc,
+    ];
+    const g = backstoryGrid({ ...input, moments, kinds: big });
+    expect(g.kinds).toBe(big);
+    expect(
+      momentItems(g.moments, g.kinds).map((i) => [i.id, i.data?.kind ?? null, i.big === true]),
+    ).toEqual([
+      ['H1-voice-0', 'voice', false],
+      ['H5-voice-0', 'voice', false],
+      ['Z3-lives-0', 'move', true],
+      ['Z3-lives-1', 'move', true],
+      ['ODD', null, false],
+    ]);
+    // The placed markers keep both, in the grid and in the person view.
+    const s = makeScale(g.span, 10);
+    const placed = (l: ReturnType<typeof layoutBackstory>, row: string) => {
+      const line = l.lines.find((x) => x.kind === 'row' && x.row.key === row)!;
+      if (line.kind !== 'row') throw new Error('a row');
+      return line.layout.markers.map((m) => [m.id, m.data?.kind ?? null, m.big, m.width]);
+    };
+    expect(placed(layoutBackstory(g, s), 'Z3')).toEqual([
+      ['Z3-lives-0', 'move', true, (2027 - 1988 + 1) * 10],
+      ['Z3-lives-1', 'move', true, MARKER_DEFAULTS.bigDot],
+    ]);
+    expect(placed(layoutBackstory(g, s), 'H1')).toEqual([
+      ['H1-voice-0', 'voice', false, MARKER_DEFAULTS.dot],
+      ['ODD', null, false, MARKER_DEFAULTS.dot],
+    ]);
+    expect(placed(layoutPerson(g, 'Z3', s), 'Z3')).toEqual([
+      ['Z3-lives-0', 'move', true, (2027 - 1988 + 1) * 10],
+      ['Z3-lives-1', 'move', true, PERSON_MARKERS.bigDot],
+    ]);
   });
 
   test('SM-9 TL-3 ages per row: year minus birth year, and plain words outside a life', () => {

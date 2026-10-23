@@ -256,6 +256,8 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
         : undefined;
       const lives = !!place;
       const momentTitle = lives ? `${LIVES_IN_PREFIX}${place.label}` : title;
+      // A51 (SM-3): a place lived is a move, when the bible's kinds still hold Moves.
+      const kind = lives && index.momentKinds?.includes('move') ? 'move' : null;
       for (const c of subjects.length ? subjects : [null]) {
         drafts.push({
           op: 'create',
@@ -266,6 +268,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
             endYear: years.end,
             title: momentTitle,
             body,
+            ...(kind ? { kind } : {}),
             status: 'idea',
           },
         });

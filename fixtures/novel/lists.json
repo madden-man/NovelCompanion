@@ -121,5 +121,21 @@
         "extra": { "from": 70 }
       }
     ]
+  },
+  {
+    "_id": "momentKinds",
+    "label": "Moment kinds",
+    "items": [
+      { "id": "move", "label": "Moves", "parentId": null, "color": "#008300", "extra": {} },
+      { "id": "life", "label": "Life event", "parentId": null, "color": "#e34948", "extra": {} },
+      {
+        "id": "work",
+        "label": "Work and study",
+        "parentId": null,
+        "color": "#4a3aa7",
+        "extra": {}
+      },
+      { "id": "voice", "label": "Voice", "parentId": null, "color": null, "extra": {} }
+    ]
   }
 ]

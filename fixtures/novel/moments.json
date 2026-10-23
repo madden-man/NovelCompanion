@@ -14,7 +14,8 @@
     "characterId": "H1",
     "year": 2028,
     "endYear": null,
-    "worldContext": ""
+    "worldContext": "",
+    "kind": "voice"
   },
   {
     "_id": "H5-voice-0",
@@ -31,7 +32,8 @@
     "characterId": "H5",
     "year": 2060,
     "endYear": null,
-    "worldContext": ""
+    "worldContext": "",
+    "kind": "voice"
   },
   {
     "_id": "Z3-lives-0",
@@ -48,7 +50,8 @@
     "characterId": "Z3",
     "year": 1988,
     "endYear": 2027,
-    "worldContext": ""
+    "worldContext": "",
+    "kind": "move"
   },
   {
     "_id": "Z3-lives-1",
@@ -65,6 +68,7 @@
     "characterId": "Z3",
     "year": 2027,
     "endYear": null,
-    "worldContext": ""
+    "worldContext": "",
+    "kind": "move"
   }
 ]

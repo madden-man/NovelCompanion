@@ -1,3 +1,4 @@
+import { LIVES_IN_PREFIX } from '../../schema/moment';
 import { splitNumberedTitle } from '../numbering';
 import { buildEntry } from './build';
 import { importableFields } from './fields';
@@ -74,6 +75,7 @@ export function mapMomentGrid(
   });
   const counts = new Map<string, number>();
   const skipped: { row: number; label: string; cells: number }[] = [];
+  const moveKind = !!ctx.list('momentKinds')?.items.some((i) => i.id === 'move');
   let ordinal = 0;
   for (let r = header.row; r < sheet.cells.length && r + 1 < endAt; r++) {
     const row = r + 1;
@@ -123,10 +125,13 @@ export function mapMomentGrid(
       if (title !== text) fields.body = text;
       const end = endYearOf(sheet, row, y, header.columns);
       if (end !== null) fields.endYear = end;
+      // A51 (SM-3): a cell that says where someone lives is a move. It is set on a new
+      // moment only (not a field the import compares), so a kind the writer changed stays.
+      const move = title.startsWith(LIVES_IN_PREFIX) && moveKind;
       const built = buildEntry({
         target: mapping.target,
         fields,
-        fixed: mapping.fixed,
+        fixed: move ? { kind: 'move', ...mapping.fixed } : mapping.fixed,
         newId: id,
         ref,
         ordinal,
