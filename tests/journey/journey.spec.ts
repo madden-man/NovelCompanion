@@ -21,6 +21,7 @@ import {
   fillEditable,
   invokeVia,
   launch,
+  momentThroughDialog,
   openListFor,
   rail,
   screenTab,
@@ -608,7 +609,7 @@ test("CU-2 A42 Cultural data lists what applies to Guangzhou in the story year's
   const was = (await invoke('storyTime.get', {})).time;
   await invoke('storyTime.set', { time: { year: 2025 } });
   await expect(view.getByTestId('culture-heading')).toHaveText('Guangzhou in the 2020s');
-  await expect(view.locator('.cu-line[data-id="CU1"]').getByTestId('line-note')).toHaveValue(
+  await expect(view.locator('.cu-line[data-id="CU1"]').getByTestId('line-note-text')).toHaveText(
     /lotus seed mooncakes/,
   );
   await invoke('storyTime.set', { time: { year: 1975 } });
@@ -662,7 +663,7 @@ test('OQ-1 SM-11 an open question on Questions is marked decided with a decision
   await field(editor, 'state').locator(':scope > select').selectOption('decided');
   await waitSaved(page);
   await expect(field(editor, 'decision')).toContainText('marked decided, but no decision');
-  await field(editor, 'decision').locator(':scope > textarea').fill('Guangzhou, near the river.');
+  await field(editor, 'decision').getByRole('textbox').fill('Guangzhou, near the river.');
   await waitSaved(page);
   await expect(field(editor, 'decision')).not.toContainText('marked decided, but no decision');
   await page.getByLabel('Show questions').selectOption('decided');
@@ -729,6 +730,11 @@ test('ED-1 one entry of every section is created from its form, every field is c
     const manifest = manifests[c];
     const a = build(manifest, 0, ctx, 'full', true);
     const b = build(manifest, 1, ctx, 'full', true);
+    if (c === 'moments') {
+      // A50: a moment is made and edited in its Backstory dialog, not from a section list.
+      failures.push(...(await momentThroughDialog(page, invoke, a, b)));
+      continue;
+    }
     const { newButton, preset } = await openListFor(page, ctx, c, a);
     await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
@@ -780,7 +786,9 @@ test('ED-1 one entry of every section is created from its form, every field is c
     if (pools.get(c)!.length === 0) pools.get(c)!.push(id);
   }
   expect(failures).toEqual([]);
-  expect(trial.map((t) => t.collection).sort()).toEqual([...ENTRY_COLLECTIONS].sort());
+  expect(trial.map((t) => t.collection).sort()).toEqual(
+    ENTRY_COLLECTIONS.filter((c) => c !== 'moments').sort(),
+  );
 });
 
 test('ED-5 the trial entries are moved to the trash from their pages, and the Trash screen lists every one', async () => {
@@ -890,8 +898,8 @@ test('ED-5 a character moves to the trash and is restored from the Trash screen'
 
 test('ED-3 a change is undone with Cmd+Z and redone with Shift+Cmd+Z', async () => {
   await openEntry('Characters', /^Sam Hale/);
-  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
-  const before = await input.inputValue();
+  const input = field(page.getByTestId('editor'), 'role').getByRole('textbox');
+  const before = (await input.textContent()) ?? '';
   await input.fill('Cannon Beach');
   await waitSaved(page);
   await page.locator('body').click();
@@ -899,12 +907,12 @@ test('ED-3 a change is undone with Cmd+Z and redone with Shift+Cmd+Z', async () 
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
     'Undid: Changed In the story on Sam Hale',
   );
-  await expect(input).toHaveValue(before);
+  await expect(input).toHaveText(before);
   await page.keyboard.press('Shift+Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
     'Redid: Changed In the story on Sam Hale',
   );
-  await expect(input).toHaveValue('Cannon Beach');
+  await expect(input).toHaveText('Cannon Beach');
 });
 
 // ---------------------------------------------------------------------------
@@ -1113,7 +1121,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   const id = (await manual.getAttribute('data-id'))!;
 
   await openEntry('Characters', /^Zhou Jun/);
-  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
+  const input = field(page.getByTestId('editor'), 'role').getByRole('textbox');
   await input.fill('Shenzhen after the snapshot');
   await waitSaved(page);
 
@@ -1128,7 +1136,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
     )
     .not.toBe('Shenzhen after the snapshot');
   await openEntry('Characters', /^Zhou Jun/);
-  await expect(field(page.getByTestId('editor'), 'role').locator('textarea')).not.toHaveValue(
+  await expect(field(page.getByTestId('editor'), 'role').getByRole('textbox')).not.toHaveText(
     'Shenzhen after the snapshot',
   );
 });
