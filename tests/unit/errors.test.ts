@@ -175,7 +175,6 @@ describe('NF-3 handle.ts maps the known error classes', () => {
 });
 
 describe('NF-3 the editor shows mapped text', () => {
-
   test('NF-3 the editor\'s "Not saved:" line shows the mapped text from main, and maps anything raw', () => {
     const fromMain = `Error invoking remote method 'nc:entry.update': Error: ${PLAIN.unreachable}`;
     // editor.tsx SaveState renders notSavedText(plainError(e)).

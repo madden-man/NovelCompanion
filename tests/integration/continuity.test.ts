@@ -269,7 +269,7 @@ describe('CC-4 the three resolutions', () => {
     expect(bible.model.get('characters', 'H1')!.birth).toEqual({ year: 1958 });
   });
 
-  test('CC-4 AI-4 Rewrite recommended makes a rewrite task with chapter, lines, quoted lines, and what must change, and no prose; it shows on the dashboard and the chapter', async () => {
+  test('CC-4 AI-4 Rewrite recommended makes a rewrite task with chapter, lines, quoted lines, and what must change, and no prose; it shows on the Continuity checker and the chapter', async () => {
     const p2 = byCheck(await open('CH7'), 'CH7', 'place');
     const r = await invoke('continuity.resolve', { id: p2.id, action: 'rewrite' });
     expect(r.finding).toMatchObject({
@@ -289,13 +289,14 @@ describe('CC-4 the three resolutions', () => {
     const tasks = (await invoke('continuity.findings', { chapterId: 'CH7', states: ['rewrite'] }))
       .findings;
     expect(tasks.map((t) => t.id)).toEqual([p2.id]);
-    const d = await invoke('dashboard.get', {});
-    expect(d.rewriteTasks).toContainEqual(
+    // The Continuity checker lists every chapter's rewrite tasks.
+    const all = (await invoke('continuity.findings', { chapterId: null, states: ['rewrite'] }))
+      .findings;
+    expect(all).toContainEqual(
       expect.objectContaining({
         id: p2.id,
         chapterId: 'CH7',
-        lines: 'line 1',
-        quote: expect.stringMatching(/Shanghai/),
+        chapter: 'Rain in Guangzhou',
       }),
     );
     // A re-run leaves the task as it is and adds no duplicate.

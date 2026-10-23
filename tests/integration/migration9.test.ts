@@ -413,7 +413,9 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     expect(open.repo.backlinks('B1').map((b) => b.id)).toContain('Q1');
     expect(await doc(open, 'proposals', 'P1')).toMatchObject({ state: 'rejected' });
     expect(await doc(open, 'proposals', 'P2')).toMatchObject({ state: 'pending' });
-    expect(Object.keys(open.repo.savedMappings())).toEqual(['w.xlsx#People']);
+    // The mapping list is history after A53; it is read from the meta document as stored.
+    const mappings = (await doc(open, 'meta', 'importMappings'))!.mappings as { key: string }[];
+    expect(mappings.map((m) => m.key)).toEqual(['w.xlsx#People']);
   });
 
   test('SM-2 the summary in meta counts what was made, skipped, and dropped', async () => {

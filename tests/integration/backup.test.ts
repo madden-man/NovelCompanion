@@ -256,7 +256,6 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     await a.repo.setTreePositions({ H1: { x: 10, y: 20 } });
     await a.repo.setRomanization('mandarin', 'mandarin');
     await a.repo.setSnapshotKeep(12);
-    await a.repo.saveMapping('book.xlsx#Sheet 1', { shape: 'table' });
     // PL-5: the scene outline and its versions travel too.
     await a.repo.setSceneOutline('- One', { breaks: { H1: 0 } });
     await a.repo.setSceneOutline('- One\n- Two', { newVersion: true });
@@ -285,7 +284,6 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     expect(b.repo.storyTime()).toEqual({ year: 2045 });
     expect(b.repo.treePositions()).toEqual({ H1: { x: 10, y: 20 } });
     expect(b.repo.snapshotKeep()).toBe(12);
-    expect(b.repo.savedMappings()).toEqual({ 'book.xlsx#Sheet 1': { shape: 'table' } });
     expect(b.repo.get('moments', 'H5-voice-0')).toBeUndefined();
     expect(b.repo.get('moments', 'H5-voice-0', { includeDeleted: true })).toBeDefined();
     expect((await b.repo.revisions('characters', 'H1')).map((r) => r.op)).toEqual(['update']);

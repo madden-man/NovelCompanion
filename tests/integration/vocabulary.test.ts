@@ -16,7 +16,7 @@ import {
   numberSettingCommand,
   templateCommand,
 } from '../../src/shared/undoCommands';
-import { DEFAULT_BIBLE_SETTINGS, DEFAULT_BRIEF_HEADINGS } from '../../src/shared/schema';
+import { DEFAULT_BIBLE_SETTINGS } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
@@ -341,7 +341,7 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
     expect(entry.demographic).toBe('18-30');
   });
 
-  test('IP-14 the new chapter strand and the brief headings read the templates, with undo', async () => {
+  test('IP-14 the new chapter strand reads the templates, with undo', async () => {
     const undo = new UndoManager();
     const io = undoIO(invoke);
     await invoke('settings.set', { templates: { strandPresent: 'now' } });
@@ -360,14 +360,6 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
     });
     expect((await invoke('settings.get', {})).templates.strandPresent).toBe('present');
 
-    const headings: string[] = [...DEFAULT_BRIEF_HEADINGS];
-    headings[0] = '1. Who is in the scene';
-    await invoke('settings.set', { templates: { briefHeadings: headings } });
-    const { structured } = await invoke('session.relevant', {
-      input: { kind: 'chapter', chapterId: 'CH6' },
-    });
-    expect(structured).toContain('## 1. Who is in the scene');
-    await invoke('settings.set', { templates: { briefHeadings: [...DEFAULT_BRIEF_HEADINGS] } });
     await expect(invoke('settings.set', { templates: { chapterTitle: '  ' } })).rejects.toThrow(
       'A default name cannot be empty.',
     );

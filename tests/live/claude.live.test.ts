@@ -128,21 +128,6 @@ describe.skipIf(!hasKey)('T-3 live Claude smoke test', () => {
     expect(answer).not.toMatch(/\n\s*\n/);
   });
 
-  test('IM-5 import proposals read chapter 3 and queue proposals for review', async () => {
-    const bibleIpc = ipcFor(() => bible, {
-      pickFile: async () => join(import.meta.dirname, '../../fixtures/files/chapter-03.docx'),
-    });
-    const { file } = await bibleIpc('import.pickFile', { kind: 'document' });
-    const id = runId();
-    await call('claude.importProposals', { runId: id, fileId: file!.id });
-    const run = await finished(id);
-    report('Import proposals: chapter-03.docx', run);
-    const t = run.turns[0]!;
-    say(`Queued ${t.proposalIds.length}; not queued: ${JSON.stringify(t.rejected)}`);
-    expect(t.status).toBe('done');
-    expect(t.proposalIds.length + t.rejected.length).toBeGreaterThan(0);
-  });
-
   test('CC-3 T-3 report whether the real model finds P1 (Chapter 5) and P2 (Chapter 7); informs, never gates', async () => {
     const bibleIpc = ipcFor(() => bible);
     const found: Record<string, boolean> = {};

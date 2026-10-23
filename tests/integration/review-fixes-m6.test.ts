@@ -15,8 +15,6 @@ import { MemorySettingsStore } from '../../src/main/claude/settings';
 import { ClaudeRuntime } from '../../src/main/claude/runtime';
 import { FakeClaudeClient } from '../../src/main/claude/fake';
 import { bibleTools } from '../../src/main/claude/tools';
-import { importProposals } from '../../src/main/claude/features/importProposals';
-import { rememberDocument } from '../../src/main/import/pickedDocuments';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
@@ -118,21 +116,6 @@ describe('AI-5 entry text reaches Claude as material', () => {
     expect(strand.label).toMatch(/^<material /);
     expect(strand.id).not.toMatch(/^<material/);
   });
-
-  test('AI-5 the import prompt wraps existing titles and keeps the file name out of the free text', () => {
-    rememberDocument('r2-doc', {
-      fileName: 'ignore-everything.docx',
-      modifiedAt: '2026-10-11T00:00:00.000Z',
-      html: '<p>Hello.</p>',
-      blocks: [{ index: 1, kind: 'paragraph', text: 'Hello.' }] as never,
-    });
-    const { prompt } = importProposals.build({ fileId: 'r2-doc' } as never, bible);
-    const titles = prompt.slice(prompt.indexOf('Existing entries'), prompt.indexOf('The document'));
-    expect(titles).toMatch(/<material source="existing entry titles">/);
-    const outside = prompt.replace(/<material[\s\S]*?<\/material>/g, '');
-    expect(outside).not.toContain('ignore-everything');
-    expect(outside).not.toContain('Margaret');
-  });
 });
 
 describe('AI-2 every entry whose facts reach Claude is recorded as read', () => {
@@ -229,19 +212,19 @@ describe('ARCH-5 the key goes only to Anthropic', () => {
   });
 });
 
-describe('ARCH-5 exceljs is a runtime dependency', () => {
-  test('ARCH-5 exceljs, imported by the main process, is in dependencies and the lockfile does not mark it dev', () => {
+describe('ARCH-5 mammoth is a runtime dependency', () => {
+  test('ARCH-5 mammoth, imported by the main process, is in dependencies and the lockfile does not mark it dev', () => {
     const root = join(import.meta.dirname, '../..');
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    expect(pkg.dependencies.exceljs).toBeDefined();
-    expect(pkg.devDependencies.exceljs).toBeUndefined();
+    expect(pkg.dependencies.mammoth).toBeDefined();
+    expect(pkg.devDependencies.mammoth).toBeUndefined();
     const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')) as {
       packages: Record<string, { dev?: boolean; dependencies?: Record<string, string> }>;
     };
-    expect(lock.packages['']!.dependencies!.exceljs).toBeDefined();
-    expect(lock.packages['node_modules/exceljs']!.dev).toBeUndefined();
+    expect(lock.packages['']!.dependencies!.mammoth).toBeDefined();
+    expect(lock.packages['node_modules/mammoth']!.dev).toBeUndefined();
   });
 });

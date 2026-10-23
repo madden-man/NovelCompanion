@@ -101,38 +101,6 @@ describe('OQ-1, SL-1 questions and the log', () => {
       (await invoke('revisions.list', { collection: 'openQuestions', id: q._id })).revisions,
     ).toHaveLength(3);
   });
-
-  test('SL-1 the latest log is the newest dated one with a note, survives reopening, and ignores the trash', async () => {
-    expect((await invoke('sessionLog.latest', {})).log).toBeNull();
-    const chapterId = (await invoke('entry.list', { collection: 'chapters', trash: 'exclude' }))
-      .entries[0]!.entry._id;
-    await make('sessionLogs', {
-      title: 'Session 2026-10-08',
-      status: 'canon',
-      date: '2026-10-08',
-      stoppedAt: 'Start of chapter 1',
-    });
-    const newest = (
-      await make('sessionLogs', {
-        title: 'Session 2026-10-09',
-        status: 'canon',
-        date: '2026-10-09',
-        chapterId,
-        stoppedAt: 'Ada at the door',
-      })
-    ).entry;
-    const latest = (await invoke('sessionLog.latest', {})).log!;
-    expect(latest).toMatchObject({
-      id: newest._id,
-      date: '2026-10-09',
-      stoppedAt: 'Ada at the door',
-      chapter: 'The house',
-    });
-    const reopened = await openBibleSession(store, slug);
-    expect((await ipcFor(() => reopened)('sessionLog.latest', {})).log!.id).toBe(newest._id);
-    await invoke('entry.delete', { collection: 'sessionLogs', id: newest._id });
-    expect((await invoke('sessionLog.latest', {})).log!.stoppedAt).toBe('Start of chapter 1');
-  });
 });
 
 describe('SR-1 SR-2 search through the IPC layer', () => {
