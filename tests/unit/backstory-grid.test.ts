@@ -2,9 +2,11 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, test } from 'vitest';
 import { readFixture } from '../helpers/loadFixture';
 import {
-  BACKSTORY_MARKERS,
   BACKSTORY_METRICS,
   NO_FAMILY,
+  PERSON_LABEL_MAX,
+  PERSON_MARKERS,
+  PERSON_METRICS,
   ageIn,
   ageText,
   allMoments,
@@ -15,6 +17,7 @@ import {
   insertEventTitle,
   insertMention,
   layoutBackstory,
+  layoutPerson,
   lifespanBar,
   lifespanOf,
   lifeProblem,
@@ -28,9 +31,12 @@ import {
 } from '../../src/shared/domain/backstoryGrid';
 import { eventSpans, fromCollections, strandSpans } from '../../src/shared/domain/timeline';
 import {
+  GRID_METRICS,
   MARKER_DEFAULTS,
   hitTest,
   makeScale,
+  placeRow,
+  roughLabelWidth,
   writingBand,
   yearMid,
   yearX,
@@ -229,13 +235,14 @@ describe('SM-9 SM-3 moments on the grid', () => {
     expect(hitBackstory(layout, grid, 10, 5)).toBeNull();
   });
 
-  test('SM-9 A49 rows are 48px for one lane and 76px for two; markers are 14px dots with 10px bars', () => {
+  test('SM-9 A50 rows are 36px for one lane and 58px for two; markers are 10px dots with 8px bars', () => {
     const s = makeScale(grid.span, 10);
     const layout = layoutBackstory(grid, s);
-    expect(layout.markers).toBe(BACKSTORY_MARKERS);
+    expect(layout.markers).toBe(MARKER_DEFAULTS);
+    expect(BACKSTORY_METRICS).toEqual({ ...GRID_METRICS, rowPad: 7 });
     const rows = layout.lines.filter((l) => l.kind === 'row');
     const one = rows.find((l) => l.layout.lanes === 1)!;
-    expect(one.height).toBe(48);
+    expect(one.height).toBe(36);
     // Two moments a year apart in one row cannot share a lane.
     const twoLane = backstoryGrid({
       ...input,
@@ -248,34 +255,45 @@ describe('SM-9 SM-3 moments on the grid', () => {
       (l) => l.kind === 'row' && l.row.key === 'H1',
     )!;
     expect(h1.kind === 'row' && h1.layout.lanes).toBe(2);
-    expect(h1.height).toBe(76);
+    expect(h1.height).toBe(58);
     const dot = rows.flatMap((l) => l.layout.markers).find((m) => m.id === 'H1-voice-0')!;
-    expect(dot.width).toBe(14);
-    expect(dot.x).toBe(yearMid(s, 2028) - 7);
-    expect(BACKSTORY_MARKERS.barHeight).toBe(10);
-    expect(BACKSTORY_MARKERS.bigBarHeight).toBe(14);
-    // The World events grid keeps its own sizes.
+    expect(dot.width).toBe(10);
+    expect(dot.x).toBe(yearMid(s, 2028) - 5);
+    // The World events grid's sizes, which the Backstory grid shares again.
     expect(MARKER_DEFAULTS).toMatchObject({
       dot: 10,
       bigDot: 16,
       gap: 4,
+      maxLanes: 4,
       barHeight: 8,
       bigBarHeight: 12,
     });
+    expect(MARKER_DEFAULTS.reserveLabel).toBeFalsy();
+    // The A49 sizes live on in the person view.
+    expect(PERSON_MARKERS).toMatchObject({
+      dot: 14,
+      bigDot: 20,
+      gap: 6,
+      maxLanes: 8,
+      barHeight: 10,
+      bigBarHeight: 14,
+      reserveLabel: true,
+    });
+    expect(PERSON_METRICS).toMatchObject({ lane: 28, rowPad: 10 });
   });
 
-  test('SM-9 A49 the hit test finds a marker across its 14px, and the track beside it is empty', () => {
+  test('SM-9 A50 the hit test finds a marker across its 10px, and the track beside it is empty', () => {
     const s = makeScale(grid.span, 10);
     const layout = layoutBackstory(grid, s);
     const h1 = layout.lines.find((l) => l.kind === 'row' && l.row.key === 'H1')!;
     if (h1.kind !== 'row') throw new Error('H1 is a row');
     const m = h1.layout.markers.find((x) => x.id === 'H1-voice-0')!;
-    const y = h1.y + BACKSTORY_METRICS.rowPad + m.lane * BACKSTORY_METRICS.lane + 14;
-    for (const x of [m.x, m.x + 7, m.x + 14]) {
+    const y = h1.y + BACKSTORY_METRICS.rowPad + m.lane * BACKSTORY_METRICS.lane + 11;
+    for (const x of [m.x, m.x + 5, m.x + 10]) {
       const h = hitTest(layout, x, y);
       expect(h?.kind === 'marker' && h.marker.id).toBe('H1-voice-0');
     }
-    expect(hitTest(layout, m.x + 20, y)?.kind).toBe('empty');
+    expect(hitTest(layout, m.x + 16, y)?.kind).toBe('empty');
   });
 
   test('SM-9 a closed family merges its people’s markers onto the heading line', () => {
@@ -295,7 +313,7 @@ describe('SM-9 SM-3 moments on the grid', () => {
         .showLabel;
     const s = makeScale(grid.span, 10);
     expect(label(layoutBackstory(grid, s), 'H1-voice-0')).toBe(true);
-    // A moment three years later shares the lane and leaves 10 pixels: too few for "Voice".
+    // A moment three years later shares the lane and leaves 16 pixels: too few for "Voice".
     const crowded = backstoryGrid({
       ...input,
       moments: [
@@ -306,6 +324,120 @@ describe('SM-9 SM-3 moments on the grid', () => {
     const l = layoutBackstory(crowded, s);
     expect(label(l, 'H1-voice-0')).toBe(false);
     expect(label(l, 'H1-later')).toBe(true);
+  });
+});
+
+describe('SM-9 A50 one person’s timeline', () => {
+  const s = makeScale(grid.span, 10);
+  /** Zhou Lan with a third moment a year after her move, so titles crowd the lane. */
+  const crowded = backstoryGrid({
+    ...input,
+    moments: [
+      ...input.moments,
+      {
+        ...input.moments[0]!,
+        _id: 'Z3-next',
+        characterId: 'Z3',
+        year: 2028,
+        endYear: null,
+        title: 'Finds work',
+      } as Doc,
+    ],
+  });
+
+  test('SM-9 A50 layoutPerson lays out one row and no family heading, 14px dots, the lifespan from the person’s years', () => {
+    const layout = layoutPerson(grid, 'Z3', s, 0);
+    expect(layout.lines).toHaveLength(1);
+    expect(layout.lines.some((l) => l.kind === 'group')).toBe(false);
+    const line = layout.lines[0]!;
+    if (line.kind !== 'row') throw new Error('one row');
+    expect(line.row.key).toBe('Z3');
+    expect(line.y).toBe(PERSON_METRICS.header);
+    expect(layout.metrics).toBe(PERSON_METRICS);
+    expect(layout.markers).toBe(PERSON_MARKERS);
+    expect(line.layout.markers.map((m) => m.id)).toEqual(['Z3-lives-0', 'Z3-lives-1']);
+    const dot = line.layout.markers.find((m) => m.id === 'Z3-lives-1')!;
+    expect(dot.width).toBe(14);
+    expect(dot.x).toBe(yearMid(s, 2027) - 7);
+    expect(layout.person?.name).toBe('Zhou Lan');
+    expect(layout.life).toEqual({ kind: 'alive', from: 1988, to: null });
+    expect(layout.life).toEqual(lifespanOf(person('Z3')));
+  });
+
+  test('SM-9 A50 the row is as tall as its lanes, lanes times 28 plus 20, or the height it is given when that is more', () => {
+    const line = (l: ReturnType<typeof layoutPerson>) => l.lines[0]!;
+    const natural = layoutPerson(grid, 'Z3', s, 0);
+    const first = line(natural);
+    if (first.kind !== 'row') throw new Error('one row');
+    const lanes = first.layout.lanes;
+    expect(line(natural).height).toBe(lanes * 28 + 20);
+    expect(natural.height).toBe(PERSON_METRICS.header + lanes * 28 + 20);
+    const tall = layoutPerson(grid, 'Z3', s, 600);
+    expect(line(tall).height).toBe(600);
+    expect(tall.height).toBe(PERSON_METRICS.header + 600);
+    // A short frame never squeezes the lanes.
+    expect(line(layoutPerson(grid, 'Z3', s, 10)).height).toBe(lanes * 28 + 20);
+    // Somebody with no moments still has the one lane.
+    expect(line(layoutPerson(grid, 'H2', s, 0)).height).toBe(48);
+  });
+
+  test('SM-9 A50 every title is drawn and holds its room: a moment a year after a long title takes the next lane', () => {
+    const layout = layoutPerson(crowded, 'Z3', s, 0);
+    const line = layout.lines[0]!;
+    if (line.kind !== 'row') throw new Error('one row');
+    const at = (id: string) => line.layout.markers.find((m) => m.id === id)!;
+    expect(line.layout.markers.every((m) => m.showLabel)).toBe(true);
+    // The bar to 2027 holds lane 0 with its title after it, so Portland in 2027 and the work in
+    // 2028 each take a lane of their own.
+    expect(at('Z3-lives-0').lane).toBe(0);
+    expect(at('Z3-lives-1').lane).toBe(1);
+    expect(at('Z3-next').lane).toBe(2);
+    expect(line.layout.lanes).toBe(3);
+    expect(line.height).toBe(3 * 28 + 20);
+    // Where the grid hides a title for want of room, the person view draws it and takes a lane.
+    const retires = backstoryGrid({
+      ...input,
+      moments: [
+        ...input.moments,
+        { ...input.moments[0]!, _id: 'H1-later', year: 2031, title: 'Retires' } as Doc,
+      ],
+    });
+    const inGrid = layoutBackstory(retires, s).lines.find(
+      (l) => l.kind === 'row' && l.row.key === 'H1',
+    )!;
+    if (inGrid.kind !== 'row') throw new Error('H1 is a row');
+    expect(inGrid.layout.lanes).toBe(1);
+    expect(inGrid.layout.markers.find((m) => m.id === 'H1-voice-0')!.showLabel).toBe(false);
+    const alone = layoutPerson(retires, 'H1', s, 0).lines[0]!;
+    if (alone.kind !== 'row') throw new Error('one row');
+    expect(alone.layout.lanes).toBe(2);
+    expect(alone.layout.markers.map((m) => [m.id, m.lane, m.showLabel])).toEqual([
+      ['H1-voice-0', 0, true],
+      ['H1-later', 1, true],
+    ]);
+  });
+
+  test('SM-9 A50 a title longer than 240px reserves 240px of its lane, no more', () => {
+    const long = 'Leaves Guangzhou on the night train with her mother and two suitcases of books';
+    expect(roughLabelWidth(long)).toBeGreaterThan(PERSON_LABEL_MAX);
+    expect(PERSON_MARKERS.labelWidth(long)).toBe(PERSON_LABEL_MAX);
+    expect(PERSON_MARKERS.labelWidth('Voice')).toBe(roughLabelWidth('Voice'));
+    const wide = makeScale({ from: 2000, to: 2100 }, 10);
+    const first = { id: 'a', row: 'r', startYear: 2000, endYear: 2000, label: long };
+    // The dot ends at 12px; the title runs to 12 + 6 + 240 and the next dot needs 6 more.
+    const clear = 12 + 6 + PERSON_LABEL_MAX + 6;
+    const yearFor = (x: number) => 2000 + Math.ceil((x + 7 - 5) / 10);
+    const next = (year: number) => ({
+      id: 'b',
+      row: 'r',
+      startYear: year,
+      endYear: year,
+      label: 'b',
+    });
+    const fits = placeRow('r', [first, next(yearFor(clear))], wide, PERSON_MARKERS);
+    expect(fits.markers.map((m) => m.lane)).toEqual([0, 0]);
+    const short = placeRow('r', [first, next(yearFor(clear) - 1)], wide, PERSON_MARKERS);
+    expect(short.markers.map((m) => m.lane)).toEqual([0, 1]);
   });
 });
 

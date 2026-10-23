@@ -20,7 +20,9 @@ import {
   layoutGrid,
   lineAt,
   makeScale,
+  MARKER_DEFAULTS,
   placeRow,
+  roughLabelWidth,
   scaleWidth,
   scrollToYear,
   shiftEnd,
@@ -217,6 +219,59 @@ describe('SM-8 marker placement', () => {
       s,
     );
     expect(crowded.lanes).toBe(4);
+  });
+});
+
+describe('SM-9 A50 placeRow with reserveLabel', () => {
+  const s = makeScale({ from: 2025, to: 2100 }, 20);
+  const capped = (l: string) => Math.min(roughLabelWidth(l), 240);
+  const reserve = { ...MARKER_DEFAULTS, labelWidth: capped, reserveLabel: true };
+  const titled = (id: string, year: number, label: string): GridItem => ({
+    id,
+    row: 'r',
+    startYear: year,
+    endYear: year,
+    label,
+  });
+
+  test('SM-9 A50 two moments a year apart take two lanes when the first title does not fit before the second', () => {
+    const items = [titled('a', 2030, 'Moves to the city'), titled('b', 2031, 'Marries')];
+    // Without it they share a lane and the first title hides.
+    const plain = placeRow('r', items, s);
+    expect(plain.markers.map((m) => [m.lane, m.showLabel])).toEqual([
+      [0, false],
+      [0, true],
+    ]);
+    const row = placeRow('r', items, s, reserve);
+    expect(row.markers.map((m) => m.lane)).toEqual([0, 1]);
+    expect(row.lanes).toBe(2);
+    // A third far enough past the first title goes back to the first lane.
+    const a = row.markers[0]!;
+    const clear = a.x + a.width + 4 + roughLabelWidth('Moves to the city') + 4;
+    const later = 2025 + Math.ceil((clear - 5) / 20);
+    const three = placeRow('r', [...items, titled('c', later, 'Leaves')], s, reserve);
+    expect(three.markers.map((m) => m.lane)).toEqual([0, 1, 0]);
+  });
+
+  test('SM-9 A50 every marker shows its title with reserveLabel, even past the most lanes', () => {
+    const many = Array.from({ length: 9 }, (_, i) => titled(`x${i}`, 2040, `Title ${i}`));
+    const row = placeRow('r', many, s, reserve);
+    expect(row.lanes).toBe(4);
+    expect(row.markers.every((m) => m.showLabel)).toBe(true);
+    // The default keeps hiding titles that do not fit.
+    expect(placeRow('r', many, s).markers.some((m) => !m.showLabel)).toBe(true);
+    expect(MARKER_DEFAULTS.reserveLabel).toBeFalsy();
+  });
+
+  test('SM-9 A50 a title longer than 240px reserves 240px', () => {
+    const long = 'x'.repeat(100);
+    expect(roughLabelWidth(long)).toBeGreaterThan(240);
+    const first = titled('a', 2030, long);
+    // The dot at 2030 runs from 105 to 115; the title to 115 + 4 + 240, then the gap.
+    const at = (x: number) => 2025 + Math.ceil((x - 5) / 20);
+    const clear = 115 + 4 + 240 + 4;
+    expect(placeRow('r', [first, titled('b', at(clear), 'b')], s, reserve).lanes).toBe(1);
+    expect(placeRow('r', [first, titled('b', at(clear) - 1, 'b')], s, reserve).lanes).toBe(2);
   });
 });
 

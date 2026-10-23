@@ -230,11 +230,11 @@ test('IP-13 the App menu lists every section under All sections; each opens its 
   const button = nav.getByTestId('app-menu-button');
   await button.click();
   const group = nav.getByRole('group', { name: 'All sections' });
-  await expect(group.getByRole('menuitem')).toHaveText(
-    ENTRY_COLLECTIONS.map((c) => collectionInfo[c].plural),
-  );
+  // A50: moments have one door, Backstory, so they have no list here.
+  const listed = ENTRY_COLLECTIONS.filter((c) => c !== 'moments');
+  await expect(group.getByRole('menuitem')).toHaveText(listed.map((c) => collectionInfo[c].plural));
   // Every section opens its own list.
-  for (const c of ENTRY_COLLECTIONS) {
+  for (const c of listed) {
     if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click();
     await group.getByRole('menuitem', { name: collectionInfo[c].plural, exact: true }).click();
     await expect(

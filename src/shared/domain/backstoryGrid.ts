@@ -15,13 +15,17 @@ import { buildGraph, placeLayout } from './tree';
 import type { StoredPositions } from './tree';
 import {
   DEFAULT_SPAN,
+  GRID_METRICS,
+  MARKER_DEFAULTS,
   byYear,
   gridSpan,
   hitTest,
   inWindow,
   layoutGrid,
   moveEdge,
+  placeRow,
   roughLabelWidth,
+  scaleWidth,
   spanExtent,
   yearX,
 } from './worldGrid';
@@ -386,25 +390,38 @@ export function ageIn(p: { birth: StoryDate | null; death: StoryDate | null }, y
 // ---------- the whole grid ----------
 
 /**
- * SM-9: the Backstory grid's rows are taller than the World events grid's, with room at the foot
- * for the lifespan bar: a one-lane row is 48px, a two-lane row 76px.
+ * SM-9: the Backstory grid's rows are the World events grid's lanes with room at the foot for the
+ * lifespan bar: a one-lane row is 36px, a two-lane row 58px (A50, back from the A49 sizes).
  */
-export const BACKSTORY_METRICS: GridMetrics = {
+export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
+
+/**
+ * A50: the person view's rows, the A49 sizes: 28px lanes and 10px above and below, so one lane
+ * is 48px. The row itself grows to fill the frame.
+ */
+export const PERSON_METRICS: GridMetrics = {
   header: 56,
   groupHeading: 32,
   lane: 28,
   rowPad: 10,
 };
 
-/** SM-9, IP-4: bigger markers than the World events grid's, so a moment is easy to hit and drag. */
-export const BACKSTORY_MARKERS: MarkerOptions = {
+/** A50: the widest a title draws in the person view; a longer one ends in an ellipsis. */
+export const PERSON_LABEL_MAX = 240;
+
+/**
+ * A50, IP-4: the person view's markers, the A49 sizes (14px dots, 20px big dots, 10px and 14px
+ * bars), each with its title drawn and the title's room kept in its lane, up to eight lanes.
+ */
+export const PERSON_MARKERS: MarkerOptions = {
   dot: 14,
   bigDot: 20,
   gap: 6,
-  maxLanes: 4,
-  labelWidth: roughLabelWidth,
+  maxLanes: 8,
+  labelWidth: (label) => Math.min(roughLabelWidth(label), PERSON_LABEL_MAX),
   barHeight: 10,
   bigBarHeight: 14,
+  reserveLabel: true,
 };
 
 export interface BackstoryGridInput extends BackstoryRowsInput {
@@ -442,7 +459,7 @@ export function layoutBackstory(
   g: BackstoryGrid,
   s: YearScale,
   closed: ReadonlySet<string> = new Set(),
-  opts: MarkerOptions = BACKSTORY_MARKERS,
+  opts: MarkerOptions = MARKER_DEFAULTS,
 ): GridLayout {
   return layoutGrid(
     gridGroups(g.families, closed),
@@ -451,6 +468,52 @@ export function layoutBackstory(
     opts,
     BACKSTORY_METRICS,
   );
+}
+
+/** A50: the person view's layout: the grid's, with the person's lifespan beside it. */
+export interface PersonLayout extends GridLayout {
+  /** The person drawn, or null when the ID is nobody in the grid. */
+  person: BackstoryPerson | null;
+  life: Lifespan;
+}
+
+/**
+ * A50, SM-9: one person's timeline. One row, no family heading, the markers at the person view's
+ * sizes with every title drawn. The row is as tall as its lanes need, or `minHeight` when that is
+ * more, so it fills the frame under the year header; the lanes start at the top and the lifespan
+ * runs along the foot.
+ */
+export function layoutPerson(
+  g: BackstoryGrid,
+  personId: string,
+  s: YearScale,
+  minHeight = 0,
+): PersonLayout {
+  const metrics = PERSON_METRICS;
+  const person = g.people.get(personId) ?? null;
+  const layout = placeRow(
+    personId,
+    momentItems(g.moments.filter((m) => m.characterId === personId)),
+    s,
+    PERSON_MARKERS,
+  );
+  const height = Math.max(layout.lanes * metrics.lane + 2 * metrics.rowPad, minHeight);
+  const row = {
+    key: personId,
+    label: person?.name ?? '',
+    groupId: person?.familyId ?? NO_FAMILY,
+    own: false,
+  };
+  return {
+    scale: s,
+    lines: [{ kind: 'row', row, y: metrics.header, height, layout }],
+    height: metrics.header + height,
+    width: scaleWidth(s),
+    metrics,
+    markers: PERSON_MARKERS,
+    person,
+    life: person ? lifespanOf(person) : { kind: 'unknown', from: null, to: null },
+  };
 }
 
 export type BackstoryHit =

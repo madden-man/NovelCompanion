@@ -10,8 +10,10 @@ import type {
 } from '../../../../shared/domain/worldGrid';
 import {
   NO_FAMILY,
+  PERSON_METRICS,
   ageText,
   layoutBackstory,
+  layoutPerson,
   lifespanBar,
   lifespanOf,
   momentLabel,
@@ -48,6 +50,11 @@ import './backstory.css';
  * group lines, markers, story year line and writing band (`gridShared.tsx`),
  * with one row per character under a collapsible heading per family, a
  * lifespan bar in the family colour, and a marker per moment.
+ *
+ * A50: with `personId` set it draws that one person's timeline instead: one
+ * row that fills the frame, the markers larger, every title drawn. The name
+ * cell leaves it again, and so does Escape anywhere in the frame that no
+ * field or dialog takes.
  */
 export function BackstoryGrid(props: {
   grid: Grid;
@@ -57,9 +64,14 @@ export function BackstoryGrid(props: {
   storyYear: number;
   writing: GridBand | null;
   pickedId: string | null;
+  /** A50: the person whose timeline fills the frame, or null for everyone. */
+  personId?: string | null;
   selectedMomentId: string | null;
   readOnly: boolean;
+  /** The name cell: a click or Enter opens the person's timeline, or leaves it when open. */
   onPick: (characterId: string) => void;
+  /** A50: back to everyone from the person view (Escape in the frame). */
+  onLeavePerson?: () => void;
   onPickMoment: (momentId: string, characterId: string) => void;
   /** A49: a double-click opens the moment with What happens open as a field. */
   onOpenMoment?: (momentId: string, characterId: string) => void;
@@ -78,7 +90,26 @@ export function BackstoryGrid(props: {
   const vp = useGridViewport(props.span, props.zoom, storyYear);
   const scale = vp.scale;
   const [closed, toggleFamily] = useClosedGroups();
-  const layout = useMemo(() => layoutBackstory(grid, scale, closed), [grid, scale, closed]);
+  const personId = props.personId && grid.people.has(props.personId) ? props.personId : null;
+  // A50: back from a person's timeline, their family opens if it was collapsed, so their row
+  // is there to scroll to and to take the focus.
+  const [shownPerson, setShownPerson] = useState(personId);
+  if (shownPerson !== personId) {
+    setShownPerson(personId);
+    const fam = personId === null && shownPerson ? grid.people.get(shownPerson)?.familyId : null;
+    if (fam && closed.has(fam)) toggleFamily(fam);
+  }
+  // Only the person view depends on the frame's height, so a height change (a resize, the
+  // scrollbar coming and going) never lays the whole grid out again.
+  const fill = vp.viewHeight - PERSON_METRICS.header;
+  const personLayout = useMemo(
+    () => (personId !== null ? layoutPerson(grid, personId, scale, fill) : null),
+    [grid, personId, scale, fill],
+  );
+  const layout = useMemo(
+    () => personLayout ?? layoutBackstory(grid, scale, closed),
+    [personLayout, grid, scale, closed],
+  );
   const byId = useMemo(() => new Map(grid.moments.map((m) => [m.id, m])), [grid.moments]);
   const families = useMemo(() => new Map(grid.families.map((f) => [f.id, f])), [grid.families]);
   const ctl = useGridMarkers({
@@ -158,8 +189,32 @@ export function BackstoryGrid(props: {
     if (canEdit) void props.onLifeEnd?.(id, k.side, k.delta);
   };
 
+  // A50: Escape leaves the person view unless a field, a rename or a dialog takes it first.
+  // During a marker or lifespan drag it calls the drag off instead (gridShared marks it taken),
+  // and the next Escape leaves.
+  const leave = props.onLeavePerson;
+  const onFrameKey =
+    personId !== null && leave
+      ? (ev: ReactKeyboardEvent<HTMLDivElement>) => {
+          if (ev.key !== 'Escape' || ev.defaultPrevented) return;
+          if (ctl.dragging || lifeDrag.dragging) return;
+          const t = ev.target as HTMLElement;
+          if (t.closest('input, textarea, select, [contenteditable="true"], .wg-rename')) return;
+          if (document.querySelector('[aria-modal="true"]')) return;
+          ev.preventDefault();
+          ctl.setTip(null);
+          leave();
+        }
+      : undefined;
+
   return (
-    <GridFrame vp={vp} layout={layout} testid="backstory-grid" className="bs-scroll">
+    <GridFrame
+      vp={vp}
+      layout={layout}
+      testid="backstory-grid"
+      className={`bs-scroll${personId !== null ? ' bs-person' : ''}`}
+      onKeyDown={onFrameKey}
+    >
       <GridHeader
         layout={layout}
         storyYear={storyYear}
@@ -195,10 +250,33 @@ export function BackstoryGrid(props: {
         if (!p) return null;
         const life = lifespanOf(p);
         const picked = props.pickedId === p.id;
+        const alone = personId === p.id;
+        const fam = families.get(p.familyId);
+        const nameLink = props.onOpenPerson ? (
+          <a
+            className="bs-name bs-name-link"
+            href={`#characters/${encodeURIComponent(p.id)}`}
+            aria-label={`Open the page of ${p.name}`}
+            title={`Open the page of ${p.name}`}
+            onClick={(e) => {
+              e.preventDefault();
+              props.onOpenPerson?.(p.id);
+            }}
+          >
+            {p.name}
+          </a>
+        ) : (
+          <span className="bs-name">{p.name}</span>
+        );
+        const zh = p.chinese && (
+          <span className="bs-zh" lang="zh">
+            {p.chinese}
+          </span>
+        );
         return (
           <div
             key={`r:${p.id}`}
-            className={`wg-line wg-row bs-row${picked ? ' picked' : ''}`}
+            className={`wg-line wg-row bs-row${picked ? ' picked' : ''}${alone ? ' bs-person-row' : ''}`}
             style={{ height: line.height }}
             data-person={p.id}
             data-group={line.row.groupId}
@@ -206,13 +284,14 @@ export function BackstoryGrid(props: {
             data-birth={life.from ?? ''}
             data-death={life.to ?? ''}
           >
-            {/* IP-4: the name opens the person's page; anywhere else in the cell picks them. */}
+            {/* IP-4: the name opens the person's page; anywhere else in the cell opens their
+                timeline, or in the timeline goes back to everyone (A50). */}
             <div className={`wg-label wg-row-label bs-row-cell${picked ? ' picked' : ''}`}>
               <button
                 type="button"
                 className="bs-row-label"
-                aria-pressed={picked}
-                aria-label={`${p.name}${p.chinese ? ` ${p.chinese}` : ''}, ${lifeYears(p)}, show their moments`}
+                aria-pressed={alone || picked}
+                aria-label={`${p.name}${p.chinese ? ` ${p.chinese}` : ''}, ${lifeYears(p)}, ${alone ? 'show everyone' : 'show their moments'}`}
                 onClick={() => props.onPick(p.id)}
               >
                 {/* The name drawn beside it is the link; the button carries it too, for a reader. */}
@@ -221,29 +300,29 @@ export function BackstoryGrid(props: {
                   {p.chinese}
                 </span>
               </button>
-              <span className="bs-row-text">
-                {props.onOpenPerson ? (
-                  <a
-                    className="bs-name bs-name-link"
-                    href={`#characters/${encodeURIComponent(p.id)}`}
-                    aria-label={`Open the page of ${p.name}`}
-                    title={`Open the page of ${p.name}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      props.onOpenPerson?.(p.id);
-                    }}
-                  >
-                    {p.name}
-                  </a>
-                ) : (
-                  <span className="bs-name">{p.name}</span>
-                )}
-                {p.chinese && (
-                  <span className="bs-zh" lang="zh">
-                    {p.chinese}
+              {alone ? (
+                <span className="bs-row-text bs-person-text">
+                  <span className="bs-person-names">
+                    {p.familyId !== NO_FAMILY && (
+                      <span
+                        className="bs-swatch"
+                        style={{ background: familyColorCss(fam?.color) ?? undefined }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    {nameLink}
+                    {zh}
                   </span>
-                )}
-              </span>
+                  <span className="bs-years" data-testid="person-years">
+                    {lifeYears(p)}
+                  </span>
+                </span>
+              ) : (
+                <span className="bs-row-text">
+                  {nameLink}
+                  {zh}
+                </span>
+              )}
             </div>
             <GridTrack
               layout={layout}

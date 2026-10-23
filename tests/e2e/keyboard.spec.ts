@@ -265,6 +265,11 @@ test('NF-2 SM-6 every section list opens from Search and filters by keyboard, op
     await typeInto(view.getByLabel('Section'), info.plural);
     await expect(view.getByLabel('Section')).toHaveValue(c);
     await press(view.getByTestId('search-open-section'));
+    if (c === 'moments') {
+      // A50: moments have one door: their list is the Backstory screen, where the dialog edits one.
+      await expect(page.getByRole('heading', { name: 'Backstory', level: 2 })).toBeVisible();
+      continue;
+    }
     const list = page.getByTestId('entry-list');
     const empty = page.getByText(`No ${info.plural.toLowerCase()} yet.`, { exact: true });
     await expect(page.getByRole('heading', { name: info.plural, level: 2 })).toBeVisible();
@@ -294,7 +299,8 @@ test('NF-2 SM-6 every section list opens from Search and filters by keyboard, op
     const left = await unreachable();
     if (left.length) missed[info.plural] = left;
   }
-  expect(opened).toBeGreaterThan(12);
+  // A50: one fewer than before, the moments, whose list is now Backstory.
+  expect(opened).toBeGreaterThan(11);
   expect(missed).toEqual({});
 });
 

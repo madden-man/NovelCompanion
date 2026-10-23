@@ -603,13 +603,16 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
                   <span className="example-note">moved {formatTime(entry.deletedAt)}</span>
                 </span>
                 <span className="row tight">
-                  <button
-                    type="button"
-                    className="btn small"
-                    onClick={() => props.onOpen(collection, entry._id)}
-                  >
-                    Open
-                  </button>
+                  {/* A50: a moment opens only on the Backstory grid, which shows live ones. */}
+                  {collection !== 'moments' && (
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => props.onOpen(collection, entry._id)}
+                    >
+                      Open
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn small primary"
