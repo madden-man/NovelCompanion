@@ -50,7 +50,7 @@ type View =
   | { kind: 'tree'; focus?: string }
   /** SM-8: the World events grid. */
   | { kind: 'timeline' }
-  | { kind: 'backstory'; characterId?: string; at?: number }
+  | { kind: 'backstory'; characterId?: string; at?: number; momentId?: string }
   | { kind: 'outline' }
   /** SM-9: one row per character; SM-10's Their backstory picks the person. */
   /** SM-11: the alignment check (CC-1 to CC-5) with the manuscript (MS-1 to MS-5) as a second tab. */
@@ -138,15 +138,32 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   );
 }
 
+/** A50: Backstory with everyone, asked for now, so an open person's timeline goes back too. */
+function everyoneOnBackstory(): View {
+  return { kind: 'backstory', at: Date.now() };
+}
+
 function Frame({ bibles }: { bibles: ReactNode }) {
   const [view, setView] = useState<View>({ kind: 'sessions', sub: 'home' });
   const [query, setQuery] = useState('');
 
+  // A50: moments have one door, Backstory. A moment opens there on its person with its dialog
+  // open (Backstory finds whose it is), and the moments list is Backstory itself.
   const open = (collection: EntryCollection, id: string) =>
-    setView({ kind: 'section', collection, selected: id, creating: false });
+    setView(
+      collection === 'moments'
+        ? { kind: 'backstory', momentId: id, at: Date.now() }
+        : { kind: 'section', collection, selected: id, creating: false },
+    );
   const openSection = (collection: EntryCollection) =>
-    setView({ kind: 'section', collection, selected: null, creating: false });
-  useOpenBackstory((characterId, at) => setView({ kind: 'backstory', characterId, at }));
+    setView(
+      collection === 'moments'
+        ? everyoneOnBackstory()
+        : { kind: 'section', collection, selected: null, creating: false },
+    );
+  useOpenBackstory((characterId, at, momentId) =>
+    setView({ kind: 'backstory', characterId, at, momentId }),
+  );
   useOpenOutline(() => setView({ kind: 'outline' }));
   useClaudeNavigation({
     settings: () => setView({ kind: 'settings' }),
@@ -199,8 +216,9 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('World events', view.kind === 'timeline', () =>
               setView({ kind: 'timeline' }),
             )}
+            {/* A50: Backstory again from the rail is everyone, also from a person's timeline. */}
             {railButton('Backstory', view.kind === 'backstory', () =>
-              setView({ kind: 'backstory' }),
+              setView(everyoneOnBackstory()),
             )}
             {railButton('Continuity checker', view.kind === 'continuity', () =>
               setView({ kind: 'continuity', tab: 'alignment' }),
@@ -224,9 +242,10 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 })),
               })),
               // IP-13: every collection has a door, its section list with New and rename in place.
+              // A50: but moments, whose door is Backstory.
               {
                 label: 'All sections',
-                items: ENTRY_COLLECTIONS.map((c) => ({
+                items: ENTRY_COLLECTIONS.filter((c) => c !== 'moments').map((c) => ({
                   label: collectionInfo[c].plural,
                   active: view.kind === 'section' && view.collection === c,
                   onSelect: () => openSection(c),
@@ -289,7 +308,12 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         ) : view.kind === 'timeline' ? (
           <TimelineView />
         ) : view.kind === 'backstory' ? (
-          <BackstoryView characterId={view.characterId} openedAt={view.at} onOpen={open} />
+          <BackstoryView
+            characterId={view.characterId}
+            momentId={view.momentId}
+            openedAt={view.at}
+            onOpen={open}
+          />
         ) : view.kind === 'outline' ? (
           <OutlineView onOpen={open} />
         ) : view.kind === 'sessions' ? (

@@ -160,10 +160,9 @@ test('SM-6 the rail is the nine screens in order under the search box, with no M
   ]) {
     await expect(nav().getByRole('button', { name: gone, exact: true })).toHaveCount(0);
     // IP-13: the section lists are back as doors under the App menu's All sections, and only there.
+    // A50: moments have one door, Backstory, so they have no list in the menu.
     const menuItems = nav().getByRole('menuitem', { name: gone, exact: true, includeHidden: true });
-    await expect(menuItems).toHaveCount(
-      ['Moments', 'Chapters', 'Open questions'].includes(gone) ? 1 : 0,
-    );
+    await expect(menuItems).toHaveCount(['Chapters', 'Open questions'].includes(gone) ? 1 : 0);
   }
 });
 

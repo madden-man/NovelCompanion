@@ -1303,9 +1303,19 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
     )
     .toBe(2042);
   await expect(rows.nth(0)).toContainText('2042Learns to fold dumplings');
-  // Each moment opens in the editor from Open.
+  // A50: each moment opens from Open on Backstory, in its person's timeline with its dialog open.
   await rows.nth(1).getByRole('button', { name: 'Open First year of high school' }).click();
-  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', made[1]!);
+  await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
+  const bsGrid = page.getByTestId('backstory-grid');
+  await expect(bsGrid).toHaveClass(/\bbs-person\b/);
+  await expect(bsGrid.locator('.bs-row')).toHaveCount(1);
+  await expect(bsGrid.locator('.bs-row[data-person="H5"]')).toHaveCount(1);
+  const opened = page.locator(`[data-testid="moment-dialog"][data-id="${made[1]!}"]`);
+  await expect(opened.getByRole('heading')).toHaveText('First year of high school');
+  await expect(opened.locator('.editable[data-field="title"] > .editable-text')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(opened).toHaveCount(0);
+  await expect(bsGrid.locator(`.wg-marker[data-id="${made[1]!}"]`)).toBeFocused();
 
   // A35: the culture section names its setting.
   await page.getByTestId('top-relevant').click();

@@ -277,6 +277,12 @@ export interface MarkerOptions {
   /** Height of a bar across several years, and of a big one (8 and 12 when not given). */
   barHeight?: number;
   bigBarHeight?: number;
+  /**
+   * Every marker draws its title, and the title takes room in its lane: the
+   * next marker in the lane starts past it (the Backstory person view, A50).
+   * False when not given, so the grids keep their labels only where they fit.
+   */
+  reserveLabel?: boolean;
 }
 
 /** A rough label width for 11 to 12 pixel text, enough to decide whether it fits. */
@@ -315,7 +321,8 @@ export function byYear(a: GridItem, b: GridItem): number {
  * Place a row's items: x from the year, a bar across the years of a range, a
  * dot centred in its column otherwise (larger when big). Overlapping markers
  * take the next lane down. A label shows when the room to the next marker in
- * its lane holds it.
+ * its lane holds it; with `reserveLabel` every label shows and its width is
+ * part of the lane, so the next marker in that lane starts past it.
  */
 export function placeRow(
   key: string,
@@ -345,7 +352,8 @@ export function placeRow(
       if (laneEnds.length < opts.maxLanes) lane = laneEnds.length;
       else lane = laneEnds.indexOf(Math.min(...laneEnds));
     }
-    laneEnds[lane] = Math.max(laneEnds[lane] ?? -Infinity, x + width);
+    const end = opts.reserveLabel ? x + width + opts.gap + opts.labelWidth(it.label) : x + width;
+    laneEnds[lane] = Math.max(laneEnds[lane] ?? -Infinity, end);
     const m: PlacedMarker = {
       id: it.id,
       startYear,
@@ -368,7 +376,7 @@ export function placeRow(
     lane.forEach((m, i) => {
       const next = lane[i + 1];
       m.labelRoom = Math.max(0, (next ? next.x : trackEnd) - (m.x + m.width) - opts.gap);
-      m.showLabel = opts.labelWidth(m.label) <= m.labelRoom;
+      m.showLabel = opts.reserveLabel === true || opts.labelWidth(m.label) <= m.labelRoom;
     });
   }
   return { key, lanes: Math.max(1, laneEnds.length), markers };

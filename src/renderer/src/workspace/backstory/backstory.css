@@ -93,7 +93,7 @@
 .bs-life {
   position: absolute;
   bottom: 1px;
-  height: 8px;
+  height: 6px;
   z-index: 1;
   pointer-events: none;
 }
@@ -101,7 +101,7 @@
 .bs-life-dash {
   position: absolute;
   top: 0;
-  height: 8px;
+  height: 6px;
   box-sizing: border-box;
 }
 .bs-life-solid {
@@ -149,7 +149,7 @@
 }
 .bs-key.life {
   width: 24px;
-  height: 8px;
+  height: 6px;
   border-radius: 3px;
   background: var(--series-1);
 }
@@ -207,6 +207,36 @@
 .bs-dialog .rich-text,
 .bs-dialog .editable-rich > .editable-text {
   max-width: none;
+}
+/* A50: a moment asked for that is not on the grid. */
+.bs-missing {
+  margin: 0;
+  color: var(--fg);
+  font-weight: 500;
+}
+/* A50: More, the rest of the moment, at the foot of the dialog. */
+.bs-more {
+  align-items: flex-start;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.bs-more-caret::before {
+  content: '\25B8';
+  display: inline-block;
+  margin-right: 6px;
+}
+.bs-more-toggle[aria-expanded='true'] .bs-more-caret::before {
+  content: '\25BE';
+}
+.bs-more-body,
+.bs-more-fields {
+  width: 100%;
+  gap: 12px;
+}
+.bs-more-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .bs-dialog-foot {
   justify-content: space-between;
@@ -361,4 +391,58 @@
 .bs-ask label {
   font-weight: 600;
   color: var(--fg);
+}
+
+/* A50: one person's timeline. The row fills the frame; the name cell holds the swatch, the name
+   and the Chinese name, with the life years on a second line. Every title draws, at most 240px. */
+.bs-row {
+  scroll-margin-top: 56px;
+}
+.bs-person-row .bs-row-cell {
+  align-items: flex-start;
+  padding-top: 10px;
+  /* Clip, not hidden: a hidden overflow would make the cell the names' scroll box (sticky). */
+  overflow: clip;
+}
+/* The row may be taller than the frame (many lanes); the names stay at the top of what shows,
+   under the 56px year header, with the cell's 10px top padding. */
+.bs-person-text {
+  position: sticky;
+  top: 66px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.bs-person-names {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.bs-person-text .bs-years {
+  font-size: 0.8rem;
+}
+.bs-person .wg-mlabel {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The row is as tall as the frame, so the frame must not take its height from the row: the
+   section keeps its full height and the frame gets what the head and legend leave. */
+.bs-area:has(> .wg-scroll.bs-person) {
+  height: calc(100vh - var(--ws-chrome));
+}
+.bs-area > .wg-scroll.bs-scroll.bs-person {
+  flex: 1 1 0;
+}
+@media (max-width: 760px) {
+  /* The page scrolls on a phone, so the person view keeps a height of its own to fill. */
+  .bs-area:has(> .wg-scroll.bs-person) {
+    height: auto;
+  }
+  .bs-area > .wg-scroll.bs-scroll.bs-person {
+    min-height: 60vh;
+    max-height: 60vh;
+  }
 }
