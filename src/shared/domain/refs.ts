@@ -5,7 +5,7 @@ import type { Doc } from './paths';
 /** One reference from an entry to another, found through the field manifest. */
 export interface OutgoingRef {
   targetId: string;
-  /** The link kind for `links`, or the field label path for reference fields. */
+  /** The field label, after the labels of the fields that hold it. */
   kind: string;
   /** Where the reference sits, for example `strands.0.characterIds.1`. */
   path: string;
@@ -39,20 +39,6 @@ function walk(
           });
         }
         break;
-      case 'links':
-        if (Array.isArray(v)) {
-          v.forEach((l, i) => {
-            if (isPlainObject(l) && typeof l.targetId === 'string') {
-              out.push({
-                targetId: l.targetId,
-                kind: typeof l.kind === 'string' ? l.kind : 'link',
-                path: joinPath(path, i),
-                target: ['*'],
-              });
-            }
-          });
-        }
-        break;
       case 'object':
         if (isPlainObject(v) && s.fields) walk(s.fields, v, path, label, out);
         break;
@@ -72,7 +58,7 @@ function walk(
   }
 }
 
-/** Every reference an entry makes: its links and every reference field (ED-9). */
+/** Every reference an entry makes, through its reference fields. */
 export function outgoingRefs(manifest: readonly FieldSpec[], doc: Doc): OutgoingRef[] {
   const out: OutgoingRef[] = [];
   walk(manifest, doc, '', '', out);

@@ -103,7 +103,7 @@ export function LivedThrough({
                   <td className="num">{e.age}</td>
                   <td>{e.title}</td>
                   <td>{e.categoryPath}</td>
-                  <td>{e.formative && <span className="chip canon">formative</span>}</td>
+                  <td>{e.formative && <span className="chip now">formative</span>}</td>
                 </tr>
               ))}
           </tbody>

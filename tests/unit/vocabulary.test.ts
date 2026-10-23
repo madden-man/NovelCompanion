@@ -1,15 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import {
   countListUsage,
-  defaultProvenance,
-  defaultStatus,
   familyColorCss,
   familyToken,
   isUnder,
   listColorCss,
   moveItem,
   parentProblem,
-  statusKind,
 } from '../../src/shared/domain/lists';
 import {
   ageGroupOptions,
@@ -127,80 +124,14 @@ describe('IP-8 list items carry a colour and extra values, move, and take parent
   });
 });
 
-describe('IP-9 statuses and provenance are lists with colours, and a status has a kind', () => {
-  const lists = fixture.lists!;
-
-  test('IP-9 statusKind reads the item kind, so a renamed or added status keeps the brief rules', () => {
-    expect(statusKind(lists, 'canon')).toBe('canon');
-    expect(statusKind(lists, 'planned')).toBe('planned');
-    expect(statusKind(lists, 'idea')).toBe('idea');
-    const own = [
-      {
-        _id: 'statuses',
-        items: [
-          { id: 'settled', label: 'Settled', extra: { kind: 'canon' } },
-          { id: 'canon', label: 'Canon', extra: { kind: 'planned' } },
-        ],
-      },
-    ];
-    expect(statusKind(own, 'settled')).toBe('canon');
-    expect(statusKind(own, 'canon')).toBe('planned');
-  });
-
-  test('IP-9 defaultStatus gives the first status of a kind, then the item named for it, then the first', () => {
-    const own = [
-      {
-        _id: 'statuses',
-        items: [
-          { id: 'settled', label: 'Settled', extra: { kind: 'canon' } },
-          { id: 'notion', label: 'Notion', extra: { kind: 'idea' } },
-          { id: 'whim', label: 'Whim', extra: { kind: 'idea' } },
-        ],
-      },
-    ];
-    expect(defaultStatus(own, 'idea')).toBe('notion');
-    expect(defaultStatus(own, 'canon')).toBe('settled');
-    expect(defaultStatus(own, 'planned')).toBe('settled');
-    expect(defaultStatus(lists, 'planned')).toBe('planned');
-    expect(
-      defaultStatus([{ _id: 'statuses', items: [{ id: 'idea', label: 'Idea' }] }], 'idea'),
-    ).toBe('idea');
-    expect(defaultStatus([], 'idea')).toBe('idea');
-    expect(defaultProvenance(lists, 'invented')).toBe('invented');
-    expect(defaultProvenance([{ _id: 'provenance', items: [] }], 'invented')).toBeNull();
-    expect(defaultProvenance([], 'invented')).toBe('invented');
-  });
-
-  test('IP-9 a status with no kind reads by its seeded ID, and anything unknown is never canon', () => {
-    expect(statusKind([], 'canon')).toBe('canon');
-    expect(statusKind([], 'planned')).toBe('planned');
-    expect(statusKind([], 'drafted')).toBe('idea');
-    expect(statusKind([], undefined)).toBe('idea');
-  });
-
+describe('IP-9 list colours', () => {
   test('IP-9 the seeded colours draw through their theme tokens; any other hex as it is', () => {
-    const statuses = fixtureList('statuses').items as { id: string; color: string }[];
-    expect(statuses.map((s) => listColorCss(s.color))).toEqual([
-      'var(--canon)',
-      'var(--series-4)',
-      'var(--idea)',
-    ]);
-    const prov = fixtureList('provenance').items as { color: string }[];
-    expect(prov.map((p) => listColorCss(p.color))).toEqual([
-      'var(--series-1)',
-      'var(--serious-ink)',
-    ]);
+    expect(listColorCss('#008300')).toBe('var(--kind-move)');
+    expect(listColorCss('#B84F25')).toBe('var(--serious-ink)');
+    // The colours of the removed statuses are plain colours now.
+    expect(listColorCss('#1b705f')).toBe('#1b705f');
     expect(listColorCss('#123456')).toBe('#123456');
     expect(listColorCss(null)).toBeNull();
-  });
-
-  test('IP-9 status and provenance are list references in every manifest', () => {
-    for (const manifest of Object.values(manifests)) {
-      const status = manifest.find((s) => s.name === 'status')!;
-      const prov = manifest.find((s) => s.name === 'provenance')!;
-      expect([status.kind, status.listId, status.required]).toEqual(['listItem', 'statuses', true]);
-      expect([prov.kind, prov.listId, prov.nullable]).toEqual(['listItem', 'provenance', true]);
-    }
   });
 });
 

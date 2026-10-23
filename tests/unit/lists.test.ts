@@ -1,70 +1,28 @@
 import { describe, expect, test } from 'vitest';
 import { manifests } from '../../src/shared/schema';
 import type { ListDoc } from '../../src/shared/schema';
-import {
-  countListUsage,
-  derivedRename,
-  itemPath,
-  newItemId,
-  renameCascade,
-  tagsUsed,
-} from '../../src/shared/domain/lists';
+import { countListUsage, derivedRename, itemPath, newItemId } from '../../src/shared/domain/lists';
 
 const docs = () => [
-  {
-    collection: 'characters',
-    manifest: manifests.characters,
-    docs: [
-      { _id: 'A', tags: ['matriarch', 'teacher'] },
-      { _id: 'B', tags: ['teacher'] },
-      { _id: 'C', tags: [] },
-    ],
-  },
   {
     collection: 'unions',
     manifest: manifests.unions,
     docs: [
-      { _id: 'U1', tags: [], type: 'married' },
-      { _id: 'U2', tags: ['teacher'], type: 'partnered' },
+      { _id: 'U1', type: 'married' },
+      { _id: 'U2', type: 'partnered' },
     ],
-  },
-  {
-    collection: 'moments',
-    manifest: manifests.moments,
-    docs: [{ _id: 'M', characterId: 'A', year: 2030, tags: ['teacher', 'sweet'] }],
   },
 ];
 
-describe('ED-8 list rename cascade', () => {
-  test('ED-8 renaming a tag rewrites it on every entry that carries it', () => {
-    expect(renameCascade('tags', 'teacher', 'educator', docs())).toEqual([
-      { collection: 'characters', id: 'A', patch: { tags: ['matriarch', 'educator'] } },
-      { collection: 'characters', id: 'B', patch: { tags: ['educator'] } },
-      { collection: 'unions', id: 'U2', patch: { tags: ['educator'] } },
-      { collection: 'moments', id: 'M', patch: { tags: ['educator', 'sweet'] } },
-    ]);
-  });
-
-  test('ED-8 renaming a tag onto one an entry already has merges them', () => {
-    expect(renameCascade('tags', 'teacher', 'matriarch', docs())[0]).toEqual({
-      collection: 'characters',
-      id: 'A',
-      patch: { tags: ['matriarch'] },
-    });
-  });
-
-  test('ED-8 lists stored by item ID need no entry changes; the new label shows everywhere at once', () => {
-    expect(renameCascade('unionTypes', 'Married', 'Wed', docs())).toEqual([]);
-    expect(renameCascade('tags', 'teacher', 'teacher', docs())).toEqual([]);
-  });
-
-  test('ED-8 usage counts entries by item ID for lists and by label for tags', () => {
+describe('ED-8 lists', () => {
+  test('ED-8 usage counts the entries that hold an item by its ID', () => {
     const all = docs();
     expect(
       countListUsage('unionTypes', { id: 'married', label: 'Married', parentId: null }, all),
     ).toBe(1);
-    expect(countListUsage('tags', { id: 't', label: 'teacher', parentId: null }, all)).toBe(4);
-    expect(countListUsage('tags', { id: 'n', label: 'nobody', parentId: null }, all)).toBe(0);
+    expect(
+      countListUsage('unionTypes', { id: 'divorced', label: 'Divorced', parentId: null }, all),
+    ).toBe(0);
   });
 
   test('ED-8 A42 an entry in the trash does not count as using an item, so a trashed community can be removed', () => {
@@ -75,11 +33,6 @@ describe('ED-8 list rename cascade', () => {
     expect(
       countListUsage('unionTypes', { id: 'married', label: 'Married', parentId: null }, all),
     ).toBe(0);
-    expect(countListUsage('tags', { id: 't', label: 'teacher', parentId: null }, all)).toBe(0);
-  });
-
-  test('ED-8 tags used are collected from entry tags', () => {
-    expect(tagsUsed(manifests.moments, docs()[2]!.docs[0]!)).toEqual(['teacher', 'sweet']);
   });
 
   test('ED-8 hierarchical items show their path, and new item IDs are unique', () => {

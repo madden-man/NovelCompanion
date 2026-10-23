@@ -213,7 +213,6 @@ describe('ED-10 field warnings', () => {
         'unions',
         {
           _id: 'U',
-          links: [{ targetId: 'GONE', kind: 'see' }],
           partnerIds: ['A', 'A'],
           type: 'married',
           startYear: null,
@@ -221,10 +220,14 @@ describe('ED-10 field warnings', () => {
         },
         ctx,
       ).map((w) => [w.path, w.code]),
-    ).toEqual([
-      ['partnerIds', 'same-twice'],
-      ['links', 'missing-target'],
-    ]);
+    ).toEqual([['partnerIds', 'same-twice']]);
+    expect(
+      warn(
+        'unions',
+        { _id: 'U', partnerIds: ['A', 'GONE'], type: 'married', startYear: null, endYear: null },
+        ctx,
+      ).map((w) => [w.path, w.code]),
+    ).toEqual([['partnerIds.1', 'missing-target']]);
     expect(
       warn(
         'unions',

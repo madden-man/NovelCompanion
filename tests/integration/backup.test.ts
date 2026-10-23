@@ -134,9 +134,8 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     expect(out.safety.reason).toBe('restore');
     expect(out.safety.counts.moments).toBe(before.collections.moments!.length + 1);
     const after = await dumpBible(open.handle);
-    // A53: wave 3 removes the revision write
-    const { revisions: _revisions, ...restored } = after.collections;
-    expect(restored).toEqual(before.collections);
+    expect(after.collections).toEqual(before.collections);
+    expect(Object.keys(after.collections)).not.toContain('revisions');
     expect(open.repo.get('characters', 'H2')).toBeDefined();
     expect(open.repo.get('characters', 'H1')!.backstory).toBe(
       'A schoolteacher who kept every letter the family ever sent.',
@@ -375,7 +374,7 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
 });
 
 describe('BK-4 a write is a single document or a transaction, so a forced quit never leaves a partial edit', () => {
-  test('BK-4 a write killed mid-transaction by a session abort leaves the entry, its history, and the read model unchanged', async () => {
+  test('BK-4 a write killed mid-transaction by a session abort leaves the entry and the read model unchanged', async () => {
     let kill = false;
     const open = await fixtureSession('bk-kill', {
       repository: {
@@ -386,7 +385,6 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
       },
     });
     const before = await open.handle.collection('characters').findOne({ _id: 'H1' as never });
-    const revisionsBefore = await open.repo.revisions('characters', 'H1');
     kill = true;
     await expect(open.repo.update('characters', 'H1', { backstory: 'Half.' })).rejects.toThrow(
       /cancelled before it finished/,
@@ -394,7 +392,7 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
     expect(await open.handle.collection('characters').findOne({ _id: 'H1' as never })).toEqual(
       before,
     );
-    expect(await open.repo.revisions('characters', 'H1')).toEqual(revisionsBefore);
+    expect(await open.handle.collectionNames()).not.toContain('revisions');
     expect(open.repo.get('characters', 'H1')).toEqual(before);
     expect(open.search.search('Half').map((h) => h.id)).not.toContain('H1');
     // A multi-document write is all or nothing too.

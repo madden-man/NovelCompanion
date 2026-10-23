@@ -199,8 +199,6 @@ describe('ARCH-6 a snapshot opens read-only', () => {
     expect(year.alive.length + year.dead.length + year.unborn.length).toBeGreaterThan(0);
     const tree = await ipc('tree.get', {});
     expect(tree).toBeTruthy();
-    const history = await ipc('revisions.list', { collection: 'characters', id: 'H1' });
-    expect(history.revisions.length).toBeGreaterThan(0);
     expect(
       (await ipc('entry.list', { collection: 'characters', trash: 'exclude' })).entries.length,
     ).toBeGreaterThan(0);

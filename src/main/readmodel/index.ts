@@ -14,13 +14,6 @@ export interface Backlink {
 }
 
 /**
- * Collections that are not loaded into memory. Revisions are history, read
- * on demand for one entry at a time; holding every prior document in memory
- * would grow without bound and no deterministic query needs them.
- */
-const NOT_LOADED = new Set(['revisions']);
-
-/**
  * The in-memory read model of the open bible (ARCH-2). Every collection is
  * held in a map keyed by ID. The repository updates it after every write, so
  * deterministic queries never round-trip to the database.
@@ -34,7 +27,7 @@ export class ReadModel {
   async load(bible: BibleHandle): Promise<void> {
     this.maps.clear();
     this.reverse = null;
-    const names = (await bible.collectionNames()).filter((n) => !NOT_LOADED.has(n));
+    const names = await bible.collectionNames();
     await Promise.all(
       names.map(async (name) => {
         const docs = await bible.collection<StoredDoc>(name).find({}).toArray();
@@ -114,9 +107,9 @@ export class ReadModel {
   }
 
   /**
-   * Entries that refer to `targetId` through their links or any reference
-   * field (ARCHITECTURE rule 4, ED-9). Entries in the trash are left out
-   * unless asked for, so "Linked from" shows only live entries.
+   * Entries that refer to `targetId` through a reference field, for the
+   * Lists usage counts and Claude's `get_entry`. Entries in the trash are
+   * left out unless asked for.
    */
   backlinks(targetId: string, opts: { includeDeleted?: boolean } = {}): Backlink[] {
     this.reverse ??= this.buildReverse();

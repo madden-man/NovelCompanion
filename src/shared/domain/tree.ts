@@ -19,7 +19,7 @@ export interface TreePerson {
   birth: StoryDate | null;
   death: StoryDate | null;
   familyIds: string[];
-  /** A53 shim, wave 3 deletes it. */
+  /** Nothing sets it. Only `tests/journey` still reads it; wave 4 rewrites that file and deletes this. */
   status?: string;
   createdAt: string;
 }
@@ -88,7 +88,6 @@ export function toPerson(d: Doc): TreePerson {
     birth: date(d.birth),
     death: date(d.death),
     familyIds: Array.isArray(d.familyIds) ? d.familyIds.map(String) : [],
-    status: str(d.status, 'idea'),
     createdAt: str(d.createdAt),
   };
 }
@@ -1010,8 +1009,6 @@ export interface AddRelative {
   anchorId: string | null;
   name: string;
   birthYear: number | null;
-  /** A53 shim, wave 3 deletes it: the planners no longer write a status. */
-  status?: 'canon' | 'planned' | 'idea';
   /** Parent link type for a parent, child, or sibling. */
   linkType: string;
   /** Union type for a partner. */
@@ -1132,8 +1129,6 @@ export interface LinkExisting {
   anchorId: string;
   otherId: string;
   type: string;
-  /** A53 shim, wave 3 deletes it: the planners no longer write a status. */
-  status?: 'canon' | 'planned' | 'idea';
 }
 
 /** One parent link or union between two people already in the tree. Refuses self-ancestry. */

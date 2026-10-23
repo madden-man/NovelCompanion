@@ -3,6 +3,7 @@ import { createBible } from '../../src/main/db';
 import type { Store } from '../../src/main/db';
 import { openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
+import { outgoingRefs } from '../../src/shared/domain/refs';
 import { ENTRY_COLLECTIONS, manifests } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
@@ -41,131 +42,48 @@ afterAll(async () => {
 });
 
 describe('ED-1 the write path works for every collection', () => {
-  test.each(ENTRY_COLLECTIONS)(
-    'ED-1 %s: create, read, update, trash, restore, each with a revision',
-    async (c) => {
-      const { repo, handle } = bible;
-      // A derived field (chapter Themes) is not stored on the entry; TH-1 tests cover it.
-      const stored = (doc: Record<string, unknown>) =>
-        Object.fromEntries(
-          Object.entries(doc).filter(([k]) => !manifests[c].find((s) => s.name === k)?.derived),
-        );
-      const created = (await repo.create(
-        c,
-        stored(build(manifests[c], 0, gen, 'full', true)) as never,
-      )) as {
-        _id: string;
-      };
-      const id = created._id;
-      expect(repo.get(c, id)).toEqual(created);
-      expect(await handle.collection(c).findOne({ _id: id as never })).toEqual(created);
-      const b = stored(build(manifests[c], 1, gen, 'full', true));
-      const updated = (await repo.update(c, id, b as never)) as Record<string, unknown>;
-      for (const [k, v] of Object.entries(b)) expect(updated[k], `${c}.${k}`).toEqual(v);
-      await repo.softDelete(c, id);
-      expect(repo.get(c, id)).toBeUndefined();
-      expect(repo.list(c, { onlyDeleted: true }).map((d) => d._id)).toContain(id);
-      await repo.restore(c, id);
-      expect(repo.get(c, id)).toEqual(expect.objectContaining(b));
-      expect((await repo.revisions(c, id)).map((r) => r.op)).toEqual([
-        'create',
-        'update',
-        'softDelete',
-        'restore',
-      ]);
-    },
-  );
-});
-
-describe('ED-4 revision history', () => {
-  test('ED-4 history lists every write newest first with the entry as it stood after it', async () => {
-    const { repo } = fixture;
-    await repo.update('characters', 'H1', { backstory: 'Salem, Oregon' });
-    await repo.update('characters', 'H1', { backstory: 'Eugene, Oregon' });
-    const history = await repo.history('characters', 'H1');
-    expect(history.map((h) => h.op)).toEqual(['update', 'update']);
-    expect(history[0]!.snapshot.backstory).toBe('Eugene, Oregon');
-    expect(history[1]!.snapshot.backstory).toBe('Salem, Oregon');
-  });
-
-  test('ED-4 a revision compares with the current entry field by field', async () => {
-    const { repo } = fixture;
-    const [, older] = await repo.history('characters', 'H1');
-    const { changes, current } = await repo.revisionDiff('characters', 'H1', older!._id);
-    expect(current.backstory).toBe('Eugene, Oregon');
-    expect(changes).toHaveLength(2);
-    expect(changes).toEqual(
-      expect.arrayContaining([
-        { path: 'backstory', before: 'Salem, Oregon', after: 'Eugene, Oregon' },
-        { path: 'tags', before: [], after: ['moved'] },
-      ]),
-    );
-  });
-
-  test('ED-4 restoring a revision writes its content back as a new revision', async () => {
-    const { repo } = fixture;
-    const [, older] = await repo.history('characters', 'H1');
-    const restored = await repo.restoreRevision('characters', 'H1', older!._id);
-    expect(restored.backstory).toBe('Salem, Oregon');
-    const history = await repo.history('characters', 'H1');
-    expect(history).toHaveLength(3);
-    expect(history[0]!.note).toMatch(/^Restored the version from /);
-    // The restore is itself history: the version before it can be restored again.
-    expect(history[1]!.snapshot.backstory).toBe('Eugene, Oregon');
-  });
-
-  test('ED-4 a revision from another entry is refused', async () => {
-    const { repo } = fixture;
-    const [rev] = await repo.history('characters', 'H1');
-    await expect(repo.restoreRevision('characters', 'H2', rev!._id)).rejects.toThrow(
-      /does not belong/,
-    );
-  });
-
-  test('ED-4 the IPC channels list, diff, and restore revisions', async () => {
-    const invoke = ipcFor(() => fixture);
-    const { revisions } = await invoke('revisions.list', { collection: 'characters', id: 'H1' });
-    expect(revisions).toHaveLength(3);
-    const diff = await invoke('revisions.diff', {
-      collection: 'characters',
-      id: 'H1',
-      revisionId: revisions[1]!._id,
-    });
-    expect(diff.revision.snapshot.backstory).toBe('Eugene, Oregon');
-    expect(diff.changes.map((c) => c.path)).toContain('backstory');
-    const { entry } = await invoke('revisions.restore', {
-      collection: 'characters',
-      id: 'H1',
-      revisionId: revisions[1]!._id,
-    });
-    expect(entry.backstory).toBe('Eugene, Oregon');
+  test.each(ENTRY_COLLECTIONS)('ED-1 %s: create, read, update, trash, restore', async (c) => {
+    const { repo, handle } = bible;
+    // A derived field (chapter Themes) is not stored on the entry; TH-1 tests cover it.
+    const stored = (doc: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(doc).filter(([k]) => !manifests[c].find((s) => s.name === k)?.derived),
+      );
+    const created = (await repo.create(
+      c,
+      stored(build(manifests[c], 0, gen, 'full', true)) as never,
+    )) as {
+      _id: string;
+    };
+    const id = created._id;
+    expect(repo.get(c, id)).toEqual(created);
+    expect(await handle.collection(c).findOne({ _id: id as never })).toEqual(created);
+    const b = stored(build(manifests[c], 1, gen, 'full', true));
+    const updated = (await repo.update(c, id, b as never)) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(b)) expect(updated[k], `${c}.${k}`).toEqual(v);
+    await repo.softDelete(c, id);
+    expect(repo.get(c, id)).toBeUndefined();
+    expect(repo.list(c, { onlyDeleted: true }).map((d) => d._id)).toContain(id);
+    await repo.restore(c, id);
+    expect(repo.get(c, id)).toEqual(expect.objectContaining(b));
   });
 });
 
 describe('ED-5 trash', () => {
-  test('ED-5 before deleting, the app lists the entries that link to it', () => {
-    const { count, entries } = fixture.repo.linkedFrom('Z3');
-    expect(count).toBeGreaterThan(2);
-    const kinds = entries.map((e) => `${e.collection}:${e.id}`);
-    expect(kinds).toEqual(expect.arrayContaining(['parentLinks:PL-Z1-Z3', 'moments:Z3-lives-0']));
-    expect(entries.every((e) => e.title.length > 0)).toBe(true);
-  });
-
-  test('ED-5 a deleted entry goes to the trash and comes back with its links intact', async () => {
-    const { repo } = fixture;
+  test('ED-5 a deleted entry goes to the trash and comes back with its references intact', async () => {
+    const { repo, model } = fixture;
     const before = repo.get('chapters', 'CH6')!;
-    const backlinksBefore = repo.backlinks('CH6');
+    const named = (id: string) => model.backlinks(id).some((b) => b.id === 'CH6');
+    const target = outgoingRefs(manifests.chapters, before)[0]!.targetId;
+    expect(named(target)).toBe(true);
     await repo.softDelete('chapters', 'CH6');
     expect(repo.get('chapters', 'CH6')).toBeUndefined();
     expect(repo.trash().map((t) => `${t.collection}:${t.entry._id}`)).toContain('chapters:CH6');
-    // Its outgoing links no longer show as live backlinks while it is in the trash.
-    expect(repo.backlinks('E10')).toEqual([]);
+    // Its references no longer count while it is in the trash.
+    expect(named(target)).toBe(false);
     const restored = await repo.restore('chapters', 'CH6');
     expect(restored.strands).toEqual(before.strands);
-    expect(repo.backlinks('E10')).toEqual([
-      { collection: 'chapters', id: 'CH6', kind: 'happened' },
-    ]);
-    expect(repo.backlinks('CH6')).toEqual(backlinksBefore);
+    expect(named(target)).toBe(true);
   });
 
   test('ED-5 entries that point at a trashed entry warn, and stop warning after a restore', async () => {
@@ -181,35 +99,25 @@ describe('ED-5 trash', () => {
     ).toEqual([]);
   });
 
-  test('ED-5 the IPC channels delete, list the trash, count links, and restore', async () => {
+  test('ED-5 the IPC channels delete, list the trash, and restore', async () => {
     const invoke = ipcFor(() => fixture);
-    const linked = await invoke('entry.linkedFrom', { id: 'GL1' });
     await invoke('entry.delete', { collection: 'glossaryTerms', id: 'GL1' });
     const { entries } = await invoke('trash.list', {});
     expect(entries.map((e) => e.entry._id)).toContain('GL1');
     const list = await invoke('entry.list', { collection: 'glossaryTerms', trash: 'only' });
     expect(list.entries.map((e) => e.entry._id)).toEqual(['GL1']);
     await invoke('entry.restore', { collection: 'glossaryTerms', id: 'GL1' });
-    expect((await invoke('entry.linkedFrom', { id: 'GL1' })).count).toBe(linked.count);
+    expect(
+      (await invoke('entry.get', { collection: 'glossaryTerms', id: 'GL1' })).entry,
+    ).not.toHaveProperty('deletedAt');
     await expect(
       invoke('entry.restore', { collection: 'glossaryTerms', id: 'GL1' }),
     ).rejects.toThrow(/not in the trash/);
   });
 });
 
-describe('ED-9 links and backlinks', () => {
-  test('ED-9 reference fields count as links: a strand cast, a union, a parent link', () => {
-    const kinds = fixture.repo.backlinks('H5').map((b) => `${b.collection}:${b.kind}`);
-    expect(kinds).toEqual(
-      expect.arrayContaining([
-        'chapters:Strands: Characters present',
-        'chapters:Strands: Point of view',
-        'parentLinks:Child',
-      ]),
-    );
-  });
-
-  test('ED-9 search finds entries for the @ picker and leaves out the trash', async () => {
+describe('SR-1 search', () => {
+  test('SR-1 search finds entries, narrowed to the sections asked for', async () => {
     const invoke = ipcFor(() => fixture);
     const { hits } = await invoke('search.query', { query: 'Margaret' });
     expect(hits.map((h) => h.id)).toContain('H1');
@@ -263,14 +171,14 @@ describe('ED-10 warnings come back with every read and never block a write', () 
 describe('ED-8 editable lists', () => {
   test('ED-8 renaming a union type changes the label every union shows, without touching the unions', async () => {
     const { repo } = fixture;
-    const before = await fixture.handle.collection('revisions').countDocuments();
+    const before = repo.get('unions', 'UN-H1-H2')!.modifiedAt;
     await repo.renameListItem('unionTypes', 'married', 'Wed');
     const list = repo.lists().find((l) => l._id === 'unionTypes')!;
     const married = list.items.find((i) => i.id === 'married')!;
     expect(married.label).toBe('Wed');
     expect(married.usage).toBeGreaterThan(0);
     expect(repo.get('unions', 'UN-H1-H2')!.type).toBe('married');
-    expect(await fixture.handle.collection('revisions').countDocuments()).toBe(before);
+    expect(repo.get('unions', 'UN-H1-H2')!.modifiedAt).toBe(before);
   });
 
   test('ED-8 renaming a family or an era renames the entry', async () => {
@@ -323,13 +231,10 @@ describe('ED-8 editable lists', () => {
 describe('ED-7 proposals wait for approval', () => {
   const stored = async (c: string, id: string) =>
     fixture.handle.collection(c).findOne({ _id: id as never });
-  const revisionCount = (id: string) =>
-    fixture.handle.collection('revisions').countDocuments({ entryId: id });
 
-  test('ED-7 a proposal changes nothing in MongoDB until approved, and approval is recorded on the proposal and a revision', async () => {
+  test('ED-7 a proposal changes nothing in MongoDB until approved, and approval is recorded on the proposal', async () => {
     const { repo, handle } = fixture;
     const before = await stored('characters', 'Z2');
-    const revsBefore = await revisionCount('Z2');
     const invoke = ipcFor(() => fixture);
     const p = await repo.propose({
       source: 'import',
@@ -340,9 +245,8 @@ describe('ED-7 proposals wait for approval', () => {
       reason: 'The workbook says Foshan.',
     });
     expect(p.state).toBe('pending');
-    // The database, not the read model, is unchanged, and no revision was written.
+    // The database, not the read model, is unchanged.
     expect(await stored('characters', 'Z2')).toEqual(before);
-    expect(await revisionCount('Z2')).toBe(revsBefore);
     const view = await invoke('proposal.diff', { id: p._id });
     expect(view.changes).toEqual([{ path: 'role', before: before!.role, after: 'Foshan' }]);
     expect(view.conflict).toBe(false);
@@ -356,11 +260,6 @@ describe('ED-7 proposals wait for approval', () => {
     );
     expect(approved.decidedAt).not.toBeNull();
     expect((await stored('characters', 'Z2'))!.role).toBe('Foshan');
-    expect(await revisionCount('Z2')).toBe(revsBefore + 1);
-    const [rev] = await repo.history('characters', 'Z2');
-    expect(rev).toEqual(
-      expect.objectContaining({ proposalId: p._id, note: 'Approved a proposal from import' }),
-    );
     expect(await handle.collection('proposals').findOne({ _id: p._id as never })).toEqual(
       expect.objectContaining({ state: 'approved' }),
     );
@@ -378,13 +277,11 @@ describe('ED-7 proposals wait for approval', () => {
       data: { backstory: 'Proposed.' },
     });
     await repo.update('characters', 'Z2', { backstory: 'My own words.' });
-    const revs = await revisionCount('Z2');
     expect((await invoke('proposal.diff', { id: p._id })).conflict).toBe(true);
     await expect(invoke('proposal.approve', { id: p._id })).rejects.toThrow(
       /This entry changed after the proposal was made, so it was not approved\. Compare again/,
     );
     expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words.');
-    expect(await revisionCount('Z2')).toBe(revs);
     expect(
       (await fixture.handle.collection('proposals').findOne({ _id: p._id as never }))!.state,
     ).toBe('pending');
@@ -402,7 +299,6 @@ describe('ED-7 proposals wait for approval', () => {
     expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words.');
     await invoke('proposal.approve', { id: p._id });
     expect((await stored('characters', 'Z2'))!.backstory).toBe('My own words, kept.');
-    expect(await revisionCount('Z2')).toBe(revs + 1);
     await expect(invoke('proposal.edit', { id: p._id, data: {} })).rejects.toThrow(
       /already approved/,
     );
@@ -426,7 +322,6 @@ describe('ED-7 proposals wait for approval', () => {
     const { repo } = fixture;
     const invoke = ipcFor(() => fixture);
     const before = await stored('places', 'PLC4');
-    const revs = await revisionCount('PLC4');
     const rejected = await repo.propose({
       source: 'bulk',
       op: 'delete',
@@ -435,7 +330,6 @@ describe('ED-7 proposals wait for approval', () => {
     });
     await invoke('proposal.reject', { id: rejected._id });
     expect(await stored('places', 'PLC4')).toEqual(before);
-    expect(await revisionCount('PLC4')).toBe(revs);
     expect(
       (await invoke('proposal.list', { state: 'rejected' })).proposals.map((v) => v.proposal._id),
     ).toContain(rejected._id);
@@ -448,7 +342,6 @@ describe('ED-7 proposals wait for approval', () => {
     });
     const { proposal: done } = await invoke('proposal.approve', { id: create._id });
     expect((await stored('places', done.appliedEntryId!))!.title).toBe('A new place');
-    expect(await revisionCount(done.appliedEntryId!)).toBe(1);
     const del = await repo.propose({
       source: 'import',
       op: 'delete',
@@ -457,6 +350,5 @@ describe('ED-7 proposals wait for approval', () => {
     });
     await invoke('proposal.approve', { id: del._id });
     expect((await stored('places', done.appliedEntryId!))!.deletedAt).toBeDefined();
-    expect(await revisionCount(done.appliedEntryId!)).toBe(2);
   });
 });

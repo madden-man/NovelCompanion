@@ -1,11 +1,10 @@
 /**
  * Editable lists (ED-8): where each list is used, how many entries use an
- * item, and the entry changes a rename makes. Pure; the repository applies
- * the changes in one transaction.
+ * item, and the entry change a rename of a family or an era makes. Pure; the
+ * repository applies the changes in one transaction.
  */
 import type { FieldSpec } from '../schema/manifest';
-import { STATUS_KINDS } from '../schema/lists';
-import type { ListItem, StatusKind } from '../schema/lists';
+import type { ListItem } from '../schema/lists';
 import { FAMILY_COLORS, FAMILY_TOKEN_HEX } from '../schema/family';
 import {
   CHART_SURFACE_DARK,
@@ -13,7 +12,7 @@ import {
   MIN_MARKER_CONTRAST,
   contrastRatio,
 } from './colour';
-import { deepEqual, isPlainObject } from './paths';
+import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 
 export interface EntryPatch {
@@ -57,7 +56,7 @@ function visitAll(
   });
 }
 
-/** True when the field holds an item of this list: by ID for list fields, by label for tags. */
+/** True when the field holds an item of this list, by its ID. */
 function usesItem(
   spec: FieldSpec,
   value: unknown,
@@ -67,7 +66,6 @@ function usesItem(
   if (spec.listId !== listId) return false;
   if (spec.kind === 'listItem') return value === item.id;
   if (spec.kind === 'listItems') return Array.isArray(value) && value.includes(item.id);
-  if (spec.kind === 'tags') return Array.isArray(value) && value.includes(item.label);
   return false;
 }
 
@@ -96,56 +94,6 @@ export function countListUsage(
     }
   }
   return n;
-}
-
-function replaceTag(values: unknown, from: string, to: string): unknown {
-  if (!Array.isArray(values) || !values.includes(from)) return values;
-  const out: string[] = [];
-  for (const v of values as string[]) {
-    const next = v === from ? to : v;
-    if (!out.includes(next)) out.push(next);
-  }
-  return out;
-}
-
-/**
- * The entry changes that renaming an item makes (ED-8). Fields that store a
- * list item by ID need no change: they show the new label at once. Fields
- * that store the label, which are tags, are rewritten on every entry.
- */
-export function renameCascade(
-  listId: string,
-  from: string,
-  to: string,
-  all: readonly CollectionDocs[],
-): EntryPatch[] {
-  if (from === to) return [];
-  const out: EntryPatch[] = [];
-  for (const { collection, manifest, docs } of all) {
-    for (const doc of docs) {
-      const next = mapFields(manifest, doc, (s, v) =>
-        s.kind === 'tags' && s.listId === listId ? replaceTag(v, from, to) : v,
-      );
-      if (next === doc) continue;
-      const patch: Doc = {};
-      for (const k of Object.keys(next)) {
-        if (!deepEqual(next[k], doc[k])) patch[k] = next[k];
-      }
-      out.push({ collection, id: String(doc._id), patch });
-    }
-  }
-  return out;
-}
-
-/** Every tag label an entry carries. */
-export function tagsUsed(manifest: readonly FieldSpec[], doc: Doc): string[] {
-  const out = new Set<string>();
-  visitAll(manifest, doc, (s, v) => {
-    if (s.kind === 'tags' && Array.isArray(v)) {
-      for (const t of v) if (typeof t === 'string' && t) out.add(t);
-    }
-  });
-  return [...out];
 }
 
 /** The label path of a hierarchical item, for example "Technology > Robotics". */
@@ -256,29 +204,6 @@ export function parentProblem(
   return null;
 }
 
-/** The fallback kind of a status ID with no `extra.kind`: the seeded IDs mean themselves. */
-const isKind = (v: unknown): v is StatusKind =>
-  typeof v === 'string' && (STATUS_KINDS as readonly string[]).includes(v);
-
-/** A53 shim, wave 3 deletes it. */
-/**
- * IP-9, SB-5: what a status means to the brief rules: canon, planned or idea,
- * read from the item's `extra.kind`. `lists` is the bible's list documents
- * (or anything with `_id` and `items`). A status with no kind is read by its
- * ID when that is one of the three, and as idea otherwise, so nothing unknown
- * ever counts as canon.
- */
-export function statusKind(
-  lists: readonly { _id?: unknown; items?: unknown }[],
-  id: unknown,
-): StatusKind {
-  const list = lists.find((l) => l._id === 'statuses');
-  const items = Array.isArray(list?.items) ? (list.items as Partial<ListItem>[]) : [];
-  const kind = items.find((i) => i.id === id)?.extra?.kind;
-  if (isKind(kind)) return kind;
-  return isKind(id) ? id : 'idea';
-}
-
 /**
  * A51: the colours of the seeded moment kinds (Moves, Life event, Work and
  * study), by their light theme hex, with the `--kind-*` token that draws them.
@@ -293,13 +218,10 @@ export const KIND_HEX_TOKENS: Record<string, string> = {
  * The CSS colours the seeded items carry, by their light theme hex, with the
  * token that draws them in both themes. The renderer draws a known hex through
  * its token, so it follows the theme; any other hex is drawn as it is.
- * The kind violet `#4a3aa7` is also series-4 and the planned status; the
- * family entry comes last, so outside a moment kind it stays `series-4`
+ * The kind violet `#4a3aa7` is also series-4; the family entry comes last, so outside a moment kind it stays `series-4`
  * (the two tokens hold the same values in both themes).
  */
 export const THEME_HEX_TOKENS: Record<string, string> = {
-  '#1b705f': 'canon',
-  '#7a611b': 'idea',
   '#b84f25': 'serious-ink',
   ...KIND_HEX_TOKENS,
   ...Object.fromEntries(FAMILY_COLORS.map((t) => [FAMILY_TOKEN_HEX[t], t])),
@@ -337,33 +259,6 @@ const itemsOf = (lists: ListDocs, listId: string): Partial<ListItem>[] => {
   const list = lists.find((l) => l._id === listId);
   return Array.isArray(list?.items) ? (list.items as Partial<ListItem>[]) : [];
 };
-
-/** A53 shim, wave 3 deletes it. */
-/**
- * IP-9: the status to write when code means "a status of this kind": the
- * first status item of that kind, else the item whose ID is the kind (a list
- * without kinds), else the first status, else the kind word itself (no list).
- */
-export function defaultStatus(lists: ListDocs, kind: StatusKind): string {
-  const items = itemsOf(lists, 'statuses');
-  const hit =
-    items.find((i) => i.extra?.kind === kind) ??
-    items.find((i) => i.id === kind && i.extra?.kind === undefined) ??
-    items[0];
-  return typeof hit?.id === 'string' ? hit.id : kind;
-}
-
-/** A53 shim, wave 3 deletes it. */
-/**
- * IP-9: the provenance to write when code means a seeded one (`researched`,
- * `invented`): that item while the list holds it, else none (provenance may
- * be blank). With no list at all, the ID itself.
- */
-export function defaultProvenance(lists: ListDocs, id: string): string | null {
-  const list = lists.find((l) => l._id === 'provenance');
-  if (!list) return id;
-  return itemsOf(lists, 'provenance').some((i) => i.id === id) ? id : null;
-}
 
 // ---------- A51: moment kinds (SM-3, SM-9, IP-9) ----------
 

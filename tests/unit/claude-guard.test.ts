@@ -72,11 +72,10 @@ describe('IP-15 Claude instructions per feature', () => {
 });
 
 describe('IP-16 housekeeping channels', () => {
-  test('IP-16 ARCH-6 purge, empty trash, prune, re-import, instructions and conversation changes are write channels', () => {
+  test('IP-16 ARCH-6 purge, empty trash, re-import, instructions and conversation changes are write channels', () => {
     for (const ch of [
       'entry.purge',
       'trash.empty',
-      'revisions.prune',
       'manuscript.reimport',
       'claude.instructions.set',
       'claude.conversation.rename',
@@ -86,6 +85,7 @@ describe('IP-16 housekeeping channels', () => {
       expect(isWriteChannel(ch), ch).toBe(true);
     }
     expect(isWriteChannel('claude.instructions.get')).toBe(false);
+    expect(isWriteChannel('revisions.prune')).toBe(false);
   });
 });
 

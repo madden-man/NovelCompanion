@@ -76,6 +76,17 @@ describe('ARCH-1 IPC contract', () => {
     expect(isChannel('fs.readFile')).toBe(false);
     expect(isChannel('__proto__')).toBe(false);
     expect(isChannel(7)).toBe(false);
+    // A53: history and the link index left the app.
+    for (const gone of [
+      'revisions.list',
+      'revisions.diff',
+      'revisions.restore',
+      'revisions.prune',
+      'entry.linkedFrom',
+      'entry.backlinks',
+    ]) {
+      expect(isChannel(gone), gone).toBe(false);
+    }
   });
 
   test('ARCH-1 main-side handler wrapper rejects a bad request before the handler runs', async () => {

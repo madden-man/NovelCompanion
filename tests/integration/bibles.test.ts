@@ -116,7 +116,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     expect(b.repo.get('characters', created._id)).toBeUndefined();
     expect(b.repo.list('characters')).toEqual([]);
     expect(await b.handle.collection('characters').countDocuments()).toBe(0);
-    expect(await b.handle.collection('revisions').countDocuments()).toBe(0);
     expect(b.search.search('Only')).toEqual([]);
     const reopened = await openBibleSession(store, bSlug);
     expect(reopened.repo.list('characters')).toEqual([]);

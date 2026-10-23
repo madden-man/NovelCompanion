@@ -221,7 +221,3 @@ export interface RouteOptions {
   thresholds?: RouteThresholds;
   hints?: CaptureHint[];
 }
-
-/** CR-6: the source note of an entry Route A files, with the capture date. */
-export const localSourceNote = (capturedOn: string): string =>
-  `From a capture on ${capturedOn}, filed without Claude.`;

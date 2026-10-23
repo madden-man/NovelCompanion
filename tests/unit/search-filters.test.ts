@@ -12,7 +12,7 @@ import { readFixture } from '../helpers/loadFixture';
 
 const fx = readFixture();
 const at = '2026-01-15T09:00:00.000Z';
-const base = { status: 'canon', createdAt: at, modifiedAt: at, body: '' };
+const base = { createdAt: at, modifiedAt: at, body: '' };
 
 const places = [
   { _id: 'PL1', title: 'Portland', ...base, parentId: null },
@@ -37,7 +37,6 @@ const extra = {
       _id: 'M2',
       title: "Peter's ferry chowder",
       ...base,
-      status: 'planned',
       characterId: 'H2',
       year: 1985,
       endYear: null,
@@ -48,9 +47,6 @@ const extra = {
       _id: 'M3',
       title: 'Inheritance',
       ...base,
-      status: 'planned',
-      provenance: 'invented',
-      tags: ['motif'],
       characterId: 'H5',
       year: 2060,
       endYear: 2065,
@@ -63,8 +59,6 @@ const extra = {
       _id: 'Q1',
       title: 'Who wrote it',
       ...base,
-      status: 'idea',
-      provenance: 'invented',
       question: 'Who wrote the second letter?',
       state: 'open',
       decision: '',
@@ -117,11 +111,10 @@ describe('SR-1 one search box over entries and chapter text', () => {
     expect(run('family reunion')).toEqual(['GL3']);
   });
 
-  test('SR-1 SM-3 finds text in moments: what happens, how they experience it, world events, and tags', () => {
+  test('SR-1 SM-3 finds text in moments: what happens, how they experience it, and world events', () => {
     expect(run('soak seeds overnight')).toContain('M1');
     expect(run('chowder')).toContain('M2');
     expect(run('letters pass down')).toContain('M3');
-    expect(run('motif')).toContain('M3');
   });
 
   test('SR-1 a query with several words wants all of them, and falls back to any when none has all', () => {
@@ -140,15 +133,6 @@ describe('SR-2 search filters', () => {
       'M3',
       'Q1',
     ]);
-  });
-
-  test('SR-2 status and provenance filters', () => {
-    expect(run('letter', { status: ['idea'] })).toEqual(['Q1']);
-    expect(run('letter', { status: ['planned'] })).toContain('M3');
-    expect(run('letter', { provenance: ['invented'] })).toEqual(
-      expect.arrayContaining(['M3', 'Q1']),
-    );
-    expect(run('letter', { provenance: ['researched'] })).toEqual([]);
   });
 
   test('SR-2 family filter matches the family, its characters, and entries that refer to them', () => {
@@ -170,11 +154,6 @@ describe('SR-2 search filters', () => {
     expect(run('pearl', { placeId: 'PL3' })).toEqual([]);
   });
 
-  test('SR-2 tag filter matches entries that carry the tag', () => {
-    expect(run('inheritance', { tag: 'motif' })).toEqual(['M3']);
-    expect(run('inheritance', { tag: 'other' })).toEqual([]);
-  });
-
   test('SR-2 year range filter applies to any entry with a year or range field', () => {
     // Moments: 1980 and 1985.
     expect(run('seeds clams', { yearFrom: 1984, yearTo: 1990 })).toEqual(['M2']);
@@ -190,10 +169,8 @@ describe('SR-2 search filters', () => {
 
   test('SR-2 filters combine, and an empty filter set keeps every match', () => {
     expect(run('letter', {})).toEqual(run('letter'));
-    expect(run('letter', { sections: ['moments'], status: ['idea'] })).toEqual([]);
-    expect(
-      run('letter', { sections: ['openQuestions'], status: ['idea'], tag: undefined }),
-    ).toEqual(['Q1']);
+    expect(run('letter', { sections: ['moments'], yearFrom: 2066 })).toEqual([]);
+    expect(run('letter', { sections: ['openQuestions'], familyId: null })).toEqual(['Q1']);
   });
 
   test('SR-2 entrySpans reads points, pairs, and dates from the manifests', () => {

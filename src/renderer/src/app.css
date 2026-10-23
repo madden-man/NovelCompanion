@@ -423,14 +423,6 @@ legend.ed-label {
   color: var(--fg-2);
   padding-left: 0;
 }
-.backlink-list {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 0.88rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
 .link-btn {
   all: unset;
   cursor: pointer;
@@ -509,14 +501,6 @@ legend.ed-label {
   flex: 1 1 120px;
   overflow-wrap: anywhere;
 }
-.drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  background: color-mix(in oklab, var(--fg) 30%, transparent);
-  display: flex;
-  justify-content: flex-end;
-}
 .drawer {
   background: var(--surface);
   color: var(--fg);
@@ -540,49 +524,6 @@ legend.ed-label {
 .drawer-head h2 {
   margin: 0;
   font-size: 1.25rem;
-}
-.drawer-body {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 14px;
-}
-.revision-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.revision {
-  all: unset;
-  box-sizing: border-box;
-  width: 100%;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg);
-  font-size: 0.88rem;
-}
-.revision:hover {
-  background: var(--surface-2);
-}
-.revision[aria-pressed='true'] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-.revision:focus-visible {
-  outline: 2px solid var(--accent);
-}
-.revision-diff {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
 }
 .diff-table th[scope='row'] {
   font-weight: 600;
@@ -641,9 +582,6 @@ legend.ed-label {
   .ws-list,
   .ws-wide-area {
     max-height: none;
-  }
-  .drawer-body {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 400px) {
@@ -877,24 +815,6 @@ legend.ed-label {
 .tnode.dying .tnode-state {
   fill: var(--fg);
   font-weight: 700;
-}
-.tchip {
-  fill: var(--surface-2);
-  stroke-width: 1;
-}
-.tchip.canon {
-  stroke: var(--canon);
-}
-.tchip.planned {
-  stroke: var(--planned);
-}
-.tchip.idea {
-  stroke: var(--idea);
-}
-.tchip-text {
-  fill: var(--fg);
-  font-size: 10px;
-  font-weight: 600;
 }
 .tnode-toggle circle {
   fill: var(--surface-2);
@@ -1991,10 +1911,6 @@ fieldset.write-group[disabled] {
   line-height: 1.3;
   text-align: left;
   overflow-wrap: anywhere;
-}
-.we-event.planned,
-.we-event.idea {
-  font-style: italic;
 }
 .we-event.formative {
   font-weight: 700;

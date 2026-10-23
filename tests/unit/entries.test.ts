@@ -45,7 +45,7 @@ describe('KB-5 the Entries list', () => {
   });
 
   test('KB-5 every kind is listed, newest change first', () => {
-    const shown = filterEntries(rows(), { kinds: all, status: null, query: '' });
+    const shown = filterEntries(rows(), { kinds: all, query: '' });
     expect(shown).toHaveLength(rows().length);
     const stamps = shown.map((r) => String(r.entry.modifiedAt));
     expect(stamps).toEqual([...stamps].sort().reverse());
@@ -56,25 +56,21 @@ describe('KB-5 the Entries list', () => {
 
   test('KB-5 a kind left out of the chips is hidden; one kind alone shows only its own', () => {
     const noPlaces = new Set([...all].filter((k) => k !== 'places'));
-    const shown = filterEntries(rows(), { kinds: noPlaces, status: null, query: '' });
+    const shown = filterEntries(rows(), { kinds: noPlaces, query: '' });
     expect(shown.some((r) => r.collection === 'places')).toBe(false);
-    const only = filterEntries(rows(), { kinds: new Set(['places']), status: null, query: '' });
+    const only = filterEntries(rows(), { kinds: new Set(['places']), query: '' });
     expect(only.length).toBe((fx.places ?? []).length);
     expect(only.every((r) => kindKeyOf(r.collection, r.entry) === 'places')).toBe(true);
   });
 
-  test('KB-5 the status filter and the search narrow the list', () => {
-    const planned = filterEntries(rows(), { kinds: all, status: 'planned', query: '' });
-    expect(planned.length).toBeGreaterThan(0);
-    expect(planned.every((r) => r.entry.status === 'planned')).toBe(true);
-    const cakes = filterEntries(rows(), { kinds: all, status: null, query: 'mooncakes' });
+  test('KB-5 the search narrows the list', () => {
+    const cakes = filterEntries(rows(), { kinds: all, query: 'mooncakes' });
     expect(cakes.map((r) => r.entry.title)).toContain('Mid-Autumn mooncakes');
     expect(cakes.every((r) => textMatches(r.entry, 'mooncakes'))).toBe(true);
     // A search hit counts even when the words are not in the text (GL-2 romanization).
     const term = (fx.glossaryTerms ?? []).find((t) => t.title === '团圆')!;
     const viaHits = filterEntries(rows(), {
       kinds: all,
-      status: null,
       query: 'tuanyuan',
       hits: new Set([String(term._id)]),
     });
@@ -90,7 +86,7 @@ describe('KB-5 the Entries list', () => {
       ),
     );
     for (const query of ['', 'letter', 'mooncakes', 'family reunion', 'zzz']) {
-      const f = { kinds: all, status: null, query };
+      const f = { kinds: all, query };
       expect(filterIndexed(indexed, f).map((r) => r.id)).toEqual(
         filterEntries(plainRows, f).map((r) => String(r.entry._id)),
       );
@@ -105,7 +101,7 @@ describe('KB-5 the Entries list', () => {
     expect(big[0]!.firstLine).toBe('The ferry 0 crosses at dawn.');
     const start = performance.now();
     for (const q of ['h', 'ha', 'har', 'harb', 'harbor', 'harbor ferry']) {
-      filterIndexed(big, { kinds: all, status: null, query: q });
+      filterIndexed(big, { kinds: all, query: q });
     }
     expect((performance.now() - start) / 6).toBeLessThan(200);
     expect(ENTRIES_PAGE).toBe(200);

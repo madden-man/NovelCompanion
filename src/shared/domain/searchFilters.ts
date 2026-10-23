@@ -1,13 +1,11 @@
 /**
- * Search filters (SR-2): section, status, provenance, family, place, tag, and
- * a year range. Pure predicates over stored entries, applied after the text
+ * Search filters (SR-2): section, family, place, and a year range. Pure predicates over stored entries, applied after the text
  * match so the index stays simple.
  */
 import { manifests } from '../schema';
 import type { EntryCollection } from '../schema';
 import type { FieldSpec } from '../schema/manifest';
 import { isKnown } from './dates';
-import { tagsUsed } from './lists';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import { outgoingRefs } from './refs';
@@ -15,11 +13,8 @@ import { outgoingRefs } from './refs';
 export interface SearchFilters {
   /** Sections (collections) to search; empty or absent means all. */
   sections?: string[];
-  status?: string[];
-  provenance?: string[];
   familyId?: string | null;
   placeId?: string | null;
-  tag?: string | null;
   yearFrom?: number | null;
   yearTo?: number | null;
 }
@@ -133,8 +128,6 @@ export function compileFilters(
   ctx: FilterContext,
 ): (collection: string, doc: Doc) => boolean {
   const sections = filters.sections?.length ? new Set(filters.sections) : null;
-  const status = filters.status?.length ? new Set(filters.status) : null;
-  const provenance = filters.provenance?.length ? new Set(filters.provenance) : null;
   const places = filters.placeId ? placeAndDescendants(ctx.places, filters.placeId) : null;
   const familyId = filters.familyId || null;
   const years = hasYearFilter(filters);
@@ -146,12 +139,7 @@ export function compileFilters(
 
   return (collection, doc) => {
     if (sections && !sections.has(collection)) return false;
-    if (status && !status.has(String(doc.status))) return false;
-    if (provenance && !provenance.has(String(doc.provenance))) return false;
     const manifest = manifests[collection as EntryCollection];
-    if (filters.tag && !(manifest && tagsUsed(manifest, doc).includes(filters.tag))) {
-      return false;
-    }
     if (years && !overlapsYears(entrySpans(collection, doc), filters.yearFrom, filters.yearTo)) {
       return false;
     }

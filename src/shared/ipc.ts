@@ -7,8 +7,6 @@ import {
   HexColor,
   ListIdParam,
   Proposal,
-  Provenance,
-  Status,
   entrySchemas,
   manifests,
 } from './schema';
@@ -37,13 +35,6 @@ export const WireWarning = z.strictObject({
   path: z.string(),
   code: z.string(),
   message: z.string(),
-});
-
-const WireBacklink = z.strictObject({
-  collection: CollectionName,
-  id: z.string(),
-  kind: z.string(),
-  title: z.string(),
 });
 
 const WithWarnings = z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) });
@@ -133,7 +124,7 @@ export const WireListItem = z.strictObject({
   parentId: z.string().nullable(),
   /** A47 (IP-8): the item's colour as a hex, or null. */
   color: z.string().nullable().default(null),
-  /** A47 (IP-8): extra values, such as a status's `kind` or an age group's `from` and `to`. */
+  /** A47 (IP-8): extra values, such as an age group's `from` and `to`. */
   extra: ItemExtra.default({}),
   usage: z.int().min(0),
   detail: z.string().optional(),
@@ -189,7 +180,6 @@ const TreePersonWire = z.strictObject({
   birth: StoryDateWire.nullable(),
   death: StoryDateWire.nullable(),
   familyIds: z.array(z.string()),
-  status: z.string().optional(), // A53: optional; wave 3 removes it
   createdAt: z.string(),
 });
 
@@ -338,7 +328,6 @@ const EventWire = z.strictObject({
   regions: z.array(z.string()),
   characterIds: z.array(z.string()),
   formative: z.boolean(),
-  status: z.string().optional(), // A53: optional; wave 3 removes it
 });
 
 const ChartEventWire = EventWire.extend({ categoryPath: z.string(), categoryRoot: z.string() });
@@ -347,7 +336,6 @@ const StrandWire = z.strictObject({
   chapterId: z.string(),
   chapterTitle: z.string(),
   readingOrder: z.number().nullable(),
-  chapterStatus: z.string().optional(), // A53: optional; wave 3 removes it
   written: z.boolean(),
   strandId: z.string(),
   label: z.string(),
@@ -379,7 +367,6 @@ const PersonInYearWire = z.strictObject({
   name: z.string(),
   chinese: z.string(),
   familyIds: z.array(z.string()),
-  status: z.string().optional(), // A53: optional; wave 3 removes it
   birthYear: z.number().nullable(),
   state: LifeStateWire,
 });
@@ -402,7 +389,6 @@ const YearViewWire = z.strictObject({
 const ChartFiltersWire = z.strictObject({
   familyId: z.string().min(1).nullable().default(null),
   placeId: z.string().min(1).nullable().default(null),
-  status: z.string().min(1).nullable().default(null),
   categoryId: z.string().min(1).nullable().default(null),
 });
 
@@ -470,11 +456,8 @@ const Year = z.int().min(-10000).max(10000);
 
 const SearchFiltersWire = z.strictObject({
   sections: z.array(CollectionName).optional(),
-  status: z.array(Status).optional(),
-  provenance: z.array(Provenance).optional(),
   familyId: EntryId.nullable().optional(),
   placeId: EntryId.nullable().optional(),
-  tag: z.string().min(1).max(100).nullable().optional(),
   yearFrom: Year.nullable().optional(),
   yearTo: Year.nullable().optional(),
 });
@@ -515,14 +498,6 @@ const RomanizationWire = z.strictObject({
     }),
   ),
   systems: z.array(z.strictObject({ id: z.string(), label: z.string() })),
-});
-
-const RevisionSummary = z.strictObject({
-  _id: z.string(),
-  op: z.enum(['create', 'update', 'softDelete', 'restore']),
-  at: z.string(),
-  note: z.string().nullable(),
-  proposalId: z.string().nullable(),
 });
 
 // ---------- snapshots and backup (M5) ----------
@@ -570,14 +545,10 @@ export const contract = {
     }),
     response: z.strictObject({ entries: z.array(WithWarnings) }),
   },
-  /** One entry with its warnings and what links to it (ED-9, ED-10). */
+  /** One entry with its warnings (ED-10). */
   'entry.get': {
     request: EntryRef,
-    response: z.strictObject({
-      entry: WireEntry,
-      warnings: z.array(WireWarning),
-      backlinks: z.array(WireBacklink),
-    }),
+    response: z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) }),
   },
   'entry.create': {
     request: z
@@ -616,15 +587,6 @@ export const contract = {
   /** Move an entry to the trash (ED-5). */
   'entry.delete': { request: EntryRef, response: WithWarnings },
   'entry.restore': { request: EntryRef, response: WithWarnings },
-  /** What links to an entry, shown before it is deleted (ED-5). */
-  'entry.linkedFrom': {
-    request: z.strictObject({ id: EntryId }),
-    response: z.strictObject({ count: z.int().min(0), entries: z.array(WireBacklink) }),
-  },
-  'entry.backlinks': {
-    request: z.strictObject({ id: EntryId }),
-    response: z.strictObject({ backlinks: z.array(WireBacklink) }),
-  },
   /** Titles and sections for entry IDs, for link chips that may point anywhere. */
   'entry.lookup': {
     request: z.strictObject({ ids: z.array(EntryId).max(500) }),
@@ -644,25 +606,6 @@ export const contract = {
     response: z.strictObject({
       entries: z.array(z.strictObject({ collection: CollectionName, entry: WireEntry })),
     }),
-  },
-  /** Revision history of one entry, newest first (ED-4). */
-  'revisions.list': {
-    request: EntryRef,
-    response: z.strictObject({ revisions: z.array(RevisionSummary) }),
-  },
-  'revisions.diff': {
-    request: EntryRef.extend({ revisionId: z.string().min(1) }),
-    response: z.strictObject({
-      revision: RevisionSummary.extend({ snapshot: WireEntry }),
-      current: WireEntry,
-      changes: z.array(
-        z.strictObject({ path: z.string(), before: z.unknown(), after: z.unknown() }),
-      ),
-    }),
-  },
-  'revisions.restore': {
-    request: EntryRef.extend({ revisionId: z.string().min(1) }),
-    response: WithWarnings,
   },
   /** Every editable list with usage counts (ED-8). */
   'lists.get': {
@@ -687,7 +630,7 @@ export const contract = {
       id: z.string().min(1).max(64).optional(),
       /** A47 (IP-9): the item's colour. */
       color: HexColor.nullable().optional(),
-      /** A47 (IP-9, IP-10): extra values; a status takes `kind` (canon, planned or idea; idea when left out). */
+      /** A47 (IP-9, IP-10): extra values, such as an age group's `from` and `to`. */
       extra: ItemExtra.optional(),
     }),
     response: z.strictObject({ item: WireItem }),
@@ -697,9 +640,8 @@ export const contract = {
     response: z.strictObject({ ok: z.literal(true) }),
   },
   /**
-   * Search the open bible (ARCH-2, SR-1, SR-2); also used by the `@` link
-   * picker (ED-9). Filters narrow the matches by section, status,
-   * provenance, family, place, tag, and a year range.
+   * Search the open bible (ARCH-2, SR-1, SR-2). Filters narrow the matches
+   * by section, family, place and a year range.
    */
   'search.query': {
     request: z.strictObject({
@@ -715,8 +657,6 @@ export const contract = {
           id: z.string(),
           title: z.string(),
           score: z.number(),
-          status: z.string().nullable().default(null),
-          provenance: z.string().nullable().default(null),
           snippet: z.string().default(''),
         }),
       ),
@@ -902,7 +842,6 @@ export const contract = {
         z.strictObject({
           id: z.string(),
           name: z.string(),
-          status: z.string().optional(), // A53: optional; wave 3 removes it
           familyIds: z.array(z.string()),
           placeNames: z.array(z.string()),
           birthYear: z.number(),
@@ -1227,7 +1166,7 @@ export const events = {
   /** The window is closing or the app is quitting; the page flushes pending edits and answers `app.flushed`. */
   'app.closeRequested': z.strictObject({ hasBible: z.boolean(), quitting: z.boolean() }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
-  /** A list changed: an item added, renamed, or removed, or a new tag. */
+  /** A list changed: an item added, renamed, or removed. */
   'lists.changed': z.strictObject({ bible: z.string() }),
   /** The story time was set or cleared (TM-3). */
   'storyTime.changed': z.strictObject({ bible: z.string() }),

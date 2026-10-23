@@ -45,10 +45,3 @@
 .trash-list li > .hk-confirm {
   flex-basis: 100%;
 }
-.revision-prune {
-  margin-bottom: 12px;
-}
-.revision-prune form {
-  align-items: flex-end;
-  flex-wrap: wrap;
-}

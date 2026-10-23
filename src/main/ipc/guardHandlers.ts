@@ -11,8 +11,7 @@ import type { ManuscriptSource } from '../session/sources';
 import type { SessionDeps } from './sessionHandlers';
 import type { Handler } from './validate';
 
-export type GuardChannel =
-  'entry.purge' | 'trash.empty' | 'revisions.prune' | 'manuscript.reimport';
+export type GuardChannel = 'entry.purge' | 'trash.empty' | 'manuscript.reimport';
 
 /** IP-18: Re-import on a chapter that was never imported from a file. */
 export const NO_LINKED_MANUSCRIPT =
@@ -37,8 +36,6 @@ export function guardHandlers(
   return {
     'entry.purge': ({ collection, id }) => session().repo.purge(collection, id),
     'trash.empty': () => session().repo.emptyTrash(),
-    'revisions.prune': ({ collection, id, before, dryRun }) =>
-      session().repo.pruneRevisions({ collection, id, before, dryRun }),
     'manuscript.reimport': async ({ chapterId }) => {
       const { model, repo } = session();
       const chapter = model.get('chapters', chapterId);

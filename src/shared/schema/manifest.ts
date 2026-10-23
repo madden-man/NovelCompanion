@@ -28,8 +28,6 @@ export type FieldKind =
   | 'listItems'
   /** A47 (IP-12): a CSS hex colour such as `#2a78d6`. */
   | 'color'
-  /** A53 shim, wave 3 deletes it. Was the removed tag labels kind. */
-  | 'tags'
   /** Free strings. */
   | 'strings'
   /** The ID of one entry. */
@@ -38,8 +36,6 @@ export type FieldKind =
   | 'refs'
   /** Exactly two entry IDs, for example the partners in a union. */
   | 'refPair'
-  /** A53 shim, wave 3 deletes it. Was the removed `{ targetId, kind }` cross-links kind. */
-  | 'links'
   /** A nested group of fields. */
   | 'object'
   /** A list of nested groups. */
@@ -110,9 +106,6 @@ export const f = {
     spec('listItem', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
   listItems: (name: string, label: string, listId: string, extra?: Extra) =>
     spec('listItems', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
-  /** A53 shim, wave 3 deletes it. */
-  tags: (name: string, label: string, extra?: Extra) =>
-    spec('tags', name, label, { listId: 'tags', ...extra }),
   strings: (name: string, label: string, extra?: Extra) => spec('strings', name, label, extra),
   ref: (name: string, label: string, target: string[], extra?: Extra) =>
     spec('ref', name, label, { target, warnings: ['missing-target'], ...extra }),
@@ -125,9 +118,6 @@ export const f = {
       warnings: ['missing-target', 'same-twice'],
       ...extra,
     }),
-  /** A53 shim, wave 3 deletes it. */
-  links: (name: string, label: string, extra?: Extra) =>
-    spec('links', name, label, { warnings: ['missing-target'], ...extra }),
   object: (name: string, label: string, fields: FieldSpec[], extra?: Extra) =>
     spec('object', name, label, { fields, ...extra }),
   objectList: (name: string, label: string, fields: FieldSpec[], extra?: Extra) =>
@@ -153,19 +143,6 @@ export function yearRange(
     f.year(end, labels[1], { nullable, warnings: ['range-end-before-start'] }),
   ];
 }
-
-/** A53 shim, wave 3 deletes it. The statuses a bible was seeded with before A53. */
-export const STATUS_OPTIONS: FieldOption[] = [
-  { value: 'canon', label: 'Canon' },
-  { value: 'planned', label: 'Planned' },
-  { value: 'idea', label: 'Idea' },
-];
-
-/** A53 shim, wave 3 deletes it. The provenance values a bible was seeded with before A53. */
-export const PROVENANCE_OPTIONS: FieldOption[] = [
-  { value: 'researched', label: 'Researched' },
-  { value: 'invented', label: 'Invented' },
-];
 
 /** Every entry collection, for a reference that may point anywhere. */
 export const ANY = ['*'];

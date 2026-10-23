@@ -446,13 +446,6 @@ describe('TL-6 timeline chart and filters', () => {
     expect(none.lifespans.map((l) => l.id)).toEqual(['X1']);
   });
 
-  test('TL-6 the status filter acts on lifespans, events, and chapters', () => {
-    const f = filterChart(chart(), { ...NO_FILTERS, status: 'planned' });
-    expect(f.lifespans.map((l) => l.id).sort()).toEqual(['X1', 'Z4', 'Z5']);
-    expect([...new Set(f.strands.map((s) => s.chapterId))].sort()).toEqual(['CH6', 'CH7']);
-    expect(f.events.every((e) => e.status === 'planned')).toBe(true);
-  });
-
   test('TL-6 SM-3 SM-4 the place filter keeps strands and lives tied to the place or a place inside it; world events have no places', () => {
     const places: Doc[] = [
       { _id: 'P-OR', title: 'Oregon', parentId: null },

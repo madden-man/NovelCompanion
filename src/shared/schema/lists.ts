@@ -53,10 +53,6 @@ export const LIST_IDS = [
 ] as const;
 export type ListId = (typeof LIST_IDS)[number];
 
-/** A53 shim, wave 3 deletes it. Was what a status meant to the brief rules (SB-5). */
-export const STATUS_KINDS = ['canon', 'planned', 'idea'] as const;
-export type StatusKind = (typeof STATUS_KINDS)[number];
-
 /**
  * Lists in the `lists` collection that configure the bible rather than name
  * choices: `eraDefaults` holds the default era ranges a new bible copies into

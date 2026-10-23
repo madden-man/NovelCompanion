@@ -34,7 +34,7 @@ export interface FieldWarning {
 /** What the checks may look up: other entries and lists. */
 export interface WarningContext {
   get(collection: string, id: string): Doc | undefined;
-  /** Find an entry in any collection, for links and `*` targets. */
+  /** Find an entry in any collection, for `*` targets. */
   find(id: string): { collection: string; doc: Doc } | undefined;
   list(listId: string): ListDoc | undefined;
   /** Every stored entry of a collection, for checks that need the whole tree (FT-6). */
@@ -131,8 +131,7 @@ function referenceChecks(
     const found = ref.target.includes('*')
       ? ctx.find(ref.targetId)?.doc
       : ref.target.map((c) => ctx.get(c, ref.targetId)).find(Boolean);
-    // Links point at whole entries; report them on the links field itself.
-    const path = ref.path.replace(/^links\.\d+$/, 'links');
+    const path = ref.path;
     if (!found) {
       out.push({
         path,

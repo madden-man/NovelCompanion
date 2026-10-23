@@ -115,7 +115,6 @@ export const WRITE_CHANNELS = [
   'entry.update',
   'entry.delete',
   'entry.restore',
-  'revisions.restore',
   'lists.rename',
   'lists.addItem',
   'lists.removeItem',
@@ -149,7 +148,6 @@ export const WRITE_CHANNELS = [
   // a47-guard
   'entry.purge',
   'trash.empty',
-  'revisions.prune',
   'manuscript.reimport',
   'claude.instructions.set',
   'claude.conversation.rename',

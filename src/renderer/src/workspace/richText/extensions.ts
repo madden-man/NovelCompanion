@@ -9,7 +9,6 @@ import type { AnyExtension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { history } from '@tiptap/pm/history';
 import { Plugin } from '@tiptap/pm/state';
-import type { Node as PMNode } from '@tiptap/pm/model';
 
 export type RichMode = 'full' | 'inline';
 
@@ -24,28 +23,6 @@ const TextHistory = Extension.create({
     return [history({ depth: 200, newGroupDelay: 500 })];
   },
 });
-
-/**
- * Where `@Title` names a linked entry, longest title first.
- * A53 shim, wave 3 deletes it with its test: no box draws mention chips since A52.
- */
-export function mentionRanges(doc: PMNode, titles: readonly string[]) {
-  const sorted = [...new Set(titles.filter((t) => t.trim()))].sort((a, b) => b.length - a.length);
-  const out: { from: number; to: number }[] = [];
-  if (!sorted.length) return out;
-  doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return;
-    const text = node.text;
-    for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-      const hit = sorted.find((t) => text.startsWith(t, i + 1));
-      if (hit) {
-        out.push({ from: pos + i, to: pos + i + 1 + hit.length });
-        i += hit.length;
-      }
-    }
-  });
-  return out;
-}
 
 /**
  * Cmd+Alt+2 and 3 make a heading and Cmd+Alt+0 body text, read from the key's

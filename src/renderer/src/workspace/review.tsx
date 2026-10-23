@@ -12,7 +12,7 @@ import { useList, useStore } from './data';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { formatTime } from './format';
-import { showValue } from './history';
+import { showValue } from './showValue';
 import { Editable, listOptions, patchForPath } from './editable';
 
 const OP_TEXT = {

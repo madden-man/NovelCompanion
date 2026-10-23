@@ -951,7 +951,7 @@ function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: 
       ) : (
         <span className="chip time">{strand.year}</span>
       )}
-      {props.isWriting && <span className="chip canon">writing now</span>}
+      {props.isWriting && <span className="chip now">writing now</span>}
       {editable ? (
         <span className="rel-head-pov" data-testid="relevant-pov">
           <Editable

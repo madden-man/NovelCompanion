@@ -402,19 +402,14 @@ textarea {
   border-radius: 50%;
   background: currentColor;
 }
-.chip.canon {
+.chip.now {
   border-color: var(--canon);
   color: var(--canon);
   background: transparent;
 }
-.chip.planned {
+.chip.todo {
   border-color: var(--planned);
   color: var(--planned);
-  background: transparent;
-}
-.chip.idea {
-  border-color: var(--idea);
-  color: var(--idea);
   background: transparent;
 }
 .chip.time {

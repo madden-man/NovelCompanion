@@ -458,11 +458,11 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   await page.keyboard.press('Meta+z');
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
 
-  // Delete a person through the ED-5 flow: the links are listed, then it goes to the trash.
+  // Delete a person through the ED-5 flow: a confirm step, then it goes to the trash.
   await select('Noor Zhou');
   await inspector().getByRole('button', { name: 'Remove Noor Zhou' }).click();
   const dialog = inspector().getByRole('dialog', { name: 'Move to trash' });
-  await expect(dialog.getByTestId('linked-count')).toHaveText(/2 entries link here/);
+  await expect(dialog).toContainText('Move Noor Zhou to the trash?');
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
   await expect(node('Noor Zhou')).toHaveCount(0);
   const raw = await new MongoClient(db.uri).connect();

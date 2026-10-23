@@ -47,28 +47,25 @@ function findings(session: OpenBible): Doc[] {
   return session.model.all('findings').filter((f) => !f.deletedAt);
 }
 
-async function write(session: OpenBible, plan: ReconcilePlan, note: string): Promise<void> {
-  await session.repo.writeBatch(
-    [
-      ...plan.creates.map((data) => ({
-        op: 'create' as const,
-        collection: 'findings' as const,
-        data,
-      })),
-      ...plan.updates.map((u) => ({
-        op: 'update' as const,
-        collection: 'findings' as const,
-        id: u.id,
-        patch: u.patch,
-      })),
-      ...plan.trash.map((id) => ({
-        op: 'softDelete' as const,
-        collection: 'findings' as const,
-        id,
-      })),
-    ],
-    { note },
-  );
+async function write(session: OpenBible, plan: ReconcilePlan): Promise<void> {
+  await session.repo.writeBatch([
+    ...plan.creates.map((data) => ({
+      op: 'create' as const,
+      collection: 'findings' as const,
+      data,
+    })),
+    ...plan.updates.map((u) => ({
+      op: 'update' as const,
+      collection: 'findings' as const,
+      id: u.id,
+      patch: u.patch,
+    })),
+    ...plan.trash.map((id) => ({
+      op: 'softDelete' as const,
+      collection: 'findings' as const,
+      id,
+    })),
+  ]);
 }
 
 /** CC-1, CC-2: run the structural checks on one chapter or all and record what they find. */
@@ -84,7 +81,7 @@ export async function checkStructure(session: OpenBible, chapterId: string | nul
     (f) => f.kind === 'structural' && (chapterId === null || f.chapterId === chapterId),
     data,
   );
-  await write(session, plan, 'Structural check');
+  await write(session, plan);
   const chapters = chaptersInOrder(data).filter((c) => chapterId === null || c._id === chapterId);
   return {
     found: fresh.length,
@@ -140,7 +137,7 @@ export async function recordAlignment(
     (f) => f.kind === 'alignment' && f.chapterId === chapterId,
     data,
   );
-  await write(session, plan, `Alignment check, run ${runId}`);
+  await write(session, plan);
   return { found: fresh.length, hidden: plan.hidden, rejected: checked.rejected, skipped: null };
 }
 
@@ -278,7 +275,6 @@ export async function resolveFinding(
   }
   const ops: Parameters<OpenBible['repo']['writeBatch']>[0] = [];
   const before = new Map<string, { collection: EntryCollection; id: string; doc: Doc }>();
-  let note: string;
   if (action === 'manuscriptWins') {
     if (f.kind !== 'alignment') throw new Error('A structural finding has no change set to apply.');
     const changeSet = Array.isArray(f.changeSet) ? (f.changeSet as FreshFinding['changeSet']) : [];
@@ -299,11 +295,9 @@ export async function resolveFinding(
       ops.push({ op: 'update', collection: p.collection, id: p.id, patch: p.patch });
     }
     ops.push({ op: 'update', collection: 'findings', id, patch: { state: 'manuscriptWins' } });
-    note = `Manuscript wins: ${entryTitle(f)}`;
   } else if (action === 'rewrite') {
     if (f.kind !== 'alignment') throw new Error('A structural finding has no lines to rewrite.');
     ops.push({ op: 'update', collection: 'findings', id, patch: { state: 'rewrite' } });
-    note = 'Rewrite recommended';
   } else {
     const kindOf = {
       kind: str(f.kind),
@@ -316,13 +310,12 @@ export async function resolveFinding(
       id,
       patch: { state: 'dismissed', dismissal: dismissalFor(data, kindOf) },
     });
-    note = action === 'done' ? 'Rewrite task done' : 'Dismissed';
   }
   before.set(`findings:${id}`, { collection: 'findings', id, doc: f });
-  const written = await session.repo.writeBatch(ops, {
-    note,
-    ...(action === 'manuscriptWins' ? { bulk: 'manuscript wins' } : {}),
-  });
+  const written = await session.repo.writeBatch(
+    ops,
+    action === 'manuscriptWins' ? { bulk: 'manuscript wins' } : {},
+  );
   const after = new Map(written.map((d) => [d._id, d]));
   const changes = [...before.values()].map((b) => ({
     collection: b.collection,
