@@ -955,3 +955,34 @@ test('BK-4 a page that never answers cannot trap the window: it closes after the
   invoke = invokeVia(page);
   await openBible();
 });
+
+test('BK-4 an edit still pending when the app quits is saved by the close-time flush', async () => {
+  test.setTimeout(120_000);
+  // The longest autosave delay, so the edit is still waiting when the quit comes.
+  await invoke('settings.set', { numbers: { autosaveMs: 750 } });
+  await rail(page, 'Characters').click();
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /^Zhou Jun/ })
+    .first()
+    .click();
+  const editor = page.getByTestId('editor');
+  await expect(editor).toHaveAttribute('data-entry-id', 'Z4');
+  const text = 'Shenzhen, typed just before quitting';
+  await field(editor, 'role').getByRole('textbox').fill(text);
+  // Not saved yet: the autosave timer is still running.
+  expect((await invoke('entry.get', { collection: 'characters', id: 'Z4' })).entry.role).not.toBe(
+    text,
+  );
+  const started = Date.now();
+  const closed = new Promise<void>((resolve) => app.process().once('exit', () => resolve()));
+  await app.evaluate(({ app: electron }) => electron.quit()).catch(() => undefined);
+  await closed;
+  // The page answered app.flushed: the window closed well before the two second wait.
+  expect(Date.now() - started).toBeLessThan(1_500);
+  ({ app, page } = await launch(db));
+  invoke = invokeVia(page);
+  await openBible();
+  expect((await invoke('entry.get', { collection: 'characters', id: 'Z4' })).entry.role).toBe(text);
+  await invoke('settings.set', { numbers: { autosaveMs: 500 } });
+});
