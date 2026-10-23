@@ -273,14 +273,28 @@ export function statusKind(
 }
 
 /**
+ * A51: the colours of the seeded moment kinds (Moves, Life event, Work and
+ * study), by their light theme hex, with the `--kind-*` token that draws them.
+ */
+export const KIND_HEX_TOKENS: Record<string, string> = {
+  '#008300': 'kind-move',
+  '#e34948': 'kind-life',
+  '#4a3aa7': 'kind-work',
+};
+
+/**
  * The CSS colours the seeded items carry, by their light theme hex, with the
  * token that draws them in both themes. The renderer draws a known hex through
  * its token, so it follows the theme; any other hex is drawn as it is.
+ * The kind violet `#4a3aa7` is also series-4 and the planned status; the
+ * family entry comes last, so outside a moment kind it stays `series-4`
+ * (the two tokens hold the same values in both themes).
  */
 export const THEME_HEX_TOKENS: Record<string, string> = {
   '#1b705f': 'canon',
   '#7a611b': 'idea',
   '#b84f25': 'serious-ink',
+  ...KIND_HEX_TOKENS,
   ...Object.fromEntries(FAMILY_COLORS.map((t) => [FAMILY_TOKEN_HEX[t], t])),
 };
 
@@ -340,4 +354,44 @@ export function defaultProvenance(lists: ListDocs, id: string): string | null {
   const list = lists.find((l) => l._id === 'provenance');
   if (!list) return id;
   return itemsOf(lists, 'provenance').some((i) => i.id === id) ? id : null;
+}
+
+// ---------- A51: moment kinds (SM-3, SM-9, IP-9) ----------
+
+/** A51: how large a kind's markers draw on the Backstory grid, from the item's `extra.weight`. */
+export const MOMENT_KIND_WEIGHTS = ['plain', 'big'] as const;
+export type MomentKindWeight = (typeof MOMENT_KIND_WEIGHTS)[number];
+
+/**
+ * A51: a moment kind item as the grid draws it, or undefined for no kind or
+ * an ID the list does not hold. `lists` is the bible's list documents.
+ */
+export function momentKindItem(
+  lists: ListDocs,
+  kind: string | null | undefined,
+): Partial<ListItem> | undefined {
+  if (!kind) return undefined;
+  return itemsOf(lists, 'momentKinds').find((i) => i.id === kind);
+}
+
+/** A51: an item's weight; anything but `big` reads as plain. */
+export function kindWeight(
+  item: Pick<Partial<ListItem>, 'extra'> | null | undefined,
+): MomentKindWeight {
+  return item?.extra?.weight === 'big' ? 'big' : 'plain';
+}
+
+/**
+ * A51: the CSS colour a moment kind's marker draws in: the token for a seeded
+ * hex (so it follows the theme), the hex for a colour the writer picked, and
+ * null for a kind with no colour (Voice) or no kind at all. The caller picks
+ * the fallback: `--fg-2` for a kind with no colour, `--fg` for no kind.
+ */
+export function kindColorCss(
+  item: Pick<Partial<ListItem>, 'color'> | null | undefined,
+): string | null {
+  const color = item?.color;
+  if (!color) return null;
+  const token = KIND_HEX_TOKENS[color.toLowerCase()];
+  return token ? `var(--${token})` : listColorCss(color);
 }

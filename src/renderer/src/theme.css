@@ -48,6 +48,10 @@
   --canon: #1b705f;
   --planned: #4a3aa7;
   --idea: #7a611b;
+  /* A51: the seeded moment kinds, marker fills on the chart surface (3:1 or more) */
+  --kind-move: #008300;
+  --kind-life: #e34948;
+  --kind-work: #4a3aa7;
   /* type */
   --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
   --font-body: 'Source Sans 3', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
@@ -91,6 +95,9 @@
     --canon: #4fc3a8;
     --planned: #9085e9;
     --idea: #d8b35a;
+    --kind-move: #008300;
+    --kind-life: #e66767;
+    --kind-work: #9085e9;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 }
@@ -128,6 +135,9 @@
   --canon: #4fc3a8;
   --planned: #9085e9;
   --idea: #d8b35a;
+  --kind-move: #008300;
+  --kind-life: #e66767;
+  --kind-work: #9085e9;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 

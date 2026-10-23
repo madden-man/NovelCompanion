@@ -51,6 +51,8 @@ export const LIST_IDS = [
   'regions',
   /** A47 (IP-10): who a cultural line is about; `extra.from` and `extra.to` in years. */
   'ageGroups',
+  /** A51 (SM-3, IP-9): what kind of moment a moment is; `color` and `extra.weight` ('plain' or 'big'). */
+  'momentKinds',
 ] as const;
 export type ListId = (typeof LIST_IDS)[number];
 
