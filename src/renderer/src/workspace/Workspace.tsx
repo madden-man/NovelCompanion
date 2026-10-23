@@ -138,6 +138,11 @@ export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   );
 }
 
+/** A50: Backstory with everyone, asked for now, so an open person's timeline goes back too. */
+function everyoneOnBackstory(): View {
+  return { kind: 'backstory', at: Date.now() };
+}
+
 function Frame({ bibles }: { bibles: ReactNode }) {
   const [view, setView] = useState<View>({ kind: 'sessions', sub: 'home' });
   const [query, setQuery] = useState('');
@@ -153,7 +158,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   const openSection = (collection: EntryCollection) =>
     setView(
       collection === 'moments'
-        ? { kind: 'backstory', at: Date.now() }
+        ? everyoneOnBackstory()
         : { kind: 'section', collection, selected: null, creating: false },
     );
   useOpenBackstory((characterId, at, momentId) =>
@@ -213,7 +218,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             )}
             {/* A50: Backstory again from the rail is everyone, also from a person's timeline. */}
             {railButton('Backstory', view.kind === 'backstory', () =>
-              setView({ kind: 'backstory', at: Date.now() }),
+              setView(everyoneOnBackstory()),
             )}
             {railButton('Continuity checker', view.kind === 'continuity', () =>
               setView({ kind: 'continuity', tab: 'alignment' }),
