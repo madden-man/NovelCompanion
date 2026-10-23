@@ -467,5 +467,7 @@ Integration notes: the box review (fresh Opus) found six ways a sentence could b
 | IP-4 | pass | `tests/e2e/backstory.spec.ts` "IP-4 A49 F2 on a moment marker renames its label in place as one step; Escape leaves it; a double-click opens the moment with What happens open", "IP-4 a moment moves to another person through Whose moment in the dialog as one step; the grid redraws"; `tests/e2e/timeline.spec.ts` the World events double-click rename unchanged |
 | IP-13 | pass | `tests/e2e/backstory.spec.ts` "IP-13 with nobody picked, New moment asks whose it is and the dialog opens on the new moment" |
 
+Supersedes the A49 section pushed on 2026-10-22 (6517696, a list of one line per moment under the grid and a first MomentDialog): that list and that dialog are replaced by this build; the offline-check note below is the same finding made twice.
+
 Builder notes: the offline e2e check for the table only passed before because its click missed the cell; in the dialog it now checks what holds, a failed save keeps the field open with the typed text and the reason. The double-click: the first click opens the dialog at once, so the dialog's own first press with a browser click count of 2 is taken as the end of the marker's double-click and opens What happens; no timer. Checks on merged main at 9efde68: lint, typecheck, 913 unit; backstory, timeline, keyboard, editable, tree, session and year e2e, hidden. Full `npm test` on main at 9efde68, 2026-10-23: lint and typecheck clean, 913 unit, 404 integration, 348 e2e, all passed, hidden.
 
