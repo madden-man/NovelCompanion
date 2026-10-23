@@ -42,6 +42,7 @@ import {
   yearX,
 } from '../../src/shared/domain/worldGrid';
 import type { Doc } from '../../src/shared/domain/paths';
+import type { BackstoryKind } from '../../src/shared/domain/backstoryGrid';
 import { DEFAULT_NUMBERS } from '../../src/shared/schema/settings';
 
 const fixture = readFixture();
@@ -188,12 +189,7 @@ describe('SM-9 SM-3 moments on the grid', () => {
   });
 
   test('A51 SM-9 the kind rides on the item; a kind weighted big draws big, in the grid and the person view', () => {
-    const kinds = fixture.lists!.find((l) => l._id === 'momentKinds')!.items as {
-      id: string;
-      label: string;
-      color?: string | null;
-      extra?: Record<string, unknown>;
-    }[];
+    const kinds = fixture.lists!.find((l) => l._id === 'momentKinds')!.items as BackstoryKind[];
     expect(grid.moments.map((m) => [m.id, m.kind])).toEqual([
       ['H1-voice-0', 'voice'],
       ['H5-voice-0', 'voice'],
