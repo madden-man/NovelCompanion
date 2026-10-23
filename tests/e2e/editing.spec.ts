@@ -110,7 +110,9 @@ test('ED-1 every field of every entity can be created and changed through the ed
   test.setTimeout(600_000);
   const ctx = await genContext();
   const failures: string[] = [];
-  for (const c of ENTRY_COLLECTIONS) {
+  // A50: a moment has no entry editor; it is made and edited in the Backstory dialog
+  // (backstory.spec.ts), and the T-5 test above covers its every field over IPC.
+  for (const c of ENTRY_COLLECTIONS.filter((x) => x !== 'moments')) {
     const info = collectionInfo[c];
     const manifest = manifests[c];
     const a = build(manifest, 0, ctx, 'full', true);

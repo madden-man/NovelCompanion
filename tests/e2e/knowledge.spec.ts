@@ -195,10 +195,12 @@ test('SR-1 one search box finds entries, chapter text, briefs, and Chinese by ch
   await expect(results).toContainText('团圆');
   await box.fill('qqqqzzzz');
   await expect(page.getByTestId('search-empty')).toBeVisible();
-  // Picking a result opens the entry: SM-3, Iris's voice moment.
+  // Picking a result opens the entry: SM-3, Iris's voice moment, which opens on Backstory in her
+  // timeline with its dialog (A50: moments have one door).
   await box.fill('Guarded');
   await results.locator('[data-hit="H5-voice-0"]').click();
-  await expect(page.getByTestId('editor')).toHaveAttribute('data-entry-id', 'H5-voice-0');
+  await expect(page.getByTestId('moment-dialog')).toHaveAttribute('data-id', 'H5-voice-0');
+  await expect(page.getByTestId('backstory-grid')).toHaveClass(/\bbs-person\b/);
 });
 
 test('SR-2 filters narrow the results by section, status, provenance, family, place, tag, and year range', async () => {
