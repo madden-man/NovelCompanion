@@ -165,7 +165,7 @@ describe('ARCH-1 IPC contract', () => {
   });
 
   test('ED-1 entry.create checks the whole entry against its schema before it is sent', () => {
-    const ok = { title: 'Hale', status: 'canon', name: 'Hale' };
+    const ok = { title: 'Hale', name: 'Hale' };
     expect(parseRequest('entry.create', { collection: 'families', data: ok })).toEqual({
       collection: 'families',
       data: ok,
@@ -173,7 +173,7 @@ describe('ARCH-1 IPC contract', () => {
     expect(() =>
       parseRequest('entry.create', {
         collection: 'families',
-        data: { title: 'x', status: 'canon' },
+        data: { title: 'x' },
       }),
     ).toThrow(/name/);
     expect(() => parseRequest('entry.create', { collection: 'nonsense', data: ok })).toThrow(

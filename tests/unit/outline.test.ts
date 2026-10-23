@@ -7,7 +7,7 @@ import {
 } from '../../src/shared/domain/outline';
 
 const at = '2026-01-15T09:00:00.000Z';
-const base = { status: 'planned', createdAt: at, modifiedAt: at };
+const base = { createdAt: at, modifiedAt: at };
 const strand = (id: string, year: number, extra: Record<string, unknown> = {}) => ({
   id,
   label: id,

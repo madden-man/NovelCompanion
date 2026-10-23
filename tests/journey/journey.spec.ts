@@ -434,7 +434,7 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   await expect(menu).toHaveCount(0);
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await selectPerson('Zhou Lan');
-  await addPerson('sibling', 'Zhou Jun', 1993, { type: 'biological', status: 'planned' });
+  await addPerson('sibling', 'Zhou Jun', 1993, { type: 'biological' });
   await setLifeYear('death', 2070);
 
   await selectPerson('Daniel Hale');
@@ -444,16 +444,15 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   await addPerson('child', 'Sam Hale', 2012, { type: 'adoptive' });
   await editLink('Ruth Hale', { startYear: 2015 });
   await selectPerson('Iris Hale-Zhou');
-  await addPerson('partner', 'Tomas Reyes', 2030, { type: 'partnered', status: 'planned' });
+  await addPerson('partner', 'Tomas Reyes', 2030, { type: 'partnered' });
   await editLink('Iris Hale-Zhou', { startYear: 2056, endYear: 2064, endReason: 'separated' });
   await selectPerson('Iris Hale-Zhou');
   await addPerson('child', 'Noor Zhou', 2058, {
     type: 'biological',
     coParent: 'Tomas Reyes',
-    status: 'planned',
   });
   await setFamilies(['Zhou family']);
-  await addPerson('person', 'The Archivist', null, { status: 'idea' });
+  await addPerson('person', 'The Archivist', null, {});
 
   await expect(page.locator('g.tnode')).toHaveCount(13);
   const t = await invoke('tree.get', {});

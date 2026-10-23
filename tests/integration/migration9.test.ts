@@ -487,7 +487,6 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     const migrated = await dumpBible(open.handle);
     await open.repo.create('moments', {
       title: 'Made after the migration',
-      status: 'idea',
       characterId: 'H1',
       year: 2030,
     });

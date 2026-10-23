@@ -98,7 +98,6 @@ describe('KB-5 the Entries list', () => {
     const many = Array.from({ length: 5000 }, (_, i) => ({
       _id: `X${i}`,
       title: `Fact ${i} harbor`,
-      status: 'canon',
       body: `<p>The ferry ${i} crosses at dawn.</p><p>Second line.</p>`,
       modifiedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
     }));

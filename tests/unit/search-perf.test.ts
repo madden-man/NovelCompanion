@@ -23,8 +23,6 @@ function bigBible(): OpenBible {
     title,
     body: '',
     status: i3(id),
-    provenance: 'invented',
-    tags: [],
     createdAt: at,
     modifiedAt: at,
   });

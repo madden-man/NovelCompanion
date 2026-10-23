@@ -34,7 +34,7 @@ test.beforeAll(async () => {
     expect(docs.characters).toHaveLength(BIG.characters);
     const tree = await createBible(store, TREE_SLUG, 'Two hundred people');
     const { characters, unions, parentLinks } = generatedTree(BIG.treePeople, 6);
-    const stamp = { provenance: 'invented', modifiedAt: '2026-01-15T09:00:00.000Z' };
+    const stamp = { modifiedAt: '2026-01-15T09:00:00.000Z' };
     await tree
       .collection('characters')
       .insertMany(characters.map((d) => ({ ...d, ...stamp })) as never[]);

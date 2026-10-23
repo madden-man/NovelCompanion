@@ -545,7 +545,7 @@ async function undoLabels(): Promise<string[]> {
 test('IP-16 ED-5 Delete forever asks for the title typed, then the entry and its revisions are gone, and it is not an undo step', async () => {
   const { entry } = await invoke('entry.create', {
     collection: 'places',
-    data: { title: 'Purge Wharf', status: 'idea' },
+    data: { title: 'Purge Wharf' },
   });
   await invoke('entry.update', {
     collection: 'places',
@@ -590,7 +590,7 @@ test('IP-16 Empty trash asks for the word empty, shows the count, and is not an 
   for (const title of ['Empty Dock One', 'Empty Dock Two']) {
     const { entry } = await invoke('entry.create', {
       collection: 'places',
-      data: { title, status: 'idea' },
+      data: { title },
     });
     await invoke('entry.delete', { collection: 'places', id: entry._id });
     ids.push(entry._id);
@@ -901,7 +901,7 @@ test('IP-9 statuses and provenance recolour in place, a status changes kind, and
   // An entry's chip shows the new colour on its edge and dot; its text stays in the text colour.
   await invoke('entry.create', {
     collection: 'openQuestions',
-    data: { title: 'Who paints the harbor wall?', status: 'idea' },
+    data: { title: 'Who paints the harbor wall?' },
   });
   await openSection('openQuestions');
   const chip = page
@@ -1004,14 +1004,13 @@ test('IP-9 A51 removing a moment kind in use is refused on the Lists screen with
     collection: 'characters',
     data: {
       title: 'Ada Kind',
-      status: 'canon',
       names: { full: 'Ada Kind' },
       birth: { year: 2001 },
     },
   });
   await invoke('entry.create', {
     collection: 'moments',
-    data: { title: 'Marries Ben', characterId: who._id, year: 2030, kind: 'life', status: 'canon' },
+    data: { title: 'Marries Ben', characterId: who._id, year: 2030, kind: 'life' },
   });
   await rail(page, 'Lists').click();
   const life = (await listItems('momentKinds')).find((i) => i.id === 'life')!;
@@ -1039,7 +1038,6 @@ test('IP-8 renaming a region on the Lists screen renames it on every event that 
       start: { year: 2041 },
       categoryId: cat.id,
       regions: ['Harbor Coast'],
-      status: 'canon',
     },
   });
   const region = (await listItems('regions')).find((i) => i.label === 'Harbor Coast');
@@ -1079,7 +1077,7 @@ test('IP-10 an age group edits its from and to ages in place, one step each', as
 test('IP-12 families take a colour and eras their years on the Lists screen', async () => {
   const { entry: fam } = await invoke('entry.create', {
     collection: 'families',
-    data: { title: 'Pierce', name: 'Pierce', color: '#2a78d6', status: 'canon' },
+    data: { title: 'Pierce', name: 'Pierce', color: '#2a78d6' },
   });
   await rail(page, 'Lists').click();
   await itemRow('families', fam._id).getByTestId('item-colour').fill('#336699');
@@ -1147,7 +1145,7 @@ test('ED-3 tree edits undo to the start and redo to the end: a union and a paren
       (
         await window.api.invoke('entry.create', {
           collection: 'characters',
-          data: { title: name, status: 'canon', names: { full: name }, birth: { year } },
+          data: { title: name, names: { full: name }, birth: { year } },
         })
       ).entry._id;
     return {

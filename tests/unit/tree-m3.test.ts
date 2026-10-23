@@ -19,7 +19,6 @@ const person = (id: string, born: number): TreePerson => ({
   birth: { year: born },
   death: null,
   familyIds: [],
-  status: 'canon',
   createdAt: `2026-01-01T00:00:0${id.length}.000Z`,
 });
 

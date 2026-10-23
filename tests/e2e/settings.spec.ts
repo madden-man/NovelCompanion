@@ -430,7 +430,7 @@ test('IP-16 Remove revisions older than a date shows the count from a dry run, t
   await invoke('bible.open', { slug: SLUG });
   const { entry } = await invoke('entry.create', {
     collection: 'openQuestions',
-    data: { title: 'Who keeps the harbor log?', status: 'idea' },
+    data: { title: 'Who keeps the harbor log?' },
   });
   for (const t of ['Who keeps the log?', 'Who keeps the tide log?']) {
     await invoke('entry.update', {

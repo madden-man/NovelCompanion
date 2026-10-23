@@ -123,34 +123,14 @@ describe('KB-6 the capture feature', () => {
     expect(given).toEqual([{ collection: 'chapters', id: 'CH4', title: 'Rain' }]);
   });
 
-  test('KB-6 a new entry from a capture is an idea and its source note names the capture and its date', () => {
-    const created = prepareCaptureDraft(
-      { op: 'create', collection: 'moments', data: { title: 'A moment' }, reason: 'r' },
-      '2026-10-12',
-    );
-    expect(created.data).toMatchObject({
-      status: 'idea',
-      sourceNote: 'From a capture on 2026-10-12.',
-    });
-    // What Claude set is kept: canon when the text says so, its own note.
-    const canon = prepareCaptureDraft(
-      {
-        op: 'create',
-        collection: 'moments',
-        data: {
-          title: 'B',
-          status: 'canon',
-          sourceNote: 'Captured 2026-10-12 from chapter notes.',
-        },
-        reason: 'r',
-      },
-      '2026-10-12',
-    );
-    expect(canon.data).toMatchObject({
-      status: 'canon',
-      sourceNote: 'Captured 2026-10-12 from chapter notes.',
-    });
-    // A change to an existing entry keeps its own source note.
+  test('KB-6 A52 a new entry from a capture carries no status or source note of its own', () => {
+    const draft = {
+      op: 'create' as const,
+      collection: 'moments' as const,
+      data: { title: 'A moment' },
+      reason: 'r',
+    };
+    expect(prepareCaptureDraft(draft, '2026-10-12')).toEqual(draft);
     const update = {
       op: 'update' as const,
       collection: 'characters' as const,
@@ -190,17 +170,14 @@ describe('KB-6 the capture feature', () => {
 });
 
 describe('KB-7 a capture Claude cannot file becomes an open question', () => {
-  test('KB-7 the open question takes the first line as its title, the text and story time as its body, and the capture tag', () => {
+  test('KB-7 the open question takes the first line as its title, the text and story time as its body', () => {
     const data = captureQuestionData(
       'The ferry to Macau <stopped> in winter.\nNobody remembers why.',
       'Story time 2034, writing Chapter 4: Rain',
-      '2026-10-12',
     );
     expect(data).toMatchObject({
       title: 'The ferry to Macau <stopped> in winter.',
-      status: 'idea',
       question: 'The ferry to Macau <stopped> in winter.\nNobody remembers why.',
-      tags: ['capture'],
     });
     // A44: long text is Markdown, so the body is the text, a blank line, and the story time.
     expect(data.body).toBe(
@@ -266,7 +243,7 @@ describe('KB-6 ED-3 filing', () => {
         /'(entry\.(create|update|delete)|lists\.addItem|proposal\.(approve|reject))'/,
       );
     }
-    expect(src).toContain('fileLocalDrafts(call, drafts, capturedOn');
+    expect(src).toContain('fileLocalDrafts(call, drafts)');
   });
 });
 
@@ -316,24 +293,21 @@ const JINAN_DRAFTS: CaptureDraft[] = [
       startYear: 2070,
       endYear: 2100,
       body: 'Teenagers in Jinan treat a degree as a joke by the 2070s.',
-      status: 'idea',
     },
   },
   { op: 'listAdd', listId: 'communities', label: 'Jinan', ref: 'new:jinan' },
 ];
 
 describe('CR-6 Route A files from the box', () => {
-  test('CR-6 CR-10 fileLocalDrafts writes nothing until it is called, mints the new item first, and files an idea with the local source note as one undo step', async () => {
+  test('CR-6 CR-10 fileLocalDrafts writes nothing until it is called, mints the new item first, and files the entry as one undo step', async () => {
     const rig = localRig();
     // Nothing is written by building the drafts: the rig has seen no call yet.
     expect(rig.calls).toEqual([]);
-    const r = await fileLocalDrafts(rig.invoke, JINAN_DRAFTS, '2026-10-22', 'idea-status');
+    const r = await fileLocalDrafts(rig.invoke, JINAN_DRAFTS);
     // IP-17: the new community is added before the line that uses it, though it came second.
     expect(rig.calls).toEqual(['lists.get', 'lists.addItem', 'entry.create']);
     expect(rig.made.NEW1).toMatchObject({
       communityId: 'jinan',
-      status: 'idea-status',
-      sourceNote: 'From a capture on 2026-10-22, filed without Claude.',
       startYear: 2070,
       endYear: 2100,
     });
@@ -365,9 +339,9 @@ describe('CR-6 Route A files from the box', () => {
         data: { title: 'Rain hats', communityId: 'new:portland', startYear: 2040 },
       },
     ];
-    const r = await fileLocalDrafts(rig.invoke, portland, '2026-10-22');
+    const r = await fileLocalDrafts(rig.invoke, portland);
     expect(rig.calls).toEqual(['lists.get', 'entry.create']);
-    expect(rig.made.NEW1).toMatchObject({ communityId: 'portland', status: 'idea' });
+    expect(rig.made.NEW1).toMatchObject({ communityId: 'portland' });
     expect(r.minted).toEqual([]);
     expect(r.command?.undo.map((o) => o.kind)).toEqual(['delete']);
 
@@ -379,7 +353,7 @@ describe('CR-6 Route A files from the box', () => {
         data: { title: 'Lost line', communityId: 'new:nowhere', startYear: 2040 },
       },
     ];
-    const lost = await fileLocalDrafts(localRig().invoke, broken, '2026-10-22');
+    const lost = await fileLocalDrafts(localRig().invoke, broken);
     expect(lost.filed).toEqual([]);
     expect(lost.failed.map((f) => f.id)).toEqual(['draft 0', 'draft 1']);
     expect(lost.command).toBeNull();
@@ -595,11 +569,9 @@ const FAST_DOCS: Record<string, Record<string, Record<string, unknown>>> = {
       role: 'The daughter who leaves.',
       familyIds: ['F1'],
       title: 'Zhou Lan',
-      status: 'canon',
       birth: { year: 1988 },
       backstory: 'Long. '.repeat(1000),
       body: 'Short body.',
-      links: [{ targetId: 'Z1', kind: 'child-of' }],
       names: { full: 'Zhou Lan' },
     },
   },
@@ -771,8 +743,6 @@ describe('CR-7 the fast file (Route B)', () => {
         communityId: 'portland',
         startYear: 2065,
         endYear: 2100,
-        status: 'idea',
-        sourceNote: 'From a capture on 2026-10-22.',
       },
     });
   });
@@ -847,7 +817,6 @@ describe('CR-7 the fast file (Route B)', () => {
     expect(
       change({
         endYear: 2080,
-        status: 'canon',
         title: 'Flood walk',
         communityId: 'portland',
         demographic: '18-30',
@@ -855,7 +824,7 @@ describe('CR-7 the fast file (Route B)', () => {
     ).toMatchObject({
       op: 'update',
       targetId: 'CU4',
-      data: { endYear: 2080, status: 'canon' },
+      data: { endYear: 2080 },
     });
     const refused = change({ endYear: 2080, body: 'New body.', tags: ['flood'] });
     expect(refused).toEqual({

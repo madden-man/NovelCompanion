@@ -136,7 +136,6 @@ describe('CC-2 CC-5 structural checks against the fixture novel', () => {
       {
         _id: 'PL-LATE',
         title: 'Late child',
-        status: 'idea',
         parentId: 'H1',
         childId: 'Z5',
         type: 'biological',
@@ -383,7 +382,6 @@ describe('CC-4 dismissals and re-runs', () => {
   const finding = (over: Doc = {}): Doc => ({
     _id: 'F-1',
     title: 't',
-    status: 'planned',
     kind: 'alignment',
     chapterId: 'CH5',
     entryIds: ['H1'],

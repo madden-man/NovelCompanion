@@ -459,7 +459,6 @@ describe('IP-12 family colour is any hex colour', () => {
       _id: 'F1',
       title: 'Hale',
       name: 'Hale',
-      status: 'canon',
       createdAt: AT,
       modifiedAt: AT,
     };

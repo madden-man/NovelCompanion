@@ -7,7 +7,7 @@ const fx = readFixture();
 const data = { all: (c: string) => (fx[c] ?? []) as Record<string, unknown>[] };
 
 const at = '2026-01-15T09:00:00.000Z';
-const base = { status: 'planned', createdAt: at, modifiedAt: at };
+const base = { createdAt: at, modifiedAt: at };
 const strand = (id: string, year: number, primary = true, end: number | null = null) => ({
   id,
   label: id,

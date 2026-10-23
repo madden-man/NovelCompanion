@@ -41,7 +41,6 @@ const base = (id: string, title: string, i: number) => ({
   _id: id,
   title,
   status: STATUSES[i % 3]!,
-  provenance: 'invented',
   createdAt: AT,
   modifiedAt: AT,
 });
@@ -74,11 +73,11 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
   // The FT-8 tree: 200 people across six generations, in the five families.
   const tree = generatedTree(BIG.treePeople, 6);
   tree.characters.forEach((c, i) =>
-    put('characters', { ...c, provenance: 'invented', modifiedAt: AT, familyIds: [`FAM${i % 5}`] }),
+    put('characters', { ...c, modifiedAt: AT, familyIds: [`FAM${i % 5}`] }),
   );
-  for (const u of tree.unions) put('unions', { ...u, provenance: 'invented', modifiedAt: AT });
+  for (const u of tree.unions) put('unions', { ...u, modifiedAt: AT });
   for (const l of tree.parentLinks) {
-    put('parentLinks', { ...l, provenance: 'invented', modifiedAt: AT });
+    put('parentLinks', { ...l, modifiedAt: AT });
   }
   for (let i = 0; i < 1000; i++) {
     const born = 1900 + (i % 180);

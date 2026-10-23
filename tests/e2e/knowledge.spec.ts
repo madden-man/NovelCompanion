@@ -148,14 +148,13 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   const place = (
     await invoke('entry.create', {
       collection: 'places',
-      data: { title: 'The Archive', status: 'canon' },
+      data: { title: 'The Archive' },
     })
   ).entry;
   await invoke('entry.update', {
     collection: 'chapters',
     id: 'CH1',
     patch: {
-      tags: ['opening'],
       strands: [
         {
           ...(
@@ -312,7 +311,6 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
     demographic: '18-30',
     startYear: 2040,
     endYear: 2049,
-    status: 'idea',
   });
   const id = (await made())!._id;
   const entry = async () =>

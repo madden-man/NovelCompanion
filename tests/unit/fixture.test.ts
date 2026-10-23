@@ -195,18 +195,15 @@ describe('Section 7 fixture novel', () => {
     });
   });
 
-  test('Section 7 planted structural errors S1 and S3 are present as data', () => {
+  test('Section 7 planted structural error S1 is present as data; S3 went with A52', () => {
     const ch = (n: number) => chapters.find((c) => c.readingOrder === n)!;
     const year = (c: Chapter) => c.strands.find((s) => s.primary)!.startYear;
     // S1
     expect(year(ch(4))).toBe(2032);
     expect(ch(4).strands[0]!.characterIds).toContain('H2');
     expect(byId(characters, 'H2').death).toEqual({ year: 2030 });
-    // S3
-    const ev = parsed<WorldEvent>('worldEvents').find(
-      (e) => 'year' in e.start && e.start.year === 2090,
-    )!;
-    expect(ch(6).links).toContainEqual({ targetId: ev._id, kind: 'happened' });
+    // S3 (A52): entries have no links, so no chapter links an event as having happened.
+    expect(chapters.every((c) => !('links' in c))).toBe(true);
   });
 
   test('Section 7 planted prose errors P1 and P2 are present in chapter text', () => {
@@ -224,7 +221,7 @@ describe('Section 7 fixture novel', () => {
       cleanChapterIds: string[];
     };
     expect(exp.$comment).toMatch(/Hand-written.*never be generated/s);
-    expect(exp.findings.map((f) => f.id)).toEqual(['S1', 'S3']);
+    expect(exp.findings.map((f) => f.id)).toEqual(['S1']);
     const all = new Set(
       Object.values(fixture)
         .flat()

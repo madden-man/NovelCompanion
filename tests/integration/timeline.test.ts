@@ -105,7 +105,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
         data: {
           _id: 'W-DATE',
           title: 'Typhoon makes landfall',
-          status: 'planned',
           start: { year: 2044, month: 9, day: 2 },
           categoryId: 'climate',
           regions: ['Guangdong'],
@@ -118,7 +117,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
         data: {
           _id: 'W-YEAR',
           title: 'Ferry line closes',
-          status: 'idea',
           start: { year: 2044 },
           categoryId: 'economy',
         },
@@ -128,7 +126,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
         data: {
           _id: 'W-RANGE',
           title: 'Drought years',
-          status: 'planned',
           start: { year: 2043 },
           end: { year: 2046 },
           categoryId: 'climate',

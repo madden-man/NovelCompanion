@@ -24,7 +24,6 @@ function bigModel(): ReadModel {
     put('characters', {
       _id: `C${i}`,
       title: `Person ${i}`,
-      status: 'canon',
       names: { full: `Person ${i}` },
       birth:
         i % 97 === 0 ? { unknown: true } : { year: born, month: 1 + (i % 12), day: 1 + (i % 28) },
@@ -36,7 +35,6 @@ function bigModel(): ReadModel {
     put('worldEvents', {
       _id: `E${i}`,
       title: `Event ${i}`,
-      status: 'planned',
       start: { year: 1950 + (i % 150) },
       end: i % 4 === 0 ? { year: 1955 + (i % 150) } : null,
       categoryId: 'technology',
@@ -50,7 +48,6 @@ function bigModel(): ReadModel {
     put('chapters', {
       _id: `CH${i}`,
       title: `Chapter ${i}`,
-      status: 'planned',
       readingOrder: i + 1,
       strands: [
         {

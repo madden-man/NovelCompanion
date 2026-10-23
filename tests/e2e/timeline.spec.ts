@@ -456,7 +456,6 @@ test('SM-8 ED-3 a click on an empty spot adds an event at that row and year thro
     start: { year: 2045 },
     end: { year: 2047 },
     formative: true,
-    status: 'idea',
   });
   expect(
     (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' })).entries,

@@ -730,7 +730,7 @@ test('SM-9 A50 in the person view a row taller than the frame scrolls, and the n
   for (let i = 0; i < 10; i++) {
     const { entry } = await invoke('entry.create', {
       collection: 'moments',
-      data: { title: `Crowded year ${i + 1}`, characterId: 'U1', year: 2030, status: 'idea' },
+      data: { title: `Crowded year ${i + 1}`, characterId: 'U1', year: 2030 },
     });
     made.push(entry._id);
   }
@@ -1823,7 +1823,7 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
     const { _id: _drop, ...lives } = strip(fixture.moments!.find((m) => m._id === 'Z3-lives-1')!);
     const { entry: later } = await invoke('entry.create', {
       collection: 'moments',
-      data: { ...lives, title: 'Moves to Seattle', year: 2033, endYear: null, links: [] },
+      data: { ...lives, title: 'Moves to Seattle', year: 2033, endYear: null },
     });
     await expect(marker(later._id)).toHaveCount(1);
     const doomed = await openMoment(page, 'Z3-lives-1');

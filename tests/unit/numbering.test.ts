@@ -67,7 +67,7 @@ describe('PL-3 the shown part and chapter numbers come from the number fields', 
   });
 
   test('PL-3 the outline rows show part numbers from their fields after a reorder', () => {
-    const base = { status: 'planned', createdAt: 'x', modifiedAt: 'x' };
+    const base = { createdAt: 'x', modifiedAt: 'x' };
     const docs: Record<string, Record<string, unknown>[]> = {
       parts: [
         { _id: 'P1', title: 'Roots', number: 2, ...base },
@@ -98,7 +98,7 @@ describe('PL-3 the shown part and chapter numbers come from the number fields', 
   });
 
   test('PL-3 a continuity finding names a chapter by its reading order, never by a number in its title', () => {
-    const base = { status: 'planned', createdAt: 'x', modifiedAt: 'x', deletedAt: null };
+    const base = { createdAt: 'x', modifiedAt: 'x', deletedAt: null };
     const docs: Record<string, Record<string, unknown>[]> = {
       characters: [
         {

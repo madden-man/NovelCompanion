@@ -27,12 +27,9 @@ afterAll(async () => {
 
 const margaret = {
   title: 'Margaret Hale',
-  status: 'canon' as const,
-  provenance: 'invented' as const,
   names: { full: 'Margaret Hale' },
   birth: { year: 1958 },
   death: { year: 2041 },
-  links: [{ targetId: 'H2', kind: 'spouse' }],
 };
 
 describe('ARCH-2 one write path for entries', () => {
@@ -42,7 +39,6 @@ describe('ARCH-2 one write path for entries', () => {
     expect(created._id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(created.createdAt).toBe(created.modifiedAt);
     expect(created.body).toBe('');
-    expect(created.tags).toEqual([]);
     const id = created._id;
 
     // Stored as zod accepted it, and in the read model.
@@ -51,12 +47,10 @@ describe('ARCH-2 one write path for entries', () => {
 
     const updated = await repo.update('characters', id, {
       title: 'Margaret Doyle Hale',
-      tags: ['matriarch'],
     });
     expect(updated.title).toBe('Margaret Doyle Hale');
     expect(updated.createdAt).toBe(created.createdAt);
     expect(updated.modifiedAt > created.modifiedAt).toBe(true);
-    expect(repo.get('characters', id)?.tags).toEqual(['matriarch']);
 
     const trashed = await repo.softDelete('characters', id);
     expect(trashed.deletedAt).toBeDefined();
@@ -67,7 +61,6 @@ describe('ARCH-2 one write path for entries', () => {
 
     const restored = await repo.restore('characters', id);
     expect(restored.deletedAt).toBeUndefined();
-    expect(restored.links).toEqual(margaret.links);
     expect(repo.get('characters', id)?.title).toBe('Margaret Doyle Hale');
     const stored = await handle.collection('characters').findOne({ _id: id as never });
     expect(stored).not.toHaveProperty('deletedAt');
@@ -93,7 +86,7 @@ describe('ARCH-2 one write path for entries', () => {
     const { repo, handle } = bible;
     const before = await handle.collection('revisions').countDocuments();
     await expect(
-      repo.create('characters', { ...margaret, status: 'maybe' as never }),
+      repo.create('characters', { ...margaret, status: 'canon' } as never),
     ).rejects.toThrow(ValidationError);
     await expect(repo.create('characters', { ...margaret, names: { full: '' } })).rejects.toThrow(
       ValidationError,
@@ -159,20 +152,14 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
     invoke = ipcFor(() => fx);
   });
 
-  /** A place written three times, linked from Margaret (H1), then moved to the trash. */
+  /** A place written three times, then moved to the trash. */
   async function trashedPlace(title: string) {
     const place = await invoke('entry.create', {
       collection: 'places',
-      data: { title, status: 'idea' },
+      data: { title },
     });
     const id = place.entry._id;
     await invoke('entry.update', { collection: 'places', id, patch: { body: '<p>Wet.</p>' } });
-    const h1 = fx.model.get('characters', 'H1')!;
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: 'H1',
-      patch: { links: [...(h1.links as object[]), { targetId: id, kind: 'related' }] },
-    });
     await invoke('entry.delete', { collection: 'places', id });
     return id;
   }
@@ -197,10 +184,14 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
 
   test('IP-16 a purged entry leaves its backlinks as dangling links the warnings report', async () => {
     const id = await trashedPlace('The boathouse');
+    const question = await invoke('entry.create', {
+      collection: 'openQuestions',
+      data: { title: 'Who owns the boathouse?', aboutIds: [id] },
+    });
     await invoke('entry.purge', { collection: 'places', id });
-    const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
-    expect((h1.entry.links as { targetId: string }[]).map((l) => l.targetId)).toContain(id);
-    expect(h1.warnings).toContainEqual(
+    const q = await invoke('entry.get', { collection: 'openQuestions', id: question.entry._id });
+    expect(q.entry.aboutIds).toContain(id);
+    expect(q.warnings).toContainEqual(
       expect.objectContaining({
         code: 'missing-target',
         message: `No entry has the ID ${id}. It may have been deleted for good.`,
@@ -357,7 +348,6 @@ describe('IP-18 the manuscript lock on the create paths', () => {
     title,
     partId: 'PT1',
     readingOrder: 90,
-    status: 'idea',
     strands: [{ id: 'S1', label: 'present', startYear: 2040, primary: true }],
     ...extra,
   });

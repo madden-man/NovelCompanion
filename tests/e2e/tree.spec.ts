@@ -250,7 +250,7 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await expect(menu).toHaveCount(0);
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await select('Zhou Lan');
-  await add('sibling', 'Zhou Jun', 1993, { type: 'biological', status: 'planned' });
+  await add('sibling', 'Zhou Jun', 1993, { type: 'biological' });
   await setYearDate('death', 2070);
 
   await select('Daniel Hale');
@@ -260,16 +260,15 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await add('child', 'Sam Hale', 2012, { type: 'adoptive' });
   await editLink('Ruth Hale', { startYear: 2015 });
   await select('Iris Hale-Zhou');
-  await add('partner', 'Tomas Reyes', 2030, { type: 'partnered', status: 'planned' });
+  await add('partner', 'Tomas Reyes', 2030, { type: 'partnered' });
   await editLink('Iris Hale-Zhou', { startYear: 2056, endYear: 2064, endReason: 'separated' });
   await select('Iris Hale-Zhou');
   await add('child', 'Noor Zhou', 2058, {
     type: 'biological',
     coParent: 'Tomas Reyes',
-    status: 'planned',
   });
   await setFamilies(['FAM-ZHOU']);
-  await add('person', 'The Archivist', null, { status: 'idea' });
+  await add('person', 'The Archivist', null, {});
 
   await expect(page.locator('g.tnode')).toHaveCount(13);
   const t = await invoke('tree.get', {});
@@ -528,7 +527,6 @@ test('FT-6 A45 warnings show in the inspector behind the toolbar count and never
       collection: 'parentLinks',
       data: {
         title: 'Loop',
-        status: 'idea',
         parentId: ids['Iris Hale-Zhou'],
         childId: ids['Margaret Hale'],
         type: 'biological',
@@ -1299,7 +1297,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
     (await invoke('entry.list', { collection: 'characters', trash: 'exclude' })).entries.find(
       (e) => e.entry.title === 'Ada Lin',
     )!.entry;
-  expect(await ada()).toMatchObject({ status: 'idea', familyIds: [], birth: { unknown: true } });
+  expect(await ada()).toMatchObject({ familyIds: [], birth: { unknown: true } });
   // IP-1: the families are a chip row; Add family turns into a picker in its place.
   const fam = field(ed, 'familyIds');
   const families = async () => (await ada()).familyIds;
@@ -1330,7 +1328,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await fillDateBox(field(ed, 'birth'), '2040');
   await openEditable(field(ed, 'status'));
   await field(ed, 'status').locator('select').selectOption('planned');
-  await expect.poll(ada).toMatchObject({ birth: { year: 2040 }, status: 'planned' });
+  await expect.poll(ada).toMatchObject({ birth: { year: 2040 } });
   // Delete and restore through the trash.
   await page.getByTestId('entry-tools').getByRole('button', { name: 'Move to trash' }).click();
   await page

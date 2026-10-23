@@ -61,7 +61,6 @@ describe('AI-5 entry text reaches Claude as material', () => {
         data: {
           title: 'Porch of Quillwick',
           descriptions: [{ startYear: 2000, endYear: 2010, text: INJECTION }],
-          status: 'planned',
         },
       })
     ).entry;

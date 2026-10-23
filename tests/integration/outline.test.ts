@@ -44,7 +44,6 @@ describe('KB-3 a new chapter from a part heading', () => {
       title: 'Low Tide',
       partId: 'PT1',
       readingOrder: 5,
-      status: 'idea',
     });
     expect(made.strands).toEqual([
       expect.objectContaining({ label: 'present', startYear: 2050, endYear: null, primary: true }),
@@ -86,7 +85,7 @@ describe('KB-3 a new chapter from a part heading', () => {
 
 describe('KB-3 parts reorder, each move with a revision', () => {
   test('KB-3 a new part shows as an empty heading, and plot.reorder moves it to the front of the parts', async () => {
-    const part = await make('parts', { title: 'Coda', number: 3, status: 'idea' });
+    const part = await make('parts', { title: 'Coda', number: 3 });
     let grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     expect(grid.rows.at(-1)).toMatchObject({ kind: 'part', id: part._id, chapterCount: 0 });
     expect(grid.rows.filter((row) => row.kind === 'part')).toHaveLength(3);

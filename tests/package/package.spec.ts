@@ -179,7 +179,7 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
         source: 'import',
         op: 'create',
         collection: 'facts',
-        data: { title: 'x', status: 'idea' },
+        data: { title: 'x' },
       } as never);
       return 'registered';
     } catch {

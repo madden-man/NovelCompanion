@@ -398,7 +398,7 @@ describe('AI-3 proposals only through the review queue', () => {
     // Edit, then approve: the entry appears through the write path, with the edited title.
     await invokeBible('proposal.edit', {
       id: proposalId!,
-      data: { title: 'The river porch', parentId: 'PLC2', status: 'planned' },
+      data: { title: 'The river porch', parentId: 'PLC2' },
     });
     const approved = await invokeBible('proposal.approve', { id: proposalId! });
     expect(approved.proposal).toMatchObject({ state: 'approved', edited: true });

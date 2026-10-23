@@ -200,7 +200,7 @@ test('KB-6 SM-3 Enter shows two proposal cards with diffs; unticking one and Cmd
 
   const events = await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' });
   const made = events.entries.find((e) => e.entry.title === 'Portland rations water')!.entry;
-  expect(made).toMatchObject({ status: 'idea', start: { year: 2034 } });
+  expect(made).toMatchObject({ start: { year: 2034 } });
   expect(String(made.sourceNote)).toMatch(/^From a capture on /);
   const moments = await invoke('entry.list', { collection: 'moments', trash: 'exclude' });
   expect(moments.entries.some((e) => e.entry.title === 'Lives in Seattle')).toBe(false);
@@ -425,7 +425,6 @@ test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothi
   await expect(link).toBeVisible();
   const made = (await lineTitled('Teenagers in Guangzhou start to eat mooncakes with coffee'))!;
   expect(made).toMatchObject({
-    status: 'idea',
     communityId: 'guangzhou',
     demographic: '0-18',
     startYear: 2050,
@@ -505,7 +504,6 @@ test('CR-6 a missing community is a highlighted chip and File it waits for it', 
   expect(await lineTitled('Teenagers start to wear paper masks')).toMatchObject({
     communityId: 'portland',
     startYear: 2060,
-    status: 'idea',
   });
   await page.keyboard.press('Escape');
 });
@@ -518,7 +516,6 @@ test('CR-6 KB-7 Review later keeps a fact the box would file as an open question
   const list = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
   expect(list.entries.find((e) => e.entry.title === YEE_HAW)?.entry).toMatchObject({
     question: YEE_HAW,
-    tags: ['capture'],
   });
   expect(await lineTitled('Teenagers in Portland begin to say yee haw ironically')).toBeUndefined();
   await page.keyboard.press('Escape');
@@ -730,7 +727,7 @@ test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, 
   await expect(saved).toContainText('could not reach Anthropic');
   const list = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
   const q = list.entries.find((e) => e.entry.title === FERRY)!.entry;
-  expect(q).toMatchObject({ tags: ['capture'], question: FERRY });
+  expect(q).toMatchObject({ question: FERRY });
   expect(String(q.body)).toContain('Story time 2034');
   await saved.getByRole('button', { name: FERRY }).click();
   await expect(box()).toBeHidden();

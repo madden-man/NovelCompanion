@@ -32,18 +32,16 @@ const make = async (collection: string, data: Record<string, unknown>) =>
 describe('OQ-1, SL-1 questions and the log', () => {
   beforeAll(async () => {
     // A person and a chapter to link and log against.
-    const part = (await make('parts', { title: 'Part', status: 'planned', number: 1 })).entry;
+    const part = (await make('parts', { title: 'Part', number: 1 })).entry;
     const who = (
       await make('characters', {
         title: 'Ada',
-        status: 'canon',
         names: { full: 'Ada' },
         birth: { year: 1980 },
       })
     ).entry;
     await make('chapters', {
       title: 'The house',
-      status: 'planned',
       partId: part._id,
       readingOrder: 1,
       strands: [
@@ -65,7 +63,6 @@ describe('OQ-1, SL-1 questions and the log', () => {
     const q = (
       await make('openQuestions', {
         title: 'Who owns the house?',
-        status: 'idea',
         question: 'Does Ada own the house outright?',
         links: [{ targetId: person._id, kind: 'about' }],
       })

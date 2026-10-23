@@ -8,7 +8,6 @@ const doc = (id: string, title: string, extra: Record<string, unknown> = {}) => 
   _id: id,
   title,
   body: '',
-  status: 'canon',
   createdAt: at,
   modifiedAt: at,
   ...extra,

@@ -23,10 +23,9 @@ import {
   fileLocalDrafts,
   mergeFilings,
 } from '../../src/shared/domain/capture';
-import { buildIndex, localSourceNote } from '../../src/shared/domain/captureRouter';
+import { buildIndex } from '../../src/shared/domain/captureRouter';
 import { indexFromSession, povCommunityId } from '../../src/main/claude/features/captureIndex';
 import * as boxRouting from '../../src/renderer/src/workspace/captureLocal';
-import { defaultStatus } from '../../src/shared/domain/lists';
 import type { CaptureProposal } from '../../src/shared/domain/capture';
 import { UndoManager } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
@@ -210,14 +209,12 @@ describe('KB-6 capture', () => {
       characterId: 'Z3',
       year: 2034,
       title: 'Lives in Seattle',
-      status: 'idea',
     });
     expect(place!.reason).toMatch(/\(Claude, capture, run /);
     expect(event).toMatchObject({ source: 'claude', op: 'create', collection: 'worldEvents' });
     expect(event!.data).toMatchObject({
       title: 'Portland rations water',
       start: { year: 2034 },
-      status: 'idea',
     });
     expect(event!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
 
@@ -239,7 +236,6 @@ describe('KB-6 capture', () => {
     ]);
     const filedId = filing.filed[0]!.id;
     expect(bible.model.get('worldEvents', filedId)).toMatchObject({
-      status: 'idea',
       start: { year: 2034 },
     });
     expect(bible.model.get('proposals', event!.id)).toMatchObject({ state: 'approved' });
@@ -368,13 +364,11 @@ describe('KB-7 capture offline', () => {
     expect(turn).toMatchObject({ status: 'failed', error: { kind: 'network' }, proposalIds: [] });
     // AI-7: the input is kept in the saved run.
     expect(turn.question).toContain('The ferry to Macau');
-    const data = captureQuestionData(FERRY, 'Story time 2034', '2026-10-12');
+    const data = captureQuestionData(FERRY, 'Story time 2034');
     const { entry } = await invoke('entry.create', { collection: 'openQuestions', data });
     expect(bible.model.get('openQuestions', entry._id)).toMatchObject({
       title: FERRY,
       question: FERRY,
-      tags: ['capture'],
-      status: 'idea',
     });
     expect(String(bible.model.get('openQuestions', entry._id)?.body)).toContain('Story time 2034');
   });
@@ -455,7 +449,7 @@ describe('IP-17 capture can mint a list item', () => {
     ).find((i) => i.label === 'Jinan')!;
     expect(item.id).toBe('jinan');
     const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
-    expect(made).toMatchObject({ communityId: 'jinan', startYear: 2045, status: 'idea' });
+    expect(made).toMatchObject({ communityId: 'jinan', startYear: 2045 });
     expect(bible.model.get('proposals', add._id)).toMatchObject({
       state: 'approved',
       appliedItemId: 'jinan',
@@ -658,7 +652,6 @@ describe('CR-7 the fast file', () => {
       demographic: '18-30',
       startYear: 2065,
       endYear: 2100,
-      status: 'idea',
     });
     expect(line!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
     expect(line!.reason).toMatch(/\(Claude, capture, fast file, run /);
@@ -823,7 +816,6 @@ describe('CR-9 a split capture stops and fails as one', () => {
 
 describe('CR-6 Route A files from the box, without Claude', () => {
   const MOONCAKES = 'Teenagers in Guangzhou start to eat mooncakes with coffee by the 2050s.';
-  const today = '2026-10-22';
   const route = (text: string) =>
     routeCapture(text, buildIndex(indexFromSession(bible)), {
       storyYear: 2034,
@@ -852,12 +844,8 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     expect(live('culturalEntries')).toHaveLength(before);
     expect(bible.model.all('conversations')).toHaveLength(runsBefore);
 
-    const idea = defaultStatus(
-      bible.model.all('lists') as unknown as Parameters<typeof defaultStatus>[0],
-      'idea',
-    );
     const { calls, via } = logged();
-    const filing = await fileLocalDrafts(via, line!.drafts, today, idea);
+    const filing = await fileLocalDrafts(via, line!.drafts);
     expect(calls).toEqual(['entry.create']);
     expect(filing.failed).toEqual([]);
     expect(live('culturalEntries')).toHaveLength(before + 1);
@@ -868,11 +856,8 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       demographic: '0-18',
       startYear: 2050,
       endYear: 2100,
-      status: idea,
-      sourceNote: localSourceNote(today),
       body: MOONCAKES,
     });
-    expect(made.sourceNote).toBe('From a capture on 2026-10-22, filed without Claude.');
     const undo = new UndoManager();
     undo.record(filing.command!);
     await undo.step('undo', undoIO(invoke));
@@ -897,7 +882,7 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     expect(communityLabels()).not.toContain('Jinan');
 
     const { calls, via } = logged();
-    const local = await fileLocalDrafts(via, drafts, today, 'idea');
+    const local = await fileLocalDrafts(via, drafts);
     const approved = await fileCapture(via, proposals, []);
     const filing = mergeFilings(local, approved);
     expect(filing.failed).toEqual([]);
@@ -908,7 +893,7 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       'worldEvents',
     ]);
     const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
-    expect(made).toMatchObject({ communityId: 'jinan', sourceNote: localSourceNote(today) });
+    expect(made).toMatchObject({ communityId: 'jinan' });
     // The approved proposals keep Claude's source note; only the local line says without Claude.
     expect(String(bible.model.get('moments', filing.filed[1]!.id)!.sourceNote)).not.toContain(
       'without Claude',
@@ -955,14 +940,10 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       bible.model.get('lists', 'communities')!.items as { id: string; label: string }[];
     // Route A: the box mints Hangzhou for its line.
     const [line] = route(MOONCAKES).facts;
-    const local = await fileLocalDrafts(
-      invoke,
-      [
-        { op: 'listAdd', listId: 'communities', label: 'Hangzhou', ref: 'new:hangzhou' },
-        ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:hangzhou' } })),
-      ],
-      today,
-    );
+    const local = await fileLocalDrafts(invoke, [
+      { op: 'listAdd', listId: 'communities', label: 'Hangzhou', ref: 'new:hangzhou' },
+      ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:hangzhou' } })),
+    ]);
     const hangzhou = items().find((i) => i.label === 'Hangzhou')!;
     const madeId = local.filed[0]!.id;
     // Another entry takes up the new item before the writer undoes the filing.
@@ -973,7 +954,6 @@ describe('CR-6 Route A files from the box, without Claude', () => {
         communityId: hangzhou.id,
         startYear: 2040,
         endYear: 2050,
-        status: 'idea',
       },
     });
     const undo = new UndoManager();
@@ -1001,7 +981,6 @@ describe('CR-6 Route A files from the box, without Claude', () => {
         communityId: jinan.id,
         startYear: 2046,
         endYear: 2050,
-        status: 'idea',
       },
     });
     const undo2 = new UndoManager();

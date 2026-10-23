@@ -35,7 +35,6 @@ const at = () => `2026-02-01T00:00:${String(seq++).padStart(2, '0')}.000Z`;
 const person = (id: string, born: number | null, died: number | null = null): Doc => ({
   _id: id,
   title: id,
-  status: 'canon',
   createdAt: at(),
   names: { full: id },
   birth: born === null ? { unknown: true } : { year: born },
@@ -350,7 +349,7 @@ describe('FT-6 warnings and the self-ancestor refusal', () => {
     expect(() =>
       planLinkExisting(
         fixtureGraph(),
-        { kind: 'child', anchorId: 'H5', otherId: 'H1', type: 'biological', status: 'idea' },
+        { kind: 'child', anchorId: 'H5', otherId: 'H1', type: 'biological' },
         () => 'NEW',
       ),
     ).toThrow(
@@ -408,7 +407,6 @@ describe('FT-2 in-tree actions', () => {
   const base: Omit<AddRelative, 'kind' | 'anchorId'> = {
     name: 'New Person',
     birthYear: 2060,
-    status: 'idea',
     linkType: 'biological',
     unionType: 'married',
     coParentId: null,
@@ -458,7 +456,6 @@ describe('FT-2 in-tree actions', () => {
       data: {
         _id: 'N1',
         title: 'Sam Hale and New Person',
-        status: 'idea',
         partnerIds: ['H6', 'N0'],
         type: 'partnered',
         startYear: null,

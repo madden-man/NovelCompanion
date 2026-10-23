@@ -27,11 +27,11 @@ test.beforeAll(async () => {
   await expect(page.getByTestId('workspace')).toBeVisible();
   // A few places, and one emptied from the trash, which takes a snapshot first (BK-1).
   for (const title of ['Portland', 'Guangzhou', 'The Hale house']) {
-    await invoke('entry.create', { collection: 'places', data: { title, status: 'canon' } });
+    await invoke('entry.create', { collection: 'places', data: { title } });
   }
   const { entry } = await invoke('entry.create', {
     collection: 'places',
-    data: { title: 'Gone for good', status: 'idea' },
+    data: { title: 'Gone for good' },
   });
   await invoke('entry.delete', { collection: 'places', id: entry._id });
   await invoke('trash.empty', {});
@@ -59,7 +59,7 @@ test('BK-1 BK-2 a snapshot taken on request can be restored, which takes a safet
 
   await invoke('entry.create', {
     collection: 'places',
-    data: { title: 'Added after the snapshot', status: 'idea' },
+    data: { title: 'Added after the snapshot' },
   });
   expect(
     (await invoke('entry.list', { collection: 'places', trash: 'exclude' })).entries.filter(

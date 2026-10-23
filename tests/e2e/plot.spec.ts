@@ -1098,7 +1098,6 @@ test('PC-1 the place tree nests places and shows each description for the year',
     data: {
       title: 'Pearl District',
       parentId: 'PLC1',
-      status: 'canon',
       descriptions: [
         { startYear: null, endYear: 2034, text: 'Warehouses by the river.' },
         { startYear: 2035, endYear: null, text: 'Stilt houses above the waterline.' },
@@ -1134,7 +1133,6 @@ test('GL-1 a term that breaks the language system is flagged and listed, and the
       characters: '广东',
       language: 'mandarin',
       romanization: 'gwong2dung1',
-      status: 'canon',
     },
   });
   await rail(page, 'Romanization').click();
@@ -1180,7 +1178,6 @@ test('GL-3 a name with a term links to it; a run with no term offers Add to glos
       title: 'Wen Test',
       names: { full: 'Wen Test', chinese: '文测' },
       birth: { year: 1990 },
-      status: 'idea',
     },
   });
   await rail(page, 'Characters').click();
@@ -1203,7 +1200,7 @@ test('GL-3 a name with a term links to it; a run with no term offers Add to glos
 test('GL-3 hovering a glossary name in the place tree shows its romanization and meaning', async () => {
   await invoke('entry.create', {
     collection: 'places',
-    data: { title: '月饼街', status: 'idea' },
+    data: { title: '月饼街' },
   });
   await rail(page, 'Place tree').click();
   const run = page.getByTestId('places-view').getByTestId('zh').first();
@@ -1214,7 +1211,7 @@ test('GL-3 hovering a glossary name in the place tree shows its romanization and
 test('GL-3 the editor shows a Meaning control on a title with Chinese and a preview of a long text field, both with the glossary meaning on focus', async () => {
   await invoke('entry.create', {
     collection: 'places',
-    data: { title: '晓曦的信', body: '她写了晓曦和月饼。\n\n第二段。', status: 'idea' },
+    data: { title: '晓曦的信', body: '她写了晓曦和月饼。\n\n第二段。' },
   });
   await sectionList(page, 'Places');
   await page

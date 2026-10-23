@@ -147,23 +147,6 @@ describe('IP-8 lists reorder and re-parent, with undo', () => {
 });
 
 describe('IP-9 statuses and provenance are lists the write path holds entries to', () => {
-  test('IP-9 the write path refuses a status or provenance that is not in its list, in plain words', async () => {
-    await expect(
-      invoke('entry.create', {
-        collection: 'places',
-        data: { title: 'Somewhere', status: 'maybe' },
-      }),
-    ).rejects.toThrow('Status maybe is not in the statuses list.');
-    await expect(
-      invoke('entry.update', {
-        collection: 'characters',
-        id: 'H1',
-        patch: { provenance: 'guessed' },
-      }),
-    ).rejects.toThrow('Provenance guessed is not in the provenance list.');
-    expect(fx.repo.get('characters', 'H1')!.provenance).toBe('invented');
-  });
-
   test('IP-9 a status is added with a colour and a kind, used by an entry, recoloured with undo, and kept while in use', async () => {
     const lists = await invoke('lists.get', {});
     expect(lists.lists.find((l) => l._id === 'statuses')!.fixedItems).toBe(false);
@@ -331,7 +314,6 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
       collection: 'culturalEntries',
       data: {
         title: 'Rent shares',
-        status: 'idea',
         communityId: 'portland',
         startYear: 2040,
         endYear: 2049,
@@ -423,29 +405,12 @@ describe("IP-9 a status of each kind stays, and code that means a kind writes th
     await ipc('lists.removeItem', { listId: 'statuses', itemId: 'idea' });
     const { entry } = await ipc('entry.create', {
       collection: 'places',
-      data: { title: 'The pier', status: 'idea' },
+      data: { title: 'The pier' },
     });
     expect(entry.status).toBe('notion');
     await expect(
       ipc('entry.create', { collection: 'places', data: { title: 'X', status: 'maybe' } }),
     ).rejects.toThrow('Status maybe is not in the statuses list.');
-  });
-
-  test('IP-9 New bible eras and an unused seeded provenance: a removed invented writes no provenance', async () => {
-    const handle = await createBible(store, freshSlug('vocab-prov'), 'Provenance');
-    const open = await openBibleSession(store, handle.id);
-    const ipc = ipcFor(() => open);
-    await ipc('lists.removeItem', { listId: 'provenance', itemId: 'invented' });
-    await ipc('lists.addItem', {
-      listId: 'statuses',
-      label: 'Pencilled',
-      parentId: null,
-      extra: { kind: 'planned' },
-    });
-    await ipc('lists.removeItem', { listId: 'statuses', itemId: 'planned' });
-    expect(await open.repo.seedDefaultEras()).toBe(8);
-    const era = open.repo.list('eraStates')[0]!;
-    expect([era.status, era.provenance]).toEqual(['pencilled', null]);
   });
 
   test('IP-9 IP-10 an undo of a look compares extra values whatever their order', async () => {

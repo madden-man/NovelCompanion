@@ -108,7 +108,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     const b = await openBibleSession(store, bSlug);
     const created = await a.repo.create('characters', {
       title: 'Only in A',
-      status: 'canon',
       names: { full: 'Only in A' },
       birth: { year: 2000 },
     });
@@ -197,7 +196,7 @@ describe('CC-4 migration 8 clears findings that were written without a key', () 
   test('CC-4 a finding with no key goes to the trash, a keyed one stays, and a re-run of the migration changes nothing', async () => {
     const bible = await createBible(store, freshSlug('finding-keys'), 'Findings');
     const at = '2026-01-15T09:00:00.000Z';
-    const base = { title: 't', status: 'planned', state: 'open', kind: 'alignment', createdAt: at };
+    const base = { title: 't', state: 'open', kind: 'alignment', createdAt: at };
     await bible.collection('findings').insertMany([
       { _id: 'old', ...base, modifiedAt: at },
       { _id: 'empty', ...base, key: '', modifiedAt: at },
@@ -225,7 +224,6 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
       {
         _id: 'b1',
         title: 'one',
-        status: 'planned',
         arcIds: ['A', 'B'],
         order: 4,
         createdAt: at,
@@ -234,7 +232,6 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
       {
         _id: 'b2',
         title: 'two',
-        status: 'planned',
         arcIds: [],
         order: 2,
         createdAt: at,
@@ -261,7 +258,7 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
   test('TH-1 a chapter theme list becomes theme appearances with empty notes, keeping notes that exist', async () => {
     const bible = await createBible(store, freshSlug('theme-apps'), 'Themes');
     const at = '2026-01-15T09:00:00.000Z';
-    const base = { status: 'planned', createdAt: at, modifiedAt: at };
+    const base = { createdAt: at, modifiedAt: at };
     await bible.collection('themes').insertMany([
       { _id: 'T1', title: 'Water', appearances: [], ...base },
       { _id: 'T2', title: 'Fire', appearances: [{ chapterId: 'C1', note: 'kept' }], ...base },

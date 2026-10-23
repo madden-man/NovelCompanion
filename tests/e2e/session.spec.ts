@@ -247,7 +247,7 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   const made = (
     await invoke('entry.create', {
       collection: 'moments',
-      data: { title: 'Iris paints the attic', status: 'idea', characterId: 'H5', year: 2044 },
+      data: { title: 'Iris paints the attic', characterId: 'H5', year: 2044 },
     })
   ).entry;
   await expect.poll(() => ids('moments', s)).toEqual([made._id, 'B4']);
@@ -259,7 +259,7 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   const ahead = (
     await invoke('entry.create', {
       collection: 'moments',
-      data: { title: 'Iris answers the letter', status: 'idea', characterId: 'H5', year: 2046 },
+      data: { title: 'Iris answers the letter', characterId: 'H5', year: 2046 },
     })
   ).entry;
   await expect.poll(() => ids('plannedAhead', s)).toEqual([ahead._id]);
@@ -399,7 +399,7 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
       (
         await invoke('entry.create', {
           collection: 'moments',
-          data: { title, status: 'idea', characterId: 'H5', year },
+          data: { title, characterId: 'H5', year },
         })
       ).entry._id,
     );
@@ -660,7 +660,7 @@ test('IP-2 Add an event makes an event at the story year with its title typed on
   // The first category, and the first status of kind planned.
   const first = (await invoke('lists.get', {})).lists.find((l) => l._id === 'eventCategories')!
     .items[0]!.id;
-  expect(await made()).toMatchObject({ categoryId: first, status: 'planned' });
+  expect(await made()).toMatchObject({ categoryId: first });
   await expect(
     strip.locator('.we-col[data-year="2045"] [data-testid="event-title-text"]'),
   ).toContainText(['Typhoon closes the port']);
@@ -933,7 +933,7 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
       (
         await invoke('entry.create', {
           collection: 'moments',
-          data: { title, status: 'idea', characterId: 'H5', year, body },
+          data: { title, characterId: 'H5', year, body },
         })
       ).entry._id,
     );

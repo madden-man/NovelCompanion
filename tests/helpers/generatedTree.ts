@@ -17,7 +17,6 @@ export function generatedTree(count = 200, gens = 6) {
     characters.push({
       _id: id,
       title: name,
-      status: 'planned',
       createdAt: time(n),
       names: { full: name },
       birth: { year: born },
@@ -31,7 +30,6 @@ export function generatedTree(count = 200, gens = 6) {
     unions.push({
       _id: `U-${a}-${b}`,
       title: `Union ${a} ${b}`,
-      status: 'planned',
       createdAt: time(1000 + unions.length),
       partnerIds: [a, b],
       type: 'married',
@@ -42,7 +40,6 @@ export function generatedTree(count = 200, gens = 6) {
     parentLinks.push({
       _id: `L-${parentId}-${childId}`,
       title: `Link ${parentId} ${childId}`,
-      status: 'planned',
       createdAt: time(5000 + parentLinks.length),
       parentId,
       childId,

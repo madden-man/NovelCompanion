@@ -31,7 +31,6 @@ describe('A51 moment kinds: the list and the schema', () => {
     const m = Moment.parse({
       _id: 'M1',
       title: 'Born',
-      status: 'canon',
       characterId: 'C1',
       year: 1990,
       createdAt: at,

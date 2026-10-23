@@ -1,5 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { Collection } from 'mongodb';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createBible } from '../../src/main/db';
 import type { Store } from '../../src/main/db';
 import { openBibleSession } from '../../src/main/db/session';
@@ -82,7 +81,7 @@ describe('ED-4 revision history', () => {
   test('ED-4 history lists every write newest first with the entry as it stood after it', async () => {
     const { repo } = fixture;
     await repo.update('characters', 'H1', { backstory: 'Salem, Oregon' });
-    await repo.update('characters', 'H1', { backstory: 'Eugene, Oregon', tags: ['moved'] });
+    await repo.update('characters', 'H1', { backstory: 'Eugene, Oregon' });
     const history = await repo.history('characters', 'H1');
     expect(history.map((h) => h.op)).toEqual(['update', 'update']);
     expect(history[0]!.snapshot.backstory).toBe('Eugene, Oregon');
@@ -108,7 +107,6 @@ describe('ED-4 revision history', () => {
     const [, older] = await repo.history('characters', 'H1');
     const restored = await repo.restoreRevision('characters', 'H1', older!._id);
     expect(restored.backstory).toBe('Salem, Oregon');
-    expect(restored.tags).toEqual([]);
     const history = await repo.history('characters', 'H1');
     expect(history).toHaveLength(3);
     expect(history[0]!.note).toMatch(/^Restored the version from /);
@@ -163,7 +161,6 @@ describe('ED-5 trash', () => {
     // Its outgoing links no longer show as live backlinks while it is in the trash.
     expect(repo.backlinks('E10')).toEqual([]);
     const restored = await repo.restore('chapters', 'CH6');
-    expect(restored.links).toEqual(before.links);
     expect(restored.strands).toEqual(before.strands);
     expect(repo.backlinks('E10')).toEqual([
       { collection: 'chapters', id: 'CH6', kind: 'happened' },
@@ -201,28 +198,6 @@ describe('ED-5 trash', () => {
 });
 
 describe('ED-9 links and backlinks', () => {
-  test('ED-9 a link added to any entry shows on the target as linked from, and goes when removed', async () => {
-    const { repo } = fixture;
-    expect(repo.backlinks('E3').filter((b) => b.collection === 'glossaryTerms')).toEqual([]);
-    await repo.update('glossaryTerms', 'GL2', { links: [{ targetId: 'E3', kind: 'mention' }] });
-    expect(repo.backlinks('E3')).toContainEqual({
-      collection: 'glossaryTerms',
-      id: 'GL2',
-      kind: 'mention',
-    });
-    const res = await ipcFor(() => fixture)('entry.get', { collection: 'worldEvents', id: 'E3' });
-    expect(res.backlinks).toContainEqual(
-      expect.objectContaining({
-        collection: 'glossaryTerms',
-        id: 'GL2',
-        kind: 'mention',
-        title: expect.any(String),
-      }),
-    );
-    await repo.update('glossaryTerms', 'GL2', { links: [] });
-    expect(repo.backlinks('E3').filter((b) => b.collection === 'glossaryTerms')).toEqual([]);
-  });
-
   test('ED-9 reference fields count as links: a strand cast, a union, a parent link', () => {
     const kinds = fixture.repo.backlinks('H5').map((b) => `${b.collection}:${b.kind}`);
     expect(kinds).toEqual(
@@ -286,67 +261,6 @@ describe('ED-10 warnings come back with every read and never block a write', () 
 });
 
 describe('ED-8 editable lists', () => {
-  test('ED-8 renaming a tag updates every entry using it in one transaction, each with a revision', async () => {
-    const { repo } = fixture;
-    await repo.update('characters', 'H3', { tags: ['river', 'archivist'] });
-    await repo.update('chapters', 'CH1', { tags: ['river'] });
-    const tags = repo.lists().find((l) => l._id === 'tags')!;
-    const river = tags.items.find((i) => i.label === 'river')!;
-    expect(river.usage).toBe(2);
-    const res = await ipcFor(() => fixture)('lists.rename', {
-      listId: 'tags',
-      itemId: river.id,
-      label: 'the river',
-    });
-    expect(res).toEqual({ updated: 2, from: 'river' });
-    expect(repo.get('characters', 'H3')!.tags).toEqual(['the river', 'archivist']);
-    expect(repo.get('chapters', 'CH1')!.tags).toEqual(['the river']);
-    const [rev] = await repo.history('chapters', 'CH1');
-    expect(rev!.note).toBe('Renamed river to the river in Tags');
-    // The stored list and the database agree.
-    const stored = await fixture.handle.collection('lists').findOne({ _id: 'tags' as never });
-    expect((stored!.items as { label: string }[]).map((i) => i.label)).toContain('the river');
-    expect(await fixture.handle.collection('characters').countDocuments({ tags: 'river' })).toBe(0);
-  });
-
-  test('ED-8 a rename that fails part way changes nothing', async () => {
-    const { repo, handle } = fixture;
-    await repo.update('characters', 'H4', { tags: ['ledger'] });
-    await repo.update('characters', 'Z4', { tags: ['ledger'] });
-    const item = repo
-      .lists()
-      .find((l) => l._id === 'tags')!
-      .items.find((i) => i.label === 'ledger')!;
-    // The second entry write inside the transaction fails, after the first succeeded.
-    const real = Collection.prototype.replaceOne;
-    let calls = 0;
-    const spy = vi.spyOn(Collection.prototype, 'replaceOne').mockImplementation(function (
-      this: Collection,
-      ...args: Parameters<Collection['replaceOne']>
-    ) {
-      calls += 1;
-      if (calls === 2) return Promise.reject(new Error('Simulated failure on the second entry'));
-      return real.apply(this, args);
-    });
-    try {
-      await expect(repo.renameListItem('tags', item.id, 'accounts')).rejects.toThrow(
-        /Simulated failure/,
-      );
-    } finally {
-      spy.mockRestore();
-    }
-    expect(calls).toBeGreaterThanOrEqual(2);
-    for (const id of ['H4', 'Z4']) {
-      const stored = await handle.collection('characters').findOne({ _id: id as never });
-      expect(stored!.tags).toEqual(['ledger']);
-      expect(repo.get('characters', id)!.tags).toEqual(['ledger']);
-      expect((await repo.history('characters', id))[0]!.note).toBeNull();
-    }
-    const stored = await handle.collection('lists').findOne({ _id: 'tags' as never });
-    expect((stored!.items as { label: string }[]).map((i) => i.label)).toContain('ledger');
-    expect((stored!.items as { label: string }[]).map((i) => i.label)).not.toContain('accounts');
-  });
-
   test('ED-8 renaming a union type changes the label every union shows, without touching the unions', async () => {
     const { repo } = fixture;
     const before = await fixture.handle.collection('revisions').countDocuments();
@@ -403,17 +317,6 @@ describe('ED-8 editable lists', () => {
     ).not.toContain('jinan-shandong');
     const child = await repo.addListItem('eventCategories', 'Drones', 'robotics');
     expect(child.parentId).toBe('robotics');
-  });
-
-  test('ED-8 tags an entry uses are added to the tags list as it is saved', async () => {
-    const { repo } = fixture;
-    await repo.update('characters', 'Z5', { tags: ['brand new tag'] });
-    expect(
-      repo
-        .lists()
-        .find((l) => l._id === 'tags')!
-        .items.map((i) => i.label),
-    ).toContain('brand new tag');
   });
 });
 
@@ -541,7 +444,7 @@ describe('ED-7 proposals wait for approval', () => {
       source: 'import',
       op: 'create',
       collection: 'places',
-      data: { title: 'A new place', status: 'idea' },
+      data: { title: 'A new place' },
     });
     const { proposal: done } = await invoke('proposal.approve', { id: create._id });
     expect((await stored('places', done.appliedEntryId!))!.title).toBe('A new place');

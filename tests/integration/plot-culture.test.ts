@@ -200,7 +200,6 @@ describe('CU-2 PC-1 culture and places over IPC', () => {
       communityId: 'portland',
       startYear: 2040,
       endYear: 2050,
-      status: 'idea',
     });
     await invoke('entry.update', {
       collection: 'culturalEntries',
@@ -213,11 +212,10 @@ describe('CU-2 PC-1 culture and places over IPC', () => {
   });
 
   test('PC-1 places nest and place.describe returns the path, the description for the year, and the children', async () => {
-    const city = await make('places', { title: 'Portland', status: 'canon' });
+    const city = await make('places', { title: 'Portland' });
     const hood = await make('places', {
       title: 'Pearl District',
       parentId: city._id,
-      status: 'canon',
       descriptions: [
         { startYear: null, endYear: 2034, text: 'Warehouses.' },
         { startYear: 2035, endYear: null, text: 'Stilt houses.' },
@@ -243,7 +241,6 @@ describe('GL-1 GL-2 glossary settings, warnings, and search', () => {
     characters: '你好',
     language: 'mandarin',
     meaning: 'hello',
-    status: 'canon',
     ...extra,
   });
 

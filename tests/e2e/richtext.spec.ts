@@ -50,7 +50,6 @@ test.beforeAll(async () => {
         startYear: 2040,
         endYear: 2049,
         body: ERA_HTML,
-        status: 'planned',
       },
     },
   ]);
@@ -275,7 +274,7 @@ test('A44 ED-9 @ in a character box links an entry, stores @Title, and shows it 
   for (const name of ['Wei Li', 'Margaret Hale']) {
     await invoke('entry.create', {
       collection: 'characters',
-      data: { title: name, status: 'canon', names: { full: name }, birth: { year: 1990 } },
+      data: { title: name, names: { full: name }, birth: { year: 1990 } },
     });
   }
   const p = await openCharacter('Wei Li');

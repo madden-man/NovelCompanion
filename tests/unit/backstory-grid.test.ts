@@ -545,7 +545,7 @@ describe('SM-9 TM-3 the chapter being written', () => {
 describe('NF-1 the Backstory grid with a 5,000-moment bible', () => {
   test('NF-1 SM-9 rows, lifespans, markers and hit tests for 5,000 moments of 500 people lay out under 100 ms', () => {
     const now = '2026-01-01T00:00:00.000Z';
-    const base = { status: 'canon', body: '', createdAt: now, modifiedAt: now };
+    const base = { body: '', createdAt: now, modifiedAt: now };
     const families: Doc[] = Array.from({ length: 20 }, (_, f) => ({
       ...base,
       _id: `F${f}`,

@@ -82,7 +82,7 @@ describe('BK-1 a snapshot is a complete JSON dump of every collection', () => {
       op: 'update',
       collection: 'characters',
       targetId: 'H1',
-      data: { tags: ['reviewed'] },
+      data: { backstory: 'Reviewed.' },
     });
     await open.repo.applyProposal(proposal._id);
     const labels = (await open.snapshots!.list()).map((s) => s.label);
@@ -119,11 +119,10 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     const open = await fixtureSession('bk-restore');
     const before = await dumpBible(open.handle);
     const snap = await open.snapshots!.take('manual', 'before edits');
-    await open.repo.update('characters', 'H1', { tags: ['edited'] });
+    await open.repo.update('characters', 'H1', { backstory: 'Edited.' });
     await open.repo.softDelete('characters', 'H2');
     const made = await open.repo.create('moments', {
       title: 'A new moment',
-      status: 'idea',
       characterId: 'H1',
       year: 2040,
     });
@@ -137,7 +136,9 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     const after = await dumpBible(open.handle);
     expect(after.collections).toEqual(before.collections);
     expect(open.repo.get('characters', 'H2')).toBeDefined();
-    expect(open.repo.get('characters', 'H1')!.tags).toEqual([]);
+    expect(open.repo.get('characters', 'H1')!.backstory).toBe(
+      'A schoolteacher who kept every letter the family ever sent.',
+    );
     expect(open.repo.get('moments', made._id)).toBeUndefined();
     expect(open.search.search('A new moment').map((h) => h.id)).not.toContain(made._id);
     expect(reloads).toHaveLength(1);
@@ -229,11 +230,11 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     };
     manifest.counts.chapters = chapters.length;
     await writeFile(join(dir, 'manifest.json'), JSON.stringify(manifest));
-    await open.repo.update('characters', 'H1', { tags: ['kept'] });
+    await open.repo.update('characters', 'H1', { backstory: 'Kept.' });
     const before = await dumpBible(open.handle);
     await expect(restoreSnapshot(open, snap.id)).rejects.toThrow();
     expect((await dumpBible(open.handle)).collections).toEqual(before.collections);
-    expect(open.repo.get('characters', 'H1')!.tags).toEqual(['kept']);
+    expect(open.repo.get('characters', 'H1')!.backstory).toBe('Kept.');
   });
 
   test('BK-2 an unfinished snapshot folder is not listed or kept as a snapshot', async () => {
@@ -250,7 +251,7 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
   test('BK-3 every collection, revision, list, setting, and entry is identical after the round trip', async () => {
     const a = await fixtureSession('bk-export');
     // Give it history and settings so the round trip has something to lose.
-    await a.repo.update('characters', 'H1', { tags: ['kept', 'second'] });
+    await a.repo.update('characters', 'H1', { backstory: 'Kept, second.' });
     await a.repo.softDelete('moments', 'H5-voice-0');
     await a.repo.setStoryTime({ year: 2045 });
     await a.repo.setTreePositions({ H1: { x: 10, y: 20 } });
@@ -383,9 +384,9 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
     const before = await open.handle.collection('characters').findOne({ _id: 'H1' as never });
     const revisionsBefore = await open.repo.revisions('characters', 'H1');
     kill = true;
-    await expect(
-      open.repo.update('characters', 'H1', { tags: ['half written'], backstory: 'Half.' }),
-    ).rejects.toThrow(/cancelled before it finished/);
+    await expect(open.repo.update('characters', 'H1', { backstory: 'Half.' })).rejects.toThrow(
+      /cancelled before it finished/,
+    );
     expect(await open.handle.collection('characters').findOne({ _id: 'H1' as never })).toEqual(
       before,
     );
@@ -395,8 +396,8 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
     // A multi-document write is all or nothing too.
     await expect(
       open.repo.createMany([
-        { collection: 'places', data: { _id: 'KILL1', title: 'One', status: 'idea' } },
-        { collection: 'places', data: { _id: 'KILL2', title: 'Two', status: 'idea' } },
+        { collection: 'places', data: { _id: 'KILL1', title: 'One' } },
+        { collection: 'places', data: { _id: 'KILL2', title: 'Two' } },
       ]),
     ).rejects.toThrow(/cancelled before it finished/);
     expect(
@@ -405,19 +406,21 @@ describe('BK-4 a write is a single document or a transaction, so a forced quit n
         .countDocuments({ _id: { $in: ['KILL1', 'KILL2'] } as never }),
     ).toBe(0);
     kill = false;
-    await open.repo.update('characters', 'H1', { tags: ['written'] });
-    expect(open.repo.get('characters', 'H1')!.tags).toEqual(['written']);
+    await open.repo.update('characters', 'H1', { backstory: 'Written.' });
+    expect(open.repo.get('characters', 'H1')!.backstory).toBe('Written.');
   });
 
   test('BK-4 two windows saving one entry never merge: the later save replaces the whole document', async () => {
     const open = await fixtureSession('bk-stale');
     const dup = await openBibleSession(store, open.handle.id);
-    await dup.repo.update('characters', 'H1', { tags: ['other window'] });
-    await expect(open.repo.update('characters', 'H1', { tags: ['stale'] })).resolves.toBeDefined();
+    await dup.repo.update('characters', 'H1', { backstory: 'Other window.' });
+    await expect(
+      open.repo.update('characters', 'H1', { backstory: 'Stale.' }),
+    ).resolves.toBeDefined();
     // The first window's read model was stale, but the write read the current document, so the later save wins whole.
     expect(
-      (await open.handle.collection('characters').findOne({ _id: 'H1' as never }))!.tags,
-    ).toEqual(['stale']);
+      (await open.handle.collection('characters').findOne({ _id: 'H1' as never }))!.backstory,
+    ).toBe('Stale.');
   });
 });
 

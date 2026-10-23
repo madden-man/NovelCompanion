@@ -35,7 +35,6 @@ const at = '2026-01-15T09:00:00.000Z';
 const moment = (id: string, title: string, extra: Document = {}) => ({
   _id: id,
   title,
-  status: 'canon',
   characterId: 'H1',
   year: 2030,
   createdAt: at,

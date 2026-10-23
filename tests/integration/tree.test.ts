@@ -113,7 +113,7 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
     await expect(
       invoke('entry.create', {
         collection: 'parentLinks',
-        data: { title: 'Loop', status: 'idea', parentId: 'H5', childId: 'H1', type: 'biological' },
+        data: { title: 'Loop', parentId: 'H5', childId: 'H1', type: 'biological' },
       }),
     ).rejects.toThrow(msg);
     await expect(
@@ -124,7 +124,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOPKID',
               title: 'Loop kid',
-              status: 'idea',
               names: { full: 'Loop kid' },
               birth: { unknown: true },
             },
@@ -134,7 +133,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOP1',
               title: 'a',
-              status: 'idea',
               parentId: 'Z5',
               childId: 'LOOPKID',
               type: 'biological',
@@ -145,7 +143,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOP2',
               title: 'b',
-              status: 'idea',
               parentId: 'LOOPKID',
               childId: 'H3',
               type: 'biological',
@@ -170,7 +167,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       collection: 'parentLinks',
       data: {
         title: 'X1 parent of U1',
-        status: 'idea',
         parentId: 'X1',
         childId: 'U1',
         type: 'guardian',
@@ -181,7 +177,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       collection: 'parentLinks',
       data: {
         title: 'U1 parent of X1',
-        status: 'idea',
         parentId: 'U1',
         childId: 'X1',
         type: 'guardian',
@@ -201,7 +196,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
         data: {
           _id: 'NEWKID',
           title: 'New kid',
-          status: 'idea',
           names: { full: 'New kid' },
           birth: { year: 2060 },
         },
@@ -211,7 +205,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
         data: {
           _id: 'NEWL1',
           title: 'Z5 parent of New kid',
-          status: 'idea',
           parentId: 'Z5',
           childId: 'NEWKID',
           type: 'biological',
@@ -334,7 +327,7 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
         source: 'claude',
         op: 'create',
         collection: 'worldEvents',
-        data: { title: 'Flood', status: 'idea', placeIds: [], reality: 'real' },
+        data: { title: 'Flood', placeIds: [], reality: 'real' },
       }),
     ).rejects.toThrow('World events have no fields named placeIds, reality');
     // Nested: a dropped name field inside names is refused, naming its path.
