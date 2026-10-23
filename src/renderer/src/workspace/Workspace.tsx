@@ -153,7 +153,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
   const openSection = (collection: EntryCollection) =>
     setView(
       collection === 'moments'
-        ? { kind: 'backstory' }
+        ? { kind: 'backstory', at: Date.now() }
         : { kind: 'section', collection, selected: null, creating: false },
     );
   useOpenBackstory((characterId, at, momentId) =>
@@ -211,8 +211,9 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('World events', view.kind === 'timeline', () =>
               setView({ kind: 'timeline' }),
             )}
+            {/* A50: Backstory again from the rail is everyone, also from a person's timeline. */}
             {railButton('Backstory', view.kind === 'backstory', () =>
-              setView({ kind: 'backstory' }),
+              setView({ kind: 'backstory', at: Date.now() }),
             )}
             {railButton('Continuity checker', view.kind === 'continuity', () =>
               setView({ kind: 'continuity', tab: 'alignment' }),

@@ -1001,6 +1001,22 @@ test('SM-9 SM-10 A50 Backstory opens on a person given to it: that person’s ti
   await expect(grid().locator('.bs-row')).toHaveCount(1);
 });
 
+test('SM-9 A50 the rail’s Backstory button in a person’s timeline shows the grid with everyone, the pick kept', async () => {
+  await page.evaluate(openBackstory, 'H5');
+  await expect(personView()).toHaveCount(1);
+  await rail(page, 'Backstory').click();
+  await expect(personView()).toHaveCount(0);
+  await expect(grid().locator('.bs-row')).toHaveCount(13);
+  await expect(grid().locator('.wg-group')).not.toHaveCount(0);
+  await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
+  await expect(picked()).toHaveText('Iris Hale-Zhou 晓曦, 2031');
+  // Asked for again, the person's timeline opens again.
+  await page.evaluate(openBackstory, 'H5');
+  await expect(personView()).toHaveCount(1);
+  await rail(page, 'Backstory').click();
+  await expect(personView()).toHaveCount(0);
+});
+
 test('SM-9 A50 a moment opened from search lands on Backstory in that person’s view with the dialog open; a moment not in the grid opens the plain screen', async () => {
   await page.locator('#rail-search').fill('Lives in Portland');
   const hit = page.getByTestId('search-results').locator('[data-hit="Z3-lives-1"]');

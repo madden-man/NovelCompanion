@@ -134,6 +134,9 @@ export function BackstoryView(props: {
       setPicked(props.characterId);
       setPerson(props.characterId);
       setSelected(null);
+    } else {
+      // A50: the rail's Backstory and List every moment show everyone; the pick stays.
+      setPerson(null);
     }
   }
 
