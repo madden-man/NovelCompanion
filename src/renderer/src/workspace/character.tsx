@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { WriteFieldset } from '../connection';
-import { STATUS_OPTIONS, manifests } from '../../../shared/schema';
+import { manifests } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { fieldByName } from '../../../shared/schema/manifest';
 import type { Response } from '../../../shared/ipc';
@@ -84,7 +84,7 @@ const newFamily = (label: string) => ({ name: label, title: label });
 
 /**
  * The character page (SM-1, A39, IP-1): the name and the Chinese name as the
- * heading, each a field in place; one line with birth, death, status,
+ * heading, each a field in place; one line with birth, death,
  * families and the age at the story year; the relatives as one read-only line
  * that opens the family tree; then three text boxes that grow with their
  * text: In the story, Description, and Backstory. Nothing else. Every field
@@ -97,7 +97,6 @@ export function CharacterPage(props: {
   onChange: (name: string, value: unknown) => void;
   /** IP-1: a field saved in place hands the stored entry to the page's autosave. */
   onSaved?: (entry: Entry) => void;
-  onMention: (targetId: string) => void;
   onOpen: (collection: EntryCollection, id: string) => void;
   /** Opens the family tree on this person. */
   onOpenTree?: (id: string) => void;
@@ -141,7 +140,6 @@ export function CharacterPage(props: {
         messages={props.messages}
         root={draft}
         grow={opts.grow}
-        onMention={props.onMention}
         onChange={(v) => props.onChange(name, v)}
       />
     );
@@ -217,14 +215,6 @@ export function CharacterPage(props: {
             dateBox="death"
             showLabel
             placeholder="Not recorded"
-            className="ed-field"
-          />
-          <EntryEditable
-            {...common}
-            kind="select"
-            path="status"
-            showLabel
-            options={STATUS_OPTIONS}
             className="ed-field"
           />
           <EntryEditable

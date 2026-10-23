@@ -8,9 +8,7 @@ import { Extension } from '@tiptap/core';
 import type { AnyExtension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { history } from '@tiptap/pm/history';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import type { EditorState } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { Plugin } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 
 export type RichMode = 'full' | 'inline';
@@ -27,9 +25,10 @@ const TextHistory = Extension.create({
   },
 });
 
-export const mentionKey = new PluginKey<DecorationSet>('mentionChips');
-
-/** Where `@Title` names a linked entry, longest title first. */
+/**
+ * Where `@Title` names a linked entry, longest title first.
+ * A53 shim, wave 3 deletes it with its test: no box draws mention chips since A52.
+ */
 export function mentionRanges(doc: PMNode, titles: readonly string[]) {
   const sorted = [...new Set(titles.filter((t) => t.trim()))].sort((a, b) => b.length - a.length);
   const out: { from: number; to: number }[] = [];
@@ -46,37 +45,6 @@ export function mentionRanges(doc: PMNode, titles: readonly string[]) {
     }
   });
   return out;
-}
-
-function chips(state: EditorState, titles: readonly string[]): DecorationSet {
-  return DecorationSet.create(
-    state.doc,
-    mentionRanges(state.doc, titles).map((r) =>
-      Decoration.inline(r.from, r.to, { class: 'mention-chip', 'data-mention': '' }),
-    ),
-  );
-}
-
-/** `@Title` of a linked entry shows as a chip; the text stays `@Title` (ED-9). */
-function MentionChips(titles: () => readonly string[]) {
-  return Extension.create({
-    name: 'mentionChips',
-    addProseMirrorPlugins() {
-      return [
-        new Plugin<DecorationSet>({
-          key: mentionKey,
-          state: {
-            init: (_, state) => chips(state, titles()),
-            apply: (tr, old, _prev, state) =>
-              tr.docChanged || tr.getMeta(mentionKey) ? chips(state, titles()) : old,
-          },
-          props: {
-            decorations: (state) => mentionKey.getState(state),
-          },
-        }),
-      ];
-    },
-  });
 }
 
 /**
@@ -104,10 +72,7 @@ const HeadingKeys = Extension.create({
   },
 });
 
-export function richExtensions(
-  mode: RichMode,
-  titles: () => readonly string[] = () => [],
-): AnyExtension[] {
+export function richExtensions(mode: RichMode): AnyExtension[] {
   const full = mode === 'full';
   return [
     StarterKit.configure({
@@ -127,7 +92,6 @@ export function richExtensions(
       horizontalRule: full ? {} : false,
     }),
     TextHistory,
-    MentionChips(titles),
     ...(full ? [HeadingKeys] : []),
   ];
 }

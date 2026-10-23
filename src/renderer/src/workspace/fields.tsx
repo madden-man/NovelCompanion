@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { collectionInfo, entryTitle, isEntryCollection } from '../../../shared/schema';
+import { entryTitle, isEntryCollection } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { blankItem } from '../../../shared/domain/blank';
 import { isPlainObject, joinPath } from '../../../shared/domain/paths';
@@ -28,22 +28,14 @@ export interface FieldProps {
   messages: Messages;
   /** The entry being edited, for fields that depend on another (custom values). */
   root: Doc;
-  /** Add a cross-link to the entry, used by `@` in long text (ED-9). */
-  onMention: (targetId: string) => void;
+  /** A53 shim, wave 3 deletes it: `@` stores no link, so nothing reads this. */
+  onMention?: (targetId: string) => void;
   /** SM-1: a long text box that grows with its text. Since A44 every long text box does. */
   grow?: boolean;
 }
 
 /** Kinds whose parts are not separate fields, so their messages show on them. */
-const OWNS_CHILD_MESSAGES = new Set([
-  'refs',
-  'refPair',
-  'links',
-  'tags',
-  'strings',
-  'listItems',
-  'storyDate',
-]);
+const OWNS_CHILD_MESSAGES = new Set(['refs', 'refPair', 'strings', 'listItems', 'storyDate']);
 
 function messagesFor(spec: FieldSpec, path: string, m: Messages) {
   const deep = OWNS_CHILD_MESSAGES.has(spec.kind);
@@ -152,8 +144,6 @@ export function Field(props: FieldProps) {
       return <ListItemsField {...props} />;
     case 'color':
       return <ColorField {...props} />;
-    case 'tags':
-      return <StringsField {...props} />;
     case 'strings':
       return <StringsField {...props} />;
     case 'ref':
@@ -162,13 +152,13 @@ export function Field(props: FieldProps) {
       return <RefsField {...props} />;
     case 'refPair':
       return <RefPairField {...props} />;
-    case 'links':
-      return <LinksField {...props} />;
     case 'object':
       return <ObjectField {...props} />;
     case 'objectList':
       return <ObjectListField {...props} />;
     case 'system':
+      return null;
+    default:
       return null;
   }
 }
@@ -195,7 +185,6 @@ const NOTE_FIELDS = new Set([
   'question',
   'decision',
   'stoppedAt',
-  'sourceNote',
   'worldContext',
   'quote',
   'resolutionNote',
@@ -203,16 +192,10 @@ const NOTE_FIELDS = new Set([
   'sceneNote',
 ]);
 
-/** Long text as a rich text box (A44) with an `@` link picker (ED-9). */
-function LongTextField({ spec, value, onChange, path, messages, onMention, root }: FieldProps) {
+/** Long text as a rich text box (A44); `@` types an `@` (A52). */
+function LongTextField({ spec, value, onChange, path, messages }: FieldProps) {
   const labelId = useId();
   const text = asString(value);
-  const ids = asArray(root.links)
-    .filter(isPlainObject)
-    .map((l) => String(l.targetId ?? ''))
-    .filter(Boolean);
-  const found = useLookup(ids);
-  const titles = ids.map((id) => found.get(id)?.title ?? '').filter(Boolean);
   return (
     <FieldShell spec={spec} path={path} messages={messages} labelId={labelId}>
       <RichText
@@ -220,8 +203,6 @@ function LongTextField({ spec, value, onChange, path, messages, onMention, root 
         onChange={onChange}
         labelledBy={labelId}
         size={NOTE_FIELDS.has(spec.name) ? 'notes' : 'prose'}
-        onMention={(hit) => onMention(hit.id)}
-        mentionTitles={titles}
       />
       <ZhPreview text={text} />
     </FieldShell>
@@ -674,58 +655,6 @@ function RefPairField({ spec, value, onChange, path, messages }: FieldProps) {
   );
 }
 
-/** Cross-links to any entry (ED-9): chips with their kind, a search to add one. */
-function LinksField({ spec, value, onChange, path, messages }: FieldProps) {
-  const links = asArray(value).filter(isPlainObject) as { targetId: string; kind: string }[];
-  const found = useLookup(links.map((l) => l.targetId));
-  const [kind, setKind] = useState('mention');
-  const kindId = useId();
-  return (
-    <FieldShell spec={spec} path={path} messages={messages} group>
-      <div className="chips">
-        {links.length === 0 && <span className="example-note">No links yet</span>}
-        {links.map((l, i) => {
-          const f = found.get(l.targetId);
-          return (
-            <span key={`${l.targetId}:${l.kind}:${i}`} className="chip link-chip">
-              {f ? `${collectionInfo[f.collection].singular}: ${f.title}` : l.targetId}
-              <span className="link-kind">{l.kind}</span>
-              <button
-                type="button"
-                className="chip-remove"
-                aria-label={`Remove the link to ${f?.title ?? l.targetId}`}
-                onClick={() => onChange(links.filter((_, j) => j !== i))}
-              >
-                ×
-              </button>
-            </span>
-          );
-        })}
-      </div>
-      <div className="row add-row">
-        <label className="sub-label" htmlFor={kindId}>
-          Link kind
-          <input
-            id={kindId}
-            className="kind-input"
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-          />
-        </label>
-        <EntryPicker
-          label="Find an entry to link"
-          onPick={(id) => {
-            const k = kind.trim() || 'mention';
-            if (!links.some((l) => l.targetId === id && l.kind === k)) {
-              onChange([...links, { targetId: id, kind: k }]);
-            }
-          }}
-        />
-      </div>
-    </FieldShell>
-  );
-}
-
 function SubFields(props: {
   fields: readonly FieldSpec[];
   value: Doc;
@@ -733,7 +662,6 @@ function SubFields(props: {
   path: string;
   messages: Messages;
   root: Doc;
-  onMention: (id: string) => void;
 }) {
   return (
     <div className="sub-fields">
@@ -745,7 +673,6 @@ function SubFields(props: {
           path={joinPath(props.path, f.name)}
           messages={props.messages}
           root={props.root}
-          onMention={props.onMention}
           onChange={(v) => props.onChange({ ...props.value, [f.name]: v })}
         />
       ))}
@@ -765,7 +692,6 @@ function ObjectField(props: FieldProps) {
         path={path}
         messages={messages}
         root={props.root}
-        onMention={props.onMention}
       />
     </FieldShell>
   );
@@ -832,7 +758,6 @@ function ObjectListField(props: FieldProps) {
               path={joinPath(path, i)}
               messages={messages}
               root={props.root}
-              onMention={props.onMention}
               onChange={(v) => onChange(items.map((x, j) => (j === i ? v : x)))}
             />
           </li>

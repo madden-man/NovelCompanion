@@ -18,7 +18,6 @@ import { filterQuestions, questionCounts } from '../../../shared/domain/question
 import type { QuestionFilter } from '../../../shared/domain/questions';
 import { call, plainError } from '../api';
 import { useStore } from './data';
-import { ListChip } from './listChip';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { Zh } from './Zh';
@@ -193,9 +192,6 @@ export function EntryList(props: {
                       <span className="chip" data-state={String(entry.state ?? 'open')}>
                         {entry.state === 'decided' ? 'decided' : 'open'}
                       </span>
-                    )}
-                    {typeof entry.status === 'string' && (
-                      <ListChip listId="statuses" id={entry.status} />
                     )}
                     {warnings.length > 0 && (
                       <span className="chip warn-chip" title="Fields with warnings">
@@ -450,7 +446,6 @@ export function NewEntryForm(props: {
               path={spec.name}
               messages={{ warnings: [], issues }}
               root={draft}
-              onMention={() => undefined}
               onChange={(v) => setDraft((d) => ({ ...d, [spec.name]: v }))}
             />
           ))}
@@ -474,9 +469,9 @@ export function NewEntryForm(props: {
 }
 
 /**
- * Entries in the trash, newest first, each restorable with its links (ED-5).
+ * Entries in the trash, newest first, each restorable (ED-5).
  * IP-16: Delete forever per entry (type its title) and Empty trash (type
- * "empty"); both take the revisions with them and are not undo steps.
+ * "empty"); neither is an undo step.
  */
 export function TrashView(props: { onOpen: (collection: EntryCollection, id: string) => void }) {
   const { version } = useStore();
@@ -502,30 +497,24 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     setError(null);
     try {
       await call('entry.restore', { collection, id });
-      const { count } = await call('entry.linkedFrom', { id });
       undo.record(restoreCommand(collection, id, title));
-      setDone(
-        `${title} is back${count ? `, with ${count} ${count === 1 ? 'entry' : 'entries'} linking to it` : ''}.`,
-      );
+      setDone(`${title} is back.`);
     } catch (e) {
       setError(plainError(e));
     }
   };
 
-  const revisionsWord = (n: number) => (n === 1 ? '1 revision' : `${n} revisions`);
   const purge = async (collection: EntryCollection, id: string, title: string) => {
-    const r = await call('entry.purge', { collection, id });
+    await call('entry.purge', { collection, id });
     setAsking(null);
-    setDone(
-      `Deleted ${title} forever, with ${revisionsWord(r.revisions)}. This is not an undo step.`,
-    );
+    setDone(`Deleted ${title} forever. This is not an undo step.`);
     setReloads((n) => n + 1);
   };
   const empty = async () => {
     const r = await call('trash.empty', {});
     setAsking(null);
     setDone(
-      `Emptied the trash: ${r.entries === 1 ? '1 entry' : `${r.entries} entries`} and ${revisionsWord(r.revisions)} deleted forever. This is not an undo step.`,
+      `Emptied the trash: ${r.entries === 1 ? '1 entry' : `${r.entries} entries`} deleted forever. This is not an undo step.`,
     );
     setReloads((n) => n + 1);
   };
@@ -535,8 +524,8 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     <section className="ws-wide stack" aria-labelledby="trash-title" data-testid="trash-view">
       <h2 id="trash-title">Trash</h2>
       <p className="lede">
-        Deleted entries wait here with their links. Restore one to bring it back as it was. Delete
-        forever removes it and its history for good; undo cannot bring it back.
+        Deleted entries wait here. Restore one to bring it back as it was. Delete forever removes it
+        for good; undo cannot bring it back.
       </p>
       {count > 0 && (
         <div className="stack tight">
@@ -563,8 +552,8 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
               onConfirm={empty}
               onCancel={() => setAsking(null)}
             >
-              {count === 1 ? '1 entry' : `${count} entries`} and every revision of{' '}
-              {count === 1 ? 'it' : 'them'} will be deleted forever. This is not an undo step.
+              {count === 1 ? '1 entry' : `${count} entries`} will be deleted forever. This is not an
+              undo step.
             </TypedConfirm>
           )}
         </div>
@@ -638,8 +627,7 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
                     onConfirm={() => purge(collection, entry._id, title)}
                     onCancel={() => setAsking(null)}
                   >
-                    {title} and every revision of it will be deleted forever. This is not an undo
-                    step.
+                    {title} will be deleted forever. This is not an undo step.
                   </TypedConfirm>
                 )}
               </li>
