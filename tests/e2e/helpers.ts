@@ -417,7 +417,6 @@ export async function setField(
       if (d.day !== undefined) await f.getByLabel('Day').fill(String(d.day));
       return;
     }
-    case 'tags':
     case 'strings': {
       await clearChips(f);
       const input = f.locator('.add-row > input');
@@ -464,13 +463,6 @@ export async function setField(
       await selects.nth(1).selectOption(b);
       return;
     }
-    case 'links':
-      await clearChips(f);
-      for (const l of value as { targetId: string; kind: string }[]) {
-        await f.getByLabel('Link kind').fill(l.kind);
-        await pickBySearch(ctx, f, l.targetId, /^Find an entry to link/);
-      }
-      return;
     case 'object': {
       const v = value as Record<string, unknown>;
       for (const sub of spec.fields ?? []) {

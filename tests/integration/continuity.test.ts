@@ -213,7 +213,7 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
 });
 
 describe('CC-4 the three resolutions', () => {
-  test('CC-4 ED-3 Manuscript wins applies the whole change set after a snapshot in one transaction, with revisions, and undoes from the stack', async () => {
+  test('CC-4 ED-3 Manuscript wins applies the whole change set after a snapshot in one transaction, as one undo step', async () => {
     const p1 = byCheck(await open('CH5'), 'CH5', 'age');
     const snapshots: string[] = [];
     const takeSnapshot = bible.repo.beforeBulk;
@@ -243,13 +243,10 @@ describe('CC-4 the three resolutions', () => {
     expect(snapshots).toEqual(['manuscript wins:1958']);
     expect(bible.model.get('characters', 'H1')!.birth).toEqual({ year: 1970 });
     expect(r.finding.state).toBe('manuscriptWins');
-    const revs = await bible.repo.revisions('characters', 'H1');
-    expect(revs.at(-1)).toMatchObject({
-      op: 'update',
-      note: 'Manuscript wins: Age: The text calls Margaret seventy. The bible has her born in 1958, so in 2040 she is 82.',
-    });
-    const findingRev = (await bible.repo.revisions('findings', p1.id)).at(-1)!;
-    expect(findingRev.note).toBe(revs.at(-1)!.note);
+    // The character and the finding come back together, so one undo step covers both.
+    expect(r.changes.map((c) => `${c.collection}:${c.id}`)).toEqual(
+      expect.arrayContaining(['characters:H1', `findings:${p1.id}`]),
+    );
 
     const undo = new UndoManager();
     undo.record(

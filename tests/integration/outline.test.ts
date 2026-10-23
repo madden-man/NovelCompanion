@@ -6,6 +6,7 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+import { entriesWritten, entryStamps } from '../helpers/entryWrites';
 
 let store: Store;
 let bible: OpenBible;
@@ -26,14 +27,14 @@ const chaptersNow = async () =>
   );
 const order = async () =>
   Object.fromEntries((await chaptersNow()).map((c) => [c._id, c.readingOrder]));
-const revs = () => bible.handle.collection('revisions').countDocuments();
+const stamps = () => entryStamps(bible.model);
 const make = async (collection: string, data: Record<string, unknown>) =>
   (await invoke('entry.create', { collection: collection as never, data })).entry;
 
 describe('KB-3 a new chapter from a part heading', () => {
   test('KB-3 outline.newChapter puts the chapter last in its part with one primary strand, and moves later chapters up in one transaction', async () => {
     const before = await order();
-    const n = await revs();
+    const n = stamps();
     const r = await invoke('outline.newChapter', {
       partId: 'PT1',
       title: '  Low Tide ',
@@ -58,7 +59,7 @@ describe('KB-3 a new chapter from a part heading', () => {
     const after = await order();
     for (const id of ['CH1', 'CH2', 'CH3', 'CH4']) expect(after[id]).toBe(before[id]);
     expect(new Set(Object.values(after)).size).toBe(Object.keys(after).length);
-    expect(await revs()).toBe(n + 5);
+    expect(entriesWritten(bible.model, n)).toBe(5);
     // The grid shows it last in part one, and part one now counts five chapters.
     const grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     const ids = grid.rows.map((row) => (row.kind === 'chapter' ? row.id : row.kind));
@@ -83,14 +84,14 @@ describe('KB-3 a new chapter from a part heading', () => {
   });
 });
 
-describe('KB-3 parts reorder, each move with a revision', () => {
+describe('KB-3 parts reorder', () => {
   test('KB-3 a new part shows as an empty heading, and plot.reorder moves it to the front of the parts', async () => {
     const part = await make('parts', { title: 'Coda', number: 3 });
     let grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     expect(grid.rows.at(-1)).toMatchObject({ kind: 'part', id: part._id, chapterCount: 0 });
     expect(grid.rows.filter((row) => row.kind === 'part')).toHaveLength(3);
 
-    const n = await revs();
+    const n = stamps();
     const r = await invoke('plot.reorder', {
       kind: 'parts',
       movedId: part._id,
@@ -102,7 +103,7 @@ describe('KB-3 parts reorder, each move with a revision', () => {
       ['PT1', { number: 1 }, { number: 2 }],
       ['PT2', { number: 2 }, { number: 3 }],
     ]);
-    expect(await revs()).toBe(n + 3);
+    expect(entriesWritten(bible.model, n)).toBe(3);
     grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     expect(grid.rows.filter((row) => row.kind === 'part').map((row) => row.id)).toEqual([
       part._id,
@@ -125,8 +126,8 @@ describe('KB-3 parts reorder, each move with a revision', () => {
 });
 
 describe('PL-5 SM-5 the scene outline over IPC', () => {
-  test('PL-5 SM-5 empty until set, round-trips text, breaks and years, survives a reopen, and writes no entry or revision', async () => {
-    const before = await revs();
+  test('PL-5 SM-5 empty until set, round-trips text, breaks and years, survives a reopen, and writes no entry', async () => {
+    const before = stamps();
     expect(await invoke('sceneOutline.get', {})).toEqual({
       text: '',
       breaks: {},
@@ -144,7 +145,7 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     expect(await invoke('sceneOutline.get', {})).toEqual(saved);
     const reopened = await openBibleSession(store, bible.handle.id);
     expect(reopened.repo.sceneOutline()).toEqual(saved);
-    expect(await revs()).toBe(before);
+    expect(entriesWritten(bible.model, before)).toBe(0);
     // SM-5: ranges are no longer stored.
     const meta = await bible.handle
       .collection<{ _id: string }>('meta')

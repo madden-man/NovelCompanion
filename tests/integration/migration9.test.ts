@@ -416,7 +416,7 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     ]);
     // A53: migration 13 keeps those targets as what the question is about.
     expect((await doc(open, 'openQuestions', 'Q1'))!.aboutIds).toEqual(['B1', 'H1']);
-    expect(open.repo.backlinks('B1').map((b) => b.id)).toContain('Q1');
+    expect(open.model.backlinks('B1').map((b) => b.id)).toContain('Q1');
     expect(await doc(open, 'proposals', 'P1')).toMatchObject({ state: 'rejected' });
     expect(await doc(open, 'proposals', 'P2')).toMatchObject({ state: 'pending' });
     const mappings = (await doc9('meta', 'importMappings'))!.mappings as { key: string }[];

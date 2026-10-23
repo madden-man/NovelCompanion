@@ -47,9 +47,7 @@ const SCALAR: Partial<Record<FieldSpec['kind'], string[]>> = {
   listItem: ['string'],
   ref: ['string'],
   refs: ['array'],
-  tags: ['array'],
   strings: ['array'],
-  links: ['array'],
   refPair: ['tuple'],
   storyDate: ['union'],
   object: ['object'],
@@ -133,7 +131,7 @@ describe('T-5 field manifests match the schemas', () => {
       for (const s of specs) {
         expect(s.label.trim().length, s.name).toBeGreaterThan(0);
         expect(`${s.label}${s.hint ?? ''}`).not.toMatch(/\u2014|--/);
-        if (s.kind === 'listItem' || s.kind === 'tags') expect(s.listId, s.name).toBeTruthy();
+        if (s.kind === 'listItem' || s.kind === 'listItems') expect(s.listId, s.name).toBeTruthy();
         if (['ref', 'refs', 'refPair'].includes(s.kind))
           expect(s.target?.length, s.name).toBeGreaterThan(0);
         if (s.fields) walk(s.fields);

@@ -57,7 +57,7 @@ describe('OQ-1, SL-1 questions and the log', () => {
     });
   });
 
-  test('OQ-1 a question links to any entry, is decided with a decision text, and keeps its history', async () => {
+  test('OQ-1 a question is about any entry and is decided with a decision text', async () => {
     const person = (await invoke('entry.list', { collection: 'characters', trash: 'exclude' }))
       .entries[0]!.entry;
     const q = (
@@ -83,22 +83,17 @@ describe('OQ-1, SL-1 questions and the log', () => {
     expect(decided.entry).toMatchObject({
       state: 'decided',
       decision: 'She owns it with her brother.',
+      aboutIds: [person._id],
     });
-    // The linked entry shows the question as a backlink.
-    const back = (await invoke('entry.backlinks', { id: person._id })).backlinks;
-    expect(back.map((b) => [b.collection, b.id])).toContainEqual(['openQuestions', q._id]);
     const open = (
       await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })
     ).entries.filter((e) => e.entry.state === 'open');
     expect(open).toEqual([]);
-    expect(
-      (await invoke('revisions.list', { collection: 'openQuestions', id: q._id })).revisions,
-    ).toHaveLength(3);
   });
 });
 
 describe('SR-1 SR-2 search through the IPC layer', () => {
-  test('SR-1 search.query returns a status, provenance, snippet, and the total before the limit', async () => {
+  test('SR-1 search.query returns a snippet and the total before the limit', async () => {
     const r = await fx('search.query', { query: 'letter', limit: 1 });
     expect(r.hits).toHaveLength(1);
     expect(r.total).toBeGreaterThan(1);
@@ -133,9 +128,6 @@ describe('SR-1 SR-2 search through the IPC layer', () => {
     expect(all.length).toBeGreaterThan(2);
     // SM-3: Iris's voice moment of 2060 mentions the letter.
     expect(await ids({ sections: ['moments'] })).toEqual(['H5-voice-0']);
-    expect(await ids({ status: ['canon'] })).toContain('H5-voice-0');
-    expect(await ids({ status: ['idea'] })).not.toContain('H5-voice-0');
-    expect(await ids({ provenance: ['researched'] })).toEqual([]);
     // The moment refers to Iris, who is in the Zhou family too.
     expect(await ids({ familyId: 'FAM-ZHOU' })).toContain('H5-voice-0');
     expect(await ids({ yearFrom: 2060, yearTo: 2060 })).toContain('H5-voice-0');

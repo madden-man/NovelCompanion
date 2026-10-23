@@ -19,6 +19,8 @@ export interface TreePerson {
   birth: StoryDate | null;
   death: StoryDate | null;
   familyIds: string[];
+  /** Nothing sets it. Only `tests/journey` still reads it; wave 4 rewrites that file and deletes this. */
+  status?: string;
   createdAt: string;
 }
 

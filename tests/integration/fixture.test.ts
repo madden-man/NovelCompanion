@@ -43,6 +43,6 @@ describe('Section 7 fixture loader', () => {
     const bible = await openBibleSession(store, handle.id);
     const z3 = await bible.repo.update('characters', 'Z3', { backstory: 'Edited.' });
     expect(z3.backstory).toBe('Edited.');
-    expect((await bible.repo.revisions('characters', 'Z3')).map((r) => r.op)).toEqual(['update']);
+    expect(bible.model.get('characters', 'Z3')!.backstory).toBe('Edited.');
   });
 });

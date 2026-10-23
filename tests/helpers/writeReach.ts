@@ -24,7 +24,6 @@ export const REPOSITORY_WRITES = new Set([
   'writeBatch',
   'softDelete',
   'restore',
-  'restoreRevision',
   'renameListItem',
   'addListItem',
   'removeListItem',

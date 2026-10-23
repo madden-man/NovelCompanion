@@ -38,6 +38,7 @@ import { queueDraft } from '../../src/main/claude/proposals';
 import { claudeInstructionsCommand } from '../../src/shared/undoCommands';
 import { UndoManager } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
+import { entriesWritten, entryStamps } from '../helpers/entryWrites';
 
 const PANEL_INSTRUCTIONS_START = PANEL_INSTRUCTIONS.slice(0, 60);
 
@@ -466,7 +467,7 @@ describe('AI-3 proposals only through the review queue', () => {
 describe('AI-7 failures', () => {
   test('AI-7 a rate limit and a rejected key fail with plain messages; the question is kept and the bible is untouched', async () => {
     const before = counts();
-    const revisions = await bible.handle.collection('revisions').countDocuments();
+    const stamps = entryStamps(bible.model);
     for (const [question, kind] of [
       ['Am I rate limited?', 'rateLimit'],
       ['Is this a rejected key?', 'badKey'],
@@ -482,7 +483,7 @@ describe('AI-7 failures', () => {
     }
     expect(needsSettings('badKey')).toBe(true);
     expect(counts()).toEqual(before);
-    expect(await bible.handle.collection('revisions').countDocuments()).toBe(revisions);
+    expect(entriesWritten(bible.model, stamps)).toBe(0);
   });
 });
 

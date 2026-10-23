@@ -3,17 +3,15 @@ import { manifests } from '../../src/shared/schema';
 import { outgoingRefs } from '../../src/shared/domain/refs';
 
 describe('ED-9 references an entry makes', () => {
-  test('ED-9 links and every reference field are found, at any depth', () => {
+  test('ED-9 every reference field is found, at any depth', () => {
     const chapter = {
       _id: 'CH',
       partId: 'PT1',
-      links: [{ targetId: 'E9', kind: 'happened' }],
       strands: [{ id: 's', povCharacterId: 'H5', characterIds: ['H5', 'Z5'], placeIds: ['PL1'] }],
     };
     expect(
       outgoingRefs(manifests.chapters, chapter).map((r) => [r.targetId, r.kind, r.path]),
     ).toEqual([
-      ['E9', 'happened', 'links.0'],
       ['PT1', 'Part', 'partId'],
       ['H5', 'Strands: Point of view', 'strands.0.povCharacterId'],
       ['H5', 'Strands: Characters present', 'strands.0.characterIds.0'],
@@ -27,11 +25,7 @@ describe('ED-9 references an entry makes', () => {
       _id: 'M',
       characterId: 'Z1',
       year: 1980,
-      links: [{ targetId: 'GL5', kind: 'mentions' }],
     });
-    expect(refs.map((r) => [r.targetId, r.kind])).toEqual([
-      ['GL5', 'mentions'],
-      ['Z1', 'Character'],
-    ]);
+    expect(refs.map((r) => [r.targetId, r.kind])).toEqual([['Z1', 'Character']]);
   });
 });
