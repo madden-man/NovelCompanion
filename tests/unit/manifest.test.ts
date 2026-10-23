@@ -55,6 +55,12 @@ const SCALAR: Partial<Record<FieldSpec['kind'], string[]>> = {
   objectList: ['array'],
 };
 
+/**
+ * Schema keys a stored document may still carry that no editor shows. A53 0b:
+ * a part keeps `bookId` until migration 013 unsets it.
+ */
+const STORED_ONLY = new Set(['parts.bookId']);
+
 /** Every mismatch between a manifest and the zod shape it describes. */
 function compare(
   specs: readonly FieldSpec[],
@@ -64,6 +70,7 @@ function compare(
   const out: string[] = [];
   const names = specs.map((s) => s.name);
   for (const key of Object.keys(shape)) {
+    if (STORED_ONLY.has(`${at}${key}`)) continue;
     if (!names.includes(key)) out.push(`${at}${key}: in the schema but not the manifest`);
   }
   for (const spec of specs) {
@@ -151,7 +158,6 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'moments',
       'unions',
       'parentLinks',
-      'books',
       'parts',
       'chapters',
       'worldEvents',
@@ -172,6 +178,7 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'plotBeats',
       'sessionLogs',
       'briefs',
+      'books',
     ]) {
       expect(ENTRY_COLLECTIONS, gone).not.toContain(gone);
     }

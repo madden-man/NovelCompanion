@@ -32,10 +32,7 @@ const make = async (collection: string, data: Record<string, unknown>) =>
 describe('OQ-1, SL-1 questions and the log', () => {
   beforeAll(async () => {
     // A person and a chapter to link and log against.
-    const book = (await make('books', { title: 'Book', status: 'planned', number: 1 })).entry;
-    const part = (
-      await make('parts', { title: 'Part', status: 'planned', bookId: book._id, number: 1 })
-    ).entry;
+    const part = (await make('parts', { title: 'Part', status: 'planned', number: 1 })).entry;
     const who = (
       await make('characters', {
         title: 'Ada',

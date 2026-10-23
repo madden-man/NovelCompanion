@@ -49,23 +49,12 @@ export interface OutlineChapter {
 /**
  * `label` is what a heading shows: the number from the number field and the
  * name ("Part 2: Lost Spirits", PL-3). `missing` marks a heading for chapters
- * or parts whose book or part is gone (in the trash or never made); it cannot
- * be renamed or added to.
+ * whose part is gone (in the trash or never made); it cannot be renamed or
+ * added to.
  */
-export interface OutlineBook {
-  kind: 'book';
-  id: string;
-  title: string;
-  number: number | null;
-  label: string;
-  missing: boolean;
-  partCount: number;
-}
-
 export interface OutlinePart {
   kind: 'part';
   id: string;
-  bookId: string;
   title: string;
   number: number | null;
   label: string;
@@ -73,7 +62,7 @@ export interface OutlinePart {
   chapterCount: number;
 }
 
-export type OutlineRow = OutlineBook | OutlinePart | OutlineChapter;
+export type OutlineRow = OutlinePart | OutlineChapter;
 
 export interface Outline {
   order: 'reading' | 'story';
@@ -105,91 +94,58 @@ function strandsOf(chapter: Doc, characters: Map<string, Doc>): OutlineStrand[] 
 }
 
 /**
- * KB-3: the reading-order rows. Every live book and part has a heading, even
- * with nothing in it yet, so a part or chapter can be made under it. Books
- * sort by number, parts by number within their book, chapters by reading
- * order. Parts whose book is gone and chapters whose part is gone sit under a
- * "No book" or "No part" heading marked missing, first, as before.
+ * KB-3: the reading-order rows. Every live part has a heading, even with
+ * nothing in it yet, so a chapter can be made under it. Parts sort by number,
+ * chapters by reading order. Chapters whose part is gone sit under a "No part"
+ * heading marked missing, first, as before.
  */
 function groupedRows(
-  books: readonly Doc[],
   parts: readonly Doc[],
   chapters: readonly OutlineChapter[],
   byReading: (a: OutlineChapter, b: OutlineChapter) => number,
 ): OutlineRow[] {
-  const bookById = new Map(books.map((b) => [str(b._id), b]));
   const partById = new Map(parts.map((p) => [str(p._id), p]));
   const byNumber = (a: Doc | undefined, b: Doc | undefined) =>
     (num(a?.number) ?? 0) - (num(b?.number) ?? 0) || title(a).localeCompare(title(b));
 
-  /** Part ID to the book it sits in; a missing part sits in no book (''). */
-  const partBook = new Map<string, string>();
-  for (const p of parts) partBook.set(str(p._id), str(p.bookId));
-  for (const c of chapters) if (!partById.has(c.partId)) partBook.set(c.partId, '');
-
-  const bookIds = new Set<string>(books.map((b) => str(b._id)));
-  for (const b of partBook.values()) bookIds.add(b);
-  const orderedBooks = [...bookIds].sort((a, b) => {
-    const da = bookById.get(a);
-    const db = bookById.get(b);
+  const partIdSet = new Set<string>(parts.map((p) => str(p._id)));
+  for (const c of chapters) partIdSet.add(c.partId);
+  const partIds = [...partIdSet].sort((a, b) => {
+    const da = partById.get(a);
+    const db = partById.get(b);
     if (!da || !db) return (da ? 1 : 0) - (db ? 1 : 0) || a.localeCompare(b);
     return byNumber(da, db);
   });
 
   const rows: OutlineRow[] = [];
-  for (const bookId of orderedBooks) {
-    const book = bookById.get(bookId);
-    const partIds = [...partBook]
-      .filter(([, b]) => b === bookId)
-      .map(([p]) => p)
-      .sort((a, b) => {
-        const da = partById.get(a);
-        const db = partById.get(b);
-        if (!da || !db) return (da ? 1 : 0) - (db ? 1 : 0) || a.localeCompare(b);
-        return byNumber(da, db);
-      });
-    const t = title(book, 'No book');
-    const n = book ? num(book.number) : null;
+  for (const partId of partIds) {
+    const part = partById.get(partId);
+    const inPart = chapters.filter((c) => c.partId === partId).sort(byReading);
+    const pt = title(part, 'No part');
+    const pn = part ? num(part.number) : null;
     rows.push({
-      kind: 'book',
-      id: bookId,
-      title: t,
-      number: n,
-      label: book ? groupLabel('book', n, t) : t,
-      missing: !book,
-      partCount: partIds.filter((p) => partById.has(p)).length,
+      kind: 'part',
+      id: partId,
+      title: pt,
+      number: pn,
+      label: part ? groupLabel('part', pn, pt) : pt,
+      missing: !part,
+      chapterCount: inPart.length,
     });
-    for (const partId of partIds) {
-      const part = partById.get(partId);
-      const inPart = chapters.filter((c) => c.partId === partId).sort(byReading);
-      const pt = title(part, 'No part');
-      const pn = part ? num(part.number) : null;
-      rows.push({
-        kind: 'part',
-        id: partId,
-        bookId,
-        title: pt,
-        number: pn,
-        label: part ? groupLabel('part', pn, pt) : pt,
-        missing: !part,
-        chapterCount: inPart.length,
-      });
-      rows.push(...inPart);
-    }
+    rows.push(...inPart);
   }
   return rows;
 }
 
 /**
  * PL-2: one row per chapter, columns are years. In reading order the rows are
- * grouped by book and part; in story-year order they are one flat list sorted
+ * grouped by part; in story-year order they are one flat list sorted
  * by the chapter's story year, then reading order.
  */
 export function outlineGrid(
   data: OutlineData,
   opts: { order: 'reading' | 'story'; cursorYear?: number | null },
 ): Outline {
-  const books = data.all('books').filter(live);
   const parts = data.all('parts').filter(live);
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
 
@@ -218,7 +174,7 @@ export function outlineGrid(
       ? [...chapters].sort(
           (a, b) => (a.storyYear ?? Infinity) - (b.storyYear ?? Infinity) || byReading(a, b),
         )
-      : groupedRows(books, parts, chapters, byReading);
+      : groupedRows(parts, chapters, byReading);
 
   const years = new Set<number>();
   for (const c of chapters) {
@@ -244,7 +200,7 @@ export interface Reorder {
 /**
  * PL-3: move one item to a new position among its siblings. `reuse` hands the
  * existing numbers back out in the new order, so siblings in other groups keep
- * theirs (reading order runs across a whole book); `sequence` numbers 1 to n.
+ * theirs (reading order runs across the whole outline); `sequence` numbers 1 to n.
  * Returns only the items whose number changes.
  */
 export function reorder(
@@ -278,14 +234,13 @@ export interface ChapterPatch {
  * PL-3: move a chapter to a place in a part, in its own part or another one.
  * Within a part the numbers of that part are reused, so other parts keep
  * theirs. Into another part the chapter takes the target position and the
- * target part, and the reading order is renumbered across the chapters of the
- * book or books involved, handing the same numbers back out in the new order.
+ * target part, and the reading order is renumbered across all the chapters,
+ * handing the same numbers back out in the new order.
  * Returns the chapters whose reading order or part changes.
  */
 export function moveChapter(
   chapters: readonly Doc[],
   parts: readonly Doc[],
-  books: readonly Doc[],
   movedId: string,
   toPartId: string,
   toIndex: number,
@@ -294,16 +249,11 @@ export function moveChapter(
   const moved = liveChapters.find((c) => str(c._id) === movedId);
   if (!moved) return [];
   const partById = new Map(parts.map((p) => [str(p._id), p]));
-  const bookNo = new Map(books.map((b) => [str(b._id), num(b.number) ?? 0]));
-  const rank = (partId: string): [number, number] => {
-    const part = partById.get(partId);
-    return [bookNo.get(str(part?.bookId)) ?? 0, num(part?.number) ?? 0];
-  };
-  const cmp = (a: { partId: string; readingOrder: number; title: string }, b: typeof a) => {
-    const [ab, ap] = rank(a.partId);
-    const [bb, bp] = rank(b.partId);
-    return ab - bb || ap - bp || a.readingOrder - b.readingOrder || a.title.localeCompare(b.title);
-  };
+  const rank = (partId: string): number => num(partById.get(partId)?.number) ?? 0;
+  const cmp = (a: { partId: string; readingOrder: number; title: string }, b: typeof a) =>
+    rank(a.partId) - rank(b.partId) ||
+    a.readingOrder - b.readingOrder ||
+    a.title.localeCompare(b.title);
   const item = (c: Doc) => ({
     id: str(c._id),
     partId: str(c.partId),
@@ -324,20 +274,12 @@ export function moveChapter(
     ).map((r) => ({ id: r.id, readingOrder: r.value, partId: toPartId }));
   }
 
-  const bookOf = (partId: string) => str(partById.get(partId)?.bookId);
-  const books2 = new Set([bookOf(str(moved.partId)), bookOf(toPartId)]);
-  const scope = liveChapters
-    .filter((c) => books2.has(bookOf(str(c.partId))))
-    .map(item)
-    .sort(cmp);
+  const scope = liveChapters.map(item).sort(cmp);
   const before = new Map(scope.map((c) => [c.id, c]));
   const values = scope.map((c) => c.readingOrder).sort((a, b) => a - b);
   const rest = scope.filter((c) => c.id !== movedId);
-  const [tb, tp] = rank(toPartId);
-  const ahead = rest.filter((c) => {
-    const [b, p] = rank(c.partId);
-    return b < tb || (b === tb && p < tp);
-  }).length;
+  const tp = rank(toPartId);
+  const ahead = rest.filter((c) => rank(c.partId) < tp).length;
   const inTarget = rest.filter((c) => c.partId === toPartId).length;
   const at = ahead + Math.max(0, Math.min(inTarget, toIndex));
   const next = [...rest];
@@ -416,9 +358,8 @@ export interface NumberPatch {
 }
 
 /**
- * KB-3: move a book among the books, or a part among the parts of its book.
- * The numbers already in use are handed back out in the new order, so a part
- * numbering that runs on across books keeps its range; when two share a
+ * KB-3: move a part among the parts. The numbers already in use are handed
+ * back out in the new order, so the parts keep their range; when two share a
  * number the group is numbered from its lowest number up instead. Returns
  * only the entries whose number changes.
  */
@@ -442,7 +383,7 @@ export function moveNumbered(
   }));
 }
 
-/** KB-3: the number a new book, or a new part in a book, takes: one past the highest. */
+/** KB-3: the number a new part takes: one past the highest. */
 export function nextNumber(siblings: readonly Doc[]): number {
   const used = siblings.filter(live).map((d) => num(d.number) ?? 0);
   return used.length ? Math.max(...used) + 1 : 1;
@@ -459,33 +400,18 @@ export function nextNumber(siblings: readonly Doc[]): number {
 export function newChapterPlace(
   chapters: readonly Doc[],
   parts: readonly Doc[],
-  books: readonly Doc[],
   partId: string,
   afterId?: string,
 ): { readingOrder: number; shifts: ChapterPatch[] } {
   const partById = new Map(parts.map((p) => [str(p._id), p]));
-  const bookNo = new Map(books.map((b) => [str(b._id), num(b.number) ?? 0]));
-  const rank = (pid: string): [number, number] => {
-    const part = partById.get(pid);
-    return [bookNo.get(str(part?.bookId)) ?? 0, num(part?.number) ?? 0];
-  };
+  const rank = (pid: string): number => num(partById.get(pid)?.number) ?? 0;
   const sorted = chapters
     .filter(live)
     .map((c) => ({ id: str(c._id), partId: str(c.partId), order: num(c.readingOrder) ?? 0 }))
-    .sort((a, b) => {
-      const [ab, ap] = rank(a.partId);
-      const [bb, bp] = rank(b.partId);
-      return ab - bb || ap - bp || a.order - b.order;
-    });
-  const [tb, tp] = rank(partId);
+    .sort((a, b) => rank(a.partId) - rank(b.partId) || a.order - b.order);
+  const tp = rank(partId);
   const following = sorted.findIndex((c) => c.id === afterId && c.partId === partId);
-  const at =
-    following >= 0
-      ? following + 1
-      : sorted.filter((c) => {
-          const [b, p] = rank(c.partId);
-          return b < tb || (b === tb && p <= tp);
-        }).length;
+  const at = following >= 0 ? following + 1 : sorted.filter((c) => rank(c.partId) <= tp).length;
   const before = sorted[at - 1];
   const after = sorted[at];
   const readingOrder = before ? before.order + 1 : Math.max(1, after ? after.order : 1);

@@ -1326,8 +1326,8 @@ export class Repository {
 
   /**
    * Replace the scene outline. The current state is the meta document; every
-   * change also lands in a version: the latest one when it was touched in the
-   * last ten minutes, else a new one (`newVersion` forces a new one). An
+   * change also lands in a version: the latest one when it opened no more than
+   * `outlineVersionDays` days ago, else a new one (`newVersion` forces a new one). An
    * outline written before versioning gets its old state as the first version
    * the first time it changes, so nothing is lost. Never an entry: no revision,
    * no undo step.
@@ -1361,7 +1361,8 @@ export class Repository {
         };
         await versions.insertOne(last);
       }
-      if (last && !startsNewVersion(last.until, now, opts.newVersion)) {
+      const days = this.bibleSettings().numbers.outlineVersionDays;
+      if (last && !startsNewVersion(last.at, now, opts.newVersion ?? false, days)) {
         await versions.updateOne(
           { _id: last._id },
           { $set: { text, breaks: cleanBreaks, years: clean, until: iso } },

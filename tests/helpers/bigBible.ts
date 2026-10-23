@@ -60,9 +60,8 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       color: ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7'][i % 4],
     });
   }
-  put('books', { ...base('BK1', 'The long river', 0), number: 1 });
   for (let i = 0; i < 4; i++) {
-    put('parts', { ...base(`PT${i}`, `Part ${i + 1}`, i), bookId: 'BK1', number: i + 1 });
+    put('parts', { ...base(`PT${i}`, `Part ${i + 1}`, i), number: i + 1 });
   }
   for (let i = 0; i < 60; i++) {
     put('places', {

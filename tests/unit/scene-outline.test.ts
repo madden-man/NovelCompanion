@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
   EMPTY_OUTLINE,
-  VERSION_GAP_MS,
   composeFlow,
   continueBullet,
   giveFirstScene,
@@ -106,15 +105,18 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect(sceneCount(EMPTY_OUTLINE)).toBe(0);
   });
 
-  test('PL-5 a save starts a new version when there is none, when forced, or after the gap', () => {
+  test('PL-5 a save starts a new version when there is none, when forced, or when the latest opened more than the set days ago', () => {
     const now = new Date('2026-10-17T12:00:00Z');
-    expect(startsNewVersion(null, now)).toBe(true);
-    expect(startsNewVersion('2026-10-17T11:55:00Z', now)).toBe(false);
-    expect(startsNewVersion('2026-10-17T11:55:00Z', now, true)).toBe(true);
-    expect(startsNewVersion(new Date(now.getTime() - VERSION_GAP_MS - 1).toISOString(), now)).toBe(
-      true,
-    );
-    expect(startsNewVersion('not a date', now)).toBe(true);
+    expect(startsNewVersion(null, now, false, 7)).toBe(true);
+    // The same day shares the version.
+    expect(startsNewVersion('2026-10-17T08:00:00Z', now, false, 7)).toBe(false);
+    expect(startsNewVersion('2026-10-11T12:00:00Z', now, false, 7)).toBe(false);
+    // Eight days after it opened, a save opens a new one.
+    expect(startsNewVersion('2026-10-09T12:00:00Z', now, false, 7)).toBe(true);
+    expect(startsNewVersion('2026-10-09T12:00:00Z', now, false, 14)).toBe(false);
+    // A restore forces one.
+    expect(startsNewVersion('2026-10-17T11:55:00Z', now, true, 7)).toBe(true);
+    expect(startsNewVersion('not a date', now, false, 7)).toBe(true);
   });
 
   test('PL-5 a missing or malformed meta document reads as an empty outline', () => {

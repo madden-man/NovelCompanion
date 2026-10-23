@@ -100,6 +100,13 @@ const NUMBER_FIELDS: {
     max: 750,
     hint: 'How long a box waits after the last key before it saves. At most 750, so a forced quit loses less than a second of typing.',
   },
+  {
+    key: 'outlineVersionDays',
+    label: 'Days between outline versions',
+    min: 1,
+    max: 365,
+    hint: 'A save opens a new outline version only when the latest one is older than this.',
+  },
 ];
 
 export function NumbersSettings() {
@@ -247,7 +254,6 @@ const TEXT_TEMPLATES: { key: TextTemplate; label: string; what: string }[] = [
   { key: 'chapterTitle', label: 'New chapter title', what: 'the new chapter title' },
   { key: 'sectionTitle', label: 'New section title', what: 'the new section title' },
   { key: 'partTitle', label: 'New part title', what: 'the new part title' },
-  { key: 'bookTitle', label: 'New book title', what: 'the new book title' },
   { key: 'eraName', label: 'New era name', what: 'the new era name' },
   { key: 'strandPresent', label: 'Present strand label', what: 'the present strand label' },
   { key: 'strandBackstory', label: 'Backstory strand label', what: 'the backstory strand label' },

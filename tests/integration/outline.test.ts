@@ -63,8 +63,8 @@ describe('KB-3 a new chapter from a part heading', () => {
     // The grid shows it last in part one, and part one now counts five chapters.
     const grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     const ids = grid.rows.map((row) => (row.kind === 'chapter' ? row.id : row.kind));
-    expect(ids.slice(0, 7)).toEqual(['book', 'part', 'CH1', 'CH2', 'CH3', 'CH4', made._id]);
-    expect(grid.rows[1]).toMatchObject({ kind: 'part', id: 'PT1', chapterCount: 5 });
+    expect(ids.slice(0, 6)).toEqual(['part', 'CH1', 'CH2', 'CH3', 'CH4', made._id]);
+    expect(grid.rows[0]).toMatchObject({ kind: 'part', id: 'PT1', chapterCount: 5 });
 
     // Undo, as the renderer replays it: the chapter to the trash, the numbers back.
     await invoke('entry.delete', { collection: 'chapters', id: made._id });
@@ -84,17 +84,16 @@ describe('KB-3 a new chapter from a part heading', () => {
   });
 });
 
-describe('KB-3 parts and books reorder, each move with a revision', () => {
-  test('KB-3 a new part shows as an empty heading, and plot.reorder moves it to the front of its book', async () => {
-    const part = await make('parts', { title: 'Coda', bookId: 'BK1', number: 3, status: 'idea' });
+describe('KB-3 parts reorder, each move with a revision', () => {
+  test('KB-3 a new part shows as an empty heading, and plot.reorder moves it to the front of the parts', async () => {
+    const part = await make('parts', { title: 'Coda', number: 3, status: 'idea' });
     let grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
     expect(grid.rows.at(-1)).toMatchObject({ kind: 'part', id: part._id, chapterCount: 0 });
-    expect(grid.rows[0]).toMatchObject({ kind: 'book', id: 'BK1', partCount: 3 });
+    expect(grid.rows.filter((row) => row.kind === 'part')).toHaveLength(3);
 
     const n = await revs();
     const r = await invoke('plot.reorder', {
       kind: 'parts',
-      groupId: 'BK1',
       movedId: part._id,
       toIndex: 0,
     });
@@ -119,26 +118,10 @@ describe('KB-3 parts and books reorder, each move with a revision', () => {
     await invoke('entry.delete', { collection: 'parts', id: part._id });
   });
 
-  test('KB-3 plot.reorder moves a book among the books and refuses a part from another book', async () => {
-    const book = await make('books', { title: 'Second', number: 2, status: 'idea' });
-    const r = await invoke('plot.reorder', { kind: 'books', movedId: book._id, toIndex: 0 });
-    expect(r.collection).toBe('books');
-    expect(r.changes.map((c) => [c.id, c.after])).toEqual([
-      [book._id, { number: 1 }],
-      ['BK1', { number: 2 }],
-    ]);
-    const grid = await invoke('outline.get', { order: 'reading', cursorYear: null });
-    expect(grid.rows[0]).toMatchObject({ kind: 'book', id: book._id, partCount: 0 });
+  test('KB-3 plot.reorder refuses a part that does not exist', async () => {
     await expect(
-      invoke('plot.reorder', { kind: 'parts', groupId: book._id, movedId: 'PT1', toIndex: 0 }),
-    ).rejects.toThrow(/not in this book/);
-    await expect(
-      invoke('plot.reorder', { kind: 'books', movedId: 'nope', toIndex: 0 }),
-    ).rejects.toThrow(/book does not exist/);
-    for (const c of r.changes) {
-      await invoke('entry.update', { collection: 'books', id: c.id, patch: c.before });
-    }
-    await invoke('entry.delete', { collection: 'books', id: book._id });
+      invoke('plot.reorder', { kind: 'parts', movedId: 'nope', toIndex: 0 }),
+    ).rejects.toThrow(/part does not exist/);
   });
 });
 
@@ -184,8 +167,8 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     expect([cleared.breaks, cleared.years]).toEqual([{}, {}]);
   });
 
-  test('PL-5 SM-5 versions: saves within ten minutes share one, later saves open another, a restore is a new version that brings back its years', async () => {
-    // Its own bible and a clock of its own, later than any real save, so the gap rule is what is tested.
+  test('PL-5 SM-5 versions: saves within the set days of the version opening share it, later saves open another, a restore is a new version that brings back its years', async () => {
+    // Its own bible and a clock of its own, later than any real save, so the days rule (default 7) is what is tested.
     let clock = new Date('2030-01-01T09:00:00Z');
     const own = (await loadFixture(store, freshSlug('outline-versions'))).id;
     const timed = await openBibleSession(store, own, { now: () => clock });
@@ -194,7 +177,8 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     expect(versionsBefore).toEqual([]);
 
     await run('sceneOutline.set', { text: '- One' });
-    clock = new Date('2030-01-01T09:04:00Z');
+    // Six days later lands in the same version.
+    clock = new Date('2030-01-07T09:00:00Z');
     await run('sceneOutline.set', {
       text: '- One\n- Two',
       breaks: { CH1: 0 },
@@ -204,11 +188,12 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     expect(versions.length).toBe(versionsBefore.length + 1);
     expect(versions[0]).toMatchObject({
       at: '2030-01-01T09:00:00.000Z',
-      until: '2030-01-01T09:04:00.000Z',
+      until: '2030-01-07T09:00:00.000Z',
       scenes: 2,
     });
 
-    clock = new Date('2030-01-01T09:20:00Z');
+    // Eight days after the version opened (two after its last save), a save opens another.
+    clock = new Date('2030-01-09T09:00:00Z');
     await run('sceneOutline.set', {
       text: '- One\n- Two\n- Three',
       breaks: { CH1: 0 },
@@ -216,7 +201,7 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     });
     versions = (await run('sceneOutline.versions', {})).versions;
     expect(versions.length).toBe(versionsBefore.length + 2);
-    expect(versions[0]).toMatchObject({ at: '2030-01-01T09:20:00.000Z', scenes: 3 });
+    expect(versions[0]).toMatchObject({ at: '2030-01-09T09:00:00.000Z', scenes: 3 });
     expect(versions[1]).toMatchObject({ scenes: 2 });
 
     // Saving the same state again makes no version; a change of years alone makes a change.
@@ -244,14 +229,14 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
     expect(old.years).toEqual({ '1': 2040 });
     expect(old).not.toHaveProperty('ranges');
 
-    clock = new Date('2030-01-01T09:21:00Z');
+    clock = new Date('2030-01-10T09:00:00Z');
     const restored = await run('sceneOutline.restore', { id: versions[1]!.id });
     expect(restored.text).toBe('- One\n- Two');
     expect(restored.breaks).toEqual({ CH1: 0 });
     expect(restored.years).toEqual({ '1': 2040 });
     versions = (await run('sceneOutline.versions', {})).versions;
     expect(versions.length).toBe(versionsBefore.length + 3);
-    expect(versions[0]).toMatchObject({ at: '2030-01-01T09:21:00.000Z', scenes: 2 });
+    expect(versions[0]).toMatchObject({ at: '2030-01-10T09:00:00.000Z', scenes: 2 });
     expect((await run('sceneOutline.version', { id: versions[0]!.id })).years).toEqual({
       '1': 2040,
     });

@@ -20,16 +20,11 @@ const strand = (id: string, year: number, extra: Record<string, unknown> = {}) =
   ...extra,
 });
 
-const books = [
-  { _id: 'B2', title: 'Second Book', number: 2, ...base },
-  { _id: 'B1', title: 'First Book', number: 1, ...base },
-  { _id: 'B3', title: 'Empty Book', number: 3, ...base },
-];
 const parts = [
-  { _id: 'P1', title: 'One', bookId: 'B1', number: 1, ...base },
-  { _id: 'P2', title: 'Two', bookId: 'B1', number: 2, ...base },
-  { _id: 'P3', title: 'Empty', bookId: 'B1', number: 3, ...base },
-  { _id: 'P4', title: 'Four', bookId: 'B2', number: 1, ...base },
+  { _id: 'P4', title: 'Four', number: 4, ...base },
+  { _id: 'P1', title: 'One', number: 1, ...base },
+  { _id: 'P2', title: 'Two', number: 2, ...base },
+  { _id: 'P3', title: 'Empty', number: 3, ...base },
 ];
 const chapters = [
   { _id: 'C1', title: 'c1', partId: 'P1', readingOrder: 1, strands: [strand('s1', 2040)], ...base },
@@ -43,41 +38,31 @@ const characters = [
 ];
 const data = (more: Record<string, Record<string, unknown>[]> = {}) => ({
   all: (c: string) =>
-    (
-      ({ books, parts, chapters, characters, ...more }) as Record<string, Record<string, unknown>[]>
-    )[c] ?? [],
+    (({ parts, chapters, characters, ...more }) as Record<string, Record<string, unknown>[]>)[c] ??
+    [],
 });
 
-describe('KB-3 one outline holds every book and part', () => {
-  test('KB-3 an empty book and an empty part still get a heading, with their counts', () => {
+describe('KB-3 one outline holds every part', () => {
+  test('KB-3 parts sort by number and an empty part still gets a heading, with the counts', () => {
     const g = outlineGrid(data(), { order: 'reading' });
     expect(g.rows.map((r) => (r.kind === 'chapter' ? r.id : `${r.kind}:${r.id}`))).toEqual([
-      'book:B1',
       'part:P1',
       'C1',
       'C2',
       'part:P2',
       'C3',
       'part:P3',
-      'book:B2',
       'part:P4',
       'C4',
-      'book:B3',
     ]);
-    const counts = g.rows.flatMap((r) =>
-      r.kind === 'part' ? [[r.id, r.chapterCount]] : r.kind === 'book' ? [[r.id, r.partCount]] : [],
-    );
+    const counts = g.rows.flatMap((r) => (r.kind === 'part' ? [[r.id, r.chapterCount]] : []));
     expect(counts).toEqual([
-      ['B1', 3],
       ['P1', 2],
       ['P2', 1],
       ['P3', 0],
-      ['B2', 1],
       ['P4', 1],
-      ['B3', 0],
     ]);
     expect(g.rows.find((r) => r.kind === 'part' && r.id === 'P2')).toMatchObject({
-      bookId: 'B1',
       label: 'Part 2: Two',
       missing: false,
     });
@@ -90,10 +75,9 @@ describe('KB-3 one outline holds every book and part', () => {
       { order: 'reading' },
     );
     const missing = g.rows.find((r) => r.kind === 'part' && r.id === 'P2');
-    expect(missing).toMatchObject({ kind: 'part', missing: true, chapterCount: 1, bookId: '' });
+    expect(missing).toMatchObject({ kind: 'part', missing: true, chapterCount: 1 });
+    expect(g.rows[0]).toBe(missing);
     expect(g.rows.filter((r) => r.kind === 'chapter')).toHaveLength(4);
-    const book = g.rows.find((r) => r.kind === 'book' && r.id === '');
-    expect(book).toMatchObject({ missing: true, label: 'No book' });
     expect(missing).toMatchObject({ label: 'No part' });
   });
 
@@ -114,21 +98,21 @@ describe('KB-3 one outline holds every book and part', () => {
   });
 });
 
-describe('KB-3 parts and books move by number', () => {
-  test('KB-3 moving a part hands its book the same numbers in the new order', () => {
-    const inBook = parts.filter((p) => p.bookId === 'B1');
-    expect(moveNumbered(inBook, 'P3', 0)).toEqual([
+describe('KB-3 parts move by number', () => {
+  test('KB-3 moving a part hands the parts the same numbers in the new order', () => {
+    const three = parts.filter((p) => p._id !== 'P4');
+    expect(moveNumbered(three, 'P3', 0)).toEqual([
       { id: 'P3', number: 1 },
       { id: 'P1', number: 2 },
       { id: 'P2', number: 3 },
     ]);
-    expect(moveNumbered(inBook, 'P1', 1)).toEqual([
+    expect(moveNumbered(three, 'P1', 1)).toEqual([
       { id: 'P2', number: 1 },
       { id: 'P1', number: 2 },
     ]);
   });
 
-  test('KB-3 parts numbered on from an earlier book keep their range', () => {
+  test('KB-3 parts numbered from above 1 keep their range', () => {
     const later = [
       { _id: 'Q1', title: 'a', number: 4, ...base },
       { _id: 'Q2', title: 'b', number: 5, ...base },
@@ -152,8 +136,8 @@ describe('KB-3 parts and books move by number', () => {
     ]);
   });
 
-  test('KB-3 a new book or part takes the number after the highest, and 1 in an empty group', () => {
-    expect(nextNumber(books)).toBe(4);
+  test('KB-3 a new part takes the number after the highest, and 1 when there is none', () => {
+    expect(nextNumber(parts)).toBe(5);
     expect(nextNumber([])).toBe(1);
     expect(nextNumber([{ _id: 'x', number: 7, deletedAt: at }])).toBe(1);
   });
@@ -161,7 +145,7 @@ describe('KB-3 parts and books move by number', () => {
 
 describe('KB-3 a new chapter goes last in its part', () => {
   test('KB-3 at the end of an early part it takes the next number and later chapters move up', () => {
-    expect(newChapterPlace(chapters, parts, books, 'P1')).toEqual({
+    expect(newChapterPlace(chapters, parts, 'P1')).toEqual({
       readingOrder: 3,
       shifts: [
         { id: 'C3', readingOrder: 4, partId: 'P2' },
@@ -171,18 +155,18 @@ describe('KB-3 a new chapter goes last in its part', () => {
   });
 
   test('KB-3 at the end of the last part nothing else moves', () => {
-    expect(newChapterPlace(chapters, parts, books, 'P4')).toEqual({ readingOrder: 5, shifts: [] });
+    expect(newChapterPlace(chapters, parts, 'P4')).toEqual({ readingOrder: 5, shifts: [] });
   });
 
   test('KB-3 in an empty part it follows the chapters of the parts before it', () => {
-    expect(newChapterPlace(chapters, parts, books, 'P3')).toEqual({
+    expect(newChapterPlace(chapters, parts, 'P3')).toEqual({
       readingOrder: 4,
       shifts: [{ id: 'C4', readingOrder: 5, partId: 'P4' }],
     });
   });
 
   test('A37 made from the scene outline it goes right after the named chapter of the part', () => {
-    expect(newChapterPlace(chapters, parts, books, 'P1', 'C1')).toEqual({
+    expect(newChapterPlace(chapters, parts, 'P1', 'C1')).toEqual({
       readingOrder: 2,
       shifts: [
         { id: 'C2', readingOrder: 3, partId: 'P1' },
@@ -191,18 +175,18 @@ describe('KB-3 a new chapter goes last in its part', () => {
       ],
     });
     // A chapter of another part is ignored: it goes last in the part asked for.
-    expect(newChapterPlace(chapters, parts, books, 'P1', 'C3').readingOrder).toBe(3);
+    expect(newChapterPlace(chapters, parts, 'P1', 'C3').readingOrder).toBe(3);
   });
 
   test('KB-3 a gap in the reading order absorbs the shift', () => {
     const gappy = chapters.map((c) => (c._id === 'C4' ? { ...c, readingOrder: 10 } : c));
-    expect(newChapterPlace(gappy, parts, books, 'P1')).toEqual({
+    expect(newChapterPlace(gappy, parts, 'P1')).toEqual({
       readingOrder: 3,
       shifts: [{ id: 'C3', readingOrder: 4, partId: 'P2' }],
     });
   });
 
   test('KB-3 the first chapter of an empty outline is number 1', () => {
-    expect(newChapterPlace([], parts, books, 'P1')).toEqual({ readingOrder: 1, shifts: [] });
+    expect(newChapterPlace([], parts, 'P1')).toEqual({ readingOrder: 1, shifts: [] });
   });
 });

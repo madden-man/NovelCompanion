@@ -3,21 +3,10 @@ import { Id, Year, entry } from './common';
 import { ANY, commonFields, f, yearRange } from './manifest';
 import type { FieldSpec } from './manifest';
 
-/** A5: books contain parts, parts contain chapters. */
-export const Book = entry({
-  number: z.int().min(1),
-  summary: z.string().default(''),
-});
-export type Book = z.infer<typeof Book>;
-
-export const bookFields: FieldSpec[] = [
-  ...commonFields,
-  f.int('number', 'Book number', { required: true }),
-  f.longText('summary', 'Summary'),
-];
-
+/** A5, A53: parts contain chapters; parts are the outline's dividers. */
 export const Part = entry({
-  bookId: Id,
+  /** A53 0b: stored until migration 013 unsets it; not in the manifest. */
+  bookId: z.string().optional(),
   number: z.int().min(1),
   summary: z.string().default(''),
 });
@@ -25,7 +14,6 @@ export type Part = z.infer<typeof Part>;
 
 export const partFields: FieldSpec[] = [
   ...commonFields,
-  f.ref('bookId', 'Book', ['books'], { required: true }),
   f.int('number', 'Part number', { required: true }),
   f.longText('summary', 'Summary'),
 ];

@@ -81,7 +81,6 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
       'families',
       'unions',
       'parentLinks',
-      'books',
       'parts',
       'chapters',
       'moments',

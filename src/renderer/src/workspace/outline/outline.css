@@ -786,8 +786,8 @@
   cursor: default;
 }
 
-/* IP-13: Books and parts, a disclosure under the track. */
-.books-parts {
+/* IP-13: Parts, a disclosure under the track. */
+.outline-parts {
   max-width: 1180px;
   padding: 8px 12px;
   color: var(--fg);
@@ -795,26 +795,18 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
 }
-.books-parts > summary {
+.outline-parts > summary {
   font-weight: 700;
   cursor: pointer;
 }
-.books-parts > summary:focus-visible {
+.outline-parts > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.bp-books,
 .bp-parts {
   list-style: none;
-  margin: 0;
+  margin: 6px 0 8px;
   padding: 0;
-}
-.bp-book {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.bp-parts {
-  margin: 6px 0 8px 16px;
 }
 .bp-part {
   padding: 6px 0;

@@ -440,6 +440,7 @@ export const NUMBER_LABELS: Record<keyof BibleNumbers, string> = {
   windowAfter: 'the years after the story year',
   pickerReach: 'the reach of the events picker',
   autosaveMs: 'the autosave delay',
+  outlineVersionDays: 'the days between outline versions',
 };
 
 /** IP-11, ED-3: one of the bible's numbers, one step per change. */

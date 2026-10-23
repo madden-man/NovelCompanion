@@ -25,10 +25,9 @@ const extra: Record<string, Record<string, unknown>[]> = {
     { _id: 'FB', title: 'Zhou', name: 'Zhou', color: 'series-3', ...base },
   ],
   characters: [{ _id: 'C1', title: 'Iris', familyIds: ['FB'], ...base }],
-  books: [{ _id: 'B1', title: 'Tide Lines', number: 1, ...base }],
   parts: [
-    { _id: 'P2', title: 'Part Two', bookId: 'B1', number: 2, ...base },
-    { _id: 'P1', title: 'Part One', bookId: 'B1', number: 1, ...base },
+    { _id: 'P2', title: 'Part Two', number: 2, ...base },
+    { _id: 'P1', title: 'Part One', number: 1, ...base },
   ],
   chapters: [
     {
@@ -60,20 +59,18 @@ const extra: Record<string, Record<string, unknown>[]> = {
 const small = { all: (c: string) => extra[c] ?? [] };
 
 describe('PL-2 the fixture outline', () => {
-  test('PL-2 the fixture grid has one chapter row per chapter, grouped under the book and part', () => {
+  test('PL-2 the fixture grid has one chapter row per chapter, grouped under the parts', () => {
     const g = outlineGrid(data, { order: 'reading' });
     const chapters = g.rows.filter((r) => r.kind === 'chapter');
     expect(chapters).toHaveLength(fx.chapters?.length ?? -1);
-    expect(g.rows[0]).toMatchObject({ kind: 'book', title: 'Tide Lines' });
-    expect(g.rows[1]).toMatchObject({ kind: 'part' });
+    expect(g.rows[0]).toMatchObject({ kind: 'part', title: 'Part One: High Water' });
   });
 });
 
 describe('PL-2 the chapter-by-year outline grid', () => {
-  test('PL-2 rows follow book, part, then reading order, with a header row per book and part', () => {
+  test('PL-2 rows follow part, then reading order, with a header row per part', () => {
     const g = outlineGrid(small, { order: 'reading' });
     expect(g.rows.map((r) => (r.kind === 'chapter' ? r.id : r.kind))).toEqual([
-      'book',
       'part',
       'X1',
       'X2',
@@ -161,7 +158,6 @@ describe('PL-3 reorder keeps reading order and story year apart', () => {
 
 describe('PL-3 a chapter can move into another part', () => {
   const parts = (extra.parts ?? []) as Record<string, unknown>[];
-  const books = (extra.books ?? []) as Record<string, unknown>[];
   const chapters = [
     { _id: 'c1', title: 'c1', partId: 'P1', readingOrder: 1, ...base },
     { _id: 'c2', title: 'c2', partId: 'P1', readingOrder: 2, ...base },
@@ -170,7 +166,7 @@ describe('PL-3 a chapter can move into another part', () => {
   ];
 
   test('PL-3 moving into the middle of the next part takes its place and part, and renumbers both parts', () => {
-    expect(moveChapter(chapters, parts, books, 'c1', 'P2', 1)).toEqual([
+    expect(moveChapter(chapters, parts, 'c1', 'P2', 1)).toEqual([
       { id: 'c2', readingOrder: 1, partId: 'P1' },
       { id: 'c3', readingOrder: 2, partId: 'P2' },
       { id: 'c1', readingOrder: 3, partId: 'P2' },
@@ -178,7 +174,7 @@ describe('PL-3 a chapter can move into another part', () => {
   });
 
   test('PL-3 moving up into the earlier part at its start', () => {
-    expect(moveChapter(chapters, parts, books, 'c4', 'P1', 0)).toEqual([
+    expect(moveChapter(chapters, parts, 'c4', 'P1', 0)).toEqual([
       { id: 'c4', readingOrder: 1, partId: 'P1' },
       { id: 'c1', readingOrder: 2, partId: 'P1' },
       { id: 'c2', readingOrder: 3, partId: 'P1' },
@@ -187,12 +183,12 @@ describe('PL-3 a chapter can move into another part', () => {
   });
 
   test('PL-3 an index past the end puts the chapter last in the target part', () => {
-    const r = moveChapter(chapters, parts, books, 'c1', 'P2', 99);
+    const r = moveChapter(chapters, parts, 'c1', 'P2', 99);
     expect(r.find((p) => p.id === 'c1')).toEqual({ id: 'c1', readingOrder: 4, partId: 'P2' });
   });
 
   test('PL-3 a move inside one part reuses that part numbers and leaves the other part alone', () => {
-    expect(moveChapter(chapters, parts, books, 'c2', 'P1', 0)).toEqual([
+    expect(moveChapter(chapters, parts, 'c2', 'P1', 0)).toEqual([
       { id: 'c2', readingOrder: 1, partId: 'P1' },
       { id: 'c1', readingOrder: 2, partId: 'P1' },
     ]);
@@ -203,7 +199,7 @@ describe('PL-3 a chapter can move into another part', () => {
       ...c,
       readingOrder: i + 1,
     }));
-    const r = moveChapter(lone, parts, books, 'c1', 'P2', 0);
+    const r = moveChapter(lone, parts, 'c1', 'P2', 0);
     const finalPart = new Map(lone.map((c) => [c._id, c.partId]));
     const finalOrder = new Map(lone.map((c) => [c._id, c.readingOrder]));
     for (const p of r) {

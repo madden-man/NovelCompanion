@@ -275,6 +275,20 @@ test('IP-11 a number saves on Enter as one undo step, the World events grid span
   await expect(
     again.getByRole('button', { name: 'Reset world window, years before to 3' }),
   ).toBeDisabled();
+
+  // A53: the days between outline versions is one of the numbers, one step like the rest.
+  const days = again.getByTestId('number-outlineVersionDays');
+  await expect(again.getByTestId('settings-numbers')).toContainText(
+    'Days between outline versions',
+  );
+  await fillEditable(days, '14');
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).numbers.outlineVersionDays)
+    .toBe(14);
+  await undoStep();
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).numbers.outlineVersionDays)
+    .toBe(7);
 });
 
 test('IP-10 the cultural time unit is a select in Settings, one step per pick', async () => {

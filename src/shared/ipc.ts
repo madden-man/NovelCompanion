@@ -444,18 +444,8 @@ const OutlineWire = z.strictObject({
   rows: z.array(
     z.union([
       z.strictObject({
-        kind: z.literal('book'),
-        id: z.string(),
-        title: z.string(),
-        number: z.number().nullable(),
-        label: z.string(),
-        missing: z.boolean(),
-        partCount: z.number(),
-      }),
-      z.strictObject({
         kind: z.literal('part'),
         id: z.string(),
-        bookId: z.string(),
         title: z.string(),
         number: z.number().nullable(),
         label: z.string(),
@@ -962,7 +952,7 @@ export const contract = {
     request: z.strictObject({}),
     response: SceneOutlineWire,
   },
-  /** Replace the text, breaks and years. Saves closer than ten minutes share one version. */
+  /** Replace the text, breaks and years. A save opens a new version only when the latest one opened more than `outlineVersionDays` days ago. */
   'sceneOutline.set': {
     request: z.strictObject({
       text: z.string().max(2_000_000),
@@ -1006,8 +996,7 @@ export const contract = {
   /**
    * PL-3: move a chapter to a place in a part (its own or another, where it
    * takes the target part). Story years never change. Returns what changed,
-   * for undo. KB-3: also a part among the parts of its book, and a book among
-   * the books.
+   * for undo. KB-3: also a part among all the parts.
    */
   'plot.reorder': {
     request: z.union([
@@ -1019,20 +1008,13 @@ export const contract = {
       }),
       z.strictObject({
         kind: z.literal('parts'),
-        /** The book. */
-        groupId: EntryId,
-        movedId: EntryId,
-        toIndex: z.int().min(0).max(5000),
-      }),
-      z.strictObject({
-        kind: z.literal('books'),
         movedId: EntryId,
         toIndex: z.int().min(0).max(5000),
       }),
     ]),
     response: z.strictObject({
-      collection: z.enum(['chapters', 'parts', 'books']),
-      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a part's or book's number). */
+      collection: z.enum(['chapters', 'parts']),
+      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a part's number). */
       changes: z.array(
         z.strictObject({
           id: z.string(),

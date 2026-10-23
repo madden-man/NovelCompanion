@@ -408,7 +408,6 @@ export function bibleHandlers(
         const patches = moveChapter(
           model.all('chapters'),
           model.all('parts'),
-          model.all('books'),
           req.movedId,
           req.groupId,
           req.toIndex,
@@ -436,19 +435,11 @@ export function bibleHandlers(
           }),
         };
       }
-      if (req.kind === 'parts' || req.kind === 'books') {
-        const collection = req.kind;
+      if (req.kind === 'parts') {
+        const collection = 'parts' as const;
         const moved = model.get(collection, req.movedId);
-        if (!moved || moved.deletedAt) {
-          throw new Error(`That ${req.kind === 'parts' ? 'part' : 'book'} does not exist.`);
-        }
-        let siblings = model.all('books');
-        if (req.kind === 'parts') {
-          const book = model.get('books', req.groupId);
-          if (!book || book.deletedAt) throw new Error('That book does not exist.');
-          if (moved.bookId !== req.groupId) throw new Error('That part is not in this book.');
-          siblings = model.all('parts').filter((p) => p.bookId === req.groupId);
-        }
+        if (!moved || moved.deletedAt) throw new Error('That part does not exist.');
+        const siblings = model.all('parts');
         const patches = moveNumbered(siblings, req.movedId, req.toIndex);
         const before = new Map(siblings.map((d) => [d._id, d]));
         await repo.writeBatch(
@@ -458,7 +449,7 @@ export function bibleHandlers(
             id: p.id,
             patch: { number: p.number },
           })),
-          { note: req.kind === 'parts' ? 'Reordered parts' : 'Reordered books' },
+          { note: 'Reordered parts' },
         );
         return {
           collection,
@@ -475,13 +466,7 @@ export function bibleHandlers(
       const { model, repo } = session();
       const part = model.get('parts', partId);
       if (!part || part.deletedAt) throw new Error('That part does not exist.');
-      const place = newChapterPlace(
-        model.all('chapters'),
-        model.all('parts'),
-        model.all('books'),
-        partId,
-        afterId,
-      );
+      const place = newChapterPlace(model.all('chapters'), model.all('parts'), partId, afterId);
       const before = new Map(model.all('chapters').map((c) => [c._id, c]));
       const written = await repo.writeBatch([
         {

@@ -13,8 +13,8 @@
 export const SCENE_OUTLINE_ID = 'sceneOutline';
 export const SCENE_VERSIONS_COLLECTION = 'sceneOutlineVersions';
 
-/** Edits closer together than this land in the same version. */
-export const VERSION_GAP_MS = 10 * 60 * 1000;
+/** One day, the unit of `outlineVersionDays` (A53). */
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Lines starting with a bullet; group 1 is the indent, 3 the text. */
 export const BULLET = /^(\s*)([-*•])\s?(.*)$/;
@@ -137,13 +137,18 @@ export function sceneCount(text: string): number {
 
 /**
  * Whether a save opens a new version or lands in the latest one: a new one
- * when there is none, when asked, or when the latest was last touched more
- * than `VERSION_GAP_MS` ago.
+ * when there is none, when asked (a restore), or when the latest opened more
+ * than `days` days ago (A53, the bible's `outlineVersionDays`).
  */
-export function startsNewVersion(lastUntil: string | null, now: Date, force = false): boolean {
-  if (force || lastUntil === null) return true;
-  const then = Date.parse(lastUntil);
-  return !Number.isFinite(then) || now.getTime() - then > VERSION_GAP_MS;
+export function startsNewVersion(
+  lastOpenedAt: string | null,
+  now: Date,
+  force: boolean,
+  days: number,
+): boolean {
+  if (force || lastOpenedAt === null) return true;
+  const then = Date.parse(lastOpenedAt);
+  return !Number.isFinite(then) || now.getTime() - then > days * DAY_MS;
 }
 
 export interface TextEdit {

@@ -45,6 +45,11 @@ export const BibleNumbers = z
         750,
         'The autosave delay is at most 750 milliseconds, so a change saves within a second.',
       ),
+    /** A53: days the latest scene outline version stays open before a save opens a new one (default 7). */
+    outlineVersionDays: z
+      .int('The days between outline versions is a whole number.')
+      .min(1, 'The days between outline versions is 1 or more.')
+      .max(365, 'The days between outline versions is 365 or fewer.'),
   })
   .refine((n) => n.timelineEnd > n.timelineStart, {
     message: 'The last year of the timeline comes after the first.',
@@ -59,6 +64,7 @@ export const DEFAULT_NUMBERS: BibleNumbers = {
   windowAfter: 1,
   pickerReach: 1,
   autosaveMs: 500,
+  outlineVersionDays: 7,
 };
 
 /** IP-11: the longest an edit waits before it saves: the larger of 700 and the delay plus 200. */
@@ -87,7 +93,6 @@ export const BibleTemplates = z.strictObject({
   chapterTitle: Name,
   sectionTitle: Name,
   partTitle: Name,
-  bookTitle: Name,
   strandPresent: Name,
   strandBackstory: Name,
   eraName: Name,
@@ -99,7 +104,6 @@ export const DEFAULT_TEMPLATES: BibleTemplates = {
   chapterTitle: 'New chapter',
   sectionTitle: 'New section',
   partTitle: 'Part {n}',
-  bookTitle: 'Book {n}',
   strandPresent: 'present',
   strandBackstory: 'backstory',
   eraName: 'New era',
@@ -131,6 +135,7 @@ export const BibleSettingsPatch = z.strictObject({
       windowAfter: z.int().optional(),
       pickerReach: z.int().optional(),
       autosaveMs: z.int().optional(),
+      outlineVersionDays: z.int().optional(),
     })
     .optional(),
   templates: z
@@ -138,7 +143,6 @@ export const BibleSettingsPatch = z.strictObject({
       chapterTitle: z.string().optional(),
       sectionTitle: z.string().optional(),
       partTitle: z.string().optional(),
-      bookTitle: z.string().optional(),
       strandPresent: z.string().optional(),
       strandBackstory: z.string().optional(),
       eraName: z.string().optional(),

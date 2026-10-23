@@ -45,7 +45,7 @@ const PEOPLE: [string, string, number | null, number | null][] = [
 describe('Section 7 fixture novel', () => {
   test('Section 7 every fixture document passes its zod schema', () => {
     const collections = Object.keys(fixture);
-    expect(collections.length).toBeGreaterThanOrEqual(14);
+    expect(collections.length).toBeGreaterThanOrEqual(13);
     for (const c of collections) {
       const schema = isEntryCollection(c)
         ? entrySchemas[c]

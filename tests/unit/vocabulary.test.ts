@@ -426,7 +426,13 @@ describe('IP-11 the grids, the brief window and the picker take the bible number
     expect(bibleSettings(undefined)).toEqual(DEFAULT_BIBLE_SETTINGS);
     const s = bibleSettings({
       cultureUnit: 'five',
-      numbers: { timelineStart: 2000, windowBefore: 'x', autosaveMs: 99_999, pickerReach: 4 },
+      numbers: {
+        timelineStart: 2000,
+        windowBefore: 'x',
+        autosaveMs: 99_999,
+        pickerReach: 4,
+        outlineVersionDays: 0,
+      },
     });
     expect(s.cultureUnit).toBe('five');
     expect(s.numbers).toEqual({
@@ -436,7 +442,11 @@ describe('IP-11 the grids, the brief window and the picker take the bible number
       windowAfter: 1,
       pickerReach: 4,
       autosaveMs: 500,
+      outlineVersionDays: 7,
     });
+    expect(bibleSettings({ numbers: { outlineVersionDays: 14 } }).numbers.outlineVersionDays).toBe(
+      14,
+    );
     // An end before the start falls back to the default span.
     expect(bibleSettings({ numbers: { timelineStart: 2200 } }).numbers.timelineStart).toBe(2025);
     expect(BibleSettings.safeParse(DEFAULT_BIBLE_SETTINGS).success).toBe(true);
@@ -481,7 +491,6 @@ describe('IP-14 templates', () => {
       chapterTitle: 'New chapter',
       sectionTitle: 'New section',
       partTitle: 'Part {n}',
-      bookTitle: 'Book {n}',
       strandPresent: 'present',
       strandBackstory: 'backstory',
       eraName: 'New era',

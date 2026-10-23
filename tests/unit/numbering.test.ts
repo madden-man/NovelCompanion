@@ -9,7 +9,7 @@ import { outlineGrid } from '../../src/shared/domain/outline';
 import { structuralFindings } from '../../src/shared/domain/continuity/structural';
 
 describe('PL-3 a structural number in a title is found and set aside', () => {
-  test('PL-3 chapter, part, and book numbers come off the front of a title, the name stays', () => {
+  test('PL-3 chapter and part numbers come off the front of a title, the name stays', () => {
     expect(splitNumberedTitle('chapter', 'Ch. 1: Mark Feels Free')).toEqual({
       number: 1,
       name: 'Mark Feels Free',
@@ -35,11 +35,7 @@ describe('PL-3 a structural number in a title is found and set aside', () => {
       number: 1,
       name: 'Sins of the Father',
     });
-    expect(splitNumberedTitle('book', 'Book One')).toEqual({ number: 1, name: '' });
-    expect(splitNumberedTitle('book', 'Book Two: I Take Refuge in You')).toEqual({
-      number: 2,
-      name: 'I Take Refuge in You',
-    });
+    expect(splitNumberedTitle('part', 'Part One')).toEqual({ number: 1, name: '' });
   });
 
   test('PL-3 a title that only looks numbered keeps its name whole', () => {
@@ -55,29 +51,27 @@ describe('PL-3 a structural number in a title is found and set aside', () => {
       expect(splitNumberedTitle('chapter', t)).toBeNull();
     }
     expect(splitNumberedTitle('part', 'Part Time Lover')).toBeNull();
-    expect(splitNumberedTitle('book', 'Book of Ruth')).toBeNull();
-    expect(bareTitle('book', 'Book One')).toBe('Book One');
+    expect(bareTitle('part', 'Part One')).toBe('Part One');
     expect(bareTitle('chapter', 'Ch. 9: HaoYu and Family Break')).toBe('HaoYu and Family Break');
   });
 });
 
-describe('PL-3 the shown book, part, and chapter numbers come from the number fields', () => {
+describe('PL-3 the shown part and chapter numbers come from the number fields', () => {
   test('PL-3 a part label takes its number from the number field, never from the title', () => {
     expect(groupLabel('part', 2, 'Lost Spirits')).toBe('Part 2: Lost Spirits');
     expect(groupLabel('part', 2, 'Part Two: Lost Spirits')).toBe('Part 2: Lost Spirits');
-    expect(groupLabel('book', 1, 'Book One')).toBe('Book 1');
+    expect(groupLabel('part', 1, 'Part One')).toBe('Part 1');
     // A title that disagrees with the field is shown whole after the field's number.
     expect(groupLabel('part', 3, 'Part Two: Lost Spirits')).toBe('Part 3: Part Two: Lost Spirits');
     expect(groupLabel('part', null, 'Lost Spirits')).toBe('Part: Lost Spirits');
   });
 
-  test('PL-3 the outline rows show book and part numbers from their fields after a reorder', () => {
+  test('PL-3 the outline rows show part numbers from their fields after a reorder', () => {
     const base = { status: 'planned', createdAt: 'x', modifiedAt: 'x' };
     const docs: Record<string, Record<string, unknown>[]> = {
-      books: [{ _id: 'B1', title: 'Book One', number: 1, ...base }],
       parts: [
-        { _id: 'P1', title: 'Roots', bookId: 'B1', number: 2, ...base },
-        { _id: 'P2', title: 'Part One: Branches', bookId: 'B1', number: 1, ...base },
+        { _id: 'P1', title: 'Roots', number: 2, ...base },
+        { _id: 'P2', title: 'Part One: Branches', number: 1, ...base },
       ],
       chapters: [
         {
@@ -100,7 +94,7 @@ describe('PL-3 the shown book, part, and chapter numbers come from the number fi
     };
     const g = outlineGrid({ all: (c: string) => docs[c] ?? [] }, { order: 'reading' });
     const labels = g.rows.map((r) => (r.kind === 'chapter' ? r.readingOrder : r.label));
-    expect(labels).toEqual(['Book 1', 'Part 1: Branches', 3, 'Part 2: Roots', 7]);
+    expect(labels).toEqual(['Part 1: Branches', 3, 'Part 2: Roots', 7]);
   });
 
   test('PL-3 a continuity finding names a chapter by its reading order, never by a number in its title', () => {
@@ -151,14 +145,11 @@ describe('PL-3 the title cleanup of a bible renames only titles whose number agr
       readingOrder,
     });
     const docs: Record<string, Record<string, unknown>[]> = {
-      books: [
-        { _id: 'B1', title: 'Book One', number: 1 },
-        { _id: 'B2', title: 'Book Two: I Take Refuge in You', number: 2 },
-      ],
       parts: [
-        { _id: 'P1', title: 'Part One: Sins of the Father', bookId: 'B1', number: 1 },
-        { _id: 'P2', title: 'Part Two: Lost Spirits', bookId: 'B1', number: 2 },
-        { _id: 'P3', title: 'Part Three: Claws', bookId: 'B2', number: 1 },
+        { _id: 'P1', title: 'Part One: Sins of the Father', number: 1 },
+        { _id: 'P2', title: 'Part Two: Lost Spirits', number: 2 },
+        { _id: 'P3', title: 'Part Three: Claws', number: 4 },
+        { _id: 'P4', title: 'Part Five', number: 5 },
       ],
       chapters: [
         ch('C0', 'Introduction', 'P1', 1),
@@ -172,20 +163,19 @@ describe('PL-3 the title cleanup of a bible renames only titles whose number agr
     };
     const plan = planTitleCleanup({ all: (c) => docs[c] ?? [] });
     expect(plan.renames.map((r) => [r.id, r.to])).toEqual([
-      ['B2', 'I Take Refuge in You'],
       ['P1', 'Sins of the Father'],
       ['P2', 'Lost Spirits'],
       ['C3', 'Mark Gets Drunk'],
       ['C4', 'Dawn is Shy'],
     ]);
-    expect(plan.numberOnly.map((r) => r.id)).toEqual(['B1']);
+    expect(plan.numberOnly.map((r) => r.id)).toEqual(['P4']);
     expect(plan.disagreements).toEqual([
       {
         collection: 'parts',
         id: 'P3',
         title: 'Part Three: Claws',
         says: 3,
-        is: 'part number 1',
+        is: 'part number 4',
       },
       {
         collection: 'chapters',
