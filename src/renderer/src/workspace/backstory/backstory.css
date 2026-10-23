@@ -1,11 +1,20 @@
 /* a39-backstory, SM-9: the Backstory screen. The grid itself is grid.css; colors only from theme tokens. */
+/* A49: the grid takes the section; the heading, legend, notice and table keep their own height. */
 .bs-area {
   grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
   padding: 14px 18px;
   min-width: 0;
-  overflow-y: auto;
+  overflow: hidden;
   max-height: calc(100vh - var(--ws-chrome));
   gap: 12px;
+}
+.bs-area > * {
+  flex: none;
+}
+.bs-zoom {
+  margin-left: 12px;
 }
 @media (max-width: 1100px) {
   .bs-area {
@@ -17,20 +26,46 @@
     grid-column: auto;
     grid-row: auto;
     max-height: none;
+    overflow: visible;
     padding: 12px 16px;
   }
-}
-.bs-help {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--fg-2);
 }
 .bs-empty {
   margin: 0;
   color: var(--fg-2);
 }
-.bs-scroll {
-  max-height: max(280px, calc(100vh - var(--ws-chrome) - 420px));
+/* Three classes deep, so this wins over grid.css's .wg-scroll height and shrink rules. */
+.bs-area > .wg-scroll.bs-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+.bs-area > .legend {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+@media (max-width: 760px) {
+  /* A phone screen scrolls the page, so the grid keeps a height of its own and the legend wraps. */
+  .bs-area > .wg-scroll.bs-scroll {
+    max-height: 70vh;
+  }
+  .bs-area > .legend {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+/* A49 wave 1 keeps the moments table until the dialog replaces it. The grid fills the screen under
+   the heading with the legend under it, and the table sits below, a scroll of the section away. A
+   table in a scroll box of its own left the grid under 200px on an 800px window, and a cell cut
+   off at that box's foot scrolled when the press focused it, so the click landed beside it. */
+.bs-area:has(> .bs-table-panel) {
+  overflow-y: auto;
+}
+.bs-area:has(> .bs-table-panel) > .wg-scroll.bs-scroll {
+  flex: none;
+  max-height: max(280px, calc(100vh - var(--ws-chrome) - 140px));
 }
 
 /* Rows: the name in the primary text color, the Chinese name beside it. */
@@ -70,7 +105,7 @@
 .bs-life {
   position: absolute;
   bottom: 1px;
-  height: 6px;
+  height: 8px;
   z-index: 1;
   pointer-events: none;
 }
@@ -78,7 +113,7 @@
 .bs-life-dash {
   position: absolute;
   top: 0;
-  height: 6px;
+  height: 8px;
   box-sizing: border-box;
 }
 .bs-life-solid {
@@ -110,6 +145,13 @@
 .bs-marker.bar {
   background: var(--fg-2);
 }
+/* IP-4: a click within 6px of a marker lands on it, not on the empty track that makes a moment.
+   The inset counts from inside the 2px ring, so 8px reaches 6px past the drawn edge. */
+.bs-marker::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
 
 /* Legend keys. */
 .bs-key {
@@ -119,7 +161,7 @@
 }
 .bs-key.life {
   width: 24px;
-  height: 6px;
+  height: 8px;
   border-radius: 3px;
   background: var(--series-1);
 }

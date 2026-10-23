@@ -15,14 +15,13 @@ import { buildGraph, placeLayout } from './tree';
 import type { StoredPositions } from './tree';
 import {
   DEFAULT_SPAN,
-  GRID_METRICS,
-  MARKER_DEFAULTS,
   byYear,
   gridSpan,
   hitTest,
   inWindow,
   layoutGrid,
   moveEdge,
+  roughLabelWidth,
   spanExtent,
   yearX,
 } from './worldGrid';
@@ -386,8 +385,27 @@ export function ageIn(p: { birth: StoryDate | null; death: StoryDate | null }, y
 
 // ---------- the whole grid ----------
 
-/** The Backstory grid's rows are one lane taller at the bottom, for the lifespan bar. */
-export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
+/**
+ * SM-9: the Backstory grid's rows are taller than the World events grid's, with room at the foot
+ * for the lifespan bar: a one-lane row is 48px, a two-lane row 76px.
+ */
+export const BACKSTORY_METRICS: GridMetrics = {
+  header: 56,
+  groupHeading: 32,
+  lane: 28,
+  rowPad: 10,
+};
+
+/** SM-9, IP-4: bigger markers than the World events grid's, so a moment is easy to hit and drag. */
+export const BACKSTORY_MARKERS: MarkerOptions = {
+  dot: 14,
+  bigDot: 20,
+  gap: 6,
+  maxLanes: 4,
+  labelWidth: roughLabelWidth,
+  barHeight: 10,
+  bigBarHeight: 14,
+};
 
 export interface BackstoryGridInput extends BackstoryRowsInput {
   moments: readonly Doc[];
@@ -424,7 +442,7 @@ export function layoutBackstory(
   g: BackstoryGrid,
   s: YearScale,
   closed: ReadonlySet<string> = new Set(),
-  opts: MarkerOptions = MARKER_DEFAULTS,
+  opts: MarkerOptions = BACKSTORY_MARKERS,
 ): GridLayout {
   return layoutGrid(
     gridGroups(g.families, closed),
