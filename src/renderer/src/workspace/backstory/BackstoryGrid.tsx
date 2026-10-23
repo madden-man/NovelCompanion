@@ -99,13 +99,16 @@ export function BackstoryGrid(props: {
     const fam = personId === null && shownPerson ? grid.people.get(shownPerson)?.familyId : null;
     if (fam && closed.has(fam)) toggleFamily(fam);
   }
+  // Only the person view depends on the frame's height, so a height change (a resize, the
+  // scrollbar coming and going) never lays the whole grid out again.
   const fill = vp.viewHeight - PERSON_METRICS.header;
+  const personLayout = useMemo(
+    () => (personId !== null ? layoutPerson(grid, personId, scale, fill) : null),
+    [grid, personId, scale, fill],
+  );
   const layout = useMemo(
-    () =>
-      personId !== null
-        ? layoutPerson(grid, personId, scale, fill)
-        : layoutBackstory(grid, scale, closed),
-    [grid, personId, scale, fill, closed],
+    () => personLayout ?? layoutBackstory(grid, scale, closed),
+    [personLayout, grid, scale, closed],
   );
   const byId = useMemo(() => new Map(grid.moments.map((m) => [m.id, m])), [grid.moments]);
   const families = useMemo(() => new Map(grid.families.map((f) => [f.id, f])), [grid.families]);
