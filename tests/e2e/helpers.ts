@@ -320,6 +320,17 @@ export async function reveal(target: Locator): Promise<void> {
   });
 }
 
+/**
+ * SM-9, A49: open a moment in its dialog by clicking its marker on the
+ * Backstory grid, and return the dialog once it shows that moment.
+ */
+export async function openMoment(page: Page, id: string): Promise<Locator> {
+  await page.getByTestId('backstory-grid').locator(`.wg-marker[data-id="${id}"]`).click();
+  const dialog = page.getByTestId('moment-dialog');
+  await expect(dialog).toHaveAttribute('data-id', id);
+  return dialog;
+}
+
 /** IP-1: open an `Editable` (its root, found by `data-field`) by clicking its text. */
 export async function openEditable(f: Locator): Promise<void> {
   if ((await f.locator('input, select').count()) === 0) {

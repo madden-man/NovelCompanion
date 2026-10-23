@@ -623,7 +623,7 @@ test('FT-7 FT-2 A45 the inspector edits Name, In the story, Description, Birth, 
   await select('Daniel Hale');
   await editor().getByRole('button', { name: 'Open in Backstory' }).click();
   await expect(page.getByTestId('backstory-view')).toBeVisible();
-  await expect(page.getByTestId('backstory-view').getByTestId('moments-heading')).toContainText(
+  await expect(page.getByTestId('backstory-view').getByTestId('picked-person')).toContainText(
     'Daniel Hale',
   );
   await openTree();

@@ -61,6 +61,8 @@ export function BackstoryGrid(props: {
   readOnly: boolean;
   onPick: (characterId: string) => void;
   onPickMoment: (momentId: string, characterId: string) => void;
+  /** A49: a double-click opens the moment with What happens open as a field. */
+  onOpenMoment?: (momentId: string, characterId: string) => void;
   onOpenEra: (id: string) => void;
   onMove: (momentId: string, delta: number, part: MovePart) => Promise<void>;
   onCreate: (characterId: string, year: number) => Promise<void>;
@@ -90,7 +92,10 @@ export function BackstoryGrid(props: {
     onMove: props.onMove,
   });
 
+  // A49: a click or Enter opens the moment; a double-click opens it with What happens open;
+  // F2 renames the label in place (IP-4).
   const rename = props.onRename;
+  const openMoment = props.onOpenMoment;
   const markers = (line: GridLine) =>
     lineMarkers(line).map((m) => {
       const mo = byId.get(m.id);
@@ -108,6 +113,7 @@ export function BackstoryGrid(props: {
           onActivate={() => props.onPickMoment(m.id, mo.characterId)}
           title={mo.title}
           onRename={rename && !props.readOnly ? (t) => rename(m.id, t) : undefined}
+          onDoubleClick={openMoment ? () => openMoment(m.id, mo.characterId) : undefined}
         />
       );
     });
