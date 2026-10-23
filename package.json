@@ -26,7 +26,6 @@
     "package": "electron-vite build && electron-builder --mac dmg",
     "install:app": "sh scripts/install-app.sh",
     "prepare": "git config core.hooksPath .githooks || true",
-    "import:eastwinds": "node scripts/import-eastwinds.ts",
     "test:package-smoke": "npm run package && playwright test -c playwright.package.config.ts",
     "test:journey": "node scripts/ensure-package.ts && playwright test -c playwright.journey.config.ts"
   },
@@ -34,7 +33,6 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.290",
     "@anthropic-ai/sdk": "0.133.0",
     "@napi-rs/keyring": "1.2.0",
-    "exceljs": "4.4.0",
     "mammoth": "1.11.0",
     "markdown-it": "14.3.3",
     "minisearch": "7.2.0",

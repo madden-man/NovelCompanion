@@ -9,7 +9,7 @@ The bible lives in MongoDB Atlas, so any Mac with the app and the connection str
 3. The app is not notarized by Apple, so the first open is refused as "from an unidentified developer". Open it anyway: right-click the app and choose Open, or go to System Settings, Privacy and Security, and press Open Anyway next to the message. Once per Mac per build.
 4. On the first screen the app says no MongoDB connection string is stored and shows a box to paste it. Paste the Atlas connection string and press Test, then Save. It goes into that Mac's keychain.
 5. When the keychain asks whether Novel Companion may use the stored string, enter the login password and press Always Allow. Once per Mac for the current build.
-6. Settings holds the Anthropic API key (for Claude features) and, if wanted, the Google Drive client. Both are per Mac.
+6. Settings holds the Anthropic API key (for Claude features). It is per Mac.
 
 ## Why the prompts, and how to end them
 
