@@ -1,5 +1,5 @@
 /* a39-backstory, SM-9: the Backstory screen. The grid itself is grid.css; colors only from theme tokens. */
-/* A49: the grid takes the section; the heading, legend, notice and table keep their own height. */
+/* A49: the grid takes the section; the heading, legend and notice keep their own height. */
 .bs-area {
   grid-column: 2 / -1;
   display: flex;
@@ -56,18 +56,6 @@
     white-space: normal;
   }
 }
-/* A49 wave 1 keeps the moments table until the dialog replaces it. The grid fills the screen under
-   the heading with the legend under it, and the table sits below, a scroll of the section away. A
-   table in a scroll box of its own left the grid under 200px on an 800px window, and a cell cut
-   off at that box's foot scrolled when the press focused it, so the click landed beside it. */
-.bs-area:has(> .bs-table-panel) {
-  overflow-y: auto;
-}
-.bs-area:has(> .bs-table-panel) > .wg-scroll.bs-scroll {
-  flex: none;
-  max-height: max(280px, calc(100vh - var(--ws-chrome) - 140px));
-}
-
 /* Rows: the name in the primary text color, the Chinese name beside it. */
 .bs-row-label {
   gap: 8px;
@@ -169,95 +157,83 @@
   background: repeating-linear-gradient(to right, var(--series-1) 0 6px, transparent 6px 10px);
 }
 
-/* The moments table. */
-.bs-table-panel h3 {
-  margin: 0;
-  font-size: 1rem;
+/* A49: the moment dialog. Field titles in the primary text colour (NF-2). */
+.bs-dialog {
+  width: min(720px, 100%);
+  gap: 14px;
+}
+.bs-dialog-head h2 {
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+.bs-dialog-title {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.bs-dialog-who {
   color: var(--fg);
+  font-weight: 500;
+}
+.bs-when {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 12px;
+}
+.bs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.bs-field-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.bs-year-age {
+  align-items: baseline;
+  flex-wrap: nowrap;
+}
+.bs-age {
+  color: var(--fg);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+/* How they experience it gets room for about eight lines, open or closed. */
+.bs-dialog .bs-body .rich-text-input,
+.bs-dialog .bs-body .editable-rich > .editable-text {
+  min-height: calc(1.55em * 8 + 18px);
+}
+.bs-dialog .rich-text,
+.bs-dialog .editable-rich > .editable-text {
+  max-width: none;
+}
+.bs-dialog-foot {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.bs-picked {
+  font-weight: 700;
+  color: var(--fg);
+}
+.bs-create {
+  margin-left: auto;
 }
 .bs-years {
   font-weight: 500;
   color: var(--fg);
 }
-.bs-table-wrap {
-  overflow-x: auto;
-}
-.bs-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.bs-table th {
-  text-align: left;
-  font-weight: 700;
-  color: var(--fg);
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border-strong);
-  white-space: nowrap;
-}
-.bs-table td {
-  vertical-align: top;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  color: var(--fg);
-}
-.bs-table tr.selected td {
-  background: var(--accent-soft);
-}
-.bs-table tr.selected td:first-child {
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.bs-col-year {
-  width: 6.5rem;
-}
-.bs-col-age {
-  width: 6rem;
-}
-.bs-col-act {
-  width: 1%;
-  white-space: nowrap;
-}
-.bs-cell {
-  width: 100%;
-  min-width: 9rem;
-  box-sizing: border-box;
-  font: inherit;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 6px;
-  resize: vertical;
-}
-.bs-cell:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.bs-cell-year {
-  min-width: 0;
-  width: 5.5rem;
-}
-.bs-cell-error {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.8rem;
-  color: var(--critical-ink);
-}
-.bs-world {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
+@media (max-width: 400px) {
+  .bs-when {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .bs-picker {
-  position: relative;
-  flex: none;
+  align-self: flex-start;
 }
+/* The list opens under the button in the dialog's flow, full width, so nothing clips it. */
 .bs-picker-list {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 10;
-  width: 300px;
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -291,14 +267,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-@media (max-width: 400px) {
-  .bs-world {
-    flex-direction: column;
-  }
-  .bs-picker-list {
-    width: min(300px, calc(100vw - 32px));
-  }
 }
 
 /* a47-grids, IP-4: the name opens the page, the rest of the cell picks the person. */
@@ -385,13 +353,10 @@
   left: 100%;
 }
 
-/* IP-1: the cells are fields that read as text until picked. */
+/* IP-1: the fields read as text until picked. */
 .bs-ed {
   display: block;
   min-width: 4rem;
-}
-.bs-col-who {
-  width: 11rem;
 }
 .bs-ask label {
   font-weight: 600;
