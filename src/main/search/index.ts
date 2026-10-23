@@ -30,7 +30,6 @@ const BODY_FIELDS = [
   'meaning',
   'usageNote',
   'notes',
-  'sourceNote',
   'worldContext',
   'question',
   'decision',
@@ -89,7 +88,6 @@ function toIndexed(collection: string, doc: StoredDoc): IndexedDoc {
   }
   const names: string[] = [];
   collectStrings(doc.names, names);
-  collectStrings(doc.tags, names);
   for (const f of NESTED_TEXT_FIELDS) collectText(doc[f], body);
   for (const f of ['name', 'characters', 'romanization']) {
     const v = doc[f];

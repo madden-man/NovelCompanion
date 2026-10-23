@@ -3,9 +3,8 @@ import { ENTRY_COLLECTIONS, collectionInfo, entryTitle } from '../../../shared/s
 import type { EntryCollection } from '../../../shared/schema';
 import type { Request, Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
-import { useEntries, useList, useStore } from './data';
+import { useEntries, useStore } from './data';
 import { Zh } from './Zh';
-import { ListChip, ListSwatch } from './listChip';
 
 type Hit = Response<'search.query'>['hits'][number];
 
@@ -15,8 +14,8 @@ const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? 
 
 /**
  * SR-1, SR-2: one search box over every entry and chapter text, in
- * English and Chinese, with filters by section, status,
- * provenance, family, place, tag, and a year range.
+ * English and Chinese, with filters by section, family, place, and a
+ * year range.
  */
 export function SearchView(props: {
   query: string;
@@ -29,16 +28,9 @@ export function SearchView(props: {
   const { version } = useStore();
   const families = useEntries('families');
   const places = useEntries('places');
-  const tags = useList('tags');
-  // A47 (IP-9): the filters show the bible's statuses and provenance, in the stored order.
-  const statuses = useList('statuses');
-  const provenances = useList('provenance');
   const [section, setSection] = useState('');
-  const [status, setStatus] = useState('');
-  const [provenance, setProvenance] = useState('');
   const [familyId, setFamilyId] = useState('');
   const [placeId, setPlaceId] = useState('');
-  const [tag, setTag] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   /** The hits last returned, with the query key they answer. */
@@ -51,11 +43,8 @@ export function SearchView(props: {
   const ids = {
     q: useId(),
     section: useId(),
-    status: useId(),
-    prov: useId(),
     family: useId(),
     place: useId(),
-    tag: useId(),
     from: useId(),
     to: useId(),
   };
@@ -63,16 +52,13 @@ export function SearchView(props: {
   const filters = useMemo(() => {
     const f: NonNullable<Request<'search.query'>['filters']> = {
       ...(section ? { sections: [section as EntryCollection] } : {}),
-      ...(status ? { status: [status] } : {}),
-      ...(provenance ? { provenance: [provenance] } : {}),
       ...(familyId ? { familyId } : {}),
       ...(placeId ? { placeId } : {}),
-      ...(tag ? { tag } : {}),
       ...(intOrNull(from) !== null ? { yearFrom: intOrNull(from) } : {}),
       ...(intOrNull(to) !== null ? { yearTo: intOrNull(to) } : {}),
     };
     return f;
-  }, [section, status, provenance, familyId, placeId, tag, from, to]);
+  }, [section, familyId, placeId, from, to]);
   /** Names the query and filters the list on screen must answer. */
   const queryKey = JSON.stringify({ query: query.trim(), filters });
 
@@ -139,30 +125,6 @@ export function SearchView(props: {
           )}
         </div>
         <div className="field">
-          <label htmlFor={ids.status}>Status</label>
-          <ListSwatch listId="statuses" id={status || null} />
-          <select id={ids.status} value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Any status</option>
-            {(statuses?.items ?? []).map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.prov}>Provenance</label>
-          <ListSwatch listId="provenance" id={provenance || null} />
-          <select id={ids.prov} value={provenance} onChange={(e) => setProvenance(e.target.value)}>
-            <option value="">Any provenance</option>
-            {(provenances?.items ?? []).map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
           <label htmlFor={ids.family}>Family</label>
           <select id={ids.family} value={familyId} onChange={(e) => setFamilyId(e.target.value)}>
             <option value="">Any family</option>
@@ -180,17 +142,6 @@ export function SearchView(props: {
             {places.map((p) => (
               <option key={p._id} value={p._id}>
                 {entryTitle(p)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.tag}>Tag</label>
-          <select id={ids.tag} value={tag} onChange={(e) => setTag(e.target.value)}>
-            <option value="">Any tag</option>
-            {(tags?.items ?? []).map((t) => (
-              <option key={t.id} value={t.label}>
-                {t.label}
               </option>
             ))}
           </select>
@@ -255,7 +206,6 @@ export function SearchView(props: {
                       <span className="entry-title">
                         <Zh text={h.title} actions={false} />
                       </span>
-                      <ListChip listId="statuses" id={h.status} />
                     </span>
                     {h.snippet && (
                       <span className="example-note">
