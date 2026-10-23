@@ -91,6 +91,14 @@ export function BackstoryGrid(props: {
   const scale = vp.scale;
   const [closed, toggleFamily] = useClosedGroups();
   const personId = props.personId && grid.people.has(props.personId) ? props.personId : null;
+  // A50: back from a person's timeline, their family opens if it was collapsed, so their row
+  // is there to scroll to and to take the focus.
+  const [shownPerson, setShownPerson] = useState(personId);
+  if (shownPerson !== personId) {
+    setShownPerson(personId);
+    const fam = personId === null && shownPerson ? grid.people.get(shownPerson)?.familyId : null;
+    if (fam && closed.has(fam)) toggleFamily(fam);
+  }
   const fill = vp.viewHeight - PERSON_METRICS.header;
   const layout = useMemo(
     () =>

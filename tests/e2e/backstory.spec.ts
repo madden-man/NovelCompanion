@@ -369,6 +369,18 @@ test('SM-9 TL-3 A50 a click on a name opens that person’s timeline: only their
   await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
   await expect(label('Z3')).toBeFocused();
   await expectRowInView('Z3');
+  // A family collapsed meanwhile opens on the way back, so the row is there to focus.
+  const zhou = grid().locator('.wg-group[data-group="FAM-ZHOU"] .wg-group-label');
+  await zhou.click();
+  await expect(zhou).toHaveAttribute('aria-expanded', 'false');
+  await expect(row('Z3')).toHaveCount(0);
+  await page.evaluate(openBackstory, 'Z3');
+  await expect(personView()).toHaveCount(1);
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
+  await expect(zhou).toHaveAttribute('aria-expanded', 'true');
+  await expect(label('Z3')).toBeFocused();
+  await expectRowInView('Z3');
   const d = await openMoment(page, 'Z3-lives-0');
   await expect(d.locator('.bs-field-title')).toHaveText([
     'Year',
