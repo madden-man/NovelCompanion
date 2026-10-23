@@ -96,7 +96,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
     {
       name: 'search_entries',
       description:
-        'Search every entry and chapter text in the bible, in English or Chinese. Returns section, ID, title, status, and a short snippet for each hit. Read one in full with get_entry or get_chapter.',
+        'Search every entry and chapter text in the bible, in English or Chinese. Returns section, ID, title, and a short snippet for each hit. Read one in full with get_entry or get_chapter.',
       shape: {
         query: z.string().min(1).max(200),
         section: Section.optional(),
@@ -122,7 +122,6 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
             section: h.collection,
             id: h.id,
             title: entryTitle(doc),
-            status: doc?.status ?? null,
             snippet: snippet ? material(`${h.collection} ${h.id}`, snippet) : '',
           };
         });
@@ -131,7 +130,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
     },
     {
       name: 'get_entry',
-      description: `Read one entry in full by its section and ID, with the entries that link to it. Sections: ${ENTRY_COLLECTIONS.join(', ')}.`,
+      description: `Read one entry in full by its section and ID, with the entries whose fields name it. Sections: ${ENTRY_COLLECTIONS.join(', ')}.`,
       shape: { section: Section, id: EntryIdArg },
       readOnly: true,
       handler: safely((a) => {
@@ -227,7 +226,7 @@ export function bibleTools(session: OpenBible, sink: Sink): ClaudeTool[] {
     {
       name: 'propose_change',
       description:
-        'Suggest a change to the bible: create an entry, change fields of one, delete one, or link one entry to another. It goes to the review queue; nothing changes until the writer approves it. Returns the proposal ID, or why it was not accepted.',
+        'Suggest a change to the bible: create an entry, change fields of one, or delete one. It goes to the review queue; nothing changes until the writer approves it. Returns the proposal ID, or why it was not accepted.',
       shape: ProposalDraft.shape,
       readOnly: false,
       handler: safely(async (a) => {

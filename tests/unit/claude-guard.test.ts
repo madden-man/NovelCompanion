@@ -100,8 +100,8 @@ describe('IP-17 list item proposals', () => {
     });
     expect(draft.collection).toBeUndefined();
     expect(
-      ProposalDraft.safeParse({ ...draft, listId: 'statuses' }).success,
-      'only communities, event categories, regions, languages and tags',
+      ProposalDraft.safeParse({ ...draft, listId: 'ageGroups' }).success,
+      'only communities, event categories, regions and languages',
     ).toBe(false);
     expect(ProposalDraft.safeParse({ ...draft, ref: 'jinan' }).success).toBe(false);
     const stored = Proposal.parse({

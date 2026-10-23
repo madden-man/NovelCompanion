@@ -134,7 +134,9 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     expect(out.safety.reason).toBe('restore');
     expect(out.safety.counts.moments).toBe(before.collections.moments!.length + 1);
     const after = await dumpBible(open.handle);
-    expect(after.collections).toEqual(before.collections);
+    // A53: wave 3 removes the revision write
+    const { revisions: _revisions, ...restored } = after.collections;
+    expect(restored).toEqual(before.collections);
     expect(open.repo.get('characters', 'H2')).toBeDefined();
     expect(open.repo.get('characters', 'H1')!.backstory).toBe(
       'A schoolteacher who kept every letter the family ever sent.',
@@ -248,9 +250,9 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
 });
 
 describe('BK-3 the JSON export loads into an empty bible with nothing lost', () => {
-  test('BK-3 every collection, revision, list, setting, and entry is identical after the round trip', async () => {
+  test('BK-3 every collection, list, setting, and entry is identical after the round trip', async () => {
     const a = await fixtureSession('bk-export');
-    // Give it history and settings so the round trip has something to lose.
+    // Give it edits, a trashed entry and settings so the round trip has something to lose.
     await a.repo.update('characters', 'H1', { backstory: 'Kept, second.' });
     await a.repo.softDelete('moments', 'H5-voice-0');
     await a.repo.setStoryTime({ year: 2045 });
@@ -261,7 +263,6 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     await a.repo.setSceneOutline('- One', { breaks: { H1: 0 } });
     await a.repo.setSceneOutline('- One\n- Two', { newVersion: true });
     const exported = await exportBibleJson(a.handle, new Date('2026-10-10T12:00:00Z'));
-    expect(exported.counts.revisions).toBeGreaterThan(0);
     expect(exported.counts.meta).toBeGreaterThanOrEqual(5);
     expect(exported.counts.sceneOutlineVersions).toBe(2);
     expect(exported.text).not.toMatch(/mongodb(\+srv)?:\/\//);
@@ -287,7 +288,7 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     expect(b.repo.snapshotKeep()).toBe(12);
     expect(b.repo.get('moments', 'H5-voice-0')).toBeUndefined();
     expect(b.repo.get('moments', 'H5-voice-0', { includeDeleted: true })).toBeDefined();
-    expect((await b.repo.revisions('characters', 'H1')).map((r) => r.op)).toEqual(['update']);
+    expect(b.repo.get('characters', 'H1')!.backstory).toBe('Kept, second.');
     expect(b.search.search('周美玲').map((h) => h.id)).toContain('Z1');
   });
 
@@ -301,9 +302,10 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
       /not a bible export/,
     );
     const broken = JSON.parse(exported.text) as {
-      collections: { characters: Record<string, unknown>[] };
+      collections: { worldEvents: Record<string, unknown>[] };
     };
-    broken.collections.characters[0]!.status = 'maybe';
+    // IP-8: a region that is not in the file's regions list.
+    broken.collections.worldEvents[0]!.regions = ['nowhere'];
     await expect(importBibleJson(handle, JSON.stringify(broken))).rejects.toThrow(
       /is not valid, so nothing was imported/,
     );
@@ -322,17 +324,19 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     const untouched = await dumpBible(handle);
     const older = JSON.parse(exported.text) as {
       bible: { schemaVersion: number };
-      collections: { characters: Record<string, unknown>[] };
+      collections: { worldEvents: Record<string, unknown>[] };
     };
     older.bible.schemaVersion = LATEST_SCHEMA_VERSION - 1;
-    older.collections.characters[0]!.status = 'maybe';
+    // IP-8: a region that is not in the file's regions list; no migration changes regions.
+    const regions = older.collections.worldEvents[0]!.regions;
+    older.collections.worldEvents[0]!.regions = ['nowhere'];
     await expect(importBibleJson(handle, JSON.stringify(older))).rejects.toThrow(
       /is not valid, so nothing was imported/,
     );
     expect((await dumpBible(handle)).collections).toEqual(untouched.collections);
     expect(await isEmptyBible(handle)).toBe(true);
     // The same older file without the damage loads and is migrated.
-    older.collections.characters[0]!.status = 'canon';
+    older.collections.worldEvents[0]!.regions = regions;
     await importBibleJson(handle, JSON.stringify(older));
     expect(await isEmptyBible(handle)).toBe(false);
   });

@@ -407,7 +407,7 @@ describe('AI-3 proposals only through the review queue', () => {
     expect(counts().places).toBe(before.places + 1);
   });
 
-  test('AI-3 propose_change links and deletes only by proposal; rejecting leaves the entry as it was', async () => {
+  test('AI-3 A53 propose_change changes and deletes only by proposal; a status in the data is dropped, not refused; rejecting leaves the entry as it was', async () => {
     const tools = bibleTools(bible, {
       label: 'test',
       now: () => new Date(),
@@ -416,17 +416,18 @@ describe('AI-3 proposals only through the review queue', () => {
       rejected: () => undefined,
     });
     const propose = tools.find((t) => t.name === 'propose_change')!;
-    const h2Links = () => JSON.stringify(bible.model.get('characters', 'H2')!.links);
-    const linksBefore = h2Links();
-    const link = await propose.handler({
-      op: 'link',
+    const backstoryBefore = bible.model.get('characters', 'H2')!.backstory;
+    // A writer's saved instructions may still ask for a status (IP-15); the key is dropped.
+    const change = await propose.handler({
+      op: 'update',
       collection: 'characters',
       targetId: 'H2',
-      link: { targetId: 'Z1', kind: 'met at the wedding' },
+      data: { backstory: 'Met Meiling at the wedding.', status: 'canon' },
       reason: 'Both are at the wedding in chapter 3.',
     });
-    const linkId = (JSON.parse(link.text) as { proposalId: string }).proposalId;
-    expect(h2Links()).toBe(linksBefore);
+    expect(change.isError).toBeFalsy();
+    const changeId = (JSON.parse(change.text) as { proposalId: string }).proposalId;
+    expect(bible.model.get('characters', 'H2')!.backstory).toBe(backstoryBefore);
     const del = await propose.handler({
       op: 'delete',
       collection: 'characters',
@@ -437,11 +438,10 @@ describe('AI-3 proposals only through the review queue', () => {
     expect(bible.model.get('characters', 'H6')!.deletedAt).toBeUndefined();
     await invokeBible('proposal.reject', { id: delId });
     expect(bible.model.get('characters', 'H6')!.deletedAt).toBeUndefined();
-    await invokeBible('proposal.approve', { id: linkId });
-    expect(bible.model.get('characters', 'H2')!.links).toContainEqual({
-      targetId: 'Z1',
-      kind: 'met at the wedding',
-    });
+    await invokeBible('proposal.approve', { id: changeId });
+    const h2 = bible.model.get('characters', 'H2')!;
+    expect(h2.backstory).toBe('Met Meiling at the wedding.');
+    expect(h2).not.toHaveProperty('status');
     // What does not fit is refused with the reason, and nothing is queued.
     const queued = counts().proposals;
     const bad = await propose.handler({
