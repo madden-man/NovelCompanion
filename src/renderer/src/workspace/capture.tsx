@@ -676,9 +676,7 @@ export function CaptureBox() {
     try {
       await undo.flush();
       // CR-9: the box's own drafts, then the proposals, as one undo step.
-      const local = drafts.length
-        ? await fileLocalDrafts(call, drafts)
-        : NO_FILING;
+      const local = drafts.length ? await fileLocalDrafts(call, drafts) : NO_FILING;
       const approved = allCards.length
         ? await fileCapture(call, tickedCards, untickedCards)
         : NO_FILING;

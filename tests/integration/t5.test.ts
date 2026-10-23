@@ -30,8 +30,8 @@ describe('T-5 editing coverage through the IPC layer', () => {
     // Coverage by construction: the plan holds every collection and every editable field.
     expect(plan.items.map((i) => i.collection).sort()).toEqual([...ENTRY_COLLECTIONS].sort());
     const total = plan.items.reduce((n, i) => n + i.fields.length, 0);
-    // A53: session logs and briefs left the model, so fewer fields than the 200 before.
-    expect(total).toBeGreaterThan(150);
+    // A53: session logs, briefs and the six common fields left the model, so fewer fields than the 200 before.
+    expect(total).toBeGreaterThan(90);
     for (const item of plan.items) {
       expect(item.fields).toEqual(editableFields(manifests[item.collection]).map((s) => s.name));
     }

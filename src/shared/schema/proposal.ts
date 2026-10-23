@@ -12,12 +12,7 @@ export const ListRef = z
 export type ListRef = z.infer<typeof ListRef>;
 
 /** IP-17: the lists a proposal may add an item to. */
-export const MINTABLE_LISTS = [
-  'communities',
-  'eventCategories',
-  'regions',
-  'languages',
-] as const;
+export const MINTABLE_LISTS = ['communities', 'eventCategories', 'regions', 'languages'] as const;
 
 /** IP-17: what a `listAdd` proposal adds. */
 export const ListAddProposal = z.strictObject({

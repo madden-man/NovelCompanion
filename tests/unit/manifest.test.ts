@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import {
   ENTRY_COLLECTIONS,
   collectionInfo,
+  commonFields,
   editableFields,
   entrySchemas,
   manifests,
@@ -55,12 +56,6 @@ const SCALAR: Partial<Record<FieldSpec['kind'], string[]>> = {
   objectList: ['array'],
 };
 
-/**
- * Schema keys a stored document may still carry that no editor shows. A53 0b:
- * a part keeps `bookId` until migration 013 unsets it.
- */
-const STORED_ONLY = new Set(['parts.bookId']);
-
 /** Every mismatch between a manifest and the zod shape it describes. */
 function compare(
   specs: readonly FieldSpec[],
@@ -70,7 +65,6 @@ function compare(
   const out: string[] = [];
   const names = specs.map((s) => s.name);
   for (const key of Object.keys(shape)) {
-    if (STORED_ONLY.has(`${at}${key}`)) continue;
     if (!names.includes(key)) out.push(`${at}${key}: in the schema but not the manifest`);
   }
   for (const spec of specs) {
@@ -189,13 +183,15 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
     }
   });
 
-  test('ED-1 entries share the common fields of section 4', () => {
-    const common = ['title', 'body', 'status', 'provenance', 'sourceNote', 'tags', 'links'];
+  test('ED-1 A52 entries share the common fields of section 4, and only those', () => {
+    const common = ['_id', 'title', 'body', 'createdAt', 'modifiedAt', 'deletedAt'];
+    expect(commonFields.map((s) => s.name)).toEqual(common);
+    const removed = ['status', 'provenance', 'sourceNote', 'sourceRef', 'tags', 'links'];
     for (const c of ENTRY_COLLECTIONS) {
-      expect(
-        manifests[c].map((s) => s.name),
-        c,
-      ).toEqual(expect.arrayContaining(common));
+      const names = manifests[c].map((s) => s.name);
+      expect(names, c).toEqual(expect.arrayContaining(common));
+      for (const r of removed) expect(names, c).not.toContain(r);
+      for (const r of removed) expect(Object.keys(entrySchemas[c].shape), c).not.toContain(r);
     }
   });
 });

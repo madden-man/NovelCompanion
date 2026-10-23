@@ -45,15 +45,17 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
       schemaVersion: LATEST_SCHEMA_VERSION,
     });
     const names = await allCollections();
-    for (const c of [...ENTRY_COLLECTIONS, 'lists', 'revisions']) {
+    for (const c of [...ENTRY_COLLECTIONS, 'lists']) {
       expect(names).toContain(`${slug}.${c}`);
     }
     // SM-2: a new bible ends with none of the collections A39 drops.
     for (const c of ['facts', 'knowledgeRecords', 'themes', 'customSections', 'plotBeats']) {
       expect(names).not.toContain(`${slug}.${c}`);
     }
-    const indexes = await bible.collection('revisions').indexes();
-    expect(indexes.map((i) => i.key)).toContainEqual({ entryId: 1, at: 1 });
+    // A53: nor the ones migration 13 drops.
+    for (const c of ['revisions', 'importSources', 'briefs', 'sessionLogs', 'books']) {
+      expect(names).not.toContain(`${slug}.${c}`);
+    }
 
     const lists = await bible.collection<ListDoc>('lists').find({}).toArray();
     expect(lists.map((l) => l._id).sort()).toEqual([...LIST_IDS, ...CONFIG_LIST_IDS].sort());
@@ -61,8 +63,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     const items = (id: string) => lists.find((l) => l._id === id)!.items.map((i) => i.id);
     expect(items('unionTypes')).toEqual(['married', 'partnered', 'other']);
     expect(items('parentLinkTypes')).toEqual(['biological', 'adoptive', 'step', 'guardian']);
-    expect(items('statuses')).toEqual(['canon', 'planned', 'idea']);
-    expect(items('provenance')).toEqual(['researched', 'invented']);
     expect(items('eventCategories').length).toBeGreaterThan(0);
     // A16: no book-specific communities in code.
     expect(items('communities')).toEqual([]);

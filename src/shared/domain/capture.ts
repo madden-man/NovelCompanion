@@ -332,10 +332,7 @@ export function mergeFilings(...filings: readonly Filing[]): Filing {
  * fact the box would file (CR-6). Title: the first line. Body (Markdown,
  * A44): the text, a blank line, the story time.
  */
-export function captureQuestionData(
-  text: string,
-  storyTime: string,
-): Record<string, unknown> {
+export function captureQuestionData(text: string, storyTime: string): Record<string, unknown> {
   const trimmed = text.trim();
   const first = (trimmed.split('\n')[0] ?? '').trim();
   const title = first.length > 120 ? `${first.slice(0, 119)}…` : first;

@@ -1113,7 +1113,7 @@ export function planAddRelative(
         data: {
           _id: newId(),
           title: `${anchor.name} and ${name}`,
-            partnerIds: [anchor.id, id],
+          partnerIds: [anchor.id, id],
           type: req.unionType,
           startYear: null,
           endYear: null,

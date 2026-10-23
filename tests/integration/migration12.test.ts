@@ -114,8 +114,8 @@ describe('A51 migration 12 on a copy of the fixture at version 11', () => {
   });
 
   test('A51 opening takes a snapshot of the version 11 bible first, then runs migration 12', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(12);
-    expect(await schemaVersion(open.handle)).toBe(12);
+    expect(LATEST_SCHEMA_VERSION).toBe(13);
+    expect(await schemaVersion(open.handle)).toBe(13);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION12_SNAPSHOT_LABEL, schemaVersion: 11 });
@@ -163,7 +163,7 @@ describe('A51 migration 12 on a copy of the fixture at version 11', () => {
     });
   });
 
-  test('A51 running it again changes nothing, and a bible at version 12 is not snapshotted again', async () => {
+  test('A51 running it again changes nothing, and a bible at version 13 is not snapshotted again', async () => {
     const dump = async () => ({
       moments: await open.handle.collection('moments').find({}).sort({ _id: 1 }).toArray(),
       lists: await open.handle.collection('lists').find({}).sort({ _id: 1 }).toArray(),
@@ -212,9 +212,9 @@ describe('A51 migration 12 on a bible that already has a kinds list', () => {
 });
 
 describe('A51 migration 12 on the fixture as it ships', () => {
-  test('A51 the fixture loads at version 12 and migration 12 leaves it exactly as it is', async () => {
+  test('A51 the fixture loads at version 13 and migration 12 leaves it exactly as it is', async () => {
     const handle = await loadFixture(store, freshSlug('mig12-fx'));
-    expect(await schemaVersion(handle)).toBe(12);
+    expect(await schemaVersion(handle)).toBe(13);
     const snapshot = async () => ({
       moments: await handle.collection('moments').find({}).sort({ _id: 1 }).toArray(),
       lists: await handle.collection('lists').find({}).sort({ _id: 1 }).toArray(),
