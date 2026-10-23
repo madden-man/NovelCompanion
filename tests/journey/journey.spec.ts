@@ -242,7 +242,6 @@ test('FT-2 FT-10 a child is added to Sam Hale from the tree and appears as a new
   const form = inspector.getByTestId('add-form');
   await form.getByLabel('Name').fill('Hope Hale');
   await form.getByLabel('Birth year').fill('2040');
-  await form.getByLabel('Status').selectOption('planned');
   await form.getByLabel('Link type').selectOption('biological');
   await form.getByRole('button', { name: /^Add the/ }).click();
   await expect(page.locator('g.tnode[aria-label^="Hope Hale,"]')).toHaveCount(1);
@@ -286,7 +285,7 @@ async function addPerson(
   kind: 'person' | 'parent' | 'child' | 'sibling' | 'partner',
   name: string,
   born: number | null,
-  opts: { status?: string; type?: string; coParent?: string } = {},
+  opts: { type?: string; coParent?: string } = {},
 ): Promise<void> {
   await (kind === 'person' ? page : treeInspector())
     .getByRole('button', { name: kind === 'person' ? 'Add person' : `Add ${kind}`, exact: true })
@@ -294,7 +293,6 @@ async function addPerson(
   const form = treeInspector().getByTestId('add-form');
   await form.getByLabel('Name').fill(name);
   if (born !== null) await form.getByLabel('Birth year').fill(String(born));
-  await form.getByLabel('Status').selectOption(opts.status ?? 'canon');
   if (opts.type && kind === 'partner') await form.getByLabel('Union type').selectOption(opts.type);
   else if (opts.type) await form.getByLabel('Link type').selectOption(opts.type);
   if (opts.coParent !== undefined) {
@@ -365,7 +363,6 @@ function signature(g: TreeGraph, familyName: (id: string) => string) {
         yr(p.birth),
         yr(p.death),
         p.familyIds.map(familyName).sort().join('+'),
-        p.status,
         gen.get(p.id),
       ])
       .sort(),
@@ -716,22 +713,13 @@ async function walkContext(): Promise<{
 }
 
 /** SM-1: the fields the character page edits; the app sets the rest (T-5 covers them). */
-const CHARACTER_PAGE = [
-  'names',
-  'birth',
-  'death',
-  'status',
-  'familyIds',
-  'role',
-  'body',
-  'backstory',
-];
+const CHARACTER_PAGE = ['names', 'birth', 'death', 'familyIds', 'role', 'body', 'backstory'];
 
 test('ED-1 one entry of every section is created from its form, every field is changed in the editor, and the saved values read back', async () => {
   test.setTimeout(600_000);
   const { ctx, pools } = await walkContext();
-  // A section with no entries yet (briefs, before the first session) goes first,
-  // so the entry made here is there for the sections that point at it.
+  // A section with no entries yet goes first, so the entry made here is there
+  // for the sections that point at it.
   const order = [...ENTRY_COLLECTIONS].sort(
     (a, b) => Number(pools.get(a)!.length > 0) - Number(pools.get(b)!.length > 0),
   );
@@ -834,7 +822,7 @@ test('ED-5 the trial entries are moved to the trash from their pages, and the Tr
 });
 
 // ---------------------------------------------------------------------------
-// Search, lists, history, trash, undo, links
+// Search, lists, trash, undo
 
 test('SR-1 SR-2 search finds English and Chinese, and the filters narrow it', async () => {
   const box = page.getByRole('searchbox', { name: 'Search the bible' });
@@ -855,61 +843,39 @@ test('SR-1 SR-2 search finds English and Chinese, and the filters narrow it', as
   await expect(results).toContainText('团圆');
 });
 
-test('ED-8 renaming a tag on the Lists screen updates every entry that uses it', async () => {
-  // SM-1: the character page has no tags box, so two open questions carry the tag.
-  for (const name of [/^Does Daniel know/, /^How cheap are grid batteries/]) {
-    await sectionList(page, 'Open questions');
-    await pick(name).first().click();
-    await expect(page.getByTestId('editor')).toBeVisible();
-    const tags = field(page.getByTestId('editor'), 'tags');
-    await tags.locator('.add-row > input').fill('harbor');
-    await tags.locator('.add-row > input').press('Enter');
-    await waitSaved(page);
-  }
+test('ED-8 renaming a community on the Lists screen changes the name every entry shows', async () => {
   await rail(page, 'Lists').click();
-  const panel = page.locator('[data-list="tags"]');
-  const row = panel.locator('li', { hasText: 'harbor' });
-  await expect(row).toContainText('used 2 times');
-  await row.getByRole('button', { name: 'Rename harbor' }).click();
-  await panel.getByLabel('New name for harbor').fill('the harbor');
-  await panel.getByRole('button', { name: 'Save name' }).click();
-  await expect(panel.getByRole('status')).toHaveText('Renamed. 2 entries were updated.');
-  for (const id of ['Q1', 'Q4']) {
-    const { tags } = (await invoke('entry.get', { collection: 'openQuestions', id })).entry;
-    expect(tags).toContain('the harbor');
-    expect(tags).not.toContain('harbor');
-  }
+  const panel = page.locator('[data-list="communities"]');
+  const row = panel.locator('[data-item="portland"]');
+  await expect(row).toContainText(/used (once|\d+ times)/);
+  // IP-8: the name is a field; Enter renames.
+  await fillEditable(row.getByTestId('item-name'), 'Portland');
+  await expect(panel.locator('p[role="status"]')).toHaveText(
+    'Renamed. Every entry shows the new name.',
+  );
+  const { lists } = await invoke('lists.get', {});
+  expect(
+    lists.find((l) => l._id === 'communities')?.items.find((i) => i.id === 'portland')?.label,
+  ).toBe('Portland');
+  // The place keeps the item's ID, so its page shows the new name.
+  expect((await invoke('entry.get', { collection: 'places', id: 'PLC1' })).entry.communityId).toBe(
+    'portland',
+  );
+  await sectionList(page, 'Places');
+  await pick(/^Portland/)
+    .first()
+    .click();
+  await expect(
+    field(page.getByTestId('editor'), 'communityId').locator('select option:checked'),
+  ).toHaveText('Portland');
 });
 
-test('ED-4 the history drawer compares a revision with the current entry and restores it', async () => {
-  await openEntry('Characters', /^Ruth Hale/);
-  const input = field(page.getByTestId('editor'), 'role').locator('textarea');
-  await input.fill('Astoria');
-  await waitSaved(page);
-  await input.fill('Seaside');
-  await waitSaved(page);
-  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
-  const drawer = page.getByTestId('history');
-  const revisions = drawer
-    .getByRole('list', { name: 'Revisions, newest first' })
-    .getByRole('button');
-  await expect(revisions.nth(0)).toContainText('Changed (current)');
-  await revisions.nth(1).click();
-  const row = drawer.getByTestId('revision-diff').getByRole('row', { name: /In the story/ });
-  await expect(row.getByRole('cell').nth(0)).toHaveText('Astoria');
-  await expect(row.getByRole('cell').nth(1)).toHaveText('Seaside');
-  await drawer.getByRole('button', { name: 'Restore this version' }).click();
-  await expect(revisions.nth(0)).toContainText('Restored the version from');
-  await drawer.getByRole('button', { name: 'Close' }).click();
-  await expect(input).toHaveValue('Astoria');
-});
-
-test('ED-5 a character moves to the trash with what links to it, and is restored from the Trash screen', async () => {
+test('ED-5 a character moves to the trash and is restored from the Trash screen', async () => {
   await openEntry('Characters', /^Tomas Reyes/);
   const tools = page.getByTestId('entry-tools');
   await tools.getByRole('button', { name: 'Move to trash' }).click();
   const dialog = tools.getByRole('dialog', { name: 'Move to trash' });
-  await expect(dialog.getByTestId('linked-count')).toBeVisible();
+  await expect(dialog.locator('strong')).toHaveText('Move Tomas Reyes to the trash?');
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
   await expect(page.getByTestId('editor')).toContainText('This entry is in the trash.');
   await rail(page, 'Trash').click();
@@ -941,34 +907,6 @@ test('ED-3 a change is undone with Cmd+Z and redone with Shift+Cmd+Z', async () 
   await expect(input).toHaveValue('Cannon Beach');
 });
 
-test('ED-9 typing @ in a long text field links an entry, and the target shows Linked from', async () => {
-  const editor = page.getByTestId('editor');
-  const body = field(editor, 'body').locator('textarea');
-  await body.click();
-  await body.press('End');
-  await body.pressSequentially(' Sam visits @Hope');
-  const picker = field(editor, 'body').getByRole('listbox', { name: 'Matching entries' });
-  await expect(picker.getByRole('option').first()).toContainText('Hope Hale');
-  await page.keyboard.press('Enter');
-  await expect(body).toHaveValue(/Sam visits @Hope Hale $/);
-  await waitSaved(page);
-  // SM-1: the character page has no links box; the mention is stored as a link.
-  const hope = (
-    await invoke('entry.list', { collection: 'characters', trash: 'exclude' })
-  ).entries.find((e) => e.entry.title === 'Hope Hale')!.entry._id;
-  const samId = (await editor.getAttribute('data-entry-id'))!;
-  expect(
-    (await invoke('entry.get', { collection: 'characters', id: samId })).entry.links,
-  ).toContainEqual({
-    targetId: hope,
-    kind: 'mention',
-  });
-  await openEntry('Characters', /^Hope Hale/);
-  await expect(page.getByTestId('entry-tools').getByTestId('linked-from')).toContainText(
-    'Character: Sam Hale',
-  );
-});
-
 // ---------------------------------------------------------------------------
 // A new chapter, Claude, proposals
 
@@ -977,7 +915,6 @@ test('ED-1 A5 a new chapter is created from its form with two strands, present a
   await page.getByRole('button', { name: 'New chapter', exact: true }).click();
   const form = page.getByTestId('new-entry');
   await field(form, 'title').locator(':scope > input').fill(CHAPTER);
-  await field(form, 'status').locator(':scope > select').selectOption('planned');
   await field(form, 'partId').locator(':scope > select').selectOption('PT2');
   await field(form, 'readingOrder').locator(':scope > input').fill('9');
   const strands = field(form, 'strands');
@@ -1059,7 +996,7 @@ test('AI-3 ED-7 a change Claude suggests waits in the review queue and is approv
 // ---------------------------------------------------------------------------
 // The manuscript and the alignment check
 
-test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary approved, and a moment promoted to canon', async () => {
+test('MS-1 MS-2 Chapter 6 is read from Word, marked as written, and its summary approved', async () => {
   await nextDocument(files.letter);
   await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
@@ -1073,19 +1010,15 @@ test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary
   await ch.getByRole('button', { name: 'Mark as written' }).click();
   const flow = ch.getByTestId('written-flow');
   const draft = flow.getByLabel('Summary to approve');
-  await expect(draft).toHaveValue(
+  await expect(draft).toHaveText(
     'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
   await flow.getByRole('button', { name: 'Approve summary' }).click();
   await expect(flow.getByTestId('summary-done')).toHaveText('Summary saved.');
-  const list = flow.getByTestId('promote-list');
-  await list
-    .getByLabel('Iris finds the letter (a moment of the point of view in these years)')
-    .check();
-  await flow.getByRole('button', { name: 'Promote checked to canon' }).click();
-  await expect(list.locator('label')).toHaveCount(0);
-  expect((await invoke('entry.get', { collection: 'moments', id: 'B4' })).entry.status).toBe(
-    'canon',
+  // MS-3 is withdrawn (A52): the summary is all marking written offers.
+  await expect(flow.getByTestId('promote-step')).toHaveCount(0);
+  expect((await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary).toBe(
+    'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
 });
 
@@ -1100,20 +1033,18 @@ test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists stru
   await alignment().getByTestId('alignment-run').click();
   // AI-6 was confirmed for this bible in the question panel, so the check starts at once.
   await expect(alignment().getByTestId('alignment-status')).toContainText(
-    'Done. Structural checks: 2 found. Claude read 8 chapters and found 2.',
+    'Done. Structural checks: 1 found. Claude read 8 chapters and found 2.',
     { timeout: 60_000 },
   );
-  // S1 and S3, found in code (SM-2: facts are gone, so S2 and its check are withdrawn).
+  // S1 alone, found in code (SM-2 withdrew S2 and A52 withdrew S3).
   await expect(alignment().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(
-    2,
+    1,
   );
   await expect(finding('character-present-while-dead')).toContainText(
     'Peter Hale (H2) as present. Peter Hale died in 2030.',
   );
   await expect(finding('fact-acted-on-before-learned')).toHaveCount(0);
-  await expect(finding('event-linked-as-happened-after-story-year')).toContainText(
-    'E10 is dated 2090',
-  );
+  await expect(finding('event-linked-as-happened-after-story-year')).toHaveCount(0);
   // P1 and P2, the recorded Claude findings, each with its chapter, line, and quote.
   await expect(finding('age')).toContainText('Chapter 5: Candles');
   await expect(finding('age').getByTestId('finding-quote')).toContainText(
