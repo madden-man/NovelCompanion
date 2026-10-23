@@ -187,11 +187,14 @@ export function BackstoryGrid(props: {
   };
 
   // A50: Escape leaves the person view unless a field, a rename or a dialog takes it first.
+  // During a marker or lifespan drag it calls the drag off instead (gridShared marks it taken),
+  // and the next Escape leaves.
   const leave = props.onLeavePerson;
   const onFrameKey =
     personId !== null && leave
       ? (ev: ReactKeyboardEvent<HTMLDivElement>) => {
           if (ev.key !== 'Escape' || ev.defaultPrevented) return;
+          if (ctl.dragging || lifeDrag.dragging) return;
           const t = ev.target as HTMLElement;
           if (t.closest('input, textarea, select, [contenteditable="true"], .wg-rename')) return;
           if (document.querySelector('[aria-modal="true"]')) return;

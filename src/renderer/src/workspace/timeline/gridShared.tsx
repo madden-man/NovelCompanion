@@ -122,6 +122,31 @@ interface Drag {
   startX: number;
   moved: boolean;
   delta: number;
+  /** Escape called it off; the press still runs to its release, which then does nothing. */
+  canceled?: boolean;
+}
+
+/**
+ * While a drag is live, Escape anywhere calls it off: the item goes back to
+ * where it was and nothing is written. The key is marked taken
+ * (`preventDefault`), so nothing else answers that Escape (the person view
+ * leaving, A50); the next Escape is everyone's again.
+ */
+function useEscapeCancels(live: boolean, cancel: () => void): void {
+  const ref = useRef(cancel);
+  useLayoutEffect(() => {
+    ref.current = cancel;
+  });
+  useEffect(() => {
+    if (!live) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      ref.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [live]);
 }
 
 export interface Tip {
@@ -141,6 +166,8 @@ export interface GridMarkers {
   setCurrent: (id: string) => void;
   /** True once for the click that ends a drag, which must not count as a click. */
   takeSuppressedClick: () => boolean;
+  /** A50: a press or drag is under way and Escape has not called it off. */
+  dragging: boolean;
   onPointerDown: (ev: ReactPointerEvent<HTMLButtonElement>, id: string) => void;
   onPointerMove: (ev: ReactPointerEvent<HTMLButtonElement>) => void;
   onPointerUp: (ev: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -202,6 +229,10 @@ export function useGridMarkers(opts: {
     [layout],
   );
   const active = current !== null && order.includes(current) ? current : order[0];
+  const dragging = drag !== null && !drag.canceled;
+  useEscapeCancels(dragging, () =>
+    setDrag((d) => (d ? { ...d, canceled: true, moved: false, delta: 0 } : d)),
+  );
 
   /** Focus another marker of the same grid. */
   const focusMarker = (from: HTMLElement, id: string) => {
@@ -216,6 +247,7 @@ export function useGridMarkers(opts: {
     order,
     active,
     drag,
+    dragging,
     tip,
     setTip,
     setCurrent,
@@ -232,7 +264,7 @@ export function useGridMarkers(opts: {
       setDrag({ id, pointerId: ev.pointerId, startX: ev.clientX, moved: false, delta: 0 });
     },
     onPointerMove: (ev) => {
-      if (!drag || ev.pointerId !== drag.pointerId) return;
+      if (!drag || drag.canceled || ev.pointerId !== drag.pointerId) return;
       const dx = ev.clientX - drag.startX;
       const y = yearsOf(drag.id);
       if (!y) return;
@@ -244,13 +276,13 @@ export function useGridMarkers(opts: {
       if (!drag || ev.pointerId !== drag.pointerId) return;
       const d = drag;
       setDrag(null);
-      if (!d.moved) return;
+      if (!d.moved && !d.canceled) return;
       // The click that follows this release (if any) is part of the drag; nothing after it is.
       suppressClick.current = true;
       setTimeout(() => {
         suppressClick.current = false;
       }, 0);
-      if (d.delta !== 0) void onMove(d.id, d.delta, 'span');
+      if (!d.canceled && d.delta !== 0) void onMove(d.id, d.delta, 'span');
     },
     cancelDrag: () => setDrag(null),
     renaming,
@@ -473,6 +505,8 @@ interface EdgeDragState {
   startX: number;
   moved: boolean;
   delta: number;
+  /** Escape called it off (A50). */
+  canceled?: boolean;
 }
 
 export interface EdgeDrag {
@@ -480,6 +514,8 @@ export interface EdgeDrag {
   deltaFor: (key: string, side: EdgeSide) => number;
   /** The end being dragged, once it has moved. */
   active: { key: string; side: EdgeSide; delta: number } | null;
+  /** A50: a press or drag on a handle is under way and Escape has not called it off. */
+  dragging: boolean;
   /** The pointer handlers for one handle. */
   handle: (
     key: string,
@@ -505,10 +541,15 @@ export function useEdgeDrag(
 ): EdgeDrag {
   const [drag, setDrag] = useState<EdgeDragState | null>(null);
   const swallow = useRef(false);
+  const dragging = drag !== null && !drag.canceled;
+  useEscapeCancels(dragging, () =>
+    setDrag((d) => (d ? { ...d, canceled: true, moved: false, delta: 0 } : d)),
+  );
   return {
     deltaFor: (key, side) =>
       drag && drag.moved && drag.key === key && drag.side === side ? drag.delta : 0,
     active: drag && drag.moved ? { key: drag.key, side: drag.side, delta: drag.delta } : null,
+    dragging,
     handle: (key, side) => ({
       onPointerDown: (ev) => {
         swallow.current = false;
@@ -519,7 +560,7 @@ export function useEdgeDrag(
         setDrag({ key, side, pointerId: ev.pointerId, startX: ev.clientX, moved: false, delta: 0 });
       },
       onPointerMove: (ev) => {
-        if (!drag || ev.pointerId !== drag.pointerId) return;
+        if (!drag || drag.canceled || ev.pointerId !== drag.pointerId) return;
         const dx = ev.clientX - drag.startX;
         const moved = drag.moved || Math.abs(dx) > 3;
         const delta = dragYears(dx, ppy);
@@ -529,12 +570,12 @@ export function useEdgeDrag(
         if (!drag || ev.pointerId !== drag.pointerId) return;
         const d = drag;
         setDrag(null);
-        if (!d.moved) return;
+        if (!d.moved && !d.canceled) return;
         swallow.current = true;
         setTimeout(() => {
           swallow.current = false;
         }, 0);
-        if (d.delta !== 0) onRelease(d.key, d.side, d.delta);
+        if (!d.canceled && d.delta !== 0) onRelease(d.key, d.side, d.delta);
       },
       onPointerCancel: () => setDrag(null),
       onClick: (ev) => {

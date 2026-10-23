@@ -1331,6 +1331,42 @@ test('IP-4 ED-10 a death dragged before the birth is refused with the reason and
   expect((await getCharacter('H1')).death).toEqual({ year: 2041 });
 });
 
+test('IP-4 A50 in the person view Escape during a marker or lifespan drag calls the drag off and stays in the view; the next Escape leaves', async () => {
+  await zoomTo('Close');
+  await openPerson('H1');
+  await expect(personView()).toHaveCount(1);
+  const { ppy } = await axis();
+  await showYear(2029);
+  const m = marker('H1-voice-0');
+  await dragBy(m, 3 * ppy);
+  await expect(grid().getByTestId('drag-year')).toHaveText('2031');
+  await page.keyboard.press('Escape');
+  await expect(grid().getByTestId('drag-year')).toHaveCount(0);
+  await expect(personView()).toHaveCount(1);
+  // The release after it moves nothing and opens nothing.
+  await page.mouse.up();
+  await expect(dialog()).toHaveCount(0);
+  await expect(m).toHaveAttribute('data-year', '2028');
+  expect((await getMoment('H1-voice-0')).year).toBe(2028);
+  // The same for an end of the lifespan.
+  await showYear(1958);
+  const handle = row('H1').getByTestId('life-handle-start');
+  await handle.hover({ force: true });
+  await dragBy(handle, -2 * ppy);
+  await expect(grid().getByTestId('drag-year')).toHaveText('Birth 1956');
+  await page.keyboard.press('Escape');
+  await expect(grid().getByTestId('drag-year')).toHaveCount(0);
+  await expect(personView()).toHaveCount(1);
+  await page.mouse.up();
+  await expect(row('H1')).toHaveAttribute('data-birth', '1958');
+  expect((await getCharacter('H1')).birth).toEqual({ year: 1958 });
+  // With no drag, Escape leaves the view.
+  await m.focus();
+  await page.keyboard.press('Escape');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('H1')).toBeFocused();
+});
+
 test('IP-4 A49 F2 on a moment marker renames its label in place as one step; Escape leaves it; a double-click opens the moment with What happens open', async () => {
   await marker('H5-voice-0').focus();
   await page.keyboard.press('F2');
