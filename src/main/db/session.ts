@@ -5,6 +5,7 @@ import { LATEST_SCHEMA_VERSION } from './migrations';
 import {
   MIGRATION10_SNAPSHOT_LABEL,
   MIGRATION11_SNAPSHOT_LABEL,
+  MIGRATION12_SNAPSHOT_LABEL,
   MIGRATION9_SNAPSHOT_LABEL,
   needsDailySnapshot,
 } from '../../shared/domain/snapshots';
@@ -20,6 +21,8 @@ const SIMPLIFIED_MODEL_VERSION = 9;
 const MARKDOWN_TEXT_VERSION = 10;
 /** The schema version of migration 11 (A47), the one that turns regions and family colours into list IDs and hex. */
 const VOCABULARY_VERSION = 11;
+/** The schema version of migration 12 (A51), the one that gives moments their kinds. */
+const MOMENT_KINDS_VERSION = 12;
 
 /** The bible's snapshot keep setting (BK-1), read straight from `meta` before the read model exists. */
 async function storedSnapshotKeep(handle: BibleHandle): Promise<number> {
@@ -73,10 +76,10 @@ export async function openBibleSession(
     }
   } else {
     // SM-2: migration 9 drops whole collections, A44: migration 10 rewrites every long
-    // text, and A47: migration 11 rewrites regions and family colours, so the bible is
-    // snapshotted as it is first. One snapshot covers them all.
+    // text, A47: migration 11 rewrites regions and family colours, and A51: migration 12
+    // sets moment kinds, so the bible is snapshotted as it is first. One snapshot covers them all.
     const have = options.snapshotRoot ? await schemaVersion(handle) : LATEST_SCHEMA_VERSION;
-    if (options.snapshotRoot && have < VOCABULARY_VERSION) {
+    if (options.snapshotRoot && have < MOMENT_KINDS_VERSION) {
       // A migration snapshot is never pruned; the keep setting applies to the others.
       const keep = await storedSnapshotKeep(handle);
       const before = new SnapshotService(handle, options.snapshotRoot, () => keep, options.now);
@@ -86,7 +89,9 @@ export async function openBibleSession(
           ? MIGRATION9_SNAPSHOT_LABEL
           : have < MARKDOWN_TEXT_VERSION
             ? MIGRATION10_SNAPSHOT_LABEL
-            : MIGRATION11_SNAPSHOT_LABEL,
+            : have < VOCABULARY_VERSION
+              ? MIGRATION11_SNAPSHOT_LABEL
+              : MIGRATION12_SNAPSHOT_LABEL,
       );
     }
     await migrate(handle);

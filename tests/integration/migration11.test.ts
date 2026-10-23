@@ -106,9 +106,9 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
     open = await openBibleSession(store, bible.id, { snapshotRoot: root });
   });
 
-  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migration 11', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(11);
-    expect(await schemaVersion(open.handle)).toBe(11);
+  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 and 12', async () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(12);
+    expect(await schemaVersion(open.handle)).toBe(12);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION11_SNAPSHOT_LABEL, schemaVersion: 10 });
@@ -196,7 +196,7 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
     expect(summary.itemsSeeded).toBeGreaterThanOrEqual(5 + 6);
   });
 
-  test('A47 running it again changes nothing, and a bible at version 11 is not snapshotted again', async () => {
+  test('A47 running it again changes nothing, and a bible at version 12 is not snapshotted again', async () => {
     const dump = async () => ({
       events: await open.handle.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
       families: await open.handle.collection('families').find({}).sort({ _id: 1 }).toArray(),
@@ -212,9 +212,9 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
 });
 
 describe('A47 migration 11 on the fixture as it ships', () => {
-  test('A47 the fixture loads at version 11 and migration 11 leaves it exactly as it is', async () => {
+  test('A47 the fixture loads at version 12 and migration 11 leaves it exactly as it is', async () => {
     const handle = await loadFixture(store, freshSlug('mig11-fx'));
-    expect(await schemaVersion(handle)).toBe(11);
+    expect(await schemaVersion(handle)).toBe(12);
     const snapshot = async () => ({
       events: await handle.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
       families: await handle.collection('families').find({}).sort({ _id: 1 }).toArray(),
