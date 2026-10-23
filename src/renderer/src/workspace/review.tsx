@@ -157,7 +157,6 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
                   path={spec.name}
                   messages={{ warnings: [], issues: [] }}
                   root={editing}
-                  onMention={() => undefined}
                   onChange={(v) => setEditing((d) => (d ? ({ ...d, [spec.name]: v } as Entry) : d))}
                 />
               ))}

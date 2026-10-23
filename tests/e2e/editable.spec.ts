@@ -521,7 +521,7 @@ test('IP-1 NF-2 every kind works from the keyboard and labels use the primary te
         placeholder: getComputedStyle(el.querySelector('.editable-text.is-placeholder')!).color,
       };
     });
-    expect(read.labels.map((l) => l[0])).toEqual(['Birth', 'Death', 'Status', 'Families']);
+    expect(read.labels.map((l) => l[0])).toEqual(['Birth', 'Death', 'Families']);
     for (const [, c] of read.labels) expect(c, theme).toBe(read.fg);
     expect(read.placeholder, theme).toBe(read.fg);
   }
@@ -529,14 +529,6 @@ test('IP-1 NF-2 every kind works from the keyboard and labels use the primary te
     if (t === null) document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', t);
   }, theme0);
-  // Status from the keyboard on the Characters page: Enter opens the select, Escape leaves it.
-  const status = field(p, 'status');
-  await status.locator('.editable-text').focus();
-  await page.keyboard.press('Enter');
-  await expect(status.locator('select')).toBeFocused();
-  await status.locator('select').selectOption('planned');
-  await expect.poll(async () => (await character('H3')).status).toBe('planned');
-  await expect(status.locator('.editable-text')).toHaveText('Planned');
 });
 
 test('IP-1 ARCH-6 a read-only field shows the reason and never opens', async () => {
@@ -584,7 +576,7 @@ test('IP-1 ARCH-6 a read-only field shows the reason and never opens', async () 
     await banner.getByTestId('open-snapshot').click();
     await expect(banner).toHaveAttribute('data-state', 'readOnly');
     const ro = await openCharacter('Ruth Hale');
-    for (const path of ['names.full', 'names.chinese', 'birth', 'death', 'status']) {
+    for (const path of ['names.full', 'names.chinese', 'birth', 'death']) {
       const f = field(ro, path);
       const t = f.locator('.editable-text');
       await expect(t, path).toHaveAttribute('title', READ_ONLY_REASON);

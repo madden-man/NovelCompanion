@@ -113,12 +113,6 @@
   color: var(--fg-2);
   pointer-events: none;
 }
-.mention-chip {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: 4px;
-  padding: 0 2px;
-}
 .rich-bubble {
   display: flex;
   gap: 2px;

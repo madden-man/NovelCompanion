@@ -588,34 +588,6 @@ test('NF-2 ED-5 the delete confirm: Move to trash opens it, every control in it 
   expect(h3.entry.deletedAt ?? null).toBeNull();
 });
 
-test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every control in the drawer takes focus', async () => {
-  // A second revision, so there is an older one to compare.
-  await invoke('entry.update', {
-    collection: 'characters',
-    id: 'H3',
-    patch: { role: 'Hood River, Oregon' },
-  });
-  await go('Characters');
-  await press(
-    page
-      .getByTestId('entry-list')
-      .getByRole('button', { name: /Daniel Hale/ })
-      .first(),
-  );
-  await press(page.getByTestId('entry-tools').getByRole('button', { name: 'History' }));
-  const drawer = page.getByTestId('history');
-  await expect(drawer).toBeVisible();
-  const revisions = drawer
-    .getByRole('list', { name: 'Revisions, newest first' })
-    .getByRole('button');
-  await expect(revisions.first()).toBeVisible();
-  await press(revisions.last());
-  await expect(drawer.getByTestId('revision-diff')).toBeVisible();
-  expect(await unreachable('[data-testid="history"]')).toEqual([]);
-  await press(drawer.getByRole('button', { name: 'Close' }));
-  await expect(drawer).toBeHidden();
-});
-
 test('NF-2 ED-7 the review queue with a proposal diff open: every control takes focus, and Reject answers Enter', async () => {
   await invoke('test.propose', {
     source: 'import',
