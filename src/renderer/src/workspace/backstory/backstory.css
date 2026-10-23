@@ -93,7 +93,7 @@
 .bs-life {
   position: absolute;
   bottom: 1px;
-  height: 8px;
+  height: 6px;
   z-index: 1;
   pointer-events: none;
 }
@@ -101,7 +101,7 @@
 .bs-life-dash {
   position: absolute;
   top: 0;
-  height: 8px;
+  height: 6px;
   box-sizing: border-box;
 }
 .bs-life-solid {
@@ -149,7 +149,7 @@
 }
 .bs-key.life {
   width: 24px;
-  height: 8px;
+  height: 6px;
   border-radius: 3px;
   background: var(--series-1);
 }

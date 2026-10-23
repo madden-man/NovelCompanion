@@ -76,17 +76,21 @@ export interface GridViewport {
   trackView: number;
   viewWidth: number;
   setViewWidth: (w: number) => void;
+  /** A50: the scroll box's inner height, for a row that fills the frame (0 until measured). */
+  viewHeight: number;
+  setViewHeight: (h: number) => void;
 }
 
 /** The scale for a zoom over the scroll box's measured width (the frame measures it). */
 export function useGridViewport(span: YearSpan, zoom: Zoom, storyYear: number): GridViewport {
   const [viewWidth, setViewWidth] = useState(0);
+  const [viewHeight, setViewHeight] = useState(0);
   const trackView = Math.max(120, viewWidth - LABEL_W - 2);
   const scale = useMemo(
     () => makeScale(span, zoomPpy(zoom, trackView, span)),
     [span, zoom, trackView],
   );
-  return { scale, zoom, storyYear, trackView, viewWidth, setViewWidth };
+  return { scale, zoom, storyYear, trackView, viewWidth, setViewWidth, viewHeight, setViewHeight };
 }
 
 /** Which group headings are closed, and the toggle. */
@@ -405,22 +409,27 @@ export function GridFrame(props: {
   layout: GridLayout;
   testid: string;
   className?: string;
+  /** A50: keys pressed inside the frame that nothing in it took (the person view's Escape). */
+  onKeyDown?: (ev: ReactKeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
   const { layout } = props;
-  const { setViewWidth, viewWidth, scale, storyYear, trackView, zoom } = props.vp;
+  const { setViewWidth, setViewHeight, viewWidth, scale, storyYear, trackView, zoom } = props.vp;
   const scroller = useRef<HTMLDivElement>(null);
   const scrolledFor = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const measure = () => setViewWidth(el.clientWidth);
+    const measure = () => {
+      setViewWidth(el.clientWidth);
+      setViewHeight(el.clientHeight);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [setViewWidth]);
+  }, [setViewWidth, setViewHeight]);
 
   // A vertical scrollbar that comes or goes with the rows narrows the panel without resizing it.
   useLayoutEffect(() => {
@@ -446,6 +455,7 @@ export function GridFrame(props: {
       data-from={layout.scale.from}
       data-to={layout.scale.to}
       style={{ ['--wg-label' as string]: `${LABEL_W}px` }}
+      onKeyDown={props.onKeyDown}
     >
       <div className="wg-canvas" style={{ width: LABEL_W + layout.width, height: layout.height }}>
         {props.children}
