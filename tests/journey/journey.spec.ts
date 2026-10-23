@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import ExcelJS from 'exceljs';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { assembleGraph, buildGraph, generations, layoutTree } from '../../src/shared/domain/tree';
 import type { TreeGraph } from '../../src/shared/domain/tree';
@@ -16,8 +15,6 @@ import {
 import type { EntryCollection } from '../../src/shared/schema';
 import { build } from '../helpers/t5';
 import type { GenContext, Invoke } from '../helpers/t5';
-import { startFakeGoogle } from '../helpers/fakeGoogle';
-import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import {
   field,
@@ -47,7 +44,6 @@ import type { JourneyFiles } from './setup';
  */
 
 let server: MongoMemoryReplSet;
-let fake: FakeGoogle;
 let files: JourneyFiles;
 let app: ElectronApplication;
 let page: Page;
@@ -62,19 +58,13 @@ async function start(): Promise<void> {
   ({ app, page } = await launch(
     server.getUri(),
     {
-      // SL-1: the stop prompt is on, as for a person.
-      NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
       // T-3: the recorded Claude with a key held in memory; never the real API or keychain.
       NOVEL_COMPANION_TEST_ANTHROPIC_KEY: KEY,
       NOVEL_COMPANION_TEST_CLAUDE_RECORDINGS: files.recordings,
-      // GD-1: Drive is the fake Google on 127.0.0.1.
-      NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
       // The files a person would choose in the open and save dialogs.
       NOVEL_COMPANION_TEST_BIBLE_FILE: files.bibleFile,
-      NOVEL_COMPANION_TEST_PICK_FILE: files.workbook,
       NOVEL_COMPANION_TEST_PICK_DOCUMENT: files.wedding,
       NOVEL_COMPANION_TEST_SAVE_PATH: files.exportJson,
-      NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR: files.briefDir,
     },
     { packaged: true },
   ));
@@ -93,19 +83,6 @@ async function nextDocument(path: string): Promise<void> {
 test.beforeAll(async () => {
   test.setTimeout(300_000);
   files = await makeJourneyFiles();
-  fake = await startFakeGoogle({ email: 'writer@example.com' });
-  fake.addFile({
-    id: 'folderNovel',
-    name: 'Novel',
-    mimeType: 'application/vnd.google-apps.folder',
-  });
-  fake.addFile({
-    id: 'docCh3',
-    name: 'Chapter 3',
-    mimeType: 'application/vnd.google-apps.document',
-    parents: ['folderNovel'],
-    content: readFileSync(files.wedding),
-  });
   server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   await start();
 });
@@ -138,10 +115,8 @@ test.afterEach(async ({}, testInfo) => {
 test.afterAll(async () => {
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   await server?.stop();
-  await fake?.close();
 });
 
-const dash = () => page.getByTestId('dashboard');
 const status = () => page.getByTestId('status-time');
 const entryList = () => page.getByTestId('entry-list');
 const pick = (name: RegExp | string) => entryList().getByRole('button', { name });
@@ -169,8 +144,9 @@ test('ARCH-8 a fresh install opens with no bibles, and a new empty bible is made
   await page.getByRole('button', { name: 'Create bible' }).click();
   await page.getByRole('button', { name: 'Open Scratch' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Scratch');
-  await expect(dash()).toBeVisible();
-  await expect(dash().getByTestId('launch-panel')).toHaveCount(0);
+  // The app opens on Characters (SM-6).
+  await expect(page.getByTestId('rail')).toBeVisible();
+  await expect(rail(page, 'Characters')).toHaveAttribute('aria-current', 'page');
 });
 
 test('BK-3 the fixture novel is loaded through Backups into a new bible, Tide Lines, which opens', async () => {
@@ -188,17 +164,6 @@ test('BK-3 the fixture novel is loaded through Backups into a new bible, Tide Li
   expect(
     (await invoke('entry.list', { collection: 'characters', trash: 'exclude' })).entries,
   ).toHaveLength(13);
-});
-
-test('DB-1 SL-1 the dashboard shows the last session note, the story time, the position, and open questions', async () => {
-  await rail(page, 'Sessions').click();
-  await expect(dash()).toBeVisible();
-  await expect(dash().getByTestId('launch-note')).toHaveText('Margaret blows out the candles.');
-  await expect(dash().getByTestId('dash-position')).toContainText('Candles');
-  await expect(dash().getByTestId('dash-time')).toContainText('2040');
-  await expect(dash().getByTestId('dash-questions').locator('.tile-num')).toHaveText('3');
-  await dash().getByTestId('launch-panel').getByRole('button', { name: 'Start working' }).click();
-  await expect(dash().getByTestId('launch-panel')).toHaveCount(0);
 });
 
 test('A27 TM-3 TM-4 SB-10 the top bar: year slider and year box, the Writing picker, and Relevant to Session', async () => {
@@ -691,10 +656,10 @@ test('GL-1 GL-3 a glossary term that breaks Pinyin is flagged, and a Chinese nam
   await page.mouse.move(0, 0);
 });
 
-test('OQ-1 SM-11 an open question on Sessions is marked decided with a decision', async () => {
-  // SM-11, A43: the open questions are on Sessions, each opening in place under its row.
-  await rail(page, 'Sessions').click();
-  const questions = page.getByTestId('sessions-view').getByTestId('questions-list');
+test('OQ-1 SM-11 an open question on Questions is marked decided with a decision', async () => {
+  // SM-11, A43: the open questions are on Questions, each opening in place under its row.
+  await rail(page, 'Questions').click();
+  const questions = page.getByTestId('questions-view').getByTestId('questions-list');
   await questions.getByRole('button', { name: /Where does Jun live/ }).click();
   const editor = page.getByTestId('editor');
   await expect(editor).toContainText('Where does Jun live');
@@ -709,20 +674,6 @@ test('OQ-1 SM-11 an open question on Sessions is marked decided with a decision'
     'decided',
   );
   await page.getByLabel('Show questions').selectOption('all');
-});
-
-test('SL-1 a session log entry is written and listed newest first', async () => {
-  await sectionList(page, 'Session log');
-  await page.getByRole('button', { name: 'New session log', exact: true }).click();
-  const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator(':scope > input').fill('Journey session');
-  await field(form, 'date').locator(':scope > input').fill('2026-10-11');
-  await form.getByRole('button', { name: 'Create session log' }).click();
-  const editor = page.getByTestId('editor');
-  await expect(editor.getByRole('heading', { name: 'Journey session' })).toBeVisible();
-  await field(editor, 'stoppedAt').locator(':scope > textarea').fill('Iris at the harbor');
-  await waitSaved(page);
-  await expect(entryList().getByRole('button').first()).toContainText('Journey session');
 });
 
 // ---------------------------------------------------------------------------
@@ -1020,64 +971,6 @@ test('ED-9 typing @ in a long text field links an entry, and the target shows Li
 });
 
 // ---------------------------------------------------------------------------
-// Import
-
-const importView = () => page.getByTestId('import-view');
-
-async function chooseGrid(): Promise<void> {
-  await rail(page, 'Import').click();
-  await importView().getByTestId('import-pick-workbook').click();
-  await expect(importView().getByTestId('import-workbook')).toBeVisible();
-  await importView().getByTestId('import-sheet').selectOption('High Level');
-  await expect(importView().getByTestId('import-grid-options')).toBeVisible();
-}
-
-test('IM-1 IM-2 IM-3 the fixture workbook is imported: the High Level grid becomes world events, with a snapshot first', async () => {
-  await chooseGrid();
-  await expect(importView().getByTestId('import-preview-counts')).toContainText('7 rows: 7 ready');
-  await importView().getByTestId('import-compare').click();
-  await expect(importView().getByTestId('import-summary')).toContainText('7 new');
-  await importView().getByTestId('import-apply').click();
-  await expect(importView().getByTestId('import-result-counts')).toContainText('Created 7');
-  await expect(importView().getByTestId('import-result')).toContainText('Snapshot taken first');
-  const events = await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' });
-  expect(events.entries.map((e) => e.entry.sourceRef)).toContain(
-    'fixture-workbook.xlsx#High Level!E3',
-  );
-});
-
-test('IM-1 IM-3 re-importing the changed workbook reuses the saved mapping and shows the change before writing it', async () => {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.readFile(files.workbook);
-  wb.getWorksheet('High Level')!.getCell('E3').value = 'Robot couriers everywhere';
-  await wb.xlsx.writeFile(files.workbook);
-  await chooseGrid();
-  await expect(importView().getByTestId('import-saved-note')).toBeVisible();
-  await importView().getByTestId('import-compare').click();
-  await expect(importView().getByTestId('import-summary')).toContainText('1 changed');
-  const change = importView().getByTestId('import-change');
-  await expect(change).toHaveCount(1);
-  await expect(change.locator('ins')).toContainText('Robot couriers everywhere');
-  await importView().getByTestId('import-apply').click();
-  await expect(importView().getByTestId('import-result-counts')).toContainText('updated 1');
-});
-
-test('IM-4 a Word document previews with its heading, italics, and scene break, and imports as a note', async () => {
-  await nextDocument(files.wedding);
-  await rail(page, 'Import').click();
-  await importView().getByTestId('import-pick-document').click();
-  const preview = importView().getByTestId('import-document-preview');
-  await expect(preview.getByRole('heading', { name: 'Chapter 3: Wedding Weather' })).toBeVisible();
-  await expect(preview.locator('em')).toHaveText('lucky');
-  await expect(preview.locator('hr')).toHaveCount(1);
-  await importView().getByTestId('import-kind').selectOption('note');
-  await importView().getByLabel('Note title').fill('Wedding notes');
-  await importView().getByTestId('import-compare').click();
-  await importView().getByTestId('import-apply').click();
-  await expect(importView().getByTestId('import-result-counts')).toContainText('Created 1');
-});
-
-// ---------------------------------------------------------------------------
 // A new chapter, Claude, proposals
 
 test('ED-1 A5 a new chapter is created from its form with two strands, present and backstory', async () => {
@@ -1164,76 +1057,8 @@ test('AI-3 ED-7 a change Claude suggests waits in the review queue and is approv
   expect(places.map((p) => p.entry.title)).toContain('The porch by the river');
 });
 
-test('IM-5 ED-7 Claude proposes entries from a Word document; one proposal is rejected in the review queue', async () => {
-  await nextDocument(files.wedding);
-  await rail(page, 'Import').click();
-  await importView().getByTestId('import-pick-document').click();
-  const box = importView().getByTestId('import-claude');
-  await box.getByTestId('import-claude-start').click();
-  const result = box.getByTestId('import-claude-result');
-  await expect(result).toHaveAttribute('data-status', 'done');
-  await expect(result.getByTestId('claude-proposals')).toContainText('2 proposals are waiting');
-  await rail(page, 'Review queue').click();
-  const queue = page.getByTestId('review-queue');
-  const pending = (await invoke('proposal.list', { state: 'pending' })).proposals;
-  expect(pending).toHaveLength(2);
-  const card = queue.locator(`[data-proposal="${pending[0]!.proposal._id}"]`);
-  await card.getByRole('button', { name: 'Reject' }).click();
-  await expect(card).toHaveCount(0);
-  await expect(queue).toContainText('Rejected');
-  expect((await invoke('proposal.list', { state: 'pending' })).proposals).toHaveLength(1);
-});
-
 // ---------------------------------------------------------------------------
-// The session: brief, manuscript, alignment
-
-test('DB-2 SB-4 SB-7 Start session on the new chapter: Claude writes the brief from the selection', async () => {
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await expect(view).toBeVisible();
-  const id = (
-    await invoke('entry.list', { collection: 'chapters', trash: 'exclude' })
-  ).entries.find((e) => e.entry.title === CHAPTER)!.entry._id;
-  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
-  await view.getByTestId('start-chapter').selectOption(id);
-  await expect(view.getByTestId('start-session-go')).toHaveText(
-    'Start session with claude-opus-5-5',
-  );
-  await view.getByTestId('start-session-go').click();
-  // AI-6 was confirmed for this bible in the question panel, so the brief starts at once.
-  await expect(view.getByTestId('claude-disclosure')).toHaveCount(0);
-  const brief = page.getByTestId('brief-view');
-  await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
-  await expect(brief.getByTestId('brief-body')).toContainText('Iris Hale-Zhou is 14');
-  await expect(brief.getByTestId('brief-body')).toContainText('Daniel Hale is 49');
-  await expect(page.getByTestId('status-time')).toContainText('Story time 2045');
-});
-
-test('SB-9 an entry is removed from the brief selection and the brief is regenerated', async () => {
-  const brief = page.getByTestId('brief-view');
-  const sel = brief.getByTestId('brief-selection');
-  // Any entry the recorded brief does not cite.
-  const target = sel
-    .locator('[data-testid="sel-item"]:not([data-id="H5"]):not([data-id="Z3"]):not([data-id="H3"])')
-    .first();
-  const removedId = (await target.getAttribute('data-id'))!;
-  await target.getByRole('button', { name: /^Remove/ }).click();
-  await expect(brief.getByTestId('brief-pending')).toContainText(`To remove: ${removedId}`);
-  await brief.getByTestId('brief-regenerate').click();
-  await expect(brief.getByTestId('brief-note')).toBeVisible();
-  await expect(brief.getByTestId('brief-body')).toContainText('removed by you');
-});
-
-test('SB-8 the brief exports as Markdown', async () => {
-  const brief = page.getByTestId('brief-view');
-  await brief.getByRole('button', { name: 'Export Markdown' }).click();
-  await expect(brief.getByTestId('brief-note')).toHaveText(/^Saved to .*\.md$/);
-  const path = ((await brief.getByTestId('brief-note').textContent()) ?? '').replace(
-    'Saved to ',
-    '',
-  );
-  expect(readFileSync(path, 'utf8')).toContain('Iris Hale-Zhou is 14');
-});
+// The manuscript and the alignment check
 
 test('MS-1 MS-2 MS-3 Chapter 6 is read from Word, marked as written, its summary approved, and a moment promoted to canon', async () => {
   await nextDocument(files.letter);
@@ -1270,8 +1095,7 @@ const finding = (check: string) =>
   alignment().locator(`[data-testid="finding"][data-check="${check}"]`);
 
 test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists structural and Claude findings', async () => {
-  await rail(page, 'Sessions').click();
-  await dash().getByRole('button', { name: 'Check alignment' }).click();
+  await rail(page, 'Continuity checker').click();
   await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
   await expect(alignment().getByTestId('alignment-runner')).toContainText('Model: claude-opus-5-5');
   await alignment().getByTestId('alignment-run').click();
@@ -1331,7 +1155,7 @@ test('CC-4 one finding is resolved with Manuscript wins, which changes the bible
   await expect(finding('age')).toHaveAttribute('data-state', 'open');
 });
 
-test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on the dashboard', async () => {
+test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on the Continuity checker', async () => {
   await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
   await expect(finding('place')).toHaveCount(0);
   const task = alignment().getByTestId('rewrite-task');
@@ -1342,79 +1166,10 @@ test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on 
   await expect(task).toContainText(
     'What must change: The city Lan grew up in must be Guangzhou, as the bible records.',
   );
-  await rail(page, 'Sessions').click();
-  const tile = dash().getByTestId('dash-tasks');
-  await expect(tile).not.toContainText('No open rewrite tasks.');
-  await expect(tile.getByTestId('rewrite-task')).toContainText('Lan had grown up in Shanghai');
 });
 
 // ---------------------------------------------------------------------------
-// Drive
-
-const settings = () => page.getByTestId('settings-view');
-const drive = () => page.getByTestId('drive-view');
-
-test('GD-1 Drive connects through the fake Google from Settings, read-only', async () => {
-  await rail(page, 'Settings').click();
-  const conn = settings().getByTestId('drive-connection');
-  await conn.getByLabel('OAuth client ID').fill(fake.clientId);
-  await conn.getByLabel('OAuth client secret').fill(fake.clientSecret);
-  await conn.getByRole('button', { name: 'Save the client' }).click();
-  await expect(conn.getByTestId('drive-state')).toHaveText('Not connected.');
-  await conn.getByTestId('drive-connect').click();
-  await expect(conn.getByTestId('drive-state')).toContainText('Connected as writer@example.com');
-});
-
-test('GD-2 GD-3 a Google Doc is linked, its change on Drive is flagged, and nothing changes until it is reviewed', async () => {
-  await rail(page, 'Google Drive').click();
-  await drive().getByRole('button', { name: 'Add files or folders from Drive' }).click();
-  const browser = drive().getByTestId('drive-browser');
-  await browser.getByRole('button', { name: 'Open Novel' }).click();
-  await browser.getByRole('checkbox', { name: 'Chapter 3' }).check();
-  await browser.getByTestId('drive-link-selected').click();
-  const row = drive().getByTestId('drive-file').filter({ hasText: 'Chapter 3' });
-  await expect(row).toHaveAttribute('data-state', 'new');
-  await row.getByRole('button', { name: 'Mark as reviewed' }).click();
-  await expect(row).toHaveAttribute('data-state', 'unchanged');
-  fake.touch('docCh3', new Date(Date.now() + 60_000).toISOString());
-  await drive().getByTestId('drive-check').click();
-  await expect(row).toHaveAttribute('data-state', 'changed');
-  await expect(row.getByTestId('drive-review-file')).toHaveText('Review changes');
-});
-
-test('GD-4 the bible exports to a new Drive folder as Markdown by section and one JSON file', async () => {
-  const exp = drive().getByTestId('drive-export');
-  await exp.getByTestId('drive-allow-export').click();
-  await exp.getByRole('button', { name: 'Make the folder' }).click();
-  await expect(exp.getByLabel('Export folder')).toHaveValue(/.+/);
-  await exp.getByTestId('drive-export-now').click();
-  await expect(exp.getByTestId('drive-export-done')).toContainText('to Tide Lines');
-  expect(fake.uploads.some((u) => u.name === 'tide-lines.json')).toBe(true);
-});
-
-test('MS-1 MS-5 a chapter is read from a Google Doc picked in the Drive browser, and Drive is never written', async () => {
-  const uploads = fake.uploads.length;
-  await screenTab(page, 'Continuity checker', 'Manuscript');
-  const view = page.getByTestId('manuscript-view');
-  await view.locator('[data-chapter="CH3"]').click();
-  const ch = view.getByTestId('ms-chapter');
-  await ch.getByRole('button', { name: 'Import from a Google Doc' }).click();
-  const browser = ch.getByTestId('drive-picker').getByTestId('drive-browser');
-  await browser.getByRole('button', { name: 'Open Novel', exact: true }).click();
-  await browser.getByRole('radio', { name: 'Chapter 3' }).check();
-  await browser.getByTestId('drive-pick-selected').click();
-  const compare = ch.getByTestId('ms-compare');
-  await expect(compare).toContainText('Chapter 3 (Google Doc)');
-  await compare.getByRole('button', { name: 'Apply' }).click();
-  await expect(ch.getByTestId('ms-source')).toHaveText('Source: Chapter 3 (Google Doc)');
-  expect(
-    (await invoke('entry.get', { collection: 'chapters', id: 'CH3' })).entry.manuscriptText,
-  ).toContain('<em>lucky</em>');
-  expect(fake.uploads.length).toBe(uploads);
-});
-
-// ---------------------------------------------------------------------------
-// Backups, settings, close
+// Backups and settings
 
 test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the snapshot brings the old value back', async () => {
   await rail(page, 'Backups').click();
@@ -1456,7 +1211,9 @@ test('BK-3 the whole bible exports to one JSON file', async () => {
   expect(file).toMatchObject({ format: 'novel-companion-bible', bible: { name: 'Tide Lines' } });
 });
 
-test('ST-1 DB-4 settings: the summary model and the brief budget are changed and kept', async () => {
+const settings = () => page.getByTestId('settings-view');
+
+test('ST-1 DB-4 settings: the summary model is changed and kept', async () => {
   await rail(page, 'Settings').click();
   const claude = settings().getByTestId('claude-settings');
   await expect(claude.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
@@ -1464,38 +1221,7 @@ test('ST-1 DB-4 settings: the summary model and the brief budget are changed and
   await expect
     .poll(async () => (await invoke('claude.status', {})).models.summaries)
     .toBe('claude-haiku-5-5');
-  const budget = settings().getByTestId('settings-briefs').getByLabel('Size budget (characters)');
-  await budget.fill('30000');
-  await budget.blur();
-  await rail(page, 'Sessions').click();
+  await rail(page, 'Questions').click();
   await rail(page, 'Settings').click();
   await expect(settings().getByTestId('claude-model-summaries')).toHaveValue('claude-haiku-5-5');
-  await expect(
-    settings().getByTestId('settings-briefs').getByLabel('Size budget (characters)'),
-  ).toHaveValue('30000');
-});
-
-test('SL-1 closing the app asks where you stopped and saves the note', async () => {
-  const closing = app.close();
-  const prompt = page.getByTestId('stop-prompt');
-  await expect(prompt.getByRole('heading', { name: 'Where did you stop?' })).toBeVisible();
-  await prompt
-    .getByLabel('Where did you stop?', { exact: true })
-    .fill('Iris is at the harbor with Lan.');
-  const shot = test.info().outputPath(`${String(stepNo + 1).padStart(2, '0')}-stop-prompt.png`);
-  await page.screenshot({ path: shot });
-  test.info().attachments.push({ name: 'screenshot', path: shot, contentType: 'image/png' });
-  await prompt.getByRole('button', { name: 'Save note and quit' }).click();
-  await closing;
-});
-
-test('SL-1 DB-1 the next launch shows the note first on the dashboard', async () => {
-  await start();
-  await page
-    .getByRole('button', { name: 'Open Tide Lines' })
-    .click()
-    .catch(() => undefined);
-  await expect(page.getByTestId('workspace')).toBeVisible();
-  const panel = page.getByTestId('launch-panel');
-  await expect(panel.getByTestId('launch-note')).toHaveText('Iris is at the harbor with Lan.');
 });

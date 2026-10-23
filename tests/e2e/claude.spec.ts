@@ -1,6 +1,3 @@
-import { copyFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import type { Invoke } from '../helpers/t5';
@@ -11,8 +8,7 @@ import type { TestDb } from './helpers';
 /**
  * M6 through the interface: the question panel from every screen (AI-1,
  * AI-2), the key and models in settings (ARCH-4), the first-use disclosure
- * (AI-6), failures (AI-7), proposals (AI-3), the prose refusal (AI-4), and
- * import proposals (IM-5). Claude is the recorded fake and the key lives in
+ * (AI-6), failures (AI-7), proposals (AI-3), and the prose refusal (AI-4). Claude is the recorded fake and the key lives in
  * memory (NOVEL_COMPANION_TEST_CLAUDE, set by `launch`).
  */
 let db: TestDb;
@@ -23,8 +19,6 @@ let invoke: Invoke;
 const SLUG = 'claude-fixture';
 const KEY = 'sk-ant-api03-e2e-test-key-0123456789abcdef';
 const fixture = readFixture();
-const dir = mkdtempSync(join(tmpdir(), 'nc-e2e-claude-'));
-const DOCUMENT = join(dir, 'chapter-03.docx');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,10 +28,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 }
 
 test.beforeAll(async () => {
-  copyFileSync(join(import.meta.dirname, '../../fixtures/files/chapter-03.docx'), DOCUMENT);
   db = fileDb();
   ({ app, page } = await launch(db, {
-    NOVEL_COMPANION_TEST_PICK_DOCUMENT: DOCUMENT,
     // Slow enough to watch the answer arrive and to press Stop part way.
     NOVEL_COMPANION_TEST_CLAUDE_STEP_DELAY_MS: '120',
   }));
@@ -105,22 +97,16 @@ test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the questi
   await page.getByTestId('ask-claude').click();
   const disclosure = panel().getByTestId('claude-disclosure');
   await expect(disclosure).toContainText('sends the content listed below to Anthropic');
-  for (const label of [
-    'Question panel',
-    'Session briefs',
-    'Alignment checks',
-    'Chapter summaries',
-    'Import proposals',
-  ]) {
+  for (const label of ['Question panel', 'Alignment checks', 'Chapter summaries', 'Capture']) {
     await expect(disclosure).toContainText(label);
   }
   await input().fill('How old is Margaret in 2040?');
   await expect(panel().getByTestId('claude-send')).toBeDisabled();
-  // The disclosure is a labelled group, names Google Drive, and Cmd+Enter cannot ask before it is confirmed.
+  // The disclosure is a labelled group, and Cmd+Enter cannot ask before it is confirmed.
   await expect(
     panel().getByRole('group', { name: 'What Claude sends to Anthropic' }),
   ).toBeVisible();
-  await expect(disclosure).toContainText('export to Google Drive');
+  await expect(disclosure).not.toContainText('Google Drive');
   await input().press('Meta+Enter');
   await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
   await expect(input()).toHaveText('How old is Margaret in 2040?');
@@ -151,8 +137,8 @@ test('ARCH-4 the key is set in settings, checked, shown masked, and the models c
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
   await expect(settings.getByTestId('claude-key-input')).toHaveValue('');
   await expect(page.locator('body')).not.toContainText(KEY);
-  // DB-4: Opus for briefs and alignment checks; every feature has its own select.
-  await expect(settings.getByTestId('claude-model-briefs')).toHaveValue('claude-opus-5-5');
+  // DB-4: Opus for alignment checks; every feature has its own select.
+  await expect(settings.getByTestId('claude-model-briefs')).toHaveCount(0);
   await expect(settings.getByTestId('claude-model-alignment')).toHaveValue('claude-opus-5-5');
   await expect(settings.getByTestId('claude-model-panel')).toHaveValue('claude-sonnet-5-5');
   await expect(settings.getByTestId('claude-model-panel').locator('option')).toHaveText([
@@ -359,30 +345,7 @@ test('AI-3 a change Claude suggests waits in the review queue with the exact cha
   await expect.poll(places).toContain('The porch by the river');
 });
 
-test('IM-5 AI-6 a Word document in Import can be read by Claude, and its proposals go to the review queue', async () => {
-  // The disclosure is per bible: a second bible asks again before the first use there.
-  await rail(page, 'Import').click();
-  const view = page.getByTestId('import-view');
-  await view.getByTestId('import-pick-document').click();
-  await expect(view.getByTestId('import-document')).toBeVisible();
-  const box = view.getByTestId('import-claude');
-  await expect(box).toContainText('Ask Claude to propose entries');
-  await box.getByTestId('import-claude-start').click();
-  const result = box.getByTestId('import-claude-result');
-  await expect(result).toHaveAttribute('data-status', 'done');
-  await expect(result).toContainText('A wedding in the rain');
-  await expect(result.getByTestId('claude-proposals')).toContainText('2 proposals are waiting');
-  await expect(result.getByTestId('claude-rejected')).toContainText(
-    'No characters entry has the ID H9.',
-  );
-  await expect(result.getByTestId('claude-entries')).toContainText('Peter Hale');
-  const pending = (await invoke('proposal.list', { state: 'pending' })).proposals.filter(
-    (p) => p.proposal.source === 'claude',
-  );
-  expect(pending.map((p) => [p.proposal.op, p.proposal.collection])).toEqual([
-    ['create', 'moments'],
-    ['update', 'characters'],
-  ]);
+test('AI-6 a second bible asks for the disclosure again before its first use there', async () => {
   // A second bible: the disclosure comes back before anything is sent.
   await invoke('bible.create', { slug: 'claude-second', name: 'Second' });
   await invoke('bible.open', { slug: 'claude-second' });

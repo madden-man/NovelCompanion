@@ -63,7 +63,7 @@ test.afterAll(async () => {
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
 });
 
-const sessions = () => page.getByTestId('sessions-view');
+const sessions = () => page.getByTestId('questions-view');
 const questions = () => sessions().getByTestId('questions-list');
 const pick = (name: RegExp | string) => questions().getByRole('button', { name });
 /** A43: a log or a question opens in place, under its row. */
@@ -71,8 +71,8 @@ const rowEditor = () => sessions().getByTestId('session-row-editor');
 const saved = () => expect(rowEditor().getByTestId('autosave')).toHaveText('Saved');
 const questionRows = () => questions().locator('.entry-row');
 
-test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns until it has a decision, and filters by state', async () => {
-  await rail(page, 'Sessions').click();
+test('OQ-1 SM-11 on Questions, an open question is made, marked decided, warns until it has a decision, and filters by state', async () => {
+  await rail(page, 'Questions').click();
   await expect(sessions().getByTestId('questions-empty')).toHaveText('No questions yet.');
   for (const title of ['Who wrote the second letter?', 'Does Iris go back to Guangzhou?']) {
     await sessions().getByRole('button', { name: 'New question', exact: true }).click();
@@ -116,8 +116,6 @@ test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns un
   await expect(pick(/Who wrote/)).toBeVisible();
   await show.selectOption('all');
   await expect(questionRows()).toHaveCount(2);
-  // DB-1: the overview counts the open one.
-  await expect(page.getByTestId('dash-questions').locator('.tile-num')).toHaveText('1');
   // A question links to any entry from the Links field.
   const stored = (
     await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })
@@ -125,68 +123,11 @@ test('OQ-1 SM-11 on Sessions, an open question is made, marked decided, warns un
   expect(stored.entry).toMatchObject({ state: 'decided', decision: 'Peter wrote it in 2029.' });
 });
 
-test('SL-1 SM-11 the session log on Sessions is newest first, and each entry has date, chapter, stop point, and notes', async () => {
-  const morning = (
-    await invoke('entry.create', {
-      collection: 'sessionLogs',
-      data: { title: 'Morning session', status: 'canon', date: '2026-10-01' },
-    })
-  ).entry;
-  await invoke('entry.create', {
-    collection: 'sessionLogs',
-    data: {
-      title: 'Later session',
-      status: 'canon',
-      date: '2026-10-05',
-      stoppedAt: 'End of chapter 2',
-    },
-  });
-  const rows = sessions().getByTestId('session-log').locator('.entry-row');
-  await expect(rows).toHaveCount(2);
-  await expect(rows.first()).toContainText('Later session');
-  await expect(rows.first()).toContainText('Stopped at: End of chapter 2');
-  await expect(rows.last()).toContainText('Morning session');
-  // A43: a log opens under its row, where its chapter, stop point and notes are edited.
-  await rows.last().click();
-  const editor = sessions()
-    .getByTestId('session-log')
-    .getByTestId('session-row-editor')
-    .getByTestId('editor');
-  await expect(editor).toHaveAttribute('data-entry-id', morning._id);
-  await field(editor, 'chapterId').locator(':scope > select').selectOption('CH2');
-  await field(editor, 'stoppedAt')
-    .locator(':scope > .rich-text [role="textbox"]')
-    .fill('Daniel burns the rice');
-  await field(editor, 'notes')
-    .locator(':scope > .rich-text [role="textbox"]')
-    .fill('Check the kitchen timeline');
-  await saved();
-  await expect(rows.last()).toContainText('Two Kitchens');
-  await expect(rows.last()).toContainText('Stopped at: Daniel burns the rice');
-  expect(
-    (await invoke('entry.get', { collection: 'sessionLogs', id: morning._id })).entry,
-  ).toMatchObject({
-    chapterId: 'CH2',
-    stoppedAt: 'Daniel burns the rice',
-    notes: 'Check the kitchen timeline',
-  });
-});
-
-test('SR-1 one search box finds entries, chapter text, briefs, and Chinese by characters and by tone-free romanization', async () => {
-  await invoke('entry.create', {
-    collection: 'briefs',
-    data: {
-      title: 'Brief for chapter 3',
-      status: 'planned',
-      content: 'Remember the lantern in the rain.',
-    },
-  });
+test('SR-1 one search box finds entries, chapter text, and Chinese by characters and by tone-free romanization', async () => {
   const box = page.getByRole('searchbox', { name: 'Search the bible' });
   const results = page.getByTestId('search-results');
   await box.fill('casseroles');
   await expect(results).toContainText('After the Funeral');
-  await box.fill('lantern');
-  await expect(results.getByRole('button', { name: /Brief for chapter 3/ })).toBeVisible();
   await box.fill('晓曦');
   await expect(results).toContainText('晓曦');
   await box.fill('tuanyuan');
@@ -994,87 +935,13 @@ test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', asy
   await openBible();
 });
 
-test('SL-1 closing the app asks where you stopped, saves the note, and the next launch shows it first', async () => {
-  test.setTimeout(180_000);
+test('BK-4 a page that never answers cannot trap the window: it closes after the two second flush wait', async () => {
+  test.setTimeout(120_000);
   await app.close();
-  ({ app, page } = await launch(db, { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
-  invoke = invokeVia(page);
-  await openBible();
-  // The newest note from the earlier session log test is already on the launch panel.
-  await expect(page.getByTestId('launch-note')).toHaveText('End of chapter 2');
-  await page.getByTestId('launch-panel').getByRole('button', { name: 'Start working' }).click();
-  await expect(page.getByTestId('launch-panel')).toHaveCount(0);
-
-  // Window close: the prompt appears, and "Keep working" cancels it.
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.close());
-  const prompt = page.getByTestId('stop-prompt');
-  await expect(prompt.getByRole('heading', { name: 'Where did you stop?' })).toBeVisible();
-  // Only the window is closing, so the buttons say close, not quit.
-  await expect(prompt.getByRole('button', { name: 'Close without a note' })).toBeVisible();
-  await prompt.getByLabel('Where did you stop?', { exact: true }).fill('A note');
-  await expect(prompt.getByRole('button', { name: 'Save note and close' })).toBeVisible();
-  await expect(prompt.getByRole('button', { name: /quit/i })).toHaveCount(0);
-  await prompt.getByRole('button', { name: 'Keep working' }).click();
-  await expect(prompt).toHaveCount(0);
-  await expect(page.getByTestId('workspace')).toBeVisible();
-
-  // Quit (what Cmd+Q does): answer, and the note is saved before the app exits.
-  const closing = app.close();
-  await expect(prompt).toBeVisible();
-  await expect(prompt.getByRole('button', { name: 'Quit without a note' })).toBeVisible();
-  await prompt
-    .getByLabel('Where did you stop?', { exact: true })
-    .fill('Iris is opening the box in the attic.');
-  await expect(prompt.getByRole('button', { name: 'Save note and quit' })).toBeVisible();
-  await prompt.getByLabel('Chapter (optional)').selectOption('CH6');
-  await prompt.getByRole('button', { name: 'Save note and quit' }).click();
-  await closing;
-
-  ({ app, page } = await launch(db, { NOVEL_COMPANION_SKIP_STOP_PROMPT: '0' }));
-  invoke = invokeVia(page);
-  await openBible();
-  const panel = page.getByTestId('launch-panel');
-  await expect(panel).toBeVisible();
-  await expect(panel.getByTestId('launch-note')).toHaveText(
-    'Iris is opening the box in the attic.',
-  );
-  await expect(panel).toContainText('The Letter');
-  const latest = (await invoke('sessionLog.latest', {})).log!;
-  expect(latest.stoppedAt).toBe('Iris is opening the box in the attic.');
-  await panel.getByRole('button', { name: 'Start working' }).click();
-  await expect(panel).toHaveCount(0);
-
-  // Leaving the answer empty still quits, and writes no log.
-  const before = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
-    .entries.length;
-  const quitting = app.close();
-  const emptyPrompt = page.getByTestId('stop-prompt');
-  await expect(emptyPrompt).toBeVisible();
-  await expect(emptyPrompt.getByRole('button', { name: 'Quit without a note' })).toBeVisible();
-  await emptyPrompt.getByRole('button', { name: 'Quit without a note' }).click();
-  await quitting;
   ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await openBible();
-  expect(
-    (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries,
-  ).toHaveLength(before);
-});
-
-test('SL-1 a page that never answers cannot trap the window: it closes after the wait with no log written', async () => {
-  test.setTimeout(120_000);
-  await app.close();
-  // A short wait for the test; a real app waits 10 seconds.
-  ({ app, page } = await launch(db, {
-    NOVEL_COMPANION_SKIP_STOP_PROMPT: '0',
-    NOVEL_COMPANION_STOP_PROMPT_TIMEOUT_MS: '1500',
-  }));
-  invoke = invokeVia(page);
-  await openBible();
-  const logs = async () =>
-    (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries.length;
-  const before = await logs();
-  // Hang the page: its script is busy for longer than the wait, so it cannot show the prompt.
+  // Hang the page: its script is busy for longer than the wait, so it cannot answer the flush.
   void page
     .evaluate(() => {
       const end = Date.now() + 8_000;
@@ -1088,10 +955,9 @@ test('SL-1 a page that never answers cannot trap the window: it closes after the
   await app.evaluate(({ app: electron }) => electron.quit()).catch(() => undefined);
   await closed;
   const waited = Date.now() - started;
-  expect(waited).toBeGreaterThanOrEqual(1_400);
+  expect(waited).toBeGreaterThanOrEqual(1_900);
   expect(waited).toBeLessThan(7_500);
   ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await openBible();
-  expect(await logs()).toBe(before);
 });

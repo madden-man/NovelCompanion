@@ -44,16 +44,13 @@ export function connectTo(db: TestDb): Promise<Store> {
 
 /**
  * Start the built app against a local MongoDB: a spec file's own database
- * (`fileDb()`), or a bare address, where the app uses `novel_companion`. The
- * "Where did you stop?" prompt (SL-1) is off unless a test turns it on, so
- * closing the app never waits on a person. Each launch has its own data folder
- * unless the test names one.
+ * (`fileDb()`), or a bare address, where the app uses `novel_companion`. Each
+ * launch has its own data folder unless the test names one.
  *
  * With `packaged`, the packaged app in release/ starts instead (T-4), under the
  * one documented exception, NOVEL_COMPANION_ALLOW_TEST_URI=1 with the local
- * test database, which is also what lets it honour the recorded Claude, the
- * fake Google, and the pickers named here. A packaged app ignores the skip
- * flag for the stop prompt, so its tests exit the app rather than close it.
+ * test database, which is also what lets it honour the recorded Claude and
+ * the pickers named here.
  */
 /**
  * The app runs hidden under test (no dock icon, no window on screen, offscreen
@@ -76,7 +73,6 @@ export async function launch(
       ...(opts.packaged ? { NOVEL_COMPANION_ALLOW_TEST_URI: '1' } : {}),
       NOVEL_COMPANION_TEST_MONGODB_URI: target.uri,
       ...('name' in target ? { NOVEL_COMPANION_TEST_DB_NAME: target.name } : {}),
-      NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
       // T-3: Claude is the recorded fake and the key lives in memory, never the real keychain.
       NOVEL_COMPANION_TEST_CLAUDE: '1',
@@ -118,18 +114,16 @@ export const RAIL_SCREENS = [
   'World events',
   'Backstory',
   'Continuity checker',
-  'Sessions',
+  'Questions',
   'Cultural data',
   'Writing tools',
 ] as const;
 
-/** SM-6: the App menu's items: the nine utilities, then the reference views. */
+/** SM-6: the App menu's items: the seven utilities, then the reference views. */
 export const APP_MENU_ITEMS = [
   'Search and filters',
   'Review queue',
-  'Import',
   'Backups',
-  'Google Drive',
   'Lists',
   'Trash',
   'Bibles',

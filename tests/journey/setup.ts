@@ -16,11 +16,9 @@ export interface JourneyFiles {
   dir: string;
   /** The fixture novel (SPEC section 7 plus the M7 brief supplement) as an exported bible file. */
   bibleFile: string;
-  workbook: string;
   wedding: string;
   letter: string;
   exportJson: string;
-  briefDir: string;
   recordings: string;
 }
 
@@ -34,18 +32,15 @@ export async function makeJourneyFiles(): Promise<JourneyFiles> {
   const files: JourneyFiles = {
     dir,
     bibleFile: join(dir, 'tide-lines-fixture.json'),
-    workbook: join(dir, 'fixture-workbook.xlsx'),
     wedding: join(dir, 'chapter-03.docx'),
     letter: join(dir, 'Chapter 6 The Letter.docx'),
     exportJson: join(dir, 'tide-lines-export.json'),
-    briefDir: mkdtempSync(join(tmpdir(), 'nc-journey-briefs-')),
     recordings: join(dir, 'recordings.json'),
   };
-  copyFileSync(join(FIXTURE_FILES, 'fixture-workbook.xlsx'), files.workbook);
   copyFileSync(join(FIXTURE_FILES, 'chapter-03.docx'), files.wedding);
   await writeLetter(files.letter);
 
-  // The recorded Claude: the suite's recordings plus the journey's own questions and brief.
+  // The recorded Claude: the suite's recordings plus the journey's own questions.
   const base = JSON.parse(readFileSync(join(ROOT, 'fixtures/claude/recordings.json'), 'utf8'));
   const extra = JSON.parse(readFileSync(join(import.meta.dirname, 'recordings.json'), 'utf8'));
   writeFileSync(files.recordings, JSON.stringify([...extra, ...base], null, 2));

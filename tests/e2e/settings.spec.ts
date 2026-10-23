@@ -60,12 +60,8 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   const summaries = view.getByTestId('claude-model-summaries');
   await summaries.focus();
   await summaries.selectOption('claude-haiku-5-5');
-  // Brief window and size budget (SB-2, SB-6): typed, then Tab moves on and saves.
-  const briefs = view.getByTestId('settings-briefs');
-  await briefs.getByLabel('World events window (years before, plus one ahead)').fill('7');
-  await page.keyboard.press('Tab');
-  await briefs.getByLabel('Size budget (characters)').fill('12345');
-  await page.keyboard.press('Tab');
+  // A53: the session window and size budget live on Relevant to Session, not here.
+  await expect(view.getByTestId('settings-briefs')).toHaveCount(0);
   // Romanization per language (GL-1): a select that saves on its pick (IP-8).
   const cantonese = view.getByTestId('settings-romanization-cantonese');
   await openEditable(cantonese);
@@ -87,12 +83,6 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await expect(view.getByTestId('appearance-dark')).toBeChecked();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
-  await expect
-    .poll(async () => {
-      const s = await invoke('brief.settings.get', {});
-      return [s.window, s.budget];
-    })
-    .toEqual([7, 12345]);
   expect((await invoke('snapshot.list', {})).keep).toBe(12);
   expect((await invoke('appearance.get', {})).appearance).toBe('dark');
 
@@ -102,10 +92,6 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const again = await openSettings();
   await expect(again.getByTestId('claude-model-summaries')).toHaveValue('claude-haiku-5-5');
-  await expect(again.getByLabel('World events window (years before, plus one ahead)')).toHaveValue(
-    '7',
-  );
-  await expect(again.getByLabel('Size budget (characters)')).toHaveValue('12345');
   await expect(again.getByTestId('settings-romanization-cantonese-text')).toHaveText('No system');
   await expect(again.getByTestId('settings-romanization-mandarin-text')).not.toHaveText(
     'No system',
@@ -303,20 +289,14 @@ test('IP-10 the cultural time unit is a select in Settings, one step per pick', 
   await expect.poll(async () => (await invoke('settings.get', {})).cultureUnit).toBe('decade');
 });
 
-test('IP-14 templates edit in place: a legend label from Settings shows in the tree, and the brief headings save one by one', async () => {
+test('IP-14 templates edit in place: a legend label from Settings shows in the tree', async () => {
   const view = await openSettings();
   const templates = view.getByTestId('settings-templates');
   await fillEditable(templates.getByTestId('template-link-married'), 'Wed');
   await expect
     .poll(async () => (await invoke('settings.get', {})).templates.linkTypeLabels.married)
     .toBe('Wed');
-  await fillEditable(templates.getByTestId('template-heading-4'), '4. Where it happens');
-  await expect
-    .poll(async () => (await invoke('settings.get', {})).templates.briefHeadings[3])
-    .toBe('4. Where it happens');
-  expect((await invoke('settings.get', {})).templates.briefHeadings[0]).toBe(
-    '1. Characters and their ages',
-  );
+  await expect(templates.getByTestId('template-brief-headings')).toHaveCount(0);
   await fillEditable(templates.getByTestId('template-chapterTitle'), 'Untitled chapter');
   await expect
     .poll(async () => (await invoke('settings.get', {})).templates.chapterTitle)
@@ -338,9 +318,6 @@ test('IP-14 templates edit in place: a legend label from Settings shows in the t
     templates: {
       linkTypeLabels: { married: 'Married' },
       chapterTitle: 'New chapter',
-      briefHeadings: (await invoke('settings.get', {})).templates.briefHeadings.map((h, i) =>
-        i === 3 ? '4. Places' : h,
-      ),
     },
   });
 });
@@ -396,7 +373,7 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
   await text.focus();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Meta+a');
-  await page.keyboard.type('Write the brief in short plain lines.');
+  await page.keyboard.type('Keep each answer to short plain lines.');
   await page.keyboard.press('Meta+Enter');
   await expect
     .poll(
@@ -405,7 +382,7 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
           (i) => i.feature === first.feature,
         )?.text,
     )
-    .toBe('Write the brief in short plain lines.');
+    .toBe('Keep each answer to short plain lines.');
   await expect(card).toContainText('Your own');
   await expect(footer).toHaveText(first.footer);
   await card.getByRole('button', { name: `Reset ${first.label} to default` }).click();
@@ -431,7 +408,7 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
           (i) => i.feature === first.feature,
         )?.text,
     )
-    .toBe('Write the brief in short plain lines.');
+    .toBe('Keep each answer to short plain lines.');
   await invoke('claude.instructions.set', { feature: first.feature, text: null });
 });
 

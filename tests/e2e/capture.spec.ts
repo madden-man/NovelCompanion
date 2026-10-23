@@ -99,8 +99,8 @@ async function sendAll(text: string) {
   await input().press('Alt+Enter');
 }
 
-test('KB-6 NF-2 Cmd+K opens the box from the dashboard and from the tree with the story time; Escape closes it', async () => {
-  await expect(page.getByTestId('dashboard')).toBeVisible();
+test('KB-6 NF-2 Cmd+K opens the box from Characters and from the tree with the story time; Escape closes it', async () => {
+  await expect(page.getByTestId('rail')).toBeVisible();
   await page.keyboard.press('Meta+k');
   await expect(box()).toBeVisible();
   await expect(box().getByRole('heading', { name: 'Add to the bible' })).toBeVisible();

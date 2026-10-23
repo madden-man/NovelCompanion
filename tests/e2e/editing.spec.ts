@@ -1113,7 +1113,6 @@ test('ED-6 generated content and imported content are edited like any other fiel
   const cases: [EntryCollection, string][] = [
     ['chapters', 'summary'],
     // IP-18: the manuscript text is locked; only Re-import changes it.
-    ['briefs', 'content'],
     ['findings', 'text'],
   ];
   for (const [c, name] of cases) {
