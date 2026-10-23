@@ -134,7 +134,6 @@ function StrandCard(props: {
       path={path(name)}
       messages={props.messages}
       root={props.root}
-      onMention={() => undefined}
       onChange={(v) => props.onChange({ [name]: v })}
     />
   );

@@ -80,8 +80,6 @@ export function valueFor(
       if (items.length < 2) throw new Error(`T-5 needs two items in ${spec.listId}`);
       return [items[v]];
     }
-    case 'tags':
-      return [`${spec.name} tag ${v === 0 ? 'one' : 'two'}`];
     case 'strings':
       return v === 0 ? [`${spec.label} a`, `${spec.label} b`] : [`${spec.label} c`];
     case 'ref':
@@ -90,8 +88,6 @@ export function valueFor(
       return [pick(ctx, spec, offset, v)];
     case 'refPair':
       return [pick(ctx, spec, offset, v), pick(ctx, spec, offset + 2, v)];
-    case 'links':
-      return [{ targetId: ctx.pool('*')[v]!, kind: v === 0 ? 'mentions' : 'echoes' }];
     case 'object':
       return build(spec.fields!, v, ctx, mode);
     case 'objectList':

@@ -45,15 +45,17 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
       schemaVersion: LATEST_SCHEMA_VERSION,
     });
     const names = await allCollections();
-    for (const c of [...ENTRY_COLLECTIONS, 'lists', 'revisions']) {
+    for (const c of [...ENTRY_COLLECTIONS, 'lists']) {
       expect(names).toContain(`${slug}.${c}`);
     }
     // SM-2: a new bible ends with none of the collections A39 drops.
     for (const c of ['facts', 'knowledgeRecords', 'themes', 'customSections', 'plotBeats']) {
       expect(names).not.toContain(`${slug}.${c}`);
     }
-    const indexes = await bible.collection('revisions').indexes();
-    expect(indexes.map((i) => i.key)).toContainEqual({ entryId: 1, at: 1 });
+    // A53: nor the ones migration 13 drops.
+    for (const c of ['revisions', 'importSources', 'briefs', 'sessionLogs', 'books']) {
+      expect(names).not.toContain(`${slug}.${c}`);
+    }
 
     const lists = await bible.collection<ListDoc>('lists').find({}).toArray();
     expect(lists.map((l) => l._id).sort()).toEqual([...LIST_IDS, ...CONFIG_LIST_IDS].sort());
@@ -61,8 +63,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     const items = (id: string) => lists.find((l) => l._id === id)!.items.map((i) => i.id);
     expect(items('unionTypes')).toEqual(['married', 'partnered', 'other']);
     expect(items('parentLinkTypes')).toEqual(['biological', 'adoptive', 'step', 'guardian']);
-    expect(items('statuses')).toEqual(['canon', 'planned', 'idea']);
-    expect(items('provenance')).toEqual(['researched', 'invented']);
     expect(items('eventCategories').length).toBeGreaterThan(0);
     // A16: no book-specific communities in code.
     expect(items('communities')).toEqual([]);
@@ -108,7 +108,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     const b = await openBibleSession(store, bSlug);
     const created = await a.repo.create('characters', {
       title: 'Only in A',
-      status: 'canon',
       names: { full: 'Only in A' },
       birth: { year: 2000 },
     });
@@ -117,7 +116,6 @@ describe('ARCH-8 multiple bibles in the one novel_companion database', () => {
     expect(b.repo.get('characters', created._id)).toBeUndefined();
     expect(b.repo.list('characters')).toEqual([]);
     expect(await b.handle.collection('characters').countDocuments()).toBe(0);
-    expect(await b.handle.collection('revisions').countDocuments()).toBe(0);
     expect(b.search.search('Only')).toEqual([]);
     const reopened = await openBibleSession(store, bSlug);
     expect(reopened.repo.list('characters')).toEqual([]);
@@ -197,7 +195,7 @@ describe('CC-4 migration 8 clears findings that were written without a key', () 
   test('CC-4 a finding with no key goes to the trash, a keyed one stays, and a re-run of the migration changes nothing', async () => {
     const bible = await createBible(store, freshSlug('finding-keys'), 'Findings');
     const at = '2026-01-15T09:00:00.000Z';
-    const base = { title: 't', status: 'planned', state: 'open', kind: 'alignment', createdAt: at };
+    const base = { title: 't', state: 'open', kind: 'alignment', createdAt: at };
     await bible.collection('findings').insertMany([
       { _id: 'old', ...base, modifiedAt: at },
       { _id: 'empty', ...base, key: '', modifiedAt: at },
@@ -225,7 +223,6 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
       {
         _id: 'b1',
         title: 'one',
-        status: 'planned',
         arcIds: ['A', 'B'],
         order: 4,
         createdAt: at,
@@ -234,7 +231,6 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
       {
         _id: 'b2',
         title: 'two',
-        status: 'planned',
         arcIds: [],
         order: 2,
         createdAt: at,
@@ -261,7 +257,7 @@ describe('PL-3 TH-1 migrations carry old data forward', () => {
   test('TH-1 a chapter theme list becomes theme appearances with empty notes, keeping notes that exist', async () => {
     const bible = await createBible(store, freshSlug('theme-apps'), 'Themes');
     const at = '2026-01-15T09:00:00.000Z';
-    const base = { status: 'planned', createdAt: at, modifiedAt: at };
+    const base = { createdAt: at, modifiedAt: at };
     await bible.collection('themes').insertMany([
       { _id: 'T1', title: 'Water', appearances: [], ...base },
       { _id: 'T2', title: 'Fire', appearances: [{ chapterId: 'C1', note: 'kept' }], ...base },

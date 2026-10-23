@@ -89,9 +89,9 @@ const byCheck = (fs: FindingWire[], chapterId: string, check: string) =>
   fs.find((f) => f.chapterId === chapterId && f.check === check)!;
 
 describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () => {
-  test('CC-1 CC-2 CC-5 the structural checks record exactly S1 and S3, and a re-run adds nothing', async () => {
+  test('CC-1 CC-2 CC-5 the structural checks record exactly S1, and a re-run adds nothing', async () => {
     const first = await invoke('continuity.check', { chapterId: null });
-    expect(first.found).toBe(2);
+    expect(first.found).toBe(1);
     expect(first.chapters.map((c) => c.id)).toEqual([
       'CH1',
       'CH2',
@@ -103,13 +103,12 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
       'CH8',
     ]);
     const again = await invoke('continuity.check', { chapterId: null });
-    expect(again.found).toBe(2);
+    expect(again.found).toBe(1);
     const fs = (await open()).filter((f) => f.kind === 'structural');
     expect(fs.map((f) => [f.chapterId, f.check, f.entries.map((e) => e.id)])).toEqual([
       ['CH4', 'character-present-while-dead', ['H2']],
-      ['CH6', 'event-linked-as-happened-after-story-year', ['E10']],
     ]);
-    expect(bible.model.all('findings').filter((f) => !f.deletedAt)).toHaveLength(2);
+    expect(bible.model.all('findings').filter((f) => !f.deletedAt)).toHaveLength(1);
   });
 
   test('CC-1 CC-3 every chapter with text is read by Claude; the recorded P1 and P2 are stored with lines, quote, citation, kind, explanation, and change set', async () => {
@@ -190,7 +189,7 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
     ]);
     // SM-3: the moments arrive with the selected entries; the stored plot has no beats or facts.
     expect(blocks[0]![2]).not.toMatch(/Beat|fact/);
-    expect(blocks[1]![2]).toMatch(/\[B4\] Iris finds the letter \(moments; /);
+    expect(blocks[1]![2]).toMatch(/\[B4\] Iris finds the letter \(moments\): /);
     expect(blocks[1]![2]).toMatch(/\[E3\] /);
     const outside = req.prompt.replace(/<material[\s\S]*?<\/material>/g, '');
     expect(outside).not.toMatch(/\[B4\]|\[E3\]/);
@@ -204,7 +203,7 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
     expect(req.prompt).not.toContain('[B5]');
     expect(req.prompt).toContain('6. The Letter [CH6], 2045 (this chapter)');
     // The M7 selection for the chapter (SB-2).
-    expect(req.prompt).toMatch(/\[E3\] .*\(worldEvents; /);
+    expect(req.prompt).toMatch(/\[E3\] .*\(worldEvents\): /);
     const runs = new RunStore(bible).list('alignment');
     expect(runs.length).toBeGreaterThanOrEqual(8);
     expect(
@@ -214,7 +213,7 @@ describe('CC-1 CC-2 CC-3 a whole-manuscript run with the recorded Claude', () =>
 });
 
 describe('CC-4 the three resolutions', () => {
-  test('CC-4 ED-3 Manuscript wins applies the whole change set after a snapshot in one transaction, with revisions, and undoes from the stack', async () => {
+  test('CC-4 ED-3 Manuscript wins applies the whole change set after a snapshot in one transaction, as one undo step', async () => {
     const p1 = byCheck(await open('CH5'), 'CH5', 'age');
     const snapshots: string[] = [];
     const takeSnapshot = bible.repo.beforeBulk;
@@ -244,13 +243,10 @@ describe('CC-4 the three resolutions', () => {
     expect(snapshots).toEqual(['manuscript wins:1958']);
     expect(bible.model.get('characters', 'H1')!.birth).toEqual({ year: 1970 });
     expect(r.finding.state).toBe('manuscriptWins');
-    const revs = await bible.repo.revisions('characters', 'H1');
-    expect(revs.at(-1)).toMatchObject({
-      op: 'update',
-      note: 'Manuscript wins: Age: The text calls Margaret seventy. The bible has her born in 1958, so in 2040 she is 82.',
-    });
-    const findingRev = (await bible.repo.revisions('findings', p1.id)).at(-1)!;
-    expect(findingRev.note).toBe(revs.at(-1)!.note);
+    // The character and the finding come back together, so one undo step covers both.
+    expect(r.changes.map((c) => `${c.collection}:${c.id}`)).toEqual(
+      expect.arrayContaining(['characters:H1', `findings:${p1.id}`]),
+    );
 
     const undo = new UndoManager();
     undo.record(
@@ -269,7 +265,7 @@ describe('CC-4 the three resolutions', () => {
     expect(bible.model.get('characters', 'H1')!.birth).toEqual({ year: 1958 });
   });
 
-  test('CC-4 AI-4 Rewrite recommended makes a rewrite task with chapter, lines, quoted lines, and what must change, and no prose; it shows on the dashboard and the chapter', async () => {
+  test('CC-4 AI-4 Rewrite recommended makes a rewrite task with chapter, lines, quoted lines, and what must change, and no prose; it shows on the Continuity checker and the chapter', async () => {
     const p2 = byCheck(await open('CH7'), 'CH7', 'place');
     const r = await invoke('continuity.resolve', { id: p2.id, action: 'rewrite' });
     expect(r.finding).toMatchObject({
@@ -289,13 +285,14 @@ describe('CC-4 the three resolutions', () => {
     const tasks = (await invoke('continuity.findings', { chapterId: 'CH7', states: ['rewrite'] }))
       .findings;
     expect(tasks.map((t) => t.id)).toEqual([p2.id]);
-    const d = await invoke('dashboard.get', {});
-    expect(d.rewriteTasks).toContainEqual(
+    // The Continuity checker lists every chapter's rewrite tasks.
+    const all = (await invoke('continuity.findings', { chapterId: null, states: ['rewrite'] }))
+      .findings;
+    expect(all).toContainEqual(
       expect.objectContaining({
         id: p2.id,
         chapterId: 'CH7',
-        lines: 'line 1',
-        quote: expect.stringMatching(/Shanghai/),
+        chapter: 'Rain in Guangzhou',
       }),
     );
     // A re-run leaves the task as it is and adds no duplicate.
@@ -347,15 +344,21 @@ describe('CC-4 the three resolutions', () => {
   });
 
   test('CC-2 CC-4 an open finding the bible no longer conflicts with goes to the trash on the next run; a stopped or failed run records nothing', async () => {
-    const s3 = byCheck(await open('CH6'), 'CH6', 'event-linked-as-happened-after-story-year');
+    // S1: Peter Hale (died 2030) present in Chapter 4 (2032). Dying in 2033 instead ends the conflict.
+    const s1 = byCheck(await open('CH4'), 'CH4', 'character-present-while-dead');
+    const death = bible.model.get('characters', 'H2')!.death;
     await invoke('entry.update', {
-      collection: 'worldEvents',
-      id: 'E10',
-      patch: { start: { year: 2044 } },
+      collection: 'characters',
+      id: 'H2',
+      patch: { death: { year: 2033 } },
     });
-    await invoke('continuity.check', { chapterId: 'CH6' });
-    expect(bible.model.get('findings', s3.id)!.deletedAt).toBeTruthy();
-    expect((await open('CH6')).map((f) => f.check)).toEqual([]);
+    await invoke('continuity.check', { chapterId: 'CH4' });
+    expect(bible.model.get('findings', s1.id)!.deletedAt).toBeTruthy();
+    expect((await open('CH4')).filter((f) => f.kind === 'structural')).toEqual([]);
+    // Put the planted error back for the tests after this one.
+    await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { death } });
+    await invoke('continuity.check', { chapterId: 'CH4' });
+    expect(byCheck(await open('CH4'), 'CH4', 'character-present-while-dead').state).toBe('open');
 
     const before = bible.model.all('findings').length;
     const failing = new FakeClaudeClient([

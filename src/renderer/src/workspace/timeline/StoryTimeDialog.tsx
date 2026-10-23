@@ -19,7 +19,7 @@ import { CompareView } from './CompareView';
 import { LivedThrough } from './LivedThrough';
 import { WorldEventsStrip } from './WorldEventsStrip';
 import { EntryEditable } from '../editable';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { openOutline } from '../outline/nav';
 import './year.css';
 import './yearLinks.css';
@@ -124,7 +124,6 @@ export function StoryTimeDialog(props: {
     openOutline(chapterId);
   };
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const eras = useEntries('eraStates');
   const eraDoc = view?.era ? (eras.find((e) => e._id === view.era?.id) ?? null) : null;
   const byId = useMemo(() => new Map(characters.map((c) => [c._id, c])), [characters]);
@@ -138,7 +137,6 @@ export function StoryTimeDialog(props: {
           name: templates.eraName,
           startYear: time.year,
           endYear: time.year + 9,
-          status: statusOf('idea'),
         },
       });
       undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));

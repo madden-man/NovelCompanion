@@ -96,3 +96,9 @@ export function parseDateText(
   }
   return { ok: true, value: { year, month, day } };
 }
+
+/** A calendar date as YYYY-MM-DD in local time. */
+export function localDateString(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

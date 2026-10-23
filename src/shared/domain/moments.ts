@@ -15,8 +15,6 @@ import type { Doc } from './paths';
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const strings = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
 /** The most an ID may hold (the `Id` schema). */
 const MAX_ID = 64;
@@ -42,12 +40,6 @@ function listId(characterId: string, kind: 'voice' | 'lives', index: number): st
 /** The common fields a moment made from a character's list item takes from the character. */
 function fromCharacter(c: Doc): Doc {
   return {
-    status: str(c.status) || 'idea',
-    provenance: c.provenance === 'researched' || c.provenance === 'invented' ? c.provenance : null,
-    sourceNote: '',
-    sourceRef: str(c.sourceRef),
-    tags: [],
-    links: [],
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
     ...(c.deletedAt ? { deletedAt: c.deletedAt } : {}),
@@ -57,7 +49,7 @@ function fromCharacter(c: Doc): Doc {
 /**
  * A plot beat becomes a moment of its point of view character: the year, the
  * title, the experience note as the body (with the description first, when
- * there is one), the world context, and every common field. Its arcs, arc
+ * there is one), the world context, and its times. Its arcs, arc
  * positions, and chapter go. A beat with no point of view or no year is skipped.
  */
 export function beatToMoment(beat: Doc): MomentOrSkip {
@@ -76,12 +68,6 @@ export function beatToMoment(beat: Doc): MomentOrSkip {
       _id: id,
       title: str(beat.title),
       body,
-      status: str(beat.status) || 'idea',
-      provenance: beat.provenance ?? null,
-      sourceNote: str(beat.sourceNote),
-      sourceRef: str(beat.sourceRef),
-      tags: strings(beat.tags),
-      links: Array.isArray(beat.links) ? beat.links : [],
       createdAt: beat.createdAt,
       modifiedAt: beat.modifiedAt,
       ...(beat.deletedAt ? { deletedAt: beat.deletedAt } : {}),
@@ -257,13 +243,6 @@ export function nameGlossaryTerms(characters: Doc[], glossary: Doc[], language: 
       _id: `${characterId.slice(0, MAX_ID - suffix.length)}${suffix}`,
       title: chinese,
       body: '',
-      status: str(c.status) || 'idea',
-      provenance:
-        c.provenance === 'researched' || c.provenance === 'invented' ? c.provenance : null,
-      sourceNote: "Made by migration 9 from the character's romanization",
-      sourceRef: str(c.sourceRef),
-      tags: [],
-      links: [],
       createdAt: c.createdAt,
       modifiedAt: c.modifiedAt,
       ...(c.deletedAt ? { deletedAt: c.deletedAt } : {}),

@@ -36,16 +36,13 @@ describe('Section 7 fixture loader', () => {
     expect(bible.repo.get('characters', 'H5')?.names.chinese).toBe('晓曦');
     expect(bible.search.search('周美玲').map((h) => h.id)).toContain('Z1');
     expect(bible.search.search('Shanghai').map((h) => h.id)).toContain('CH7');
-    expect(bible.model.backlinks('E10')).toEqual([
-      { collection: 'chapters', id: 'CH6', kind: 'happened' },
-    ]);
   });
 
   test('Section 7 the fixture can be edited through the write path', async () => {
     const handle = await loadFixture(store, freshSlug('fixture-edit'));
     const bible = await openBibleSession(store, handle.id);
-    const z3 = await bible.repo.update('characters', 'Z3', { tags: ['edited'] });
-    expect(z3.tags).toEqual(['edited']);
-    expect((await bible.repo.revisions('characters', 'Z3')).map((r) => r.op)).toEqual(['update']);
+    const z3 = await bible.repo.update('characters', 'Z3', { backstory: 'Edited.' });
+    expect(z3.backstory).toBe('Edited.');
+    expect(bible.model.get('characters', 'Z3')!.backstory).toBe('Edited.');
   });
 });

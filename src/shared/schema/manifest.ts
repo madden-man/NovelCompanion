@@ -28,8 +28,6 @@ export type FieldKind =
   | 'listItems'
   /** A47 (IP-12): a CSS hex colour such as `#2a78d6`. */
   | 'color'
-  /** Tag labels; they live in the `tags` list. */
-  | 'tags'
   /** Free strings. */
   | 'strings'
   /** The ID of one entry. */
@@ -38,8 +36,6 @@ export type FieldKind =
   | 'refs'
   /** Exactly two entry IDs, for example the partners in a union. */
   | 'refPair'
-  /** `{ targetId, kind }` cross-links (ED-9). */
-  | 'links'
   /** A nested group of fields. */
   | 'object'
   /** A list of nested groups. */
@@ -62,7 +58,7 @@ export interface FieldSpec {
   nullable?: boolean;
   /** For `enum`. */
   options?: FieldOption[];
-  /** For `listItem`, `listItems` and `tags`. */
+  /** For `listItem` and `listItems`. */
   listId?: string;
   /** For `ref`, `refs`, `refPair`: the collections a target may come from. */
   target?: string[];
@@ -110,8 +106,6 @@ export const f = {
     spec('listItem', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
   listItems: (name: string, label: string, listId: string, extra?: Extra) =>
     spec('listItems', name, label, { listId, warnings: ['unknown-list-item'], ...extra }),
-  tags: (name: string, label: string, extra?: Extra) =>
-    spec('tags', name, label, { listId: 'tags', ...extra }),
   strings: (name: string, label: string, extra?: Extra) => spec('strings', name, label, extra),
   ref: (name: string, label: string, target: string[], extra?: Extra) =>
     spec('ref', name, label, { target, warnings: ['missing-target'], ...extra }),
@@ -124,8 +118,6 @@ export const f = {
       warnings: ['missing-target', 'same-twice'],
       ...extra,
     }),
-  links: (name: string, label: string, extra?: Extra) =>
-    spec('links', name, label, { warnings: ['missing-target'], ...extra }),
   object: (name: string, label: string, fields: FieldSpec[], extra?: Extra) =>
     spec('object', name, label, { fields, ...extra }),
   objectList: (name: string, label: string, fields: FieldSpec[], extra?: Extra) =>
@@ -152,20 +144,7 @@ export function yearRange(
   ];
 }
 
-/** The statuses a bible is seeded with (A47: the `statuses` list holds the real items). */
-export const STATUS_OPTIONS: FieldOption[] = [
-  { value: 'canon', label: 'Canon' },
-  { value: 'planned', label: 'Planned' },
-  { value: 'idea', label: 'Idea' },
-];
-
-/** The provenance values a bible is seeded with (A47: the `provenance` list holds the real items). */
-export const PROVENANCE_OPTIONS: FieldOption[] = [
-  { value: 'researched', label: 'Researched' },
-  { value: 'invented', label: 'Invented' },
-];
-
-/** Every entry collection, for links and `@` mentions that may point anywhere. */
+/** Every entry collection, for a reference that may point anywhere. */
 export const ANY = ['*'];
 
 /** The fields every entry shares (SPEC section 4, top paragraph). */
@@ -173,16 +152,8 @@ export const commonFields: FieldSpec[] = [
   f.system('_id', 'ID'),
   f.text('title', 'Title', { required: true }),
   f.longText('body', 'Body'),
-  f.listItem('status', 'Status', 'statuses', { required: true }),
-  f.listItem('provenance', 'Provenance', 'provenance', { nullable: true }),
-  f.longText('sourceNote', 'Source note'),
-  f.text('sourceRef', 'Source location', {
-    hint: 'Where an import found this entry. The importer sets it.',
-  }),
-  f.tags('tags', 'Tags'),
   f.system('createdAt', 'Created'),
   f.system('modifiedAt', 'Last changed'),
-  f.links('links', 'Links'),
   f.system('deletedAt', 'Moved to trash'),
 ];
 

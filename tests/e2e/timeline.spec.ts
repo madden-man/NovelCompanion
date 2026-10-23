@@ -206,8 +206,6 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
   expect((after.strands as { id: string; startYear: number }[]).map((s) => s.startYear)).toEqual([
     2045, 2033,
   ]);
-  const revs = await invoke('revisions.list', { collection: 'chapters', id: 'CH2' });
-  expect(revs.revisions[0]?.note).toBe('Set the backstory strand year to 2033 from the story time');
   await closeDialog();
 });
 
@@ -456,7 +454,6 @@ test('SM-8 ED-3 a click on an empty spot adds an event at that row and year thro
     start: { year: 2045 },
     end: { year: 2047 },
     formative: true,
-    status: 'idea',
   });
   expect(
     (await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' })).entries,

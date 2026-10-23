@@ -12,7 +12,6 @@ const MAIN = join(import.meta.dirname, '../../src/main');
 const WRITES_OUTSIDE_THE_WALK: Record<string, string> = {
   'snapshot.take':
     'Writes a new snapshot folder on this Mac and prunes old ones; a read-only snapshot has nothing new to keep.',
-  'drive.export': 'Writes files to Google Drive.',
   'chapter.summarize':
     'Runs Claude through the session Claude seam (an interface), which saves the run in the bible.',
 };
@@ -26,8 +25,6 @@ const READS_THAT_WRITE: Record<string, string> = {
   'bible.open': 'Opens a bible from MongoDB (migrations run there), never a snapshot.',
   'connection.retry': 'Reopens the bible from MongoDB once it answers, which ends read-only mode.',
   'mongo.replace': 'Reopens the bible on the new connection, never a snapshot.',
-  'drive.check':
-    'Remembers what linked folders hold; on a read-only snapshot that cache is left as it was.',
 };
 
 describe('ARCH-6 the write channel list matches the handlers that write', () => {

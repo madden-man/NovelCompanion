@@ -6,6 +6,7 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+import { entriesWritten, entryStamps } from '../helpers/entryWrites';
 
 let store: Store;
 let fixture: OpenBible;
@@ -77,14 +78,14 @@ describe('PL-2 PL-4 the outline and chapter page over IPC', () => {
 });
 
 describe('PL-3 reordering changes reading order only', () => {
-  test('PL-3 plot.reorder moves a chapter within its part, writes revisions, and leaves story years alone', async () => {
+  test('PL-3 plot.reorder moves a chapter within its part, writes each chapter it moves, and leaves story years alone', async () => {
     const before = await fxInvoke('entry.list', { collection: 'chapters', trash: 'exclude' });
     const part = before.entries.map((e) => e.entry).filter((c) => c.partId === 'PT1');
     const sorted = [...part].sort((a, b) => Number(a.readingOrder) - Number(b.readingOrder));
     const last = sorted[sorted.length - 1]!;
     const yearsBefore = new Map(part.map((c) => [c._id, JSON.stringify(c.strands)]));
-    const revs = () => fixture.handle.collection('revisions').countDocuments();
-    const n = await revs();
+    const stamps = () => entryStamps(fixture.model);
+    const n = stamps();
     const r = await fxInvoke('plot.reorder', {
       kind: 'chapters',
       groupId: 'PT1',
@@ -95,7 +96,7 @@ describe('PL-3 reordering changes reading order only', () => {
     expect(r.changes.find((c) => c.id === last._id)).toMatchObject({
       after: { readingOrder: sorted[0]!.readingOrder, partId: 'PT1' },
     });
-    expect(await revs()).toBe(n + r.changes.length);
+    expect(entriesWritten(fixture.model, n)).toBe(r.changes.length);
     const after = (
       await fxInvoke('entry.list', { collection: 'chapters', trash: 'exclude' })
     ).entries
@@ -139,8 +140,8 @@ describe('PL-3 chapters across parts', () => {
     const first = inPart(before, 'PT1')[0]!;
     const target = inPart(before, 'PT2')[1]!;
     const yearsBefore = new Map(before.map((c) => [c._id, JSON.stringify(c.strands)]));
-    const revs = () => fixture.handle.collection('revisions').countDocuments();
-    const n = await revs();
+    const stamps = () => entryStamps(fixture.model);
+    const n = stamps();
     const r = await fxInvoke('plot.reorder', {
       kind: 'chapters',
       groupId: 'PT2',
@@ -157,11 +158,11 @@ describe('PL-3 chapters across parts', () => {
     );
     expect(readingOrders).toEqual([...readingOrders].sort((a, b) => a - b));
     expect(new Set(readingOrders).size).toBe(readingOrders.length);
-    // Both parts changed and each change has a revision.
+    // Both parts changed and each change is written.
     expect(new Set(r.changes.map((c) => (c.after as { partId: string }).partId))).toEqual(
       new Set(['PT1', 'PT2']),
     );
-    expect(await revs()).toBe(n + r.changes.length);
+    expect(entriesWritten(fixture.model, n)).toBe(r.changes.length);
     // The target keeps its place after the moved chapter, and no story year moved.
     const idx = inPart(after, 'PT2').findIndex((c) => c._id === target._id);
     expect(idx).toBe(2);
@@ -200,7 +201,6 @@ describe('CU-2 PC-1 culture and places over IPC', () => {
       communityId: 'portland',
       startYear: 2040,
       endYear: 2050,
-      status: 'idea',
     });
     await invoke('entry.update', {
       collection: 'culturalEntries',
@@ -213,11 +213,10 @@ describe('CU-2 PC-1 culture and places over IPC', () => {
   });
 
   test('PC-1 places nest and place.describe returns the path, the description for the year, and the children', async () => {
-    const city = await make('places', { title: 'Portland', status: 'canon' });
+    const city = await make('places', { title: 'Portland' });
     const hood = await make('places', {
       title: 'Pearl District',
       parentId: city._id,
-      status: 'canon',
       descriptions: [
         { startYear: null, endYear: 2034, text: 'Warehouses.' },
         { startYear: 2035, endYear: null, text: 'Stilt houses.' },
@@ -243,7 +242,6 @@ describe('GL-1 GL-2 glossary settings, warnings, and search', () => {
     characters: '你好',
     language: 'mandarin',
     meaning: 'hello',
-    status: 'canon',
     ...extra,
   });
 
@@ -329,11 +327,11 @@ describe('GL-1 GL-2 glossary settings, warnings, and search', () => {
     ).toBeNull();
   });
 
-  test('GL-1 the romanization choice is a settings write in meta: it persists, and it adds no entry revision', async () => {
-    const revs = () => fresh.handle.collection('revisions').countDocuments();
-    const n = await revs();
+  test('GL-1 the romanization choice is a settings write in meta: it persists, and it writes no entry', async () => {
+    const stamps = () => entryStamps(fresh.model);
+    const n = stamps();
     await invoke('romanization.set', { languageId: 'cantonese', systemId: null });
-    expect(await revs()).toBe(n);
+    expect(entriesWritten(fresh.model, n)).toBe(0);
     const doc = await fresh.handle.collection('meta').findOne({ _id: 'romanization' as never });
     expect(doc).toMatchObject({ systems: { cantonese: '' } });
     await invoke('romanization.set', { languageId: 'cantonese', systemId: 'cantonese' });

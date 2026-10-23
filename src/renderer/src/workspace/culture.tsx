@@ -39,7 +39,7 @@ import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
 import { ListSelect } from './listSelect';
 import { RomanizationSystems } from './romanizationSystems';
-import { useBibleSettings, useDefaultStatus } from './bibleSettings';
+import { useBibleSettings } from './bibleSettings';
 import {
   Editable,
   EntryEditable,
@@ -160,7 +160,6 @@ function unitHeading(start: number, unit: CultureUnit): string {
  * one undo step (ED-3, IP-6), and Undo is in the top bar (A43).
  */
 export function CommunityView() {
-  const statusOf = useDefaultStatus();
   const story = useStoryTime();
   const { cultureUnit: unit } = useBibleSettings();
   const communities = useList('communities');
@@ -279,7 +278,6 @@ export function CommunityView() {
         collection: 'culturalEntries',
         data: {
           title,
-          status: statusOf('idea'),
           communityId: chosen.id,
           demographic: group.demographic,
           ...unitSpan(start, unit),
@@ -759,7 +757,6 @@ function LineRow(props: {
 function ErasView() {
   const eras = useEntries('eraStates');
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const story = useStoryTime();
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -819,7 +816,6 @@ function ErasView() {
           name: templates.eraName,
           startYear: start,
           endYear: end,
-          status: statusOf('idea'),
         },
       });
       undo.record(createCommand('eraStates', entry._id, entryTitle(entry)));
@@ -1064,7 +1060,6 @@ function NewByName(props: {
 export function PlacesView(props: { embedded?: boolean } = {}) {
   const story = useStoryTime();
   const undo = useUndo();
-  const statusOf = useDefaultStatus();
   const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
   const places = useEntries('places');
@@ -1078,7 +1073,7 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
   const create = async (name: string) => {
     const { entry } = await call('entry.create', {
       collection: 'places',
-      data: { ...blankEntry(manifests.places), title: name, status: statusOf('idea') },
+      data: { ...blankEntry(manifests.places), title: name },
     });
     undo.record(createCommand('places', entry._id, entryTitle(entry)));
   };
@@ -1232,7 +1227,6 @@ export function RomanizationView() {
 export function GlossaryTable(props: { embedded?: boolean } = {}) {
   const terms = useEntries('glossaryTerms');
   const undo = useUndo();
-  const statusOf = useDefaultStatus();
   const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
   const languages = useList('languages');
@@ -1257,7 +1251,6 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
         title: characters,
         characters,
         language,
-        status: statusOf('idea'),
       },
     });
     undo.record(createCommand('glossaryTerms', entry._id, entryTitle(entry)));

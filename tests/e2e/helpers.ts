@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
-import { collectionInfo } from '../../src/shared/schema';
+import { collectionInfo, editableFields, manifests } from '../../src/shared/schema';
+import { openBackstory } from '../../src/renderer/src/workspace/backstory/nav';
 import type { EntryCollection, FieldSpec } from '../../src/shared/schema';
 import type { Channel, Request, Response } from '../../src/shared/ipc';
 import { isPlainObject } from '../../src/shared/domain/paths';
@@ -44,16 +45,13 @@ export function connectTo(db: TestDb): Promise<Store> {
 
 /**
  * Start the built app against a local MongoDB: a spec file's own database
- * (`fileDb()`), or a bare address, where the app uses `novel_companion`. The
- * "Where did you stop?" prompt (SL-1) is off unless a test turns it on, so
- * closing the app never waits on a person. Each launch has its own data folder
- * unless the test names one.
+ * (`fileDb()`), or a bare address, where the app uses `novel_companion`. Each
+ * launch has its own data folder unless the test names one.
  *
  * With `packaged`, the packaged app in release/ starts instead (T-4), under the
  * one documented exception, NOVEL_COMPANION_ALLOW_TEST_URI=1 with the local
- * test database, which is also what lets it honour the recorded Claude, the
- * fake Google, and the pickers named here. A packaged app ignores the skip
- * flag for the stop prompt, so its tests exit the app rather than close it.
+ * test database, which is also what lets it honour the recorded Claude and
+ * the pickers named here.
  */
 /**
  * The app runs hidden under test (no dock icon, no window on screen, offscreen
@@ -76,7 +74,6 @@ export async function launch(
       ...(opts.packaged ? { NOVEL_COMPANION_ALLOW_TEST_URI: '1' } : {}),
       NOVEL_COMPANION_TEST_MONGODB_URI: target.uri,
       ...('name' in target ? { NOVEL_COMPANION_TEST_DB_NAME: target.name } : {}),
-      NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-')),
       // T-3: Claude is the recorded fake and the key lives in memory, never the real keychain.
       NOVEL_COMPANION_TEST_CLAUDE: '1',
@@ -118,18 +115,16 @@ export const RAIL_SCREENS = [
   'World events',
   'Backstory',
   'Continuity checker',
-  'Sessions',
+  'Questions',
   'Cultural data',
   'Writing tools',
 ] as const;
 
-/** SM-6: the App menu's items: the nine utilities, then the reference views. */
+/** SM-6: the App menu's items: the seven utilities, then the reference views. */
 export const APP_MENU_ITEMS = [
   'Search and filters',
   'Review queue',
-  'Import',
   'Backups',
-  'Google Drive',
   'Lists',
   'Trash',
   'Bibles',
@@ -423,7 +418,6 @@ export async function setField(
       if (d.day !== undefined) await f.getByLabel('Day').fill(String(d.day));
       return;
     }
-    case 'tags':
     case 'strings': {
       await clearChips(f);
       const input = f.locator('.add-row > input');
@@ -470,13 +464,6 @@ export async function setField(
       await selects.nth(1).selectOption(b);
       return;
     }
-    case 'links':
-      await clearChips(f);
-      for (const l of value as { targetId: string; kind: string }[]) {
-        await f.getByLabel('Link kind').fill(l.kind);
-        await pickBySearch(ctx, f, l.targetId, /^Find an entry to link/);
-      }
-      return;
     case 'object': {
       const v = value as Record<string, unknown>;
       for (const sub of spec.fields ?? []) {
@@ -607,4 +594,81 @@ export async function seedFixture(
 ): Promise<Response<'test.seed'>> {
   await seedFixtureLists(invoke);
   return invoke('test.seed', { items });
+}
+
+/**
+ * ED-1, A50: make a moment the way a person does on Backstory (their timeline,
+ * Add a moment), set every field to `b` in its dialog, and return what the
+ * stored moment does not match.
+ */
+export async function momentThroughDialog(
+  page: Page,
+  invoke: Invoke,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): Promise<string[]> {
+  const manifest = manifests.moments;
+  await rail(page, 'Backstory').click();
+  await expect(page.getByTestId('backstory-grid')).toBeVisible();
+  await page.evaluate(openBackstory, String(a.characterId));
+  await page.getByTestId('backstory-view').getByRole('button', { name: 'Add a moment' }).click();
+  const dialog = page.getByTestId('moment-dialog');
+  await expect(dialog).toBeVisible();
+  const id = await dialog.getAttribute('data-id');
+  if (!id) throw new Error('The moment dialog shows no moment ID');
+  const ed = (name: string) => dialog.locator(`.editable[data-field="${name}"]`);
+  const rich = async (name: string, value: string) => {
+    const f = ed(name);
+    await openEditable(f);
+    const box = f.locator('[role="textbox"]');
+    const [first = '', ...rest] = value.split('\n');
+    await box.fill(first);
+    for (const line of rest) {
+      await box.press('Shift+Enter');
+      await box.pressSequentially(line);
+    }
+    await box.press('Enter');
+    await expect(box).toHaveCount(0);
+  };
+  const select = async (name: string, value: string) => {
+    const f = ed(name);
+    await openEditable(f);
+    await f.locator('select').selectOption(value);
+    await expect(f.locator('select')).toHaveCount(0);
+  };
+  // What happens opens at once on a new moment.
+  await fillEditable(ed('title'), String(b.title));
+  await rich('body', String(b.body));
+  await rich('worldContext', String(b.worldContext));
+  // The year first: a moment over several years keeps its length when its year moves.
+  await fillEditable(ed('year'), String(b.year));
+  await fillEditable(ed('endYear'), b.endYear === null ? '' : String(b.endYear));
+  await select('characterId', String(b.characterId));
+  await expect(dialog).toHaveAttribute('data-person', String(b.characterId));
+  // A51: the kind sits in the When and who row.
+  await select('kind', typeof b.kind === 'string' ? b.kind : '');
+  const want = withoutSystem(manifest, b) as Record<string, unknown>;
+  const failures: string[] = [];
+  const fields = editableFields(manifest);
+  // Every change saves at once; wait for the last of them to land.
+  await expect
+    .poll(async () => {
+      const { entry } = await invoke('entry.get', { collection: 'moments', id });
+      const got = withoutSystem(manifest, entry) as Record<string, unknown>;
+      return fields.filter(
+        (s) => JSON.stringify(got[s.name] ?? null) !== JSON.stringify(want[s.name] ?? null),
+      ).length;
+    })
+    .toBe(0)
+    .catch(() => undefined);
+  const { entry } = await invoke('entry.get', { collection: 'moments', id });
+  const got = withoutSystem(manifest, entry) as Record<string, unknown>;
+  for (const s of fields) {
+    const g = JSON.stringify(got[s.name] ?? null);
+    const w = JSON.stringify(want[s.name] ?? null);
+    if (g !== w) failures.push(`moments.${s.name}: expected ${w}, found ${g}`);
+  }
+  await dialog.locator('.bs-dialog-head').getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toHaveCount(0);
+  return failures;
 }

@@ -127,12 +127,12 @@ let app: ElectronApplication;
 let page: Page;
 
 test.afterAll(async () => {
-  // A packaged app ignores the skip flag, so closing would wait on the stop prompt: exit instead.
+  // Exit rather than close, so the test never waits on the close-time flush.
   await app?.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   await server?.stop();
 });
 
-test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and the dashboard renders', async () => {
+test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and the workspace renders', async () => {
   test.setTimeout(180_000);
   server = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   app = await electron.launch({
@@ -165,10 +165,8 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
   await page.getByRole('button', { name: 'Open Smoke Test' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Smoke Test', { timeout: 60_000 });
   await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(page.getByTestId('dashboard')).toBeVisible();
-  await expect(
-    page.getByTestId('dashboard').getByRole('button', { name: 'Start session' }),
-  ).toBeVisible();
+  await expect(page.getByTestId('rail')).toBeVisible();
+  await expect(page.getByTestId('rail').getByRole('button', { name: 'Questions' })).toBeVisible();
 
   // The data folder came from the environment, not ~/Library/Application Support.
   const userData = await app.evaluate(({ app: electron }) => electron.getPath('userData'));
@@ -181,7 +179,7 @@ test('NF-4 T-4 the packaged app launches on a test database, a bible opens, and 
         source: 'import',
         op: 'create',
         collection: 'facts',
-        data: { title: 'x', status: 'idea' },
+        data: { title: 'x' },
       } as never);
       return 'registered';
     } catch {

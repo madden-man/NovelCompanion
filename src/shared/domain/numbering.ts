@@ -1,13 +1,13 @@
 /**
  * Structural numbers in titles (PL-3). A chapter's shown number comes from its
- * reading order, and a part's or book's from its number field, so a title
+ * reading order, and a part's from its number field, so a title
  * such as "Ch. 3: Mark Gets Drunk" or "Part One: Sins of the Father" repeats a
  * number that goes stale as soon as the entries are reordered. These helpers
  * find such a leading number, give the bare name, and build the shown label
  * from the number field instead of the title.
  */
 
-export type NumberedKind = 'chapter' | 'part' | 'book';
+export type NumberedKind = 'chapter' | 'part';
 
 const WORDS = [
   'zero',
@@ -50,7 +50,6 @@ function romanValue(text: string): number | null {
 const KEYWORDS: Record<NumberedKind, string> = {
   chapter: '(?:chapter|chap\\.?|ch\\.?)',
   part: '(?:part|pt\\.?)',
-  book: '(?:book|bk\\.?)',
 };
 
 /** A separator after the number: punctuation, or spaces before the name. */
@@ -66,7 +65,7 @@ function numberOf(token: string): number | null {
 /**
  * The structural number at the start of a title and the name after it:
  * "Ch. 1: Mark Feels Free" is chapter 1 named "Mark Feels Free", "Part One:
- * Sins of the Father" is part 1, "Book One" is book 1 with no name. A chapter
+ * Sins of the Father" is part 1, "Part One" is part 1 with no name. A chapter
  * title may also start with a bare number followed by punctuation ("3: The
  * Storm", "3. The Storm"); a bare number followed only by a space ("1984 Was
  * Hot", "12 Angry Men") is part of the name. Returns null when the title
@@ -110,20 +109,19 @@ export function bareTitle(kind: NumberedKind, title: string): string {
 export function numberedKindOf(collection: string): NumberedKind | null {
   if (collection === 'chapters') return 'chapter';
   if (collection === 'parts') return 'part';
-  if (collection === 'books') return 'book';
   return null;
 }
 
 /**
- * The label a book or part is shown by: the number from its number field and
+ * The label a part is shown by: the number from its number field and
  * the name from its title, "Part 2: Lost Spirits". A title that repeats the
  * same number ("Part Two: Lost Spirits") is shown without the repeat, and one
- * that is only the number ("Book One") is shown as "Book 1". A title whose
+ * that is only the number ("Part One") is shown as "Part 1". A title whose
  * number disagrees with the number field is shown whole after the field's
  * number, so the disagreement stays visible.
  */
-export function groupLabel(kind: 'book' | 'part', number: unknown, title: string): string {
-  const word = kind === 'book' ? 'Book' : 'Part';
+export function groupLabel(kind: 'part', number: unknown, title: string): string {
+  const word = 'Part';
   const t = title.trim();
   if (typeof number !== 'number' || !Number.isFinite(number)) return t ? `${word}: ${t}` : word;
   const split = splitNumberedTitle(kind, t);
@@ -139,7 +137,7 @@ type Entry = Record<string, unknown> & { _id: string };
 export interface TitleCleanupPlan {
   /** Titles to rewrite to the bare name: the number agrees with the number field or the reading order. */
   renames: {
-    collection: 'books' | 'parts' | 'chapters';
+    collection: 'parts' | 'chapters';
     id: string;
     from: string;
     to: string;
@@ -147,7 +145,7 @@ export interface TitleCleanupPlan {
   }[];
   /** Titles left alone because their number disagrees with where the entry is. */
   disagreements: {
-    collection: 'books' | 'parts' | 'chapters';
+    collection: 'parts' | 'chapters';
     id: string;
     title: string;
     /** The number in the title. */
@@ -155,15 +153,15 @@ export interface TitleCleanupPlan {
     /** What the entry's own fields make it, in words: "reading order 4, chapter 3 of its part". */
     is: string;
   }[];
-  /** Titles that are only a number ("Book One"): no name would be left, so they stay. */
-  numberOnly: { collection: 'books' | 'parts' | 'chapters'; id: string; title: string }[];
+  /** Titles that are only a number ("Part One"): no name would be left, so they stay. */
+  numberOnly: { collection: 'parts' | 'chapters'; id: string; title: string }[];
 }
 
 /**
- * Which book, part, and chapter titles repeat a structural number (PL-3). A
+ * Which part and chapter titles repeat a structural number (PL-3). A
  * chapter's number agrees when it is the chapter's place in its part (not
- * counting an introduction or prologue), in its book, or its reading order;
- * a part's or book's when it equals the number field. Nothing is guessed: a
+ * counting an introduction or prologue) or its reading order; a part's when
+ * it equals the number field. Nothing is guessed: a
  * disagreeing title is listed, not renamed.
  */
 export function planTitleCleanup(data: {
@@ -173,10 +171,7 @@ export function planTitleCleanup(data: {
     data.all(c).filter((d) => !d.deletedAt && typeof d._id === 'string') as Entry[];
   const plan: TitleCleanupPlan = { renames: [], disagreements: [], numberOnly: [] };
   const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-  for (const [collection, kind] of [
-    ['books', 'book'],
-    ['parts', 'part'],
-  ] as const) {
+  for (const [collection, kind] of [['parts', 'part']] as const) {
     for (const d of live(collection)) {
       const title = String(d.title ?? '');
       const split = splitNumberedTitle(kind, title);
@@ -200,28 +195,17 @@ export function planTitleCleanup(data: {
         });
     }
   }
-  const parts = new Map(live('parts').map((p) => [p._id, p]));
   const chapters = live('chapters').sort(
     (a, b) => (n(a.readingOrder) ?? 0) - (n(b.readingOrder) ?? 0) || a._id.localeCompare(b._id),
   );
   const counted = (c: Entry) => !UNNUMBERED.test(String(c.title ?? '').trim());
   const inPart = new Map<string, number>();
-  const inBook = new Map<string, number>();
   for (const c of chapters) {
     if (!counted(c)) continue;
     const partId = String(c.partId ?? '');
-    const bookId = String(parts.get(partId)?.bookId ?? '');
     inPart.set(
       c._id,
       chapters.filter((x) => counted(x) && String(x.partId ?? '') === partId).indexOf(c) + 1,
-    );
-    inBook.set(
-      c._id,
-      chapters
-        .filter(
-          (x) => counted(x) && String(parts.get(String(x.partId ?? ''))?.bookId ?? '') === bookId,
-        )
-        .indexOf(c) + 1,
     );
   }
   for (const c of chapters) {
@@ -234,8 +218,7 @@ export function planTitleCleanup(data: {
     }
     const order = n(c.readingOrder);
     const part = inPart.get(c._id);
-    const book = inBook.get(c._id);
-    if (split.number === part || split.number === book || split.number === order)
+    if (split.number === part || split.number === order)
       plan.renames.push({
         collection: 'chapters',
         id: c._id,

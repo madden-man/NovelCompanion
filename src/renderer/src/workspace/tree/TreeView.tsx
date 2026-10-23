@@ -1,4 +1,4 @@
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
@@ -60,11 +60,9 @@ import { rasterize, standaloneSvg } from './exportImage';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
-import { useItemLook } from '../listChip';
 
 type TreeData = Response<'tree.get'>;
 type View = { x: number; y: number; w: number; h: number };
-type Status = 'canon' | 'planned' | 'idea';
 
 const PAD = 40;
 /** A pointer that moves less than this many screen pixels is a click, not a drag (FT-11). */
@@ -134,12 +132,12 @@ interface NodeProps {
   onCard: (card: { text: string; el: Element } | null) => void;
 }
 
-/** One person in the tree (FT-7): name, years, status, and their state in the year (FT-5). */
+/** One person in the tree (FT-7): name, years, and their state in the year (FT-5). */
 const TreeNode = memo(function TreeNode(p: NodeProps) {
   const s = lifeState(p.person, p.year);
   const years = lifeYears(p.person);
   const label = p.person.chinese ? `${p.person.name} ${p.person.chinese}` : p.person.name;
-  const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${p.person.status}, ${stateText(s)}${p.hint ? `, ${p.hint}` : ''}`;
+  const aria = `${label}, ${years === 'unknown' ? 'born unknown' : years}, ${stateText(s)}${p.hint ? `, ${p.hint}` : ''}`;
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.altKey) {
       const step: Record<string, [number, number]> = {
@@ -167,8 +165,6 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
     if (cardText) p.onCard({ text: cardText, el: e.currentTarget });
   };
   const stripes = p.colors.length ? p.colors : ['none'];
-  // A47 (IP-9): the status edge in the status list's colour.
-  const statusLook = useItemLook('statuses', p.person.status);
   const h = NODE_H / stripes.length;
   return (
     <g
@@ -213,18 +209,6 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       </text>
       <text className="tnode-state" x={NODE_W - 8} y={38} textAnchor="end" data-testid="node-state">
         {stateText(s)}
-      </text>
-      <rect
-        className={`tchip ${p.person.status}`}
-        style={statusLook.colour ? { stroke: statusLook.colour } : undefined}
-        x={14}
-        y={46}
-        width={52}
-        height={14}
-        rx={7}
-      />
-      <text className="tchip-text" x={40} y={56.5} textAnchor="middle">
-        {p.person.status}
       </text>
       {p.branch && (
         <g
@@ -1177,8 +1161,7 @@ function TreeInspector(props: {
  * FT-7 (A45): the selected person's own fields in the tree inspector: Name,
  * the name in Chinese characters, In the story, Description, Birth, Death and
  * Families, with the same autosave, warnings and undo as every editor (ED-2,
- * ED-3). Backstory is a link to the Backstory screen. Status, provenance,
- * source, tags and links are left to the character's own page; they stay stored.
+ * ED-3). Backstory is a link to the Backstory screen.
  */
 function TreePersonForm({ id }: { id: string }) {
   const ed = useAutosave('characters', id);
@@ -1187,14 +1170,6 @@ function TreePersonForm({ id }: { id: string }) {
   if (!draft) return <p aria-live="polite">Loading the person.</p>;
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
-  const onMention = (targetId: string) => {
-    const links = Array.isArray(draft.links)
-      ? (draft.links as { targetId: string; kind: string }[])
-      : [];
-    if (!links.some((l) => l.targetId === targetId)) {
-      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
-    }
-  };
   const field = (name: string, opts: { label?: string; grow?: boolean } = {}) => {
     const base = fieldByName(PERSON_FIELDS, name);
     if (!base) return null;
@@ -1207,7 +1182,6 @@ function TreePersonForm({ id }: { id: string }) {
         messages={messages}
         root={draft}
         grow={opts.grow}
-        onMention={onMention}
         onChange={(v) => ed.setField(name, v)}
       />
     );
@@ -1224,7 +1198,6 @@ function TreePersonForm({ id }: { id: string }) {
         path={`names.${part}`}
         messages={messages}
         root={draft}
-        onMention={onMention}
         onChange={(v) => {
           const text = typeof v === 'string' ? v : '';
           ed.setField('names', { ...names, [part]: text });
@@ -1311,14 +1284,12 @@ function AddRelativeForm(props: {
   const partners = anchor ? partnersOf(graph, anchor.id) : [];
   const [name, setName] = useState('');
   const [born, setBorn] = useState('');
-  const defaultStatus = useDefaultStatus();
-  const [status, setStatus] = useState<Status>(() => defaultStatus('idea') as Status);
   const [linkType, setLinkType] = useState('biological');
   const [unionType, setUnionType] = useState('married');
   const [coParent, setCoParent] = useState(partners[0] ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const ids = { name: useId(), born: useId(), status: useId(), type: useId(), co: useId() };
+  const ids = { name: useId(), born: useId(), type: useId(), co: useId() };
   const noParents =
     kind === 'sibling' && anchor !== null && parentsOf(graph, anchor.id).length === 0;
   const title =
@@ -1340,7 +1311,6 @@ function AddRelativeForm(props: {
           anchorId: anchor?.id ?? null,
           name,
           birthYear: year,
-          status,
           linkType,
           unionType,
           coParentId: kind === 'child' && coParent ? coParent : null,
@@ -1392,15 +1362,6 @@ function AddRelativeForm(props: {
             value={born}
             placeholder="Blank for unknown"
             onChange={(e) => setBorn(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={ids.status}>Status</label>
-          <ListSelect
-            id={ids.status}
-            listId="statuses"
-            value={status}
-            onChange={(v) => setStatus((v ?? defaultStatus('idea')) as Status)}
           />
         </div>
         {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
@@ -1761,7 +1722,7 @@ function DropMenu(props: {
       // The dropped person is the parent, child or partner of the one they landed on.
       const plan = planLinkExisting(
         graph,
-        { kind, anchorId: drop.onto, otherId: drop.id, type, status: 'idea' },
+        { kind, anchorId: drop.onto, otherId: drop.id, type },
         () => ulid(),
       );
       const { entry } = await call('entry.create', {

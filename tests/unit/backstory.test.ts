@@ -19,7 +19,7 @@ describe('SM-3 A35 a Lives in moment names a place in the bible', () => {
 
 describe('SM-3 A35 the selection: setting, communities, and backstory moments', () => {
   const now = '2026-10-13T00:00:00.000Z';
-  const base = { status: 'canon', body: '', createdAt: now, modifiedAt: now };
+  const base = { body: '', createdAt: now, modifiedAt: now };
   const collections = {
     lists: [
       {

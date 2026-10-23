@@ -50,18 +50,17 @@ import { registerTextTarget, useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings';
 import { NumberField } from './NumberField';
 import { EntryEditable } from '../editable';
-import { BooksParts } from './BooksParts';
+import { Parts } from './Parts';
 import { StrandPopover, strandChipText } from './StrandPopover';
 import { clearOutlineFocus, useOpenOutline, waitingOutlineFocus } from './nav';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
 type PartRow = Extract<Outline['rows'][number], { kind: 'part' }>;
-type BookRow = Extract<Outline['rows'][number], { kind: 'book' }>;
 type VersionSummary = Response<'sceneOutline.versions'>['versions'][number];
 type Version = Response<'sceneOutline.version'>;
 type Open = (collection: EntryCollection, id: string) => void;
@@ -544,7 +543,6 @@ const SCROLL_STEP = 14;
 export function SceneOutline(props: { onOpen: Open }) {
   const { version } = useStore();
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
   const story = useStoryTime();
@@ -577,10 +575,6 @@ export function SceneOutline(props: { onOpen: Open }) {
   );
   const parts = useMemo(
     () => (outline?.rows ?? []).filter((r): r is PartRow => r.kind === 'part' && !r.missing),
-    [outline],
-  );
-  const books = useMemo(
-    () => (outline?.rows ?? []).filter((r): r is BookRow => r.kind === 'book' && !r.missing),
     [outline],
   );
   const order = useMemo(() => (outline ? chapters.map((c) => c.id) : null), [outline, chapters]);
@@ -636,16 +630,8 @@ export function SceneOutline(props: { onOpen: Open }) {
   const ensurePart = async (): Promise<string | undefined> => {
     const last = parts.at(-1);
     if (last) return last.id;
-    const bookId =
-      books.at(-1)?.id ??
-      (await writes.create('books', {
-        title: fillTemplate(templates.bookTitle, 1),
-        number: 1,
-        status: statusOf('idea'),
-      }));
-    if (!bookId) return undefined;
     const title = fillTemplate(templates.partTitle, 1);
-    return writes.create('parts', { title, bookId, number: 1, status: statusOf('idea') });
+    return writes.create('parts', { title, number: 1 });
   };
 
   /**
@@ -786,7 +772,7 @@ export function SceneOutline(props: { onOpen: Open }) {
     const n = part.number ?? 0;
     void together(`Added a divider before ${lower.title}`, async (steps) => {
       for (const p of parts) {
-        if (p.bookId === part.bookId && p.id !== part.id && (p.number ?? 0) > n) {
+        if (p.id !== part.id && (p.number ?? 0) > n) {
           steps.push(await update('parts', p.id, { number: (p.number ?? 0) + 1 }));
         }
       }
@@ -794,9 +780,7 @@ export function SceneOutline(props: { onOpen: Open }) {
         collection: 'parts',
         data: {
           title: fillTemplate(templates.sectionTitle, n + 1),
-          bookId: part.bookId,
           number: n + 1,
-          status: statusOf('idea'),
         },
       });
       steps.push(createCommand('parts', entry._id, entryTitle(entry)));
@@ -1271,7 +1255,7 @@ export function SceneOutline(props: { onOpen: Open }) {
             )}
           </div>
         )}
-        {outline && <BooksParts writes={writes} />}
+        {outline && <Parts writes={writes} />}
         <Versions
           saves={scene.saves}
           onRestore={(r) => {
@@ -1915,6 +1899,7 @@ function when(iso: string): string {
 /** PL-5: the saved versions, newest first; one opens for a look and can be restored. */
 function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => void }) {
   const ro = useWriteGuard();
+  const days = useBibleSettings().numbers.outlineVersionDays;
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<VersionSummary[] | null>(null);
   const [picked, setPicked] = useState<Version | null>(null);
@@ -1964,9 +1949,9 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
     >
       <summary>Versions{list ? ` (${list.length})` : ''}</summary>
       <p className="example-note">
-        Every change is kept, with the years of the scenes. Edits within ten minutes of each other
-        make one version. Restoring an older version is itself a new version, so nothing is ever
-        lost.
+        Every change is kept, with the years of the scenes. A new version opens when the latest one
+        is older than {days} {days === 1 ? 'day' : 'days'}. Restoring an older version is itself a
+        new version, so nothing is ever lost.
       </p>
       {error && (
         <p className="callout crit" role="alert">

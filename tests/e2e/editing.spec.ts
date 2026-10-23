@@ -10,7 +10,6 @@ import {
 } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
 import { build, t5Verify, t5Write } from '../helpers/t5';
-import { openBackstory } from '../../src/renderer/src/workspace/backstory/nav';
 import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
 import {
   changes,
@@ -20,6 +19,7 @@ import {
   fillEditable,
   invokeVia,
   launch,
+  momentThroughDialog,
   openEditable,
   openListFor,
   rail,
@@ -117,8 +117,8 @@ test('ED-1 every field of every entity can be created and changed through the ed
     const a = build(manifest, 0, ctx, 'full', true);
     const b = build(manifest, 1, ctx, 'full', true);
     if (c === 'moments') {
-      // A50: a moment's editor is its Backstory dialog, with the rest of the entry under More.
-      failures.push(...(await momentThroughDialog(ctx, a, b)));
+      // A50: a moment's editor is its Backstory dialog.
+      failures.push(...(await momentThroughDialog(page, invoke, a, b)));
       continue;
     }
     const { newButton, preset } = await openListFor(page, ctx, c, a);
@@ -165,100 +165,12 @@ test('ED-1 every field of every entity can be created and changed through the ed
 });
 
 /**
- * ED-1, A50: make a moment the way a person does on Backstory (their timeline,
- * Add a moment), set every field to `b` in its dialog, the rest under More,
- * and return what the stored moment does not match.
- */
-async function momentThroughDialog(
-  ctx: UiContext,
-  a: Record<string, unknown>,
-  b: Record<string, unknown>,
-): Promise<string[]> {
-  const manifest = manifests.moments;
-  await rail(page, 'Backstory').click();
-  await expect(page.getByTestId('backstory-grid')).toBeVisible();
-  await page.evaluate(openBackstory, String(a.characterId));
-  await page.getByTestId('backstory-view').getByRole('button', { name: 'Add a moment' }).click();
-  const dialog = page.getByTestId('moment-dialog');
-  await expect(dialog).toBeVisible();
-  const id = await dialog.getAttribute('data-id');
-  if (!id) throw new Error('The moment dialog shows no moment ID');
-  const ed = (name: string) => dialog.locator(`.editable[data-field="${name}"]`);
-  const rich = async (name: string, value: string) => {
-    const f = ed(name);
-    await openEditable(f);
-    const box = f.locator('[role="textbox"]');
-    const [first = '', ...rest] = value.split('\n');
-    await box.fill(first);
-    for (const line of rest) {
-      await box.press('Shift+Enter');
-      await box.pressSequentially(line);
-    }
-    await box.press('Enter');
-    await expect(box).toHaveCount(0);
-  };
-  const select = async (name: string, value: string) => {
-    const f = ed(name);
-    await openEditable(f);
-    await f.locator('select').selectOption(value);
-    await expect(f.locator('select')).toHaveCount(0);
-  };
-  // What happens opens at once on a new moment.
-  await fillEditable(ed('title'), String(b.title));
-  await rich('body', String(b.body));
-  await rich('worldContext', String(b.worldContext));
-  // The year first: a moment over several years keeps its length when its year moves.
-  await fillEditable(ed('year'), String(b.year));
-  await fillEditable(ed('endYear'), b.endYear === null ? '' : String(b.endYear));
-  await select('characterId', String(b.characterId));
-  await expect(dialog).toHaveAttribute('data-person', String(b.characterId));
-  // A51: the kind sits in the When and who row.
-  await select('kind', typeof b.kind === 'string' ? b.kind : '');
-  const more = dialog.getByRole('button', { name: 'More', exact: true });
-  await more.click();
-  await expect(more).toHaveAttribute('aria-expanded', 'true');
-  for (const name of ['status', 'provenance', 'tags', 'links']) {
-    const s = fieldByName(manifest, name)!;
-    await setField(ctx, dialog, s, name, b[name], b);
-  }
-  await rich('sourceNote', String(b.sourceNote));
-  await fillEditable(ed('sourceRef'), String(b.sourceRef));
-  const want = withoutSystem(manifest, b) as Record<string, unknown>;
-  const failures: string[] = [];
-  const fields = editableFields(manifest);
-  // Every change saves at once; wait for the last of them to land.
-  await expect
-    .poll(async () => {
-      const { entry } = await invoke('entry.get', { collection: 'moments', id });
-      const got = withoutSystem(manifest, entry) as Record<string, unknown>;
-      return fields.filter(
-        (s) => JSON.stringify(got[s.name] ?? null) !== JSON.stringify(want[s.name] ?? null),
-      ).length;
-    })
-    .toBe(0)
-    .catch(() => undefined);
-  const { entry } = await invoke('entry.get', { collection: 'moments', id });
-  const got = withoutSystem(manifest, entry) as Record<string, unknown>;
-  for (const s of fields) {
-    const g = JSON.stringify(got[s.name] ?? null);
-    const w = JSON.stringify(want[s.name] ?? null);
-    if (g !== w) failures.push(`moments.${s.name}: expected ${w}, found ${g}`);
-  }
-  await dialog.locator('.bs-dialog-head').getByRole('button', { name: 'Close' }).click();
-  await expect(dialog).toHaveCount(0);
-  return failures;
-}
-
-/**
- * SM-1: the fields the character page edits. The rest (provenance, source
- * note and location, tags, links) are set by the app and edited through the
- * IPC layer, which the T-5 test above covers. The title follows the full name.
+ * SM-1: the fields the character page edits. The title follows the full name.
  */
 const CHARACTER_PAGE_FIELDS = [
   'names',
   'birth',
   'death',
-  'status',
   'familyIds',
   'role',
   'body',
@@ -379,7 +291,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   expect((await currentEntry('characters', 'Undo Hale')).role).toBe('Place 51');
 });
 
-test('ED-3 undo and redo cover creating, deleting, restoring, and editing links', async () => {
+test('ED-3 undo and redo cover creating, deleting, restoring, and editing what a question is about', async () => {
   await newCharacter('Temp Person');
   const tools = page.getByTestId('entry-tools');
   // Delete, then undo the delete.
@@ -403,7 +315,7 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
   await expect
     .poll(async () => Boolean((await currentEntry('characters', 'Temp Person')).deletedAt))
     .toBe(false);
-  // Edit links, then undo the link edit. SM-1: the character page has no links box, so an open question carries them.
+  // Edit what an open question is about, then undo that edit.
   await openSection('openQuestions');
   await page.getByRole('button', { name: /^New / }).first().click();
   const form = page.getByTestId('new-entry');
@@ -412,20 +324,20 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
   const editor = page.getByTestId('editor');
   await expect(editor.getByRole('heading', { name: 'Temp question' })).toBeVisible();
   await waitSaved(page);
-  const links = field(editor, 'links');
-  await links.getByPlaceholder('Find an entry to link').fill('Ada Sullivan');
-  await links.getByRole('option').filter({ hasText: 'Ada Sullivan' }).first().click();
+  const about = field(editor, 'aboutIds');
+  await about.getByPlaceholder('Add to About').fill('Ada Sullivan');
+  await about.getByRole('option').filter({ hasText: 'Ada Sullivan' }).first().click();
   await waitSaved(page);
   await expect
-    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).links)
+    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).aboutIds)
     .toHaveLength(1);
   await page.keyboard.press('Meta+z');
   await expect
-    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).links)
+    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).aboutIds)
     .toHaveLength(0);
-  // The step before the link edit is the create itself: undoing it sends the entry to the trash.
+  // The step before the About edit is the create itself: undoing it sends the entry to the trash.
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
-    'Undid: Changed Links on Temp question',
+    'Undid: Changed About on Temp question',
   );
   await page.keyboard.press('Meta+z');
   await expect(page.getByTestId('undo-notice').first()).toHaveText('Undid: Created Temp question');
@@ -438,101 +350,102 @@ test('ED-3 undo and redo cover creating, deleting, restoring, and editing links'
     .toBe(false);
 });
 
-test('ED-4 the history drawer compares any revision with the current entry and restores it', async () => {
-  await newCharacter('Revision Doyle', 1950);
-  const editor = page.getByTestId('editor');
-  const input = field(editor, 'role').getByRole('textbox');
-  await input.fill('Cork');
-  await waitSaved(page);
-  await input.fill('Boston');
-  await waitSaved(page);
-  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
-  const drawer = page.getByTestId('history');
-  const revisions = drawer
-    .getByRole('list', { name: 'Revisions, newest first' })
-    .getByRole('button');
-  // SM-1: a character is created from the name, then the birth year is a change of its own.
-  await expect(revisions).toHaveCount(4);
-  await expect(revisions.nth(0)).toContainText('Changed (current)');
-  await expect(revisions.nth(3)).toContainText('Created');
-  await revisions.nth(1).click();
-  const diff = drawer.getByTestId('revision-diff');
-  const row = diff.getByRole('row', { name: /In the story/ });
-  await expect(row.getByRole('cell').nth(0)).toHaveText('Cork');
-  await expect(row.getByRole('cell').nth(1)).toHaveText('Boston');
-  await drawer.getByRole('button', { name: 'Restore this version' }).click();
-  await expect(revisions).toHaveCount(5);
-  await expect(revisions.nth(0)).toContainText('Restored the version from');
-  await drawer.getByRole('button', { name: 'Close' }).click();
-  await expect(input).toHaveText('Cork');
-  expect((await currentEntry('characters', 'Revision Doyle')).role).toBe('Cork');
-  // The restore is undoable like any change.
-  await page.keyboard.press('Meta+z');
-  await expect
-    .poll(async () => (await currentEntry('characters', 'Revision Doyle')).role)
-    .toBe('Boston');
-});
-
-test('ED-5 deleting lists what links here, moves it to the trash, and restores it with its links', async () => {
-  // Link Ada from a new character, so Ada has something linking to her. SM-1: the character
-  // page has no links box, so the link is a mention typed in the description.
-  await newCharacter('Linker Zhou', 1992);
-  const editor = page.getByTestId('editor');
-  const desc = field(editor, 'body').getByRole('textbox');
-  await desc.click();
-  await desc.pressSequentially('Cousin of @Ada');
-  await expect(
-    field(editor, 'body')
-      .getByRole('listbox', { name: 'Matching entries' })
-      .getByRole('option')
-      .first(),
-  ).toContainText('Ada Sullivan');
-  await page.keyboard.press('Enter');
-  await waitSaved(page);
-
+test('ED-5 Move to trash asks once, moves the entry to the trash, and restores it', async () => {
   await openSection('characters');
   await page
     .getByTestId('entry-list')
     .getByRole('button', { name: /Ada Sullivan/ })
     .click();
   const tools = page.getByTestId('entry-tools');
-  await expect(tools.getByTestId('linked-from')).toContainText('Character: Linker Zhou');
   await tools.getByRole('button', { name: 'Move to trash' }).click();
   const dialog = tools.getByRole('dialog', { name: 'Move to trash' });
-  await expect(dialog.getByTestId('linked-count')).toHaveText(/^1 entry links here\./);
-  await expect(dialog).toContainText('Character: Linker Zhou');
+  await expect(dialog.locator('strong')).toHaveText('Move Ada Sullivan to the trash?');
+  // A52: the confirm is the question and two buttons; no list of what refers to it.
+  await expect(dialog.getByRole('button')).toHaveText(['Move to trash', 'Keep it']);
+  await expect(dialog.getByRole('listitem')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Keep it' })).toBeFocused();
+  await dialog.getByRole('button', { name: 'Keep it' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect((await currentEntry('characters', 'Ada Sullivan')).deletedAt).toBeUndefined();
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
-  await expect(page.getByTestId('editor')).toContainText('This entry is in the trash.');
+  await expect(page.getByTestId('editor')).toContainText(
+    'This entry is in the trash. Restore it to bring it back.',
+  );
+  expect((await currentEntry('characters', 'Ada Sullivan')).deletedAt).toBeTruthy();
 
   await rail(page, 'Trash').click();
   const trash = page.getByTestId('trash-list');
   await expect(trash).toContainText('Ada Sullivan');
   await trash.getByRole('button', { name: 'Restore Ada Sullivan' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Ada Sullivan is back' })).toContainText(
-    'with 1 entry linking to it',
-  );
+  await expect(page.getByTestId('trash-notice')).toHaveText('Ada Sullivan is back.');
   await expect(page.getByRole('button', { name: 'Restore Ada Sullivan' })).toHaveCount(0);
   const ada = await currentEntry('characters', 'Ada Sullivan');
   expect(ada.deletedAt).toBeUndefined();
-  const { backlinks } = await invoke('entry.backlinks', { id: ada._id });
-  expect(backlinks).toContainEqual(
-    expect.objectContaining({ title: 'Linker Zhou', kind: 'mention' }),
-  );
 });
 
-/** The revisions MongoDB holds for one entry. */
-async function revisionsInMongo(id: string): Promise<number> {
-  const client = new MongoClient(db.uri);
-  try {
-    await client.connect();
-    return await client
-      .db(db.name)
-      .collection(`${BIBLE}.revisions`)
-      .countDocuments({ entryId: id });
-  } finally {
-    await client.close();
+test('A52 an entry page shows no status, provenance, source, tags, links or history, and @ types an @ with no picker', async () => {
+  const removed = ['status', 'provenance', 'sourceNote', 'sourceRef', 'tags', 'links'];
+  const labels = /^(Status|Provenance|Source note|Source location|Tags|Links|Linked from|History)$/;
+  // The generic page: an open question.
+  await openSection('openQuestions');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Temp question/ })
+    .click();
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { name: 'Temp question' })).toBeVisible();
+  for (const name of removed) {
+    await expect(editor.locator(`[data-field="${name}"]`)).toHaveCount(0);
   }
-}
+  await expect(editor.locator('.ed-label, .eyebrow', { hasText: labels })).toHaveCount(0);
+  // The foot holds the dates and Move to trash, nothing else.
+  const tools = page.getByTestId('entry-tools');
+  await expect(tools.locator('dt')).toHaveText(['Created', 'Last changed']);
+  await expect(tools.getByRole('button')).toHaveText(['Move to trash']);
+  await expect(page.getByTestId('linked-from')).toHaveCount(0);
+  await expect(page.getByTestId('history')).toHaveCount(0);
+
+  // `@` types an `@`: nothing opens and nothing is stored behind it.
+  const box = field(editor, 'question').getByRole('textbox');
+  await box.click();
+  await box.pressSequentially('Ask @Ada');
+  await expect(box).toHaveText('Ask @Ada');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await expect(box).not.toHaveAttribute('aria-controls');
+  await waitSaved(page);
+  const saved = await currentEntry('openQuestions', 'Temp question');
+  expect(saved.question).toContain('Ask @Ada');
+  expect(saved).not.toHaveProperty('links');
+
+  // Text that already says `@Title` stays as typed, with no chip.
+  await invoke('entry.update', {
+    collection: 'openQuestions',
+    id: saved._id,
+    patch: { question: 'Cousin of @Ada Sullivan?' },
+  });
+  await expect(box).toHaveText('Cousin of @Ada Sullivan?');
+  await expect(editor.locator('.mention-chip, [data-mention]')).toHaveCount(0);
+
+  // SM-1: the character page's dates line is birth, death, families and age; its foot the same.
+  await openSection('characters');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /Ada Sullivan/ })
+    .click();
+  const line = page.getByTestId('char-line');
+  await expect(line).toBeVisible();
+  await expect(line).not.toContainText('Status');
+  await expect(line.locator('[data-field="status"]')).toHaveCount(0);
+  await expect(page.getByTestId('entry-tools').getByRole('button')).toHaveText(['Move to trash']);
+
+  // IP-16: Settings keeps no revisions to remove.
+  await rail(page, 'Settings').click();
+  const settings = page.getByTestId('settings-view');
+  await expect(settings.getByRole('heading', { name: 'Numbers' })).toBeVisible();
+  await expect(settings.getByText('Remove revisions older than')).toHaveCount(0);
+  await expect(settings.getByRole('heading', { name: 'Revisions' })).toHaveCount(0);
+});
 
 /** The labels of the undo history, newest first. */
 async function undoLabels(): Promise<string[]> {
@@ -542,10 +455,10 @@ async function undoLabels(): Promise<string[]> {
   return labels;
 }
 
-test('IP-16 ED-5 Delete forever asks for the title typed, then the entry and its revisions are gone, and it is not an undo step', async () => {
+test('IP-16 ED-5 Delete forever asks for the title typed, then the entry is gone, and it is not an undo step', async () => {
   const { entry } = await invoke('entry.create', {
     collection: 'places',
-    data: { title: 'Purge Wharf', status: 'idea' },
+    data: { title: 'Purge Wharf' },
   });
   await invoke('entry.update', {
     collection: 'places',
@@ -553,15 +466,15 @@ test('IP-16 ED-5 Delete forever asks for the title typed, then the entry and its
     patch: { descriptions: [{ startYear: null, endYear: null, text: 'Pilings in the mud.' }] },
   });
   await invoke('entry.delete', { collection: 'places', id: entry._id });
-  const stored = await revisionsInMongo(entry._id);
-  expect(stored).toBeGreaterThan(1);
   await rail(page, 'Trash').click();
   const row = page.getByTestId('trash-list').locator(`li[data-id="${entry._id}"]`);
   await expect(row).toContainText('Purge Wharf');
   const labels = await undoLabels();
   await row.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
   const confirm = row.getByTestId('trash-purge-confirm');
-  await expect(confirm).toContainText('This is not an undo step.');
+  await expect(confirm).toContainText(
+    'Purge Wharf will be deleted forever. This is not an undo step.',
+  );
   const typed = confirm.getByLabel('Type Purge Wharf to confirm');
   await expect(typed).toBeFocused();
   const go = confirm.getByRole('button', { name: 'Delete Purge Wharf forever' });
@@ -576,11 +489,10 @@ test('IP-16 ED-5 Delete forever asks for the title typed, then the entry and its
   await confirm.getByLabel('Type Purge Wharf to confirm').fill('Purge Wharf');
   await confirm.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
   await expect(page.getByTestId('trash-notice')).toContainText(
-    `Deleted Purge Wharf forever, with ${stored} revisions. This is not an undo step.`,
+    'Deleted Purge Wharf forever. This is not an undo step.',
   );
   await expect(row).toHaveCount(0);
   expect(await fromMongo('places', entry._id)).toBeNull();
-  expect(await revisionsInMongo(entry._id)).toBe(0);
   // Nothing was added to the undo history.
   expect(await undoLabels()).toEqual(labels);
 });
@@ -590,7 +502,7 @@ test('IP-16 Empty trash asks for the word empty, shows the count, and is not an 
   for (const title of ['Empty Dock One', 'Empty Dock Two']) {
     const { entry } = await invoke('entry.create', {
       collection: 'places',
-      data: { title, status: 'idea' },
+      data: { title },
     });
     await invoke('entry.delete', { collection: 'places', id: entry._id });
     ids.push(entry._id);
@@ -602,105 +514,21 @@ test('IP-16 Empty trash asks for the word empty, shows the count, and is not an 
   const labels = await undoLabels();
   await page.getByTestId('trash-empty-all').click();
   const confirm = page.getByTestId('trash-empty-confirm');
-  await expect(confirm).toContainText(`${count} entries and every revision of them`);
+  await expect(confirm).toContainText(`${count} entries will be deleted forever.`);
   const go = confirm.getByRole('button', { name: `Delete all ${count} entries forever` });
   await expect(go).toBeDisabled();
   await confirm.getByLabel('Type empty to confirm').fill('Empty');
   await go.click();
-  await expect(page.getByTestId('trash-notice')).toContainText(
-    `Emptied the trash: ${count} entries`,
+  await expect(page.getByTestId('trash-notice')).toHaveText(
+    `Emptied the trash: ${count} entries deleted forever. This is not an undo step.`,
   );
   await expect(page.getByTestId('trash-notice')).toContainText('This is not an undo step.');
   await expect(page.getByTestId('trash-empty')).toHaveText('The trash is empty.');
   expect((await invoke('trash.list', {})).entries).toEqual([]);
   for (const id of ids) {
     expect(await fromMongo('places', id)).toBeNull();
-    expect(await revisionsInMongo(id)).toBe(0);
   }
   expect(await undoLabels()).toEqual(labels);
-});
-
-test('IP-16 ED-4 History removes revisions older than a date: a dry run shows the count, then confirm, and the list reloads', async () => {
-  const doyle = await currentEntry('characters', 'Revision Doyle');
-  const stored = await revisionsInMongo(doyle._id);
-  expect(stored).toBeGreaterThan(1);
-  await openSection('characters');
-  await page
-    .getByTestId('entry-list')
-    .getByRole('button', { name: /Revision Doyle/ })
-    .click();
-  await page.getByTestId('entry-tools').getByRole('button', { name: 'History' }).click();
-  const drawer = page.getByTestId('history');
-  const revisions = drawer
-    .getByRole('list', { name: 'Revisions, newest first' })
-    .getByRole('button');
-  await expect(revisions).toHaveCount(stored);
-  const prune = drawer.getByTestId('revision-prune');
-  const day = prune.getByLabel('Remove revisions older than');
-  // A day before any revision: nothing to remove.
-  await day.fill('2000-01-01');
-  await prune.getByRole('button', { name: 'Count them' }).click();
-  await expect(prune.getByTestId('revision-prune-count')).toHaveText(
-    'No revisions of Revision Doyle are older than 2000-01-01.',
-  );
-  // Tomorrow: every revision, counted first, and nothing removed by counting.
-  const tomorrow = await page.evaluate(() => {
-    const d = new Date(Date.now() + 86_400_000);
-    const p = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  });
-  await day.fill(tomorrow);
-  await prune.getByRole('button', { name: 'Count them' }).click();
-  await expect(prune.getByTestId('revision-prune-count')).toHaveText(
-    `${stored} revisions of Revision Doyle are older than ${tomorrow}. Removing them is not an undo step.`,
-  );
-  expect(await revisionsInMongo(doyle._id)).toBe(stored);
-  await expect(prune.getByRole('button', { name: 'Keep them' })).toBeFocused();
-  await prune.getByRole('button', { name: `Remove ${stored} revisions` }).click();
-  await expect(prune.getByTestId('revision-prune-notice')).toHaveText(
-    `Removed ${stored} revisions from before ${tomorrow}. This is not an undo step.`,
-  );
-  await expect(revisions).toHaveCount(0);
-  await expect(drawer).toContainText('No revisions are kept for this entry.');
-  expect(await revisionsInMongo(doyle._id)).toBe(0);
-  // The entry itself is untouched.
-  expect((await currentEntry('characters', 'Revision Doyle')).role).toBe(doyle.role);
-  await drawer.getByRole('button', { name: 'Close' }).click();
-});
-
-test('ED-9 typing @ in a long text field searches, inserts a link, and the target shows Linked from', async () => {
-  await openSection('characters');
-  await page
-    .getByTestId('entry-list')
-    .getByRole('button', { name: /Linker Zhou/ })
-    .click();
-  const editor = page.getByTestId('editor');
-  const body = field(editor, 'body').getByRole('textbox');
-  await body.click();
-  await body.press('End');
-  await body.pressSequentially('Compare with @Revi');
-  const picker = field(editor, 'body').getByRole('listbox', { name: 'Matching entries' });
-  await expect(picker.getByRole('option').first()).toContainText('Revision Doyle');
-  await page.keyboard.press('Enter');
-  await expect(body).toHaveText(/Compare with @Revision Doyle $/);
-  await waitSaved(page);
-  const linker = await currentEntry('characters', 'Linker Zhou');
-  const doyle = await currentEntry('characters', 'Revision Doyle');
-  expect(linker.links).toContainEqual({ targetId: doyle._id, kind: 'mention' });
-
-  await page
-    .getByTestId('entry-list')
-    .getByRole('button', { name: /Revision Doyle/ })
-    .click();
-  const linked = page.getByTestId('entry-tools').getByTestId('linked-from');
-  await expect(linked).toContainText('Character: Linker Zhou');
-  await linked.getByRole('button', { name: 'Character: Linker Zhou' }).click();
-  await expect(
-    page
-      .getByTestId('editor')
-      .getByTestId('char-heading')
-      .getByRole('heading', { name: 'Linker Zhou' }),
-  ).toBeVisible();
 });
 
 test('ED-10 a death date before the birth date is flagged at the field in plain words and still saves', async () => {
@@ -753,43 +581,43 @@ async function undoStep() {
   await page.keyboard.press('Meta+z');
 }
 
-test('ED-8 renaming a tag on the Lists screen updates every entry that uses it', async () => {
-  // SM-1: the character page has no tags box, so two open questions carry the tag.
-  await openSection('openQuestions');
-  await page.getByRole('button', { name: /^New / }).first().click();
-  const form = page.getByTestId('new-entry');
-  await field(form, 'title').locator('input').fill('Second question');
-  await form.getByRole('button', { name: /^Create / }).click();
-  await waitSaved(page);
-  for (const name of ['Temp question', 'Second question']) {
-    await openSection('openQuestions');
-    await page
-      .getByTestId('entry-list')
-      .getByRole('button', { name: new RegExp(name) })
-      .click();
-    const tags = field(page.getByTestId('editor'), 'tags');
-    await tags.locator('.add-row > input').fill('harbor');
-    await tags.locator('.add-row > input').press('Enter');
-    await waitSaved(page);
+test('ED-8 renaming a community on the Lists screen updates every entry that uses it', async () => {
+  const { item } = await invoke('lists.addItem', {
+    listId: 'communities',
+    label: 'Harbor families',
+  });
+  for (const title of ['North Pier', 'South Pier']) {
+    await invoke('entry.create', {
+      collection: 'places',
+      data: { title, communityId: item.id },
+    });
   }
   await rail(page, 'Lists').click();
-  const panel = page.locator('[data-list="tags"]');
-  // The row by its item ID: the open field holds the name as a value, not as text.
-  const tagId = (await listItems('tags')).find((i) => i.label === 'harbor')!.id;
-  const row = panel.locator(`[data-item="${tagId}"]`);
+  const row = itemRow('communities', item.id);
   await expect(row).toContainText('used 2 times');
   // IP-8: the name is a field; Enter renames.
-  await fillEditable(row.getByTestId('item-name'), 'the harbor');
-  await expect(panel.locator('p[role="status"]')).toHaveText('Renamed. 2 entries were updated.');
-  for (const name of ['Temp question', 'Second question']) {
-    expect((await currentEntry('openQuestions', name)).tags).toContain('the harbor');
-    expect((await currentEntry('openQuestions', name)).tags).not.toContain('harbor');
+  await fillEditable(row.getByTestId('item-name'), 'Harbour families');
+  await expect(listPanel('communities').locator('p[role="status"]')).toHaveText(
+    'Renamed. Every entry shows the new name.',
+  );
+  const label = async () => (await listItems('communities')).find((i) => i.id === item.id)?.label;
+  expect(await label()).toBe('Harbour families');
+  // The entries keep the item's ID, so each shows the new name.
+  for (const title of ['North Pier', 'South Pier']) {
+    expect((await currentEntry('places', title)).communityId).toBe(item.id);
   }
+  await openSection('places');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /North Pier/ })
+    .click();
+  await expect(
+    field(page.getByTestId('editor'), 'communityId').locator('select option:checked'),
+  ).toHaveText('Harbour families');
   // The rename is undoable.
-  await page.keyboard.press('Meta+z');
-  await expect
-    .poll(async () => (await currentEntry('openQuestions', 'Temp question')).tags)
-    .toContain('harbor');
+  await rail(page, 'Lists').click();
+  await undoStep();
+  await expect.poll(label).toBe('Harbor families');
 });
 
 test('ED-8 renaming a union type changes the name every union shows', async () => {
@@ -892,71 +720,6 @@ test('IP-8 an event category takes a parent in place, never one under itself, an
     .toBe(false);
 });
 
-test('IP-9 statuses and provenance recolour in place, a status changes kind, and a new status takes its kind when added', async () => {
-  await rail(page, 'Lists').click();
-  const item = async (listId: string, id: string) =>
-    (await listItems(listId)).find((i) => i.id === id);
-  await itemRow('statuses', 'idea').getByTestId('item-colour').fill('#aa3300');
-  await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#aa3300');
-  // An entry's chip shows the new colour on its edge and dot; its text stays in the text colour.
-  await invoke('entry.create', {
-    collection: 'openQuestions',
-    data: { title: 'Who paints the harbor wall?', status: 'idea' },
-  });
-  await openSection('openQuestions');
-  const chip = page
-    .getByTestId('entry-list')
-    .getByRole('button', { name: /Who paints the harbor wall\?/ })
-    .locator('.chip[data-list="statuses"][data-item="idea"]');
-  await expect(chip).toHaveCSS('border-top-color', 'rgb(170, 51, 0)');
-  await expect(chip.locator('.dot')).toHaveCSS('background-color', 'rgb(170, 51, 0)');
-  const fg = await chip.evaluate((el) => getComputedStyle(el).color);
-  expect(fg).not.toBe('rgb(170, 51, 0)');
-  await rail(page, 'Lists').click();
-  await undoStep();
-  await expect.poll(async () => (await item('statuses', 'idea'))?.color).toBe('#7a611b');
-  await itemRow('provenance', 'invented').getByTestId('item-colour').fill('#225588');
-  await expect.poll(async () => (await item('provenance', 'invented'))?.color).toBe('#225588');
-
-  const panel = listPanel('statuses');
-  await panel.getByLabel(/^New item for /).fill('Draft');
-  await panel.getByLabel('Kind', { exact: true }).selectOption('planned');
-  await panel.getByRole('button', { name: /^Add to / }).click();
-  await expect
-    .poll(async () => (await listItems('statuses')).find((i) => i.label === 'Draft')?.extra.kind)
-    .toBe('planned');
-  const draft = (await listItems('statuses')).find((i) => i.label === 'Draft')!;
-  const kind = itemRow('statuses', draft.id).getByTestId('item-kind');
-  await expect(itemRow('statuses', draft.id).getByTestId('item-kind-text')).toHaveText(
-    'kind planned',
-  );
-  await openEditable(kind);
-  await kind.locator('select').selectOption('canon');
-  await expect.poll(async () => (await item('statuses', draft.id))?.extra.kind).toBe('canon');
-  await undoStep();
-  await expect.poll(async () => (await item('statuses', draft.id))?.extra.kind).toBe('planned');
-  // The last status of a kind cannot change kind away: the reason shows at the field.
-  const ideaKind = itemRow('statuses', 'idea').getByTestId('item-kind');
-  await openEditable(ideaKind);
-  await ideaKind.locator('select').selectOption('canon');
-  await expect(ideaKind.getByRole('alert')).toContainText('idea');
-  await ideaKind.locator('select').press('Escape');
-  expect((await item('statuses', 'idea'))?.extra.kind).toBe('idea');
-});
-
-test('IP-9 removing a status in use is refused on the Lists screen with the reason', async () => {
-  await rail(page, 'Lists').click();
-  const used = (await listItems('statuses')).find((i) => i.id === 'idea')!;
-  expect(used.usage).toBeGreaterThan(0);
-  await itemRow('statuses', 'idea')
-    .getByRole('button', { name: `Remove ${used.label}` })
-    .click();
-  const note = listPanel('statuses').locator('p[role="status"]');
-  await expect(note).toContainText(new RegExp(`(entry uses|entries use) ${used.label}\\.`));
-  await expect(note).toContainText('Change them first, or rename the item instead.');
-  expect((await listItems('statuses')).some((i) => i.id === 'idea')).toBe(true);
-});
-
 test('IP-9 A51 the Moment kinds list on the Lists screen recolours a kind, changes its weight to Large marker as one step, and shows the contrast note for a colour under 3:1', async () => {
   await rail(page, 'Lists').click();
   const kind = async (id: string) => (await listItems('momentKinds')).find((i) => i.id === id);
@@ -1004,14 +767,13 @@ test('IP-9 A51 removing a moment kind in use is refused on the Lists screen with
     collection: 'characters',
     data: {
       title: 'Ada Kind',
-      status: 'canon',
       names: { full: 'Ada Kind' },
       birth: { year: 2001 },
     },
   });
   await invoke('entry.create', {
     collection: 'moments',
-    data: { title: 'Marries Ben', characterId: who._id, year: 2030, kind: 'life', status: 'canon' },
+    data: { title: 'Marries Ben', characterId: who._id, year: 2030, kind: 'life' },
   });
   await rail(page, 'Lists').click();
   const life = (await listItems('momentKinds')).find((i) => i.id === 'life')!;
@@ -1039,7 +801,6 @@ test('IP-8 renaming a region on the Lists screen renames it on every event that 
       start: { year: 2041 },
       categoryId: cat.id,
       regions: ['Harbor Coast'],
-      status: 'canon',
     },
   });
   const region = (await listItems('regions')).find((i) => i.label === 'Harbor Coast');
@@ -1079,7 +840,7 @@ test('IP-10 an age group edits its from and to ages in place, one step each', as
 test('IP-12 families take a colour and eras their years on the Lists screen', async () => {
   const { entry: fam } = await invoke('entry.create', {
     collection: 'families',
-    data: { title: 'Pierce', name: 'Pierce', color: '#2a78d6', status: 'canon' },
+    data: { title: 'Pierce', name: 'Pierce', color: '#2a78d6' },
   });
   await rail(page, 'Lists').click();
   await itemRow('families', fam._id).getByTestId('item-colour').fill('#336699');
@@ -1113,7 +874,6 @@ test('ED-6 generated content and imported content are edited like any other fiel
   const cases: [EntryCollection, string][] = [
     ['chapters', 'summary'],
     // IP-18: the manuscript text is locked; only Re-import changes it.
-    ['briefs', 'content'],
     ['findings', 'text'],
   ];
   for (const [c, name] of cases) {
@@ -1148,7 +908,7 @@ test('ED-3 tree edits undo to the start and redo to the end: a union and a paren
       (
         await window.api.invoke('entry.create', {
           collection: 'characters',
-          data: { title: name, status: 'canon', names: { full: name }, birth: { year } },
+          data: { title: name, names: { full: name }, birth: { year } },
         })
       ).entry._id;
     return {

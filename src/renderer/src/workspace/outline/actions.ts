@@ -31,7 +31,7 @@ export function useOutlineWrites() {
     [ro.off],
   );
 
-  /** PL-3, KB-3: move a chapter, a beat, a part, or a book. */
+  /** PL-3, KB-3: move a chapter, a beat, or a part. */
   const reorder = useCallback(
     (req: Request<'plot.reorder'>, label: string) =>
       guard(async () => {

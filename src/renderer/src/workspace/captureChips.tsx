@@ -14,12 +14,7 @@ import type { WireList } from '../../../shared/ipc';
 import { collectionInfo, isEntryCollection, manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { FieldSpec } from '../../../shared/schema/manifest';
-import {
-  CAPTURE_SECTIONS,
-  LEXICON,
-  WRITING_STRAND,
-  localSourceNote,
-} from '../../../shared/domain/captureRouter';
+import { CAPTURE_SECTIONS, LEXICON, WRITING_STRAND } from '../../../shared/domain/captureRouter';
 import type {
   CaptureDraft,
   CaptureFact,
@@ -28,7 +23,7 @@ import type {
 } from '../../../shared/domain/captureRouter';
 import { Editable, fieldLabel } from './editable';
 import type { EditableOption } from './editable';
-import { showValue } from './history';
+import { showValue } from './showValue';
 import { TYPED_ASKS, draftsWith, openAsks } from './captureLocal';
 import type { FactChoice } from './captureLocal';
 
@@ -91,15 +86,12 @@ function shownDraftValue(
 /**
  * The drafts of a Route A fact as the ED-7 table: Field, Now, Proposed. Every
  * row is a new value, so Now reads "Not set" as it does for a created entry
- * in the review queue; the status and the source note File it adds show too.
+ * in the review queue.
  */
 export function DraftDiff(props: {
   drafts: readonly CaptureDraft[];
   lists: readonly WireList[];
   index: RouterIndex;
-  /** The status ID File it gives each entry (the bible's first idea status). */
-  status: string;
-  capturedOn: string;
 }) {
   const { drafts, lists, index } = props;
   const rows: { key: string; field: string; value: string }[] = [];
@@ -116,9 +108,7 @@ export function DraftDiff(props: {
     const c = d.collection;
     if (d.op !== 'create' || !c || !isEntryCollection(c)) continue;
     const manifest = manifests[c as EntryCollection];
-    const data = { ...(d.data ?? {}) };
-    delete data.status;
-    for (const [path, value] of Object.entries(data)) {
+    for (const [path, value] of Object.entries(d.data ?? {})) {
       if (value === '' || value === undefined) continue;
       const spec = manifest.find((s) => s.name === path);
       rows.push({
@@ -127,15 +117,6 @@ export function DraftDiff(props: {
         value: shownDraftValue(spec, value, lists, index, drafts),
       });
     }
-    const status = lists
-      .find((l) => l._id === 'statuses')
-      ?.items.find((s) => s.id === props.status)?.label;
-    rows.push({ key: `${i}:status`, field: 'Status', value: status ?? props.status });
-    rows.push({
-      key: `${i}:sourceNote`,
-      field: fieldLabel(c as EntryCollection, 'sourceNote'),
-      value: localSourceNote(props.capturedOn),
-    });
   }
   return (
     <table className="diff-table" data-testid="draft-diff">
@@ -389,8 +370,6 @@ export function FactCard(props: {
   first: boolean;
   lists: readonly WireList[];
   index: RouterIndex;
-  status: string;
-  capturedOn: string;
   busy: boolean;
   /** Why the fact cannot go to Claude now (no key, not confirmed), or null. */
   claudeOff: string | null;
@@ -463,15 +442,7 @@ export function FactCard(props: {
           Pick the {open.join(' and ').toLowerCase()} to file this.
         </p>
       )}
-      {stand === 'local' && (
-        <DraftDiff
-          drafts={drafts}
-          lists={props.lists}
-          index={props.index}
-          status={props.status}
-          capturedOn={props.capturedOn}
-        />
-      )}
+      {stand === 'local' && <DraftDiff drafts={drafts} lists={props.lists} index={props.index} />}
       {(stand === 'local' || stand === 'unsent') && (
         <div className="row capture-fact-actions">
           {stand === 'unsent' && (

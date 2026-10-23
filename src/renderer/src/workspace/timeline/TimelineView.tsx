@@ -33,7 +33,7 @@ import { WorldEventsGrid } from './WorldEventsGrid';
 import { useEraEdits, useTitleRename } from './gridShared';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -59,7 +59,6 @@ export function TimelineView() {
   const categories = useList('eventCategories');
   // A47: the bible's numbers (IP-11) and its regions list, in its order, by label (IP-8).
   const { numbers } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const regionItems = useList('regions')?.items;
   const [selected, setSelected] = useState<{ collection: EntryCollection; id: string } | null>(
     null,
@@ -142,7 +141,6 @@ export function TimelineView() {
       inWindow(spans, win).map((e) => ({
         id: e.id,
         title: e.title,
-        status: e.status,
         startYear: e.startYear,
         endYear: e.endYear,
         formative: e.formative,
@@ -202,13 +200,12 @@ export function TimelineView() {
     const data: Record<string, unknown> = {
       ...base,
       title: n.title,
-      status: statusOf('idea'),
       start: { year: n.year },
       end: n.endYear !== null && n.endYear !== n.year ? { year: n.endYear } : null,
       categoryId: n.categoryId,
       formative: n.formative,
     };
-    // Real or invented is provenance once the model drops `reality` (SM-4); until then, invented.
+    // SM-4: an event made from the grid is invented.
     if ('reality' in base) data.reality = 'invented';
     try {
       const { entry } = await call('entry.create', { collection: 'worldEvents', data });

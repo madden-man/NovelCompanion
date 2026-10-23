@@ -196,8 +196,8 @@ export function BackupsView() {
       <div className="panel stack">
         <h3>Export the whole bible</h3>
         <p>
-          Writes every entry, link, revision, list, and setting to one JSON file. The file can be
-          loaded into an empty bible with nothing lost.
+          Writes every entry, list, and setting to one JSON file. The file can be loaded into an
+          empty bible with nothing lost.
         </p>
         <div className="row">
           <button

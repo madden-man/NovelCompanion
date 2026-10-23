@@ -119,7 +119,7 @@ async function add(
   kind: 'person' | 'parent' | 'child' | 'sibling' | 'partner',
   name: string,
   born: number | null,
-  opts: { status?: string; type?: string; coParent?: string } = {},
+  opts: { type?: string; coParent?: string } = {},
 ) {
   // A38: Add person is on the tree toolbar; the relatives are added from the inspector.
   await (kind === 'person' ? page : inspector())
@@ -128,7 +128,8 @@ async function add(
   const form = inspector().getByTestId('add-form');
   await form.getByLabel('Name').fill(name);
   if (born !== null) await form.getByLabel('Birth year').fill(String(born));
-  await form.getByLabel('Status').selectOption(opts.status ?? 'canon');
+  // A53: the form has no Status select.
+  await expect(form.getByLabel('Status', { exact: true })).toHaveCount(0);
   if (opts.type && kind === 'partner') await form.getByLabel('Union type').selectOption(opts.type);
   else if (opts.type) await form.getByLabel('Link type').selectOption(opts.type);
   if (opts.coParent !== undefined) {
@@ -199,7 +200,6 @@ function signature(g: TreeGraph) {
         yr(p.birth),
         yr(p.death),
         [...p.familyIds].sort().join('+'),
-        p.status,
         gen.get(p.id),
       ])
       .sort(),
@@ -250,7 +250,7 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await expect(menu).toHaveCount(0);
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await select('Zhou Lan');
-  await add('sibling', 'Zhou Jun', 1993, { type: 'biological', status: 'planned' });
+  await add('sibling', 'Zhou Jun', 1993, { type: 'biological' });
   await setYearDate('death', 2070);
 
   await select('Daniel Hale');
@@ -260,16 +260,15 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await add('child', 'Sam Hale', 2012, { type: 'adoptive' });
   await editLink('Ruth Hale', { startYear: 2015 });
   await select('Iris Hale-Zhou');
-  await add('partner', 'Tomas Reyes', 2030, { type: 'partnered', status: 'planned' });
+  await add('partner', 'Tomas Reyes', 2030, { type: 'partnered' });
   await editLink('Iris Hale-Zhou', { startYear: 2056, endYear: 2064, endReason: 'separated' });
   await select('Iris Hale-Zhou');
   await add('child', 'Noor Zhou', 2058, {
     type: 'biological',
     coParent: 'Tomas Reyes',
-    status: 'planned',
   });
   await setFamilies(['FAM-ZHOU']);
-  await add('person', 'The Archivist', null, { status: 'idea' });
+  await add('person', 'The Archivist', null, {});
 
   await expect(page.locator('g.tnode')).toHaveCount(13);
   const t = await invoke('tree.get', {});
@@ -406,10 +405,13 @@ test('FT-7 FT-3 a click opens the character in the inspector without leaving the
   await expect(page.getByTestId('tree-view')).toBeVisible();
   await expect(inspector().getByTestId('inspector-name')).toHaveText('Zhou Jun');
   await expect(node('Zhou Jun')).toHaveAttribute('aria-pressed', 'true');
-  // Name, years, and status on the node.
+  // Name and years on the node; no status chip, and no status in its label (A53).
   await expect(node('Zhou Jun').locator('text.tnode-name')).toHaveText('Zhou Jun');
   await expect(node('Zhou Jun').locator('text.tnode-years')).toHaveText('1993 to 2070');
-  await expect(node('Zhou Jun').locator('text.tchip-text')).toHaveText('planned');
+  await expect(page.locator('g.tnode .tchip, g.tnode .tchip-text')).toHaveCount(0);
+  await expect(node('Zhou Jun')).toHaveAttribute('aria-label', /^Zhou Jun, 1993 to 2070, /);
+  for (const word of ['canon', 'planned', 'idea'])
+    await expect(node('Zhou Jun')).not.toHaveAttribute('aria-label', new RegExp(`\\b${word}\\b`));
   await setYearDate('birth', 1995);
   await expect(node('Zhou Jun').locator('text.tnode-years')).toHaveText('1995 to 2070');
   await expect(node('Zhou Jun')).toHaveAttribute('data-age', '45');
@@ -456,11 +458,11 @@ test('FT-2 change a link type, remove a link and undo it, and delete and restore
   await page.keyboard.press('Meta+z');
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
 
-  // Delete a person through the ED-5 flow: the links are listed, then it goes to the trash.
+  // Delete a person through the ED-5 flow: a confirm step, then it goes to the trash.
   await select('Noor Zhou');
   await inspector().getByRole('button', { name: 'Remove Noor Zhou' }).click();
   const dialog = inspector().getByRole('dialog', { name: 'Move to trash' });
-  await expect(dialog.getByTestId('linked-count')).toHaveText(/2 entries link here/);
+  await expect(dialog).toContainText('Move Noor Zhou to the trash?');
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
   await expect(node('Noor Zhou')).toHaveCount(0);
   const raw = await new MongoClient(db.uri).connect();
@@ -528,7 +530,6 @@ test('FT-6 A45 warnings show in the inspector behind the toolbar count and never
       collection: 'parentLinks',
       data: {
         title: 'Loop',
-        status: 'idea',
         parentId: ids['Iris Hale-Zhou'],
         childId: ids['Margaret Hale'],
         type: 'biological',
@@ -555,9 +556,9 @@ test('FT-7 FT-2 A45 the inspector edits Name, In the story, Description, Birth, 
   await select('Daniel Hale');
   const ed = editor();
   // The fields, in order; status, provenance, source, tags, links and the backstory box are gone.
-  const fields = await ed
-    .locator('form.editor-fields > fieldset > [data-field]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('data-field')));
+  const shown = ed.locator('form.editor-fields > fieldset > [data-field]');
+  await expect(shown).toHaveCount(7);
+  const fields = await shown.evaluateAll((els) => els.map((e) => e.getAttribute('data-field')));
   expect(fields).toEqual([
     'names.full',
     'names.chinese',
@@ -1051,7 +1052,7 @@ async function openCharacter(name: string) {
   return page.getByTestId('character-page');
 }
 
-test('SM-1 the character page is the name and Chinese name, one line of dates, status, families and age, the relatives, and three text boxes, nothing else', async () => {
+test('SM-1 the character page is the name and Chinese name, one line of dates, families and age, the relatives, and three text boxes, nothing else', async () => {
   await openBible(FIX);
   const p = await openCharacter('Iris Hale-Zhou');
   const heading = p.getByTestId('char-heading');
@@ -1063,15 +1064,16 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   await expect(editorPane.locator('.editor-head .eyebrow')).toHaveCount(0);
   await expect(editorPane.getByRole('heading', { name: /Iris Hale-Zhou/ })).toHaveCount(1);
   await expect(editorPane.getByTestId('autosave')).toBeVisible();
-  // One line: birth, death, status, families, and the age (no story time yet: the current position).
+  // One line: birth, death, families, and the age (no story time yet: the current position).
   const line = p.getByTestId('char-line');
-  for (const name of ['birth', 'death', 'status', 'familyIds']) {
+  for (const name of ['birth', 'death', 'familyIds']) {
     await expect(field(line, name), name).toBeVisible();
   }
+  await expect(field(line, 'status')).toHaveCount(0);
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
   await expect(p.getByTestId('char-age')).toHaveText('Age 9');
-  // SM-1 "on one line": at the default window the five sit side by side, the age last.
+  // SM-1 "on one line": at the default window the four sit side by side, the age last.
   expect(
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()),
   ).toEqual([1200, 800]);
@@ -1079,7 +1081,6 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
     [
       field(line, 'birth'),
       field(line, 'death'),
-      field(line, 'status'),
       field(line, 'familyIds'),
       p.getByTestId('char-age'),
     ].map(async (l) => (await l.boundingBox())!),
@@ -1129,7 +1130,6 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, s
   expect(fields.filter((f) => !String(f).includes('.'))).toEqual([
     'birth',
     'death',
-    'status',
     'familyIds',
     'role',
     'body',
@@ -1299,7 +1299,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
     (await invoke('entry.list', { collection: 'characters', trash: 'exclude' })).entries.find(
       (e) => e.entry.title === 'Ada Lin',
     )!.entry;
-  expect(await ada()).toMatchObject({ status: 'idea', familyIds: [], birth: { unknown: true } });
+  expect(await ada()).toMatchObject({ familyIds: [], birth: { unknown: true } });
   // IP-1: the families are a chip row; Add family turns into a picker in its place.
   const fam = field(ed, 'familyIds');
   const families = async () => (await ada()).familyIds;
@@ -1328,9 +1328,7 @@ test('CH-1 SM-1 a character is created from the full name, edited with zero, one
   await fam.locator('[role="option"][data-value="FAM-HALE"]').click();
   await expect.poll(families).toEqual(['FAM-ZHOU', 'FAM-HALE']);
   await fillDateBox(field(ed, 'birth'), '2040');
-  await openEditable(field(ed, 'status'));
-  await field(ed, 'status').locator('select').selectOption('planned');
-  await expect.poll(ada).toMatchObject({ birth: { year: 2040 }, status: 'planned' });
+  await expect.poll(ada).toMatchObject({ birth: { year: 2040 } });
   // Delete and restore through the trash.
   await page.getByTestId('entry-tools').getByRole('button', { name: 'Move to trash' }).click();
   await page

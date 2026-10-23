@@ -35,13 +35,9 @@ const CATEGORIES = [
   'demographics',
   'culture',
 ];
-const STATUSES = ['canon', 'planned', 'idea'] as const;
-
-const base = (id: string, title: string, i: number) => ({
+const base = (id: string, title: string, _i: number) => ({
   _id: id,
   title,
-  status: STATUSES[i % 3]!,
-  provenance: 'invented',
   createdAt: AT,
   modifiedAt: AT,
 });
@@ -60,9 +56,8 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
       color: ['#2a78d6', '#eb6834', '#1baf7a', '#4a3aa7'][i % 4],
     });
   }
-  put('books', { ...base('BK1', 'The long river', 0), number: 1 });
   for (let i = 0; i < 4; i++) {
-    put('parts', { ...base(`PT${i}`, `Part ${i + 1}`, i), bookId: 'BK1', number: i + 1 });
+    put('parts', { ...base(`PT${i}`, `Part ${i + 1}`, i), number: i + 1 });
   }
   for (let i = 0; i < 60; i++) {
     put('places', {
@@ -75,11 +70,11 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
   // The FT-8 tree: 200 people across six generations, in the five families.
   const tree = generatedTree(BIG.treePeople, 6);
   tree.characters.forEach((c, i) =>
-    put('characters', { ...c, provenance: 'invented', modifiedAt: AT, familyIds: [`FAM${i % 5}`] }),
+    put('characters', { ...c, modifiedAt: AT, familyIds: [`FAM${i % 5}`] }),
   );
-  for (const u of tree.unions) put('unions', { ...u, provenance: 'invented', modifiedAt: AT });
+  for (const u of tree.unions) put('unions', { ...u, modifiedAt: AT });
   for (const l of tree.parentLinks) {
-    put('parentLinks', { ...l, provenance: 'invented', modifiedAt: AT });
+    put('parentLinks', { ...l, modifiedAt: AT });
   }
   for (let i = 0; i < 1000; i++) {
     const born = 1900 + (i % 180);
@@ -91,7 +86,6 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
         i % 97 === 0 ? { unknown: true } : { year: born, month: 1 + (i % 12), day: 1 + (i % 28) },
       death: i % 3 === 0 ? { year: born + 60 + (i % 30) } : null,
       familyIds: [`FAM${i % 5}`],
-      tags: i % 10 === 0 ? ['keeper'] : [],
     });
   }
   const people = out.characters.map((c) => c._id);

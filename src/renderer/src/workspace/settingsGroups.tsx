@@ -1,13 +1,12 @@
 /**
- * A47 Settings groups for the open bible (IP-10, IP-11, IP-12, IP-14, IP-15,
- * IP-16): the numbers, the cultural time unit, the templates, the default
- * eras, Claude's instructions, and removing old revisions. Every value is an
+ * A47 Settings groups for the open bible (IP-10, IP-11, IP-12, IP-14, IP-15):
+ * the numbers, the cultural time unit, the templates, the default eras, and
+ * Claude's instructions. Every value is an
  * `Editable` that saves on Enter or a pick, each change one undo step.
  */
 import { useCallback, useEffect, useId, useState } from 'react';
 import {
   CULTURE_UNITS,
-  DEFAULT_BRIEF_HEADINGS,
   DEFAULT_LINK_TYPE_LABELS,
   DEFAULT_NUMBERS,
   DEFAULT_TEMPLATES,
@@ -78,14 +77,14 @@ const NUMBER_FIELDS: {
     label: 'World window, years before',
     min: 0,
     max: 200,
-    hint: 'Years before the story year the world window and the brief take in.',
+    hint: 'Years before the story year the world window and the session selection take in.',
   },
   {
     key: 'windowAfter',
     label: 'World window, years after',
     min: 0,
     max: 200,
-    hint: 'Years after the story year the world window and the brief look ahead.',
+    hint: 'Years after the story year the world window and the session selection look ahead.',
   },
   {
     key: 'pickerReach',
@@ -100,6 +99,13 @@ const NUMBER_FIELDS: {
     min: 100,
     max: 750,
     hint: 'How long a box waits after the last key before it saves. At most 750, so a forced quit loses less than a second of typing.',
+  },
+  {
+    key: 'outlineVersionDays',
+    label: 'Days between outline versions',
+    min: 1,
+    max: 365,
+    hint: 'A save opens a new outline version only when the latest one is older than this.',
   },
 ];
 
@@ -242,13 +248,12 @@ export function CultureUnitSettings() {
 
 // IP-14: templates
 
-type TextTemplate = Exclude<keyof BibleTemplates, 'briefHeadings' | 'linkTypeLabels'>;
+type TextTemplate = Exclude<keyof BibleTemplates, 'linkTypeLabels'>;
 
 const TEXT_TEMPLATES: { key: TextTemplate; label: string; what: string }[] = [
   { key: 'chapterTitle', label: 'New chapter title', what: 'the new chapter title' },
   { key: 'sectionTitle', label: 'New section title', what: 'the new section title' },
   { key: 'partTitle', label: 'New part title', what: 'the new part title' },
-  { key: 'bookTitle', label: 'New book title', what: 'the new book title' },
   { key: 'eraName', label: 'New era name', what: 'the new era name' },
   { key: 'strandPresent', label: 'Present strand label', what: 'the present strand label' },
   { key: 'strandBackstory', label: 'Backstory strand label', what: 'the backstory strand label' },
@@ -294,25 +299,6 @@ export function TemplateSettings() {
             fallback={DEFAULT_TEMPLATES[f.key]}
             testId={`template-${f.key}`}
             onSave={(next) => save(f.key, f.what, next)}
-          />
-        ))}
-      </div>
-      <h5>Brief section headings</h5>
-      <div className="settings-grid" data-testid="template-brief-headings">
-        {t.briefHeadings.map((h, i) => (
-          <TemplateRow
-            key={i}
-            label={`Brief heading ${i + 1}`}
-            value={h}
-            fallback={DEFAULT_BRIEF_HEADINGS[i] ?? ''}
-            testId={`template-heading-${i + 1}`}
-            onSave={(next) =>
-              save(
-                'briefHeadings',
-                'the brief headings',
-                t.briefHeadings.map((x, j) => (j === i ? next : x)),
-              )
-            }
           />
         ))}
       </div>
@@ -558,158 +544,6 @@ export function ClaudeInstructionsSettings() {
   );
 }
 
-// IP-16: remove old revisions for the whole bible
-
-const CONFIRM_WORD = 'remove';
-
-export function PruneRevisionsSettings() {
-  const ro = useWriteGuard();
-  const ids = { date: useId(), word: useId() };
-  const [date, setDate] = useState('');
-  const [count, setCount] = useState<number | null>(null);
-  /**
-   * The cutoff the count was taken at, which the confirm sends again: a day
-   * still to come is cut at the moment of counting, so a save made after the
-   * count is never removed and the confirm removes exactly what was counted.
-   */
-  const [cutoff, setCutoff] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [word, setWord] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<Note>(null);
-
-  const pickDate = (next: string) => {
-    setDate(next);
-    setCount(null);
-    setCutoff(null);
-    setAsking(false);
-    setWord('');
-  };
-  useEffect(() => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-    let live = true;
-    const before = new Date(Math.min(new Date(date).getTime(), Date.now())).toISOString();
-    call('revisions.prune', { before, dryRun: true }).then(
-      (r) => {
-        if (!live) return;
-        setCutoff(before);
-        setCount(r.count);
-      },
-      (e: unknown) => {
-        if (live) setNote({ text: plainError(e), bad: true });
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [date]);
-
-  const prune = async () => {
-    if (!cutoff) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      const r = await call('revisions.prune', { before: cutoff, dryRun: false });
-      setNote({
-        text: `Removed ${r.count} ${r.count === 1 ? 'revision' : 'revisions'} written before ${date}. This is not an undo step.`,
-        bad: false,
-      });
-      setAsking(false);
-      setWord('');
-      setCount(0);
-    } catch (e) {
-      setNote({ text: plainError(e), bad: true });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const n = count ?? 0;
-  const things = `${n} ${n === 1 ? 'revision' : 'revisions'}`;
-  return (
-    <div className="panel stack tight" data-testid="settings-prune">
-      <h4>Revisions</h4>
-      <p className="example-note">
-        Every change keeps the entry as it was before. Old revisions can go once you no longer need
-        them. Removing them is not an undo step, and a snapshot is taken first.
-      </p>
-      <div className="prune-row">
-        <div className="field">
-          <label htmlFor={ids.date}>Remove revisions older than</label>
-          <input
-            id={ids.date}
-            type="date"
-            value={date}
-            disabled={ro.off}
-            {...ro.tip}
-            onChange={(e) => pickDate(e.target.value)}
-            data-testid="prune-date"
-          />
-        </div>
-        {count !== null && !asking && (
-          <button
-            type="button"
-            className="btn danger"
-            disabled={ro.off || count === 0}
-            {...ro.tip}
-            onClick={() => setAsking(true)}
-          >
-            Remove {things}
-          </button>
-        )}
-      </div>
-      {count !== null && (
-        <p role="status" data-testid="prune-count">
-          {count === 0
-            ? `No revisions were written before ${date}.`
-            : `${things} ${count === 1 ? 'was' : 'were'} written before ${date}.`}
-        </p>
-      )}
-      {asking && (
-        <form
-          className="prune-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (word.trim().toLowerCase() === CONFIRM_WORD) void prune();
-          }}
-        >
-          <div className="field">
-            <label htmlFor={ids.word}>
-              Type {CONFIRM_WORD} to remove {things} for good
-            </label>
-            <input
-              id={ids.word}
-              value={word}
-              autoComplete="off"
-              autoFocus
-              onChange={(e) => setWord(e.target.value)}
-              data-testid="prune-word"
-            />
-          </div>
-          <button
-            type="submit"
-            className="btn danger"
-            disabled={busy || word.trim().toLowerCase() !== CONFIRM_WORD}
-          >
-            Remove {things} for good
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              setAsking(false);
-              setWord('');
-            }}
-          >
-            Keep them
-          </button>
-        </form>
-      )}
-      <NoteLine note={note} testId="prune-note" />
-    </div>
-  );
-}
-
 /** The A47 groups of This bible, in the order the screen shows them. */
 export function BibleVocabularySettings() {
   return (
@@ -718,7 +552,6 @@ export function BibleVocabularySettings() {
       <CultureUnitSettings />
       <TemplateSettings />
       <EraDefaultSettings />
-      <PruneRevisionsSettings />
     </WriteFieldset>
   );
 }

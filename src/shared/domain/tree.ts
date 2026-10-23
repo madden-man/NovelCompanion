@@ -19,7 +19,6 @@ export interface TreePerson {
   birth: StoryDate | null;
   death: StoryDate | null;
   familyIds: string[];
-  status: string;
   createdAt: string;
 }
 
@@ -87,7 +86,6 @@ export function toPerson(d: Doc): TreePerson {
     birth: date(d.birth),
     death: date(d.death),
     familyIds: Array.isArray(d.familyIds) ? d.familyIds.map(String) : [],
-    status: str(d.status, 'idea'),
     createdAt: str(d.createdAt),
   };
 }
@@ -1009,7 +1007,6 @@ export interface AddRelative {
   anchorId: string | null;
   name: string;
   birthYear: number | null;
-  status: 'canon' | 'planned' | 'idea';
   /** Parent link type for a parent, child, or sibling. */
   linkType: string;
   /** Union type for a partner. */
@@ -1032,14 +1029,12 @@ function linkData(
   parent: { id: string; name: string },
   child: { id: string; name: string; birthYear: number | null },
   type: string,
-  status: string,
 ): PlannedEntry {
   return {
     collection: 'parentLinks',
     data: {
       _id: id,
       title: `${parent.name} parent of ${child.name}`,
-      status,
       parentId: parent.id,
       childId: child.id,
       type,
@@ -1073,7 +1068,6 @@ export function planAddRelative(
       data: {
         _id: id,
         title: name,
-        status: req.status,
         names: { full: name },
         birth: req.birthYear === null ? { unknown: true } : { year: req.birthYear },
         familyIds,
@@ -1084,14 +1078,14 @@ export function planAddRelative(
   const a = { id: anchor.id, name: anchor.name, birthYear: yearOf(anchor.birth) };
   switch (req.kind) {
     case 'parent':
-      out.push(linkData(newId(), person, a, req.linkType, req.status));
+      out.push(linkData(newId(), person, a, req.linkType));
       break;
     case 'child': {
-      out.push(linkData(newId(), a, person, req.linkType, req.status));
+      out.push(linkData(newId(), a, person, req.linkType));
       if (req.coParentId) {
         const co = g.byId.get(req.coParentId);
         if (!co) throw new TreeActionError('The other parent is not in the tree.');
-        out.push(linkData(newId(), { id: co.id, name: co.name }, person, req.linkType, req.status));
+        out.push(linkData(newId(), { id: co.id, name: co.name }, person, req.linkType));
       }
       break;
     }
@@ -1104,7 +1098,7 @@ export function planAddRelative(
       }
       for (const p of ps) {
         const P = g.byId.get(p) as TreePerson;
-        out.push(linkData(newId(), { id: P.id, name: P.name }, person, req.linkType, req.status));
+        out.push(linkData(newId(), { id: P.id, name: P.name }, person, req.linkType));
       }
       break;
     }
@@ -1114,7 +1108,6 @@ export function planAddRelative(
         data: {
           _id: newId(),
           title: `${anchor.name} and ${name}`,
-          status: req.status,
           partnerIds: [anchor.id, id],
           type: req.unionType,
           startYear: null,
@@ -1134,7 +1127,6 @@ export interface LinkExisting {
   anchorId: string;
   otherId: string;
   type: string;
-  status: 'canon' | 'planned' | 'idea';
 }
 
 /** One parent link or union between two people already in the tree. Refuses self-ancestry. */
@@ -1153,7 +1145,6 @@ export function planLinkExisting(
       data: {
         _id: newId(),
         title: `${A.name} and ${O.name}`,
-        status: req.status,
         partnerIds: [A.id, O.id],
         type: req.type,
         startYear: null,
@@ -1173,7 +1164,6 @@ export function planLinkExisting(
     { id: parent.id, name: parent.name },
     { id: child.id, name: child.name, birthYear: yearOf(child.birth) },
     req.type,
-    req.status,
   );
 }
 

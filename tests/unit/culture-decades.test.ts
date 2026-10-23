@@ -35,7 +35,6 @@ describe('A41 cultural lines by decade and age group', () => {
     const parsed = CulturalEntry.parse({
       _id: 'CU9',
       title: 'Mooncakes',
-      status: 'canon',
       createdAt: '2026-01-15T09:00:00.000Z',
       modifiedAt: '2026-01-15T09:00:00.000Z',
       communityId: 'sf',

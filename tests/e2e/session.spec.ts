@@ -34,7 +34,6 @@ const fixture = readFixture();
 const supplement = readSupplement();
 const dir = mkdtempSync(join(tmpdir(), 'nc-e2e-m7-'));
 const docPath = join(dir, 'Chapter 6 The Letter.docx');
-const exportDir = mkdtempSync(join(tmpdir(), 'nc-e2e-m7-export-'));
 
 test.describe.configure({ mode: 'serial' });
 
@@ -68,7 +67,6 @@ async function writeDoc(last: string): Promise<void> {
 async function start(env: Record<string, string> = {}): Promise<void> {
   ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_PICK_DOCUMENT: docPath,
-    NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR: exportDir,
     ...env,
   }));
   invoke = invokeVia(page);
@@ -102,7 +100,7 @@ test.beforeAll(async () => {
       fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     );
   }
-  // The M7 brief supplement: moments, questions, session logs, and communities.
+  // The M7 brief supplement: moments, questions, and communities.
   for (const c of ['moments', 'openQuestions']) {
     const docs = supplement.entries[c]!;
     await seedFixture(
@@ -116,12 +114,6 @@ test.beforeAll(async () => {
     for (const d of docs.filter((x) => x.deletedAt)) {
       await invoke('entry.delete', { collection: c as never, id: d._id });
     }
-  }
-  for (const c of ['sessionLogs']) {
-    await seedFixture(
-      invoke,
-      supplement.entries[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
-    );
   }
   for (const [c, byId] of Object.entries(supplement.patches)) {
     for (const [id, patch] of Object.entries(byId)) {
@@ -142,67 +134,18 @@ const strand = (id: string) =>
 const groupIds = (scope: ReturnType<Page['locator']>, kind: string) =>
   scope.locator(`[data-testid="sel-group"][data-kind="${kind}"] [data-testid="sel-item"]`);
 
-test('DB-1 SM-11 the app opens on Sessions: last note, story time, position, open questions, rewrite tasks, two controls', async () => {
+test('SM-6 SM-11 OQ-1 the app opens on Characters, and Questions lists the open questions', async () => {
   await page.reload();
   await expect(page.getByTestId('workspace')).toBeVisible();
-  await expect(page.getByTestId('sessions-view')).toBeVisible();
-  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
-  const dash = page.getByTestId('dashboard');
-  await expect(dash).toBeVisible();
-  // SL-1: the newest note first (SL3, 2026-10-09).
-  await expect(dash.getByTestId('launch-note')).toHaveText('Margaret blows out the candles.');
-  await expect(dash.getByTestId('launch-panel')).toContainText('Chapter: Candles');
-  await expect(dash.getByTestId('dash-time')).toContainText('2040');
-  await expect(dash.getByTestId('dash-position')).toContainText('Chapter 5');
-  await expect(dash.getByTestId('dash-position')).toContainText('Candles');
-  await expect(dash.getByTestId('dash-questions').locator('.tile-num')).toHaveText('3');
-  await expect(dash.getByTestId('dash-tasks')).toContainText('No open rewrite tasks.');
-  await expect(dash.getByTestId('dash-task-count').locator('.tile-num')).toHaveText('0');
-  // The questions tile leads to the questions list on the same screen.
-  await dash.getByRole('button', { name: 'Go to the questions' }).click();
-  await expect(page.getByTestId('questions-list')).toBeInViewport();
-  await expect(dash.getByRole('button', { name: 'Start session' })).toBeVisible();
-  await dash.getByRole('button', { name: 'Check alignment' }).click();
-  // SM-11: Check alignment opens the Continuity checker on its alignment tab.
-  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
-  await rail(page, 'Sessions').click();
-  await expect(page.getByTestId('dashboard')).toBeVisible();
-});
-
-test('SM-11 SL-1 SB-8 A43 Sessions lists the session log newest first and the saved briefs, a log opens under its row', async () => {
-  const log = page.getByTestId('session-log');
-  await expect(log.locator('.entry-row')).toHaveCount(3);
-  expect(
-    await log.locator('.entry-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-id'))),
-  ).toEqual(['SL3', 'SL2', 'SL1']);
-  await expect(log.locator('[data-id="SL3"]')).toContainText(
-    'Stopped at: Margaret blows out the candles.',
-  );
-  await log.locator('[data-id="SL2"]').click();
-  // The editor opens inside the row's list item, right under the row.
-  const row = log.locator('li').filter({ has: page.locator('[data-id="SL2"]') });
-  const opened = row.getByTestId('session-row-editor');
-  await expect(opened.getByTestId('editor')).toHaveAttribute('data-entry-id', 'SL2');
-  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-expanded', 'true');
-  // One at a time: another log replaces it.
-  await log.locator('[data-id="SL3"]').click();
-  await expect(page.getByTestId('session-row-editor')).toHaveCount(1);
-  await expect(page.getByTestId('session-row-editor').getByTestId('editor')).toHaveAttribute(
-    'data-entry-id',
-    'SL3',
-  );
-  await expect(log.locator('[data-id="SL2"]')).toHaveAttribute('aria-expanded', 'false');
-  // A second click on the open row closes it, as Close does.
-  await log.locator('[data-id="SL3"]').click();
-  await expect(page.getByTestId('session-row-editor')).toHaveCount(0);
-  await log.locator('[data-id="SL2"]').click();
-  await opened.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByTestId('session-row-editor')).toHaveCount(0);
-  await expect(log.locator('[data-id="SL2"]')).toBeFocused();
+  await expect(page.getByTestId('rail')).toBeVisible();
+  await expect(rail(page, 'Characters')).toHaveAttribute('aria-current', 'page');
+  await rail(page, 'Questions').click();
+  const view = page.getByTestId('questions-view');
+  await expect(view.getByRole('heading', { name: 'Questions', level: 2 })).toBeVisible();
+  await expect(view.getByLabel('Show questions').locator('option').nth(1)).toHaveText('Open (3)');
+  await expect(view.getByTestId('questions-list')).toBeVisible();
   // No inspector column beside the screen.
   await expect(page.getByTestId('inspector')).toHaveCount(0);
-  await expect(page.getByText('No briefs yet. Start a session to write one.')).toBeVisible();
 });
 
 test('TM-4 picking a chapter strand in Writing moves the story year to that strand year', async () => {
@@ -299,13 +242,12 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   await expect.poll(() => ids('moments', s)).toEqual(['B4']);
   await expect.poll(() => ids('previousChapters')).toEqual(['CH1', 'CH3', 'CH4', 'CH5']);
   await expect.poll(() => ids('openQuestions')).toEqual(['Q1', 'Q4']);
-  await expect.poll(() => ids('sessionNote')).toEqual(['SL2']);
 
   // A change anywhere in the bible shows at once.
   const made = (
     await invoke('entry.create', {
       collection: 'moments',
-      data: { title: 'Iris paints the attic', status: 'idea', characterId: 'H5', year: 2044 },
+      data: { title: 'Iris paints the attic', characterId: 'H5', year: 2044 },
     })
   ).entry;
   await expect.poll(() => ids('moments', s)).toEqual([made._id, 'B4']);
@@ -317,7 +259,7 @@ test('SB-1 SB-2 Relevant to Session opens from every screen and shows the select
   const ahead = (
     await invoke('entry.create', {
       collection: 'moments',
-      data: { title: 'Iris answers the letter', status: 'idea', characterId: 'H5', year: 2046 },
+      data: { title: 'Iris answers the letter', characterId: 'H5', year: 2046 },
     })
   ).entry;
   await expect.poll(() => ids('plannedAhead', s)).toEqual([ahead._id]);
@@ -457,7 +399,7 @@ test('SM-10 a tile opens to role, description, the three latest moments up to th
       (
         await invoke('entry.create', {
           collection: 'moments',
-          data: { title, status: 'idea', characterId: 'H5', year },
+          data: { title, characterId: 'H5', year },
         })
       ).entry._id,
     );
@@ -715,10 +657,10 @@ test('IP-2 Add an event makes an event at the story year with its title typed on
       .map((e) => e.entry)
       .find((e) => e.title === 'Typhoon closes the port');
   await expect.poll(async () => (await made())?.start).toEqual({ year: 2045 });
-  // The first category, and the first status of kind planned.
+  // The first category.
   const first = (await invoke('lists.get', {})).lists.find((l) => l._id === 'eventCategories')!
     .items[0]!.id;
-  expect(await made()).toMatchObject({ categoryId: first, status: 'planned' });
+  expect(await made()).toMatchObject({ categoryId: first });
   await expect(
     strip.locator('.we-col[data-year="2045"] [data-testid="event-title-text"]'),
   ).toContainText(['Typhoon closes the port']);
@@ -764,7 +706,7 @@ test('IP-2 Write it yourself makes a cultural line in the community for the unit
   await expect(culture.getByTestId('culture-line-text')).toHaveText(['Flood memorial walk']);
 });
 
-test('IP-2 SB-9 More shows no raw IDs, and Remove and Keep work before a brief is generated', async () => {
+test('IP-2 SB-9 More shows no raw IDs, and Remove and Keep work on the desk', async () => {
   const s = strand('CH6-present');
   const more = s.getByTestId('relevant-more');
   await more.locator('summary').click();
@@ -783,28 +725,12 @@ test('IP-2 SB-9 More shows no raw IDs, and Remove and Keep work before a brief i
   await expect(prev).toHaveCount(0);
   const left = more.locator('[data-testid="omitted-item"][data-id="CH1"]');
   await expect(left).toContainText('removed by you');
-  // Start session's preview shares the removal, with Keep beside it.
-  await page.getByTestId('top-start-session').click();
-  const preview = page.getByTestId('start-selection');
-  const leftThere = preview.locator('[data-testid="omitted-item"][data-id="CH1"]');
-  await expect(leftThere).toContainText('removed by you');
-  await expect(preview).not.toContainText(/\bCH1\b/);
-  await leftThere.getByRole('button', { name: `Keep ${title}` }).click();
-  await expect(
-    preview.locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]'),
-  ).toHaveCount(1);
-  // And Remove in the preview reaches the desk.
-  await preview
-    .locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]')
-    .getByRole('button', { name: `Remove ${title}` })
-    .click();
-  await page.getByTestId('top-relevant').click();
-  await strand('CH6-present').getByTestId('relevant-more').locator('summary').click();
   await left.getByRole('button', { name: `Keep ${title}` }).click();
   await expect(prev).toHaveCount(1);
+  await expect(left).toHaveCount(0);
 });
 
-test('IP-2 SB-9 removals are forgotten when the section changes and when the brief is generated', async () => {
+test('IP-2 SB-9 removals are forgotten when the section changes', async () => {
   const more = () => strand('CH6-present').getByTestId('relevant-more');
   const prev = () =>
     more().locator('[data-kind="previousChapters"] [data-testid="sel-item"][data-id="CH1"]');
@@ -834,242 +760,17 @@ test('IP-2 SB-9 removals are forgotten when the section changes and when the bri
   await openMore();
   await expect(prev()).toHaveCount(1);
   await expect(left()).toHaveCount(0);
-  // Writing the brief takes the removal with it, then forgets it.
-  await removeCh1();
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await expect(
-    page.getByTestId('start-selection').locator('[data-testid="omitted-item"][data-id="CH1"]'),
-  ).toHaveCount(1);
-  await view.getByTestId('start-session-go').click();
-  await expect(page.getByTestId('brief-view')).toBeVisible();
-  const made = (await invoke('entry.list', { collection: 'briefs', trash: 'exclude' })).entries[0]!
-    .entry;
-  expect(made.removed).toEqual(['CH1']);
-  await page.getByTestId('top-relevant').click();
-  await openMore();
-  await expect(prev()).toHaveCount(1);
-  await expect(left()).toHaveCount(0);
-  // Put the bible back as the next test expects it: no brief yet.
-  const log = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((l) => l.briefId === made._id)!;
-  await invoke('entry.delete', { collection: 'sessionLogs', id: log._id });
-  await invoke('entry.delete', { collection: 'briefs', id: made._id });
 });
 
-let briefId = '';
-
-test('DB-2 DB-3 SB-7 Start session from the top bar: the selection, a structured brief, a session log, the story time', async () => {
-  await rail(page, 'Lists').click();
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await expect(view).toBeVisible();
-  // SB-1: the strand being written is the section, not the whole chapter.
-  await expect(view.getByTestId('start-strand')).toHaveValue('CH6|CH6-present');
-  await expect(view.getByTestId('claude-unavailable')).toBeVisible();
-  await expect(view).toContainText('What the bible selects: Chapter 6: The Letter');
-  const logsBefore = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
-    .entries.length;
-  await view.getByTestId('start-session-go').click();
-  const brief = page.getByTestId('brief-view');
-  await expect(brief).toBeVisible();
-  await expect(brief.getByTestId('brief-model')).toHaveText('Structured brief, no synthesis');
-  // ARCH-4: with no key stored the note says so and links to Settings.
-  await expect(brief.getByTestId('brief-note')).toContainText('No Anthropic API key is stored');
-  await expect(
-    brief.getByTestId('brief-note').getByRole('button', { name: 'Open settings' }),
-  ).toBeVisible();
-  await expect(brief.getByTestId('brief-body').locator('h2')).toHaveText([
-    '1. Characters and their ages',
-    '2. World events ongoing',
-    '3. Cultural expectations',
-    '4. Places',
-    '5. Backstory',
-    '6. Previous chapters',
-    '7. Glossary and open questions',
-    '8. Last session note',
-  ]);
-  await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
-  const briefs = (await invoke('entry.list', { collection: 'briefs', trash: 'exclude' })).entries;
-  expect(briefs).toHaveLength(1);
-  briefId = briefs[0]!.entry._id;
-  expect(briefs[0]!.entry.chapterId).toBe('CH6');
-  const logs = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
-    .entries;
-  expect(logs).toHaveLength(logsBefore + 1);
-  const log = logs.find((l) => l.entry.briefId === briefId)!;
-  expect(log.entry).toMatchObject({ chapterId: 'CH6', storyYear: 2045, povCharacterId: 'H5' });
-  expect((await invoke('storyTime.get', {})).time).toEqual({
-    year: 2045,
-    chapterId: 'CH6',
-    strandId: 'CH6-present',
-  });
-  await expect(page.getByTestId('status-time')).toContainText('Story time 2045');
-});
-
-test('SB-9 removing and adding entries in the brief view, then regenerating', async () => {
-  const brief = page.getByTestId('brief-view');
-  const sel = brief.getByTestId('brief-selection');
-  await sel
-    .locator('[data-testid="sel-item"][data-id="E5"]')
-    .first()
-    .getByRole('button', { name: /^Remove/ })
-    .click();
-  await sel.getByPlaceholder('Add an entry to the selection').fill('Zhou Jun');
-  await sel.getByRole('option').filter({ hasText: 'Zhou Jun' }).first().click();
-  // IP-2: the pending entries by title, never by ID.
-  await expect(brief.getByTestId('brief-pending')).toContainText('To add: Zhou Jun');
-  await expect(brief.getByTestId('brief-pending')).toContainText(
-    'To remove: Grid batteries replace the last coal plant in Guangdong',
-  );
-  await expect(brief.getByTestId('brief-pending')).not.toContainText('Z4');
-  // IP-6: a brief the app just wrote has nothing to lose.
-  await expect(brief.getByTestId('brief-regenerate-warning')).toHaveCount(0);
-  await brief.getByTestId('brief-regenerate').click();
-  await expect(brief.getByTestId('brief-note')).toBeVisible();
-  const saved = (await invoke('entry.get', { collection: 'briefs', id: briefId })).entry;
-  expect(saved.entryIds).toContain('Z4');
-  expect(saved.entryIds).not.toContain('E5');
-  await expect(brief.getByTestId('brief-body')).toContainText('9. Added by you');
-  await expect(brief.getByTestId('brief-body')).toContainText('removed by you');
-});
-
-test('SB-8 SB-4 the brief is edited in place, a foreign citation is flagged, and it exports as Markdown and PDF', async () => {
-  const brief = page.getByTestId('brief-view');
-  await brief.getByRole('button', { name: 'Edit the text' }).click();
-  const text =
-    '# My brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- A stray line. [[Z2]]\n';
-  await brief.getByTestId('brief-text').fill(text);
-  await expect(brief.getByTestId('autosave')).toHaveText('Saved');
-  // IP-2: the stray citation by title, never by ID.
-  await expect(brief.getByTestId('brief-problems')).toContainText('Zhou Wei');
-  await expect(brief.getByTestId('brief-problems')).not.toContainText('Z2');
-  await brief.getByRole('button', { name: 'Show the brief' }).click();
-  await expect(brief.locator('.cite.bad')).toHaveText('Z2 not in the selection');
-  await brief.getByRole('button', { name: 'Export Markdown' }).click();
-  const md = join(exportDir, 'Brief Chapter 6 The Letter present 2045.md');
-  await expect(brief.getByTestId('brief-note')).toHaveText(`Saved to ${md}`);
-  expect(readFileSync(md, 'utf8')).toBe(text);
-  await brief.getByRole('button', { name: 'Export PDF' }).click();
-  const pdf = join(exportDir, 'Brief Chapter 6 The Letter present 2045.pdf');
-  await expect(brief.getByTestId('brief-note')).toHaveText(`Saved to ${pdf}`);
-  expect(readFileSync(pdf).subarray(0, 5).toString()).toBe('%PDF-');
-});
-
-test('IP-6 Regenerate on an edited brief says it replaces the edits, and is one undo step', async () => {
-  const brief = page.getByTestId('brief-view');
-  const edited =
-    '# My brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- A stray line. [[Z2]]\n';
-  const stored = async () => String((await entry('briefs', briefId)).content);
-  await expect.poll(stored).toBe(edited);
-  const warning = brief.getByTestId('brief-regenerate-warning');
-  await expect(warning).toHaveText('This replaces your edits');
-  await expect(brief.getByTestId('brief-regenerate')).toHaveAccessibleDescription(
-    'This replaces your edits',
-  );
-  await brief.getByTestId('brief-regenerate').click();
-  await expect.poll(stored).not.toBe(edited);
-  await expect(warning).toHaveCount(0);
-  await expect(await lastStep()).toHaveText(/^Regenerated Brief: Chapter 6/);
-  await page.keyboard.press('Escape');
-  await undoButton().click();
-  await expect.poll(stored).toBe(edited);
-  await expect(warning).toHaveText('This replaces your edits');
-  // Redo writes the regenerated text back; Undo again leaves the edits as they were.
-  await page.getByTestId('top-bar').getByRole('button', { name: 'Redo', exact: true }).click();
-  await expect.poll(stored).not.toBe(edited);
-  await undoButton().click();
-  await expect.poll(stored).toBe(edited);
-});
-
-test('SM-11 SB-8 DB-2 Start session lives on Sessions; a saved brief opens there in place and Back to Sessions returns', async () => {
-  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'brief');
-  await page.getByRole('button', { name: 'Back to Sessions' }).click();
-  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'home');
-  // The Start session panel is on the screen, its selection folded until asked for.
-  await expect(page.getByTestId('sessions-start').getByTestId('start-session')).toBeVisible();
-  await expect(page.getByTestId('start-selection')).not.toHaveAttribute('open', '');
-  const briefs = page.getByTestId('session-briefs');
-  await expect(briefs.locator(`[data-id="${briefId}"]`)).toContainText('Brief: Chapter 6');
-  await briefs.locator(`[data-id="${briefId}"]`).click();
-  await expect(page.getByTestId('brief-view')).toBeVisible();
-  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'brief');
-  await page.getByRole('button', { name: 'Back to Sessions' }).click();
-  await expect(page.getByTestId('session-log').locator('.entry-row').first()).toBeVisible();
-  // Start session in the top bar unfolds the selection.
-  await page.getByTestId('top-start-session').click();
-  await expect(page.getByTestId('start-selection')).toHaveAttribute('open', '');
-});
-
-test('IP-6 SL-1 New log entry writes a log for today and the chapter being written, open under its row', async () => {
-  // On Sessions, opened at Start session by the test before.
-  await expect(page.getByTestId('sessions-view')).toBeVisible();
-  const log = page.getByTestId('session-log');
-  const before = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
-    .entries.length;
-  await page.getByTestId('new-log-entry').click();
-  const editor = page.getByTestId('session-row-editor');
-  await expect(editor).toBeVisible();
-  const logs = (await invoke('entry.list', { collection: 'sessionLogs', trash: 'exclude' }))
-    .entries;
-  expect(logs).toHaveLength(before + 1);
-  const d = new Date();
-  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const made = logs
-    .map((l) => l.entry)
-    .find((l) => !l.briefId && l.date === today && l.chapterId === 'CH6')!;
-  expect(made).toMatchObject({ date: today, chapterId: 'CH6', storyYear: 2045 });
-  // The editor opens inside the new row's list item, under its row.
-  const row = log.locator(`.entry-row[data-id="${made._id}"]`);
-  await expect(row).toHaveAttribute('aria-expanded', 'true');
-  await expect(row.locator('xpath=..').getByTestId('session-row-editor')).toBeVisible();
-  await expect(await lastStep()).toHaveText(`Created Session ${today}`);
-  await page.keyboard.press('Escape');
-  await undoButton().click();
-  await expect(log.locator(`.entry-row[data-id="${made._id}"]`)).toHaveCount(0);
-});
-
-test('SB-4 DB-4 with Claude available the brief is written by the brief model from the selection', async () => {
+test('MS-1 MS-2 MS-4 MS-5 SM-11 import a chapter from Word, mark it written, approve the summary, and re-import with a diff', async () => {
+  // T-3: the recorded Claude drafts the summary, so the app runs with a key held in memory.
   await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   await start({
     NOVEL_COMPANION_TEST_ANTHROPIC_KEY: 'sk-ant-api03-e2e-session-key-0123456789abcdef',
   });
   await openBible();
-  // The recorded brief puts E9 under Planned ahead. World events lost their places in A39, so
-  // E9 reaches CH6 only as the year after the story year (A33), as in the integration test.
-  await invoke('entry.update', {
-    collection: 'worldEvents',
-    id: 'E9',
-    patch: { start: { year: 2046 } },
-  });
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
-  await view.getByTestId('start-chapter').selectOption('CH6');
-  await expect(view.getByTestId('start-session-go')).toHaveText(
-    'Start session with claude-opus-5-5',
-  );
-  await view.getByTestId('start-session-go').click();
-  // AI-6: the first Claude use in this bible says what is sent before anything is.
-  await view.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
-  const brief = page.getByTestId('brief-view');
-  await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
-  await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
-  await expect(brief.getByTestId('brief-missing-lead')).toHaveCount(0);
-  await expect(brief.getByTestId('brief-uncited')).toHaveCount(0);
-  // A line that cites nothing is flagged on a Claude-written brief.
-  await brief.getByRole('button', { name: 'Edit the text' }).click();
-  const text = await brief.getByTestId('brief-text').inputValue();
-  await brief.getByTestId('brief-text').fill(`${text}- Daniel has always hated rain.\n`);
-  await expect(brief.getByTestId('autosave')).toHaveText('Saved');
-  await expect(brief.getByTestId('brief-uncited')).toContainText('Daniel has always hated rain.');
-  await brief.getByRole('button', { name: 'Show the brief' }).click();
-  await expect(brief.locator('.uncited-flag')).toHaveText(['cites nothing']);
-});
-
-test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written, approve the summary, promote, and re-import with a diff', async () => {
+  // AI-6: the disclosure was read for this bible (the test below shows it being asked).
+  await invoke('claude.acknowledge', {});
   // SM-11: the manuscript is the Continuity checker's second tab.
   await screenTab(page, 'Continuity checker', 'Manuscript');
   const view = page.getByTestId('manuscript-view');
@@ -1094,7 +795,7 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   expect(stored.manuscriptText).toContain('<em>attic</em>');
   expect(stored.manuscriptSource).toBe(`word:${docPath}`);
 
-  // MS-2, MS-3: mark it written.
+  // MS-2: mark it written; the summary is all it offers (MS-3 withdrawn by A52).
   await ch.getByRole('button', { name: 'Mark as written' }).click();
   const flow = ch.getByTestId('written-flow');
   const draft = flow.getByLabel('Summary to approve');
@@ -1109,16 +810,8 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   await flow.getByRole('button', { name: 'Approve summary' }).click();
   await expect(flow.getByTestId('summary-done')).toHaveText('Summary saved.');
   await expect(ch.getByTestId('summary-stale')).toHaveCount(0);
-  const list = flow.getByTestId('promote-list');
-  // SM-3: Iris's planned moment of 2045 is the one this chapter establishes.
-  const label = 'Iris finds the letter (a moment of the point of view in these years)';
-  await expect(list.locator('label')).toHaveText([label]);
-  await list.getByLabel(label).check();
-  await flow.getByRole('button', { name: 'Promote checked to canon' }).click();
-  await expect(list.locator('label')).toHaveCount(0);
-  expect((await invoke('entry.get', { collection: 'moments', id: 'B4' })).entry.status).toBe(
-    'canon',
-  );
+  await expect(flow.getByTestId('promote-step')).toHaveCount(0);
+  await expect(flow).not.toContainText('canon');
 
   // MS-4: the file changes; reading it again shows the diff and marks the summary.
   await writeDoc('Daniel left the table before dessert.');
@@ -1161,7 +854,7 @@ test('IP-18 Re-import on the desk reads the linked Word chapter again, shows the
   await compare.getByRole('button', { name: 'Discard' }).click();
 });
 
-test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run through the Claude runtime: disclosure, streaming, Stop, saved runs', async () => {
+test('DB-4 AI-1 AI-6 MS-2 with an API key, summaries run through the Claude runtime: disclosure, streaming, saved runs', async () => {
   await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   // T-3: the recorded Claude (NOVEL_COMPANION_TEST_CLAUDE) with a key held in memory.
   await start({
@@ -1170,61 +863,23 @@ test('SB-4 DB-2 DB-4 AI-1 AI-6 MS-2 with an API key, briefs and summaries run th
   });
   await openBible();
 
-  // ST-1 DB-4: the brief and summary models with their defaults, and the brief window and budget.
+  // ST-1 DB-4: the summary model with its default; briefs have no model and no panel.
   await rail(page, 'Settings').click();
   const settings = page.getByTestId('settings-view');
-  await expect(settings.getByTestId('claude-model-briefs')).toHaveValue('claude-opus-5-5');
   await expect(settings.getByTestId('claude-model-summaries')).toHaveValue('claude-sonnet-5-5');
-  await expect(settings.getByTestId('settings-briefs')).toContainText(
-    'Briefs are written with claude-opus-5-5',
-  );
-  await expect(
-    settings.getByTestId('settings-briefs').getByLabel('Size budget (characters)'),
-  ).toHaveValue('40000');
-
-  // DB-2 SB-4 AI-6: the first brief asks for the disclosure, then Claude writes it.
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
-  await view.getByTestId('start-chapter').selectOption('CH6');
-  await expect(view.getByTestId('start-session-go')).toHaveText(
-    'Start session with claude-opus-5-5',
-  );
-  await view.getByTestId('start-session-go').click();
-  await view.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
-  await expect(view.getByTestId('claude-progress')).toBeVisible();
-  const brief = page.getByTestId('brief-view');
-  await expect(brief.getByTestId('brief-model')).toHaveText('Written by claude-opus-5-5');
-  await expect(brief.getByTestId('brief-problems')).toHaveCount(0);
-  await expect(brief.getByTestId('brief-uncited')).toHaveCount(0);
-  await expect(brief.getByTestId('brief-missing-lead')).toHaveCount(0);
-  await expect(brief.getByTestId('brief-body').locator('h2').first()).toHaveText(
-    '1. Characters and their ages',
-  );
-  await expect(brief.getByTestId('brief-body')).toContainText('Planned ahead (after 2045)');
-  const runs = (await invoke('claude.runs', { feature: 'briefs' })).runs;
-  expect(runs[0]).toMatchObject({ feature: 'briefs', status: 'done' });
-
-  // AI-1: Stop ends a brief run; the structured brief is saved and the note says why.
-  await page.getByTestId('top-start-session').click();
-  await view.getByRole('button', { name: 'A chapter', exact: true }).click();
-  await view.getByTestId('start-chapter').selectOption('CH5');
-  await view.getByTestId('start-session-go').click();
-  await expect(view.getByTestId('claude-progress')).toContainText('Claude is writing the brief');
-  await view.getByTestId('claude-run-stop').click();
-  await expect(brief.getByTestId('brief-model')).toHaveText('Structured brief, no synthesis');
-  await expect(brief.getByTestId('brief-note')).toContainText('you stopped it');
-  expect((await invoke('claude.runs', { feature: 'briefs' })).runs[0]).toMatchObject({
-    status: 'stopped',
-  });
+  await expect(settings.getByTestId('claude-model-briefs')).toHaveCount(0);
+  await expect(settings.getByTestId('settings-briefs')).toHaveCount(0);
 
   // MS-2: the written chapter's summary is drafted by the summary model; nothing saved yet.
   const before = (await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary;
   await screenTab(page, 'Continuity checker', 'Manuscript');
   const ms = page.getByTestId('manuscript-view');
   await ms.locator('[data-chapter="CH6"]').click();
-  await ms.getByRole('button', { name: 'Summary and promotions' }).click();
+  await ms.getByRole('button', { name: 'Summary', exact: true }).click();
   const flow = ms.getByTestId('written-flow');
+  // AI-6: the first Claude use in this bible says what is sent before anything is.
+  await flow.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
+  await expect(flow.getByTestId('claude-progress')).toBeVisible();
   await expect(flow.getByLabel('Summary to approve')).toHaveText(
     'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
@@ -1270,7 +925,7 @@ test('SM-3 A35 Relevant to Session lists the moments of the years before the sce
       (
         await invoke('entry.create', {
           collection: 'moments',
-          data: { title, status: 'idea', characterId: 'H5', year, body },
+          data: { title, characterId: 'H5', year, body },
         })
       ).entry._id,
     );
@@ -1341,17 +996,9 @@ test('SB-1 Relevant to Session takes places and other characters present for a s
     .getByTestId('session-places')
     .selectOption([{ index: 0 }]);
   await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
-  // Start session offers the same two pickers.
-  await page.getByTestId('top-start-session').click();
-  const view = page.getByTestId('start-session');
-  await view.getByRole('button', { name: 'A story year and point of view' }).click();
-  await view.getByLabel('Point of view').selectOption('H5');
-  await expect(view.getByTestId('session-places')).toBeVisible();
-  await view.getByTestId('session-characters').selectOption(['Z4']);
-  await expect(view.locator('[data-testid="sel-item"][data-id="Z4"]').first()).toBeVisible();
 });
 
-test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and promotion flow on the Continuity checker', async () => {
+test('MS-2 SM-11 ticking Written in the chapter editor offers the summary on the Continuity checker', async () => {
   await invoke('entry.update', { collection: 'chapters', id: 'CH3', patch: { written: false } });
   await sectionList(page, 'Chapters');
   const title = String(
@@ -1366,6 +1013,8 @@ test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and pr
   await field(editor, 'written').locator('input[type="checkbox"]').check();
   await editor.getByTestId('written-offer').getByRole('button').click();
   await expect(page.getByTestId('written-flow')).toBeVisible();
+  await expect(page.getByTestId('summary-step')).toBeVisible();
+  await expect(page.getByTestId('promote-step')).toHaveCount(0);
   await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('tab', { name: 'Manuscript' })).toHaveAttribute(
     'aria-selected',
@@ -1471,7 +1120,7 @@ test('IP-2 NF-2 every control of the desk works from the keyboard, in both theme
           fg,
           found: [
             ...root.querySelectorAll(
-              '.editable-text, .editable-label, h4, .rel-tile-name, .rel-comm, .brief-warn',
+              '.editable-text, .editable-label, h4, .rel-tile-name, .rel-comm',
             ),
           ].map((el) => ({
             what: `${el.className} ${(el.textContent ?? '').slice(0, 30)}`,

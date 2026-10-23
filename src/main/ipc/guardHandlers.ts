@@ -6,13 +6,12 @@
 import type { Channel, WireEntry } from '../../shared/ipc';
 import { manuscriptChange } from '../../shared/domain/manuscript';
 import type { OpenBible } from '../db/session';
-import { parseLocator, registeredSources, wordSource } from '../session/sources';
+import { parseLocator, wordSource } from '../session/sources';
 import type { ManuscriptSource } from '../session/sources';
 import type { SessionDeps } from './sessionHandlers';
 import type { Handler } from './validate';
 
-export type GuardChannel =
-  'entry.purge' | 'trash.empty' | 'revisions.prune' | 'manuscript.reimport';
+export type GuardChannel = 'entry.purge' | 'trash.empty' | 'manuscript.reimport';
 
 /** IP-18: Re-import on a chapter that was never imported from a file. */
 export const NO_LINKED_MANUSCRIPT =
@@ -29,17 +28,14 @@ export function guardHandlers(
     if (!s) throw new Error('Open a bible first.');
     return s;
   };
-  // The same sources as `manuscript.read` (MS-1): Word, plus any registered.
+  // The same sources as `manuscript.read` (MS-1): Word files.
   const sources = (): ManuscriptSource[] => {
     if (deps.sources) return deps.sources;
-    const word = wordSource(async () => (deps.pickFile ? deps.pickFile('document') : null));
-    return [word, ...registeredSources().filter((s) => s.id !== 'word')];
+    return [wordSource(async () => (deps.pickFile ? deps.pickFile('document') : null))];
   };
   return {
     'entry.purge': ({ collection, id }) => session().repo.purge(collection, id),
     'trash.empty': () => session().repo.emptyTrash(),
-    'revisions.prune': ({ collection, id, before, dryRun }) =>
-      session().repo.pruneRevisions({ collection, id, before, dryRun }),
     'manuscript.reimport': async ({ chapterId }) => {
       const { model, repo } = session();
       const chapter = model.get('chapters', chapterId);

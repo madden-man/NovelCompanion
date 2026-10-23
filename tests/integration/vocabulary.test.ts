@@ -16,7 +16,7 @@ import {
   numberSettingCommand,
   templateCommand,
 } from '../../src/shared/undoCommands';
-import { DEFAULT_BIBLE_SETTINGS, DEFAULT_BRIEF_HEADINGS } from '../../src/shared/schema';
+import { DEFAULT_BIBLE_SETTINGS } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
@@ -146,121 +146,6 @@ describe('IP-8 lists reorder and re-parent, with undo', () => {
   });
 });
 
-describe('IP-9 statuses and provenance are lists the write path holds entries to', () => {
-  test('IP-9 the write path refuses a status or provenance that is not in its list, in plain words', async () => {
-    await expect(
-      invoke('entry.create', {
-        collection: 'places',
-        data: { title: 'Somewhere', status: 'maybe' },
-      }),
-    ).rejects.toThrow('Status maybe is not in the statuses list.');
-    await expect(
-      invoke('entry.update', {
-        collection: 'characters',
-        id: 'H1',
-        patch: { provenance: 'guessed' },
-      }),
-    ).rejects.toThrow('Provenance guessed is not in the provenance list.');
-    expect(fx.repo.get('characters', 'H1')!.provenance).toBe('invented');
-  });
-
-  test('IP-9 a status is added with a colour and a kind, used by an entry, recoloured with undo, and kept while in use', async () => {
-    const lists = await invoke('lists.get', {});
-    expect(lists.lists.find((l) => l._id === 'statuses')!.fixedItems).toBe(false);
-    await expect(
-      invoke('lists.addItem', {
-        listId: 'statuses',
-        label: 'Maybe',
-        parentId: null,
-        extra: { kind: 'perhaps' },
-      }),
-    ).rejects.toThrow('A status has the kind canon, planned or idea.');
-    const { item } = await invoke('lists.addItem', {
-      listId: 'statuses',
-      label: 'Settled',
-      parentId: null,
-      color: '#0b6e4f',
-      extra: { kind: 'canon' },
-    });
-    expect(item).toEqual({
-      id: 'settled',
-      label: 'Settled',
-      parentId: null,
-      color: '#0b6e4f',
-      extra: { kind: 'canon' },
-    });
-    const { item: loose } = await invoke('lists.addItem', {
-      listId: 'statuses',
-      label: 'Loose end',
-      parentId: null,
-    });
-    expect(loose.extra).toEqual({ kind: 'idea' });
-    const { entry } = await invoke('entry.create', {
-      collection: 'places',
-      data: { title: 'The ferry dock', status: 'settled' },
-    });
-    expect(entry.status).toBe('settled');
-
-    const undo = new UndoManager();
-    const io = undoIO(invoke);
-    const before = { color: item.color, extra: item.extra };
-    const { item: after } = await invoke('lists.setItem', {
-      listId: 'statuses',
-      itemId: 'settled',
-      color: '#2a78d6',
-      extra: { kind: 'planned' },
-    });
-    undo.record(
-      listLookCommand(invoke, 'Statuses', 'statuses', item, before, {
-        color: after.color,
-        extra: after.extra,
-      }),
-    );
-    expect((await undo.step('undo', io)).status).toBe('applied');
-    const back = (await items('statuses')).find((i) => i.id === 'settled')!;
-    expect([back.color, back.extra]).toEqual(['#0b6e4f', { kind: 'canon' }]);
-
-    await expect(
-      invoke('lists.removeItem', { listId: 'statuses', itemId: 'settled' }),
-    ).rejects.toThrow('1 entry uses Settled. Change them first, or rename the item instead.');
-    await expect(
-      invoke('lists.setItem', { listId: 'statuses', itemId: 'settled', color: 'green' }),
-    ).rejects.toThrow();
-  });
-
-  test('IP-9 removing an unused status undoes with its colour and kind', async () => {
-    const undo = new UndoManager();
-    const io = undoIO(invoke);
-    const loose = (await items('statuses')).find((i) => i.id === 'loose-end')!;
-    await invoke('lists.removeItem', { listId: 'statuses', itemId: 'loose-end' });
-    undo.record(listRemoveCommand(invoke, 'Statuses', 'statuses', loose));
-    expect((await undo.step('undo', io)).status).toBe('applied');
-    const again = (await items('statuses')).find((i) => i.id === 'loose-end')!;
-    expect(again.extra).toEqual({ kind: 'idea' });
-  });
-
-  test('IP-9 SB-5 an entry under a canon-kind status is selected as canon', async () => {
-    const input = { kind: 'chapter' as const, chapterId: 'CH6' };
-    const first = (await invoke('session.relevant', { input })).selection.strands[0]!.groups.find(
-      (g) => g.kind === 'characters',
-    )!.items[0]!;
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: first.id,
-      patch: { status: 'settled' },
-    });
-    const again = (await invoke('session.relevant', { input })).selection.strands[0]!.groups.find(
-      (g) => g.kind === 'characters',
-    )!.items.find((i) => i.id === first.id)!;
-    expect([again.status, again.kind]).toEqual(['settled', 'canon']);
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: first.id,
-      patch: { status: first.status },
-    });
-  });
-});
-
 describe('IP-10 IP-11 IP-14 the bible settings', () => {
   test('IP-11 settings.get gives the defaults, and the brief window is the bible window before', async () => {
     const fresh = await createBibleWithDefaults(store, freshSlug('vocab-set'), 'Settings');
@@ -331,7 +216,6 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
       collection: 'culturalEntries',
       data: {
         title: 'Rent shares',
-        status: 'idea',
         communityId: 'portland',
         startYear: 2040,
         endYear: 2049,
@@ -341,7 +225,7 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
     expect(entry.demographic).toBe('18-30');
   });
 
-  test('IP-14 the new chapter strand and the brief headings read the templates, with undo', async () => {
+  test('IP-14 the new chapter strand reads the templates, with undo', async () => {
     const undo = new UndoManager();
     const io = undoIO(invoke);
     await invoke('settings.set', { templates: { strandPresent: 'now' } });
@@ -360,14 +244,6 @@ describe('IP-10 IP-11 IP-14 the bible settings', () => {
     });
     expect((await invoke('settings.get', {})).templates.strandPresent).toBe('present');
 
-    const headings: string[] = [...DEFAULT_BRIEF_HEADINGS];
-    headings[0] = '1. Who is in the scene';
-    await invoke('settings.set', { templates: { briefHeadings: headings } });
-    const { structured } = await invoke('session.relevant', {
-      input: { kind: 'chapter', chapterId: 'CH6' },
-    });
-    expect(structured).toContain('## 1. Who is in the scene');
-    await invoke('settings.set', { templates: { briefHeadings: [...DEFAULT_BRIEF_HEADINGS] } });
     await expect(invoke('settings.set', { templates: { chapterTitle: '  ' } })).rejects.toThrow(
       'A default name cannot be empty.',
     );
@@ -411,49 +287,22 @@ describe('IP-12 era defaults for a new bible', () => {
   });
 });
 
-describe("IP-9 a status of each kind stays, and code that means a kind writes the bible's own", () => {
-  test('IP-9 the last status of a kind cannot be removed or given another kind', async () => {
-    const fresh = await createBibleWithDefaults(store, freshSlug('vocab-kind'), 'Kinds');
-    const ipc = ipcFor(() => fresh);
-    await expect(ipc('lists.removeItem', { listId: 'statuses', itemId: 'idea' })).rejects.toThrow(
-      'Keep at least one status of kind idea.',
-    );
-    await expect(
-      ipc('lists.setItem', { listId: 'statuses', itemId: 'idea', extra: { kind: 'canon' } }),
-    ).rejects.toThrow('Keep at least one status of kind idea.');
-    // With a second idea-kind status, the seeded one can go, and writes of "idea" land on the other.
-    await ipc('lists.addItem', {
-      listId: 'statuses',
-      label: 'Notion',
+describe('IP-9 IP-10 list item looks', () => {
+  test('IP-9 removing an unused item undoes with its colour and extra values', async () => {
+    const undo = new UndoManager();
+    const io = undoIO(invoke);
+    const { item } = await invoke('lists.addItem', {
+      listId: 'momentKinds',
+      label: 'Travel',
       parentId: null,
-      extra: { kind: 'idea' },
+      color: '#2a78d6',
+      extra: { weight: 'big' },
     });
-    await ipc('lists.removeItem', { listId: 'statuses', itemId: 'idea' });
-    const { entry } = await ipc('entry.create', {
-      collection: 'places',
-      data: { title: 'The pier', status: 'idea' },
-    });
-    expect(entry.status).toBe('notion');
-    await expect(
-      ipc('entry.create', { collection: 'places', data: { title: 'X', status: 'maybe' } }),
-    ).rejects.toThrow('Status maybe is not in the statuses list.');
-  });
-
-  test('IP-9 New bible eras and an unused seeded provenance: a removed invented writes no provenance', async () => {
-    const handle = await createBible(store, freshSlug('vocab-prov'), 'Provenance');
-    const open = await openBibleSession(store, handle.id);
-    const ipc = ipcFor(() => open);
-    await ipc('lists.removeItem', { listId: 'provenance', itemId: 'invented' });
-    await ipc('lists.addItem', {
-      listId: 'statuses',
-      label: 'Pencilled',
-      parentId: null,
-      extra: { kind: 'planned' },
-    });
-    await ipc('lists.removeItem', { listId: 'statuses', itemId: 'planned' });
-    expect(await open.repo.seedDefaultEras()).toBe(8);
-    const era = open.repo.list('eraStates')[0]!;
-    expect([era.status, era.provenance]).toEqual(['pencilled', null]);
+    await invoke('lists.removeItem', { listId: 'momentKinds', itemId: item.id });
+    undo.record(listRemoveCommand(invoke, 'Moment kinds', 'momentKinds', item));
+    expect((await undo.step('undo', io)).status).toBe('applied');
+    const again = (await items('momentKinds')).find((i) => i.id === item.id)!;
+    expect([again.color, again.extra]).toEqual(['#2a78d6', { weight: 'big' }]);
   });
 
   test('IP-9 IP-10 an undo of a look compares extra values whatever their order', async () => {
@@ -480,76 +329,14 @@ describe("IP-9 a status of each kind stays, and code that means a kind writes th
   });
 });
 
-describe('IP-8 IP-12 revisions and files from before A47', () => {
-  test('IP-8 IP-12 restoring a revision from before migration 11 maps regions and colours', async () => {
-    const event = fx.repo.list('worldEvents').find((e) => e.regions.includes('oregon'))!;
-    const family = fx.repo.list('families')[0]!;
-    const legacy = async (collection: string, id: string, prior: Record<string, unknown>) => {
-      const revisions = fx.handle.collection('revisions');
-      await revisions.insertMany([
-        {
-          _id: `00A-${id}` as never,
-          collection,
-          entryId: id,
-          op: 'create',
-          at: '2026-01-01T00:00:00.000Z',
-          prior: null,
-        },
-        {
-          _id: `00B-${id}` as never,
-          collection,
-          entryId: id,
-          op: 'update',
-          at: '2026-01-02T00:00:00.000Z',
-          prior,
-        },
-      ]);
-      return `00A-${id}`;
-    };
-    const evRev = await legacy('worldEvents', event._id, {
-      ...event,
-      title: 'Before A47',
-      regions: ['Oregon', 'china', 'Atlantis'],
-    });
-    const restored = await invoke('revisions.restore', {
-      collection: 'worldEvents',
-      id: event._id,
-      revisionId: evRev,
-    });
-    // A name the list lacks becomes a new region, as a new tag does.
-    expect([restored.entry.title, restored.entry.regions]).toEqual([
-      'Before A47',
-      ['oregon', 'china', 'atlantis'],
-    ]);
-    expect((await items('regions')).find((i) => i.id === 'atlantis')!.label).toBe('Atlantis');
-    expect(restored.warnings.filter((w) => w.code === 'unknown-list-item')).toEqual([]);
-
-    const famRev = await legacy('families', family._id, { ...family, color: 'series-2' });
-    const fam = await invoke('revisions.restore', {
-      collection: 'families',
-      id: family._id,
-      revisionId: famRev,
-    });
-    expect(fam.entry.color).toBe('#eb6834');
-
-    // The vocabulary check runs on a restore: a status the list lost is refused.
-    const badRev = await legacy('places', 'PLC1', {
-      ...fx.repo.get('places', 'PLC1')!,
-      status: 'retired',
-    });
-    await expect(
-      invoke('revisions.restore', { collection: 'places', id: 'PLC1', revisionId: badRev }),
-    ).rejects.toThrow('Status retired is not in the statuses list.');
-  });
-
-  test('IP-8 IP-9 a bible file is held to its own regions list, and to the seeded statuses when it has none', async () => {
+describe('IP-8 IP-12 files from before A47', () => {
+  test('IP-8 a bible file is held to its own regions list', async () => {
     const { text } = await exportBibleJson(fx.handle);
     const file = () =>
       JSON.parse(text) as {
         collections: {
           lists: { _id: string }[];
           worldEvents: { regions: string[] }[];
-          places: { status: string }[];
         };
       };
     const target = async () => createBible(store, freshSlug('vocab-file'), 'File');
@@ -559,20 +346,6 @@ describe('IP-8 IP-12 revisions and files from before A47', () => {
     await expect(importBibleJson(await target(), JSON.stringify(badRegion))).rejects.toThrow(
       'region nowhere-land is not in the list.',
     );
-
-    const noStatuses = file();
-    noStatuses.collections.lists = noStatuses.collections.lists.filter((l) => l._id !== 'statuses');
-    noStatuses.collections.places[0]!.status = 'settled';
-    await expect(importBibleJson(await target(), JSON.stringify(noStatuses))).rejects.toThrow(
-      'status settled is not in the list.',
-    );
-    // Seeded statuses only: the file loads once no entry uses one the bible added.
-    for (const docs of Object.values(noStatuses.collections) as { status?: string }[][]) {
-      for (const d of docs)
-        if (d.status && !['canon', 'planned', 'idea'].includes(d.status)) d.status = 'canon';
-    }
-    noStatuses.collections.places[0]!.status = 'canon';
-    await importBibleJson(await target(), JSON.stringify(noStatuses));
   });
 });
 

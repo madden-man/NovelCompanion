@@ -3,13 +3,7 @@
  * with a plain explanation, so a link in imported text cannot send Tommy to
  * an arbitrary site.
  */
-export const EXTERNAL_HOSTS: readonly string[] = [
-  'docs.google.com',
-  'drive.google.com',
-  'accounts.google.com',
-  'console.anthropic.com',
-  'github.com',
-];
+export const EXTERNAL_HOSTS: readonly string[] = ['console.anthropic.com', 'github.com'];
 
 export type ExternalCheck = { ok: true; url: string } | { ok: false; message: string };
 

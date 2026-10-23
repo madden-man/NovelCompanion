@@ -1,4 +1,4 @@
-import { useBibleSettings, useDefaultStatus } from './bibleSettings';
+import { useBibleSettings } from './bibleSettings';
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import type { ClaudeStatusWire, RunError } from '../../../shared/claude';
 import type { ProposalView } from '../../../shared/ipc';
@@ -13,7 +13,6 @@ import {
 } from '../../../shared/domain/capture';
 import type { CaptureProposal, FiledEntry, Filing } from '../../../shared/domain/capture';
 import type { CaptureFact, CaptureHint } from '../../../shared/domain/captureRouter';
-import { localDateString } from '../../../shared/domain/sessionLog';
 import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { ClaudeErrorNote, Disclosure, claudeNav, newRunId, useRunStream, watchRun } from './claude';
@@ -236,7 +235,6 @@ function standOf(routed: Routed, runs: readonly RunState[], i: number): FactStan
  * still saved as an open question (KB-7).
  */
 export function CaptureBox() {
-  const statusOf = useDefaultStatus();
   const settings = useBibleSettings();
   const { lists } = useStore();
   const open = useBoxOpen();
@@ -269,13 +267,12 @@ export function CaptureBox() {
   const [notFiled, setNotFiled] = useState(0);
   /** Sentences the last File it put back in the box (unsent, or a draft that failed). */
   const [left, setLeft] = useState(0);
-  const capturedOn = localDateString(new Date());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        // Another modal dialog (Story Time, the stop prompt) holds focus: two focus traps would fight.
+        // Another modal dialog (Story Time) holds focus: two focus traps would fight.
         if (!boxOpen && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         captureNav.open();
       }
@@ -329,12 +326,7 @@ export function CaptureBox() {
   const writeQuestion = useCallback(
     async (body: string): Promise<{ id: string; title: string } | null> => {
       try {
-        const data = captureQuestionData(
-          body,
-          time.words,
-          localDateString(new Date()),
-          statusOf('idea'),
-        );
+        const data = captureQuestionData(body, time.words);
         const { entry } = await call('entry.create', { collection: 'openQuestions', data });
         undo.record(createCommand('openQuestions', entry._id, entryTitle(entry)));
         return { id: entry._id, title: entryTitle(entry) };
@@ -344,7 +336,7 @@ export function CaptureBox() {
         return null;
       }
     },
-    [time.words, undo, statusOf],
+    [time.words, undo],
   );
 
   /** KB-7: keep the text as an open question; the text stays in the box until this succeeds. */
@@ -682,9 +674,7 @@ export function CaptureBox() {
     try {
       await undo.flush();
       // CR-9: the box's own drafts, then the proposals, as one undo step.
-      const local = drafts.length
-        ? await fileLocalDrafts(call, drafts, capturedOn, statusOf('idea'))
-        : NO_FILING;
+      const local = drafts.length ? await fileLocalDrafts(call, drafts) : NO_FILING;
       const approved = allCards.length
         ? await fileCapture(call, tickedCards, untickedCards)
         : NO_FILING;
@@ -782,8 +772,6 @@ export function CaptureBox() {
           routed={routed}
           runs={runs}
           lists={lists}
-          ideaStatus={statusOf('idea')}
-          capturedOn={capturedOn}
           noKey={noKey}
           claudeOff={claudeOff}
           waiting={waiting.length}
@@ -844,8 +832,6 @@ function CaptureDialog(props: {
   routed: Routed | null;
   runs: RunState[];
   lists: ReturnType<typeof useStore>['lists'];
-  ideaStatus: string;
-  capturedOn: string;
   noKey: boolean;
   claudeOff: string | null;
   /** Route A facts waiting for a chip. */
@@ -1077,8 +1063,6 @@ function CaptureDialog(props: {
                     first={i === 0}
                     lists={props.lists}
                     index={routed.bible.index}
-                    status={props.ideaStatus}
-                    capturedOn={props.capturedOn}
                     busy={props.busy || phase === 'running'}
                     claudeOff={props.claudeOff}
                     onTick={(t) => props.setFactTicked(i, t)}

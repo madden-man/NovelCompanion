@@ -6,6 +6,7 @@ import {
   MIGRATION10_SNAPSHOT_LABEL,
   MIGRATION11_SNAPSHOT_LABEL,
   MIGRATION12_SNAPSHOT_LABEL,
+  MIGRATION13_SNAPSHOT_LABEL,
   MIGRATION9_SNAPSHOT_LABEL,
   needsDailySnapshot,
 } from '../../shared/domain/snapshots';
@@ -23,6 +24,8 @@ const MARKDOWN_TEXT_VERSION = 10;
 const VOCABULARY_VERSION = 11;
 /** The schema version of migration 12 (A51), the one that gives moments their kinds. */
 const MOMENT_KINDS_VERSION = 12;
+/** The schema version of migration 13 (A53), the one that removes the cut fields and collections. */
+const CUTS_VERSION = 13;
 
 /** The bible's snapshot keep setting (BK-1), read straight from `meta` before the read model exists. */
 async function storedSnapshotKeep(handle: BibleHandle): Promise<number> {
@@ -77,9 +80,10 @@ export async function openBibleSession(
   } else {
     // SM-2: migration 9 drops whole collections, A44: migration 10 rewrites every long
     // text, A47: migration 11 rewrites regions and family colours, and A51: migration 12
-    // sets moment kinds, so the bible is snapshotted as it is first. One snapshot covers them all.
+    // sets moment kinds, and A53: migration 13 removes fields and collections, so the bible is
+    // snapshotted as it is first. One snapshot covers them all.
     const have = options.snapshotRoot ? await schemaVersion(handle) : LATEST_SCHEMA_VERSION;
-    if (options.snapshotRoot && have < MOMENT_KINDS_VERSION) {
+    if (options.snapshotRoot && have < CUTS_VERSION) {
       // A migration snapshot is never pruned; the keep setting applies to the others.
       const keep = await storedSnapshotKeep(handle);
       const before = new SnapshotService(handle, options.snapshotRoot, () => keep, options.now);
@@ -91,7 +95,9 @@ export async function openBibleSession(
             ? MIGRATION10_SNAPSHOT_LABEL
             : have < VOCABULARY_VERSION
               ? MIGRATION11_SNAPSHOT_LABEL
-              : MIGRATION12_SNAPSHOT_LABEL,
+              : have < MOMENT_KINDS_VERSION
+                ? MIGRATION12_SNAPSHOT_LABEL
+                : MIGRATION13_SNAPSHOT_LABEL,
       );
     }
     await migrate(handle);

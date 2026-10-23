@@ -22,13 +22,9 @@ function bigBible(): OpenBible {
     _id: id,
     title,
     body: '',
-    status: i3(id),
-    provenance: 'invented',
-    tags: [],
     createdAt: at,
     modifiedAt: at,
   });
-  const i3 = (id: string) => ['canon', 'planned', 'idea'][id.length % 3]!;
   let n = 0;
   const put = (c: string, d: Record<string, unknown> & { _id: string }) => {
     model.put(c, d);
@@ -42,7 +38,6 @@ function bigBible(): OpenBible {
       birth: { year: 1900 + (i % 180) },
       death: i % 3 === 0 ? { year: 1960 + (i % 120) } : null,
       familyIds: [`F${i % 5}`],
-      tags: i % 10 === 0 ? ['keeper'] : [],
     });
   }
   for (let i = 0; i < 1500; i++) {
@@ -151,8 +146,6 @@ describe('SR-1 search with 5,000 entries', () => {
   test('SR-2 every filter at once returns under 200 ms', () => {
     const filters = {
       sections: ['characters', 'chapters', 'worldEvents'] as never,
-      status: ['canon', 'planned'] as never,
-      provenance: ['invented'] as never,
       familyId: 'F1',
       placeId: 'P5',
       yearFrom: 1950,
@@ -162,6 +155,8 @@ describe('SR-1 search with 5,000 entries', () => {
     expect(
       worst(() => query('person', { familyId: 'F2', yearFrom: 1990, yearTo: 2000 })),
     ).toBeLessThan(200);
-    expect(worst(() => query('rain', { tag: 'keeper', placeId: 'P5' }))).toBeLessThan(200);
+    expect(
+      worst(() => query('rain', { sections: ['chapters'] as never, placeId: 'P5' })),
+    ).toBeLessThan(200);
   });
 });

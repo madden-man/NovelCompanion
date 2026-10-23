@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import {
   ENTRY_COLLECTIONS,
   collectionInfo,
+  commonFields,
   editableFields,
   entrySchemas,
   manifests,
@@ -46,9 +47,7 @@ const SCALAR: Partial<Record<FieldSpec['kind'], string[]>> = {
   listItem: ['string'],
   ref: ['string'],
   refs: ['array'],
-  tags: ['array'],
   strings: ['array'],
-  links: ['array'],
   refPair: ['tuple'],
   storyDate: ['union'],
   object: ['object'],
@@ -132,7 +131,7 @@ describe('T-5 field manifests match the schemas', () => {
       for (const s of specs) {
         expect(s.label.trim().length, s.name).toBeGreaterThan(0);
         expect(`${s.label}${s.hint ?? ''}`).not.toMatch(/\u2014|--/);
-        if (s.kind === 'listItem' || s.kind === 'tags') expect(s.listId, s.name).toBeTruthy();
+        if (s.kind === 'listItem' || s.kind === 'listItems') expect(s.listId, s.name).toBeTruthy();
         if (['ref', 'refs', 'refPair'].includes(s.kind))
           expect(s.target?.length, s.name).toBeGreaterThan(0);
         if (s.fields) walk(s.fields);
@@ -151,7 +150,6 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'moments',
       'unions',
       'parentLinks',
-      'books',
       'parts',
       'chapters',
       'worldEvents',
@@ -160,7 +158,6 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'places',
       'glossaryTerms',
       'openQuestions',
-      'sessionLogs',
     ];
     for (const gone of [
       'facts',
@@ -171,6 +168,9 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'arcs',
       'relationships',
       'plotBeats',
+      'sessionLogs',
+      'briefs',
+      'books',
     ]) {
       expect(ENTRY_COLLECTIONS, gone).not.toContain(gone);
     }
@@ -181,23 +181,24 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
     }
   });
 
-  test('ED-1 entries share the common fields of section 4', () => {
-    const common = ['title', 'body', 'status', 'provenance', 'sourceNote', 'tags', 'links'];
+  test('ED-1 A52 entries share the common fields of section 4, and only those', () => {
+    const common = ['_id', 'title', 'body', 'createdAt', 'modifiedAt', 'deletedAt'];
+    expect(commonFields.map((s) => s.name)).toEqual(common);
+    const removed = ['status', 'provenance', 'sourceNote', 'sourceRef', 'tags', 'links'];
     for (const c of ENTRY_COLLECTIONS) {
-      expect(
-        manifests[c].map((s) => s.name),
-        c,
-      ).toEqual(expect.arrayContaining(common));
+      const names = manifests[c].map((s) => s.name);
+      expect(names, c).toEqual(expect.arrayContaining(common));
+      for (const r of removed) expect(names, c).not.toContain(r);
+      for (const r of removed) expect(Object.keys(entrySchemas[c].shape), c).not.toContain(r);
     }
   });
 });
 
 describe('ED-6 generated content is ordinary editable fields', () => {
-  test('ED-6 chapter summaries, briefs, and continuity findings are editable long text in the manifest', () => {
+  test('ED-6 chapter summaries and continuity findings are editable long text in the manifest', () => {
     const kindOf = (c: keyof typeof manifests, name: string) =>
       manifests[c].find((s) => s.name === name)?.kind;
     expect(kindOf('chapters', 'summary')).toBe('longText');
-    expect(kindOf('briefs', 'content')).toBe('longText');
     expect(kindOf('findings', 'text')).toBe('longText');
     expect(kindOf('findings', 'resolutionNote')).toBe('longText');
     // IP-18 supersedes ED-6 for the imported manuscript: its text and source file are system fields.

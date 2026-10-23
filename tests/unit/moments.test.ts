@@ -19,12 +19,6 @@ const beat = {
   _id: '01JBEAT0000000000000000001',
   title: 'Mark starts high school',
   body: '',
-  status: 'planned',
-  provenance: 'invented',
-  sourceNote: 'Sullivan sheet',
-  sourceRef: 'East_Winds_World.xlsx#Sullivan!A12',
-  tags: ['Sullivan'],
-  links: [{ targetId: 'E7', kind: 'mentions' }],
   createdAt: at,
   modifiedAt: later,
   arcIds: ['ARC1'],
@@ -40,9 +34,6 @@ const beat = {
 const mark = {
   _id: 'MARK',
   title: 'Mark Sullivan',
-  status: 'canon',
-  provenance: 'invented',
-  sourceRef: 'East_Winds_World.xlsx#Characters!A3',
   createdAt: at,
   modifiedAt: later,
   birth: { year: 2037 },
@@ -62,13 +53,12 @@ describe('SM-3 the moment schema', () => {
     const m = Moment.parse({
       _id: 'M1',
       title: 'Moves to Portland',
-      status: 'idea',
       createdAt: at,
       modifiedAt: at,
       characterId: 'Z3',
       year: 2027,
     });
-    expect(m).toMatchObject({ endYear: null, body: '', worldContext: '', tags: [], links: [] });
+    expect(m).toMatchObject({ endYear: null, body: '', worldContext: '' });
     expect(entrySchemas.moments).toBe(Moment);
     expect(Moment.safeParse({ ...m, year: undefined }).success).toBe(false);
     expect(Moment.safeParse({ ...m, characterId: '' }).success).toBe(false);
@@ -95,7 +85,7 @@ describe('SM-3 the moment schema', () => {
     const ws = computeWarnings(
       'moments',
       manifests.moments,
-      { _id: 'M', characterId: 'MARK', year: 2030, endYear: null, links: [] },
+      { _id: 'M', characterId: 'MARK', year: 2030, endYear: null },
       ctx,
     );
     expect(ws).toEqual([
@@ -119,12 +109,6 @@ describe('SM-3 migration 9 as pure functions', () => {
       _id: beat._id,
       title: 'Mark starts high school',
       body: 'He feels watched.',
-      status: 'planned',
-      provenance: 'invented',
-      sourceNote: 'Sullivan sheet',
-      sourceRef: 'East_Winds_World.xlsx#Sullivan!A12',
-      tags: ['Sullivan'],
-      links: [{ targetId: 'E7', kind: 'mentions' }],
       createdAt: at,
       modifiedAt: later,
       characterId: 'MARK',
@@ -164,8 +148,6 @@ describe('SM-3 migration 9 as pure functions', () => {
       body: 'Clipped, ironic.',
       characterId: 'MARK',
       year: 2055,
-      status: 'canon',
-      provenance: 'invented',
       createdAt: at,
       modifiedAt: later,
     });
@@ -270,9 +252,6 @@ describe('SM-1 migration 9: a name romanization moves to the glossary term for t
   const lan = {
     _id: 'Z3',
     title: 'Zhou Lan',
-    status: 'canon',
-    provenance: 'invented',
-    sourceRef: 'East_Winds_World.xlsx#Characters!A9',
     createdAt: at,
     modifiedAt: later,
     names: { full: 'Zhou Lan', chinese: '周岚', romanization: 'Zhōu Lán' },
@@ -286,12 +265,6 @@ describe('SM-1 migration 9: a name romanization moves to the glossary term for t
         _id: 'Z3-name',
         title: '周岚',
         body: '',
-        status: 'canon',
-        provenance: 'invented',
-        sourceNote: "Made by migration 9 from the character's romanization",
-        sourceRef: 'East_Winds_World.xlsx#Characters!A9',
-        tags: [],
-        links: [],
         createdAt: at,
         modifiedAt: later,
         characters: '周岚',

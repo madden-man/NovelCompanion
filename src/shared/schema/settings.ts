@@ -28,9 +28,9 @@ export const BibleNumbers = z
     timelineStart: Year,
     /** The last year of both grids (default 2100). */
     timelineEnd: Year,
-    /** Years before the story year the world window and the brief take in (default 3). */
+    /** Years before the story year the world window and the session selection take in (default 3). */
     windowBefore: Whole(0, 200, 'Years before'),
-    /** Years after the story year the world window and the brief look ahead (default 1). */
+    /** Years after the story year the world window and the session selection look ahead (default 1). */
     windowAfter: Whole(0, 200, 'Years after'),
     /** Years either side of a moment the Relevant world events picker reaches (default 1). */
     pickerReach: Whole(0, 100, 'The picker reach'),
@@ -45,6 +45,11 @@ export const BibleNumbers = z
         750,
         'The autosave delay is at most 750 milliseconds, so a change saves within a second.',
       ),
+    /** A53: days the latest scene outline version stays open before a save opens a new one (default 7). */
+    outlineVersionDays: z
+      .int('The days between outline versions is a whole number.')
+      .min(1, 'The days between outline versions is 1 or more.')
+      .max(365, 'The days between outline versions is 365 or fewer.'),
   })
   .refine((n) => n.timelineEnd > n.timelineStart, {
     message: 'The last year of the timeline comes after the first.',
@@ -59,25 +64,13 @@ export const DEFAULT_NUMBERS: BibleNumbers = {
   windowAfter: 1,
   pickerReach: 1,
   autosaveMs: 500,
+  outlineVersionDays: 7,
 };
 
 /** IP-11: the longest an edit waits before it saves: the larger of 700 and the delay plus 200. */
 export function autosaveMaxMs(numbers: Pick<BibleNumbers, 'autosaveMs'>): number {
   return Math.max(700, numbers.autosaveMs + 200);
 }
-
-/** DB-2: the brief's section headings, in order, as the app has always written them. */
-export const DEFAULT_BRIEF_HEADINGS = [
-  '1. Characters and their ages',
-  '2. World events ongoing',
-  '3. Cultural expectations',
-  '4. Places',
-  '5. Backstory',
-  '6. Previous chapters',
-  '7. Glossary and open questions',
-  '8. Last session note',
-  '9. Added by you',
-] as const;
 
 /** The tree legend's labels for each union and parent link type (FT-1). */
 export const DEFAULT_LINK_TYPE_LABELS: Record<string, string> = {
@@ -100,11 +93,9 @@ export const BibleTemplates = z.strictObject({
   chapterTitle: Name,
   sectionTitle: Name,
   partTitle: Name,
-  bookTitle: Name,
   strandPresent: Name,
   strandBackstory: Name,
   eraName: Name,
-  briefHeadings: z.array(Name).length(DEFAULT_BRIEF_HEADINGS.length),
   linkTypeLabels: z.record(z.string().min(1).max(64), Name),
 });
 export type BibleTemplates = z.infer<typeof BibleTemplates>;
@@ -113,11 +104,9 @@ export const DEFAULT_TEMPLATES: BibleTemplates = {
   chapterTitle: 'New chapter',
   sectionTitle: 'New section',
   partTitle: 'Part {n}',
-  bookTitle: 'Book {n}',
   strandPresent: 'present',
   strandBackstory: 'backstory',
   eraName: 'New era',
-  briefHeadings: [...DEFAULT_BRIEF_HEADINGS],
   linkTypeLabels: { ...DEFAULT_LINK_TYPE_LABELS },
 };
 
@@ -146,6 +135,7 @@ export const BibleSettingsPatch = z.strictObject({
       windowAfter: z.int().optional(),
       pickerReach: z.int().optional(),
       autosaveMs: z.int().optional(),
+      outlineVersionDays: z.int().optional(),
     })
     .optional(),
   templates: z
@@ -153,11 +143,9 @@ export const BibleSettingsPatch = z.strictObject({
       chapterTitle: z.string().optional(),
       sectionTitle: z.string().optional(),
       partTitle: z.string().optional(),
-      bookTitle: z.string().optional(),
       strandPresent: z.string().optional(),
       strandBackstory: z.string().optional(),
       eraName: z.string().optional(),
-      briefHeadings: z.array(z.string()).optional(),
       linkTypeLabels: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
@@ -194,7 +182,6 @@ export function templates(settings: unknown): BibleTemplates {
   const t = obj(obj(settings).templates);
   const out: BibleTemplates = {
     ...DEFAULT_TEMPLATES,
-    briefHeadings: [...DEFAULT_TEMPLATES.briefHeadings],
     linkTypeLabels: { ...DEFAULT_TEMPLATES.linkTypeLabels },
   };
   const shape = BibleTemplates.shape;

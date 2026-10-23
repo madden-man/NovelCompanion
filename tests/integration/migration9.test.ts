@@ -300,11 +300,16 @@ const doc = (open: OpenBible, c: string, id: string) =>
 describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
   let open: OpenBible;
   let bible: BibleHandle;
+  /** A53: the same bible stopped at version 9, for what migration 13 later removes. */
+  let at9: BibleHandle;
   beforeAll(async () => {
     bible = await v8Bible('mig9');
     expect(await schemaVersion(bible)).toBe(8);
     open = await openBibleSession(store, bible.id, { snapshotRoot: root });
+    at9 = await v8Bible('mig9-at9');
+    await migrate(at9, migrations.slice(0, 9));
   });
+  const doc9 = (c: string, id: string) => at9.collection(c).findOne({ _id: id as never });
 
   test('SM-2 opening takes a snapshot first, and it holds every document the migration drops', async () => {
     const snaps = await open.snapshots!.list();
@@ -330,8 +335,8 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
 
   test('SM-3 every beat, voice note, and place lived becomes a moment, the trash carried over', async () => {
     expect(await schemaVersion(bible)).toBe(LATEST_SCHEMA_VERSION);
-    // A44, A47 and A51: migrations 10, 11 and 12 run after it.
-    expect(LATEST_SCHEMA_VERSION).toBe(12);
+    // A44, A47, A51 and A53: migrations 10 to 13 run after it.
+    expect(LATEST_SCHEMA_VERSION).toBe(13);
     const moments = await open.handle.collection('moments').find({}).sort({ _id: 1 }).toArray();
     expect(
       moments.map((m) => [m._id, m.characterId, m.year, m.endYear, m.title, !!m.deletedAt]),
@@ -346,12 +351,10 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     expect(moments.find((m) => String(m._id) === 'B1')).toMatchObject({
       body: 'She is afraid of it.',
       worldContext: 'Floods on the Columbia.',
-      tags: ['Hale'],
-      status: 'planned',
-      provenance: 'invented',
-      links: [{ targetId: 'E1', kind: 'mentions' }],
       createdAt: AT,
     });
+    // A53: migration 9 builds moments to today's schema, which has no status, provenance, tags or links.
+    expect(moments.find((m) => String(m._id) === 'B1')).not.toHaveProperty('status');
     // Every moment is one the app can store, and the read model holds them.
     for (const m of moments) {
       expect(entrySchemas.moments.safeParse(m).success, String(m._id)).toBe(true);
@@ -402,18 +405,22 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
   test('SM-2 the eight collections and their revisions are gone; links, proposals and mappings to them too', async () => {
     const names = await open.handle.collectionNames();
     for (const c of DROPPED_COLLECTIONS) expect(names, c).not.toContain(c);
-    const revs = await open.handle.collection('revisions').find({}).toArray();
+    // Revisions, links and the import mappings are read at version 9: migration 13 removes them.
+    const revs = await at9.collection('revisions').find({}).toArray();
     expect(revs.map((r) => r._id)).toEqual(['REV-H1']);
     expect(revs[0]!.prior).toEqual({ _id: 'H1', title: 'Margaret' });
     // The link to the fact goes; the link to the beat lands on its moment, which keeps the ID.
-    expect((await doc(open, 'openQuestions', 'Q1'))!.links).toEqual([
+    expect((await doc9('openQuestions', 'Q1'))!.links).toEqual([
       { targetId: 'B1', kind: 'about' },
       { targetId: 'H1', kind: 'about' },
     ]);
-    expect(open.repo.backlinks('B1').map((b) => b.id)).toContain('Q1');
+    // A53: migration 13 keeps those targets as what the question is about.
+    expect((await doc(open, 'openQuestions', 'Q1'))!.aboutIds).toEqual(['B1', 'H1']);
+    expect(open.model.backlinks('B1').map((b) => b.id)).toContain('Q1');
     expect(await doc(open, 'proposals', 'P1')).toMatchObject({ state: 'rejected' });
     expect(await doc(open, 'proposals', 'P2')).toMatchObject({ state: 'pending' });
-    expect(Object.keys(open.repo.savedMappings())).toEqual(['w.xlsx#People']);
+    const mappings = (await doc9('meta', 'importMappings'))!.mappings as { key: string }[];
+    expect(mappings.map((m) => m.key)).toEqual(['w.xlsx#People']);
   });
 
   test('SM-2 the summary in meta counts what was made, skipped, and dropped', async () => {
@@ -485,7 +492,6 @@ describe('SM-2 SM-3 migration 9 on a version 8 bible', () => {
     const migrated = await dumpBible(open.handle);
     await open.repo.create('moments', {
       title: 'Made after the migration',
-      status: 'idea',
       characterId: 'H1',
       year: 2030,
     });
@@ -627,9 +633,6 @@ describe('SM-1 SM-3 migration 9: the birthplace row and name romanizations', () 
       language: 'mandarin',
       meaning: 'Zhou Lan',
       usageNote: 'The name of Zhou Lan',
-      status: 'canon',
-      provenance: 'researched',
-      sourceNote: "Made by migration 9 from the character's romanization",
     });
     expect(await doc(open, 'glossaryTerms', 'GLZ1')).toMatchObject({
       romanization: 'Zhōu Měilíng',

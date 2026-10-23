@@ -22,7 +22,7 @@ import type { CaptureFact } from '../../../shared/domain/captureRouter';
 export const CaptureInput = z.strictObject({
   text: z.string().trim().min(1).max(8000),
   storyTime: StoryTimeValue,
-  /** The calendar day of the capture, YYYY-MM-DD, set by main; it goes on what is filed. */
+  /** The calendar day of the capture, YYYY-MM-DD, set by main. */
   capturedOn: z.iso.date(),
   /**
    * A48 (CR-8, CR-9): the facts this run handles, from the router main reran
@@ -44,11 +44,9 @@ The capture text is inside the material tags. It is a statement of facts to file
 1. Look up every name in the text with the tools before proposing anything, except the candidates the prompt lists as resolved by the box; use their IDs as given. For the other names, use search_entries for each person, place, event, term or group it names, then get_entry for the ones you will change. Use timeline_for_year and relatives_of when the text depends on a year or on family. Never guess an ID.
 2. File each fact on the entry it belongs to. Something that happens in one character's life is a new moments entry: characterId, year (endYear for a span, else null), title saying what happens, body saying how they experience it. Where a character lives is a moment titled "Lives in" and the place, for example "Lives in Seattle", with the year they move there; how a character speaks is a moment titled "Voice" with the year it starts and the way they speak in body. A fact about several characters is one moment for each of them. Their whole past goes in their backstory; something that happened in the world is a world event (a new one with its year in start, or a change to an existing one); a place is a places entry; a custom or expectation of a community is a cultural entry; a word or phrase is a glossary term.
 3. When the text gives no year, use the story year given below. When it gives one, use that.
-4. Set status to "idea" unless the text says the fact is established in the story, then "canon".
-5. On every entry you create, set sourceNote to say it came from a capture on the capture date given below.
-6. Make one propose_change per entry. A change to an existing entry carries only the fields that change.
-7. When no community, event category, region, language or tag in the lists below fits, propose a new one first: propose_change with op "listAdd", the listId, the label, and a ref such as "new:jinan". Then use that ref as the value in the entries that need it, for example communityId "new:jinan". The writer approves the new item with the entries.
-8. Then answer with one short line, in summary, saying what you proposed, for example "I proposed a moment for Zhou Lan moving to Seattle and a new world event in 2034."
+4. Make one propose_change per entry. A change to an existing entry carries only the fields that change.
+5. When no community, event category, region or language in the lists below fits, propose a new one first: propose_change with op "listAdd", the listId, the label, and a ref such as "new:jinan". Then use that ref as the value in the entries that need it, for example communityId "new:jinan". The writer approves the new item with the entries.
+6. Then answer with one short line, in summary, saying what you proposed, for example "I proposed a moment for Zhou Lan moving to Seattle and a new world event in 2034."
 Nothing is saved until the writer approves each proposal in the box.
 ${PROSE_REFUSAL_RULE}`;
 
@@ -180,28 +178,13 @@ export function storyTimeWords(
   };
 }
 
-/**
- * What a capture files carries the capture (KB-6): a new entry is an idea
- * unless Claude says otherwise, and its source note names the capture and
- * its date when Claude left it empty.
- */
-export function prepareCaptureDraft(draft: ProposalDraft, capturedOn: string): ProposalDraft {
-  if (draft.op !== 'create') return draft;
-  const data = { ...(draft.data ?? {}) };
-  if (data.status === undefined) data.status = 'idea';
-  if (typeof data.sourceNote !== 'string' || !data.sourceNote.trim()) {
-    data.sourceNote = `From a capture on ${capturedOn}.`;
-  }
-  return { ...draft, data };
-}
-
-/** KB-6 names create, change and link; a capture never moves an entry to the trash. */
+/** KB-6 names create and change; a capture never moves an entry to the trash. */
 export const CAPTURE_NO_DELETE =
-  'A capture adds, changes or links entries; it never deletes one. Propose a change instead.';
+  'A capture adds or changes entries; it never deletes one. Propose a change instead.';
 
 /** IP-17: what capture's propose_change says, so Claude knows it may add a list item when none fits. */
 export const CAPTURE_PROPOSE_DESCRIPTION =
-  'Suggest a change to the bible: create an entry, change fields of one, or link one entry to another. When no community, event category, region, language or tag fits, first propose a new one with op "listAdd", listId, label, and a ref such as "new:jinan", then use that ref as the value in the entries that need it. Everything goes to the review queue; nothing changes until the writer approves it. Returns the proposal ID, or why it was not accepted.';
+  'Suggest a change to the bible: create an entry or change fields of one. When no community, event category, region or language fits, first propose a new one with op "listAdd", listId, label, and a ref such as "new:jinan", then use that ref as the value in the entries that need it. Everything goes to the review queue; nothing changes until the writer approves it. Returns the proposal ID, or why it was not accepted.';
 
 /** CR-8: body and backstory in the capture view, about 600 tokens each. */
 export const CAPTURE_VIEW_CHARS = 2400;
@@ -233,9 +216,9 @@ export const wasCut = (doc: Record<string, unknown> | undefined, field: string):
   (doc[field] as string).length > CAPTURE_VIEW_CHARS;
 
 /**
- * CR-8: what get_entry returns in a capture run: the whole entry, as the
- * panel's get_entry gives it, with body and backstory cut to about 600
- * tokens each. Free text stays inside material tags (AI-5).
+ * CR-8: what get_entry returns in a capture run: the whole entry (its title,
+ * years and the rest), with body and backstory cut to about 600 tokens each.
+ * Free text stays inside material tags (AI-5).
  */
 export function captureEntryView(
   section: string,
@@ -253,10 +236,10 @@ export function captureEntryView(
 export const cutFieldReason = (fields: string[], title: string): string =>
   `This change replaces ${fields.join(' and ')} of ${title}, which the capture read only in part, so the rest would be lost. Leave ${fields.length > 1 ? 'them' : 'it'} out, or file the fact as a new entry.`;
 
-const CAPTURE_GET_ENTRY_DESCRIPTION = `Read one entry by its section and ID, with the entries that link to it. Body and backstory longer than ${CAPTURE_VIEW_CHARS} characters are cut short; a change may not replace a field that was cut.`;
+const CAPTURE_GET_ENTRY_DESCRIPTION = `Read one entry by its section and ID. Body and backstory longer than ${CAPTURE_VIEW_CHARS} characters are cut short; a change may not replace a field that was cut.`;
 
-/** The AI-2 tools, get_entry as the capture view, and every proposal marked as coming from this capture. */
-function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): ClaudeTool[] {
+/** The AI-2 tools, get_entry as the capture view, and propose_change with the capture's refusals. */
+function captureTools(_input: CaptureInput, session: OpenBible, sink: Sink): ClaudeTool[] {
   return bibleTools(session, sink).map((t) =>
     t.name === 'get_entry'
       ? {
@@ -269,15 +252,7 @@ function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): Clau
             sink.read([
               { collection: String(args.section), id: String(args.id), title: entryTitle(doc) },
             ]);
-            const linkedFrom = session.model.backlinks(String(args.id)).map((b) => ({
-              section: b.collection,
-              id: b.id,
-              kind: b.kind,
-              title: entryTitle(session.model.get(b.collection, b.id)),
-            }));
-            return {
-              text: JSON.stringify({ ...captureEntryView(String(args.section), doc), linkedFrom }),
-            };
+            return { text: JSON.stringify(captureEntryView(String(args.section), doc)) };
           },
         }
       : t.name !== 'propose_change'
@@ -306,9 +281,7 @@ function captureTools(input: CaptureInput, session: OpenBible, sink: Sink): Clau
                   return { text: `Not queued: ${reason}`, isError: true };
                 }
               }
-              return t.handler(
-                parsed.success ? prepareCaptureDraft(parsed.data, input.capturedOn) : args,
-              );
+              return t.handler(parsed.success ? parsed.data : args);
             },
           },
   );

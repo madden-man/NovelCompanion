@@ -23,8 +23,6 @@ function context(docs: Record<string, Doc[]>, lists: ListDoc[] = []): WarningCon
 const person = (id: string, birth: unknown, death: unknown = null, title = id): Doc => ({
   _id: id,
   title,
-  status: 'canon',
-  links: [],
   names: { full: title },
   birth,
   death,
@@ -67,15 +65,14 @@ describe('ED-10 field warnings', () => {
   });
 
   test('ED-10 a range that ends before it starts is flagged at its end, at any depth', () => {
-    expect(
-      codes('eraStates', { _id: 'E', links: [], name: 'x', startYear: 2050, endYear: 2040 }),
-    ).toEqual(['endYear:range-end-before-start']);
+    expect(codes('eraStates', { _id: 'E', name: 'x', startYear: 2050, endYear: 2040 })).toEqual([
+      'endYear:range-end-before-start',
+    ]);
     expect(
       codes(
         'unions',
         {
           _id: 'U',
-          links: [],
           partnerIds: ['A', 'B'],
           type: 'married',
           startYear: 2000,
@@ -86,7 +83,6 @@ describe('ED-10 field warnings', () => {
     ).toEqual(['endYear:range-end-before-start']);
     const chapter: Doc = {
       _id: 'C',
-      links: [],
       strands: [
         {
           id: 's1',
@@ -106,7 +102,6 @@ describe('ED-10 field warnings', () => {
     const ctx = context({ characters: [person('A', { year: 1950 }, { year: 2000 }, 'Ada')] });
     const moment = (year: number, endYear: number | null = null): Doc => ({
       _id: 'M',
-      links: [],
       characterId: 'A',
       year,
       endYear,
@@ -126,7 +121,7 @@ describe('ED-10 field warnings', () => {
 
   test('ED-10 FT-6 a parent under 12 or over 60 at the child birth is flagged; 12 and 60 are not', () => {
     const link = (parentBirth: number): [Doc, WarningContext] => [
-      { _id: 'P', links: [], parentId: 'M', childId: 'K', type: 'biological', startYear: null },
+      { _id: 'P', parentId: 'M', childId: 'K', type: 'biological', startYear: null },
       context({
         characters: [
           person('M', { year: parentBirth }, null, 'Mother'),
@@ -153,7 +148,6 @@ describe('ED-10 field warnings', () => {
       });
     const link: Doc = {
       _id: 'P',
-      links: [],
       parentId: 'M',
       childId: 'K',
       type: 'biological',
@@ -191,7 +185,6 @@ describe('ED-10 field warnings', () => {
         'unions',
         {
           _id: 'U',
-          links: [],
           partnerIds: ['A', 'B'],
           type: 'married',
           startYear: 1985,
@@ -220,7 +213,6 @@ describe('ED-10 field warnings', () => {
         'unions',
         {
           _id: 'U',
-          links: [{ targetId: 'GONE', kind: 'see' }],
           partnerIds: ['A', 'A'],
           type: 'married',
           startYear: null,
@@ -228,16 +220,19 @@ describe('ED-10 field warnings', () => {
         },
         ctx,
       ).map((w) => [w.path, w.code]),
-    ).toEqual([
-      ['partnerIds', 'same-twice'],
-      ['links', 'missing-target'],
-    ]);
+    ).toEqual([['partnerIds', 'same-twice']]);
+    expect(
+      warn(
+        'unions',
+        { _id: 'U', partnerIds: ['A', 'GONE'], type: 'married', startYear: null, endYear: null },
+        ctx,
+      ).map((w) => [w.path, w.code]),
+    ).toEqual([['partnerIds.1', 'missing-target']]);
     expect(
       warn(
         'unions',
         {
           _id: 'U',
-          links: [],
           partnerIds: ['A', 'T'],
           type: 'married',
           startYear: null,
@@ -271,7 +266,6 @@ describe('ED-10 field warnings', () => {
         'unions',
         {
           _id: 'U',
-          links: [],
           partnerIds: ['A', 'B'],
           type: 'eloped',
           startYear: null,
@@ -292,7 +286,7 @@ describe('ED-10 field warnings', () => {
       characterIds: [],
       placeIds: [],
     });
-    const ch = (...strands: unknown[]): Doc => ({ _id: 'C', links: [], strands });
+    const ch = (...strands: unknown[]): Doc => ({ _id: 'C', strands });
     expect(codes('chapters', ch(strand('a', false)))).toEqual(['strands:primary-strand-count']);
     expect(codes('chapters', ch(strand('a', true), strand('b', true)))).toEqual([
       'strands:primary-strand-count',
@@ -301,16 +295,16 @@ describe('ED-10 field warnings', () => {
   });
 
   test('ED-10 world events that end before they start, places inside themselves, and decided questions with no decision are flagged', () => {
-    expect(
-      codes('worldEvents', { _id: 'W', links: [], start: { year: 2040 }, end: { year: 2039 } }),
-    ).toEqual(['end:range-end-before-start']);
-    const ctx = context({ places: [{ _id: 'PL', links: [], parentId: 'PL' }] });
-    expect(
-      codes('places', { _id: 'PL', links: [], parentId: 'PL', descriptions: [] }, ctx),
-    ).toEqual(['parentId:self-reference']);
-    expect(
-      codes('openQuestions', { _id: 'Q', links: [], state: 'decided', decision: ' ' }),
-    ).toEqual(['decision:decided-without-decision']);
+    expect(codes('worldEvents', { _id: 'W', start: { year: 2040 }, end: { year: 2039 } })).toEqual([
+      'end:range-end-before-start',
+    ]);
+    const ctx = context({ places: [{ _id: 'PL', parentId: 'PL' }] });
+    expect(codes('places', { _id: 'PL', parentId: 'PL', descriptions: [] }, ctx)).toEqual([
+      'parentId:self-reference',
+    ]);
+    expect(codes('openQuestions', { _id: 'Q', state: 'decided', decision: ' ' })).toEqual([
+      'decision:decided-without-decision',
+    ]);
   });
 
   test('ED-10 every warning is declared on the field it lands on in the manifest', () => {
@@ -324,12 +318,12 @@ describe('ED-10 field warnings', () => {
       ['characters', person('A', { year: 2000, month: 2, day: 30 }, { year: 1990 }), context({})],
       [
         'moments',
-        { _id: 'M', links: [], characterId: 'Z', year: 1, endYear: 0 },
+        { _id: 'M', characterId: 'Z', year: 1, endYear: 0 },
         context({ characters: [person('Z', { year: 2000 }, { year: 2001 })] }),
       ],
       [
         'parentLinks',
-        { _id: 'P', links: [], parentId: 'M', childId: 'K', type: 'x' },
+        { _id: 'P', parentId: 'M', childId: 'K', type: 'x' },
         context(
           {
             characters: [person('M', { year: 1999 }, { year: 1990 }), person('K', { year: 2000 })],
@@ -339,7 +333,7 @@ describe('ED-10 field warnings', () => {
       ],
       [
         'unions',
-        { _id: 'U', links: [], partnerIds: ['A', 'A'], type: 'x', startYear: 1, endYear: 0 },
+        { _id: 'U', partnerIds: ['A', 'A'], type: 'x', startYear: 1, endYear: 0 },
         context({ characters: [person('A', { year: 2000 })] }),
       ],
     ];

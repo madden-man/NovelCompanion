@@ -1,12 +1,11 @@
 /**
- * Session brief selection (SB-1 to SB-3, SB-5, SB-6, SB-9, SM-3). The one
+ * Session selection (SB-1 to SB-3, SB-5, SB-6, SB-9, SM-3). The one
  * deterministic query that decides which entries a session is about. The
- * "Relevant to Session" view, the structured brief (SB-7), the saved
- * manifest (SB-3), and the input Claude synthesizes from (SB-4) all come from
- * `selectForSession`, so they can never disagree.
+ * "Relevant to Session" view and the alignment check's material (CC-3) both
+ * come from `selectForSession`, so they can never disagree.
  *
  * SB-2 steps 1 to 6 run once per strand, the primary strand first (A5); steps
- * 7 to 10 run once for the section. Every list is sorted on explicit keys so
+ * 7 and 9 run once for the section. Every list is sorted on explicit keys so
  * the same inputs and data give the same manifest every time (SB-3). Nothing
  * here calls a model or reads the clock.
  *
@@ -48,12 +47,9 @@ import { yearOf } from '../dates';
 import { plainText } from '../markdown';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
-import { latestLog } from '../sessionLog';
 import { characterName, eraFor, eventSpans, eventsAhead, eventsUpTo, stateIn } from '../timeline';
 import type { EventSpan, TimelineData } from '../timeline';
 import { ENTRY_COLLECTIONS } from '../../schema';
-import type { StatusKind } from '../../schema/lists';
-import { statusKind } from '../lists';
 import { LIVES_IN_PREFIX, VOICE_MOMENT_TITLE } from '../../schema/moment';
 
 // ---------- inputs and settings ----------
@@ -110,7 +106,6 @@ export type GroupKind =
   | 'glossary'
   | 'openQuestions'
   | 'decidedQuestions'
-  | 'sessionNote'
   | 'added';
 
 export const GROUP_TITLES: Record<GroupKind, string> = {
@@ -126,7 +121,6 @@ export const GROUP_TITLES: Record<GroupKind, string> = {
   glossary: 'Glossary terms',
   openQuestions: 'Open questions',
   decidedQuestions: 'Decided',
-  sessionNote: 'Last session note',
   added: 'Added by you',
 };
 
@@ -144,7 +138,6 @@ export const GROUP_STEP: Record<GroupKind, number> = {
   glossary: 9,
   openQuestions: 9,
   decidedQuestions: 9,
-  sessionNote: 10,
   added: 0,
 };
 
@@ -179,17 +172,12 @@ export const DROP_ORDER: GroupKind[] = [
   'previousChapters',
   'moments',
   'era',
-  'sessionNote',
 ];
 
 export interface SelectedItem {
   id: string;
   collection: string;
   title: string;
-  /** The item ID in the statuses list (seeded canon, planned, idea). */
-  status: string;
-  /** A47 (IP-9): what the status means to SB-5, from the item's `extra.kind`. Set on every selected item. */
-  kind?: StatusKind;
   /** Why it was selected, or the computed fact about it (an age, a year). */
   note: string;
   /** The entry's text as the brief shows it; its length is what SB-6 counts. */
@@ -227,7 +215,6 @@ export interface BackstoryRow {
   /** How they experience it, plain. */
   body: string;
   worldContext: string;
-  status: string;
 }
 
 /** A35, SM-3: the moments of the chapter's backstory years, for Relevant to Session. Not in the manifest. */
@@ -287,7 +274,7 @@ export interface Selection {
   /** The chapters the section covers, in reading order. */
   chapterIds: string[];
   strands: StrandSelection[];
-  /** Steps 7, 9 and 10, and SB-9 additions. */
+  /** Steps 7 and 9, and SB-9 additions. */
   shared: SelectionGroup[];
   /** What SB-6 or the person left out. The brief says so. */
   omitted: OmittedItem[];
@@ -319,7 +306,7 @@ const idList = (v: unknown): string[] =>
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
- * Plain text of a stored long text, for briefs and the budget: Markdown since
+ * Plain text of a stored long text, for the selection and its budget: Markdown since
  * A44, and the HTML stored before it reads the same way.
  */
 export function plain(text: unknown): string {
@@ -352,11 +339,9 @@ function index(data: TimelineData, collection: string): Map<string, Doc> {
   return new Map(data.all(collection).map((d) => [str(d._id), d]));
 }
 
-function linksOf(d: Doc | undefined): string[] {
-  return (Array.isArray(d?.links) ? d.links : [])
-    .filter(isPlainObject)
-    .map((l) => str(l.targetId))
-    .filter(Boolean);
+/** A53: what an open question is about (`aboutIds`). */
+function aboutOf(d: Doc | undefined): string[] {
+  return (Array.isArray(d?.aboutIds) ? d.aboutIds : []).map(str).filter(Boolean);
 }
 
 interface StrandSpec {
@@ -584,7 +569,6 @@ function characterItem(c: Doc, year: number, voice: Doc | null): SelectedItem {
     id,
     collection: 'characters',
     title: characterName(c, id),
-    status: str(c.status),
     note: describeState(state),
     detail: joinText(
       str(names.chinese),
@@ -606,7 +590,6 @@ function momentItem(m: Doc, c: Doc): SelectedItem {
     id: str(m._id),
     collection: 'moments',
     title: title(m, 'Untitled moment'),
-    status: str(m.status),
     note: joinText(`${characterName(c, str(c._id))}, ${when}${age ? ',' : ''}`, age),
     detail: joinText(plain(m.body), plain(m.worldContext)),
     refs: [],
@@ -731,7 +714,6 @@ export function selectForSession(
           title: title(m, 'Untitled moment'),
           body: plain(m.body),
           worldContext: plain(m.worldContext),
-          status: str(m.status),
         }));
       if (!rows.length) continue;
       const ages =
@@ -759,7 +741,6 @@ export function selectForSession(
     id: e.id,
     collection: 'worldEvents',
     title: e.title,
-    status: e.status,
     note: joinText(eventDates(e) + (note ? ',' : ''), note),
     detail: joinText(plain(eventDocs.get(e.id)?.body), e.regions.map(regionLabel).join(', ')),
     refs: [],
@@ -809,7 +790,6 @@ export function selectForSession(
         id: era.id,
         collection: 'eraStates',
         title: era.name,
-        status: str(data.all('eraStates').find((d) => d._id === era.id)?.status),
         note: rangeText(era.startYear, era.endYear),
         detail: plain(data.all('eraStates').find((d) => d._id === era.id)?.body),
         refs: [],
@@ -863,7 +843,6 @@ export function selectForSession(
           id: str(c._id),
           collection: 'culturalEntries',
           title: title(c),
-          status: str(c.status),
           note: `${communityLabel(community)}, ${rangeText(num(c.startYear), num(c.endYear))}`,
           detail: plain(c.body),
           refs: [],
@@ -882,7 +861,6 @@ export function selectForSession(
         id: p,
         collection: 'places',
         title: placePath(places, p) || title(place),
-        status: str(place.status),
         note: rangeText(d.startYear, d.endYear),
         detail: d.text,
         refs: [],
@@ -930,7 +908,6 @@ export function selectForSession(
         found.collection === 'characters'
           ? characterName(found.doc, id)
           : title(found.doc, 'Untitled'),
-      status: str(found.doc.status),
       note: 'added by you',
       detail: genericText(found.doc),
       refs: [],
@@ -1002,10 +979,6 @@ export function selectForSession(
     }
   }
 
-  // A47 (IP-9, SB-5): each item's status kind, read from the statuses list.
-  const listDocs = data.all('lists');
-  for (const g of all()) for (const it of g.items) it.kind = statusKind(listDocs, it.status);
-
   const ids = new Set<string>(section.chapters.map((c) => str(c._id)));
   for (const g of all()) {
     for (const it of g.items) {
@@ -1058,19 +1031,7 @@ function entryLookup(data: TimelineData): Lookup {
   };
 }
 
-const SKIP_KEYS = new Set([
-  '_id',
-  'createdAt',
-  'modifiedAt',
-  'deletedAt',
-  'status',
-  'provenance',
-  'links',
-  'sourceRef',
-  'tags',
-  'manuscriptText',
-  'selection',
-]);
+const SKIP_KEYS = new Set(['_id', 'createdAt', 'modifiedAt', 'deletedAt', 'manuscriptText']);
 
 /** Every string an entry holds, for entries added by hand (SB-9). */
 function genericText(doc: Doc): string {
@@ -1085,7 +1046,7 @@ function genericText(doc: Doc): string {
   return joinText(...out);
 }
 
-// ---------- steps 7, 9 and 10 ----------
+// ---------- steps 7 and 9 ----------
 
 function sharedSteps(
   data: TimelineData,
@@ -1151,7 +1112,6 @@ function sharedSteps(
       id: str(c._id),
       collection: 'chapters',
       title: chapterLabel(c),
-      status: str(c.status),
       note:
         (reasons.get(str(c._id)) ?? []).join('; ') +
         (c.summaryOutOfDate === true ? '; the summary may be out of date' : ''),
@@ -1170,23 +1130,16 @@ function sharedSteps(
     }
   }
   previous.forEach((p) => selected.add(p.id));
-  const selectedDocs = [...selected].map((id) => findEntry(id)?.doc).filter((d): d is Doc => !!d);
-  const linkedFrom = new Set(selectedDocs.flatMap(linksOf));
-  const isLinked = (d: Doc) =>
-    linkedFrom.has(str(d._id)) || linksOf(d).some((t) => selected.has(t));
-  const linkedTo = (d: Doc) => {
-    const names = [...new Set(linksOf(d).filter((t) => selected.has(t)))]
-      .concat(selectedDocs.filter((s) => linksOf(s).includes(str(d._id))).map((s) => str(s._id)))
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .sort(byText)
-      .map((id) => {
-        const f = findEntry(id);
-        return f?.collection === 'characters' ? characterName(f.doc, id) : title(f?.doc, id);
-      });
-    return names.length ? `linked to ${names.join(', ')}` : '';
+  const isAbout = (q: Doc) => aboutOf(q).some((t) => selected.has(t));
+  const aboutNote = (q: Doc) => {
+    const names = [...new Set(aboutOf(q).filter((t) => selected.has(t)))].sort(byText).map((id) => {
+      const f = findEntry(id);
+      return f?.collection === 'characters' ? characterName(f.doc, id) : title(f?.doc, id);
+    });
+    return names.length ? `about ${names.join(', ')}` : '';
   };
 
-  // 9. Glossary terms and open questions linked to anything selected (A18).
+  // 9. Glossary terms in the names of selected characters, and open questions about anything selected (A18, A53).
   const selectedCharacters = strands
     .flatMap((s) => s.groups.find((g) => g.kind === 'characters')?.items ?? [])
     .map((it) => it.id)
@@ -1205,12 +1158,9 @@ function sharedSteps(
       const inNames = chars
         ? selectedCharacters.filter((c) => nameStrings(c).some((n) => n.includes(chars)))
         : [];
-      const why = [
-        isLinked(g) ? linkedTo(g) : '',
-        inNames.length
-          ? `in the name of ${inNames.map((c) => characterName(c, str(c._id))).join(', ')}`
-          : '',
-      ].filter(Boolean);
+      const why = inNames.length
+        ? [`in the name of ${inNames.map((c) => characterName(c, str(c._id))).join(', ')}`]
+        : [];
       return { g, why };
     })
     .filter((x) => x.why.length)
@@ -1222,7 +1172,6 @@ function sharedSteps(
       id: str(g._id),
       collection: 'glossaryTerms',
       title: joinText(str(g.characters), str(g.romanization)),
-      status: str(g.status),
       note: why.join('; '),
       detail: joinText(str(g.meaning), str(g.usageNote)),
       refs: [],
@@ -1232,51 +1181,29 @@ function sharedSteps(
   const decided: SelectedItem[] = data
     .all('openQuestions')
     .filter(live)
-    .filter((q) => q.state === 'decided' && isLinked(q))
+    .filter((q) => q.state === 'decided' && isAbout(q))
     .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)))
     .map((q) => ({
       id: str(q._id),
       collection: 'openQuestions',
       title: title(q),
-      status: str(q.status),
-      note: linkedTo(q),
+      note: aboutNote(q),
       detail: joinText(plain(q.question), `Decision: ${plain(q.decision) || 'not recorded'}`),
       refs: [],
     }));
   const questions: SelectedItem[] = data
     .all('openQuestions')
     .filter(live)
-    .filter((q) => q.state !== 'decided' && isLinked(q))
+    .filter((q) => q.state !== 'decided' && isAbout(q))
     .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)))
     .map((q) => ({
       id: str(q._id),
       collection: 'openQuestions',
       title: title(q),
-      status: str(q.status),
-      note: linkedTo(q),
+      note: aboutNote(q),
       detail: plain(q.question),
       refs: [],
     }));
-
-  // 10. The last session log note for this chapter.
-  const logs = data
-    .all('sessionLogs')
-    .filter(live)
-    .filter((l) => sectionIds.includes(str(l.chapterId)));
-  const last = sectionIds.length ? latestLog(logs) : null;
-  const sessionNote: SelectedItem[] = last
-    ? [
-        {
-          id: str(last._id),
-          collection: 'sessionLogs',
-          title: title(last, 'Session'),
-          status: str(last.status),
-          note: str(last.date),
-          detail: joinText(str(last.stoppedAt), str(last.notes)),
-          refs: [],
-        },
-      ]
-    : [];
 
   const group = (kind: GroupKind, items: SelectedItem[]): SelectionGroup => ({
     kind,
@@ -1289,16 +1216,5 @@ function sharedSteps(
     group('glossary', glossary),
     group('openQuestions', questions),
     group('decidedQuestions', decided),
-    group('sessionNote', sessionNote),
   ];
-}
-
-/** Every group of a selection, strands first (primary first) then the shared steps. */
-export function allGroups(sel: Selection): SelectionGroup[] {
-  return [...sel.strands.flatMap((s) => s.groups), ...sel.shared];
-}
-
-/** True when the entry is in the selection's manifest (SB-3, SB-4). */
-export function inManifest(sel: Pick<Selection, 'ids'>, id: string): boolean {
-  return sel.ids.includes(id);
 }

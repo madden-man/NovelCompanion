@@ -1,13 +1,12 @@
 import { WriteFieldset } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
-import { entryTitle, isEntryCollection } from '../../../../shared/schema';
+import { entryTitle } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
 import { useEntries } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
-import { OpenSettingsButton, claudeNav } from '../claude';
-import { DriveDocumentPicker } from '../drive';
+import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
 import { ManuscriptDiff, Reimport } from './Reimport';
 import { EntryEditable } from '../editable';
@@ -18,14 +17,11 @@ import type { OpenEntry } from './common';
 import './alignment.css';
 
 type Read = Response<'manuscript.read'>;
-type Establishment = Response<'chapter.establishes'>['items'][number];
 
 /**
- * The manuscript (MS-1 to MS-5): import a chapter from a Word file or a
- * Google Doc (chosen with the Drive browser), read a linked file again and
- * see the text diff,
- * and mark a chapter as written: a summary to approve and the planned
- * entries it establishes to promote. The app only reads manuscripts; it
+ * The manuscript (MS-1 to MS-5): import a chapter from a Word file, read a
+ * linked file again and see the text diff, and mark a chapter as written: a summary to approve.
+ * The app only reads manuscripts; it
  * never writes to one.
  */
 export function ManuscriptView({
@@ -64,9 +60,9 @@ export function ManuscriptView({
               >
                 {`Chapter ${String(c.readingOrder)}: ${entryTitle(c)}`}
               </button>{' '}
-              {c.written === true && <span className="chip canon">written</span>}
+              {c.written === true && <span className="chip now">written</span>}
               {c.summaryOutOfDate === true && (
-                <span className="chip planned">summary may be out of date</span>
+                <span className="chip todo">summary may be out of date</span>
               )}
             </li>
           ))}
@@ -97,7 +93,6 @@ function ChapterManuscript({
 }) {
   const undo = useUndo();
   const [sources, setSources] = useState<Response<'manuscript.sources'>['sources']>([]);
-  const [picking, setPicking] = useState<string | null>(null);
   const [read, setRead] = useState<Read | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -108,12 +103,11 @@ function ChapterManuscript({
     void call('manuscript.sources', {}).then((r) => setSources(r.sources));
   }, []);
 
-  const doRead = async (sourceId?: string, locator?: string) => {
+  const doRead = async (sourceId?: string) => {
     setError(null);
     setNote(null);
-    setPicking(null);
     try {
-      const r = await call('manuscript.read', { chapterId: chapter._id, sourceId, locator });
+      const r = await call('manuscript.read', { chapterId: chapter._id, sourceId });
       setRead(r.token ? r : null);
     } catch (e) {
       setError(plainError(e));
@@ -173,9 +167,9 @@ function ChapterManuscript({
       <div className="row">
         <h3>{entryTitle(chapter)}</h3>
         {chapter.written === true ? (
-          <span className="chip canon">written</span>
+          <span className="chip now">written</span>
         ) : (
-          <span className="chip planned">not written</span>
+          <span className="chip todo">not written</span>
         )}
         <button type="button" className="link-btn" onClick={() => onOpen('chapters', chapter._id)}>
           Open the chapter
@@ -205,13 +199,7 @@ function ChapterManuscript({
       )}
       <WriteFieldset className="row">
         {sources.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className="btn small"
-            aria-expanded={s.picker === 'drive' ? picking === s.id : undefined}
-            onClick={() => (s.picker === 'drive' ? setPicking(s.id) : void doRead(s.id))}
-          >
+          <button key={s.id} type="button" className="btn small" onClick={() => void doRead(s.id)}>
             Import from a {s.label}
           </button>
         ))}
@@ -223,7 +211,7 @@ function ChapterManuscript({
         {chapter.written === true ? (
           <>
             <button type="button" className="btn small" onClick={() => setFlow(true)}>
-              Summary and promotions
+              Summary
             </button>
             <button type="button" className="btn small" onClick={() => void markNotWritten()}>
               Not written after all
@@ -244,13 +232,6 @@ function ChapterManuscript({
         <p className="callout" role="status" data-testid="ms-note">
           {note}
         </p>
-      )}
-      {picking && (
-        <DriveDocumentPicker
-          onPick={(item) => void doRead(picking, item.id)}
-          onCancel={() => setPicking(null)}
-          onOpenSettings={claudeNav.openSettings}
-        />
       )}
       {read && (
         <div className="sunken stack" data-testid="ms-compare">
@@ -279,7 +260,7 @@ function ChapterManuscript({
           </div>
         </div>
       )}
-      {flow && <WrittenFlow chapter={chapter} onOpen={onOpen} />}
+      {flow && <WrittenFlow chapter={chapter} />}
       {lines.length > 0 && (
         <div className="ms-text-row" data-testid="ms-text-row">
           {/* IP-18: the text is imported, never edited here; Re-import heads it. */}
@@ -303,21 +284,16 @@ function ChapterManuscript({
   );
 }
 
-/** MS-2 and MS-3: after a chapter is marked written. */
-function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry }) {
+/** MS-2: after a chapter is marked written, its summary to approve. */
+function WrittenFlow({ chapter }: { chapter: Entry }) {
   const undo = useUndo();
   const [draft, setDraft] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageSettings, setMessageSettings] = useState(false);
   const [model, setModel] = useState<string | null>(null);
-  const [items, setItems] = useState<Establishment[] | null>(null);
-  const [checked, setChecked] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const summaryId = useId();
-
-  const loadItems = () =>
-    void call('chapter.establishes', { chapterId: chapter._id }).then((r) => setItems(r.items));
 
   const claude = useClaudeRun('the summary');
 
@@ -332,13 +308,10 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
 
   useEffect(() => {
     let live = true;
-    void call('chapter.establishes', { chapterId: chapter._id }).then((r) => {
-      if (live) setItems(r.items);
-    });
     // MS-2: offer a generated summary as soon as the chapter is written (after the AI-6
     // disclosure on the first use in this bible). Without Claude, it is written by hand.
-    void call('brief.settings.get', {}).then((s) => {
-      if (live) summarize(s.claudeAvailable);
+    void call('claude.status', {}).then((s) => {
+      if (live) summarize(s.key.set);
     });
     return () => {
       live = false;
@@ -358,21 +331,6 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
       );
       setDone('Summary saved.');
       setDraft(null);
-    } catch (e) {
-      setError(plainError(e));
-    }
-  };
-
-  const promote = async () => {
-    setError(null);
-    try {
-      for (const id of checked) {
-        const item = items?.find((i) => i.id === id);
-        if (!item || !isEntryCollection(item.collection)) continue;
-        await updateWithUndo(undo, item.collection, id, { status: 'canon' }, 'Promoted to canon');
-      }
-      setChecked([]);
-      loadItems();
     } catch (e) {
       setError(plainError(e));
     }
@@ -418,58 +376,6 @@ function WrittenFlow({ chapter, onOpen }: { chapter: Entry; onOpen: OpenEntry })
               {done}
             </p>
           )
-        )}
-      </div>
-      <div className="sunken stack tight" data-testid="promote-step">
-        <span className="eyebrow">Planned entries this chapter establishes</span>
-        {items === null ? (
-          <p aria-live="polite">Loading.</p>
-        ) : items.length === 0 ? (
-          <p className="example-note">Nothing planned is established here.</p>
-        ) : (
-          <>
-            <ul className="plain-list stack tight" data-testid="promote-list">
-              {items.map((it) => (
-                <li key={it.id} className="row tight">
-                  <input
-                    type="checkbox"
-                    id={`promote-${it.id}`}
-                    checked={checked.includes(it.id)}
-                    onChange={(e) =>
-                      setChecked((c) =>
-                        e.target.checked ? [...c, it.id] : c.filter((x) => x !== it.id),
-                      )
-                    }
-                  />
-                  <label htmlFor={`promote-${it.id}`}>
-                    {it.title} ({it.why})
-                  </label>
-                  {isEntryCollection(it.collection) && (
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() =>
-                        isEntryCollection(it.collection) && onOpen(it.collection, it.id)
-                      }
-                    >
-                      Open
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <div className="row">
-              <button
-                type="button"
-                className="btn primary small"
-                disabled={!checked.length}
-                onClick={() => void promote()}
-              >
-                Promote checked to canon
-              </button>
-              <span className="example-note">Unchecked entries stay planned.</span>
-            </div>
-          </>
         )}
       </div>
       {error && (

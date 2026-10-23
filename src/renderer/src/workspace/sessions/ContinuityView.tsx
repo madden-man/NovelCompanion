@@ -15,7 +15,7 @@ const TABS: { tab: ContinuityTab; label: string }[] = [
  * SM-11: the Continuity checker. The alignment check (CC-1 to CC-5: run,
  * findings and their three resolutions, rewrite tasks) and, as a second tab,
  * the manuscript it reads (MS-1 to MS-5: the chapters that hold text, import
- * from Word or a Google Doc, the re-import diff, marking a chapter written).
+ * from Word, the re-import diff, marking a chapter written).
  */
 export function ContinuityView(props: {
   tab: ContinuityTab;

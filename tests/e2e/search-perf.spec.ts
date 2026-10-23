@@ -9,7 +9,7 @@ import type { TestDb } from './helpers';
  * NF-1 in the built app over the 5,000-entry bible, on the screens that list
  * many rows since the Entries screen left (SM-6, SM-11): a query typed into
  * the rail's search box answers in the results within NF-1's 200 ms search
- * budget, and Sessions draws its open questions within 500 ms, NF-1's redraw
+ * budget, and Questions draws its open questions within 500 ms, NF-1's redraw
  * budget. As in perf.spec.ts, each limit is asserted on the median of three
  * samples, since other suites share the machine.
  */
@@ -76,14 +76,14 @@ function typeQuery(q: string) {
   );
 }
 
-/** Open Sessions from the rail and time it until every question row is painted. */
-function openSessions(rows: number) {
+/** Open Questions from the rail and time it until every question row is painted. */
+function openQuestions(rows: number) {
   return page.evaluate(
     ({ rows }) =>
       new Promise<number>((resolve) => {
         const button = [
           ...document.querySelectorAll<HTMLButtonElement>('nav[aria-label="Sections"] button'),
-        ].find((b) => b.textContent === 'Sessions')!;
+        ].find((b) => b.textContent === 'Questions')!;
         const start = performance.now();
         button.click();
         const check = () => {
@@ -131,18 +131,20 @@ test('NF-1 SM-6 SR-1 a query in the rail search box answers over the 5,000-entry
   for (const ms of Object.values(results)) expect(ms).toBeLessThan(SEARCH_MS);
 });
 
-test('NF-1 SM-11 OQ-1 Sessions draws every open question of the 5,000-entry bible within 500 ms', async () => {
+test('NF-1 SM-11 OQ-1 Questions draws every open question of the 5,000-entry bible within 500 ms', async () => {
   test.setTimeout(120_000);
   // The first open loads the questions; it must still draw within the budget.
   const samples: number[] = [];
   for (let i = 0; i < 3; i++) {
     await rail(page, 'Characters').click();
     await expect(page.getByRole('heading', { name: 'Characters', level: 2 })).toBeVisible();
-    samples.push(await openSessions(questions));
+    samples.push(await openQuestions(questions));
   }
-  process.stdout.write(`NF-1 Sessions open (ms): ${samples.map((s) => s.toFixed(0)).join(', ')}\n`);
+  process.stdout.write(
+    `NF-1 Questions open (ms): ${samples.map((s) => s.toFixed(0)).join(', ')}\n`,
+  );
   test.info().annotations.push({
-    type: 'NF-1 Sessions open (ms)',
+    type: 'NF-1 Questions open (ms)',
     description: samples.map((s) => s.toFixed(0)).join(', '),
   });
   await expect(page.getByLabel('Show questions').locator('option').first()).toHaveText(

@@ -64,7 +64,6 @@ describe('SM-1 Birth and Death as one text box', () => {
         _id: 'X',
         birth: { year: 2031, month: 2, day: 30 },
         death: null,
-        links: [],
       },
       { get: () => undefined, find: () => undefined, list: () => undefined },
     );

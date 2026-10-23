@@ -22,7 +22,6 @@ test.beforeAll(async () => {
       ...process.env,
       NOVEL_COMPANION_TEST_MONGODB_URI: db.uri,
       NOVEL_COMPANION_TEST_DB_NAME: db.name,
-      NOVEL_COMPANION_SKIP_STOP_PROMPT: '1',
       // Its own data folder, never the real one, so parallel files never share it.
       NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-app-')),
       ...HIDDEN_ENV,

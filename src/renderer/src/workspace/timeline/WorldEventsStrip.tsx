@@ -6,7 +6,6 @@ import { span } from './common';
 export interface StripEvent {
   id: string;
   title: string;
-  status: string;
   startYear: number;
   endYear: number;
   formative?: boolean;
@@ -29,7 +28,7 @@ export function WorldEventsStrip(props: {
   /** Columns for the years with no event, else only the years that have one. */
   everyYear: boolean;
   onOpen: (id: string) => void;
-  /** Something to show after an event's title, such as a Remove button in the brief view. */
+  /** Something to show after an event's title, such as a Remove button on the desk. */
   action?: (id: string) => ReactNode;
   /** a47-desk (IP-2): draws an event's title, such as a field, in place of the link. */
   renderTitle?: (e: StripEvent) => ReactNode;
@@ -85,9 +84,9 @@ export function WorldEventsStrip(props: {
                     {props.renderTitle?.(e) ?? (
                       <button
                         type="button"
-                        className={`link-btn we-event ${e.status}${e.formative ? ' formative' : ''}`}
+                        className={`link-btn we-event${e.formative ? ' formative' : ''}`}
                         onClick={() => props.onOpen(e.id)}
-                        title={`${span(e.startYear, e.endYear)}${e.status ? `, ${e.status}` : ''}${e.formative ? ', formative' : ''}`}
+                        title={`${span(e.startYear, e.endYear)}${e.formative ? ', formative' : ''}`}
                       >
                         {e.title}
                       </button>

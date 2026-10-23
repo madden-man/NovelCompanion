@@ -8,7 +8,6 @@ const doc = (id: string, title: string, extra: Record<string, unknown> = {}) => 
   _id: id,
   title,
   body: '',
-  status: 'canon',
   createdAt: at,
   modifiedAt: at,
   ...extra,
@@ -55,6 +54,8 @@ describe('ARCH-2 search index', () => {
       }),
     ],
     ['characters', doc('C3', 'Trashed person', { deletedAt: at })],
+    // A53: a stray source note or tag left in older data is not searched.
+    ['characters', doc('C4', 'Ada Wong', { sourceNote: 'workbook marmalade', tags: ['quokka'] })],
   );
   const ids = (q: string) => index.search(q).map((h) => h.id);
 
@@ -78,5 +79,11 @@ describe('ARCH-2 search index', () => {
 
   test('ARCH-2 entries in the trash are not indexed', () => {
     expect(ids('trashed')).toEqual([]);
+  });
+
+  test('ARCH-2 a source note and tags left in stored data are not indexed', () => {
+    expect(ids('ada')).toEqual(['C4']);
+    expect(ids('marmalade')).toEqual([]);
+    expect(ids('quokka')).toEqual([]);
   });
 });

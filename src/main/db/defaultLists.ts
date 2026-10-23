@@ -30,16 +30,6 @@ export function defaultLists(): ListDoc[] {
     },
     { _id: 'communities', label: 'Communities', items: [] },
     {
-      _id: 'statuses',
-      label: 'Statuses',
-      items: [item('canon', 'Canon'), item('planned', 'Planned'), item('idea', 'Idea')],
-    },
-    {
-      _id: 'provenance',
-      label: 'Provenance',
-      items: [item('researched', 'Researched'), item('invented', 'Invented')],
-    },
-    {
       _id: 'eventCategories',
       label: 'Event categories',
       items: [
@@ -79,7 +69,5 @@ export function defaultLists(): ListDoc[] {
         item('voice', 'Voice'),
       ],
     },
-    /** Tags are added as entries use them, and renamed here (ED-8). */
-    { _id: 'tags', label: 'Tags', items: [] },
   ];
 }

@@ -8,7 +8,7 @@ export interface Picked {
 }
 
 /**
- * A43: an entry picked on a wide screen (a session log, an open question, a
+ * A43: an entry picked on a wide screen (an open question, a
  * place, a glossary term, a world event) opens in place, under its row, with
  * the full editor. One opens at a time; Close puts it away and gives the focus
  * back to whatever opened it, usually the row.

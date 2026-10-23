@@ -86,15 +86,9 @@ export function useSelection(
 
 /**
  * SB-2 step 3 window and SB-6 size budget, stored in the bible (ST-1). Shown
- * folded in Relevant to Session and as a panel in Settings.
+ * folded in Relevant to Session.
  */
-export function BriefSettings({
-  onChanged,
-  variant = 'details',
-}: {
-  onChanged?: () => void;
-  variant?: 'details' | 'panel';
-}) {
+export function BriefSettings({ onChanged }: { onChanged?: () => void }) {
   const undo = useUndo();
   const [s, setS] = useState<Response<'brief.settings.get'> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +135,6 @@ export function BriefSettings({
             onBlur={(e) => void save({ budget: Number(e.target.value) })}
           />
         </div>
-        <span>Briefs are written with {s.model}.</span>
       </div>
       {error && (
         <p className="callout crit" role="alert">
@@ -150,14 +143,6 @@ export function BriefSettings({
       )}
     </WriteFieldset>
   );
-  if (variant === 'panel') {
-    return (
-      <div className="panel stack tight" data-testid="settings-briefs">
-        <h4>Session briefs</h4>
-        {fields}
-      </div>
-    );
-  }
   return (
     <details className="sunken" data-testid="brief-settings">
       <summary>Brief settings</summary>
@@ -171,8 +156,7 @@ export function BriefSettings({
  * written, from the Writing picker, else a story year and point of view
  * (SB-1). The chapter heads it, then the scene note, the characters as tiles,
  * the world events strip and the cultural context, with the rest of the
- * selection folded below. It is the same selection the brief is written from
- * (SB-2, SB-3), shown live.
+ * selection folded below. It is the SB-2 selection (SB-3), shown live.
  */
 export function RelevantView({
   onOpen,
@@ -193,7 +177,7 @@ export function RelevantView({
   const [placeIds, setPlaceIds] = useState<string[]>([]);
   const [characterIds, setCharacterIds] = useState<string[]>([]);
   const input = useSessionInput(pov, { placeIds, characterIds });
-  // SB-9, IP-2: Remove and Keep before any brief is written, shared with Start session.
+  // SB-9, IP-2: Remove and Keep, kept for the bible.
   const { overrides, remove, keep } = useOverrides(input);
   const { result, error } = useSelection(input, overrides, bump);
   const povId = useId();

@@ -4,12 +4,11 @@ import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
 import {
   backstoryGrid,
-  insertMention,
+  insertEventTitle,
   lifeProblem,
   lifespanOf,
   momentsOf,
   moveLifeEnd,
-  withMentionLink,
   withYear,
 } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment } from '../../../../shared/domain/backstoryGrid';
@@ -39,7 +38,7 @@ import type { AddedItem } from '../editable';
 import { useEraEdits, useTitleRename } from '../timeline/gridShared';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -55,12 +54,6 @@ const FIELD_WORDS: Record<MomentField, string> = {
   worldContext: 'the relevant world events',
   characterId: 'whose moment it is',
   kind: 'the kind',
-  status: 'the status',
-  provenance: 'the provenance',
-  sourceNote: 'the source note',
-  sourceRef: 'the source location',
-  tags: 'the tags',
-  links: 'the links',
 };
 
 /**
@@ -86,7 +79,6 @@ export function BackstoryView(props: {
   const characters = useEntries('characters');
   const families = useEntries('families');
   const { numbers } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const unions = useEntries('unions');
   const parentLinks = useEntries('parentLinks');
   const momentEntries = useEntries('moments');
@@ -277,7 +269,6 @@ export function BackstoryView(props: {
     const data: Record<string, unknown> = {
       ...blankEntry(manifests.moments),
       title: '',
-      status: statusOf('idea'),
       characterId,
       year: at,
       endYear: null,
@@ -309,17 +300,8 @@ export function BackstoryView(props: {
     return run;
   };
 
-  /**
-   * `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9);
-   * `added`: the list item a select's Add new made, joined to the step.
-   */
-  const save = (
-    id: string,
-    field: MomentField,
-    value: unknown,
-    mentioned: readonly string[] = [],
-    added?: AddedItem,
-  ) => {
+  /** `added`: the list item a select's Add new made, joined to the step. */
+  const save = (id: string, field: MomentField, value: unknown, added?: AddedItem) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -329,13 +311,6 @@ export function BackstoryView(props: {
         unknown
       >;
       const patch: Record<string, unknown> = { [field]: value };
-      if (mentioned.length) {
-        let links = Array.isArray(before.links)
-          ? (before.links as { targetId: string; kind: string }[])
-          : [];
-        for (const t of mentioned) links = withMentionLink(links, t);
-        patch.links = links;
-      }
       // A moment over several years keeps its length when its year changes.
       if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
         patch.endYear = before.endYear + (value - Number(before.year));
@@ -397,11 +372,11 @@ export function BackstoryView(props: {
   };
 
   /**
-   * IP-4, ED-9: mention a world event in a moment's Relevant world events: the
-   * `@Title` on a line of its own and the link to the event, one step. It joins
-   * the queue, so a cell saved on its way out (the blur before the click) lands first.
+   * IP-4: a picked world event's title in a moment's Relevant world events, on
+   * a line of its own as plain text, one step. It joins the queue, so a cell
+   * saved on its way out (the blur before the click) lands first.
    */
-  const mention = (id: string, event: { id: string; title: string }) => {
+  const pickEvent = (id: string, event: { id: string; title: string }) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -410,21 +385,15 @@ export function BackstoryView(props: {
         unknown
       >;
       const text = typeof before.worldContext === 'string' ? before.worldContext : '';
-      const links = Array.isArray(before.links)
-        ? (before.links as { targetId: string; kind: string }[])
-        : [];
-      const worldContext = insertMention(text, event.title);
-      const nextLinks = withMentionLink(links, event.id);
-      if (worldContext === text && nextLinks.length === links.length) return;
+      const worldContext = insertEventTitle(text, event.title);
+      if (worldContext === text) return;
       const { entry } = await call('entry.update', {
         collection: 'moments',
         id,
-        patch: { worldContext, links: nextLinks },
+        patch: { worldContext },
       });
       const title = entryTitle(entry) || 'a moment';
-      undo.record(
-        editCommand(`Mentioned ${event.title} in ${title}`, 'moments', id, before, entry),
-      );
+      undo.record(editCommand(`Added ${event.title} to ${title}`, 'moments', id, before, entry));
     });
   };
 
@@ -625,9 +594,8 @@ export function BackstoryView(props: {
           fresh={fresh}
           freshKey={freshKey}
           onOpenTitle={() => openTitle(open.id, open.characterId)}
-          entry={momentEntries.find((e) => e._id === open.id) ?? null}
-          onSave={(field, value, mentioned, added) => save(open.id, field, value, mentioned, added)}
-          onMention={(e) => mention(open.id, e)}
+          onSave={(field, value, added) => save(open.id, field, value, added)}
+          onPickEvent={(e) => pickEvent(open.id, e)}
           onTrashed={() => trashedOne(open)}
           onClose={closeDialog}
           onPrev={prev ? () => show(prev.id) : null}

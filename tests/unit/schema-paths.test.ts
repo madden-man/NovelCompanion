@@ -10,9 +10,13 @@ describe('ED-7 SM-1 the paths a value has that its schema does not', () => {
       'names.romanization',
       'names.order',
     ]);
-    expect(unknownPaths(c, { links: [{ targetId: 'H1', kind: 'about', note: 'x' }] })).toEqual([
-      'links.0.note',
-    ]);
+    // A52: links left every entry, so they are a dropped field at the top.
+    expect(unknownPaths(c, { links: [{ targetId: 'H1', kind: 'about' }] })).toEqual(['links']);
+    expect(
+      unknownPaths(entrySchemas.places, {
+        descriptions: [{ startYear: null, endYear: null, text: 'x', note: 'x' }],
+      }),
+    ).toEqual(['descriptions.0.note']);
     expect(unknownPaths(c, { birth: { year: 1990, era: 'x' } })).toEqual(['birth.era']);
     expect(unknownPaths(c, { birth: { unknown: true } })).toEqual([]);
     expect(unknownPaths(c, { names: { full: 'A', chinese: '甲' }, familyIds: ['F'] })).toEqual([]);

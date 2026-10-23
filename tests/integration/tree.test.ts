@@ -7,6 +7,7 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+import { entriesWritten, entryStamps } from '../helpers/entryWrites';
 
 let store: Store;
 let bible: OpenBible;
@@ -21,7 +22,7 @@ afterAll(async () => {
   await store.close();
 });
 
-const revisions = () => bible.handle.collection('revisions').countDocuments();
+const stamps = () => entryStamps(bible.model);
 
 describe('FT-1 FT-4 tree queries against the loaded fixture', () => {
   test('FT-1 tree.get returns every person, union, and parent link from the read model', async () => {
@@ -107,13 +108,13 @@ describe('FT-1 FT-4 tree queries against the loaded fixture', () => {
 
 describe('FT-6 the write path refuses a person as their own ancestor', () => {
   test('FT-6 creating, editing, batching, or restoring a link that closes a loop is refused, and nothing is written', async () => {
-    const before = await revisions();
+    const before = stamps();
     const msg =
       /Margaret Hale is already an ancestor of Iris Hale-Zhou, so it would make someone their own ancestor/;
     await expect(
       invoke('entry.create', {
         collection: 'parentLinks',
-        data: { title: 'Loop', status: 'idea', parentId: 'H5', childId: 'H1', type: 'biological' },
+        data: { title: 'Loop', parentId: 'H5', childId: 'H1', type: 'biological' },
       }),
     ).rejects.toThrow(msg);
     await expect(
@@ -124,7 +125,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOPKID',
               title: 'Loop kid',
-              status: 'idea',
               names: { full: 'Loop kid' },
               birth: { unknown: true },
             },
@@ -134,7 +134,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOP1',
               title: 'a',
-              status: 'idea',
               parentId: 'Z5',
               childId: 'LOOPKID',
               type: 'biological',
@@ -145,7 +144,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
             data: {
               _id: 'LOOP2',
               title: 'b',
-              status: 'idea',
               parentId: 'LOOPKID',
               childId: 'H3',
               type: 'biological',
@@ -170,7 +168,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       collection: 'parentLinks',
       data: {
         title: 'X1 parent of U1',
-        status: 'idea',
         parentId: 'X1',
         childId: 'U1',
         type: 'guardian',
@@ -181,7 +178,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       collection: 'parentLinks',
       data: {
         title: 'U1 parent of X1',
-        status: 'idea',
         parentId: 'U1',
         childId: 'X1',
         type: 'guardian',
@@ -191,7 +187,8 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       invoke('entry.restore', { collection: 'parentLinks', id: entry._id }),
     ).rejects.toThrow(/own ancestor/);
     await invoke('entry.delete', { collection: 'parentLinks', id: back.entry._id });
-    expect(await revisions()).toBe(before + 4);
+    // Only the two links made along the way were written, each created and then trashed.
+    expect(entriesWritten(bible.model, before)).toBe(2);
   });
 
   test('FT-2 entry.createMany writes a person and their links in one transaction, all or nothing', async () => {
@@ -201,7 +198,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
         data: {
           _id: 'NEWKID',
           title: 'New kid',
-          status: 'idea',
           names: { full: 'New kid' },
           birth: { year: 2060 },
         },
@@ -211,7 +207,6 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
         data: {
           _id: 'NEWL1',
           title: 'Z5 parent of New kid',
-          status: 'idea',
           parentId: 'Z5',
           childId: 'NEWKID',
           type: 'biological',
@@ -234,23 +229,21 @@ describe('FT-6 the write path refuses a person as their own ancestor', () => {
       childId: 'NEWKID',
     });
     expect(
-      await bible.handle
-        .collection('revisions')
-        .countDocuments({ entryId: { $in: ['NEWKID', 'NEWL1'] } }),
-    ).toBe(2);
+      await bible.handle.collection('parentLinks').findOne({ _id: 'NEWL1' as never }),
+    ).toMatchObject({ childId: 'NEWKID' });
   });
 });
 
 describe('FT-10 tree positions are stored per bible', () => {
-  test('FT-10 saved positions come back from tree.get and after reopening, and write no revision', async () => {
-    const before = await revisions();
+  test('FT-10 saved positions come back from tree.get and after reopening, and write no entry', async () => {
+    const before = stamps();
     expect((await invoke('tree.get', {})).positions).toBeNull();
     const positions = { H1: { x: 9, y: 0 }, U1: { x: 0, y: -132, loose: true } };
     await invoke('tree.savePositions', { positions });
     expect((await invoke('tree.get', {})).positions).toEqual(positions);
     const again = await openBibleSession(store, bible.handle.id);
     expect((await ipcFor(() => again)('tree.get', {})).positions).toEqual(positions);
-    expect(await revisions()).toBe(before);
+    expect(entriesWritten(bible.model, before)).toBe(0);
   });
 });
 
@@ -270,7 +263,7 @@ describe('CH-3 the character page and the story time', () => {
   });
 
   test('CH-3 the story time drives the page age, persists in meta, and writes no entry', async () => {
-    const before = await revisions();
+    const before = stamps();
     const set = await invoke('storyTime.set', { time: { year: 2041 } });
     expect(set).toEqual({
       time: { year: 2041 },
@@ -283,7 +276,7 @@ describe('CH-3 the character page and the story time', () => {
     });
     // The current-position age stays at the last written chapter.
     expect(page.current.state).toEqual({ state: 'alive', age: 82, dyingThisYear: false });
-    expect(await revisions()).toBe(before);
+    expect(entriesWritten(bible.model, before)).toBe(0);
     // Reopen the bible: the story time comes back from the meta document.
     const again = await openBibleSession(store, bible.handle.id);
     expect(await ipcFor(() => again)('storyTime.get', {})).toEqual(set);
@@ -334,7 +327,7 @@ describe('M1 review fix: rejecting a proposal checks it was still pending', () =
         source: 'claude',
         op: 'create',
         collection: 'worldEvents',
-        data: { title: 'Flood', status: 'idea', placeIds: [], reality: 'real' },
+        data: { title: 'Flood', placeIds: [], reality: 'real' },
       }),
     ).rejects.toThrow('World events have no fields named placeIds, reality');
     // Nested: a dropped name field inside names is refused, naming its path.

@@ -1,15 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import {
   countListUsage,
-  defaultProvenance,
-  defaultStatus,
   familyColorCss,
   familyToken,
   isUnder,
   listColorCss,
   moveItem,
   parentProblem,
-  statusKind,
 } from '../../src/shared/domain/lists';
 import {
   ageGroupOptions,
@@ -24,18 +21,11 @@ import {
 import { gridSpan, yearWindow } from '../../src/shared/domain/worldGrid';
 import { backstoryGrid, eventsNear } from '../../src/shared/domain/backstoryGrid';
 import { selectForSession } from '../../src/shared/domain/brief/selection';
-import {
-  isCanon,
-  missingLeadSections,
-  structuredBrief,
-} from '../../src/shared/domain/brief/render';
-import { establishedPlanned } from '../../src/shared/domain/manuscript';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { computeWarnings } from '../../src/shared/domain/warnings';
 import {
   BibleSettings,
   DEFAULT_BIBLE_SETTINGS,
-  DEFAULT_BRIEF_HEADINGS,
   DEFAULT_TEMPLATES,
   Family,
   ListDoc,
@@ -46,8 +36,6 @@ import {
   manifests,
   templates,
 } from '../../src/shared/schema';
-import { coerceCell } from '../../src/shared/domain/import';
-import type { ListAdd } from '../../src/shared/domain/import';
 import { briefCollections } from '../helpers/briefFixture';
 import { readFixture } from '../helpers/loadFixture';
 
@@ -136,170 +124,14 @@ describe('IP-8 list items carry a colour and extra values, move, and take parent
   });
 });
 
-describe('IP-9 statuses and provenance are lists with colours, and a status has a kind', () => {
-  const lists = fixture.lists!;
-
-  test('IP-9 statusKind reads the item kind, so a renamed or added status keeps the brief rules', () => {
-    expect(statusKind(lists, 'canon')).toBe('canon');
-    expect(statusKind(lists, 'planned')).toBe('planned');
-    expect(statusKind(lists, 'idea')).toBe('idea');
-    const own = [
-      {
-        _id: 'statuses',
-        items: [
-          { id: 'settled', label: 'Settled', extra: { kind: 'canon' } },
-          { id: 'canon', label: 'Canon', extra: { kind: 'planned' } },
-        ],
-      },
-    ];
-    expect(statusKind(own, 'settled')).toBe('canon');
-    expect(statusKind(own, 'canon')).toBe('planned');
-  });
-
-  test('IP-9 defaultStatus gives the first status of a kind, then the item named for it, then the first', () => {
-    const own = [
-      {
-        _id: 'statuses',
-        items: [
-          { id: 'settled', label: 'Settled', extra: { kind: 'canon' } },
-          { id: 'notion', label: 'Notion', extra: { kind: 'idea' } },
-          { id: 'whim', label: 'Whim', extra: { kind: 'idea' } },
-        ],
-      },
-    ];
-    expect(defaultStatus(own, 'idea')).toBe('notion');
-    expect(defaultStatus(own, 'canon')).toBe('settled');
-    expect(defaultStatus(own, 'planned')).toBe('settled');
-    expect(defaultStatus(lists, 'planned')).toBe('planned');
-    expect(
-      defaultStatus([{ _id: 'statuses', items: [{ id: 'idea', label: 'Idea' }] }], 'idea'),
-    ).toBe('idea');
-    expect(defaultStatus([], 'idea')).toBe('idea');
-    expect(defaultProvenance(lists, 'invented')).toBe('invented');
-    expect(defaultProvenance([{ _id: 'provenance', items: [] }], 'invented')).toBeNull();
-    expect(defaultProvenance([], 'invented')).toBe('invented');
-  });
-
-  test('IP-9 a status with no kind reads by its seeded ID, and anything unknown is never canon', () => {
-    expect(statusKind([], 'canon')).toBe('canon');
-    expect(statusKind([], 'planned')).toBe('planned');
-    expect(statusKind([], 'drafted')).toBe('idea');
-    expect(statusKind([], undefined)).toBe('idea');
-    expect(isCanon({ status: 'drafted' })).toBe(false);
-    expect(isCanon({ status: 'drafted', kind: 'canon' })).toBe(true);
-  });
-
+describe('IP-9 list colours', () => {
   test('IP-9 the seeded colours draw through their theme tokens; any other hex as it is', () => {
-    const statuses = fixtureList('statuses').items as { id: string; color: string }[];
-    expect(statuses.map((s) => listColorCss(s.color))).toEqual([
-      'var(--canon)',
-      'var(--series-4)',
-      'var(--idea)',
-    ]);
-    const prov = fixtureList('provenance').items as { color: string }[];
-    expect(prov.map((p) => listColorCss(p.color))).toEqual([
-      'var(--series-1)',
-      'var(--serious-ink)',
-    ]);
+    expect(listColorCss('#008300')).toBe('var(--kind-move)');
+    expect(listColorCss('#B84F25')).toBe('var(--serious-ink)');
+    // The colours of the removed statuses are plain colours now.
+    expect(listColorCss('#1b705f')).toBe('#1b705f');
     expect(listColorCss('#123456')).toBe('#123456');
     expect(listColorCss(null)).toBeNull();
-  });
-
-  test('IP-9 status and provenance are list references in every manifest', () => {
-    for (const manifest of Object.values(manifests)) {
-      const status = manifest.find((s) => s.name === 'status')!;
-      const prov = manifest.find((s) => s.name === 'provenance')!;
-      expect([status.kind, status.listId, status.required]).toEqual(['listItem', 'statuses', true]);
-      expect([prov.kind, prov.listId, prov.nullable]).toEqual(['listItem', 'provenance', true]);
-    }
-  });
-
-  test('IP-9 SB-5 the structured brief files an item by its status kind: a canon-kind status is canon, an idea-kind one is not', () => {
-    const cols = briefCollections(true);
-    cols.lists = cols.lists!.map((l) =>
-      l._id === 'statuses'
-        ? {
-            ...l,
-            items: [
-              ...(l.items as object[]),
-              {
-                id: 'settled',
-                label: 'Settled',
-                parentId: null,
-                color: null,
-                extra: { kind: 'canon' },
-              },
-              {
-                id: 'shelved',
-                label: 'Shelved',
-                parentId: null,
-                color: null,
-                extra: { kind: 'idea' },
-              },
-            ],
-          }
-        : l,
-    );
-    const b4 = cols.moments!.find((m) => m._id === 'B4')!;
-    const before = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH6' });
-    const b4Item = before.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!;
-    expect(b4Item.kind).toBe(b4.status === 'canon' ? 'canon' : b4.status);
-
-    const asStatus = (status: string) => {
-      const c = {
-        ...cols,
-        moments: cols.moments!.map((m) => (m._id === 'B4' ? { ...m, status } : m)),
-      };
-      const sel = selectForSession(fromCollections(c), { kind: 'chapter', chapterId: 'CH6' });
-      const md = structuredBrief(sel);
-      const section = md.slice(md.indexOf('## 5. Backstory'), md.indexOf('## 6.'));
-      return {
-        item: sel.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!,
-        canon:
-          section.indexOf('Canon:') >= 0 && section.indexOf('[[B4]]') > section.indexOf('Canon:'),
-        underIdea:
-          section.indexOf('Planned or idea:') >= 0 &&
-          section.indexOf('[[B4]]') > section.indexOf('Planned or idea:'),
-      };
-    };
-    const settled = asStatus('settled');
-    expect([settled.item.status, settled.item.kind, settled.canon]).toEqual([
-      'settled',
-      'canon',
-      true,
-    ]);
-    const shelved = asStatus('shelved');
-    expect([shelved.item.status, shelved.item.kind, shelved.underIdea]).toEqual([
-      'shelved',
-      'idea',
-      true,
-    ]);
-  });
-
-  test('IP-9 MS-3 a written chapter establishes entries whose status kind is planned', () => {
-    const cols = briefCollections(true);
-    const plannedIds = establishedPlanned(fromCollections(cols), 'CH6').map((e) => e.id);
-    expect(plannedIds.length).toBeGreaterThan(0);
-    const withKind = (kind: string) =>
-      cols.lists!.map((l) =>
-        l._id === 'statuses'
-          ? {
-              ...l,
-              items: (l.items as { id: string; extra?: object }[]).map((i) =>
-                i.id === 'planned' ? { ...i, extra: { kind } } : i,
-              ),
-            }
-          : l,
-      );
-    // The same entries, their status now meaning idea: nothing is established.
-    expect(
-      establishedPlanned(fromCollections({ ...cols, lists: withKind('idea') }), 'CH6'),
-    ).toEqual([]);
-    expect(
-      establishedPlanned(fromCollections({ ...cols, lists: withKind('planned') }), 'CH6').map(
-        (e) => e.id,
-      ),
-    ).toEqual(plannedIds);
   });
 });
 
@@ -453,7 +285,13 @@ describe('IP-11 the grids, the brief window and the picker take the bible number
     expect(bibleSettings(undefined)).toEqual(DEFAULT_BIBLE_SETTINGS);
     const s = bibleSettings({
       cultureUnit: 'five',
-      numbers: { timelineStart: 2000, windowBefore: 'x', autosaveMs: 99_999, pickerReach: 4 },
+      numbers: {
+        timelineStart: 2000,
+        windowBefore: 'x',
+        autosaveMs: 99_999,
+        pickerReach: 4,
+        outlineVersionDays: 0,
+      },
     });
     expect(s.cultureUnit).toBe('five');
     expect(s.numbers).toEqual({
@@ -463,7 +301,11 @@ describe('IP-11 the grids, the brief window and the picker take the bible number
       windowAfter: 1,
       pickerReach: 4,
       autosaveMs: 500,
+      outlineVersionDays: 7,
     });
+    expect(bibleSettings({ numbers: { outlineVersionDays: 14 } }).numbers.outlineVersionDays).toBe(
+      14,
+    );
     // An end before the start falls back to the default span.
     expect(bibleSettings({ numbers: { timelineStart: 2200 } }).numbers.timelineStart).toBe(2025);
     expect(BibleSettings.safeParse(DEFAULT_BIBLE_SETTINGS).success).toBe(true);
@@ -476,7 +318,6 @@ describe('IP-12 family colour is any hex colour', () => {
       _id: 'F1',
       title: 'Hale',
       name: 'Hale',
-      status: 'canon',
       createdAt: AT,
       modifiedAt: AT,
     };
@@ -508,12 +349,10 @@ describe('IP-14 templates', () => {
       chapterTitle: 'New chapter',
       sectionTitle: 'New section',
       partTitle: 'Part {n}',
-      bookTitle: 'Book {n}',
       strandPresent: 'present',
       strandBackstory: 'backstory',
       eraName: 'New era',
     });
-    expect(DEFAULT_TEMPLATES.briefHeadings).toEqual([...DEFAULT_BRIEF_HEADINGS]);
     expect(DEFAULT_TEMPLATES.linkTypeLabels.biological).toBe('Biological parent');
   });
 
@@ -522,13 +361,11 @@ describe('IP-14 templates', () => {
       templates: {
         chapterTitle: 'Untitled scene',
         sectionTitle: '',
-        briefHeadings: ['too short'],
         linkTypeLabels: { step: 'Stepparent' },
       },
     });
     expect(t.chapterTitle).toBe('Untitled scene');
     expect(t.sectionTitle).toBe('New section');
-    expect(t.briefHeadings).toEqual([...DEFAULT_BRIEF_HEADINGS]);
     expect(t.linkTypeLabels).toMatchObject({ step: 'Stepparent', married: 'Married' });
   });
 
@@ -536,64 +373,5 @@ describe('IP-14 templates', () => {
     expect(fillTemplate('Part {n}', 2)).toBe('Part 2');
     expect(fillTemplate('Book {n} of the saga', 1)).toBe('Book 1 of the saga');
     expect(fillTemplate('New chapter')).toBe('New chapter');
-  });
-
-  test('IP-14 DB-2 the structured brief uses the bible headings, and the lead check accepts them', () => {
-    const sel = selectForSession(fromCollections(briefCollections(true)), {
-      kind: 'chapter',
-      chapterId: 'CH6',
-    });
-    const headings: string[] = [...DEFAULT_BRIEF_HEADINGS];
-    headings[0] = '1. Who is in the scene';
-    headings[3] = '4. Where';
-    const md = structuredBrief(sel, headings);
-    expect(md).toContain('## 1. Who is in the scene');
-    expect(md).toContain('## 4. Where');
-    expect(md).not.toContain('## 1. Characters and their ages');
-    expect(missingLeadSections(md, headings)).toEqual([]);
-    expect(missingLeadSections(structuredBrief(sel))).toEqual([]);
-    expect(missingLeadSections('## Places\n', headings)).toEqual([
-      '1. Who is in the scene',
-      '2. World events ongoing',
-      '3. Cultural expectations',
-    ]);
-  });
-});
-
-describe('IP-8 IP-12 the importer fills region and colour fields', () => {
-  const env = (add: boolean) => ({
-    ctx: {
-      file: { fileName: 'x.xlsx', modifiedAt: AT },
-      newId: () => 'N1',
-      list: (id: string) => fixture.lists!.find((l) => l._id === id) as never,
-      entries: () => [],
-    },
-    addMissingListItems: add,
-    createMissing: false,
-    listAdds: [] as ListAdd[],
-    resolveName: () => null,
-  });
-  const regions = manifests.worldEvents.find((s) => s.name === 'regions')!;
-
-  test('IP-8 a regions cell names regions by label; a new one is added to the list when the import may add', () => {
-    const e = env(true);
-    expect(coerceCell(regions, 'Oregon; China; Mars', e)).toEqual({
-      ok: true,
-      value: ['oregon', 'china', 'mars'],
-    });
-    expect(e.listAdds).toEqual([{ listId: 'regions', id: 'mars', label: 'Mars', parentId: null }]);
-    expect(coerceCell(regions, 'Mars', env(false))).toEqual({
-      ok: false,
-      reason: '"Mars" is not in the Regions list',
-    });
-  });
-
-  test('IP-12 a colour cell takes a hex value and refuses anything else', () => {
-    const color = manifests.families.find((s) => s.name === 'color')!;
-    expect(coerceCell(color, '#1BAF7A', env(false))).toEqual({ ok: true, value: '#1baf7a' });
-    expect(coerceCell(color, 'green', env(false))).toEqual({
-      ok: false,
-      reason: '"green" is not a hex colour such as #2a78d6',
-    });
   });
 });

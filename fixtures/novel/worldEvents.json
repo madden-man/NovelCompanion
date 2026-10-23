@@ -2,9 +2,6 @@
   {
     "_id": "E1",
     "title": "Beijing hosts the Summer Olympics",
-    "status": "canon",
-    "provenance": "researched",
-    "sourceNote": "Games of the XXIX Olympiad, Beijing, August 2008.",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2008, "month": 8, "day": 8 },
@@ -17,8 +14,6 @@
   {
     "_id": "E2",
     "title": "Care robots licensed for home use in Oregon",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2027 },
@@ -28,8 +23,6 @@
   {
     "_id": "E3",
     "title": "Columbia River king tide floods downtown Portland",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2034, "month": 1 },
@@ -41,8 +34,6 @@
   {
     "_id": "E4",
     "title": "Pacific Rim trade accord signed",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2036 },
@@ -52,8 +43,6 @@
   {
     "_id": "E5",
     "title": "Grid batteries replace the last coal plant in Guangdong",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2042 },
@@ -63,8 +52,6 @@
   {
     "_id": "E6",
     "title": "Pearl River delta seawall completed",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2048 },
@@ -75,8 +62,6 @@
   {
     "_id": "E7",
     "title": "Visa lottery reopens between China and the United States",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2057 },
@@ -87,8 +72,6 @@
   {
     "_id": "E8",
     "title": "Basic income pilot in the Pacific Northwest",
-    "status": "idea",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2063 },
@@ -98,8 +81,6 @@
   {
     "_id": "E9",
     "title": "Household robots outnumber cars in Portland",
-    "status": "idea",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2072 },
@@ -109,8 +90,6 @@
   {
     "_id": "E10",
     "title": "Arctic summer sea ice is gone for good",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2090 },
@@ -121,8 +100,6 @@
   {
     "_id": "E11",
     "title": "Guangzhou metro reaches the coast",
-    "status": "idea",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "start": { "year": 2081 },

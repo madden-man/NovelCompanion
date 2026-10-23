@@ -8,8 +8,8 @@ import type { TestDb } from './helpers';
  * A44: long text fields are rich text boxes that store Markdown. These tests
  * drive the era description (the box Tommy named) and a character's text
  * boxes through the real editor: typing shortcuts, the selection toolbar,
- * pasting from a word processor and as Markdown, Cmd+Z across the box and
- * the app, and `@` links.
+ * pasting from a word processor and as Markdown, and Cmd+Z across the box
+ * and the app.
  */
 
 let db: TestDb;
@@ -50,7 +50,6 @@ test.beforeAll(async () => {
         startYear: 2040,
         endYear: 2049,
         body: ERA_HTML,
-        status: 'planned',
       },
     },
   ]);
@@ -271,43 +270,11 @@ async function openCharacter(name: string): Promise<Locator> {
   return page.getByTestId('character-page');
 }
 
-test('A44 ED-9 @ in a character box links an entry, stores @Title, and shows it as a chip', async () => {
-  for (const name of ['Wei Li', 'Margaret Hale']) {
-    await invoke('entry.create', {
-      collection: 'characters',
-      data: { title: name, status: 'canon', names: { full: name }, birth: { year: 1990 } },
-    });
-  }
-  const p = await openCharacter('Wei Li');
-  const box = p.getByRole('textbox', { name: 'Description', exact: true });
-  await box.click();
-  await page.keyboard.type('Wei writes to @Marg');
-  const list = p.getByRole('listbox', { name: 'Matching entries' });
-  await expect(list.getByRole('option').first()).toContainText('Margaret Hale');
-  await page.keyboard.press('Enter');
-  await expect(list).toHaveCount(0);
-  await page.keyboard.type('every week.');
-  await waitSaved(page);
-  const wei = (await invoke('entry.list', { collection: 'characters', trash: 'exclude' })).entries
-    .map((e) => e.entry)
-    .find((e) => e.title === 'Wei Li')!;
-  const margaret = (
-    await invoke('entry.list', { collection: 'characters', trash: 'exclude' })
-  ).entries
-    .map((e) => e.entry)
-    .find((e) => e.title === 'Margaret Hale')!;
-  expect(wei.body).toBe('Wei writes to @Margaret Hale every week.');
-  expect(wei.links).toContainEqual({ targetId: margaret._id, kind: 'mention' });
-  await expect(box.locator('.mention-chip')).toHaveText('@Margaret Hale');
-  // Escape closes the list and leaves the text as typed.
-  await page.keyboard.type(' Also @Wei');
-  await expect(list).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(list).toHaveCount(0);
-  await expect(box).toContainText('Also @Wei');
-});
-
 test('A44 SM-1 the character boxes start tall enough to read, grow with their text, and keep a reading measure', async () => {
+  await invoke('entry.create', {
+    collection: 'characters',
+    data: { title: 'Margaret Hale', names: { full: 'Margaret Hale' }, birth: { year: 1990 } },
+  });
   const p = await openCharacter('Margaret Hale');
   const box = p.getByRole('textbox', { name: 'Backstory', exact: true });
   const lineHeight = await box.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));

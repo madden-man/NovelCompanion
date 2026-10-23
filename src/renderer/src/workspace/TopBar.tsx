@@ -9,15 +9,12 @@ import { useStrandOptions } from './timeline/StoryTimeDialog';
  * The bar above every screen of an open bible: the story year slider, the
  * era as a button that opens the year view (KB-2, as Cmd+T does), the
  * chapter being written, Undo and Redo with this session's changes (ED-3,
- * A43), Relevant to Session, and Start session. The first two
- * read and write the one story time (TM-3), so the tree, the timeline,
- * character ages, and the session selection follow them. Start session opens
- * the DB-2 flow on the Sessions screen (SM-11) with the chapter being written
- * as its section.
+ * A43), and Relevant to Session. The first two read and write the one story
+ * time (TM-3), so the tree, the timeline, character ages, and the session
+ * selection follow them.
  */
 export function TopBar(props: {
   onRelevant: () => void;
-  onStartSession: () => void;
   /** SM-10: Relevant to Session is the screen showing. */
   relevantActive?: boolean;
 }) {
@@ -125,14 +122,6 @@ export function TopBar(props: {
           title="The entries that matter for the chapter being written"
         >
           Relevant to Session
-        </button>
-        <button
-          type="button"
-          className="btn primary small"
-          onClick={props.onStartSession}
-          data-testid="top-start-session"
-        >
-          Start session
         </button>
       </div>
     </section>

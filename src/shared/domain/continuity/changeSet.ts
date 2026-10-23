@@ -23,17 +23,11 @@ import type { TimelineData } from '../timeline';
 
 /** Collections a change set may write: the bible, not the app's own records. */
 export const CHANGE_SET_COLLECTIONS: EntryCollection[] = ENTRY_COLLECTIONS.filter(
-  (c) => !['findings', 'briefs', 'sessionLogs'].includes(c),
+  (c) => c !== 'findings',
 );
 
 /** Fields a change set never writes: the manuscript is read only (MS-5), and import bookkeeping. */
-const NEVER = new Set([
-  'manuscriptText',
-  'manuscriptSource',
-  'sourceFile',
-  'sourceRef',
-  'summaryOutOfDate',
-]);
+const NEVER = new Set(['manuscriptText', 'manuscriptSource', 'sourceFile', 'summaryOutOfDate']);
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 

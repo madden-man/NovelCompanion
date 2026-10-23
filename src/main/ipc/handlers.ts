@@ -5,17 +5,10 @@ import type { Store } from '../db';
 import { createBibleWithDefaults, openBibleForApp } from '../db/session';
 import type { OpenBible } from '../db/session';
 import { checkExternalUrl } from '../links';
-import type { ImportBridge, ImportDeps } from './importHandlers';
+import type { BackupDeps } from './backupHandlers';
 import type { SessionDeps } from './sessionHandlers';
-import { printHtmlToPdf } from '../session/pdf';
 import { registerSessionClaude } from '../session/claude';
-import { DriveService, fetchDriveFile, setDriveService } from '../drive';
-import { gdocSource, registerManuscriptSource } from '../session/sources';
 import { runtimeSessionClaude } from '../claude/session';
-import { GOOGLE_ENDPOINTS, endpointsAt } from '../drive/oauth';
-import { keychainStore, memoryStore } from '../drive/secrets';
-import { DRIVE_CHANNELS, driveHandlers } from './driveHandlers';
-import type { DriveChannel } from './driveHandlers';
 import {
   ALLOW_TEST_URI_ENV,
   KEYCHAIN_ACCOUNT,
@@ -103,20 +96,14 @@ function broadcast<E extends EventName>(event: E, payload: EventPayload<E>): voi
 const currentSummary = () =>
   current ? { id: current.session.handle.id, name: current.name } : null;
 
-let closeDecision: ((proceed: boolean) => void) | null = null;
-let closePromptShown: (() => void) | null = null;
+let flushed: (() => void) | null = null;
 
-/** SL-1: main registers what happens when the page says the stop prompt is showing. */
-export function onClosePromptShown(fn: () => void): void {
-  closePromptShown = fn;
+/** Main registers what happens when the page says it flushed its pending edits on close. */
+export function onFlushed(fn: () => void): void {
+  flushed = fn;
 }
 
-/** SL-1: main registers what happens when the stop prompt is answered or cancelled. */
-export function onCloseDecision(fn: (proceed: boolean) => void): void {
-  closeDecision = fn;
-}
-
-/** True when a bible is open, so closing the app should ask where the writing stopped. A read-only snapshot has nowhere to save the note. */
+/** True when a bible is open, so closing the app first lets the page save its pending edits. A read-only snapshot has nothing to save. */
 export function hasOpenBible(): boolean {
   return current !== null && !current.readOnly;
 }
@@ -295,53 +282,14 @@ const seams = (): boolean => testSeamsHonoured(process.env, { isPackaged: app.is
 const testPath = (name: string): string | null =>
   seams() && process.env[name] ? (process.env[name] as string) : null;
 
-/**
- * GD-1: the one Drive service. A build on a test database never reads the
- * keychain (as `mongoUri` skips it), and one honouring the test seams may point Drive at
- * a local fake Google.
- */
-const TEST_GOOGLE_ENV = 'NOVEL_COMPANION_TEST_GOOGLE_BASE';
-function makeDriveService(): DriveService {
-  const base = testPath(TEST_GOOGLE_ENV);
-  const underTest =
-    base !== null || testDatabaseHonoured(process.env, { isPackaged: app.isPackaged });
-  if (base && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(base)) {
-    return new DriveService({
-      secrets: memoryStore(),
-      endpoints: endpointsAt(base),
-      // The fake consent page redirects straight to the loopback listener.
-      openBrowser: async (url) => void (await fetch(url)),
-      authTimeoutMs: 10_000,
-    });
-  }
-  return new DriveService({
-    secrets: underTest ? memoryStore() : keychainStore(),
-    endpoints: GOOGLE_ENDPOINTS,
-    // The consent page opens in the system browser, never in the app's window.
-    openBrowser: (url) => shell.openExternal(url),
-  });
-}
-
-let importBridge: ImportBridge | null = null;
-let onDriveApplied: ((origin: string) => Promise<void>) | null = null;
-
-const importDeps: ImportDeps & SessionDeps = {
-  bridge: (b) => {
-    importBridge = b;
-  },
-  onApplied: (origin) => onDriveApplied?.(origin),
-  async pickFile(kind) {
-    const forced = testPath(
-      kind === 'workbook' ? 'NOVEL_COMPANION_TEST_PICK_FILE' : 'NOVEL_COMPANION_TEST_PICK_DOCUMENT',
-    );
+const fileDeps: BackupDeps & SessionDeps = {
+  async pickFile() {
+    const forced = testPath('NOVEL_COMPANION_TEST_PICK_DOCUMENT');
     if (forced) return forced;
     const result = await dialog.showOpenDialog({
-      title: kind === 'workbook' ? 'Choose an Excel workbook' : 'Choose a Word document',
+      title: 'Choose a Word document',
       properties: ['openFile'],
-      filters:
-        kind === 'workbook'
-          ? [{ name: 'Excel workbooks', extensions: ['xlsx'] }]
-          : [{ name: 'Word documents', extensions: ['docx'] }],
+      filters: [{ name: 'Word documents', extensions: ['docx'] }],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   },
@@ -355,21 +303,6 @@ const importDeps: ImportDeps & SessionDeps = {
     });
     return result.canceled ? null : (result.filePath ?? null);
   },
-  /** SB-8: where an exported brief goes. Test builds may name a folder instead of a dialog. */
-  async pickExportPath(defaultName, format) {
-    const dir = testPath('NOVEL_COMPANION_TEST_BRIEF_EXPORT_DIR');
-    if (dir) return join(dir, defaultName);
-    const result = await dialog.showSaveDialog({
-      title: format === 'pdf' ? 'Export the brief as a PDF' : 'Export the brief as Markdown',
-      defaultPath: defaultName,
-      filters:
-        format === 'pdf'
-          ? [{ name: 'PDF', extensions: ['pdf'] }]
-          : [{ name: 'Markdown', extensions: ['md'] }],
-    });
-    return result.canceled ? null : (result.filePath ?? null);
-  },
-  printPdf: (html) => printHtmlToPdf(html),
   async pickBibleFile() {
     const forced = testPath('NOVEL_COMPANION_TEST_BIBLE_FILE');
     if (forced) return forced;
@@ -395,35 +328,16 @@ export function registerHandlers(): void {
   handle('tree.export', (req) => exportTree(req));
   // WT-1: the writing tools read Datamuse from main; nothing in the bible changes.
   handle('words.lookup', (req) => lookupWords(req));
-  handle('app.confirmClose', ({ proceed }) => {
-    closeDecision?.(proceed);
-    return { ok: true as const };
-  });
-  handle('app.closePromptShown', () => {
-    closePromptShown?.();
+  handle('app.flushed', () => {
+    flushed?.();
     return { ok: true as const };
   });
   registerAppHandlers();
-  const handlers = bibleHandlers(() => current?.session ?? null, importDeps);
+  const handlers = bibleHandlers(() => current?.session ?? null, fileDeps);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, guard(channel, handlers[channel] as Handler<BibleChannel>));
   }
-  // Google Drive (M9).
-  const drive = makeDriveService();
-  setDriveService(drive);
-  // MS-1: chapters can be read from Google Docs through the same Drive service (read only, MS-5).
-  registerManuscriptSource(gdocSource(fetchDriveFile));
-  const dh = driveHandlers(
-    () => current?.session ?? null,
-    () => drive,
-    () => importBridge,
-  );
-  onDriveApplied = dh.onApplied;
-  for (const channel of DRIVE_CHANNELS) {
-    handle(channel, guard(channel, dh.handlers[channel] as Handler<DriveChannel>));
-  }
-
-  // Claude (ARCH-4, AI-1 to AI-7, IM-5).
+  // Claude (ARCH-4, AI-1 to AI-7).
   const claudeSetup = claudeDeps({
     isPackaged: app.isPackaged,
     testSeams: seams(),
@@ -435,9 +349,9 @@ export function registerHandlers(): void {
     emit: (e) => broadcast('claude.stream', e),
   });
   claudeRuntime = claudeSetup.runtime;
-  // Briefs (SB-4, DB-2) and chapter summaries (MS-2) run through the same runtime: streamed,
-  // stoppable, saved per AI-1, with the models from Claude settings (DB-4). Test builds get the
-  // recorded Claude from NOVEL_COMPANION_TEST_CLAUDE, like every other Claude feature.
+  // Chapter summaries (MS-2) run through the same runtime: streamed, stoppable, saved per
+  // AI-1, with the models from Claude settings (DB-4). Test builds get the recorded Claude
+  // from NOVEL_COMPANION_TEST_CLAUDE, like every other Claude feature.
   registerSessionClaude(
     runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
   );
@@ -454,7 +368,7 @@ export function registerHandlers(): void {
 }
 
 /**
- * ARCH-6: every bible, Drive, and Claude channel runs through this. A write
+ * ARCH-6: every bible and Claude channel runs through this. A write
  * while a snapshot is open read-only is refused before it runs; a request
  * that fails because MongoDB went away says so and marks the connection lost.
  */

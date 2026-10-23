@@ -74,13 +74,9 @@ function firstLineOf(text: string, max = 120): string {
   return line.length > max ? `${line.slice(0, max - 3).trimEnd()}...` : line;
 }
 
-export type EntryStatus = 'canon' | 'planned' | 'idea';
-
 export interface EntriesFilter {
   /** Kind keys shown. */
   kinds: ReadonlySet<string>;
-  /** Null shows every status. */
-  status: EntryStatus | null;
   /** The search box, as typed. */
   query: string;
   /** IDs the search channel returned for the query (SR-1); they match too. */
@@ -143,7 +139,7 @@ export function textMatches(entry: Doc, query: string): boolean {
 
 const stamp = (e: Doc) => (typeof e.modifiedAt === 'string' ? Date.parse(e.modifiedAt) || 0 : 0);
 
-/** Indexed rows that pass the kind chips, the status, and the search, newest change first. */
+/** Indexed rows that pass the kind chips and the search, newest change first. */
 export function filterIndexed(
   rows: readonly IndexedEntry[],
   filter: EntriesFilter,
@@ -152,7 +148,6 @@ export function filterIndexed(
   const out = rows.filter(
     (r) =>
       filter.kinds.has(r.kindKey) &&
-      (filter.status === null || r.entry.status === filter.status) &&
       (!words.length ||
         words.every((w) => r.haystack.includes(w)) ||
         (filter.hits?.has(r.id) ?? false)),
@@ -163,7 +158,7 @@ export function filterIndexed(
   );
 }
 
-/** The rows that pass the kind chips, the status, and the search, newest change first. */
+/** The rows that pass the kind chips and the search, newest change first. */
 export function filterEntries(rows: readonly EntriesRow[], filter: EntriesFilter): EntriesRow[] {
   return filterIndexed(
     rows.filter((r) => !r.entry.deletedAt).map((r) => indexEntry(r.collection, r.entry)),

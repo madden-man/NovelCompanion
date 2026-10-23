@@ -4,8 +4,6 @@ import type { ClaudeFeature } from '../../../shared/claude';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { Disclosure } from './claude';
-import { DriveSettingsSection } from './drive';
-import { BriefSettings } from './sessions/relevant';
 import { APPEARANCES } from '../../../shared/ipcApp';
 import type { Appearance, MongoSettingsWire } from '../../../shared/ipcApp';
 import { applyAppearance } from '../appearance';
@@ -27,10 +25,9 @@ function LoadFailed(props: { what: string; error: string; testId: string }) {
 
 /**
  * Settings (ST-1), one screen: Claude (the API key, masked and replace only,
- * the model per feature, the brief window and size budget), this bible's
- * romanization systems and snapshot count, the MongoDB connection (masked,
- * replace only, tested before the app switches to it), the Google Drive
- * connection, and appearance. Per-bible settings live in the bible's meta
+ * and the model per feature), this bible's romanization systems and snapshot
+ * count, the MongoDB connection (masked, replace only, tested before the app
+ * switches to it), and appearance. Per-bible settings live in the bible's meta
  * through the one write path; app-wide ones in the app's data folder; every
  * secret in the keychain (ARCH-5).
  */
@@ -46,7 +43,6 @@ export function SettingsView() {
           <MongoSettings />
         </div>
       </div>
-      <DriveSettingsSection />
       <AppearanceSettings />
     </section>
   );
@@ -495,7 +491,6 @@ function ClaudeSettings() {
           </p>
         )}
       </div>
-      <BriefSettings variant="panel" key={status.models.briefs} />
       <ClaudeInstructionsSettings />
       <Disclosure confirmedAt={status.acknowledgedAt} />
     </div>

@@ -1,22 +1,12 @@
 /**
- * Manuscript chapters (MS-1 to MS-5): the text diff shown on re-import, the
- * "summary may be out of date" rule, and the planned entries a written
- * chapter establishes. Pure functions; nothing here writes anywhere, and no
- * code path in the app writes to a manuscript file or document (MS-5, A4).
+ * Manuscript chapters (MS-1 to MS-5): the text diff shown on re-import and
+ * the "summary may be out of date" rule. Pure functions; nothing here writes
+ * anywhere, and no code path in the app writes to a manuscript file or
+ * document (MS-5, A4).
  */
-import { statusKind } from './lists';
 import { plain } from './brief/selection';
-import { characterName } from './timeline';
-import type { TimelineData } from './timeline';
-import { isPlainObject } from './paths';
-import type { Doc } from './paths';
-import { entryTitle } from '../schema';
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const live = (d: Doc | undefined): d is Doc => !!d && !d.deletedAt;
-const idList = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 
 /** The manuscript as lines of plain text, one per paragraph; a scene break is `* * *`. */
 export function manuscriptLines(body: string): string[] {
@@ -99,96 +89,4 @@ export function manuscriptChange(
       chapter.summaryOutOfDate === true ||
       (changed && hadText && str(chapter.summary).trim() !== ''),
   };
-}
-
-export interface Establishment {
-  id: string;
-  collection: string;
-  title: string;
-  /** How the chapter establishes it, in plain words. */
-  why: string;
-}
-
-/**
- * MS-3: the planned entries a written chapter establishes, for promotion to
- * canon one by one. They are the chapter's planned point-of-view characters,
- * characters present, and places; the point of view's moments in each
- * strand's years (SM-3: beats became moments, found by year and strand); and
- * entries it links to. World events dated after the chapter's latest strand year are
- * left out: a chapter cannot establish something that has not happened yet.
- */
-export function establishedPlanned(data: TimelineData, chapterId: string): Establishment[] {
-  const chapter = data.all('chapters').find((c) => c._id === chapterId);
-  if (!live(chapter)) return [];
-  const strands = (Array.isArray(chapter.strands) ? chapter.strands : []).filter(isPlainObject);
-  const latestYear = Math.max(
-    ...strands.map((s) => num(s.endYear) ?? num(s.startYear) ?? -Infinity),
-  );
-  const found = new Map<string, Establishment>();
-  const all = new Map<string, { collection: string; doc: Doc }>();
-  for (const c of [
-    'characters',
-    'places',
-    'moments',
-    'worldEvents',
-    'culturalEntries',
-    'glossaryTerms',
-    'eraStates',
-    'openQuestions',
-    'unions',
-    'parentLinks',
-    'families',
-  ]) {
-    for (const d of data.all(c)) if (live(d)) all.set(str(d._id), { collection: c, doc: d });
-  }
-  const lists = data.all('lists');
-  const add = (id: string, why: string) => {
-    const e = all.get(id);
-    // A47 (IP-9): planned by the status item's kind.
-    if (!e || statusKind(lists, e.doc.status) !== 'planned') return;
-    if (e.collection === 'worldEvents') {
-      const start = isPlainObject(e.doc.start) ? num(e.doc.start.year) : null;
-      if (start !== null && start > latestYear) return;
-    }
-    const prev = found.get(id);
-    if (prev) {
-      if (!prev.why.split('; ').includes(why)) prev.why = `${prev.why}; ${why}`;
-      return;
-    }
-    found.set(id, {
-      id,
-      collection: e.collection,
-      title: e.collection === 'characters' ? characterName(e.doc, id) : entryTitle(e.doc),
-      why,
-    });
-  };
-  for (const s of strands) {
-    if (str(s.povCharacterId)) add(str(s.povCharacterId), 'point of view');
-    for (const c of idList(s.characterIds)) add(c, 'present');
-    for (const p of idList(s.placeIds)) add(p, 'a place in the chapter');
-  }
-  const moments = data.all('moments').filter(live);
-  for (const s of strands) {
-    const pov = str(s.povCharacterId);
-    const from = num(s.startYear);
-    if (!pov || from === null) continue;
-    const to = Math.max(from, num(s.endYear) ?? from);
-    for (const m of moments) {
-      const y = num(m.year);
-      if (m.characterId === pov && y !== null && y >= from && y <= to) {
-        add(str(m._id), 'a moment of the point of view in these years');
-      }
-    }
-  }
-  for (const l of (Array.isArray(chapter.links) ? chapter.links : []).filter(isPlainObject)) {
-    add(str(l.targetId), `linked as ${str(l.kind) || 'a link'}`);
-  }
-  const order = ['characters', 'places', 'moments'];
-  const rank = (c: string) => (order.includes(c) ? order.indexOf(c) : order.length);
-  return [...found.values()].sort(
-    (a, b) =>
-      rank(a.collection) - rank(b.collection) ||
-      a.title.localeCompare(b.title) ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
 }

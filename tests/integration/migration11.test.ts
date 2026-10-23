@@ -76,13 +76,23 @@ async function v10Bible(label: string): Promise<BibleHandle> {
   )) {
     await bible.collection('lists').replaceOne({ _id: l._id as never }, l, { upsert: true });
   }
-  // The writer had renamed Canon before A47; the label is kept.
-  await bible
-    .collection('lists')
-    .updateOne(
-      { _id: 'statuses' as never, 'items.id': 'canon' },
-      { $set: { 'items.$.label': 'Settled' } },
-    );
+  // The statuses and provenance lists as migration 1 seeded them before A53, with no colours
+  // or kinds. The writer had renamed Canon before A47; the label is kept.
+  const item = (id: string, label: string) => ({ id, label, parentId: null });
+  for (const l of [
+    {
+      _id: 'statuses',
+      label: 'Statuses',
+      items: [item('canon', 'Settled'), item('planned', 'Planned'), item('idea', 'Idea')],
+    },
+    {
+      _id: 'provenance',
+      label: 'Provenance',
+      items: [item('researched', 'Researched'), item('invented', 'Invented')],
+    },
+  ]) {
+    await bible.collection('lists').replaceOne({ _id: l._id as never }, l, { upsert: true });
+  }
   await bible
     .collection('meta')
     .insertOne({ _id: 'briefSettings' as never, window: 5, budget: 9000 });
@@ -97,6 +107,8 @@ const list = (open: OpenBible, id: string) =>
 describe('A47 migration 11 on a copy of the fixture at version 10', () => {
   let open: OpenBible;
   let bible: BibleHandle;
+  /** A53: the same bible stopped at version 11, for what migration 13 later removes. */
+  let at11: BibleHandle;
   beforeAll(async () => {
     bible = await v10Bible('mig11');
     expect(await schemaVersion(bible)).toBe(10);
@@ -104,11 +116,15 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
       true,
     );
     open = await openBibleSession(store, bible.id, { snapshotRoot: root });
+    at11 = await v10Bible('mig11-at11');
+    await migrate(at11, migrations.slice(0, 11));
   });
+  const list11 = (id: string) =>
+    at11.collection('lists').findOne({ _id: id as never }) as Promise<Document>;
 
-  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 and 12', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(12);
-    expect(await schemaVersion(open.handle)).toBe(12);
+  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 to 13', async () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(13);
+    expect(await schemaVersion(open.handle)).toBe(13);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION11_SNAPSHOT_LABEL, schemaVersion: 10 });
@@ -146,13 +162,14 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
   });
 
   test('IP-9 IP-10 statuses and provenance hold colours and kinds, age groups hold the six bands, and a renamed label is kept', async () => {
-    const statuses = await list(open, 'statuses');
+    // A53: migration 13 removes the statuses and provenance lists, so they are read at version 11.
+    const statuses = await list11('statuses');
     expect(statuses.items.map((i: Document) => [i.id, i.label, i.color, i.extra.kind])).toEqual([
       ['canon', 'Settled', '#1b705f', 'canon'],
       ['planned', 'Planned', '#4a3aa7', 'planned'],
       ['idea', 'Idea', '#7a611b', 'idea'],
     ]);
-    const prov = await list(open, 'provenance');
+    const prov = await list11('provenance');
     expect(prov.items.map((i: Document) => [i.id, i.color])).toEqual([
       ['researched', '#2a78d6'],
       ['invented', '#b84f25'],
@@ -179,7 +196,8 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
   });
 
   test('A47 migration 11 leaves revisions as they were', async () => {
-    const revisions = await open.handle.collection('revisions').find({}).toArray();
+    // A53: migration 13 drops the revisions, so they are read at version 11.
+    const revisions = await at11.collection('revisions').find({}).toArray();
     expect(revisions).toEqual([LEGACY_REVISION]);
   });
 
@@ -196,15 +214,16 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
     expect(summary.itemsSeeded).toBeGreaterThanOrEqual(5 + 6);
   });
 
-  test('A47 running it again changes nothing, and a bible at version 12 is not snapshotted again', async () => {
+  test('A47 running it again changes nothing, and a bible at version 13 is not snapshotted again', async () => {
+    // A53: run again at version 11, before migration 13 removes the lists it seeds.
     const dump = async () => ({
-      events: await open.handle.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
-      families: await open.handle.collection('families').find({}).sort({ _id: 1 }).toArray(),
-      lists: await open.handle.collection('lists').find({}).sort({ _id: 1 }).toArray(),
-      meta: await open.handle.collection('meta').find({}).sort({ _id: 1 }).toArray(),
+      events: await at11.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
+      families: await at11.collection('families').find({}).sort({ _id: 1 }).toArray(),
+      lists: await at11.collection('lists').find({}).sort({ _id: 1 }).toArray(),
+      meta: await at11.collection('meta').find({}).sort({ _id: 1 }).toArray(),
     });
     const before = await dump();
-    await migrations[10]!.up(open.handle);
+    await migrations[10]!.up(at11);
     expect(await dump()).toEqual(before);
     await openBibleSession(store, bible.id, { snapshotRoot: root });
     expect((await open.snapshots!.list()).filter((s) => s.reason === 'migration')).toHaveLength(1);
@@ -212,13 +231,18 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
 });
 
 describe('A47 migration 11 on the fixture as it ships', () => {
-  test('A47 the fixture loads at version 12 and migration 11 leaves it exactly as it is', async () => {
+  test('A47 the fixture loads at version 13 and migration 11 leaves its events, families and lists as they are', async () => {
     const handle = await loadFixture(store, freshSlug('mig11-fx'));
-    expect(await schemaVersion(handle)).toBe(12);
+    expect(await schemaVersion(handle)).toBe(13);
+    // A53: migration 11 seeds statuses and provenance, which migration 13 removed; they are left out.
     const snapshot = async () => ({
       events: await handle.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
       families: await handle.collection('families').find({}).sort({ _id: 1 }).toArray(),
-      lists: await handle.collection('lists').find({}).sort({ _id: 1 }).toArray(),
+      lists: await handle
+        .collection('lists')
+        .find({ _id: { $nin: ['statuses', 'provenance'] } } as Document)
+        .sort({ _id: 1 })
+        .toArray(),
     });
     const before = await snapshot();
     await migrations[10]!.up(handle);

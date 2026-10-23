@@ -95,9 +95,6 @@ export type EditableKindProps =
       allowEmpty?: boolean;
       mode?: RichMode;
       size?: RichSize;
-      /** ED-9: titles of linked entries, chips where the text says `@Title`; `@` picks call onMention. */
-      mentionTitles?: readonly string[];
-      onMention?: (hit: { id: string; title: string }) => void;
     }
   | {
       kind: 'select';
@@ -484,7 +481,7 @@ export function Editable(props: EditableProps) {
         {empty ? (
           (props.placeholder ?? '')
         ) : props.kind === 'rich' ? (
-          <MarkdownView text={shown} mentionTitles={props.mentionTitles} />
+          <MarkdownView text={shown} />
         ) : props.display ? (
           props.display(shown)
         ) : (
@@ -651,8 +648,6 @@ export function Editable(props: EditableProps) {
         placeholder={props.placeholder}
         describedBy={error ? errorId : undefined}
         className="editable-rich-box"
-        mentionTitles={props.mentionTitles}
-        onMention={props.onMention}
         onBlur={() => void commit('blur')}
         onKeyDown={(e) => {
           // Cmd+Enter always saves; Enter saves too, except inside a list, where it

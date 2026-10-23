@@ -657,9 +657,9 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
         <div className="row tight" aria-label="Resolution">
           <span>Resolution:</span>
           {f.state === 'manuscriptWins' ? (
-            <span className="chip canon">bible updated</span>
+            <span className="chip now">bible updated</span>
           ) : f.state === 'rewrite' ? (
-            <span className="chip planned">rewrite task</span>
+            <span className="chip todo">rewrite task</span>
           ) : (
             <span className="chip">not resolved yet</span>
           )}
@@ -791,7 +791,7 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
               <div className="row tight">
                 <strong>{chapterText(t)}</strong>
                 {t.lineStart !== null && <span>{linesText(t)}</span>}
-                <span className="chip planned">{t.label}</span>
+                <span className="chip todo">{t.label}</span>
               </div>
               {t.lines.length > 0 && <QuoteLines f={t} editable={false} />}
               <div className="al-task-text">
@@ -844,7 +844,7 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
   );
 }
 
-/** CC-1: the alignment check screen, opened by Check alignment on the dashboard. */
+/** CC-1: the alignment check screen, the Continuity checker's first tab. */
 export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | null }) {
   const chapters = useEntries('chapters');
   const [scope, setScope] = useState<Scope>(props.chapterId ?? null);

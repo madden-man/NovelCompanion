@@ -65,8 +65,6 @@ function v9Data(): Record<string, Document[]> {
         startYear: 2040,
         endYear: 2049,
         body: ERA_HTML,
-        status: 'planned',
-        provenance: 'invented',
         createdAt: '2026-01-15T09:00:00.000Z',
         modifiedAt: '2026-01-15T09:00:00.000Z',
       },
@@ -129,8 +127,8 @@ describe('A44 migration 10 on a version 9 bible', () => {
   });
 
   test('A44 opening takes a snapshot of the HTML first, then runs migration 10', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(12);
-    expect(await schemaVersion(open.handle)).toBe(12);
+    expect(LATEST_SCHEMA_VERSION).toBe(13);
+    expect(await schemaVersion(open.handle)).toBe(13);
     const before = (await open.snapshots!.list()).find((s) => s.reason === 'migration')!;
     expect(before).toMatchObject({ label: MIGRATION10_SNAPSHOT_LABEL, schemaVersion: 9 });
     const data = await open.snapshots!.read(before.id);
@@ -155,9 +153,11 @@ describe('A44 migration 10 on a version 9 bible', () => {
   test('A44 the manuscript text, the history and the modified times are left as they were', async () => {
     const chapter = await get(open, 'chapters', fixture.chapters![0]!._id);
     expect(chapter.manuscriptText).toBe(MANUSCRIPT_HTML);
-    expect((await get(open, 'revisions', 'REV-H1')).prior.backstory).toBe(
-      '<p>An older backstory.</p>',
-    );
+    // A53: migration 13 drops the revisions, so the history is read at version 10.
+    const at10 = await v9Bible('mig10-at10');
+    await migrate(at10, migrations.slice(0, 10));
+    const rev = await at10.collection('revisions').findOne({ _id: 'REV-H1' as never });
+    expect(rev!.prior.backstory).toBe('<p>An older backstory.</p>');
     expect((await get(open, 'eraStates', 'ERA-A44')).modifiedAt).toBe('2026-01-15T09:00:00.000Z');
   });
 

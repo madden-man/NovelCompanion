@@ -69,7 +69,7 @@ test.beforeAll(async () => {
     await invoke('entry.update', { collection: 'chapters', id, patch });
   }
   await page.reload();
-  await expect(page.getByTestId('dashboard')).toBeVisible();
+  await expect(page.getByTestId('rail')).toBeVisible();
 });
 
 test.afterAll(async () => {
@@ -79,8 +79,8 @@ test.afterAll(async () => {
 const view = () => page.getByTestId('alignment-view');
 const finding = (check: string) => view().locator(`[data-testid="finding"][data-check="${check}"]`);
 
-test('CC-1 CC-2 CC-3 CC-5 SM-11 Check alignment on Sessions opens the Continuity checker, which finds S1 and S3 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2)', async () => {
-  await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
+test('CC-1 CC-2 CC-3 CC-5 SM-11 the Continuity checker opens on the alignment check, which finds S1 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2; A52: no S3)', async () => {
+  await rail(page, 'Continuity checker').click();
   await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('tab', { name: 'Alignment check' })).toHaveAttribute(
     'aria-selected',
@@ -92,18 +92,16 @@ test('CC-1 CC-2 CC-3 CC-5 SM-11 Check alignment on Sessions opens the Continuity
   // AI-6: the first Claude run in a bible says what is sent, before anything is.
   await page.getByTestId('claude-acknowledge').click();
   await expect(view().getByTestId('alignment-status')).toContainText(
-    'Done. Structural checks: 2 found. Claude read 8 chapters and found 2.',
+    'Done. Structural checks: 1 found. Claude read 8 chapters and found 2.',
     { timeout: 30_000 },
   );
   const structural = view().getByTestId('structural-findings').getByTestId('finding');
-  await expect(structural).toHaveCount(2);
+  await expect(structural).toHaveCount(1);
   await expect(finding('character-present-while-dead')).toContainText(
     'Chapter 4 is set in 2032 and lists Peter Hale (H2) as present. Peter Hale died in 2030.',
   );
   await expect(finding('fact-acted-on-before-learned')).toHaveCount(0);
-  await expect(finding('event-linked-as-happened-after-story-year')).toContainText(
-    'E10 is dated 2090',
-  );
+  await expect(finding('event-linked-as-happened-after-story-year')).toHaveCount(0);
   const p1 = finding('age');
   await expect(p1).toContainText('Chapter 5: Candles');
   await expect(p1).toContainText('line 1');
@@ -147,7 +145,7 @@ test('CC-4 ED-3 Manuscript wins shows the change set as a diff, applies it, and 
   await expect(finding('age')).toHaveAttribute('data-state', 'open');
 });
 
-test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and what must change, on the Continuity checker, on Sessions, and on the chapter', async () => {
+test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and what must change, on the Continuity checker and on the chapter', async () => {
   await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
   await expect(finding('place')).toHaveCount(0);
   const task = view().getByTestId('rewrite-task');
@@ -162,12 +160,7 @@ test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and wha
     'Lives in Guangzhou',
   );
 
-  await rail(page, 'Sessions').click();
-  await expect(page.getByTestId('dash-task-count').locator('.tile-num')).toHaveText('1');
-  const tile = page.getByTestId('dash-tasks');
-  await expect(tile.getByTestId('rewrite-task')).toContainText('line 1');
-  await expect(tile.getByTestId('rewrite-task')).toContainText('Lan had grown up in Shanghai');
-  await tile.getByRole('button', { name: 'Open chapter' }).click();
+  await task.getByRole('button', { name: 'Open chapter' }).click();
   const chapter = page.getByTestId('chapter-alignment');
   await expect(chapter.getByTestId('rewrite-task')).toContainText('What must change');
   // CC-1: the chapter page checks just this chapter.
@@ -183,33 +176,27 @@ test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and wha
 });
 
 test('CC-4 Dismiss hides a finding, and it stays hidden when the check runs again', async () => {
-  await rail(page, 'Sessions').click();
-  await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
-  await finding('character-present-while-dead').getByRole('button', { name: 'Dismiss' }).click();
+  await rail(page, 'Continuity checker').click();
+  // NF-2: the actions are buttons reached by Tab and pressed with Enter.
+  const dismiss = finding('character-present-while-dead').getByRole('button', { name: 'Dismiss' });
+  await dismiss.focus();
+  await page.keyboard.press('Enter');
   await expect(finding('character-present-while-dead')).toHaveCount(0);
   await expect(view().getByTestId('findings-dismissed')).toContainText(
     '1 dismissed finding is hidden',
   );
   await view().getByTestId('alignment-run').click();
   await expect(view().getByTestId('alignment-status')).toContainText(
-    'Done. Structural checks: 2 found, 1 dismissed and unchanged.',
+    'Done. Structural checks: 1 found, 1 dismissed and unchanged.',
     { timeout: 30_000 },
   );
   await expect(finding('character-present-while-dead')).toHaveCount(0);
-  await expect(view().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(1);
-  // NF-2: the actions are buttons reached by Tab and pressed with Enter.
-  const check = 'event-linked-as-happened-after-story-year';
-  const dismiss = finding(check).getByRole('button', { name: 'Dismiss' });
-  await dismiss.focus();
-  await page.keyboard.press('Enter');
-  await expect(finding(check)).toHaveCount(0);
+  await expect(view().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(0);
 });
 
 test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records no new findings', async () => {
-  await rail(page, 'Sessions').click();
-  await page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }).click();
+  await rail(page, 'Continuity checker').click();
   const all = view().getByTestId('alignment-findings').getByTestId('finding');
-  const before = await all.count();
   // A marker in chapter 8's title (the text is locked, IP-18) selects the recording that waits for Stop.
   const ch8 = (await invoke('entry.get', { collection: 'chapters', id: 'CH8' })).entry;
   const title = String(ch8.title);
@@ -219,6 +206,11 @@ test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records
     patch: { title: `${title} E2E-HOLD-UNTIL-STOPPED` },
   });
   await view().getByTestId('alignment-scope').selectOption('CH8');
+  // The findings the list shows for chapter 8 before the run, read from main so the count never races the list.
+  const before = (
+    await invoke('continuity.findings', { chapterId: 'CH8', states: ['open', 'manuscriptWins'] })
+  ).findings.length;
+  await expect(all).toHaveCount(before);
   await view().getByTestId('alignment-run').click();
   await expect(view().getByTestId('alignment-status')).toContainText('Claude is reading', {
     timeout: 30_000,
@@ -399,9 +391,9 @@ test('IP-7 Open on a card goes to the finding page', async () => {
   await expect(page.getByTestId('editor')).toContainText('Ruth rounds down on purpose.');
 });
 
-test('IP-7 a rewrite task edits its text in place on Sessions, and Done and Open chapter stay', async () => {
-  await rail(page, 'Sessions').click();
-  const task = page.getByTestId('dash-tasks').getByTestId('rewrite-task');
+test('IP-7 a rewrite task edits its text in place on the Continuity checker, and Done and Open chapter stay', async () => {
+  await alignmentTab();
+  const task = view().getByTestId('rewrite-task');
   await expect(task).toHaveCount(1);
   const id = await findingId('place');
   const before = String((await entryOf('findings', id)).mustChange);

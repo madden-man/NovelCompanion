@@ -15,7 +15,7 @@ import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { captureNav } from '../capture';
 import { relativesLine } from '../character';
 import { useEntries, useList, useStore } from '../data';
@@ -132,13 +132,6 @@ function useStrandWriter(chapterId: string | null) {
   );
 }
 
-/** IP-2: the status a thing made on the desk is written with: planned if the list has one, else canon. */
-function usePlannedStatus(): string {
-  const statuses = useList('statuses');
-  const statusOf = useDefaultStatus();
-  return statuses?.items.find((i) => i.extra?.kind === 'planned')?.id ?? statusOf('canon');
-}
-
 /** SM-10, IP-2: one character of the chapter as a tile; its values are fields. */
 function Tile(props: {
   item: Item;
@@ -155,7 +148,6 @@ function Tile(props: {
   const { version } = useStore();
   const undo = useUndo();
   const ro = useWriteGuard();
-  const statusOf = useDefaultStatus();
   const [open, setOpen] = useState(false);
   const [rel, setRel] = useState<Relatives | null>(null);
   const [newMoment, setNewMoment] = useState<string | null>(null);
@@ -199,7 +191,7 @@ function Tile(props: {
     try {
       const { entry } = await call('entry.create', {
         collection: 'moments',
-        data: { title: '', characterId: item.id, year: props.year, status: statusOf('idea') },
+        data: { title: '', characterId: item.id, year: props.year },
       });
       undo.record(createCommand('moments', entry._id, `a moment of ${name} in ${props.year}`));
       setNewMoment(entry._id);
@@ -612,7 +604,6 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
   const undo = useUndo();
   const ro = useWriteGuard();
   const unit = useBibleSettings().cultureUnit;
-  const status = usePlannedStatus();
   const pickId = useId();
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>(strand.placeIds);
@@ -649,7 +640,6 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
           communityId: nearest.id,
           ...unitSpan(unitOf(strand.year, unit), unit),
           demographic: 'all',
-          status,
         },
       });
       undo.record(
@@ -824,7 +814,6 @@ function DeskEvents(props: {
   const events = useEntries('worldEvents');
   const byId = useMemo(() => new Map(events.map((e) => [e._id, e])), [events]);
   const categories = useList('eventCategories');
-  const status = usePlannedStatus();
   const undo = useUndo();
   const ro = useWriteGuard();
   const [made, setMade] = useState<string | null>(null);
@@ -839,7 +828,7 @@ function DeskEvents(props: {
     try {
       const { entry } = await call('entry.create', {
         collection: 'worldEvents',
-        data: { title: '', start: { year: strand.year }, categoryId, status },
+        data: { title: '', start: { year: strand.year }, categoryId },
       });
       undo.record(createCommand('worldEvents', entry._id, `an event in ${strand.year}`));
       setMade(entry._id);
@@ -848,7 +837,7 @@ function DeskEvents(props: {
     }
   };
   const renderTitle = (e: StripEvent) => (
-    <span className={`rel-event ${e.status}`}>
+    <span className="rel-event">
       <EntryEditable
         collection="worldEvents"
         id={e.id}
@@ -962,7 +951,7 @@ function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: 
       ) : (
         <span className="chip time">{strand.year}</span>
       )}
-      {props.isWriting && <span className="chip canon">writing now</span>}
+      {props.isWriting && <span className="chip now">writing now</span>}
       {editable ? (
         <span className="rel-head-pov" data-testid="relevant-pov">
           <Editable
@@ -996,7 +985,7 @@ function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: 
  * tiles, the five-year world events strip, the cultural context of the
  * setting in that year, and the backstory of the chapter's backstory years.
  * Everything else in the SB-2 selection folds under "More", where an entry
- * can be removed (and kept again) before a brief is written (SB-9). Every
+ * can be removed (and kept again) (SB-9). Every
  * stored value is a field (IP-1); the manuscript has Re-import (IP-18).
  */
 export function RelevantBody(props: {
@@ -1085,10 +1074,7 @@ export function RelevantBody(props: {
               <OmittedList selection={sel} onKeep={props.onKeep} />
             </section>
           )}
-          <p className="example-note">
-            {sel.ids.length} entries, selected the same way the brief selects them.
-            {props.onRemove && ' Remove one here and Start session leaves it out of the brief.'}
-          </p>
+          <p className="example-note">{sel.ids.length} entries.</p>
         </div>
       </details>
       {chapter && <Reimport chapter={chapter} />}

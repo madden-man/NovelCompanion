@@ -1,12 +1,7 @@
-import { copyFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { collectionInfo, entryTitle } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
-import { startFakeGoogle } from '../helpers/fakeGoogle';
-import type { FakeGoogle } from '../helpers/fakeGoogle';
 import { readFixture } from '../helpers/loadFixture';
 import { readSupplement } from '../helpers/briefFixture';
 import type { Invoke } from '../helpers/t5';
@@ -30,7 +25,6 @@ import type { TestDb } from './helpers';
  * shortcuts, with the visible result asserted.
  */
 let db: TestDb;
-let fake: FakeGoogle;
 let app: ElectronApplication;
 let page: Page;
 let invoke: Invoke;
@@ -38,9 +32,6 @@ let invoke: Invoke;
 const SLUG = 'keyboard';
 const KEY = 'sk-ant-api03-e2e-test-key-0123456789abcdef';
 const fixture = readFixture();
-const FIXTURES = join(import.meta.dirname, '../../fixtures/files');
-const dir = mkdtempSync(join(tmpdir(), 'nc-e2e-keyboard-'));
-const WORKBOOK = join(dir, 'fixture-workbook.xlsx');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -51,25 +42,8 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 
 test.beforeAll(async () => {
   test.setTimeout(300_000);
-  copyFileSync(join(FIXTURES, 'fixture-workbook.xlsx'), WORKBOOK);
-  fake = await startFakeGoogle({ email: 'tommy@example.com' });
-  fake.addFile({
-    id: 'folderNovel',
-    name: 'Novel',
-    mimeType: 'application/vnd.google-apps.folder',
-  });
-  fake.addFile({
-    id: 'docCh3',
-    name: 'Chapter 3',
-    mimeType: 'application/vnd.google-apps.document',
-    parents: ['folderNovel'],
-    content: Buffer.from('not used'),
-  });
   db = fileDb();
-  ({ app, page } = await launch(db, {
-    NOVEL_COMPANION_TEST_GOOGLE_BASE: fake.base,
-    NOVEL_COMPANION_TEST_PICK_FILE: WORKBOOK,
-  }));
+  ({ app, page } = await launch(db));
   invoke = invokeVia(page);
   await invoke('bible.create', { slug: SLUG, name: 'Keyboard' });
   await invoke('bible.open', { slug: SLUG });
@@ -86,7 +60,6 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
-  await fake?.close();
 });
 
 const isFocused = (loc: Locator) =>
@@ -153,8 +126,7 @@ async function typeInto(select: Locator, label: string) {
  * closed disclosure are left out: they appear when it opens.
  */
 async function unreachable(scope?: string): Promise<string[]> {
-  // A screen can render more controls once its data loads (Google Drive's client
-  // fields wait on the connection status), so a miss gets one more full walk.
+  // A screen can render more controls once its data loads, so a miss gets one more full walk.
   const left = await walk(scope);
   return left.length ? walk(scope) : left;
 }
@@ -299,8 +271,8 @@ test('NF-2 SM-6 every section list opens from Search and filters by keyboard, op
     const left = await unreachable();
     if (left.length) missed[info.plural] = left;
   }
-  // A50: one fewer than before, the moments, whose list is now Backstory.
-  expect(opened).toBeGreaterThan(11);
+  // A50: one fewer than before, the moments, whose list is now Backstory. A53: one fewer again, books.
+  expect(opened).toBeGreaterThan(10);
   expect(missed).toEqual({});
 });
 
@@ -320,8 +292,8 @@ test('NF-2 ED-1 a new character is made, edited, and saved from the keyboard', a
   expect(saved.entries.some((e) => e.entry.role === 'Tacoma')).toBe(true);
 });
 
-test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to Session, and Start session', async () => {
-  await go('Sessions');
+test('NF-2 TM-3 the top bar: the story year box, the Writing picker, and Relevant to Session', async () => {
+  await go('Questions');
   await fromTop();
   const year = topBar().getByRole('spinbutton', { name: 'Story year' });
   await tabTo(year);
@@ -339,26 +311,6 @@ test('NF-2 TM-3 the top bar: the story year box, the Writing picker, Relevant to
     'aria-current',
     'page',
   );
-  await fromTop();
-  await press(topBar().getByRole('button', { name: 'Start session' }));
-  // SM-11: Start session is on the Sessions screen.
-  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'start');
-  await expect(page.getByTestId('start-session')).toBeInViewport();
-});
-
-test('NF-2 DB-1 SM-11 Sessions: Start session and Check alignment open their parts', async () => {
-  await go('Sessions');
-  const dash = page.getByTestId('dashboard');
-  await press(dash.getByRole('button', { name: 'Start session' }));
-  await expect(page.getByTestId('sessions-view')).toHaveAttribute('data-sub', 'start');
-  await expect(page.getByTestId('start-session')).toBeInViewport();
-  await go('Sessions');
-  await press(page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }));
-  // CC-1 SM-11: the button opens the Continuity checker on its alignment tab.
-  await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('heading', { name: 'Alignment check', level: 2 })).toBeVisible();
-  await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
 });
 
 test('NF-2 FT-8 the tree: a person opens in the inspector with I, and Fit to window answers Enter', async () => {
@@ -402,7 +354,7 @@ test('NF-2 SM-8 the world events grid by keyboard', async () => {
 });
 
 test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens it, and Lived through opens and picks by typing', async () => {
-  await go('Sessions');
+  await go('Questions');
   const open = topBar().getByTestId('top-open-year');
   await fromTop();
   await press(open);
@@ -420,7 +372,7 @@ test('NF-2 KB-2 TL-2 TL-5 the year view is the dialog: the top bar button opens 
 });
 
 test('NF-2 KB-2 TL-7 compare in the dialog: Cmd+T, Enter on the disclosure, and two characters picked by typing fill the table', async () => {
-  await go('Sessions');
+  await go('Questions');
   await page.keyboard.press('Meta+t');
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
@@ -530,14 +482,6 @@ test('NF-2 SR-1 search from the rail box: type, Tab to a result, Enter opens it'
   await expect(editor()).toContainText('Zhou Meiling');
 });
 
-test('NF-2 IM-1 import: choosing a workbook and mapping it work from the keyboard', async () => {
-  await go('Import');
-  const view = page.getByTestId('import-view');
-  await press(view.getByRole('button', { name: 'Choose an Excel workbook' }));
-  await expect(view).toContainText('fixture-workbook.xlsx');
-  expect(await unreachable()).toEqual([]);
-});
-
 test('NF-2 BK-1 backups: Take a snapshot now adds a row', async () => {
   await go('Backups');
   const rows = page.getByTestId('snapshot-row');
@@ -562,37 +506,18 @@ test('NF-2 ED-7 the review queue: a proposal is approved with the keyboard', asy
   expect(h3.entry.role).toBe('Salem, Oregon');
 });
 
-test('NF-2 ST-1 GD-1 settings and Drive: the key, the Drive client, connecting, and linking a file, all by keyboard', async () => {
+test('NF-2 ST-1 settings: the key, by keyboard', async () => {
   await go('Settings');
   const settings = page.getByTestId('settings-view');
   await tabTo(settings.getByTestId('claude-key-input'));
   await page.keyboard.type(KEY);
   await press(settings.getByTestId('claude-key-save'));
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
-  const conn = settings.getByTestId('drive-connection');
-  await tabTo(conn.getByLabel('OAuth client ID'));
-  await page.keyboard.type(fake.clientId);
-  await tabTo(conn.getByLabel('OAuth client secret'));
-  await page.keyboard.type(fake.clientSecret);
-  await press(conn.getByRole('button', { name: 'Save the client' }));
-  await expect(conn.getByTestId('drive-state')).toHaveText('Not connected.');
-  await press(conn.getByTestId('drive-connect'));
-  await expect(conn.getByTestId('drive-state')).toContainText('Connected as tommy@example.com');
-
-  await go('Google Drive');
-  const drive = page.getByTestId('drive-view');
-  await press(drive.getByRole('button', { name: 'Add files or folders from Drive' }));
-  const browser = drive.getByTestId('drive-browser');
-  await press(browser.getByRole('button', { name: 'Open Novel' }));
-  await press(browser.getByRole('checkbox', { name: 'Chapter 3' }), 'Space');
-  await expect(browser.getByRole('checkbox', { name: 'Chapter 3' })).toBeChecked();
-  await press(browser.getByTestId('drive-link-selected'));
-  await expect(drive.getByTestId('drive-link')).toHaveCount(1);
   expect(await unreachable()).toEqual([]);
 });
 
 test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and Escape', async () => {
-  await go('Sessions');
+  await go('Questions');
   await page.keyboard.press('Meta+j');
   const panel = page.getByTestId('claude-panel');
   await expect(panel).toBeVisible();
@@ -616,7 +541,7 @@ test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and E
 });
 
 test('NF-2 TM-1 TM-4 the Story Time dialog: Cmd+T, the year box, the step buttons, and Escape', async () => {
-  await go('Sessions');
+  await go('Questions');
   await page.keyboard.press('Meta+t');
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
@@ -663,34 +588,6 @@ test('NF-2 ED-5 the delete confirm: Move to trash opens it, every control in it 
   expect(h3.entry.deletedAt ?? null).toBeNull();
 });
 
-test('NF-2 ED-4 the history drawer: a revision opens its comparison, and every control in the drawer takes focus', async () => {
-  // A second revision, so there is an older one to compare.
-  await invoke('entry.update', {
-    collection: 'characters',
-    id: 'H3',
-    patch: { role: 'Hood River, Oregon' },
-  });
-  await go('Characters');
-  await press(
-    page
-      .getByTestId('entry-list')
-      .getByRole('button', { name: /Daniel Hale/ })
-      .first(),
-  );
-  await press(page.getByTestId('entry-tools').getByRole('button', { name: 'History' }));
-  const drawer = page.getByTestId('history');
-  await expect(drawer).toBeVisible();
-  const revisions = drawer
-    .getByRole('list', { name: 'Revisions, newest first' })
-    .getByRole('button');
-  await expect(revisions.first()).toBeVisible();
-  await press(revisions.last());
-  await expect(drawer.getByTestId('revision-diff')).toBeVisible();
-  expect(await unreachable('[data-testid="history"]')).toEqual([]);
-  await press(drawer.getByRole('button', { name: 'Close' }));
-  await expect(drawer).toBeHidden();
-});
-
 test('NF-2 ED-7 the review queue with a proposal diff open: every control takes focus, and Reject answers Enter', async () => {
   await invoke('test.propose', {
     source: 'import',
@@ -705,23 +602,6 @@ test('NF-2 ED-7 the review queue with a proposal diff open: every control takes 
   expect(await unreachable()).toEqual([]);
   await press(queue.getByRole('button', { name: 'Reject' }).first());
   await expect(queue.getByTestId('proposal-diff')).toHaveCount(0);
-});
-
-test('NF-2 SB-7 the brief view after generation: every control takes focus', async () => {
-  // Without a key the brief is the structured one (SB-7): this test is about the keyboard, not Claude.
-  await invoke('claude.clearKey', {});
-  await go('Sessions');
-  await press(page.getByTestId('dashboard').getByRole('button', { name: 'Start session' }));
-  const view = page.getByTestId('start-session');
-  await press(view.getByRole('button', { name: 'A chapter', exact: true }));
-  await expect(view.getByTestId('start-chapter')).toBeVisible();
-  await press(view.getByTestId('start-session-go'));
-  const brief = page.getByTestId('brief-view');
-  await expect(brief).toBeVisible({ timeout: 60_000 });
-  await expect(brief.getByTestId('brief-body').locator('h2').first()).toBeVisible({
-    timeout: 60_000,
-  });
-  expect(await unreachable()).toEqual([]);
 });
 
 test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its diff, Rewrite recommended, and Dismiss, all by keyboard', async () => {
@@ -747,10 +627,9 @@ test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its di
     await invoke('entry.update', { collection: 'chapters', id, patch });
   }
   await invoke('bible.open', { slug: SLUG });
-  await expect(page.getByTestId('dashboard')).toBeVisible();
+  await expect(page.getByTestId('rail')).toBeVisible();
 
-  await fromTop();
-  await press(page.getByTestId('dashboard').getByRole('button', { name: 'Check alignment' }));
+  await go('Continuity checker');
   const view = page.getByTestId('alignment-view');
   const run = view.getByTestId('alignment-run');
   const stop = view.getByTestId('alignment-stop');

@@ -2,8 +2,6 @@
   {
     "_id": "ERA-2025",
     "title": "The late twenties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The late twenties",
@@ -14,8 +12,6 @@
   {
     "_id": "ERA-2030",
     "title": "The thirties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The thirties",
@@ -26,8 +22,6 @@
   {
     "_id": "ERA-2040",
     "title": "The forties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The forties",
@@ -38,8 +32,6 @@
   {
     "_id": "ERA-2050",
     "title": "The fifties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The fifties",
@@ -50,8 +42,6 @@
   {
     "_id": "ERA-2060",
     "title": "The sixties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The sixties",
@@ -62,8 +52,6 @@
   {
     "_id": "ERA-2070",
     "title": "The seventies",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The seventies",
@@ -74,8 +62,6 @@
   {
     "_id": "ERA-2080",
     "title": "The eighties",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The eighties",
@@ -86,8 +72,6 @@
   {
     "_id": "ERA-2090",
     "title": "The last decade",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "name": "The last decade",

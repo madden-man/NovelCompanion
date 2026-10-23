@@ -9,7 +9,6 @@ import {
   HexColor,
   LIST_IDS,
   ListDoc,
-  STATUS_KINDS,
   bibleSettings,
   Proposal,
   collectionInfo,
@@ -26,39 +25,31 @@ import type {
   EntryOf,
   ListItem,
   ListItemInput,
-  StatusKind,
   StoredListItem,
 } from '../../shared/schema';
 import type { BibleSettings } from '../../shared/schema';
-import { contentOf, diffEntries } from '../../shared/domain/diff';
+import { diffEntries } from '../../shared/domain/diff';
 import type { FieldChange } from '../../shared/domain/diff';
 import { unknownPaths } from '../../shared/domain/schemaPaths';
 import { StoryTimeValue } from '../../shared/storyTime';
 import {
   countListUsage,
   derivedRename,
-  defaultProvenance,
-  defaultStatus,
   moveItem,
   newItemId,
   parentProblem,
-  renameCascade,
-  tagsUsed,
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
 import type { SelectionSettings } from '../../shared/domain/brief/selection';
-import { familyHexFrom, regionIdsFrom } from './migrations/011-vocabulary';
+import { regionIdsFrom } from './migrations/011-vocabulary';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
 import { ROMANIZATION_META_ID, settingsFromMeta } from '../../shared/domain/romanization';
-import type { DriveKnown, DriveLink, DriveSeen } from '../../shared/domain/drive';
 import type { RomanizationSettings } from '../../shared/domain/romanization';
 import { ownAncestorMessage, wouldBeOwnAncestor } from '../../shared/domain/tree';
 import type { FieldWarning } from '../../shared/domain/warnings';
-import { conflictQuestion, questionCovers, questionWithConflict } from '../../shared/domain/import';
-import type { ChangeItem, Conflict, ListAdd, SourceRecord } from '../../shared/domain/import';
-import type { Backlink, ReadModel, StoredDoc } from '../readmodel';
+import type { ReadModel, StoredDoc } from '../readmodel';
 import type { SearchIndex } from '../search';
 import type { BibleHandle } from './bibles';
 import {
@@ -86,30 +77,6 @@ export interface ChangeEvent {
   collection: EntryCollection;
   id: string;
   op: ChangeOp | 'purge';
-}
-
-export interface Revision {
-  _id: string;
-  collection: EntryCollection;
-  entryId: string;
-  op: ChangeOp;
-  at: string;
-  /** The full document before this write, or null for a create. */
-  prior: StoredDoc | null;
-  /** Why the write happened when it was not a plain edit, in plain words. */
-  note?: string;
-  /** The approved proposal that made this write (ED-7). */
-  proposalId?: string;
-}
-
-/** A revision as the history drawer lists it: the entry as it stood after that write. */
-export interface RevisionView {
-  _id: string;
-  op: ChangeOp;
-  at: string;
-  note: string | null;
-  proposalId: string | null;
-  snapshot: StoredDoc;
 }
 
 export interface ListView {
@@ -160,8 +127,6 @@ interface Change {
   op: ChangeOp;
   next: StoredDoc;
   prior: StoredDoc | null;
-  note?: string;
-  proposalId?: string;
 }
 
 const newId = monotonicFactory();
@@ -171,7 +136,7 @@ const isDerived = (id: string): id is DerivedListId =>
 
 /**
  * The one write path (ARCHITECTURE rule 2). Every mutation validates with zod,
- * writes the entries and their revisions in one transaction, updates the read
+ * writes the entries in one transaction, updates the read
  * model, patches the search index, and emits a change event.
  */
 export class Repository {
@@ -278,26 +243,8 @@ export class Repository {
     }
   }
 
-  /** Tag labels the changes use that the tags list does not have yet. */
-  private newTags(changes: Change[]): ListItem[] {
-    const tags = this.model.get('lists', 'tags') as ListDoc | undefined;
-    const known = new Set((tags?.items ?? []).map((i) => i.label));
-    const draft: ListDoc = { _id: 'tags', label: 'Tags', items: [...(tags?.items ?? [])] };
-    const out: ListItem[] = [];
-    for (const ch of changes) {
-      for (const label of tagsUsed(manifests[ch.collection], ch.next)) {
-        if (known.has(label)) continue;
-        known.add(label);
-        const item = { id: newItemId(draft, label), label, parentId: null };
-        draft.items.push(item);
-        out.push(item);
-      }
-    }
-    return out;
-  }
-
   /**
-   * Write every change and its revision in one transaction, then update the
+   * Write every change in one transaction, then update the
    * read model and search index and announce each change. `extra` runs inside
    * the same transaction for list and proposal updates.
    */
@@ -306,18 +253,7 @@ export class Repository {
     extra?: (session: ClientSession) => Promise<void>,
     listsAfter: ListDoc[] = [],
   ): Promise<void> {
-    const addTags = this.newTags(changes);
     const listUpdates = [...listsAfter];
-    if (addTags.length) {
-      const base =
-        listUpdates.find((l) => l._id === 'tags') ??
-        (this.model.get('lists', 'tags') as ListDoc | undefined) ??
-        ({ _id: 'tags', label: 'Tags', items: [] } as ListDoc);
-      const merged = { ...base, items: [...base.items, ...addTags] };
-      const i = listUpdates.findIndex((l) => l._id === 'tags');
-      if (i >= 0) listUpdates[i] = merged;
-      else listUpdates.push(merged);
-    }
     this.settleRegions(changes, listUpdates); // a47-model
     await this.transact(async (session) => {
       await this.writeChanges(changes, session);
@@ -346,9 +282,9 @@ export class Repository {
   }
 
   /**
-   * Insert the new entries together, replace the changed ones (each only if it
-   * has not changed since it was read), and append the revisions together, so a
-   * large import is a handful of round trips rather than one per entry.
+   * Insert the new entries together and replace the changed ones (each only if
+   * it has not changed since it was read), so a large batch is a handful of
+   * round trips rather than one per entry.
    */
   private async writeChanges(changes: Change[], session: ClientSession): Promise<void> {
     const byCollection = new Map<EntryCollection, Change[]>();
@@ -377,21 +313,6 @@ export class Repository {
           throw new RepositoryError('This entry changed somewhere else. Reload it and try again.');
         }
       }
-    }
-    if (changes.length) {
-      const revisions: Revision[] = changes.map((ch) => ({
-        _id: newId(),
-        collection: ch.collection,
-        entryId: ch.next._id,
-        op: ch.op,
-        at: ch.next.modifiedAt as string,
-        prior: ch.prior,
-        ...(ch.note ? { note: ch.note } : {}),
-        ...(ch.proposalId ? { proposalId: ch.proposalId } : {}),
-      }));
-      await this.bible
-        .collection<Revision>('revisions')
-        .insertMany(revisions, { session, ordered: true });
     }
   }
 
@@ -528,8 +449,7 @@ export class Repository {
   }
 
   /**
-   * Several creates, updates, and moves to the trash in one transaction, each
-   * with a revision (M8: an alignment run's findings, and Manuscript wins
+   * Several creates, updates, and moves to the trash in one transaction (M8: an alignment run's findings, and Manuscript wins
    * applying a change set together with the finding's new state, CC-4). With
    * `bulk`, a snapshot is taken first (BK-1). Either everything is written or nothing is.
    */
@@ -539,7 +459,7 @@ export class Repository {
       | { op: 'update'; collection: EntryCollection; id: string; patch: Record<string, unknown> }
       | { op: 'softDelete'; collection: EntryCollection; id: string }
     )[],
-    opts: { note?: string; bulk?: string } = {},
+    opts: { bulk?: string } = {},
   ): Promise<StoredDoc[]> {
     if (!ops.length) return [];
     if (opts.bulk) await this.bulkGuard(opts.bulk);
@@ -560,7 +480,6 @@ export class Repository {
             : this.buildSoftDelete(o.collection, prior);
       }
       seen.add(`${o.collection}:${change.next._id}`);
-      if (opts.note) change.note = opts.note;
       changes.push(change);
     }
     await this.commit(changes);
@@ -626,97 +545,6 @@ export class Repository {
       list: (id) => this.model.get('lists', id) as ListDoc | undefined,
       all: (col) => this.model.all(col),
     });
-  }
-
-  /** Entries that refer to this one, through links or reference fields (ED-9). */
-  backlinks(id: string, opts: { includeDeleted?: boolean } = {}): Backlink[] {
-    return this.model.backlinks(id, opts);
-  }
-
-  /** What deleting an entry would leave pointing at the trash (ED-5). */
-  linkedFrom(id: string): { count: number; entries: (Backlink & { title: string })[] } {
-    const entries = this.model.backlinks(id).map((b) => ({
-      ...b,
-      title: entryTitle(this.model.get(b.collection, b.id)),
-    }));
-    return { count: new Set(entries.map((e) => `${e.collection}:${e.id}`)).size, entries };
-  }
-
-  async revisions(c: EntryCollection, id: string): Promise<Revision[]> {
-    return this.bible
-      .collection<Revision>('revisions')
-      .find({ collection: c, entryId: id })
-      .sort({ _id: 1 })
-      .toArray();
-  }
-
-  /**
-   * The history of one entry, newest first, each with the entry as it stood
-   * after that write (ED-4). A revision holds the document before its write,
-   * so the state after write N is the prior of write N+1, or the current one.
-   */
-  async history(c: EntryCollection, id: string): Promise<RevisionView[]> {
-    this.assertCollection(c);
-    const current = await this.current(c, id);
-    const revs = await this.revisions(c, id);
-    return revs
-      .map((r, i) => ({
-        _id: r._id,
-        op: r.op,
-        at: r.at,
-        note: r.note ?? null,
-        proposalId: r.proposalId ?? null,
-        snapshot: revs[i + 1]?.prior ?? current,
-      }))
-      .reverse();
-  }
-
-  private async revision(c: EntryCollection, id: string, revisionId: string) {
-    const view = (await this.history(c, id)).find((r) => r._id === revisionId);
-    if (!view) throw new RepositoryError('That revision does not belong to this entry.');
-    return view;
-  }
-
-  /** A side-by-side comparison of one revision with the current entry (ED-4). */
-  async revisionDiff(
-    c: EntryCollection,
-    id: string,
-    revisionId: string,
-  ): Promise<{ revision: RevisionView; current: StoredDoc; changes: FieldChange[] }> {
-    const revision = await this.revision(c, id, revisionId);
-    const current = await this.current(c, id);
-    return { revision, current, changes: diffEntries(revision.snapshot, current) };
-  }
-
-  /** Bring back the content of an earlier revision as a new write (ED-4). Trash state is kept. */
-  async restoreRevision<C extends EntryCollection>(
-    c: C,
-    id: string,
-    revisionId: string,
-  ): Promise<EntryOf<C>> {
-    const revision = await this.revision(c, id, revisionId);
-    const prior = await this.current(c, id);
-    const doc = this.validate(c, {
-      // a47-model: a revision from before migration 11 holds region names and colour tokens.
-      // a47-guard (IP-18): the manuscript fields keep their current values.
-      ...withoutLocked(c, this.fromBeforeMigration11(c, contentOf(revision.snapshot))),
-      ...this.lockedValues(c, prior),
-      _id: prior._id,
-      createdAt: prior.createdAt,
-      modifiedAt: this.stamp(prior),
-      ...(prior.deletedAt ? { deletedAt: prior.deletedAt } : {}),
-    });
-    this.checkVocabulary(c, doc as StoredDoc, prior); // a47-model
-    await this.commit([
-      {
-        collection: c,
-        op: 'update',
-        next: doc as StoredDoc,
-        prior,
-        note: `Restored the version from ${revision.at}`,
-      },
-    ]);
-    return doc;
   }
 
   // ---------- lists (ED-8) ----------
@@ -793,8 +621,8 @@ export class Repository {
   }
 
   /**
-   * Rename a list item and update every entry that uses it, in one
-   * transaction with a revision for each entry (ED-8).
+   * Rename a list item (ED-8). A family or an era is renamed through its
+   * entry; any other item is renamed in its list, in one transaction.
    */
   async renameListItem(
     listId: string,
@@ -809,9 +637,7 @@ export class Repository {
       const prior = await this.current(collection, itemId);
       const from = String(prior.name);
       const { patch } = derivedRename(listId, prior, to);
-      await this.commit([
-        { ...this.buildUpdate(collection, prior, patch), note: `Renamed ${from} to ${to}` },
-      ]);
+      await this.commit([this.buildUpdate(collection, prior, patch)]);
       return { updated: 1, from };
     }
     const list = this.storedList(listId);
@@ -820,25 +646,13 @@ export class Repository {
     const from = item.label;
     if (from === to) return { updated: 0, from };
     const clash = list.items.find((i) => i.id !== itemId && i.label === to);
-    if (clash && listId !== 'tags') {
+    if (clash) {
       throw new RepositoryError(`The ${list.label} list already has an item called ${to}.`);
     }
-    // Renaming a tag onto an existing tag merges the two.
-    const items = clash
-      ? list.items.filter((i) => i.id !== itemId)
-      : list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
-    const patches = renameCascade(listId, from, to, this.allDocs());
-    const changes: Change[] = [];
-    for (const p of patches) {
-      const collection = p.collection as EntryCollection;
-      const prior = await this.current(collection, p.id);
-      changes.push({
-        ...this.buildUpdate(collection, prior, p.patch),
-        note: `Renamed ${from} to ${to} in ${list.label}`,
-      });
-    }
-    await this.commit(changes, undefined, [{ ...list, items }]);
-    return { updated: changes.length, from };
+    const items = list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
+    // Entries hold the item by its ID, so they show the new label with no change.
+    await this.commit([], undefined, [{ ...list, items }]);
+    return { updated: 0, from };
   }
 
   async addListItem(
@@ -847,7 +661,7 @@ export class Repository {
     parentId: string | null = null,
     /** The ID to use when it is free (an undo putting an item back); otherwise one is made from the label. */
     wantedId?: string,
-    /** A47 (IP-9, IP-10): the item's colour and extra values, such as a status's kind. */
+    /** A47 (IP-9, IP-10): the item's colour and extra values, such as an age group's range. */
     look: { color?: string | null; extra?: Record<string, string | number> } = {},
   ): Promise<StoredListItem> {
     if (isDerived(listId)) {
@@ -890,12 +704,6 @@ export class Repository {
     }
     if (list.items.some((i) => i.parentId === itemId)) {
       throw new RepositoryError(`${item.label} has items under it. Move or remove them first.`);
-    }
-    if (listId === 'statuses') {
-      this.keepEveryKind(
-        list.items,
-        list.items.filter((i) => i.id !== itemId),
-      );
     }
     await this.commit([], undefined, [
       { ...list, items: list.items.filter((i) => i.id !== itemId) },
@@ -1049,7 +857,7 @@ export class Repository {
 
   /**
    * Apply an approved proposal through the write path and record the approval
-   * on the proposal and on the entry's revision, in one transaction (ED-7).
+   * on the proposal, in one transaction (ED-7).
    * A proposal whose entry changed after it was made is refused: the person
    * has not seen the change against the entry as it is now.
    */
@@ -1076,8 +884,6 @@ export class Repository {
           ? this.buildUpdate(c, prior, data)
           : this.buildSoftDelete(c, prior);
     }
-    change.note = `Approved a proposal from ${proposal.source}`;
-    change.proposalId = proposal._id;
     const decided: Proposal = {
       ...proposal,
       state: 'approved',
@@ -1119,155 +925,6 @@ export class Repository {
     return decided;
   }
 
-  // ---------- import (IM-3, IM-7) ----------
-
-  /** What earlier imports recorded about where each field's value came from. */
-  sourceRecords(entryId: string): SourceRecord[] {
-    const doc = this.model.get('importSources', entryId);
-    return Array.isArray(doc?.fields) ? (doc.fields as SourceRecord[]) : [];
-  }
-
-  /**
-   * Write the approved changes of an import in one transaction (ED-7, IM-3):
-   * new entries, changes to entries already imported, the list choices they
-   * need, the record of where each field came from, and an open question for
-   * every field where two sources disagreed (IM-7). Either all of it is
-   * written or none. Entries changed since the plan was made are refused.
-   */
-  async applyImport(input: {
-    file: { fileName: string; modifiedAt: string };
-    items: ChangeItem[];
-    listAdds: ListAdd[];
-  }): Promise<{ created: number; updated: number; questions: number }> {
-    await this.bulkGuard('import');
-    const note = `Imported from ${input.file.fileName}`;
-    const changes: Change[] = [];
-    let created = 0;
-    let updated = 0;
-    let questions = 0;
-    const touched = new Map<string, { collection: EntryCollection; records: SourceRecord[] }>();
-    for (const item of input.items) {
-      this.assertCollection(item.collection);
-      if (item.kind === 'new') {
-        const data: Record<string, unknown> = {
-          ...(item.data as Record<string, unknown>),
-          _id: item.entryId,
-        };
-        const change = this.buildCreate(item.collection, data, { importer: true });
-        changes.push({ ...change, note });
-        created += 1;
-      } else {
-        const prior = await this.current(item.collection, item.entryId);
-        if (item.baseModifiedAt !== undefined && prior.modifiedAt !== item.baseModifiedAt) {
-          throw new RepositoryError(
-            `${entryTitle(prior)} changed after the import was compared, so nothing was written. Compare again.`,
-          );
-        }
-        if (item.patch && Object.keys(item.patch).length > 0) {
-          changes.push({
-            ...this.buildUpdate(item.collection, prior, item.patch, { importer: true }),
-            note,
-          });
-          updated += 1;
-        }
-      }
-      if (item.records.length) {
-        touched.set(item.entryId, { collection: item.collection, records: item.records });
-      }
-      // An open question about this entry that already lists a field is brought up to date, not asked again.
-      const askedAbout = this.model
-        .all('openQuestions')
-        .filter(
-          (q) =>
-            !q.deletedAt &&
-            q.state === 'open' &&
-            Array.isArray(q.links) &&
-            (q.links as { targetId?: unknown; kind?: unknown }[]).some(
-              (l) => l.targetId === item.entryId && l.kind === 'conflict',
-            ),
-        );
-      const fresh: Conflict[] = [];
-      const reworded = new Map<string, string>();
-      for (const c of item.deltas.flatMap((d) => (d.conflict ? [d.conflict] : []))) {
-        let handled = false;
-        for (const q of askedAbout) {
-          const text = reworded.get(String(q._id)) ?? String(q.question ?? '');
-          if (questionCovers(text, c)) {
-            handled = true;
-            break;
-          }
-          if (text.split('\n').some((l, i) => i > 0 && l.startsWith(`${c.label}: `))) {
-            const next = questionWithConflict(text, c);
-            if (next !== null) reworded.set(String(q._id), next);
-            handled = true;
-            break;
-          }
-        }
-        if (!handled) fresh.push(c);
-      }
-      for (const [id, text] of reworded) {
-        const prior = askedAbout.find((q) => String(q._id) === id);
-        if (!prior) continue;
-        changes.push({ ...this.buildUpdate('openQuestions', prior, { question: text }), note });
-      }
-      const conflicts = fresh;
-      if (conflicts.length) {
-        const q = conflictQuestion(item.title, conflicts);
-        changes.push({
-          ...this.buildCreate('openQuestions', {
-            title: q.title,
-            question: q.question,
-            state: 'open',
-            status: defaultStatus(this.model.all('lists'), 'planned'),
-            sourceRef: item.ref,
-            links: [{ targetId: item.entryId, kind: 'conflict' }],
-          }),
-          note,
-        });
-        questions += 1;
-      }
-    }
-    const lists = this.listsWithAdds(input.listAdds);
-    const sourceDocs = [...touched].map(([entryId, t]) => {
-      const prior = this.sourceRecords(entryId);
-      const fields = [
-        ...prior.filter((r) => !t.records.some((n) => n.path === r.path)),
-        ...t.records,
-      ];
-      return { _id: entryId, collection: t.collection, fields };
-    });
-    await this.commit(
-      changes,
-      async (session) => {
-        for (const doc of sourceDocs) {
-          await this.bible
-            .collection<StoredDoc>('importSources')
-            .replaceOne({ _id: doc._id }, doc, { session, upsert: true });
-        }
-      },
-      lists,
-    );
-    for (const doc of sourceDocs) this.model.put('importSources', doc as unknown as StoredDoc);
-    return { created, updated, questions };
-  }
-
-  /** The lists with the import's new choices added, ready to write. */
-  private listsWithAdds(adds: ListAdd[]): ListDoc[] {
-    const out = new Map<string, ListDoc>();
-    for (const add of adds) {
-      const base =
-        out.get(add.listId) ??
-        (this.model.get('lists', add.listId) as ListDoc | undefined) ??
-        ({ _id: add.listId, label: add.listId, items: [] } as ListDoc);
-      if (base.items.some((i) => i.id === add.id)) continue;
-      out.set(add.listId, {
-        ...base,
-        items: [...base.items, { id: add.id, label: add.label, parentId: add.parentId }],
-      });
-    }
-    return [...out.values()];
-  }
-
   // ---------- backup settings (BK-1) ----------
 
   /** How many snapshots to keep; 30 unless the person changed it. */
@@ -1282,73 +939,6 @@ export class Repository {
     }
     await this.writeMeta({ _id: SNAPSHOT_SETTINGS_ID, keep });
     return keep;
-  }
-
-  /** Saved column mappings, keyed by file name and sheet (IM-1). Stored in `meta`. */
-  savedMappings(): Record<string, unknown> {
-    const doc = this.model.get('meta', IMPORT_MAPPINGS_ID);
-    const list = (Array.isArray(doc?.mappings) ? doc.mappings : []) as {
-      key: string;
-      mapping: unknown;
-    }[];
-    return Object.fromEntries(list.map((m) => [m.key, m.mapping]));
-  }
-
-  async saveMapping(key: string, mapping: unknown): Promise<void> {
-    // A list, not an object, because file names and sheet names contain dots.
-    const kept = Object.entries(this.savedMappings())
-      .filter(([k]) => k !== key)
-      .map(([k, m]) => ({ key: k, mapping: m }));
-    await this.writeMeta({
-      _id: IMPORT_MAPPINGS_ID,
-      mappings: [...kept, { key, mapping }],
-    });
-  }
-
-  // ---------- Google Drive links (GD-2, GD-3; stored in meta, never a token) ----------
-
-  /** The Drive files and folders linked to this bible, and the version of each file last brought in. */
-  driveState(): { links: DriveLink[]; seen: DriveSeen[]; known: DriveKnown[] } {
-    const doc = this.model.get('meta', DRIVE_ID);
-    // Read through shape checks: a hand-edited or older meta document cannot reach the screens as a cast.
-    const rows = <T>(value: unknown, ok: (r: Record<string, unknown>) => boolean): T[] =>
-      (Array.isArray(value) ? value : []).filter(
-        (r): r is T => !!r && typeof r === 'object' && ok(r as Record<string, unknown>),
-      );
-    const text = (v: unknown) => typeof v === 'string' && v.length > 0;
-    return {
-      links: rows<DriveLink>(
-        doc?.links,
-        (r) =>
-          text(r.id) &&
-          text(r.name) &&
-          text(r.mimeType) &&
-          (r.kind === 'folder' || r.kind === 'workbook' || r.kind === 'document'),
-      ),
-      seen: rows<DriveSeen>(doc?.seen, (r) => text(r.fileId) && text(r.modifiedTime)),
-      known: rows<DriveKnown>(
-        doc?.known,
-        (r) =>
-          text(r.fileId) &&
-          text(r.linkId) &&
-          text(r.name) &&
-          text(r.mimeType) &&
-          (r.kind === 'workbook' || r.kind === 'document'),
-      ),
-    };
-  }
-
-  async setDriveState(state: {
-    links: DriveLink[];
-    seen: DriveSeen[];
-    known?: DriveKnown[];
-  }): Promise<void> {
-    await this.writeMeta({
-      _id: DRIVE_ID,
-      links: state.links,
-      seen: state.seen,
-      known: state.known ?? this.driveState().known,
-    });
   }
 
   /** Tell views that the whole bible was replaced, after a restore or a file import. */
@@ -1390,7 +980,7 @@ export class Repository {
   /**
    * TM-5: promote a year into one chapter strand, an explicit action the
    * person confirms after seeing the change (ED-7). It goes through the one
-   * write path with a revision note. Refused when the chapter changed after
+   * write path. Refused when the chapter changed after
    * the person saw the change.
    */
   async setStrandYear(
@@ -1408,9 +998,8 @@ export class Repository {
     const strands = (Array.isArray(prior.strands) ? prior.strands : []) as object[];
     const shifted = shiftStrand(strands, strandId, year);
     if (!shifted) throw new RepositoryError('That strand is no longer in this chapter.');
-    const { strand, next } = shifted;
+    const { next } = shifted;
     const change = this.buildUpdate('chapters', prior, { strands: next });
-    change.note = `Set the ${strand.label} strand year to ${year} from the story time`;
     await this.commit([change]);
     return change.next;
   }
@@ -1431,8 +1020,6 @@ export class Repository {
       ...this.buildCreate('eraStates', {
         title: r.name,
         name: r.name,
-        status: defaultStatus(this.model.all('lists'), 'planned'),
-        provenance: defaultProvenance(this.model.all('lists'), 'invented'),
         startYear: r.startYear,
         endYear: r.endYear,
       }),
@@ -1447,7 +1034,7 @@ export class Repository {
   /**
    * Change the order fields of several chapters in one transaction (PL-3).
    * Each patch carries only a chapter's reading order and part; story years
-   * are never touched. Each entry gets a revision, so each step can be undone.
+   * are never touched.
    */
   async reorder(
     collection: 'chapters',
@@ -1461,7 +1048,7 @@ export class Repository {
         throw new RepositoryError(`A reorder may only change ${allowed.join(' and ')}.`);
       }
       const prior = await this.current(collection, m.id);
-      changes.push({ ...this.buildUpdate(collection, prior, m.patch), note: 'Reordered chapters' });
+      changes.push(this.buildUpdate(collection, prior, m.patch));
     }
     if (changes.length) await this.commit(changes);
     return changes.map((c) => c.next);
@@ -1470,8 +1057,7 @@ export class Repository {
   /**
    * One romanization system per language (GL-1). This is a settings write, in
    * the same class as the story time and the tree layout: it is stored in the
-   * `meta` collection, is not an entry, and so has no entry revision and no
-   * undo step. Changing it is one visible action on the Romanization screen
+   * `meta` collection, is not an entry, and so has no undo step. Changing it is one visible action on the Romanization screen
    * that can be changed back there. Every settings write goes through
    * `writeMeta`, the one place that touches `meta`.
    */
@@ -1509,7 +1095,7 @@ export class Repository {
   }
 
   /**
-   * Save the tree positions. Layout is not an entry: no revision. Undo of a
+   * Save the tree positions. Layout is not an entry. Undo of a
    * move is a renderer command that writes back through here (ED-3), and the
    * tree reloads on the change event either way.
    */
@@ -1545,11 +1131,10 @@ export class Repository {
 
   /**
    * Replace the scene outline. The current state is the meta document; every
-   * change also lands in a version: the latest one when it was touched in the
-   * last ten minutes, else a new one (`newVersion` forces a new one). An
+   * change also lands in a version: the latest one when it opened no more than
+   * `outlineVersionDays` days ago, else a new one (`newVersion` forces a new one). An
    * outline written before versioning gets its old state as the first version
-   * the first time it changes, so nothing is lost. Never an entry: no revision,
-   * no undo step.
+   * the first time it changes, so nothing is lost. Never an entry: no undo step.
    */
   async setSceneOutline(
     text: string,
@@ -1580,7 +1165,8 @@ export class Repository {
         };
         await versions.insertOne(last);
       }
-      if (last && !startsNewVersion(last.until, now, opts.newVersion)) {
+      const days = this.bibleSettings().numbers.outlineVersionDays;
+      if (last && !startsNewVersion(last.at, now, opts.newVersion ?? false, days)) {
         await versions.updateOne(
           { _id: last._id },
           { $set: { text, breaks: cleanBreaks, years: clean, until: iso } },
@@ -1654,8 +1240,7 @@ export class Repository {
   /**
    * Settings writes (story time, tree layout, romanization choices): a single
    * `meta` document, replaced or removed, with the read model kept in step.
-   * They are not entries, so they carry no entry revision (ARCHITECTURE rule 5
-   * covers entries).
+   * They are not entries (ARCHITECTURE rule 5 covers entries).
    */
   private async writeMeta(doc: StoredDoc | null, removeId?: string): Promise<void> {
     const meta = this.bible.collection<StoredDoc>('meta');
@@ -1689,7 +1274,7 @@ export class Repository {
   /** Brief settings writes run one after another, so each merges onto the one before it. */
   private briefQueue: Promise<unknown> = Promise.resolve();
 
-  /** A settings write, like the story time: the meta document only, no entry revision. */
+  /** A settings write, like the story time: the meta document only. */
   setBriefSettings(next: {
     window?: number;
     budget?: number;
@@ -1773,7 +1358,7 @@ export class Repository {
   /**
    * IP-15: set one feature's instructions, or reset it to the default with
    * null or blank text. A settings write like the brief settings: the meta
-   * document only, no entry revision; undo is a renderer command.
+   * document only; undo is a renderer command.
    */
   async setClaudeInstructions(
     feature: ClaudeFeature,
@@ -1797,8 +1382,7 @@ export class Repository {
   }
 
   /**
-   * IP-16: delete one entry in the trash forever, with its revisions and its
-   * import record, in one transaction. Not an undo step (the A40 rule): a
+   * IP-16: delete one entry in the trash forever, in one transaction. Not an undo step (the A40 rule): a
    * snapshot is taken first instead (BK-1). Links to it from other entries are
    * left as they are, and the warnings report them as missing.
    */
@@ -1813,7 +1397,7 @@ export class Repository {
   /** IP-16: delete every entry in the trash forever, in one transaction. */
   async emptyTrash(): Promise<PurgeCounts> {
     const items = this.trash().map((t) => ({ collection: t.collection, id: t.entry._id }));
-    if (!items.length) return { entries: 0, revisions: 0 };
+    if (!items.length) return { entries: 0 };
     await this.bulkGuard('empty trash');
     return this.purgeAll(items);
   }
@@ -1821,11 +1405,10 @@ export class Repository {
   private async purgeAll(
     items: { collection: EntryCollection; id: string }[],
   ): Promise<PurgeCounts> {
-    const counts: PurgeCounts = { entries: 0, revisions: 0 };
+    const counts: PurgeCounts = { entries: 0 };
     await this.transact(async (session) => {
       // A retried transaction counts again from nothing.
       counts.entries = 0;
-      counts.revisions = 0;
       const byCollection = new Map<EntryCollection, string[]>();
       for (const it of items) {
         byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
@@ -1841,19 +1424,11 @@ export class Repository {
           );
         }
         counts.entries += gone.deletedCount;
-        const revs = await this.bible
-          .collection<Revision>('revisions')
-          .deleteMany({ collection, entryId: { $in: ids } }, { session });
-        counts.revisions += revs.deletedCount;
       }
-      await this.bible
-        .collection<StoredDoc>('importSources')
-        .deleteMany({ _id: { $in: items.map((i) => i.id) } }, { session });
       await this.options.midTransaction?.(session);
     });
     for (const it of items) {
       this.model.remove(it.collection, it.id);
-      this.model.remove('importSources', it.id);
       this.index.remove(it.collection, it.id);
     }
     for (const it of items) {
@@ -1868,43 +1443,6 @@ export class Repository {
   }
 
   /**
-   * IP-16: remove revisions written before a date, for one entry or the whole
-   * bible. `dryRun` only counts them, for the count shown before confirming.
-   * Not an undo step; a snapshot is taken first (BK-1).
-   */
-  async pruneRevisions(opts: {
-    collection?: EntryCollection;
-    id?: string;
-    before: string;
-    dryRun?: boolean;
-  }): Promise<{ count: number }> {
-    const before = new Date(opts.before);
-    if (Number.isNaN(before.getTime())) {
-      throw new RepositoryError('Give the date as a day, for example 2026-01-31.');
-    }
-    if (opts.id && !opts.collection) {
-      throw new RepositoryError('Say which section the entry is in.');
-    }
-    const filter: Document = { at: { $lt: before.toISOString() } };
-    if (opts.collection) {
-      this.assertCollection(opts.collection);
-      filter.collection = opts.collection;
-      if (opts.id) {
-        if (!this.model.get(opts.collection, opts.id)) {
-          throw new RepositoryError(`No ${opts.collection} entry has the ID ${opts.id}.`);
-        }
-        filter.entryId = opts.id;
-      }
-    }
-    const revisions = this.bible.collection<Revision>('revisions');
-    if (opts.dryRun) return { count: await revisions.countDocuments(filter) };
-    if (!(await revisions.countDocuments(filter))) return { count: 0 };
-    await this.bulkGuard('remove old revisions');
-    const res = await revisions.deleteMany(filter);
-    return { count: res.deletedCount };
-  }
-
-  /**
    * IP-18: a patch that changes the manuscript fields of a chapter is refused
    * unless the importer writes it. A patch that repeats their stored values
    * (a whole entry saved back) is not a change and passes.
@@ -1915,12 +1453,6 @@ export class Repository {
     patch: Record<string, unknown>,
   ): void {
     if (lockedTouched(c, prior, patch).length) throw new RepositoryError(MANUSCRIPT_LOCKED);
-  }
-
-  /** IP-18: the stored manuscript fields of an entry, kept when an older revision is restored. */
-  private lockedValues(c: EntryCollection, prior: StoredDoc): Record<string, unknown> {
-    const fields = LOCKED_FIELDS[c] ?? [];
-    return Object.fromEntries(fields.filter((k) => k in prior).map((k) => [k, prior[k]]));
   }
 
   /**
@@ -1985,7 +1517,7 @@ export class Repository {
     const add = { ...input.listAdd, label: input.listAdd.label.trim() };
     if (!(MINTABLE_LISTS as readonly string[]).includes(add.listId)) {
       throw new RepositoryError(
-        `New items can be proposed only for communities, event categories, regions, languages and tags, not ${add.listId}.`,
+        `New items can be proposed only for communities, event categories, regions and languages, not ${add.listId}.`,
       );
     }
     const list = this.storedList(add.listId);
@@ -2079,12 +1611,12 @@ export class Repository {
             `${item.label} is no longer in ${list.label}. Edit this proposal to use an item the list has.`,
           );
         }
-        values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+        values.set(u.ref, made.id);
         continue;
       }
       const { made, next, existed } = this.mintItem(list, item);
       if (!existed) lists.set(item.listId, next);
-      values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+      values.set(u.ref, made.id);
       decided.push({
         ...add,
         state: 'approved',
@@ -2151,34 +1683,18 @@ export class Repository {
   // ---------- a47-model: list order and parents, item looks, bible settings, era defaults ----------
 
   /**
-   * A47 (IP-9): a status or provenance ID the list does not hold is refused,
-   * with the field named. Only a value that changes is checked, so an entry
-   * restored from the trash with an item removed since can still be edited.
-   * A seeded word the list no longer holds (code that writes `idea`, `planned`
-   * or `invented`) is settled to the bible's own: the first status of that
-   * kind (`defaultStatus`), or no provenance. A51: a moment's kind is checked
-   * against the `momentKinds` list the same way.
+   * A51 (IP-9): a moment's kind the `momentKinds` list does not hold is
+   * refused, with the field named. Only a value that changes is checked, so an
+   * entry restored from the trash with an item removed since can still be edited.
    */
   private checkVocabulary(c: EntryCollection, doc: StoredDoc, prior: StoredDoc | null): void {
-    const fields: [string, string, string][] = [
-      ['status', 'statuses', 'Status'],
-      ['provenance', 'provenance', 'Provenance'],
-      ...(c === 'moments' ? [['kind', 'momentKinds', 'Kind'] as [string, string, string]] : []),
-    ];
+    const fields: [string, string, string][] =
+      c === 'moments' ? [['kind', 'momentKinds', 'Kind']] : [];
     for (const [field, listId, label] of fields) {
       const v = doc[field];
       if (typeof v !== 'string' || (prior && prior[field] === v)) continue;
       const list = this.model.get('lists', listId) as ListDoc | undefined;
       if (!list || list.items.some((i) => i.id === v)) continue;
-      const lists = this.model.all('lists');
-      if (field === 'status' && (STATUS_KINDS as readonly string[]).includes(v)) {
-        doc.status = defaultStatus(lists, v as StatusKind);
-        continue;
-      }
-      if (field === 'provenance' && ['researched', 'invented'].includes(v)) {
-        doc.provenance = defaultProvenance(lists, v);
-        continue;
-      }
       const message = `${label} ${v} is not in the ${listId} list.`;
       throw new ValidationError(message, [
         { code: 'custom', message, path: [field], input: v } as z.core.$ZodIssue,
@@ -2187,29 +1703,9 @@ export class Repository {
   }
 
   /**
-   * A47 (IP-8, IP-12): an entry's content as migration 11 would have left it,
-   * for restoring a revision written before it: region names become region
-   * item IDs and a family colour token becomes its hex.
-   */
-  private fromBeforeMigration11<T extends Record<string, unknown>>(
-    c: EntryCollection,
-    content: T,
-  ): T {
-    if (c === 'worldEvents' && Array.isArray(content.regions)) {
-      const regions = this.model.get('lists', 'regions') as ListDoc | undefined;
-      return { ...content, regions: regionIdsFrom(content.regions, regions?.items ?? []) };
-    }
-    if (c === 'families' && 'color' in content) {
-      return { ...content, color: familyHexFrom(content.color) };
-    }
-    return content;
-  }
-
-  /**
    * A47 (IP-8): world events hold region item IDs. A region written by name
-   * (an approved proposal, a restored revision) becomes the item with that
-   * label, and a name the list lacks becomes a new item in the same write,
-   * as a new tag does. `listUpdates` gains the regions list when it grows.
+   * (an approved proposal, an older backup) becomes the item with that
+   * label, and a name the list lacks becomes a new item in the same write. `listUpdates` gains the regions list when it grows.
    */
   private settleRegions(changes: Change[], listUpdates: ListDoc[]): void {
     const at = listUpdates.findIndex((l) => l._id === 'regions');
@@ -2240,20 +1736,7 @@ export class Repository {
     else listUpdates.push(grown);
   }
 
-  /** IP-9: every kind the statuses had keeps at least one status. */
-  private keepEveryKind(
-    before: readonly Pick<ListItem, 'extra'>[],
-    after: readonly Pick<ListItem, 'extra'>[],
-  ): void {
-    for (const kind of STATUS_KINDS) {
-      const had = before.some((i) => i.extra?.kind === kind);
-      if (had && !after.some((i) => i.extra?.kind === kind)) {
-        throw new RepositoryError(`Keep at least one status of kind ${kind}.`);
-      }
-    }
-  }
-
-  /** An item's colour and extra values, checked for its list: a status always has a kind. */
+  /** An item's colour and extra values, checked for its list. */
   private itemLook(
     listId: string,
     look: { color: string | null; extra: Record<string, string | number> },
@@ -2262,12 +1745,6 @@ export class Repository {
       throw new RepositoryError('A colour is a hex value such as #2a78d6.');
     }
     const extra = { ...look.extra };
-    if (listId === 'statuses') {
-      extra.kind ??= 'idea';
-      if (!(STATUS_KINDS as readonly unknown[]).includes(extra.kind)) {
-        throw new RepositoryError('A status has the kind canon, planned or idea.');
-      }
-    }
     if (listId === 'ageGroups') {
       for (const k of ['from', 'to'] as const) {
         const v = extra[k];
@@ -2334,7 +1811,7 @@ export class Repository {
 
   /**
    * IP-9, IP-10: change an item's colour (null clears it) or its extra
-   * values (merged; a value of null removes that key). A status keeps a kind.
+   * values (merged; a value of null removes that key).
    */
   async setListItemLook(
     listId: string,
@@ -2362,7 +1839,6 @@ export class Repository {
       }),
     };
     const items = list.items.map((i) => (i.id === itemId ? next : i));
-    if (listId === 'statuses') this.keepEveryKind(list.items, items);
     await this.commit([], undefined, [{ ...list, items }]);
     return next;
   }
@@ -2374,7 +1850,7 @@ export class Repository {
 
   /**
    * Change any part of the bible's settings. A settings write: the meta
-   * document only, no entry revision; writes run one after another so two
+   * document only; writes run one after another so two
    * quick changes both land. A value that does not fit is refused in plain words.
    */
   setBibleSettings(patch: BibleSettingsPatch): Promise<BibleSettings> {
@@ -2506,9 +1982,7 @@ const BRIEF_SETTINGS_ID = 'briefSettings';
 export const BIBLE_SETTINGS_ID = 'bibleSettings';
 const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
-const IMPORT_MAPPINGS_ID = 'importMappings';
 const TREE_LAYOUT_ID = 'treeLayout';
-const DRIVE_ID = 'drive';
 
 // ---------- a47-guard ----------
 
@@ -2528,7 +2002,6 @@ export interface ListAddInput {
 /** What a purge removed (IP-16). */
 export interface PurgeCounts {
   entries: number;
-  revisions: number;
 }
 
 const CLAUDE_INSTRUCTIONS_ID = 'claudeInstructions';
@@ -2546,12 +2019,6 @@ export const LOCKED_FIELDS: Partial<Record<EntryCollection, readonly string[]>> 
   chapters: ['manuscriptText', 'manuscriptSource', 'sourceFile'],
 };
 
-/** A document without its locked fields, so an older revision cannot bring them back (IP-18). */
-function withoutLocked(c: EntryCollection, doc: Record<string, unknown>): Record<string, unknown> {
-  const fields = LOCKED_FIELDS[c] ?? [];
-  return Object.fromEntries(Object.entries(doc).filter(([k]) => !fields.includes(k)));
-}
-
 /** The locked fields a patch would change. Absent and empty count as the same. */
 export function lockedTouched(
   c: EntryCollection,
@@ -2567,7 +2034,6 @@ const LIST_ITEM_LABELS: Record<string, string> = {
   eventCategories: 'Event category',
   regions: 'Region',
   languages: 'Language',
-  tags: 'Tag',
 };
 
 /** A list's item in the singular, as the diff names it. */

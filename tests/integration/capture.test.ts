@@ -23,10 +23,9 @@ import {
   fileLocalDrafts,
   mergeFilings,
 } from '../../src/shared/domain/capture';
-import { buildIndex, localSourceNote } from '../../src/shared/domain/captureRouter';
+import { buildIndex } from '../../src/shared/domain/captureRouter';
 import { indexFromSession, povCommunityId } from '../../src/main/claude/features/captureIndex';
 import * as boxRouting from '../../src/renderer/src/workspace/captureLocal';
-import { defaultStatus } from '../../src/shared/domain/lists';
 import type { CaptureProposal } from '../../src/shared/domain/capture';
 import { UndoManager } from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
@@ -174,7 +173,7 @@ afterAll(async () => {
 });
 
 describe('KB-6 capture', () => {
-  test('KB-6 SM-3 AI-3 AI-5 a recorded capture queues a Lives in moment and a world event in the story year, from Claude, as ideas naming the capture, and writes nothing', async () => {
+  test('KB-6 SM-3 AI-3 AI-5 a recorded capture queues a Lives in moment and a world event in the story year, from Claude, with no status or source note, and writes nothing', async () => {
     const eventsBefore = bible.model.all('worldEvents').length;
     const momentsBefore = bible.model.all('moments').length;
     const { fake, turn, run } = await capture(MOVE);
@@ -210,16 +209,18 @@ describe('KB-6 capture', () => {
       characterId: 'Z3',
       year: 2034,
       title: 'Lives in Seattle',
-      status: 'idea',
     });
     expect(place!.reason).toMatch(/\(Claude, capture, run /);
     expect(event).toMatchObject({ source: 'claude', op: 'create', collection: 'worldEvents' });
     expect(event!.data).toMatchObject({
       title: 'Portland rations water',
       start: { year: 2034 },
-      status: 'idea',
     });
-    expect(event!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
+    // A52: a recording that still sets status or a source note has them dropped before queueing.
+    for (const p of [place!, event!]) {
+      expect(p.data).not.toHaveProperty('status');
+      expect(p.data).not.toHaveProperty('sourceNote');
+    }
 
     // AI-3: nothing is written before File it.
     expect(bible.model.all('worldEvents')).toHaveLength(eventsBefore);
@@ -239,7 +240,6 @@ describe('KB-6 capture', () => {
     ]);
     const filedId = filing.filed[0]!.id;
     expect(bible.model.get('worldEvents', filedId)).toMatchObject({
-      status: 'idea',
       start: { year: 2034 },
     });
     expect(bible.model.get('proposals', event!.id)).toMatchObject({ state: 'approved' });
@@ -278,8 +278,8 @@ describe('KB-6 capture', () => {
     const proposals = proposalsOf(turn.proposalIds);
     expect(turn.proposalIds).toHaveLength(2);
     expect(proposals.map((p) => [p!.collection, p!.data.characterId, p!.data.status])).toEqual([
-      ['moments', 'Z1', 'idea'],
-      ['moments', 'H4', 'idea'],
+      ['moments', 'Z1', undefined],
+      ['moments', 'H4', undefined],
     ]);
     const filing = await fileCapture(
       invoke,
@@ -363,19 +363,18 @@ describe('SM-2 a capture never files to a dropped kind', () => {
 });
 
 describe('KB-7 capture offline', () => {
-  test('KB-7 AI-7 a failed run proposes nothing, keeps the text, and the box saves it as an open question tagged capture with the story time', async () => {
+  test('KB-7 AI-7 a failed run proposes nothing, keeps the text, and the box saves the text as an open question with the story time', async () => {
     const { turn } = await capture(FERRY);
     expect(turn).toMatchObject({ status: 'failed', error: { kind: 'network' }, proposalIds: [] });
     // AI-7: the input is kept in the saved run.
     expect(turn.question).toContain('The ferry to Macau');
-    const data = captureQuestionData(FERRY, 'Story time 2034', '2026-10-12');
+    const data = captureQuestionData(FERRY, 'Story time 2034');
     const { entry } = await invoke('entry.create', { collection: 'openQuestions', data });
     expect(bible.model.get('openQuestions', entry._id)).toMatchObject({
       title: FERRY,
       question: FERRY,
-      tags: ['capture'],
-      status: 'idea',
     });
+    expect(bible.model.get('openQuestions', entry._id)).not.toHaveProperty('tags');
     expect(String(bible.model.get('openQuestions', entry._id)?.body)).toContain('Story time 2034');
   });
 
@@ -419,7 +418,7 @@ describe('IP-17 capture can mint a list item', () => {
     // The tool description tells Claude it may add a list item when none fits.
     const propose = fake.requests.at(-1)!.tools.find((t) => t.name === 'propose_change')!;
     expect(propose.description).toMatch(
-      /community, event category, region, language or tag fits, first propose a new one/,
+      /community, event category, region or language fits, first propose a new one/,
     );
     expect(add).toMatchObject({
       op: 'listAdd',
@@ -455,7 +454,7 @@ describe('IP-17 capture can mint a list item', () => {
     ).find((i) => i.label === 'Jinan')!;
     expect(item.id).toBe('jinan');
     const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
-    expect(made).toMatchObject({ communityId: 'jinan', startYear: 2045, status: 'idea' });
+    expect(made).toMatchObject({ communityId: 'jinan', startYear: 2045 });
     expect(bible.model.get('proposals', add._id)).toMatchObject({
       state: 'approved',
       appliedItemId: 'jinan',
@@ -658,9 +657,8 @@ describe('CR-7 the fast file', () => {
       demographic: '18-30',
       startYear: 2065,
       endYear: 2100,
-      status: 'idea',
     });
-    expect(line!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
+    expect(line!.data).not.toHaveProperty('sourceNote');
     expect(line!.reason).toMatch(/\(Claude, capture, fast file, run /);
     expect(bible.model.all('culturalEntries')).toHaveLength(before);
   });
@@ -733,20 +731,20 @@ describe('CR-9 the handler reruns the router with the hints', () => {
     expect(full.turns[0]!.proposalIds).toHaveLength(2);
   });
 
-  test('CR-8 the capture view of get_entry is what Claude reads in a capture run: the whole entry, with the entries that link to it', async () => {
+  test('CR-8 A52 the capture view of get_entry is what Claude reads in a capture run: the whole entry, with no links', async () => {
     const { fake } = await capture(MOVE);
     const reads = fake.toolResults.filter((t) => t.name === 'get_entry');
     expect(reads).toHaveLength(1);
     const out = JSON.parse(reads[0]!.output.text) as {
       section: string;
       entry: Record<string, unknown>;
-      linkedFrom: unknown[];
+      linkedFrom?: unknown[];
     };
     expect(out.section).toBe('characters');
     expect(Object.keys(out.entry).sort()).toEqual(
       Object.keys(bible.model.get('characters', 'Z3')!).sort(),
     );
-    expect(out.linkedFrom.length).toBeGreaterThan(0);
+    expect(out.linkedFrom).toBeUndefined();
   });
 
   test('CR-9 AI-4 a capture with only local facts starts no run and sends nothing', async () => {
@@ -823,7 +821,6 @@ describe('CR-9 a split capture stops and fails as one', () => {
 
 describe('CR-6 Route A files from the box, without Claude', () => {
   const MOONCAKES = 'Teenagers in Guangzhou start to eat mooncakes with coffee by the 2050s.';
-  const today = '2026-10-22';
   const route = (text: string) =>
     routeCapture(text, buildIndex(indexFromSession(bible)), {
       storyYear: 2034,
@@ -843,7 +840,7 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     return { calls, via };
   }
 
-  test('CR-6 CR-10 a clear cultural line routes locally, writes nothing until File it, then files an idea with the local source note', async () => {
+  test('CR-6 CR-10 a clear cultural line routes locally, writes nothing until File it, then files it with no status or source note', async () => {
     const before = live('culturalEntries').length;
     const runsBefore = bible.model.all('conversations').length;
     const [line] = route(MOONCAKES).facts;
@@ -852,12 +849,8 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     expect(live('culturalEntries')).toHaveLength(before);
     expect(bible.model.all('conversations')).toHaveLength(runsBefore);
 
-    const idea = defaultStatus(
-      bible.model.all('lists') as unknown as Parameters<typeof defaultStatus>[0],
-      'idea',
-    );
     const { calls, via } = logged();
-    const filing = await fileLocalDrafts(via, line!.drafts, today, idea);
+    const filing = await fileLocalDrafts(via, line!.drafts);
     expect(calls).toEqual(['entry.create']);
     expect(filing.failed).toEqual([]);
     expect(live('culturalEntries')).toHaveLength(before + 1);
@@ -868,11 +861,10 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       demographic: '0-18',
       startYear: 2050,
       endYear: 2100,
-      status: idea,
-      sourceNote: localSourceNote(today),
       body: MOONCAKES,
     });
-    expect(made.sourceNote).toBe('From a capture on 2026-10-22, filed without Claude.');
+    expect(made).not.toHaveProperty('status');
+    expect(made).not.toHaveProperty('sourceNote');
     const undo = new UndoManager();
     undo.record(filing.command!);
     await undo.step('undo', undoIO(invoke));
@@ -897,7 +889,7 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     expect(communityLabels()).not.toContain('Jinan');
 
     const { calls, via } = logged();
-    const local = await fileLocalDrafts(via, drafts, today, 'idea');
+    const local = await fileLocalDrafts(via, drafts);
     const approved = await fileCapture(via, proposals, []);
     const filing = mergeFilings(local, approved);
     expect(filing.failed).toEqual([]);
@@ -908,11 +900,11 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       'worldEvents',
     ]);
     const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
-    expect(made).toMatchObject({ communityId: 'jinan', sourceNote: localSourceNote(today) });
-    // The approved proposals keep Claude's source note; only the local line says without Claude.
-    expect(String(bible.model.get('moments', filing.filed[1]!.id)!.sourceNote)).not.toContain(
-      'without Claude',
-    );
+    expect(made).toMatchObject({ communityId: 'jinan' });
+    // A52: neither the local line nor the approved proposals carry a source note.
+    for (const f of filing.filed) {
+      expect(bible.model.get(f.collection, f.id)).not.toHaveProperty('sourceNote');
+    }
     expect(filing.command!.label).toBe(
       'Filed a capture: Teenagers in Guangzhou start to eat mooncakes with coffee, Lives in Seattle and 2 more',
     );
@@ -955,14 +947,10 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       bible.model.get('lists', 'communities')!.items as { id: string; label: string }[];
     // Route A: the box mints Hangzhou for its line.
     const [line] = route(MOONCAKES).facts;
-    const local = await fileLocalDrafts(
-      invoke,
-      [
-        { op: 'listAdd', listId: 'communities', label: 'Hangzhou', ref: 'new:hangzhou' },
-        ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:hangzhou' } })),
-      ],
-      today,
-    );
+    const local = await fileLocalDrafts(invoke, [
+      { op: 'listAdd', listId: 'communities', label: 'Hangzhou', ref: 'new:hangzhou' },
+      ...line!.drafts.map((d) => ({ ...d, data: { ...d.data, communityId: 'new:hangzhou' } })),
+    ]);
     const hangzhou = items().find((i) => i.label === 'Hangzhou')!;
     const madeId = local.filed[0]!.id;
     // Another entry takes up the new item before the writer undoes the filing.
@@ -973,7 +961,6 @@ describe('CR-6 Route A files from the box, without Claude', () => {
         communityId: hangzhou.id,
         startYear: 2040,
         endYear: 2050,
-        status: 'idea',
       },
     });
     const undo = new UndoManager();
@@ -1001,7 +988,6 @@ describe('CR-6 Route A files from the box, without Claude', () => {
         communityId: jinan.id,
         startYear: 2046,
         endYear: 2050,
-        status: 'idea',
       },
     });
     const undo2 = new UndoManager();

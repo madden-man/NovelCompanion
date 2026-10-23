@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { ListChip } from '../listChip';
 import { isEntryCollection } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import type { Response } from '../../../../shared/ipc';
@@ -36,12 +35,6 @@ export async function updateWithUndo(
   return after;
 }
 
-/** A status chip: canon, planned, or idea (SB-5 keeps them visibly apart). */
-export function StatusChip({ status }: { status: string }) {
-  // A47 (IP-9): the status list's label and colour (a47-vocab).
-  return <ListChip listId="statuses" id={status} />;
-}
-
 function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) => ReactNode }) {
   const { item, onOpen } = props;
   const collection = item.collection;
@@ -60,7 +53,6 @@ function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) =
         ) : (
           <strong>{item.title}</strong>
         )}
-        <StatusChip status={item.status} />
         {item.note && <span data-testid="sel-note">{item.note}</span>}
         {props.action?.(item)}
       </div>
@@ -116,7 +108,7 @@ function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
       if (typeof it.year !== 'number' || it.year > to) continue;
       const endYear = it.endYear ?? it.year;
       if (endYear < from) continue;
-      out.push({ id: it.id, title: it.title, status: it.status, startYear: it.year, endYear });
+      out.push({ id: it.id, title: it.title, startYear: it.year, endYear });
     }
   }
   return out;
@@ -176,104 +168,8 @@ export function EventsWindow(props: {
 }
 
 /**
- * A selection as the "Relevant to Session" view and the brief show it: one
- * section per strand, primary first, then what the section shares. Every item
- * opens its entry.
- */
-export function SelectionBody(props: {
-  selection: SelectionView;
-  onOpen: OpenEntry;
-  /** The strand being written, marked in the list. */
-  writing?: { chapterId?: string; strandId?: string } | null;
-  action?: (item: Item) => ReactNode;
-  /** SB-9: put back an entry removed from the selection, shown on its Left out row. */
-  onKeep?: (id: string) => void;
-}) {
-  const { selection: sel, onOpen } = props;
-  return (
-    <div className="stack" data-testid="selection">
-      {sel.strands.map((s) => {
-        const isWriting =
-          !!props.writing?.strandId &&
-          s.chapterId === props.writing.chapterId &&
-          s.strandId === props.writing.strandId;
-        return (
-          <section
-            key={`${s.chapterId ?? ''}|${s.strandId ?? s.label}`}
-            className="panel stack tight"
-            data-testid="relevant-strand"
-            data-strand={s.strandId ?? ''}
-            aria-label={s.label}
-          >
-            <div className="row">
-              <h3>{s.label}</h3>
-              <span className="chip time">{s.year}</span>
-              {s.primary && <span className="chip">primary</span>}
-              {isWriting && <span className="chip canon">writing now</span>}
-              {s.povName && <span>Point of view: {s.povName}</span>}
-              {s.communities.length > 0 && (
-                <span>Community: {s.communities.map((c) => c.label).join(', ')}</span>
-              )}
-            </div>
-            {s.groups.map((g) => {
-              if (g.kind === 'eventsWindow') {
-                return (
-                  <EventsWindow
-                    key={g.kind}
-                    strand={s}
-                    group={g}
-                    window={sel.window}
-                    ahead={sel.ahead}
-                    onOpen={onOpen}
-                    action={props.action}
-                  />
-                );
-              }
-              const group =
-                g.kind === 'plannedAhead'
-                  ? {
-                      ...g,
-                      items: g.items.filter((it) => !onEventStrip(it, s.year, sel.ahead)),
-                    }
-                  : g;
-              return (
-                <GroupBlock
-                  key={g.kind}
-                  group={group}
-                  onOpen={onOpen}
-                  action={props.action}
-                  showEmpty={g.kind === 'characters' || g.kind === 'culture' || g.kind === 'era'}
-                />
-              );
-            })}
-          </section>
-        );
-      })}
-      <section className="panel stack tight" aria-label="For the whole section">
-        <h3>For the whole section</h3>
-        {sel.shared.map((g) => (
-          <GroupBlock
-            key={g.kind}
-            group={g}
-            onOpen={onOpen}
-            action={props.action}
-            showEmpty={g.kind === 'previousChapters'}
-          />
-        ))}
-      </section>
-      {sel.omitted.length > 0 && (
-        <section className="panel stack tight" data-testid="sel-omitted" aria-label="Left out">
-          <h3>Left out</h3>
-          <OmittedList selection={sel} onKeep={props.onKeep} />
-        </section>
-      )}
-    </div>
-  );
-}
-
-/**
  * SB-9, IP-2: what the selection left out, by title; an entry removed by the
- * writer has Keep, which puts it back before the brief is written.
+ * writer has Keep, which puts it back.
  */
 export function OmittedList(props: { selection: SelectionView; onKeep?: (id: string) => void }) {
   const sel = props.selection;
@@ -304,7 +200,7 @@ export function OmittedList(props: { selection: SelectionView; onKeep?: (id: str
   );
 }
 
-/** SB-9, IP-2: Remove on an item of a selection no brief has been written from yet. */
+/** SB-9, IP-2: Remove on an item of the selection. */
 export function removeAction(onRemove: (id: string) => void) {
   function RemoveAction(item: Item) {
     return (

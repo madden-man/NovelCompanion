@@ -39,7 +39,7 @@ function htmlText(html: string): string {
 const MARKUP = /[*_~\\#>]|^\s*(?:[-+]|\d+[.)])(?:\s|$)|^\s*-{3,}\s*$/m;
 
 /**
- * A stored long text as plain text, for search, briefs and the budget: one
+ * A stored long text as plain text, for search and the selection budget: one
  * line per paragraph, heading, list item or line break, a scene break as
  * `* * *`, and no formatting marks. HTML from before A44 reads the same way.
  */

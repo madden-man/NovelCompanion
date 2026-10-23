@@ -551,40 +551,6 @@ test('SM-9 ED-3 IP-1 a field edit in the dialog saves over IPC on Enter or blur,
   await closeMoment();
 });
 
-test('SM-9 A50 ED-1 ED-3 More in the dialog: Add new makes a status and picks it, a tag adds, one undo step each', async () => {
-  const id = 'Z3-lives-1';
-  const d = await openMoment(page, id);
-  const more = d.getByRole('button', { name: 'More', exact: true });
-  await expect(more).toHaveAttribute('aria-expanded', 'false');
-  await more.click();
-  const start = await getMoment(id);
-  const statuses = async () =>
-    (await invoke('lists.get', {})).lists
-      .find((l) => l._id === 'statuses')!
-      .items.map((i) => i.label);
-  const st = cell(id, 'status');
-  await openEditable(st);
-  await st.locator('select').selectOption({ label: 'Add new...' });
-  const name = st.getByRole('textbox');
-  await name.fill('Rumoured');
-  await name.press('Enter');
-  await expect(cellText(id, 'status')).toHaveText('Rumoured');
-  expect(await statuses()).toContain('Rumoured');
-  const tags = d.locator('.ed-field[data-field="tags"]');
-  await tags.locator('.add-row > input').fill('river');
-  await tags.locator('.add-row > input').press('Enter');
-  const withRiver = [...((start.tags as string[]) ?? []), 'river'];
-  await expect.poll(async () => (await getMoment(id)).tags).toEqual(withRiver);
-  await expect(tags.locator('.chip').last()).toContainText('river');
-  await blurAndUndo();
-  await expect.poll(async () => (await getMoment(id)).tags).toEqual(start.tags);
-  // The status and the list item Add new made go back together.
-  await page.keyboard.press('Meta+z');
-  await expect.poll(async () => (await getMoment(id)).status).toBe(start.status);
-  await expect.poll(statuses).not.toContain('Rumoured');
-  await closeMoment();
-});
-
 test('SM-9 Add a moment in the head makes a moment at the story year and opens it with What happens open, and the grid shows its marker', async () => {
   await pickRow('Z3');
   const before = (await liveMoments()).length;
@@ -730,7 +696,7 @@ test('SM-9 A50 in the person view a row taller than the frame scrolls, and the n
   for (let i = 0; i < 10; i++) {
     const { entry } = await invoke('entry.create', {
       collection: 'moments',
-      data: { title: `Crowded year ${i + 1}`, characterId: 'U1', year: 2030, status: 'idea' },
+      data: { title: `Crowded year ${i + 1}`, characterId: 'U1', year: 2030 },
     });
     made.push(entry._id);
   }
@@ -825,24 +791,12 @@ test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it;
   await expect(marker('Z3-lives-0')).toHaveAttribute('data-end-year', '2027');
 });
 
-test('SM-9 ED-5 Delete in the dialog lists what links to the moment, then moves it to the trash as one undo step; the notice and Undo bring it back', async () => {
-  // A world event links to the moment, so the confirm names it.
-  const e2 = (await invoke('entry.get', { collection: 'worldEvents', id: 'E2' })).entry;
-  const links0 = (e2.links ?? []) as { targetId: string; kind: string }[];
-  await invoke('entry.update', {
-    collection: 'worldEvents',
-    id: 'E2',
-    patch: { links: [...links0, { targetId: 'Z3-lives-1', kind: 'mentions' }] },
-  });
+test('SM-9 ED-5 Delete in the dialog asks once, then moves the moment to the trash as one undo step; the notice and Undo bring it back', async () => {
   const d = await openMoment(page, 'Z3-lives-1');
   const del = d.getByRole('button', { name: 'Delete' });
   await del.click();
   const confirm = d.getByRole('dialog', { name: 'Move to trash' });
   await expect(confirm).toContainText('Move Lives in Portland, Oregon to the trash?');
-  await expect(confirm.getByTestId('linked-count')).toHaveText(
-    '1 entry links here. Its link is kept and works again if you restore this entry.',
-  );
-  await expect(confirm).toContainText('World event: Care robots licensed for home use in Oregon');
   // Keep it changes nothing; Escape in the confirm keeps it too, and the dialog stays.
   await expect(confirm.getByRole('button', { name: 'Keep it' })).toBeFocused();
   await confirm.getByRole('button', { name: 'Keep it' }).click();
@@ -867,9 +821,7 @@ test('SM-9 ED-5 Delete in the dialog lists what links to the moment, then moves 
   expect((await getMoment('Z3-lives-1')).deletedAt).toBeUndefined();
   await expect(notice).toHaveCount(0);
   // The same delete is one step of the app's undo history too.
-  await invoke('entry.update', { collection: 'worldEvents', id: 'E2', patch: { links: links0 } });
   await del.click();
-  await expect(confirm.getByText('Nothing links here.')).toBeVisible();
   await confirm.getByRole('button', { name: 'Move to trash' }).click();
   await expect(marker('Z3-lives-1')).toHaveCount(0);
   await blurAndUndo();
@@ -889,7 +841,7 @@ test('SM-9 ED-5 Delete in the dialog lists what links to the moment, then moves 
   await expect(marker('Z3-lives-1')).toHaveCount(1);
 });
 
-test('SM-9 A33 IP-4 ED-9 Pick events in the dialog lists the events within the reach and inserts a mention with its link into Relevant world events', async () => {
+test('SM-9 A33 IP-4 Pick events in the dialog lists the events within the reach and inserts the title into Relevant world events', async () => {
   const d = await openMoment(page, 'H1-voice-0');
   const pickButton = d.getByRole('button', {
     name: 'Pick events from 2027 to 2029 for Voice',
@@ -908,21 +860,15 @@ test('SM-9 A33 IP-4 ED-9 Pick events in the dialog lists the events within the r
   await picker.locator('.bs-picker-item').first().click();
   await expect(picker).toHaveCount(0);
   await expect(pickButton).toBeFocused();
-  // An @ mention (ED-9) and the link to the event, in one write.
+  // A53: the title as plain text, one write, nothing stored behind it.
   await expect
     .poll(async () => (await getMoment('H1-voice-0')).worldContext)
-    .toBe('@Care robots licensed for home use in Oregon');
-  expect((await getMoment('H1-voice-0')).links).toContainEqual({
-    targetId: 'E2',
-    kind: 'mention',
-  });
+    .toBe('Care robots licensed for home use in Oregon');
+  expect((await getMoment('H1-voice-0')).links).toBeUndefined();
   await expect(cellText('H1-voice-0', 'worldContext')).toHaveText(
-    '@Care robots licensed for home use in Oregon',
+    'Care robots licensed for home use in Oregon',
   );
-  // ED-9: the closed field shows the mention as a chip, as the open box does.
-  await expect(cellText('H1-voice-0', 'worldContext').locator('.mention-chip')).toHaveText(
-    '@Care robots licensed for home use in Oregon',
-  );
+  await expect(cellText('H1-voice-0', 'worldContext').locator('.mention-chip')).toHaveCount(0);
   // Picking it again adds nothing; Escape closes the list and leaves the dialog open.
   await pickButton.click();
   await page.keyboard.press('Escape');
@@ -932,17 +878,16 @@ test('SM-9 A33 IP-4 ED-9 Pick events in the dialog lists the events within the r
   await expect(cellText('H1-voice-0', 'worldContext')).toHaveText('Add the world events');
   const undone = await getMoment('H1-voice-0');
   expect(undone.worldContext).toBe('');
-  expect(undone.links).not.toContainEqual({ targetId: 'E2', kind: 'mention' });
-  // Text typed in the field and not yet saved is saved as the field closes; the mention goes after it.
+  // Text typed in the field and not yet saved is saved as the field closes; the title goes after it.
   await fillRich('H1-voice-0', 'worldContext', 'Rents doubled that spring.', 'none');
   await pickButton.click();
   await picker.locator('.bs-picker-item').first().click();
   await expect
     .poll(async () => (await getMoment('H1-voice-0')).worldContext)
-    .toBe('Rents doubled that spring.\n@Care robots licensed for home use in Oregon');
+    .toBe('Rents doubled that spring.\nCare robots licensed for home use in Oregon');
   await expect(cellText('H1-voice-0', 'worldContext')).toContainText('Rents doubled that spring.');
   await expect(cellText('H1-voice-0', 'worldContext')).toContainText(
-    '@Care robots licensed for home use in Oregon',
+    'Care robots licensed for home use in Oregon',
   );
   await blurAndUndo();
   await expect(cellText('H1-voice-0', 'worldContext')).toHaveText('Rents doubled that spring.');
@@ -1186,9 +1131,7 @@ test('SM-9 NF-2 the screen works from the keyboard and its labels use the primar
   await expect(dialog()).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(dialog().getByRole('button', { name: /^Pick events/ })).toBeFocused();
-  // A50: More, closed, then the foot.
-  await page.keyboard.press('Tab');
-  await expect(dialog().getByRole('button', { name: 'More', exact: true })).toBeFocused();
+  // Then the foot.
   await page.keyboard.press('Tab');
   await expect(dialog().getByRole('button', { name: 'Delete' })).toBeFocused();
   await page.keyboard.press('Tab');
@@ -1823,7 +1766,7 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
     const { _id: _drop, ...lives } = strip(fixture.moments!.find((m) => m._id === 'Z3-lives-1')!);
     const { entry: later } = await invoke('entry.create', {
       collection: 'moments',
-      data: { ...lives, title: 'Moves to Seattle', year: 2033, endYear: null, links: [] },
+      data: { ...lives, title: 'Moves to Seattle', year: 2033, endYear: null },
     });
     await expect(marker(later._id)).toHaveCount(1);
     const doomed = await openMoment(page, 'Z3-lives-1');
@@ -1888,31 +1831,10 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
     }
     await off(d.getByRole('button', { name: /^Pick events/ }));
     await off(d.getByRole('button', { name: 'Delete' }));
-    // A50: More holds the rest of the moment; its fields are off too, and History still opens.
-    await d.getByRole('button', { name: 'More', exact: true }).click();
-    for (const f of ['status', 'provenance', 'sourceNote', 'sourceRef']) {
-      await off(cellText('Z3-lives-0', f));
-    }
-    // Tags and Links sit in a fieldset that is off with the reason, as in the entry editor.
-    const rest = d.locator('fieldset.bs-more-group');
-    await expect(rest).toHaveAttribute('disabled', '');
-    await expect(rest).toHaveAttribute('title', READ_ONLY_REASON);
-    await expect(rest).toHaveAttribute('aria-describedby', 'read-only-reason');
-    await expect(rest.locator('[data-field="tags"] .add-row > input')).toBeDisabled();
-    await expect(rest.getByLabel('Link kind')).toBeDisabled();
-    const history = d.getByRole('button', { name: 'History', exact: true });
-    await history.click();
-    await expect(page.getByTestId('history')).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('history')).toHaveCount(0);
-    await expect(d).toBeVisible();
-    await expect(history).toBeFocused();
     // Reading still works: the age, and Previous and Next through the person's moments.
     await expect(d.getByTestId('moment-age')).toHaveText('0');
     await d.getByRole('button', { name: 'Next' }).click();
     await expect(d).toHaveAttribute('data-id', later._id);
-    // More stays open from one moment to the next.
-    await expect(d.getByTestId('moment-more')).toBeVisible();
     await expect(d.getByTestId('moment-age')).toHaveText('45');
     await d.getByRole('button', { name: 'Previous' }).click();
     await expect(d).toHaveAttribute('data-id', 'Z3-lives-0');

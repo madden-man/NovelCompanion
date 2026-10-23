@@ -8,7 +8,6 @@
  * The checks, per chapter strand (A5) or per chapter at its story year:
  * - a character present in a strand while dead or unborn in that strand's
  *   year (for a year range: dead before it starts, or born after it ends);
- * - an event linked to the chapter as having happened, dated after its story year;
  * - a strand year outside its point of view character's lifetime;
  * and, for the whole manuscript, the FT-6 tree warnings. The facts step
  * (KN-3) went with A39.
@@ -17,7 +16,7 @@ import { lifeState } from '../ages';
 import type { LifeState } from '../ages';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
-import { characterName, eventSpans } from '../timeline';
+import { characterName } from '../timeline';
 import type { TimelineData } from '../timeline';
 import { buildGraph, treeWarnings } from '../tree';
 import type { StoryDate } from '../../schema/common';
@@ -25,7 +24,6 @@ import type { StoryDate } from '../../schema/common';
 export const STRUCTURAL_CHECKS = [
   'character-present-while-dead',
   'character-present-while-unborn',
-  'event-linked-as-happened-after-story-year',
   'strand-year-outside-pov-lifetime',
   'tree-warning',
 ] as const;
@@ -35,7 +33,6 @@ export type StructuralCheck = (typeof STRUCTURAL_CHECKS)[number];
 export const CHECK_LABELS: Record<StructuralCheck, string> = {
   'character-present-while-dead': 'Present while dead',
   'character-present-while-unborn': 'Present before birth',
-  'event-linked-as-happened-after-story-year': 'Event linked before it happens',
   'strand-year-outside-pov-lifetime': 'Point of view outside their lifetime',
   'tree-warning': 'Family tree warning',
 };
@@ -100,11 +97,6 @@ function strandsOf(chapter: Doc): StrandOf[] {
     });
   }
   return out;
-}
-
-/** The primary strand, or the first when none is marked (the chapter's story year, A5). */
-function primaryOf(strands: StrandOf[]): StrandOf | undefined {
-  return strands.find((s) => s.primary) ?? strands[0];
 }
 
 /** The shown chapter number is the reading order, never a number in the title (PL-3). */
@@ -203,24 +195,6 @@ function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] 
     }
   }
 
-  // Linked events belong to the chapter, so they use its story year.
-  const primary = primaryOf(strands);
-  if (!primary) return out;
-  const year = primary.startYear;
-  const events = new Map(eventSpans(data).map((e) => [e.id, e]));
-  const links = Array.isArray(chapter.links) ? chapter.links.filter(isPlainObject) : [];
-  for (const l of links) {
-    if (str(l.kind) !== 'happened') continue;
-    const e = events.get(str(l.targetId));
-    if (!e || e.startYear <= year) continue;
-    add(
-      'event-linked-as-happened-after-story-year',
-      primary,
-      [e.id],
-      `${e.title} is linked before it happens`,
-      `${setIn(chapter, primary)} and links event ${e.id} as having happened. ${e.id} is dated ${e.startYear}.`,
-    );
-  }
   return out;
 }
 

@@ -9,7 +9,7 @@ import { connectTo, fileDb, launch, rail } from './helpers';
 import type { TestDb } from './helpers';
 
 /**
- * NF-1 and T-6 in the built app: launch to the dashboard with 5,000 entries
+ * NF-1 and T-6 in the built app: launch to the rail with 5,000 entries
  * and 100 chapters, and the tree redraw both inside that bible (1,200
  * characters) and on the 200-person, six-generation tree alone (FT-8).
  *
@@ -34,7 +34,7 @@ test.beforeAll(async () => {
     expect(docs.characters).toHaveLength(BIG.characters);
     const tree = await createBible(store, TREE_SLUG, 'Two hundred people');
     const { characters, unions, parentLinks } = generatedTree(BIG.treePeople, 6);
-    const stamp = { provenance: 'invented', modifiedAt: '2026-01-15T09:00:00.000Z' };
+    const stamp = { modifiedAt: '2026-01-15T09:00:00.000Z' };
     await tree
       .collection('characters')
       .insertMany(characters.map((d) => ({ ...d, ...stamp })) as never[]);
@@ -50,47 +50,47 @@ test.beforeAll(async () => {
 test.afterAll(async () => {});
 
 /**
- * One launch: from starting Electron to the dashboard drawn with its tiles,
- * including connecting to MongoDB, opening the bible, loading the read model
+ * One launch: from starting Electron to the rail drawn beside the character
+ * list the app opens on, including connecting to MongoDB, opening the bible, loading the read model
  * and the search index, and the first render. The bible is opened from the
  * list with the keyboard, as a person would, unless the app opened it itself.
  */
-async function launchToDashboard(): Promise<{ app: ElectronApplication; page: Page; ms: number }> {
+async function launchToRail(): Promise<{ app: ElectronApplication; page: Page; ms: number }> {
   const start = performance.now();
   const { app, page } = await launch(db);
-  const dashboard = page.getByTestId('dashboard');
+  const railNav = page.getByTestId('rail');
   const openButton = page.getByRole('button', { name: `Open ${BIG_NAME}`, exact: true });
-  await expect(dashboard.or(openButton)).toBeVisible({ timeout: 30_000 });
-  if (!(await dashboard.isVisible())) {
+  await expect(railNav.or(openButton)).toBeVisible({ timeout: 30_000 });
+  if (!(await railNav.isVisible())) {
     await openButton.focus();
     await page.keyboard.press('Enter');
   }
-  await expect(dashboard).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId('dash-questions')).toBeVisible();
-  // Two frames: the browser has laid out and painted the dashboard.
+  await expect(railNav).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('entry-list')).toBeVisible();
+  // Two frames: the browser has laid out and painted the rail and the list.
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))),
   );
   return { app, page, ms: performance.now() - start };
 }
 
-test('NF-1 T-6 launch to the dashboard with 5,000 entries and 100 chapters takes under 3 seconds', async () => {
+test('NF-1 T-6 launch to the rail with 5,000 entries and 100 chapters takes under 3 seconds', async () => {
   test.setTimeout(300_000);
   const samples: number[] = [];
   for (let i = 0; i < 3; i++) {
-    const { app, page, ms } = await launchToDashboard();
+    const { app, page, ms } = await launchToRail();
     samples.push(ms);
     await expect(page.getByTestId('current-bible')).toHaveText(BIG_NAME);
-    // The open questions tile counts the generated questions, so the read model is loaded.
-    await expect(page.getByTestId('dash-questions')).toContainText(/\d/);
+    // The character list shows the generated characters, so the read model is loaded.
+    await expect(page.getByTestId('entry-list').locator('li').first()).toBeVisible();
     await app.close();
   }
   test.info().annotations.push({
-    type: 'NF-1 launch to dashboard (ms)',
+    type: 'NF-1 launch to rail (ms)',
     description: samples.map((s) => s.toFixed(0)).join(', '),
   });
   process.stdout.write(
-    `NF-1 launch to dashboard samples (ms): ${samples.map((s) => s.toFixed(0)).join(', ')}\n`,
+    `NF-1 launch to rail samples (ms): ${samples.map((s) => s.toFixed(0)).join(', ')}\n`,
   );
   expect(median(samples)).toBeLessThan(3000);
 });

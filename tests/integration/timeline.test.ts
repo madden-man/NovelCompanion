@@ -8,6 +8,7 @@ import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture, readFixture } from '../helpers/loadFixture';
 import type { Invoke } from '../helpers/t5';
+import { ENTRY_COLLECTIONS } from '../../src/shared/schema';
 
 type Expected = {
   years: {
@@ -37,7 +38,11 @@ afterAll(async () => {
   await store.close();
 });
 
-const revisionCount = () => bible.handle.collection('revisions').countDocuments();
+/** Every entry's ID and modified time, so a test can tell that nothing was written. */
+const entryStamps = () =>
+  ENTRY_COLLECTIONS.flatMap((c) =>
+    bible.model.all(c).map((d) => `${c}:${String(d._id)}:${String(d.modifiedAt)}`),
+  ).sort();
 
 describe('TL-2 TM-2 the year view over IPC from the read model', () => {
   test('TL-2 timeline.year returns the hand-written answers for 2040, 2041, and 2075', async () => {
@@ -98,14 +103,13 @@ describe('TL-2 TM-2 the year view over IPC from the read model', () => {
 
 describe('WE-1 WE-2 world events and eras through the repository', () => {
   test('WE-1 SM-4 events with a full date, a year, or a range, with category, regions, characters, and the formative flag', async () => {
-    const before = await revisionCount();
+    const before = bible.repo.list('worldEvents').length;
     const made = await bible.repo.createMany([
       {
         collection: 'worldEvents',
         data: {
           _id: 'W-DATE',
           title: 'Typhoon makes landfall',
-          status: 'planned',
           start: { year: 2044, month: 9, day: 2 },
           categoryId: 'climate',
           regions: ['Guangdong'],
@@ -118,7 +122,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
         data: {
           _id: 'W-YEAR',
           title: 'Ferry line closes',
-          status: 'idea',
           start: { year: 2044 },
           categoryId: 'economy',
         },
@@ -128,7 +131,6 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
         data: {
           _id: 'W-RANGE',
           title: 'Drought years',
-          status: 'planned',
           start: { year: 2043 },
           end: { year: 2046 },
           categoryId: 'climate',
@@ -136,11 +138,11 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
       },
     ]);
     expect(made).toHaveLength(3);
-    expect(await revisionCount()).toBe(before + 3);
+    expect(bible.repo.list('worldEvents')).toHaveLength(before + 3);
     const year = await invoke('timeline.year', { at: { year: 2044 } });
     expect(year.events.map((e) => e.id)).toEqual(['W-RANGE', 'W-YEAR', 'W-DATE']);
     const chart = await invoke('timeline.chart', {
-      filters: { familyId: null, placeId: null, status: null, categoryId: null },
+      filters: { familyId: null, placeId: null, categoryId: null },
     });
     // A47 (IP-8): a region written by name is stored as the regions list item.
     expect(
@@ -168,7 +170,7 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
       label: 'Climate and water',
     });
     const chart = await invoke('timeline.chart', {
-      filters: { familyId: null, placeId: null, status: null, categoryId: 'climate' },
+      filters: { familyId: null, placeId: null, categoryId: 'climate' },
     });
     expect(chart.events.find((e) => e.id === 'E3')?.categoryPath).toBe(
       'Climate and water > Floods',
@@ -230,9 +232,7 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
       [2080, 2089],
       [2090, 2100],
     ]);
-    expect(
-      await fresh.handle.collection('revisions').countDocuments({ collection: 'eraStates' }),
-    ).toBe(8);
+    expect(await fresh.handle.collection('eraStates').countDocuments()).toBe(8);
     const freshIpc = ipcFor(() => fresh);
     expect((await freshIpc('timeline.eraCoverage', {})).messages).toEqual([]);
     // Seeding again, or a bible that already has eras, changes nothing.
@@ -244,7 +244,7 @@ describe('WE-1 WE-2 world events and eras through the repository', () => {
 
 describe('TM-1 TM-3 TM-4 TM-5 story time', () => {
   test('TM-3 the story time with a full date, chapter, and strand persists in meta and reads back after reopening', async () => {
-    const entriesBefore = await revisionCount();
+    const entriesBefore = entryStamps();
     const set = await invoke('storyTime.set', {
       time: { year: 2045, month: 3, day: 14, chapterId: 'CH2', strandId: 'CH2-present' },
     });
@@ -257,8 +257,8 @@ describe('TM-1 TM-3 TM-4 TM-5 story time', () => {
     });
     const meta = await bible.handle.collection('meta').findOne({ _id: 'storyTime' as never });
     expect(meta).toMatchObject({ year: 2045, month: 3, day: 14, chapterId: 'CH2' });
-    // TM-5: setting the time wrote no entry and no revision.
-    expect(await revisionCount()).toBe(entriesBefore);
+    // TM-5: setting the time wrote no entry.
+    expect(entryStamps()).toEqual(entriesBefore);
     const reopened = await openBibleSession(store, bible.handle.id);
     const again = await ipcFor(() => reopened)('storyTime.get', {});
     expect(again.time).toEqual(set.time);
@@ -326,8 +326,6 @@ describe('TM-1 TM-3 TM-4 TM-5 story time', () => {
       ['CH2-present', 2046],
       ['CH2-backstory', 2032],
     ]);
-    const revs = await bible.repo.revisions('chapters', 'CH2');
-    expect(revs.at(-1)?.note).toBe('Set the present strand year to 2046 from the story time');
     // A stale approval is refused: the person has not seen the chapter as it is now.
     await expect(
       invoke('storyTime.promote', {

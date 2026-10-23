@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -8,7 +7,6 @@ import {
   needsDailySnapshot,
   snapshotsToPrune,
 } from '../../src/shared/domain/snapshots';
-import { resetOnNavigation } from '../../src/main/promptReset';
 import { CHANNELS, parseRequest, parseResponse } from '../../src/shared/ipc';
 import { IpcValidationError } from '../../src/shared/ipc';
 
@@ -72,17 +70,8 @@ describe('BK-1 daily snapshots and how many are kept', () => {
 });
 
 describe('BK-1 BK-2 BK-3 the new IPC channels validate both sides', () => {
-  test('ARCH-1 every import, snapshot, and backup channel is in the contract', () => {
+  test('ARCH-1 every snapshot and backup channel is in the contract', () => {
     for (const c of [
-      'import.pickFile',
-      'import.workbook',
-      'import.guess',
-      'import.fields',
-      'import.preview',
-      'import.plan',
-      'import.apply',
-      'import.document',
-      'import.documentPlan',
       'snapshot.list',
       'snapshot.take',
       'snapshot.restore',
@@ -94,61 +83,18 @@ describe('BK-1 BK-2 BK-3 the new IPC channels validate both sides', () => {
     }
   });
 
-  test('IM-1 requests reject unknown fields, bad shapes, and out of range limits', () => {
-    expect(() => parseRequest('import.pickFile', { kind: 'pdf' })).toThrow(IpcValidationError);
-    expect(() => parseRequest('import.preview', { fileId: 'f', limit: 1000, mapping: {} })).toThrow(
-      IpcValidationError,
-    );
-    expect(() =>
-      parseRequest('import.apply', { planId: 'p', approved: [''], saveMapping: true }),
-    ).toThrow(IpcValidationError);
+  test('BK-1 BK-3 requests reject unknown fields, bad shapes, and out of range values', () => {
     expect(() => parseRequest('snapshot.keep', { keep: 0 })).toThrow(IpcValidationError);
     expect(() => parseRequest('snapshot.restore', { id: '' })).toThrow(IpcValidationError);
     expect(() => parseRequest('backup.import', { slug: 'Bad Slug', name: 'x' })).toThrow(
       IpcValidationError,
     );
-    expect(() =>
-      parseRequest('import.documentPlan', { fileId: 'f', target: { kind: 'note', title: ' ' } }),
-    ).toThrow(IpcValidationError);
-    const ok = parseRequest('import.apply', { planId: 'p', approved: ['c1'] });
-    expect(ok.saveMapping).toBe(true);
-    expect(parseRequest('import.preview', { fileId: 'f', mapping: tableMapping }).limit).toBe(12);
+    expect(() => parseRequest('snapshot.take', { extra: 1 })).toThrow(IpcValidationError);
   });
 
-  test('IM-2 a response with a missing field is rejected', () => {
+  test('BK-1 a response with a missing field is rejected', () => {
     expect(() => parseResponse('snapshot.list', { snapshots: [] })).toThrow(IpcValidationError);
-    expect(() =>
-      parseResponse('import.apply', {
-        created: 1,
-        updated: 0,
-        unchanged: 0,
-        questions: 0,
-        failed: [{ where: 'x' }],
-        snapshot: null,
-      }),
-    ).toThrow(IpcValidationError);
-  });
-});
-
-const tableMapping = {
-  shape: 'table',
-  sheet: 'People',
-  target: { collection: 'characters' },
-  columns: [{ header: 'Name', index: 0, field: 'title' }],
-};
-
-describe('SL-1 the stop prompt flag resets when the page reloads or navigates', () => {
-  test('SL-1 a main frame navigation to a new document resets the flag; same-page and frame changes do not', () => {
-    const wc = new EventEmitter();
-    let resets = 0;
-    resetOnNavigation({ on: (event, listener) => wc.on(event, listener) }, () => {
-      resets += 1;
-    });
-    wc.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
-    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
-    expect(resets).toBe(0);
-    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
-    expect(resets).toBe(1);
+    expect(() => parseResponse('backup.export', { path: null })).toThrow(IpcValidationError);
   });
 });
 

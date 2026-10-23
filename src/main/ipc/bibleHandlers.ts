@@ -4,8 +4,8 @@ import type { Channel, WireEntry } from '../../shared/ipc';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 import type { Handler } from './validate';
-import { importHandlers } from './importHandlers';
-import type { ImportChannel, ImportDeps } from './importHandlers';
+import { backupHandlers } from './backupHandlers';
+import type { BackupChannel, BackupDeps } from './backupHandlers';
 import { sessionHandlers } from './sessionHandlers';
 import type { SessionChannel, SessionDeps } from './sessionHandlers';
 import { continuityHandlers } from './continuityHandlers';
@@ -41,7 +41,6 @@ import {
 import { newNestedId } from '../../shared/domain/blank';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
-import { latestLog } from '../../shared/domain/sessionLog';
 import { compileFilters } from '../../shared/domain/searchFilters';
 import { entrySnippet } from '../search';
 import type { ListDoc } from '../../shared/schema';
@@ -58,19 +57,13 @@ export type BibleChannel =
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
-  | 'entry.linkedFrom'
-  | 'entry.backlinks'
   | 'entry.lookup'
   | 'trash.list'
-  | 'revisions.list'
-  | 'revisions.diff'
-  | 'revisions.restore'
   | 'lists.get'
   | 'lists.rename'
   | 'lists.addItem'
   | 'lists.removeItem'
   | 'search.query'
-  | 'sessionLog.latest'
   | 'proposal.list'
   | 'proposal.diff'
   | 'proposal.approve'
@@ -107,7 +100,7 @@ export type BibleChannel =
   | 'romanization.check'
   | 'community.notes.get'
   | 'community.notes.set'
-  | ImportChannel
+  | BackupChannel
   | SessionChannel
   | ContinuityChannel
   // a47-guard
@@ -144,7 +137,7 @@ const isFullMoment = (m: {
  */
 export function bibleHandlers(
   current: () => OpenBible | null,
-  deps: ImportDeps & SessionDeps = {},
+  deps: BackupDeps & SessionDeps = {},
 ): BibleHandlers {
   const session = (): OpenBible => {
     const s = current();
@@ -157,15 +150,6 @@ export function bibleHandlers(
     entry: wire(entry),
     warnings: session().repo.warnings(c, entry),
   });
-  const titled = (links: { collection: string; id: string; kind: string }[]) =>
-    links
-      .filter((b): b is typeof b & { collection: EntryCollection } =>
-        isEntryCollection(b.collection),
-      )
-      .map((b) => ({
-        ...b,
-        title: entryTitle(session().model.get(b.collection, b.id)),
-      }));
 
   const graph = () => {
     const { model } = session();
@@ -206,7 +190,7 @@ export function bibleHandlers(
   };
 
   return {
-    ...importHandlers(current, deps),
+    ...backupHandlers(current, deps),
     ...sessionHandlers(current, deps),
     ...continuityHandlers(current),
     // a47-guard
@@ -238,7 +222,7 @@ export function bibleHandlers(
       const { repo } = session();
       const entry = repo.get(collection, id, { includeDeleted: true }) as StoredDoc | undefined;
       if (!entry) throw new Error(`No ${collection} entry has the ID ${id}.`);
-      return { ...withWarnings(collection, entry), backlinks: titled(repo.backlinks(id)) };
+      return withWarnings(collection, entry);
     },
     'entry.create': async ({ collection, data }) => {
       const entry = (await session().repo.create(collection, data as never)) as StoredDoc;
@@ -410,7 +394,6 @@ export function bibleHandlers(
         const patches = moveChapter(
           model.all('chapters'),
           model.all('parts'),
-          model.all('books'),
           req.movedId,
           req.groupId,
           req.toIndex,
@@ -438,19 +421,11 @@ export function bibleHandlers(
           }),
         };
       }
-      if (req.kind === 'parts' || req.kind === 'books') {
-        const collection = req.kind;
+      if (req.kind === 'parts') {
+        const collection = 'parts' as const;
         const moved = model.get(collection, req.movedId);
-        if (!moved || moved.deletedAt) {
-          throw new Error(`That ${req.kind === 'parts' ? 'part' : 'book'} does not exist.`);
-        }
-        let siblings = model.all('books');
-        if (req.kind === 'parts') {
-          const book = model.get('books', req.groupId);
-          if (!book || book.deletedAt) throw new Error('That book does not exist.');
-          if (moved.bookId !== req.groupId) throw new Error('That part is not in this book.');
-          siblings = model.all('parts').filter((p) => p.bookId === req.groupId);
-        }
+        if (!moved || moved.deletedAt) throw new Error('That part does not exist.');
+        const siblings = model.all('parts');
         const patches = moveNumbered(siblings, req.movedId, req.toIndex);
         const before = new Map(siblings.map((d) => [d._id, d]));
         await repo.writeBatch(
@@ -460,7 +435,6 @@ export function bibleHandlers(
             id: p.id,
             patch: { number: p.number },
           })),
-          { note: req.kind === 'parts' ? 'Reordered parts' : 'Reordered books' },
         );
         return {
           collection,
@@ -477,13 +451,7 @@ export function bibleHandlers(
       const { model, repo } = session();
       const part = model.get('parts', partId);
       if (!part || part.deletedAt) throw new Error('That part does not exist.');
-      const place = newChapterPlace(
-        model.all('chapters'),
-        model.all('parts'),
-        model.all('books'),
-        partId,
-        afterId,
-      );
+      const place = newChapterPlace(model.all('chapters'), model.all('parts'), partId, afterId);
       const before = new Map(model.all('chapters').map((c) => [c._id, c]));
       const written = await repo.writeBatch([
         {
@@ -493,7 +461,6 @@ export function bibleHandlers(
             title: title.trim(),
             partId,
             readingOrder: place.readingOrder,
-            status: 'idea',
             strands: [
               {
                 id: newNestedId(),
@@ -578,11 +545,6 @@ export function bibleHandlers(
       const entry = (await session().repo.restore(collection, id)) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.linkedFrom': ({ id }) => {
-      const { count, entries } = session().repo.linkedFrom(id);
-      return { count, entries: titled(entries) };
-    },
-    'entry.backlinks': ({ id }) => ({ backlinks: titled(session().repo.backlinks(id)) }),
     'entry.lookup': ({ ids }) => {
       const { model } = session();
       const entries = [];
@@ -604,22 +566,6 @@ export function bibleHandlers(
         .repo.trash()
         .map((t) => ({ collection: t.collection, entry: wire(t.entry) })),
     }),
-    'revisions.list': async ({ collection, id }) => {
-      const history = await session().repo.history(collection, id);
-      return { revisions: history.map(({ snapshot: _s, ...r }) => r) };
-    },
-    'revisions.diff': async ({ collection, id, revisionId }) => {
-      const d = await session().repo.revisionDiff(collection, id, revisionId);
-      return {
-        revision: { ...d.revision, snapshot: wire(d.revision.snapshot) },
-        current: wire(d.current),
-        changes: d.changes,
-      };
-    },
-    'revisions.restore': async ({ collection, id, revisionId }) => {
-      const entry = (await session().repo.restoreRevision(collection, id, revisionId)) as StoredDoc;
-      return withWarnings(collection, entry);
-    },
     'lists.get': () => ({ lists: session().repo.lists() }),
     'lists.rename': ({ listId, itemId, label }) =>
       session().repo.renameListItem(listId, itemId, label),
@@ -661,29 +607,10 @@ export function bibleHandlers(
         return {
           ...h,
           title: entryTitle(doc),
-          status: typeof doc.status === 'string' ? doc.status : null,
-          provenance: typeof doc.provenance === 'string' ? doc.provenance : null,
           snippet: entrySnippet(doc),
         };
       });
       return { hits, total: matched.length };
-    },
-    'sessionLog.latest': () => {
-      const { model } = session();
-      const log = latestLog(model.all('sessionLogs'));
-      if (!log) return { log: null };
-      const chapterId = typeof log.chapterId === 'string' && log.chapterId ? log.chapterId : null;
-      const chapter = chapterId ? model.get('chapters', chapterId) : undefined;
-      return {
-        log: {
-          id: String(log._id),
-          date: String(log.date ?? ''),
-          chapterId,
-          chapter: chapter && !chapter.deletedAt ? entryTitle(chapter) : null,
-          stoppedAt: String(log.stoppedAt ?? ''),
-          notes: String(log.notes ?? ''),
-        },
-      };
     },
     // a47-model
     'lists.move': ({ listId, itemId, index }) => session().repo.moveListItem(listId, itemId, index),

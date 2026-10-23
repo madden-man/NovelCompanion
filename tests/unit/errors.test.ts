@@ -9,8 +9,6 @@ import {
   plainCallError as plainError,
 } from '../../src/shared/errors';
 import { ValidationError, RepositoryError } from '../../src/main/db/repository';
-import { DriveApi, DriveError } from '../../src/main/drive/api';
-import { endpointsAt } from '../../src/main/drive/oauth';
 import { userStrings } from '../helpers/userStrings';
 
 type Registered = (event: unknown, payload: unknown) => Promise<unknown>;
@@ -170,42 +168,13 @@ describe('NF-3 handle.ts maps the known error classes', () => {
     for (const m of [
       'This entry changed somewhere else. Reload it and try again.',
       'Open a bible first.',
-      'Google Drive could not find that file. It may be deleted or no longer shared with you.',
     ]) {
-      const e = m.startsWith('Google') ? new DriveError(m, 404) : new RepositoryError(m);
-      expect(await thrownThroughHandle(e)).toBe(m);
+      expect(await thrownThroughHandle(new RepositoryError(m))).toBe(m);
     }
   });
 });
 
-describe('NF-3 Drive and the editor show mapped text', () => {
-  test('NF-3 a Drive 400 or other refusal has no status code and says what to do next', async () => {
-    for (const status of [400, 409, 418]) {
-      const api = new DriveApi({
-        endpoints: endpointsAt('http://127.0.0.1:9'),
-        token: () => Promise.resolve('t'),
-        fetch: () =>
-          Promise.resolve(
-            new Response(
-              JSON.stringify({
-                error: { message: 'Invalid Value', errors: [{ reason: 'invalid' }] },
-              }),
-              {
-                status,
-              },
-            ),
-          ),
-      });
-      const shown = await api.about().then(
-        () => '',
-        (e: Error) => e.message,
-      );
-      expect(shown).not.toMatch(new RegExp(String(status)));
-      expect(shown).not.toMatch(/Invalid Value|invalid/);
-      expectPlain(shown);
-    }
-  });
-
+describe('NF-3 the editor shows mapped text', () => {
   test('NF-3 the editor\'s "Not saved:" line shows the mapped text from main, and maps anything raw', () => {
     const fromMain = `Error invoking remote method 'nc:entry.update': Error: ${PLAIN.unreachable}`;
     // editor.tsx SaveState renders notSavedText(plainError(e)).

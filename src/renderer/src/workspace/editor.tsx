@@ -11,7 +11,6 @@ import {
   manifests,
 } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
-import type { Response } from '../../../shared/ipc';
 import { patchBetween } from '../../../shared/domain/diff';
 import { fieldIssues, labelPath } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
@@ -21,7 +20,6 @@ import { notSavedText } from '../../../shared/errors';
 import type { Entry } from './data';
 import { Field } from './fields';
 import { formatTime } from './format';
-import { HistoryDrawer } from './history';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
 import { ChapterAlignment } from './sessions/alignment';
@@ -31,8 +29,6 @@ import { useBibleSettings } from './bibleSettings';
 import { autosaveMaxMs } from '../../../shared/schema/settings';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
-
-type Backlink = Response<'entry.get'>['backlinks'][number];
 
 /**
  * Debounce for autosave, and the longest a change may wait while typing goes
@@ -52,7 +48,6 @@ export function useAutosave(collection: EntryCollection, id: string) {
   const undo = useUndo();
   const [draft, setDraft] = useState<Entry | null>(null);
   const [warnings, setWarnings] = useState<FieldWarning[]>([]);
-  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [issues, setIssues] = useState<FieldIssue[]>([]);
   const [status, setStatus] = useState<SaveStatus>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +88,6 @@ export function useAutosave(collection: EntryCollection, id: string) {
         current.current = r.entry as Entry;
         setDraft(r.entry as Entry);
         setWarnings(r.warnings);
-        setBacklinks(r.backlinks);
         setIssues([]);
         setError(null);
         setStatus('saved');
@@ -212,7 +206,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
     [reload],
   );
 
-  return { draft, warnings, backlinks, issues, status, error, setField, flush, reload, adopt };
+  return { draft, warnings, issues, status, error, setField, flush, reload, adopt };
 }
 
 export function SaveState({ status, error }: { status: SaveStatus; error: string | null }) {
@@ -236,7 +230,7 @@ export function SaveState({ status, error }: { status: SaveStatus; error: string
 }
 
 /**
- * Move to trash and restore (ED-5): before deleting, list what links here.
+ * Move to trash and restore (ED-5): one confirm before deleting.
  * Used at the foot of an entry page, in an embedded editor, and by the tree inspector (FT-2).
  */
 export function TrashControls(props: {
@@ -254,7 +248,7 @@ export function TrashControls(props: {
   const { collection, id, title } = props;
   const undo = useUndo();
   const ro = useWriteGuard();
-  const [confirmDelete, setConfirmDelete] = useState<Response<'entry.linkedFrom'> | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const trashButton = useRef<HTMLButtonElement | null>(null);
   const keepButton = useRef<HTMLButtonElement | null>(null);
@@ -265,7 +259,7 @@ export function TrashControls(props: {
     if (confirmDelete) keepButton.current?.focus();
   }, [confirmDelete]);
   const keep = () => {
-    setConfirmDelete(null);
+    setConfirmDelete(false);
     trashButton.current?.focus();
   };
 
@@ -273,7 +267,7 @@ export function TrashControls(props: {
     setActionError(null);
     try {
       await props.beforeDelete();
-      setConfirmDelete(await call('entry.linkedFrom', { id }));
+      setConfirmDelete(true);
     } catch (e) {
       setActionError(plainError(e));
     }
@@ -283,7 +277,7 @@ export function TrashControls(props: {
     try {
       await call('entry.delete', { collection, id });
       undo.record(deleteCommand(collection, id, title));
-      setConfirmDelete(null);
+      setConfirmDelete(false);
       props.onChanged();
     } catch (e) {
       setActionError(plainError(e));
@@ -345,25 +339,6 @@ export function TrashControls(props: {
           }}
         >
           <strong>Move {title} to the trash?</strong>
-          {confirmDelete.count === 0 ? (
-            <p>Nothing links here.</p>
-          ) : (
-            <>
-              <p data-testid="linked-count">
-                {confirmDelete.count === 1
-                  ? '1 entry links here. Its link is kept and works again if you restore this entry.'
-                  : `${confirmDelete.count} entries link here. Their links are kept and work again if you restore this entry.`}
-              </p>
-              <ul className="backlink-list">
-                {confirmDelete.entries.map((b, i) => (
-                  <li key={i}>
-                    {collectionInfo[b.collection].singular}: {b.title}{' '}
-                    <span className="example-note">({b.kind})</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
           <div className="row">
             <button type="button" className="btn danger" onClick={() => void doDelete()}>
               Move to trash
@@ -378,20 +353,19 @@ export function TrashControls(props: {
   );
 }
 
-/** One entry's page beside its section list, with its links, history and trash at the foot (A43). */
+/** One entry's page beside its section list, with its dates and trash at the foot (A43). */
 export function EntryPane(props: {
   collection: EntryCollection;
   id: string;
   onOpen: (collection: EntryCollection, id: string) => void;
   onClosed: () => void;
-  /** MS-2: a chapter was ticked Written here; open its summary and promotions. */
+  /** MS-2: a chapter was ticked Written here; open its summary. */
   onWritten?: (chapterId: string) => void;
   /** SM-1: the relatives line opens the family tree on this person. */
   onOpenTree?: (characterId: string) => void;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
-  const [showHistory, setShowHistory] = useState(false);
   const [offerWritten, setOfferWritten] = useState(false);
   const writtenNow = ed.draft?.written === true;
   const [seenWritten, setSeenWritten] = useState<boolean | null>(null);
@@ -403,15 +377,6 @@ export function EntryPane(props: {
   const info = collectionInfo[collection];
   const manifest = manifests[collection];
   const draft = ed.draft;
-
-  const onMention = (targetId: string) => {
-    const links = Array.isArray(draft?.links)
-      ? (draft.links as { targetId: string; kind: string }[])
-      : [];
-    if (!links.some((l) => l.targetId === targetId)) {
-      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
-    }
-  };
 
   if (ed.status === 'missing') {
     return (
@@ -441,7 +406,7 @@ export function EntryPane(props: {
   );
 
   // SM-1, A43: every section is the list and the page, and the page takes the whole width.
-  // Links, dates, history and trash sit at its foot; undo is in the top bar.
+  // Dates and trash sit at its foot; undo is in the top bar.
   return (
     <>
       <section
@@ -469,7 +434,7 @@ export function EntryPane(props: {
         </header>
         {inTrash && (
           <p className="callout warn" role="status">
-            This entry is in the trash. Restore it to bring it back with its links.
+            This entry is in the trash. Restore it to bring it back.
           </p>
         )}
         {offerWritten && props.onWritten && (
@@ -480,7 +445,7 @@ export function EntryPane(props: {
               className="link-btn"
               onClick={() => void ed.flush().then(() => props.onWritten?.(id))}
             >
-              Review its summary and promote planned entries
+              Review its summary
             </button>
           </p>
         )}
@@ -491,7 +456,6 @@ export function EntryPane(props: {
             messages={messages}
             onChange={ed.setField}
             onSaved={ed.adopt}
-            onMention={onMention}
             onOpen={props.onOpen}
             onOpenTree={props.onOpenTree}
           />
@@ -517,7 +481,6 @@ export function EntryPane(props: {
                       path={spec.name}
                       messages={messages}
                       root={draft}
-                      onMention={onMention}
                       onChange={(v) => ed.setField(spec.name, v)}
                     />
                   ),
@@ -529,15 +492,7 @@ export function EntryPane(props: {
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
         )}
-        <aside
-          className="entry-tools"
-          aria-label="Links, history and trash"
-          data-testid="entry-tools"
-        >
-          <div className="stack tight">
-            <span className="eyebrow">Linked from</span>
-            <Backlinks backlinks={ed.backlinks} onOpen={props.onOpen} />
-          </div>
+        <aside className="entry-tools" aria-label="Dates and trash" data-testid="entry-tools">
           <dl className="kv">
             <dt>Created</dt>
             <dd>{formatTime(draft.createdAt)}</dd>
@@ -552,24 +507,10 @@ export function EntryPane(props: {
               inTrash={inTrash}
               beforeDelete={ed.flush}
               onChanged={ed.reload}
-              extra={
-                <button type="button" className="btn" onClick={() => setShowHistory(true)}>
-                  History
-                </button>
-              }
             />
           </div>
         </aside>
       </section>
-      {showHistory && (
-        <HistoryDrawer
-          collection={collection}
-          id={id}
-          title={entryTitle(draft)}
-          beforeRestore={ed.flush}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
     </>
   );
 }
@@ -608,14 +549,6 @@ export function EmbeddedEditor(props: {
   if (!draft) return <p aria-live="polite">Loading the entry.</p>;
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
-  const onMention = (targetId: string) => {
-    const links = Array.isArray(draft.links)
-      ? (draft.links as { targetId: string; kind: string }[])
-      : [];
-    if (!links.some((l) => l.targetId === targetId)) {
-      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
-    }
-  };
   return (
     <section
       className="stack embedded-editor"
@@ -637,7 +570,7 @@ export function EmbeddedEditor(props: {
       </header>
       {inTrash && (
         <p className="callout warn" role="status">
-          This entry is in the trash. Restore it to bring it back with its links.
+          This entry is in the trash. Restore it to bring it back.
         </p>
       )}
       {ed.warnings.length > 0 && (
@@ -670,43 +603,11 @@ export function EmbeddedEditor(props: {
               path={spec.name}
               messages={messages}
               root={draft}
-              onMention={onMention}
               onChange={(v) => ed.setField(spec.name, v)}
             />
           ))}
         </WriteFieldset>
       </form>
     </section>
-  );
-}
-
-function Backlinks(props: {
-  backlinks: Backlink[];
-  onOpen: (collection: EntryCollection, id: string) => void;
-}) {
-  const { backlinks } = props;
-  if (backlinks.length === 0) return <p className="example-note">Nothing links here yet.</p>;
-  const seen = new Set<string>();
-  const unique = backlinks.filter((b) => {
-    const k = `${b.collection}:${b.id}:${b.kind}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  return (
-    <ul className="backlink-list" data-testid="linked-from">
-      {unique.map((b) => (
-        <li key={`${b.collection}:${b.id}:${b.kind}`}>
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() => props.onOpen(b.collection, b.id)}
-          >
-            {collectionInfo[b.collection].singular}: {b.title}
-          </button>{' '}
-          <span className="link-kind">{b.kind}</span>
-        </li>
-      ))}
-    </ul>
   );
 }

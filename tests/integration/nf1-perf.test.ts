@@ -81,7 +81,6 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
       'families',
       'unions',
       'parentLinks',
-      'books',
       'parts',
       'chapters',
       'moments',
@@ -127,7 +126,6 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
           limit: 20,
           filters: {
             sections: ['characters', 'chapters', 'worldEvents'],
-            status: ['canon', 'planned'],
             familyId: 'FAM1',
             placeId: 'PLC6',
             yearFrom: 1950,
@@ -190,7 +188,7 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
     }
   });
 
-  test('NF-1 TL-6 the timeline chart, unfiltered and by family, place, status, and category, runs under 100 ms; strandsIn and era coverage too', async () => {
+  test('NF-1 TL-6 the timeline chart, unfiltered and by family, place, and category, runs under 100 ms; strandsIn and era coverage too', async () => {
     const all = await medianCall('timeline.chart: no filter', 'timeline.chart', {});
     const chart = all.result as { events: unknown[]; lifespans: unknown[]; strands: unknown[] };
     expect(chart.events.length).toBeGreaterThan(1000);
@@ -199,17 +197,15 @@ describe('NF-1 T-6 with 5,000 entries and 100 chapters in MongoDB', () => {
     const filters = {
       familyId: null,
       placeId: null,
-      status: null,
       categoryId: null,
     };
     for (const [label, f] of [
       ['timeline.chart: family', { ...filters, familyId: 'FAM2' }],
       ['timeline.chart: place (with places inside it)', { ...filters, placeId: 'PLC6' }],
-      ['timeline.chart: status', { ...filters, status: 'canon' }],
       ['timeline.chart: category', { ...filters, categoryId: 'technology' }],
       [
         'timeline.chart: every filter',
-        { familyId: 'FAM1', placeId: 'PLC0', status: 'planned', categoryId: 'culture' },
+        { familyId: 'FAM1', placeId: 'PLC0', categoryId: 'culture' },
       ],
     ] as const) {
       const { ms } = await medianCall(label, 'timeline.chart', { filters: f });

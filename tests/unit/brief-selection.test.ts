@@ -1,21 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import {
-  DROP_ORDER,
-  allGroups,
-  itemSize,
-  selectForSession,
-} from '../../src/shared/domain/brief/selection';
+import { DROP_ORDER, itemSize, selectForSession } from '../../src/shared/domain/brief/selection';
 import type { BriefInput, GroupKind, Selection } from '../../src/shared/domain/brief/selection';
-import {
-  citationProblems,
-  citedIds,
-  markdownToHtml,
-  missingLeadSections,
-  structuredBrief,
-  uncitedLines,
-} from '../../src/shared/domain/brief/render';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { briefCollections, briefData } from '../helpers/briefFixture';
 import { SelectionWire } from '../../src/shared/ipcSession';
@@ -63,7 +50,6 @@ const SHARED_KINDS: GroupKind[] = [
   'previousChapters',
   'glossary',
   'openQuestions',
-  'sessionNote',
   'decidedQuestions',
   'added',
 ];
@@ -183,7 +169,6 @@ describe('SB-2 the selection matches the hand-written known answers (fixtures/ex
     const sel = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH2' });
     expect(sel.strands.every((s) => s.year !== 0)).toBe(true);
     expect(sel.skippedStrands).toHaveLength(1);
-    expect(structuredBrief(sel)).toContain('strand has no start year');
   });
 
   test('SB-2 SM-3 a trashed character, event, or moment is never selected', () => {
@@ -246,7 +231,7 @@ describe('SB-3 the manifest is identical for the same inputs and data', () => {
 });
 
 describe('SB-6 the size budget drops items in the fixed priority order', () => {
-  test('SB-6 A25 a budget of 0 drops everything but the lead sections, lowest priority first, and says the brief is over budget', () => {
+  test('SB-6 A25 a budget of 0 drops everything but the lead sections, lowest priority first, and marks the selection over budget', () => {
     const sel = selectForSession(
       briefData(true),
       { kind: 'chapter', chapterId: 'CH6' },
@@ -257,9 +242,6 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
     expect(sel.ids).toEqual(expected.budgetZero.ids);
     expect(sel.size).toBeGreaterThan(0);
     expect(sel.overBudget).toBe(true);
-    const brief = structuredBrief(sel);
-    expect(brief).toContain('## Left out');
-    expect(brief).toContain('## Over budget');
     // An entry reported as left out is never still in the manifest.
     expect(sel.omitted.filter((o) => sel.ids.includes(o.id))).toEqual([]);
   });
@@ -293,15 +275,13 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
       ['decidedQuestions', 'Q2', 'budget'],
     ]);
     expect(sel.size).toBeLessThanOrEqual(full.size - 1);
-    const brief = structuredBrief(sel);
-    expect(brief).toMatch(/Is Iris left-handed\? \(decided\): over the size budget/);
   });
 
   test('SB-6 the budget counts the characters of the selected text, each entry once', () => {
     const sel = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
     const seen = new Set<string>();
     let n = 0;
-    for (const g of allGroups(sel)) {
+    for (const g of [...sel.strands.flatMap((s) => s.groups), ...sel.shared]) {
       for (const it of g.items) {
         if (seen.has(it.id)) continue;
         seen.add(it.id);
@@ -319,7 +299,6 @@ describe('SB-6 the size budget drops items in the fixed priority order', () => {
       'previousChapters',
       'moments',
       'era',
-      'sessionNote',
     ]);
     // A25: the DB-2 lead sections are never dropped.
     for (const k of ['characters', 'eventsWindow', 'eventsFormative', 'culture'] as GroupKind[]) {
@@ -354,8 +333,6 @@ describe('SB-3 SB-5 A24 more known answers', () => {
     const ch5 = sel.strands.find((st) => st.chapterId === 'CH5')!;
     expect(group(ch5.groups, 'moments').map((it) => it.id)).not.toContain('B6');
     expect(sel.ids).not.toContain('B1');
-    const md = structuredBrief(sel);
-    expect(md).toContain('## 5. Backstory');
   });
 
   test('SM-3 SB-5 in a one-chapter session a moment after the chapter year is not backstory; the next year sits under Planned ahead', () => {
@@ -378,24 +355,44 @@ describe('SB-3 SB-5 A24 more known answers', () => {
       .flatMap((g) => g.items.map((it) => it.id));
     expect(ahead).toContain('M-NEXT');
     expect(sel.ids).not.toContain('M-LATER');
-    const md = structuredBrief(sel);
-    const heading = md.indexOf('## Planned ahead (after 2045)');
-    expect(heading).toBeGreaterThan(0);
-    expect(md.indexOf('[[M-NEXT]]')).toBeGreaterThan(heading);
-    expect(md.indexOf('[[M-NEXT]]')).toBeGreaterThan(md.lastIndexOf('[[B4]]'));
   });
 
-  test('A24 decided questions are selected by the same link rule and shown under Decided with their decision', () => {
+  test('SB-2 step 9 A53 a question joins through About alone, a glossary term through a name alone', () => {
+    const cols = briefCollections(true);
+    cols.openQuestions = cols.openQuestions!.map((q) =>
+      q._id === 'Q3'
+        ? { ...q, aboutIds: ['Z4', 'H5', 'H3'] }
+        : q._id === 'Q4'
+          ? { ...q, aboutIds: [] }
+          : q,
+    );
+    // A stray link left from before A53 joins nothing.
+    cols.glossaryTerms = [
+      ...cols.glossaryTerms!,
+      {
+        _id: 'GL9',
+        characters: '雨',
+        romanization: 'yu',
+        links: [{ targetId: 'H5', kind: 'about' }],
+      },
+    ];
+    const sel = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH6' });
+    const questions = group(sel.shared, 'openQuestions');
+    expect(questions.map((it) => [it.id, it.note])).toEqual([
+      ['Q1', 'about Daniel Hale'],
+      ['Q3', 'about Daniel Hale, Iris Hale-Zhou'],
+    ]);
+    expect(group(sel.shared, 'glossary').map((it) => it.id)).toEqual(['GL1']);
+    expect(sel.ids).not.toContain('GL9');
+    expect(sel.ids).not.toContain('Q4');
+  });
+
+  test('A24 decided questions are selected by the same About rule and shown under Decided with their decision', () => {
     const sel = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
     expect(group(sel.shared, 'decidedQuestions').map((it) => [it.id, it.detail])).toEqual([
       ['Q2', 'Settled: she is. Decision: Left-handed.'],
     ]);
     expect(group(sel.shared, 'openQuestions').map((it) => it.id)).toEqual(['Q1', 'Q4']);
-    const md = structuredBrief(sel);
-    const decided = md.indexOf('### Decided');
-    expect(decided).toBeGreaterThan(md.indexOf('## 7. Glossary and open questions'));
-    expect(md.indexOf('[[Q2]]')).toBeGreaterThan(decided);
-    expect(md.indexOf('[[Q1]]')).toBeLessThan(decided);
   });
 });
 
@@ -416,73 +413,6 @@ describe('SB-9 add and remove entries, then select again', () => {
       ['E5', 'removed'],
       ['GL1', 'removed'],
     ]);
-    expect(structuredBrief(sel)).toContain('## 9. Added by you');
-  });
-});
-
-describe('SB-5 SB-7 the structured brief', () => {
-  const sel = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
-  const md = structuredBrief(sel);
-
-  test('DB-2 SB-7 the brief opens with characters and ages, world events, and cultural expectations', () => {
-    expect(missingLeadSections(md)).toEqual([]);
-    const headings = md.split('\n').filter((l) => l.startsWith('## '));
-    expect(headings.slice(0, 3)).toEqual([
-      '## 1. Characters and their ages',
-      '## 2. World events ongoing',
-      '## 3. Cultural expectations',
-    ]);
-    expect(md).toContain('Iris Hale-Zhou: alive, age 14.');
-  });
-
-  test('SB-5 canon and planned material are apart, and events after the year only appear under Planned ahead', () => {
-    const lines = md.split('\n');
-    // A year with an event the year after: it sits under Planned ahead only.
-    const later = structuredBrief(
-      selectForSession(briefData(false), { kind: 'pov', year: 2047, povCharacterId: 'H5' }),
-    ).split('\n');
-    const ahead = later.findIndex((l) => l.startsWith('## Planned ahead (after 2047)'));
-    expect(ahead).toBeGreaterThan(0);
-    const e6 = later.findIndex((l) => l.includes('[[E6]]'));
-    expect(e6).toBeGreaterThan(ahead);
-    // In the world events section, canon lines come before the "Planned or idea" label.
-    const events = lines.slice(
-      lines.indexOf('## 2. World events ongoing'),
-      lines.indexOf('## 3. Cultural expectations'),
-    );
-    const canon = events.indexOf('Canon:');
-    const planned = events.indexOf('Planned or idea:');
-    expect(canon).toBeGreaterThan(0);
-    expect(planned).toBeGreaterThan(canon);
-    expect(events.slice(canon + 1, planned).every((l) => !l.includes('[[E5]]'))).toBe(true);
-    expect(events.slice(planned).some((l) => l.includes('[[E5]]'))).toBe(true);
-  });
-
-  test('SB-4 every line cites manifest entries only; a foreign citation is caught and marked', () => {
-    expect(citationProblems(md, sel.ids)).toEqual([]);
-    expect(citedIds(md)).toEqual(expect.arrayContaining(sel.ids.filter((id) => id !== 'CH6')));
-    const edited = `${md}\n- Something else. [[Z2]]`;
-    expect(citationProblems(edited, sel.ids)).toEqual(['Z2']);
-    expect(markdownToHtml(edited, sel.ids)).toContain(
-      '<span class="cite bad" data-cite="Z2" title="Not in the selection">Z2 not in the selection</span>',
-    );
-  });
-
-  test('SB-4 lines of a Claude-written brief that cite nothing are found and marked', () => {
-    const text =
-      '# Brief\n\n## 1. Characters\n- Iris is fourteen. [[H5]]\n- Daniel is tired.\nA loose sentence.\n- Nothing selected.\n';
-    expect(uncitedLines(text)).toEqual(['Daniel is tired.', 'A loose sentence.']);
-    const html = markdownToHtml(text, sel.ids, { flagUncited: true });
-    expect(html).toContain(
-      '<li><span class="uncited" title="This line cites no entry">Daniel is tired. <strong class="uncited-flag">cites nothing</strong></span></li>',
-    );
-    expect(markdownToHtml(text, sel.ids)).not.toContain('uncited');
-  });
-
-  test('SB-8 Markdown to HTML escapes brief text', () => {
-    expect(markdownToHtml('- <script>x</script> **bold**')).toBe(
-      '<ul>\n<li>&lt;script&gt;x&lt;/script&gt; <strong>bold</strong></li>\n</ul>',
-    );
   });
 });
 
@@ -506,11 +436,8 @@ describe('SB-1 SB-6 A25 M7 review fixes', () => {
     expect(sel.leadSize).toBe(probe.leadSize);
     expect(sel.size).toBeGreaterThan(budget);
     expect(sel.overBudget).toBe(false);
-    expect(structuredBrief(sel)).not.toContain('## Over budget');
     const tight = selectForSession(briefData(true), input, { window: 10, budget: 0 });
-    expect(structuredBrief(tight)).toContain(
-      `The lead sections alone are ${tight.leadSize} characters`,
-    );
+    expect(tight.overBudget).toBe(true);
   });
   test('SB-2 the wire schema accepts every field a real selection carries, including an undated strand', () => {
     const whole = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
@@ -532,7 +459,7 @@ describe('SB-1 SB-6 A25 M7 review fixes', () => {
   });
 });
 
-describe('SM-3 the brief reads moments: the voice at that age, and the backstory up to the story year', () => {
+describe('SM-3 the selection reads moments: the voice at that age, and the backstory up to the story year', () => {
   test('SM-3 SB-2 a character carries the latest Voice moment at or before the year, and cites it', () => {
     // Chapter 5 is 2040: Margaret's voice moment is from 2028 (age 70).
     const ch5 = selectForSession(briefData(false), { kind: 'chapter', chapterId: 'CH5' });
@@ -562,6 +489,5 @@ describe('SM-3 the brief reads moments: the voice at that age, and the backstory
     expect(moments.map((it) => [it.id, it.note])).toEqual([['B4', 'Iris Hale-Zhou, 2045, age 14']]);
     expect(moments[0]!.detail).toBe('Iris finds an envelope in the attic.');
     expect(ch6.ids).not.toContain('B5');
-    expect(structuredBrief(ch6)).toContain('## 5. Backstory');
   });
 });

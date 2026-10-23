@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { configSchemas, entrySchemas, isEntryCollection } from '../../src/shared/schema';
 import type { Chapter, Character, EraState, Moment, WorldEvent } from '../../src/shared/schema';
-import ExcelJS from 'exceljs';
 import { readFixture } from '../helpers/loadFixture';
 import { readZipEntry } from '../helpers/zip';
 
@@ -46,7 +45,7 @@ const PEOPLE: [string, string, number | null, number | null][] = [
 describe('Section 7 fixture novel', () => {
   test('Section 7 every fixture document passes its zod schema', () => {
     const collections = Object.keys(fixture);
-    expect(collections.length).toBeGreaterThanOrEqual(14);
+    expect(collections.length).toBeGreaterThanOrEqual(13);
     for (const c of collections) {
       const schema = isEntryCollection(c)
         ? entrySchemas[c]
@@ -196,18 +195,15 @@ describe('Section 7 fixture novel', () => {
     });
   });
 
-  test('Section 7 planted structural errors S1 and S3 are present as data', () => {
+  test('Section 7 planted structural error S1 is present as data; S3 went with A52', () => {
     const ch = (n: number) => chapters.find((c) => c.readingOrder === n)!;
     const year = (c: Chapter) => c.strands.find((s) => s.primary)!.startYear;
     // S1
     expect(year(ch(4))).toBe(2032);
     expect(ch(4).strands[0]!.characterIds).toContain('H2');
     expect(byId(characters, 'H2').death).toEqual({ year: 2030 });
-    // S3
-    const ev = parsed<WorldEvent>('worldEvents').find(
-      (e) => 'year' in e.start && e.start.year === 2090,
-    )!;
-    expect(ch(6).links).toContainEqual({ targetId: ev._id, kind: 'happened' });
+    // S3 (A52): entries have no links, so no chapter links an event as having happened.
+    expect(chapters.every((c) => !('links' in c))).toBe(true);
   });
 
   test('Section 7 planted prose errors P1 and P2 are present in chapter text', () => {
@@ -225,7 +221,7 @@ describe('Section 7 fixture novel', () => {
       cleanChapterIds: string[];
     };
     expect(exp.$comment).toMatch(/Hand-written.*never be generated/s);
-    expect(exp.findings.map((f) => f.id)).toEqual(['S1', 'S3']);
+    expect(exp.findings.map((f) => f.id)).toEqual(['S1']);
     const all = new Set(
       Object.values(fixture)
         .flat()
@@ -302,36 +298,6 @@ describe('Section 7 fixture novel', () => {
         .sort(),
     ).toEqual(['H1', 'H2', 'H4', 'Z1', 'Z2', 'Z4']);
     for (const n of [2040, 2041, 2075]) expect(y(n).unknown).toEqual(['U1']);
-  });
-
-  test('Section 7 fixture workbook has one table sheet and one grid sheet', async () => {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(join(ROOT, 'fixtures/files/fixture-workbook.xlsx'));
-    expect(wb.worksheets.map((w) => w.name)).toEqual([
-      'People',
-      'High Level',
-      'Hale and Zhou families',
-      'Lives by year',
-    ]);
-    const table = wb.getWorksheet('People')!;
-    expect(table.getRow(1).values).toEqual([
-      undefined,
-      'ID',
-      'Name',
-      'Chinese name',
-      'Born',
-      'Died',
-      'Family',
-      'Notes',
-    ]);
-    expect(table.rowCount).toBeGreaterThan(5);
-    const grid = wb.getWorksheet('High Level')!;
-    const header = (grid.getRow(1).values as unknown[]).slice(2);
-    expect(header.every((v) => typeof v === 'number' && v >= 2025)).toBe(true);
-    // A heading row has a label and no cells; a data row has a label and dated cells.
-    expect(grid.getRow(2).cellCount).toBe(1);
-    expect(grid.getRow(3).getCell(1).value).toBe('Robotics');
-    expect(grid.getRow(3).getCell(2).value).toBe('Care robots common');
   });
 
   test('Section 7 fixture Word document has a heading and an italic run', () => {

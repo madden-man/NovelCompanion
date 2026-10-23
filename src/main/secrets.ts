@@ -32,8 +32,8 @@ export function testDatabaseHonoured(
 }
 
 /**
- * T-4: whether the test seams are honoured: the recorded Claude, the fake
- * Google, and the file pickers a test names. Always in an unpackaged build;
+ * T-4: whether the test seams are honoured: the recorded Claude and the file
+ * pickers a test names. Always in an unpackaged build;
  * in a packaged build only under the one documented exception, the allow flag
  * with a local test database, so the end-to-end journey can drive the
  * packaged app. Without both, a packaged build refuses every seam.

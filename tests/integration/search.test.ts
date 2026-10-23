@@ -21,7 +21,6 @@ afterAll(async () => {
 
 const person = (title: string, full = title) => ({
   title,
-  status: 'canon' as const,
   names: { full },
   birth: { year: 2031 },
 });

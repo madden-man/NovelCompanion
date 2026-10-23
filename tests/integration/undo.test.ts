@@ -38,7 +38,6 @@ afterAll(async () => {
 
 const person = (name: string, year: number) => ({
   title: name,
-  status: 'canon' as const,
   names: { full: name },
   birth: { year },
 });
@@ -63,7 +62,6 @@ describe('ED-3 undo and redo of tree edits through the IPC layer', () => {
       collection: 'unions',
       data: {
         title: 'Meiling and Wei',
-        status: 'canon',
         partnerIds: [mother._id, father._id],
         type: 'married',
         startYear: 1979,
@@ -74,7 +72,6 @@ describe('ED-3 undo and redo of tree edits through the IPC layer', () => {
       collection: 'parentLinks',
       data: {
         title: 'Meiling parent of Lan',
-        status: 'canon',
         parentId: mother._id,
         childId: child._id,
         type: 'biological',
@@ -251,7 +248,6 @@ describe('ED-3 undo and redo of the writes that are not entries: tree positions,
     undo.record(listAddCommand(invoke, 'Communities', 'communities', oakland));
     await bible.repo.create('culturalEntries', {
       title: 'Harvest dinner',
-      status: 'idea',
       communityId: oakland.id,
       startYear: null,
       endYear: null,
@@ -304,7 +300,7 @@ describe('ED-3 undo and redo of the writes that are not entries: tree positions,
     for (const title of ['Spring stream shrines', 'Night noodle stalls']) {
       const { entry } = await invoke('entry.create', {
         collection: 'culturalEntries',
-        data: { title, status: 'idea', communityId: item.id, startYear: 2040, endYear: 2049 },
+        data: { title, communityId: item.id, startYear: 2040, endYear: 2049 },
       });
       lines.push({ id: entry._id });
     }

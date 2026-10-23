@@ -32,7 +32,6 @@ describe('FT-6 tree warnings at the field (ED-10)', () => {
     type: 'married',
     startYear: 1985,
     endYear: 2000,
-    links: [],
   };
   const u2: Doc = { ...u1, _id: 'U2', partnerIds: ['Ann', 'Cy'], startYear: 1995, endYear: null };
   const links: Doc[] = [
@@ -61,7 +60,6 @@ describe('FT-6 tree warnings at the field (ED-10)', () => {
     const c = context({ characters: [person('Mum', 1930), person('Kid', 2000)] });
     const link = (type: string): Doc => ({
       _id: 'L',
-      links: [],
       parentId: 'Mum',
       childId: 'Kid',
       type,

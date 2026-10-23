@@ -37,7 +37,7 @@ import type { EntryCollection } from '../../../../shared/schema';
 import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import { call, plainError } from '../../api';
 import { useReadOnly } from '../../connection';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
 import { span } from './common';
@@ -627,7 +627,6 @@ export function useEraEdits(o: {
   const readOnly = o.readOnly || snapshot !== null;
   const undo = useUndo();
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const run = (job: () => Promise<void>): Promise<void> => {
     const next = queue.current.then(async () => {
@@ -733,7 +732,6 @@ export function useEraEdits(o: {
             name,
             startYear: gap.startYear,
             endYear: gap.endYear,
-            status: statusOf('idea'),
           },
         });
         undo.record(

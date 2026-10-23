@@ -599,7 +599,7 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
     }
   };
 
-  test('CR-5 cultural data drafts carry title, community, age group, years, body and status idea', () => {
+  test('CR-5 cultural data drafts carry title, community, age group, years and body', () => {
     const f = one('Teenagers in Jinan treat an American college degree as a joke by the 2070s');
     expect(f.drafts).toEqual([
       {
@@ -612,7 +612,6 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
           startYear: 2070,
           endYear: 2100,
           body: 'Teenagers in Jinan treat an American college degree as a joke by the 2070s',
-          status: 'idea',
         },
       },
     ]);
@@ -627,7 +626,6 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
       year: 2061,
       endYear: null,
       title: 'Lives in Seattle',
-      status: 'idea',
     });
     valid(f);
     const g = one('Dawn and Mark argue about whether to raise LiNa bilingual');
@@ -710,8 +708,6 @@ describe('CR-5 CR-6 drafts in the shape of a proposal', () => {
     expect(q.drafts[0]!.data).toMatchObject({
       title: "Should Frank's church split over the Compact?",
       question: "Should Frank's church split over the Compact in 2075?",
-      tags: ['capture'],
-      status: 'idea',
     });
     valid(q);
     const c = one('New character: a woman named Rosa Delgado runs the bakery');

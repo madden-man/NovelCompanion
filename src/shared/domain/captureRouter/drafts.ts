@@ -2,7 +2,7 @@
  * Capture routing (A48, CR-5, CR-6): what a fact would write, per section,
  * in the shape of main's `ProposalDraft`; the required fields it could not
  * fill; the chips the box must ask for; and the judgment flags that keep it
- * off Route A. The source note is not set here: the box and main add it.
+ * off Route A.
  */
 import { LIVES_IN_PREFIX } from '../../schema/moment';
 import { LEXICON } from './lexicon';
@@ -239,7 +239,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           startYear: years.start,
           endYear: years.end ?? index.timelineEnd,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -269,7 +268,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
             title: momentTitle,
             body,
             ...(kind ? { kind } : {}),
-            status: 'idea',
           },
         });
       }
@@ -294,7 +292,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
             characters: quoted,
             language: 'english',
             usageNote: text,
-            status: 'idea',
           },
         });
         reasons.push(`"${quoted}" may also be a glossary term`);
@@ -326,7 +323,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           ...(categoryId ? { categoryId } : {}),
           regions: regions.values,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -344,7 +340,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           parentId: parent?.id ?? null,
           communityId: parent?.communityId ?? ctx.communityId ?? null,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -360,7 +355,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           characters: term ?? '',
           language: term && hasHan(term) ? 'mandarin' : 'english',
           usageNote: text,
-          status: 'idea',
         },
       });
       break;
@@ -369,7 +363,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
       drafts.push({
         op: 'create',
         collection: 'openQuestions',
-        data: { title, question: text, body: '', tags: ['capture'], status: 'idea' },
+        data: { title, question: text, body: '' },
       });
       break;
     }
@@ -384,7 +378,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           names: { full: name ?? '' },
           birth: { unknown: true },
           body,
-          status: 'idea',
         },
       });
       break;

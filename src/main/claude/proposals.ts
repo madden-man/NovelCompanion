@@ -18,17 +18,13 @@ import type { OpenBible } from '../db/session';
  * A draft that fails is reported with its reason, never silently dropped.
  */
 export const ProposalDraft = z.strictObject({
-  op: z.enum(['create', 'update', 'delete', 'link', 'listAdd']),
+  op: z.enum(['create', 'update', 'delete', 'listAdd']),
   /** The section of the entry. Every kind but listAdd needs it. */
   collection: z.enum(ENTRY_COLLECTIONS as [EntryCollection, ...EntryCollection[]]).optional(),
-  /** The entry to change, delete, or link from. Absent for a create. */
+  /** The entry to change or delete. Absent for a create. */
   targetId: z.string().min(1).max(64).nullable().optional(),
   /** Create: the new entry's fields. Update: only the fields to change. */
   data: z.record(z.string(), z.unknown()).optional(),
-  /** Link: the entry to link to and the kind of link. */
-  link: z
-    .strictObject({ targetId: z.string().min(1).max(64), kind: z.string().min(1).max(64) })
-    .optional(),
   /** IP-17, listAdd: the list to add an item to. */
   listId: z.enum(MINTABLE_LISTS).optional(),
   /** IP-17, listAdd: the new item's name. */
@@ -38,14 +34,17 @@ export const ProposalDraft = z.strictObject({
   /** IP-17, listAdd: the ref the entries in the same set use for the new item, for example new:jinan. */
   ref: ListRef.optional(),
   reason: z.string().max(2000),
-  /** IM-6: where in the source the suggestion comes from, for an import proposal. */
-  sourceRef: z.string().max(500).optional(),
 });
 export type ProposalDraft = z.infer<typeof ProposalDraft>;
 
 const SYSTEM = new Set(['_id', 'createdAt', 'modifiedAt', 'deletedAt']);
+/**
+ * A52 change 4, A53: fields entries no longer have. A writer's own
+ * instructions may still ask for them, so they are dropped, never refused.
+ */
+const REMOVED = new Set(['status', 'provenance', 'sourceNote', 'sourceRef', 'tags', 'links']);
 const strip = (data: Record<string, unknown> = {}) =>
-  Object.fromEntries(Object.entries(data).filter(([k]) => !SYSTEM.has(k)));
+  Object.fromEntries(Object.entries(data).filter(([k]) => !SYSTEM.has(k) && !REMOVED.has(k)));
 
 export function draftSummary(d: ProposalDraft): string {
   if (d.op === 'listAdd') return `add to ${d.listId ?? 'a list'}: ${d.label ?? ''}`.trim();
@@ -85,8 +84,6 @@ export function checkDraft(session: OpenBible, draft: ProposalDraft, now: Date):
   if (draft.op === 'create') {
     const data = strip(draft.data);
     if (entryTitle(data) === 'Untitled') return { ok: false, reason: 'A new entry needs a title.' };
-    if (data.status === undefined) data.status = 'idea';
-    if (draft.sourceRef && data.sourceRef === undefined) data.sourceRef = draft.sourceRef;
     const result = entrySchemas[c].safeParse({
       ...data,
       _id: 'CHECK',
@@ -103,22 +100,6 @@ export function checkDraft(session: OpenBible, draft: ProposalDraft, now: Date):
     return { ok: false, reason: `No ${c} entry has the ID ${targetId || '(none given)'}.` };
   if (draft.op === 'delete') {
     return { ok: true, input: { op: 'delete', collection: c, targetId, data: {} } };
-  }
-  if (draft.op === 'link') {
-    if (!draft.link) return { ok: false, reason: 'A link proposal needs the entry to link to.' };
-    const to = model.find(draft.link.targetId);
-    if (!to || to.doc.deletedAt)
-      return { ok: false, reason: `No entry has the ID ${draft.link.targetId}.` };
-    const links = Array.isArray(target.links)
-      ? (target.links as { targetId: string; kind: string }[])
-      : [];
-    if (links.some((l) => l.targetId === draft.link?.targetId && l.kind === draft.link.kind)) {
-      return { ok: false, reason: 'That link is already there.' };
-    }
-    return {
-      ok: true,
-      input: { op: 'update', collection: c, targetId, data: { links: [...links, draft.link] } },
-    };
   }
   const data = strip(draft.data);
   if (Object.keys(data).length === 0) return { ok: false, reason: 'The change has no fields.' };

@@ -6,10 +6,10 @@ import { FEATURES } from '../../src/main/claude/features';
 import {
   CAPTURE_INSTRUCTIONS,
   CAPTURE_NO_DELETE,
+  CAPTURE_PROPOSE_DESCRIPTION,
   CAPTURE_VIEW_CHARS,
   CaptureInput,
   cutText,
-  prepareCaptureDraft,
   wasCut,
 } from '../../src/main/claude/features/capture';
 import {
@@ -70,8 +70,6 @@ describe('KB-6 the capture feature', () => {
       expect(CAPTURE_INSTRUCTIONS, where).toContain(where);
     }
     expect(CAPTURE_INSTRUCTIONS).toMatch(/When the text gives no year, use the story year/);
-    expect(CAPTURE_INSTRUCTIONS).toMatch(/Set status to "idea" unless the text says/);
-    expect(CAPTURE_INSTRUCTIONS).toMatch(/came from a capture on the capture date/);
     expect(CAPTURE_INSTRUCTIONS).toMatch(/one propose_change per entry/);
     expect(CAPTURE_INSTRUCTIONS).toMatch(/answer with one short line/);
   });
@@ -123,42 +121,18 @@ describe('KB-6 the capture feature', () => {
     expect(given).toEqual([{ collection: 'chapters', id: 'CH4', title: 'Rain' }]);
   });
 
-  test('KB-6 a new entry from a capture is an idea and its source note names the capture and its date', () => {
-    const created = prepareCaptureDraft(
-      { op: 'create', collection: 'moments', data: { title: 'A moment' }, reason: 'r' },
-      '2026-10-12',
+  test('KB-6 A52 the capture prompt and tool ask for no status, source note, tag or link', () => {
+    expect(CAPTURE_INSTRUCTIONS).not.toMatch(/status|sourceNote|source note|\btag\b|canon/);
+    expect(CAPTURE_INSTRUCTIONS).toMatch(
+      /When no community, event category, region or language in the lists below fits/,
     );
-    expect(created.data).toMatchObject({
-      status: 'idea',
-      sourceNote: 'From a capture on 2026-10-12.',
-    });
-    // What Claude set is kept: canon when the text says so, its own note.
-    const canon = prepareCaptureDraft(
-      {
-        op: 'create',
-        collection: 'moments',
-        data: {
-          title: 'B',
-          status: 'canon',
-          sourceNote: 'Captured 2026-10-12 from chapter notes.',
-        },
-        reason: 'r',
-      },
-      '2026-10-12',
+    expect(CAPTURE_PROPOSE_DESCRIPTION).toMatch(
+      /^Suggest a change to the bible: create an entry or change fields of one\./,
     );
-    expect(canon.data).toMatchObject({
-      status: 'canon',
-      sourceNote: 'Captured 2026-10-12 from chapter notes.',
-    });
-    // A change to an existing entry keeps its own source note.
-    const update = {
-      op: 'update' as const,
-      collection: 'characters' as const,
-      targetId: 'Z3',
-      data: { backstory: 'x' },
-      reason: 'r',
-    };
-    expect(prepareCaptureDraft(update, '2026-10-12')).toEqual(update);
+    expect(CAPTURE_PROPOSE_DESCRIPTION).not.toMatch(/\blink\b|\btag\b/);
+    expect(CAPTURE_NO_DELETE).toBe(
+      'A capture adds or changes entries; it never deletes one. Propose a change instead.',
+    );
   });
 
   test('KB-6 T-3 SM-3 the recordings file a Lives in moment and a world event, and a moment for each of two characters', () => {
@@ -190,17 +164,14 @@ describe('KB-6 the capture feature', () => {
 });
 
 describe('KB-7 a capture Claude cannot file becomes an open question', () => {
-  test('KB-7 the open question takes the first line as its title, the text and story time as its body, and the capture tag', () => {
+  test('KB-7 the open question takes the first line as its title, the text and story time as its body', () => {
     const data = captureQuestionData(
       'The ferry to Macau <stopped> in winter.\nNobody remembers why.',
       'Story time 2034, writing Chapter 4: Rain',
-      '2026-10-12',
     );
     expect(data).toMatchObject({
       title: 'The ferry to Macau <stopped> in winter.',
-      status: 'idea',
       question: 'The ferry to Macau <stopped> in winter.\nNobody remembers why.',
-      tags: ['capture'],
     });
     // A44: long text is Markdown, so the body is the text, a blank line, and the story time.
     expect(data.body).toBe(
@@ -266,7 +237,7 @@ describe('KB-6 ED-3 filing', () => {
         /'(entry\.(create|update|delete)|lists\.addItem|proposal\.(approve|reject))'/,
       );
     }
-    expect(src).toContain('fileLocalDrafts(call, drafts, capturedOn');
+    expect(src).toContain('fileLocalDrafts(call, drafts)');
   });
 });
 
@@ -316,24 +287,21 @@ const JINAN_DRAFTS: CaptureDraft[] = [
       startYear: 2070,
       endYear: 2100,
       body: 'Teenagers in Jinan treat a degree as a joke by the 2070s.',
-      status: 'idea',
     },
   },
   { op: 'listAdd', listId: 'communities', label: 'Jinan', ref: 'new:jinan' },
 ];
 
 describe('CR-6 Route A files from the box', () => {
-  test('CR-6 CR-10 fileLocalDrafts writes nothing until it is called, mints the new item first, and files an idea with the local source note as one undo step', async () => {
+  test('CR-6 CR-10 fileLocalDrafts writes nothing until it is called, mints the new item first, and files the entry as one undo step', async () => {
     const rig = localRig();
     // Nothing is written by building the drafts: the rig has seen no call yet.
     expect(rig.calls).toEqual([]);
-    const r = await fileLocalDrafts(rig.invoke, JINAN_DRAFTS, '2026-10-22', 'idea-status');
+    const r = await fileLocalDrafts(rig.invoke, JINAN_DRAFTS);
     // IP-17: the new community is added before the line that uses it, though it came second.
     expect(rig.calls).toEqual(['lists.get', 'lists.addItem', 'entry.create']);
     expect(rig.made.NEW1).toMatchObject({
       communityId: 'jinan',
-      status: 'idea-status',
-      sourceNote: 'From a capture on 2026-10-22, filed without Claude.',
       startYear: 2070,
       endYear: 2100,
     });
@@ -365,9 +333,9 @@ describe('CR-6 Route A files from the box', () => {
         data: { title: 'Rain hats', communityId: 'new:portland', startYear: 2040 },
       },
     ];
-    const r = await fileLocalDrafts(rig.invoke, portland, '2026-10-22');
+    const r = await fileLocalDrafts(rig.invoke, portland);
     expect(rig.calls).toEqual(['lists.get', 'entry.create']);
-    expect(rig.made.NEW1).toMatchObject({ communityId: 'portland', status: 'idea' });
+    expect(rig.made.NEW1).toMatchObject({ communityId: 'portland' });
     expect(r.minted).toEqual([]);
     expect(r.command?.undo.map((o) => o.kind)).toEqual(['delete']);
 
@@ -379,7 +347,7 @@ describe('CR-6 Route A files from the box', () => {
         data: { title: 'Lost line', communityId: 'new:nowhere', startYear: 2040 },
       },
     ];
-    const lost = await fileLocalDrafts(localRig().invoke, broken, '2026-10-22');
+    const lost = await fileLocalDrafts(localRig().invoke, broken);
     expect(lost.filed).toEqual([]);
     expect(lost.failed.map((f) => f.id)).toEqual(['draft 0', 'draft 1']);
     expect(lost.command).toBeNull();
@@ -595,11 +563,9 @@ const FAST_DOCS: Record<string, Record<string, Record<string, unknown>>> = {
       role: 'The daughter who leaves.',
       familyIds: ['F1'],
       title: 'Zhou Lan',
-      status: 'canon',
       birth: { year: 1988 },
       backstory: 'Long. '.repeat(1000),
       body: 'Short body.',
-      links: [{ targetId: 'Z1', kind: 'child-of' }],
       names: { full: 'Zhou Lan' },
     },
   },
@@ -633,7 +599,6 @@ const fastProposal = (over: Partial<CaptureFastProposal> = {}): CaptureFastPropo
     startYear: 2065,
     endYear: 2100,
   }),
-  link: null,
   listId: null,
   label: null,
   parentId: null,
@@ -672,7 +637,6 @@ describe('CR-7 the fast file (Route B)', () => {
     expect(schema.properties.proposals.items.properties.op.enum).toEqual([
       'create',
       'update',
-      'link',
       'listAdd',
       'delete',
     ]);
@@ -735,7 +699,7 @@ describe('CR-7 the fast file (Route B)', () => {
     expect(prompt).not.toContain('floods (Floods)');
   });
 
-  test('CR-7 KB-6 a proposal becomes a draft that is an idea with the capture date, and a new list item keeps its ref', () => {
+  test('CR-7 KB-6 A52 a proposal becomes a draft with only its own fields, and a new list item keeps its ref', () => {
     const input = fastInput([fact()]);
     const out = FEATURES.captureFast.proposals!(
       {
@@ -771,10 +735,10 @@ describe('CR-7 the fast file (Route B)', () => {
         communityId: 'portland',
         startYear: 2065,
         endYear: 2100,
-        status: 'idea',
-        sourceNote: 'From a capture on 2026-10-22.',
       },
     });
+    expect(out[1]).not.toHaveProperty('data.status');
+    expect(out[1]).not.toHaveProperty('data.sourceNote');
   });
 
   test('CR-7 KB-6 a delete from the fast file is refused with its reason, never queued', () => {
@@ -838,7 +802,7 @@ describe('CR-7 the fast file (Route B)', () => {
     );
   });
 
-  test('CR-7 CR-8 the fast file may change only years, status, title or a list item field of an existing entry; a text or array field is refused', () => {
+  test('CR-7 CR-8 the fast file may change only years, title or a list item field of an existing entry; a text or array field is refused', () => {
     const change = (fields: Record<string, unknown>) =>
       fastDraft(
         fastProposal({ op: 'update', targetId: 'CU4', fields: JSON.stringify(fields) }),
@@ -847,7 +811,6 @@ describe('CR-7 the fast file (Route B)', () => {
     expect(
       change({
         endYear: 2080,
-        status: 'canon',
         title: 'Flood walk',
         communityId: 'portland',
         demographic: '18-30',
@@ -855,17 +818,19 @@ describe('CR-7 the fast file (Route B)', () => {
     ).toMatchObject({
       op: 'update',
       targetId: 'CU4',
-      data: { endYear: 2080, status: 'canon' },
+      data: { endYear: 2080 },
     });
-    const refused = change({ endYear: 2080, body: 'New body.', tags: ['flood'] });
+    const refused = change({ endYear: 2080, body: 'New body.' });
     expect(refused).toEqual({
       summary: 'update culturalEntries: CU4',
       problem:
-        'The fast file can change only years, status, title or a list item field of an existing entry, and this change also sets body, tags. Send the capture to Claude in full to change those.',
+        'The fast file can change only years, title or a list item field of an existing entry, and this change also sets body. Send the capture to Claude in full to change those.',
     });
+    expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(/may only set its years, title or a list item field/);
     expect(CAPTURE_FAST_INSTRUCTIONS).toMatch(
-      /never change a text field such as body or an array field such as tags/,
+      /never change a text field such as body or an array field such as regions/,
     );
+    expect(CAPTURE_FAST_INSTRUCTIONS).not.toMatch(/status|canon|\btag\b|\blink\b/);
   });
 
   test('CR-7 the titles nearby are the 30 nearest to the fact, in year order', () => {
@@ -1010,7 +975,7 @@ describe('CR-8 the full capture with hints (Route C)', () => {
     expect(tool.description).toMatch(/cut short; a change may not replace a field that was cut/);
     const out = JSON.parse((await tool.handler({ section: 'characters', id: 'Z3' })).text) as {
       entry: Record<string, unknown>;
-      linkedFrom: unknown[];
+      linkedFrom?: unknown[];
     };
     // Every stored field is there, so a change can be judged against the whole entry.
     expect(Object.keys(out.entry).sort()).toEqual(Object.keys(FAST_DOCS.characters!.Z3!).sort());
@@ -1025,7 +990,9 @@ describe('CR-8 the full capture with hints (Route C)', () => {
       /^<material source="characters Z3">\n(Long\. ){400} \(cut short\)\n<\/material>$/,
     );
     expect(out.entry.body).toBe('<material source="characters Z3">\nShort body.\n</material>');
-    expect(out.linkedFrom).toEqual([]);
+    // A52: the capture view carries no links.
+    expect(out.linkedFrom).toBeUndefined();
+    expect(tool.description).not.toMatch(/link/);
     expect(read).toEqual([{ collection: 'characters', id: 'Z3', title: 'Zhou Lan' }]);
     const missing = await tool.handler({ section: 'characters', id: 'NOPE' });
     expect(missing).toEqual({ text: 'No characters entry has the ID NOPE.', isError: true });

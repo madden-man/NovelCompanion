@@ -1,5 +1,5 @@
-import { ClaudeRun, ClaudeTurn } from '../../shared/claude';
-import type { ClaudeFeature, ClaudeRunSummary } from '../../shared/claude';
+import { ClaudeFeature, ClaudeRun, ClaudeTurn } from '../../shared/claude';
+import type { ClaudeRunSummary } from '../../shared/claude';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 
@@ -9,7 +9,7 @@ const COLLECTION = 'conversations';
  * Saved Claude runs (AI-1) in the bible's `conversations` collection, created
  * by schema version 7 with a `{ modifiedAt: -1 }` index. Panel conversations
  * and feature runs share it, told apart by `feature`. A run is not an entry:
- * it has no revisions and no undo, like proposals and settings, and this is
+ * it has no undo, like proposals and settings, and this is
  * the one place that writes it. The read model is kept in step.
  *
  * Writes touch one turn at a time (`$push` a new turn, `$set` the matching
@@ -25,6 +25,8 @@ export class RunStore {
 
   private remember(doc: ClaudeRun | null): ClaudeRun {
     if (!doc) throw new Error('That conversation is not saved.');
+    // A53: a run of a removed feature (a saved `briefs` run) is skipped, not an error.
+    if (!ClaudeFeature.safeParse(doc.feature).success) return doc;
     const parsed = ClaudeRun.parse(doc);
     this.session.model.put(COLLECTION, parsed as unknown as StoredDoc);
     return parsed;

@@ -99,7 +99,7 @@ const SCREEN_SHOWS: Record<(typeof RAIL_SCREENS)[number], () => Locator> = {
   'World events': () => page.getByTestId('world-grid'),
   Backstory: () => page.getByTestId('backstory-view'),
   'Continuity checker': () => page.getByTestId('continuity-view'),
-  Sessions: () => page.getByTestId('sessions-view'),
+  Questions: () => page.getByTestId('questions-view'),
   'Cultural data': () => page.getByTestId('cultural-data'),
   'Writing tools': () => page.getByTestId('writing-tools-screen'),
 };
@@ -108,9 +108,7 @@ const SCREEN_SHOWS: Record<(typeof RAIL_SCREENS)[number], () => Locator> = {
 const MENU_SHOWS: Record<(typeof APP_MENU_ITEMS)[number], () => Locator> = {
   'Search and filters': () => page.getByTestId('search-view'),
   'Review queue': () => page.getByTestId('review-queue'),
-  Import: () => page.getByTestId('import-view'),
   Backups: () => page.getByTestId('backups-view'),
-  'Google Drive': () => page.getByTestId('drive-view'),
   Lists: () => page.getByRole('heading', { name: 'Lists', level: 2 }),
   Trash: () => page.getByRole('heading', { name: 'Trash', level: 2 }),
   Bibles: () => page.getByTestId('bible-list'),
@@ -120,11 +118,10 @@ const MENU_SHOWS: Record<(typeof APP_MENU_ITEMS)[number], () => Locator> = {
   'Glossary table': () => page.getByTestId('glossary-table'),
 };
 
-test('SM-6 the rail is the nine screens in order under the search box, with no More, and the app opens on Sessions', async () => {
-  // DB-1 SM-11: the app opens on Sessions, which holds what the dashboard held.
-  await expect(page.getByTestId('sessions-view')).toBeVisible();
-  await expect(page.getByTestId('dashboard')).toBeVisible();
-  await expect(rail(page, 'Sessions')).toHaveAttribute('aria-current', 'page');
+test('SM-6 the rail is the nine screens in order under the search box, with no More, and the app opens on Characters', async () => {
+  // A53: the app opens on Characters.
+  await expect(page.getByRole('heading', { name: 'Characters', level: 2 })).toBeVisible();
+  await expect(rail(page, 'Characters')).toHaveAttribute('aria-current', 'page');
   await expect(nav().getByTestId('rail-main').getByRole('button')).toHaveText([...RAIL_SCREENS]);
   // The search box sits above the nine.
   const search = nav().getByRole('searchbox', { name: 'Search the bible' });
@@ -153,6 +150,7 @@ test('SM-6 the rail is the nine screens in order under the search box, with no M
     'Manuscript',
     'Relevant to Session',
     'Start session',
+    'Sessions',
     'Moments',
     'Chapters',
     'Open questions',
@@ -177,18 +175,18 @@ test('SM-6 each of the nine screens opens from its rail button', async () => {
   await expect(rail(page, 'World events')).toHaveAttribute('aria-current', 'page');
   // A name the rail does not have fails at once, naming the valid ones, instead of timing out.
   expect(() => rail(page, 'Dashboard')).toThrow(
-    /"Dashboard" is not in the rail\. The rail screens are Characters, Family tree, Outline, World events, Backstory, Continuity checker, Sessions, Cultural data, Writing tools \("Timeline" still names World events\)/,
+    /"Dashboard" is not in the rail\. The rail screens are Characters, Family tree, Outline, World events, Backstory, Continuity checker, Questions, Cultural data, Writing tools \("Timeline" still names World events\)/,
   );
 });
 
-test('SM-6 the App menu holds the nine utilities and the reference views, and each item opens its screen', async () => {
+test('SM-6 the App menu holds the seven utilities and the reference views, and each item opens its screen', async () => {
   await appButton().click();
   await expect(appButton()).toHaveAttribute('aria-expanded', 'true');
   await expect(appMenu()).toBeVisible();
   // IP-13: a third group, All sections, follows (app.spec.ts covers it).
   await expect(appMenu().getByRole('group')).toHaveCount(3);
   await expect(appMenu().getByRole('group', { name: 'Manage' }).getByRole('menuitem')).toHaveText(
-    APP_MENU_ITEMS.slice(0, 9),
+    APP_MENU_ITEMS.slice(0, 7),
   );
   await expect(
     appMenu().getByRole('group', { name: 'Reference' }).getByRole('menuitem'),
@@ -372,7 +370,7 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await expect(appMenu().getByRole('menuitem', { name: 'Continuity findings' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Lists' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(appMenu()).toBeHidden();

@@ -11,7 +11,7 @@ import ts from 'typescript';
  * bible), or calls a function that writes. A handler is a `'channel.name':`
  * entry of a handler map, or the function given to `handle('channel', ...)`.
  *
- * Calls through an interface (a key store, a settings file, a Drive client)
+ * Calls through an interface (a key store, a settings file)
  * resolve to the interface, not an implementation, so they never count as a
  * bible write; none of those writes the bible.
  */
@@ -24,7 +24,6 @@ export const REPOSITORY_WRITES = new Set([
   'writeBatch',
   'softDelete',
   'restore',
-  'restoreRevision',
   'renameListItem',
   'addListItem',
   'removeListItem',
@@ -33,10 +32,7 @@ export const REPOSITORY_WRITES = new Set([
   'refreshProposal',
   'applyProposal',
   'rejectProposal',
-  'applyImport',
   'setSnapshotKeep',
-  'saveMapping',
-  'setDriveState',
   'setStoryTime',
   'setStrandYear',
   'seedDefaultEras',

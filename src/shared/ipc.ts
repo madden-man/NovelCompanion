@@ -7,17 +7,13 @@ import {
   HexColor,
   ListIdParam,
   Proposal,
-  Provenance,
-  Status,
   entrySchemas,
   manifests,
 } from './schema';
 import { StoryTimeValue } from './storyTime';
 import { sessionContract } from './ipcSession';
 import { claudeContract, claudeEvents } from './claude';
-import { Cell, Mapping } from './domain/import/types';
 import { SnapshotManifest } from './domain/snapshots';
-import { driveContract } from './ipcDrive';
 import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
 import { wordsContract } from './ipcWords';
@@ -39,13 +35,6 @@ export const WireWarning = z.strictObject({
   path: z.string(),
   code: z.string(),
   message: z.string(),
-});
-
-const WireBacklink = z.strictObject({
-  collection: CollectionName,
-  id: z.string(),
-  kind: z.string(),
-  title: z.string(),
 });
 
 const WithWarnings = z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) });
@@ -135,7 +124,7 @@ export const WireListItem = z.strictObject({
   parentId: z.string().nullable(),
   /** A47 (IP-8): the item's colour as a hex, or null. */
   color: z.string().nullable().default(null),
-  /** A47 (IP-8): extra values, such as a status's `kind` or an age group's `from` and `to`. */
+  /** A47 (IP-8): extra values, such as an age group's `from` and `to`. */
   extra: ItemExtra.default({}),
   usage: z.int().min(0),
   detail: z.string().optional(),
@@ -191,7 +180,6 @@ const TreePersonWire = z.strictObject({
   birth: StoryDateWire.nullable(),
   death: StoryDateWire.nullable(),
   familyIds: z.array(z.string()),
-  status: z.string(),
   createdAt: z.string(),
 });
 
@@ -340,7 +328,6 @@ const EventWire = z.strictObject({
   regions: z.array(z.string()),
   characterIds: z.array(z.string()),
   formative: z.boolean(),
-  status: z.string(),
 });
 
 const ChartEventWire = EventWire.extend({ categoryPath: z.string(), categoryRoot: z.string() });
@@ -349,7 +336,6 @@ const StrandWire = z.strictObject({
   chapterId: z.string(),
   chapterTitle: z.string(),
   readingOrder: z.number().nullable(),
-  chapterStatus: z.string(),
   written: z.boolean(),
   strandId: z.string(),
   label: z.string(),
@@ -381,7 +367,6 @@ const PersonInYearWire = z.strictObject({
   name: z.string(),
   chinese: z.string(),
   familyIds: z.array(z.string()),
-  status: z.string(),
   birthYear: z.number().nullable(),
   state: LifeStateWire,
 });
@@ -404,7 +389,6 @@ const YearViewWire = z.strictObject({
 const ChartFiltersWire = z.strictObject({
   familyId: z.string().min(1).nullable().default(null),
   placeId: z.string().min(1).nullable().default(null),
-  status: z.string().min(1).nullable().default(null),
   categoryId: z.string().min(1).nullable().default(null),
 });
 
@@ -446,18 +430,8 @@ const OutlineWire = z.strictObject({
   rows: z.array(
     z.union([
       z.strictObject({
-        kind: z.literal('book'),
-        id: z.string(),
-        title: z.string(),
-        number: z.number().nullable(),
-        label: z.string(),
-        missing: z.boolean(),
-        partCount: z.number(),
-      }),
-      z.strictObject({
         kind: z.literal('part'),
         id: z.string(),
-        bookId: z.string(),
         title: z.string(),
         number: z.number().nullable(),
         label: z.string(),
@@ -482,11 +456,8 @@ const Year = z.int().min(-10000).max(10000);
 
 const SearchFiltersWire = z.strictObject({
   sections: z.array(CollectionName).optional(),
-  status: z.array(Status).optional(),
-  provenance: z.array(Provenance).optional(),
   familyId: EntryId.nullable().optional(),
   placeId: EntryId.nullable().optional(),
-  tag: z.string().min(1).max(100).nullable().optional(),
   yearFrom: Year.nullable().optional(),
   yearTo: Year.nullable().optional(),
 });
@@ -529,96 +500,7 @@ const RomanizationWire = z.strictObject({
   systems: z.array(z.strictObject({ id: z.string(), label: z.string() })),
 });
 
-const RevisionSummary = z.strictObject({
-  _id: z.string(),
-  op: z.enum(['create', 'update', 'softDelete', 'restore']),
-  at: z.string(),
-  note: z.string().nullable(),
-  proposalId: z.string().nullable(),
-});
-
-// ---------- import, snapshots, and backup (M5) ----------
-
-/** A file the person picked. Main keeps the path; the page holds only this ID. */
-export const ImportFileWire = z.strictObject({
-  id: z.string().min(1).max(64),
-  name: z.string().min(1),
-  kind: z.enum(['workbook', 'document']),
-  modifiedAt: z.iso.datetime({ offset: true }),
-});
-
-const ImportSheetWire = z.strictObject({
-  name: z.string(),
-  rows: z.int().min(0),
-  columns: z.int().min(0),
-  shape: z.enum(['table', 'grid']),
-  headerRow: z.int().min(1),
-  /** The first rows and columns, for choosing a shape and a header row. */
-  preview: z.array(z.array(Cell)),
-});
-
-const ImportRowWire = z.strictObject({
-  where: z.string(),
-  ok: z.boolean(),
-  reason: z.string().optional(),
-  title: z.string(),
-  values: z.array(z.strictObject({ label: z.string(), text: z.string() })),
-});
-
-const ConflictWire = z.strictObject({
-  winner: z.enum(['incoming', 'existing']),
-  claims: z.array(
-    z.strictObject({ ref: z.string(), at: z.string(), value: z.string(), kept: z.boolean() }),
-  ),
-});
-
-const ChangeItemWire = z.strictObject({
-  id: z.string(),
-  kind: z.enum(['new', 'changed']),
-  collection: CollectionName,
-  title: z.string(),
-  ref: z.string(),
-  note: z.string().optional(),
-  /** IDs of the new items this one points at (a part, a book, a character stub). Approving it approves them too. */
-  needs: z.array(z.string()).optional(),
-  deltas: z.array(
-    z.strictObject({
-      path: z.string(),
-      label: z.string(),
-      before: z.string(),
-      after: z.string(),
-      outcome: z.enum(['apply', 'keep']),
-      conflict: ConflictWire.optional(),
-    }),
-  ),
-});
-
-const FailedRowWire = z.strictObject({ where: z.string(), ref: z.string(), reason: z.string() });
-
-export const ImportPlanWire = z.strictObject({
-  planId: z.string().min(1),
-  file: z.string(),
-  created: z.int().min(0),
-  changed: z.int().min(0),
-  unchanged: z.int().min(0),
-  conflicts: z.int().min(0),
-  listAdds: z.array(z.string()),
-  failed: z.array(FailedRowWire),
-  items: z.array(ChangeItemWire),
-  notes: z.array(z.string()),
-});
-
-const DocumentTargetWire = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('backstory'), characterId: EntryId }),
-  z.strictObject({
-    kind: z.literal('chapter'),
-    chapterId: EntryId.nullable(),
-    title: z.string().max(500).optional(),
-    partId: EntryId.optional(),
-    year: z.int().min(-10000).max(10000).optional(),
-  }),
-  z.strictObject({ kind: z.literal('note'), title: z.string().trim().min(1).max(500) }),
-]);
+// ---------- snapshots and backup (M5) ----------
 
 export const SnapshotWire = SnapshotManifest.extend({ id: z.string().min(1) });
 
@@ -663,14 +545,10 @@ export const contract = {
     }),
     response: z.strictObject({ entries: z.array(WithWarnings) }),
   },
-  /** One entry with its warnings and what links to it (ED-9, ED-10). */
+  /** One entry with its warnings (ED-10). */
   'entry.get': {
     request: EntryRef,
-    response: z.strictObject({
-      entry: WireEntry,
-      warnings: z.array(WireWarning),
-      backlinks: z.array(WireBacklink),
-    }),
+    response: z.strictObject({ entry: WireEntry, warnings: z.array(WireWarning) }),
   },
   'entry.create': {
     request: z
@@ -709,15 +587,6 @@ export const contract = {
   /** Move an entry to the trash (ED-5). */
   'entry.delete': { request: EntryRef, response: WithWarnings },
   'entry.restore': { request: EntryRef, response: WithWarnings },
-  /** What links to an entry, shown before it is deleted (ED-5). */
-  'entry.linkedFrom': {
-    request: z.strictObject({ id: EntryId }),
-    response: z.strictObject({ count: z.int().min(0), entries: z.array(WireBacklink) }),
-  },
-  'entry.backlinks': {
-    request: z.strictObject({ id: EntryId }),
-    response: z.strictObject({ backlinks: z.array(WireBacklink) }),
-  },
   /** Titles and sections for entry IDs, for link chips that may point anywhere. */
   'entry.lookup': {
     request: z.strictObject({ ids: z.array(EntryId).max(500) }),
@@ -737,25 +606,6 @@ export const contract = {
     response: z.strictObject({
       entries: z.array(z.strictObject({ collection: CollectionName, entry: WireEntry })),
     }),
-  },
-  /** Revision history of one entry, newest first (ED-4). */
-  'revisions.list': {
-    request: EntryRef,
-    response: z.strictObject({ revisions: z.array(RevisionSummary) }),
-  },
-  'revisions.diff': {
-    request: EntryRef.extend({ revisionId: z.string().min(1) }),
-    response: z.strictObject({
-      revision: RevisionSummary.extend({ snapshot: WireEntry }),
-      current: WireEntry,
-      changes: z.array(
-        z.strictObject({ path: z.string(), before: z.unknown(), after: z.unknown() }),
-      ),
-    }),
-  },
-  'revisions.restore': {
-    request: EntryRef.extend({ revisionId: z.string().min(1) }),
-    response: WithWarnings,
   },
   /** Every editable list with usage counts (ED-8). */
   'lists.get': {
@@ -780,7 +630,7 @@ export const contract = {
       id: z.string().min(1).max(64).optional(),
       /** A47 (IP-9): the item's colour. */
       color: HexColor.nullable().optional(),
-      /** A47 (IP-9, IP-10): extra values; a status takes `kind` (canon, planned or idea; idea when left out). */
+      /** A47 (IP-9, IP-10): extra values, such as an age group's `from` and `to`. */
       extra: ItemExtra.optional(),
     }),
     response: z.strictObject({ item: WireItem }),
@@ -790,9 +640,8 @@ export const contract = {
     response: z.strictObject({ ok: z.literal(true) }),
   },
   /**
-   * Search the open bible (ARCH-2, SR-1, SR-2); also used by the `@` link
-   * picker (ED-9). Filters narrow the matches by section, status,
-   * provenance, family, place, tag, and a year range.
+   * Search the open bible (ARCH-2, SR-1, SR-2). Filters narrow the matches
+   * by section, family, place and a year range.
    */
   'search.query': {
     request: z.strictObject({
@@ -808,8 +657,6 @@ export const contract = {
           id: z.string(),
           title: z.string(),
           score: z.number(),
-          status: z.string().nullable().default(null),
-          provenance: z.string().nullable().default(null),
           snippet: z.string().default(''),
         }),
       ),
@@ -817,29 +664,8 @@ export const contract = {
       total: z.int().min(0).default(0),
     }),
   },
-  /** SL-1: the newest session log with a note, for the launch panel. */
-  'sessionLog.latest': {
-    request: z.strictObject({}),
-    response: z.strictObject({
-      log: z
-        .strictObject({
-          id: z.string(),
-          date: z.string(),
-          chapterId: z.string().nullable(),
-          chapter: z.string().nullable(),
-          stoppedAt: z.string(),
-          notes: z.string(),
-        })
-        .nullable(),
-    }),
-  },
-  /** SL-1: the stop prompt is answered (or skipped); main closes the window (or quits) when `proceed` is true, and stays open when it is false. */
-  'app.confirmClose': {
-    request: z.strictObject({ proceed: z.boolean() }),
-    response: z.strictObject({ ok: z.literal(true) }),
-  },
-  /** SL-1: the page is showing the stop prompt, so main stops its 10 second wait and waits for the answer. */
-  'app.closePromptShown': {
+  /** The page flushed its pending edits after `app.closeRequested`; main closes the window (or quits). */
+  'app.flushed': {
     request: z.strictObject({}),
     response: z.strictObject({ ok: z.literal(true) }),
   },
@@ -1016,7 +842,6 @@ export const contract = {
         z.strictObject({
           id: z.string(),
           name: z.string(),
-          status: z.string(),
           familyIds: z.array(z.string()),
           placeNames: z.array(z.string()),
           birthYear: z.number(),
@@ -1066,7 +891,7 @@ export const contract = {
     request: z.strictObject({}),
     response: SceneOutlineWire,
   },
-  /** Replace the text, breaks and years. Saves closer than ten minutes share one version. */
+  /** Replace the text, breaks and years. A save opens a new version only when the latest one opened more than `outlineVersionDays` days ago. */
   'sceneOutline.set': {
     request: z.strictObject({
       text: z.string().max(2_000_000),
@@ -1110,8 +935,7 @@ export const contract = {
   /**
    * PL-3: move a chapter to a place in a part (its own or another, where it
    * takes the target part). Story years never change. Returns what changed,
-   * for undo. KB-3: also a part among the parts of its book, and a book among
-   * the books.
+   * for undo. KB-3: also a part among all the parts.
    */
   'plot.reorder': {
     request: z.union([
@@ -1123,20 +947,13 @@ export const contract = {
       }),
       z.strictObject({
         kind: z.literal('parts'),
-        /** The book. */
-        groupId: EntryId,
-        movedId: EntryId,
-        toIndex: z.int().min(0).max(5000),
-      }),
-      z.strictObject({
-        kind: z.literal('books'),
         movedId: EntryId,
         toIndex: z.int().min(0).max(5000),
       }),
     ]),
     response: z.strictObject({
-      collection: z.enum(['chapters', 'parts', 'books']),
-      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a part's or book's number). */
+      collection: z.enum(['chapters', 'parts']),
+      /** For each entry that changed, the order fields before and after (a chapter's reading order and part, a part's number). */
       changes: z.array(
         z.strictObject({
           id: z.string(),
@@ -1221,90 +1038,6 @@ export const contract = {
     }),
     response: z.strictObject({ notes: z.record(z.string(), z.string()) }),
   },
-  /** IM-1: open the file picker for a workbook or a Word document. Null when cancelled. */
-  'import.pickFile': {
-    request: z.strictObject({ kind: z.enum(['workbook', 'document']) }),
-    response: z.strictObject({ file: ImportFileWire.nullable() }),
-  },
-  /** IM-1: the sheets of a picked workbook and the mappings saved for this file. */
-  'import.workbook': {
-    request: z.strictObject({ fileId: z.string().min(1) }),
-    response: z.strictObject({
-      file: ImportFileWire,
-      sheets: z.array(ImportSheetWire),
-      saved: z.array(z.strictObject({ sheet: z.string(), mapping: Mapping })),
-    }),
-  },
-  /** IM-1: a starting mapping for a sheet, columns matched to fields by their headers. */
-  'import.guess': {
-    request: z.strictObject({
-      fileId: z.string().min(1),
-      sheet: z.string().min(1),
-      shape: z.enum(['table', 'grid']),
-      collection: CollectionName,
-    }),
-    response: z.strictObject({ mapping: Mapping }),
-  },
-  /** IM-1: the fields a column can fill in a section. */
-  'import.fields': {
-    request: z.strictObject({ collection: CollectionName }),
-    response: z.strictObject({
-      fields: z.array(z.strictObject({ path: z.string(), label: z.string() })),
-    }),
-  },
-  /** IM-1, IM-2: the first rows of a sheet as the mapping would import them, each with its result. */
-  'import.preview': {
-    request: z.strictObject({
-      fileId: z.string().min(1),
-      mapping: Mapping,
-      limit: z.int().min(1).max(200).default(12),
-    }),
-    response: z.strictObject({
-      rows: z.array(ImportRowWire),
-      total: z.int().min(0),
-      ok: z.int().min(0),
-      failed: z.int().min(0),
-      notes: z.array(z.string()),
-    }),
-  },
-  /** IM-3: compare the sheet with the bible. Nothing is written. */
-  'import.plan': {
-    request: z.strictObject({ fileId: z.string().min(1), mapping: Mapping }),
-    response: ImportPlanWire,
-  },
-  /** ED-7, IM-3: write the changes the person approved, after a snapshot (BK-1). */
-  'import.apply': {
-    request: z.strictObject({
-      planId: z.string().min(1),
-      approved: z.array(z.string().min(1)).max(100000),
-      saveMapping: z.boolean().default(true),
-    }),
-    response: z.strictObject({
-      created: z.int().min(0),
-      updated: z.int().min(0),
-      unchanged: z.int().min(0),
-      questions: z.int().min(0),
-      failed: z.array(FailedRowWire),
-      snapshot: z.string().nullable(),
-    }),
-  },
-  /** IM-4: a Word document as the editor will store it, with its headings. */
-  'import.document': {
-    request: z.strictObject({ fileId: z.string().min(1) }),
-    response: z.strictObject({
-      file: ImportFileWire,
-      title: z.string(),
-      headings: z.array(z.strictObject({ level: z.int(), text: z.string(), index: z.int() })),
-      paragraphs: z.int().min(0),
-      sceneBreaks: z.int().min(0),
-      body: z.string(),
-    }),
-  },
-  /** IM-4, IM-3: what importing the document into an entry would change. */
-  'import.documentPlan': {
-    request: z.strictObject({ fileId: z.string().min(1), target: DocumentTargetWire }),
-    response: ImportPlanWire,
-  },
   /** BK-1: the snapshots of the open bible, newest first, and how many are kept. */
   'snapshot.list': {
     request: z.strictObject({}),
@@ -1347,12 +1080,10 @@ export const contract = {
       z.strictObject({ ok: z.literal(false), message: z.string() }),
     ]),
   },
-  /** Google Drive (M9): see `ipcDrive.ts`. */
-  ...driveContract,
   ...appContract,
   /** WT-1 writing tools over Datamuse (src/shared/ipcWords.ts). */
   ...wordsContract,
-  /** M7 sessions, briefs, dashboard, and manuscript (src/shared/ipcSession.ts). */
+  /** M7 sessions and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
   /** M8 alignment check (src/shared/ipcContinuity.ts). */
@@ -1432,10 +1163,10 @@ export const events = {
   }),
   /** Cmd+Z and Shift+Cmd+Z (ED-3), and Cmd+T for the Story Time dialog (TM-1), caught in main before the page or the menu sees them. */
   'app.command': z.strictObject({ command: z.enum(['undo', 'redo', 'storyTime']) }),
-  /** SL-1: the window is closing or the app is quitting; ask "Where did you stop?" first. */
+  /** The window is closing or the app is quitting; the page flushes pending edits and answers `app.flushed`. */
   'app.closeRequested': z.strictObject({ hasBible: z.boolean(), quitting: z.boolean() }),
   'proposals.changed': z.strictObject({ bible: z.string() }),
-  /** A list changed: an item added, renamed, or removed, or a new tag. */
+  /** A list changed: an item added, renamed, or removed. */
   'lists.changed': z.strictObject({ bible: z.string() }),
   /** The story time was set or cleared (TM-3). */
   'storyTime.changed': z.strictObject({ bible: z.string() }),

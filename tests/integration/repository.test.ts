@@ -27,22 +27,18 @@ afterAll(async () => {
 
 const margaret = {
   title: 'Margaret Hale',
-  status: 'canon' as const,
-  provenance: 'invented' as const,
   names: { full: 'Margaret Hale' },
   birth: { year: 1958 },
   death: { year: 2041 },
-  links: [{ targetId: 'H2', kind: 'spouse' }],
 };
 
 describe('ARCH-2 one write path for entries', () => {
-  test('ARCH-2 create, update, soft delete, and restore a character, with a revision for each write', async () => {
+  test('ARCH-2 create, update, soft delete, and restore a character, and no revision is written', async () => {
     const { repo, handle, model } = bible;
     const created = await repo.create('characters', margaret);
     expect(created._id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(created.createdAt).toBe(created.modifiedAt);
     expect(created.body).toBe('');
-    expect(created.tags).toEqual([]);
     const id = created._id;
 
     // Stored as zod accepted it, and in the read model.
@@ -51,12 +47,10 @@ describe('ARCH-2 one write path for entries', () => {
 
     const updated = await repo.update('characters', id, {
       title: 'Margaret Doyle Hale',
-      tags: ['matriarch'],
     });
     expect(updated.title).toBe('Margaret Doyle Hale');
     expect(updated.createdAt).toBe(created.createdAt);
     expect(updated.modifiedAt > created.modifiedAt).toBe(true);
-    expect(repo.get('characters', id)?.tags).toEqual(['matriarch']);
 
     const trashed = await repo.softDelete('characters', id);
     expect(trashed.deletedAt).toBeDefined();
@@ -67,17 +61,12 @@ describe('ARCH-2 one write path for entries', () => {
 
     const restored = await repo.restore('characters', id);
     expect(restored.deletedAt).toBeUndefined();
-    expect(restored.links).toEqual(margaret.links);
     expect(repo.get('characters', id)?.title).toBe('Margaret Doyle Hale');
     const stored = await handle.collection('characters').findOne({ _id: id as never });
     expect(stored).not.toHaveProperty('deletedAt');
 
-    const revisions = await repo.revisions('characters', id);
-    expect(revisions.map((r) => r.op)).toEqual(['create', 'update', 'softDelete', 'restore']);
-    expect(revisions[0]!.prior).toBeNull();
-    expect(revisions[1]!.prior).toEqual(created);
-    expect(revisions[2]!.prior).toEqual(updated);
-    expect(revisions[3]!.prior).toEqual(trashed);
+    // A53: no history is kept beside the entries.
+    expect(await handle.collectionNames()).not.toContain('revisions');
 
     expect(events.filter((e) => e.id === id)).toEqual(
       ['create', 'update', 'softDelete', 'restore'].map((op) => ({
@@ -91,9 +80,9 @@ describe('ARCH-2 one write path for entries', () => {
 
   test('ARCH-2 invalid writes are rejected with zod and leave no trace', async () => {
     const { repo, handle } = bible;
-    const before = await handle.collection('revisions').countDocuments();
+    const before = await handle.collection('characters').countDocuments();
     await expect(
-      repo.create('characters', { ...margaret, status: 'maybe' as never }),
+      repo.create('characters', { ...margaret, status: 'canon' } as never),
     ).rejects.toThrow(ValidationError);
     await expect(repo.create('characters', { ...margaret, names: { full: '' } })).rejects.toThrow(
       ValidationError,
@@ -106,7 +95,7 @@ describe('ARCH-2 one write path for entries', () => {
       repo.update('characters', ok._id, { birth: { year: 'old' } as never }),
     ).rejects.toThrow(ValidationError);
     expect(repo.get('characters', ok._id)?.birth).toEqual({ year: 1958 });
-    expect(await handle.collection('revisions').countDocuments()).toBe(before + 1);
+    expect(await handle.collection('characters').countDocuments()).toBe(before + 1);
   });
 
   test('ARCH-2 writes to unknown entries or sections fail plainly', async () => {
@@ -128,9 +117,8 @@ describe('ARCH-2 one write path for entries', () => {
       .collection('characters')
       .updateOne({ _id: c._id as never }, { $set: { modifiedAt: '2099-01-01T00:00:00.000Z' } });
     const mine = await repo.update('characters', c._id, { title: 'Mine' });
+    // The new stamp is later than the other writer's, so the update read the stored document.
     expect(mine.modifiedAt > '2099-01-01T00:00:00.000Z').toBe(true);
-    const revs = await repo.revisions('characters', c._id);
-    expect(revs.at(-1)!.prior?.modifiedAt).toBe('2099-01-01T00:00:00.000Z');
   });
 
   test('ARCH-2 the read model loads every collection of the bible on open', async () => {
@@ -150,8 +138,6 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
   let fx: OpenBible;
   let invoke: Invoke;
   const fxEvents: ChangeEvent[] = [];
-  const revisionsOf = (collection: string, entryId: string) =>
-    fx.handle.collection('revisions').countDocuments({ collection, entryId });
 
   beforeAll(async () => {
     fx = await openBibleSession(store, (await loadFixture(store, freshSlug('guard'))).id);
@@ -159,35 +145,24 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
     invoke = ipcFor(() => fx);
   });
 
-  /** A place written three times, linked from Margaret (H1), then moved to the trash. */
+  /** A place written three times, then moved to the trash. */
   async function trashedPlace(title: string) {
     const place = await invoke('entry.create', {
       collection: 'places',
-      data: { title, status: 'idea' },
+      data: { title },
     });
     const id = place.entry._id;
     await invoke('entry.update', { collection: 'places', id, patch: { body: '<p>Wet.</p>' } });
-    const h1 = fx.model.get('characters', 'H1')!;
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: 'H1',
-      patch: { links: [...(h1.links as object[]), { targetId: id, kind: 'related' }] },
-    });
     await invoke('entry.delete', { collection: 'places', id });
     return id;
   }
 
-  test('IP-16 entry.purge deletes an entry in the trash and its revisions in one go, and is not a revision itself', async () => {
+  test('IP-16 entry.purge deletes an entry in the trash in one go and counts entries only', async () => {
     const id = await trashedPlace('The porch by the river');
-    expect(await revisionsOf('places', id)).toBe(3);
     fx.search.rebuild(fx.model);
-    const before = await fx.handle.collection('revisions').countDocuments({});
     const counts = await invoke('entry.purge', { collection: 'places', id });
-    expect(counts).toEqual({ entries: 1, revisions: 3 });
+    expect(counts).toEqual({ entries: 1 });
     expect(await fx.handle.collection('places').findOne({ _id: id as never })).toBeNull();
-    expect(await revisionsOf('places', id)).toBe(0);
-    // A purge writes no revision of its own (A40: not an undo step).
-    expect(await fx.handle.collection('revisions').countDocuments({})).toBe(before - 3);
     // The read model and the search index drop it.
     expect(fx.model.get('places', id)).toBeUndefined();
     expect(fx.repo.trash().some((t) => t.entry._id === id)).toBe(false);
@@ -197,10 +172,14 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
 
   test('IP-16 a purged entry leaves its backlinks as dangling links the warnings report', async () => {
     const id = await trashedPlace('The boathouse');
+    const question = await invoke('entry.create', {
+      collection: 'openQuestions',
+      data: { title: 'Who owns the boathouse?', aboutIds: [id] },
+    });
     await invoke('entry.purge', { collection: 'places', id });
-    const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
-    expect((h1.entry.links as { targetId: string }[]).map((l) => l.targetId)).toContain(id);
-    expect(h1.warnings).toContainEqual(
+    const q = await invoke('entry.get', { collection: 'openQuestions', id: question.entry._id });
+    expect(q.entry.aboutIds).toContain(id);
+    expect(q.warnings).toContainEqual(
       expect.objectContaining({
         code: 'missing-target',
         message: `No entry has the ID ${id}. It may have been deleted for good.`,
@@ -209,30 +188,30 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
   });
 
   test('IP-16 entry.purge refuses an entry that is not in the trash, and writes nothing', async () => {
-    const before = await revisionsOf('characters', 'H2');
+    const before = await fx.handle.collection('characters').findOne({ _id: 'H2' as never });
     await expect(invoke('entry.purge', { collection: 'characters', id: 'H2' })).rejects.toThrow(
       'Only an entry in the trash can be deleted forever. Move it to the trash first.',
     );
     expect(fx.model.get('characters', 'H2')).toBeDefined();
-    expect(await revisionsOf('characters', 'H2')).toBe(before);
+    expect(await fx.handle.collection('characters').findOne({ _id: 'H2' as never })).toEqual(
+      before,
+    );
   });
 
-  test('IP-16 trash.empty deletes every trashed entry across sections and their revisions, in one transaction', async () => {
+  test('IP-16 trash.empty deletes every trashed entry across sections, in one transaction', async () => {
     const place = await trashedPlace('The old ferry dock');
     await invoke('entry.delete', { collection: 'culturalEntries', id: 'CU1' });
     const trashed = fx.repo.trash();
     expect(trashed.map((t) => t.entry._id)).toEqual(expect.arrayContaining([place, 'CU1']));
-    let revisions = 0;
-    for (const t of trashed) revisions += await revisionsOf(t.collection, t.entry._id);
     const counts = await invoke('trash.empty', {});
-    expect(counts).toEqual({ entries: trashed.length, revisions });
+    expect(counts).toEqual({ entries: trashed.length });
     expect(fx.repo.trash()).toEqual([]);
     expect(fx.model.get('culturalEntries', 'CU1')).toBeUndefined();
     expect(
       await fx.handle.collection('culturalEntries').findOne({ _id: 'CU1' as never }),
     ).toBeNull();
     // Nothing left to empty.
-    expect(await invoke('trash.empty', {})).toEqual({ entries: 0, revisions: 0 });
+    expect(await invoke('trash.empty', {})).toEqual({ entries: 0 });
   });
 
   test('IP-16 trash.empty writes nothing when the transaction fails part way', async () => {
@@ -244,61 +223,11 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
     });
     await expect(failing.emptyTrash()).rejects.toThrow();
     expect(await fx.handle.collection('places').findOne({ _id: id as never })).not.toBeNull();
-    expect(await revisionsOf('places', id)).toBe(3);
     expect(fx.model.get('places', id)?.deletedAt).toBeTruthy();
-  });
-
-  test('IP-16 revisions.prune counts first with dryRun, then removes the revisions before a date, for one entry or the whole bible', async () => {
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: 'H3',
-      patch: { body: '<p>One.</p>' },
-    });
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: 'H3',
-      patch: { body: '<p>Two.</p>' },
-    });
-    const all = await fx.handle.collection('revisions').countDocuments({});
-    const mine = await revisionsOf('characters', 'H3');
-    expect(mine).toBe(2);
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
-    const dry = await invoke('revisions.prune', {
-      collection: 'characters',
-      id: 'H3',
-      before: tomorrow,
-      dryRun: true,
-    });
-    expect(dry).toEqual({ count: 2 });
-    expect(await revisionsOf('characters', 'H3')).toBe(2);
-    // Nothing is older than a date long past.
-    expect(
-      await invoke('revisions.prune', { collection: 'characters', id: 'H3', before: '2000-01-01' }),
-    ).toEqual({ count: 0 });
-    expect(
-      await invoke('revisions.prune', { collection: 'characters', id: 'H3', before: tomorrow }),
-    ).toEqual({ count: 2 });
-    expect(await revisionsOf('characters', 'H3')).toBe(0);
-    // The history still opens; the entry is as it was.
-    expect(await invoke('revisions.list', { collection: 'characters', id: 'H3' })).toEqual({
-      revisions: [],
-    });
-    expect(fx.model.get('characters', 'H3')!.body).toBe('<p>Two.</p>');
-    // The whole bible.
-    const rest = all - 2;
-    expect(await invoke('revisions.prune', { before: tomorrow, dryRun: true })).toEqual({
-      count: rest,
-    });
-    expect(await invoke('revisions.prune', { before: tomorrow })).toEqual({ count: rest });
-    expect(await fx.handle.collection('revisions').countDocuments({})).toBe(0);
-    await expect(invoke('revisions.prune', { id: 'H3', before: tomorrow })).rejects.toThrow(
-      /Say which section the entry is in/,
-    );
   });
 
   test('IP-18 the write path refuses a change to the manuscript text from anything but the importer, with a plain error', async () => {
     const before = fx.model.get('chapters', 'CH5')!;
-    const revs = await revisionsOf('chapters', 'CH5');
     for (const patch of [
       { manuscriptText: '<p>Rewritten here.</p>' },
       { manuscriptSource: 'word:/tmp/other.docx' },
@@ -316,7 +245,6 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
       ]),
     ).rejects.toThrow(MANUSCRIPT_LOCKED);
     expect(fx.model.get('chapters', 'CH5')).toEqual(before);
-    expect(await revisionsOf('chapters', 'CH5')).toBe(revs);
     // A save that repeats the stored text, as a whole entry saved back, is not a change.
     const ok = await invoke('entry.update', {
       collection: 'chapters',
@@ -327,7 +255,7 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
     expect(ok.entry.manuscriptText).toBe(before.manuscriptText);
   });
 
-  test('IP-18 the importer still writes the manuscript fields, and restoring an older revision keeps them', async () => {
+  test('IP-18 the importer still writes the manuscript fields', async () => {
     const text = String(fx.model.get('chapters', 'CH4')!.manuscriptText);
     const next = `${text}<p>Imported again.</p>`;
     const written = await fx.repo.update(
@@ -337,16 +265,7 @@ describe('IP-16 IP-18 housekeeping and the manuscript lock on the fixture', () =
       { importer: true },
     );
     expect(written.manuscriptText).toBe(next);
-    const history = await invoke('revisions.list', { collection: 'chapters', id: 'CH4' });
-    const first = history.revisions.at(-1)!;
-    await invoke('entry.update', { collection: 'chapters', id: 'CH4', patch: { summary: 'S.' } });
-    // The oldest revision holds the old text; a restore brings back the rest, never the text.
-    const restored = await invoke('revisions.restore', {
-      collection: 'chapters',
-      id: 'CH4',
-      revisionId: first._id,
-    });
-    expect(restored.entry.manuscriptText).toBe(next);
+    expect(written.sourceFile).toBe('chapter-04.docx');
   });
 });
 
@@ -357,7 +276,6 @@ describe('IP-18 the manuscript lock on the create paths', () => {
     title,
     partId: 'PT1',
     readingOrder: 90,
-    status: 'idea',
     strands: [{ id: 'S1', label: 'present', startYear: 2040, primary: true }],
     ...extra,
   });
@@ -422,34 +340,5 @@ describe('IP-18 the manuscript lock on the create paths', () => {
       manuscriptText: '<p>From Word.</p>',
       sourceFile: 'imported.docx',
     });
-  });
-
-  test('IP-18 restoring a revision that holds a manuscript field the entry no longer has does not bring it back', async () => {
-    const made = await fx.repo.create(
-      'chapters',
-      chapter('Restored', { sourceFile: 'old.docx', manuscriptSource: 'word:/old.docx' }) as never,
-      { importer: true },
-    );
-    await invoke('entry.update', {
-      collection: 'chapters',
-      id: made._id,
-      patch: { summary: 'A.' },
-    });
-    // The stored entry loses the keys (as a document written before they existed would lack them).
-    await fx.handle
-      .collection('chapters')
-      .updateOne({ _id: made._id as never }, { $unset: { sourceFile: '', manuscriptSource: '' } });
-    const { sourceFile: _s, manuscriptSource: _m, ...bare } = fx.model.get('chapters', made._id)!;
-    fx.model.put('chapters', bare as never);
-    const history = await invoke('revisions.list', { collection: 'chapters', id: made._id });
-    const oldest = history.revisions.at(-1)!;
-    const restored = await invoke('revisions.restore', {
-      collection: 'chapters',
-      id: made._id,
-      revisionId: oldest._id,
-    });
-    expect(restored.entry.sourceFile).toBeNull();
-    expect(restored.entry.manuscriptSource).toBeNull();
-    expect(restored.entry.summary).toBe('');
   });
 });

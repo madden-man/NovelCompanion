@@ -7,8 +7,8 @@ export const HexColor = z
 
 /**
  * A user-editable list (ED-8). Hierarchical lists use `parentId`. A47 (IP-8):
- * every item may carry a colour and a few extra values (a status kind, an
- * age group's from and to), so one shape serves every list.
+ * every item may carry a colour and a few extra values (an age group's from
+ * and to, a moment kind's weight), so one shape serves every list.
  */
 export const ListItem = z.strictObject({
   id: z.string().min(1),
@@ -41,12 +41,9 @@ export const LIST_IDS = [
   'unionTypes',
   'parentLinkTypes',
   'communities',
-  'statuses',
-  'provenance',
   'eventCategories',
   'romanizationSystems',
   'languages',
-  'tags',
   /** A47 (IP-8): the regions world events name, by item ID. */
   'regions',
   /** A47 (IP-10): who a cultural line is about; `extra.from` and `extra.to` in years. */
@@ -55,10 +52,6 @@ export const LIST_IDS = [
   'momentKinds',
 ] as const;
 export type ListId = (typeof LIST_IDS)[number];
-
-/** A47 (IP-9): what a status means to the brief rules (SB-5). Every status item carries one in `extra.kind`. */
-export const STATUS_KINDS = ['canon', 'planned', 'idea'] as const;
-export type StatusKind = (typeof STATUS_KINDS)[number];
 
 /**
  * Lists in the `lists` collection that configure the bible rather than name

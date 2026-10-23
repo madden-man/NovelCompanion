@@ -8,12 +8,8 @@ import {
   markdownToText,
   plainText,
 } from '../../src/shared/domain/markdown';
-import { blocksToBody, blocksToMarkdown, parseBlocks } from '../../src/shared/domain/import';
 import { plain } from '../../src/shared/domain/brief/selection';
-import {
-  mentionRanges,
-  richExtensions,
-} from '../../src/renderer/src/workspace/richText/extensions';
+import { richExtensions } from '../../src/renderer/src/workspace/richText/extensions';
 import {
   parseMarkdown,
   serializeMarkdown,
@@ -73,16 +69,6 @@ describe('A44 HTML to Markdown, the shapes the importer wrote', () => {
 
   test('bold a style turns off, as Google Docs wraps a paste, is not bold', () => {
     expect(htmlToMarkdown('<b style="font-weight:normal"><p>Plain</p></b>')).toBe('Plain');
-  });
-
-  test('blocksToMarkdown is the Markdown of what blocksToBody wrote', () => {
-    const blocks = parseBlocks(
-      '<h1>Chapter 3: Wedding Weather</h1><p>It was <em>lucky</em> rain.</p><p>* * *</p><ul><li>Red</li></ul><p>After.</p>',
-    );
-    expect(blocksToMarkdown(blocks)).toBe(htmlToMarkdown(blocksToBody(blocks)));
-    expect(blocksToMarkdown(blocks)).toBe(
-      '## Chapter 3: Wedding Weather\n\nIt was *lucky* rain.\n\n---\n\n- Red\n\nAfter.',
-    );
   });
 
   test('looksLikeHtml finds stored HTML and not a tag the writer escaped', () => {
@@ -169,14 +155,5 @@ describe('A44 Markdown as plain text, for search and briefs', () => {
   test('the escape leaves what this Markdown does not read', () => {
     expect(escapeMarkdown('[a] `b` 3 < 4', false)).toBe('[a] `b` 3 < 4');
     expect(escapeMarkdown('<p>', false)).toBe('\\<p>');
-  });
-});
-
-describe('A44 @mentions show as chips where the text names a linked entry', () => {
-  test('the longest linked title wins, and other @ text is left alone', () => {
-    const doc = parseMarkdown(full, '@Wei Li Jr and @Wei Li met @nobody.');
-    const ranges = mentionRanges(doc, ['Wei Li', 'Wei Li Jr']);
-    const texts = ranges.map((r) => doc.textBetween(r.from, r.to));
-    expect(texts).toEqual(['@Wei Li Jr', '@Wei Li']);
   });
 });

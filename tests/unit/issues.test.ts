@@ -7,7 +7,6 @@ describe('ED-10 schema problems in plain words at the field', () => {
     const r = entrySchemas.characters.safeParse({
       _id: 'A',
       title: 'Ada',
-      status: 'canon',
       createdAt: '2026-01-01T00:00:00.000Z',
       modifiedAt: '2026-01-01T00:00:00.000Z',
       names: { full: '' },
