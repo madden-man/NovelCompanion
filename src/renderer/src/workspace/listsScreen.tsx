@@ -1,10 +1,10 @@
 /**
  * The Lists screen (ED-8, A47 IP-8 to IP-12): every list the bible keeps, each
  * item a row of fields. Items move with a drag or the Up and Down buttons, a
- * hierarchical list takes a parent in place, a name renames on Enter, statuses
- * and provenance carry a colour (and a status its kind), moment kinds a
- * colour, its contrast on the grid, and a weight (A51), age groups their
- * ages, families their colour, eras their years. Each change is one undo step.
+ * hierarchical list takes a parent in place, a name renames on Enter, moment
+ * kinds carry a colour, its contrast on the grid, and a weight (A51), age
+ * groups their ages, families their colour, eras their years. Each change is
+ * one undo step.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -18,8 +18,6 @@ import {
   listColorCss,
 } from '../../../shared/domain/lists';
 import type { MomentKindWeight } from '../../../shared/domain/lists';
-import { STATUS_KINDS } from '../../../shared/schema/lists';
-import type { StatusKind } from '../../../shared/schema/lists';
 import {
   listAddCommand,
   listLookCommand,
@@ -40,13 +38,6 @@ import './vocab.css';
 
 type Item = WireList['items'][number];
 type Note = { text: string; bad: boolean } | null;
-
-const KIND_LABELS: Record<StatusKind, string> = {
-  canon: 'Canon',
-  planned: 'Planned',
-  idea: 'Idea',
-};
-const KIND_OPTIONS = STATUS_KINDS.map((k) => ({ value: k, label: KIND_LABELS[k] }));
 
 const WEIGHT_LABELS: Record<MomentKindWeight, string> = {
   plain: 'Plain marker',
@@ -97,7 +88,7 @@ function KindContrastReadout({ color }: { color: string | null | undefined }) {
 /** Lists whose items sit under one another. */
 const HIERARCHICAL = new Set(['eventCategories']);
 /** Lists whose items carry a colour on this screen. */
-const COLOURED = new Set(['statuses', 'provenance', 'momentKinds']);
+const COLOURED = new Set(['momentKinds']);
 
 /** Every editable list, with rename, reorder, add, and remove (ED-8, IP-8). */
 export function ListsView() {
@@ -106,9 +97,8 @@ export function ListsView() {
     <section className="ws-wide stack" aria-labelledby="lists-title" data-testid="lists-view">
       <h2 id="lists-title">Lists</h2>
       <p className="lede">
-        Types, communities, regions, age groups, statuses, moment kinds, tags, families, and eras.
-        Renaming an item updates every entry that uses it. The order here is the order every list
-        and select shows.
+        Types, communities, regions, age groups, moment kinds, families, and eras. Renaming an item
+        updates every entry that uses it. The order here is the order every list and select shows.
       </p>
       <div className="lists-grid">
         {lists.map((l) =>
@@ -155,7 +145,6 @@ function ListPanel({ list }: { list: WireList }) {
   const [over, setOver] = useState<string | null>(null);
   const hierarchical = HIERARCHICAL.has(list._id);
   const coloured = COLOURED.has(list._id);
-  const isStatus = list._id === 'statuses';
   const isAges = list._id === 'ageGroups';
   const isMomentKinds = list._id === 'momentKinds';
   const asDoc = { _id: list._id, label: list.label, items: list.items };
@@ -338,17 +327,6 @@ function ListPanel({ list }: { list: WireList }) {
                     }}
                   />
                 </span>
-                {isStatus && (
-                  <Editable
-                    kind="select"
-                    label={`Kind of ${item.label}`}
-                    value={String(item.extra.kind ?? 'idea')}
-                    options={KIND_OPTIONS}
-                    testId="item-kind"
-                    display={(s) => `kind ${s.toLowerCase()}`}
-                    onSave={(next) => setExtra(item, 'kind', next ?? 'idea')}
-                  />
-                )}
                 {isMomentKinds && (
                   <Editable
                     kind="select"
@@ -450,25 +428,22 @@ function ListPanel({ list }: { list: WireList }) {
   );
 }
 
-/** The foot of a list: a name, and for some lists a parent, a kind, or ages. */
+/** The foot of a list: a name, and for some lists a parent or ages. */
 function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
   const { list } = props;
   const undo = useUndo();
   const [label, setLabel] = useState('');
   const [parent, setParent] = useState('');
-  const [kind, setKind] = useState<StatusKind>('idea');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const ids = { add: useId(), parent: useId(), kind: useId(), from: useId(), to: useId() };
+  const ids = { add: useId(), parent: useId(), from: useId(), to: useId() };
   const hierarchical = HIERARCHICAL.has(list._id);
-  const isStatus = list._id === 'statuses';
   const isAges = list._id === 'ageGroups';
 
   const add = async (e: FormEvent) => {
     e.preventDefault();
     props.onMessage(null);
     const extra: Record<string, string | number> = {};
-    if (isStatus) extra.kind = kind;
     if (isAges && from.trim()) extra.from = Number(from);
     if (isAges && to.trim()) extra.to = Number(to);
     try {
@@ -511,22 +486,6 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
             emptyLabel="At the top"
             onChange={(v) => setParent(v ?? '')}
           />
-        </>
-      )}
-      {isStatus && (
-        <>
-          <label htmlFor={ids.kind}>Kind</label>
-          <select
-            id={ids.kind}
-            value={kind}
-            onChange={(e) => setKind(e.target.value as StatusKind)}
-          >
-            {KIND_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
         </>
       )}
       {isAges && (

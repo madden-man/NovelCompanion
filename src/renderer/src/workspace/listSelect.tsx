@@ -12,7 +12,6 @@ import { itemPath } from '../../../shared/domain/lists';
 import { plainError } from '../api';
 import { useReadOnly } from '../connection';
 import { useList, useStore } from './data';
-import { ListSwatch } from './listChip';
 import { useUndo } from './undo';
 import { ADD_NEW_LABEL, useListAddNew } from './editable';
 import type { EditableOption } from './editable';
@@ -42,7 +41,7 @@ export function ListSelect(props: {
   /** The select's own ID, for a label outside it. */
   id?: string;
   'aria-label'?: string;
-  /** Offer a blank choice with this text ("None", "Any status"). */
+  /** Offer a blank choice with this text ("None", "Any family"). */
   emptyLabel?: string;
   /** The parent a new item is added under. */
   parentId?: string | null;
@@ -154,46 +153,39 @@ export function ListSelect(props: {
   const elsewhere = known
     ? null
     : (lists.flatMap((l) => l.items).find((i) => i.id === props.value)?.label ?? null);
-  const swatch =
-    props.listId === 'statuses' || props.listId === 'provenance' ? (
-      <ListSwatch listId={props.listId} id={props.value || null} />
-    ) : null;
   return (
-    <>
-      {swatch}
-      <select
-        ref={selectRef}
-        id={props.id}
-        aria-label={props.id ? undefined : props['aria-label']}
-        className={props.className}
-        value={props.value}
-        disabled={props.disabled}
-        data-testid={props.testId}
-        onChange={(e) => {
-          if (e.target.value === ADD) {
-            setNaming(true);
-            return;
-          }
-          props.onChange(e.target.value === '' ? null : e.target.value);
-        }}
-      >
-        {(props.emptyLabel !== undefined || !props.value) && (
-          <option value="">{props.emptyLabel ?? 'Choose one'}</option>
-        )}
-        {props.value && !known && (
-          <option value={props.value} title={`Item ID ${props.value}`}>
-            {elsewhere ?? 'Unknown item'}
+    <select
+      ref={selectRef}
+      id={props.id}
+      aria-label={props.id ? undefined : props['aria-label']}
+      className={props.className}
+      value={props.value}
+      disabled={props.disabled}
+      data-testid={props.testId}
+      onChange={(e) => {
+        if (e.target.value === ADD) {
+          setNaming(true);
+          return;
+        }
+        props.onChange(e.target.value === '' ? null : e.target.value);
+      }}
+    >
+      {(props.emptyLabel !== undefined || !props.value) && (
+        <option value="">{props.emptyLabel ?? 'Choose one'}</option>
+      )}
+      {props.value && !known && (
+        <option value={props.value} title={`Item ID ${props.value}`}>
+          {elsewhere ?? 'Unknown item'}
+        </option>
+      )}
+      {choices
+        .filter((c) => !exclude.has(c.value))
+        .map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label}
           </option>
-        )}
-        {choices
-          .filter((c) => !exclude.has(c.value))
-          .map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        {!readOnly && <option value={ADD}>{ADD_NEW_LABEL}</option>}
-      </select>
-    </>
+        ))}
+      {!readOnly && <option value={ADD}>{ADD_NEW_LABEL}</option>}
+    </select>
   );
 }
