@@ -2,8 +2,6 @@
   {
     "_id": "CH1",
     "title": "The Archivist's Door",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT1",
@@ -23,19 +21,11 @@
     "written": true,
     "manuscriptText": "<p>Iris was forty-four the winter she brought Noor to the archive. The Archivist opened the door before they knocked.</p><p><em>You are late,</em> the Archivist said, as if they had been expected for years.</p>",
     "summary": "Iris and Noor visit the Archivist.",
-    "sourceFile": "chapter-01.docx",
-    "links": [
-      {
-        "targetId": "E9",
-        "kind": "happened"
-      }
-    ]
+    "sourceFile": "chapter-01.docx"
   },
   {
     "_id": "CH2",
     "title": "Two Kitchens",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT1",
@@ -70,8 +60,6 @@
   {
     "_id": "CH3",
     "title": "Wedding Weather",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT1",
@@ -96,8 +84,6 @@
   {
     "_id": "CH4",
     "title": "After the Funeral",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT1",
@@ -122,8 +108,6 @@
   {
     "_id": "CH5",
     "title": "Candles",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT2",
@@ -148,8 +132,6 @@
   {
     "_id": "CH6",
     "title": "The Letter",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT2",
@@ -169,23 +151,11 @@
     "written": false,
     "manuscriptText": "<p>Iris asked her father about the uncle nobody mentioned. Outside, the old flood line was still painted on the wall.</p>",
     "summary": "Iris starts asking questions.",
-    "sourceFile": null,
-    "links": [
-      {
-        "targetId": "E3",
-        "kind": "happened"
-      },
-      {
-        "targetId": "E10",
-        "kind": "happened"
-      }
-    ]
+    "sourceFile": null
   },
   {
     "_id": "CH7",
     "title": "Rain in Guangzhou",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT2",
@@ -210,8 +180,6 @@
   {
     "_id": "CH8",
     "title": "Noor",
-    "status": "idea",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "partId": "PT2",
@@ -231,12 +199,6 @@
     "written": false,
     "manuscriptText": "<p>Noor taught her mother to talk to the house robot without shouting.</p>",
     "summary": "Noor and Iris, older.",
-    "sourceFile": null,
-    "links": [
-      {
-        "targetId": "E9",
-        "kind": "happened"
-      }
-    ]
+    "sourceFile": null
   }
 ]

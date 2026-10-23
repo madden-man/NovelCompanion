@@ -20,9 +20,6 @@
           }
         ]
       }
-    },
-    "glossaryTerms": {
-      "GL3": { "links": [{ "targetId": "CU4", "kind": "mentions" }] }
     }
   },
   "entries": {
@@ -30,7 +27,6 @@
       {
         "_id": "B1",
         "title": "Peter writes the letter",
-        "status": "planned",
         "characterId": "H2",
         "year": 2029,
         "body": "Peter names the half-brother in a letter he never sends."
@@ -38,7 +34,6 @@
       {
         "_id": "B2",
         "title": "Margaret hides the letter",
-        "status": "canon",
         "characterId": "H1",
         "year": 2032,
         "body": "After the funeral Margaret puts the letter in her box."
@@ -46,7 +41,6 @@
       {
         "_id": "B3",
         "title": "Ruth reads the letter",
-        "status": "planned",
         "characterId": "H4",
         "year": 2041,
         "body": "Margaret gives Ruth the letter before she dies."
@@ -54,7 +48,6 @@
       {
         "_id": "B4",
         "title": "Iris finds the letter",
-        "status": "planned",
         "characterId": "H5",
         "year": 2045,
         "body": "Iris finds an envelope in the attic."
@@ -62,7 +55,6 @@
       {
         "_id": "B5",
         "title": "Iris confronts Daniel",
-        "status": "idea",
         "characterId": "H5",
         "year": 2050,
         "body": "Years later Iris asks her father outright."
@@ -70,7 +62,6 @@
       {
         "_id": "B6",
         "title": "Lan visits Guangzhou",
-        "status": "planned",
         "characterId": "Z3",
         "year": 2060,
         "body": "Lan shows Iris the street where she grew up."
@@ -78,7 +69,6 @@
       {
         "_id": "B7",
         "title": "Lan keeps the letters",
-        "status": "planned",
         "characterId": "Z3",
         "year": 2040,
         "body": "Lan moves her mother's letters into a locked drawer."
@@ -88,35 +78,31 @@
       {
         "_id": "Q1",
         "title": "Does Daniel know about the uncle?",
-        "status": "planned",
         "question": "Has Daniel heard of the half-brother by 2045?",
         "state": "open",
-        "links": [{ "targetId": "H3", "kind": "about" }]
+        "aboutIds": ["H3"]
       },
       {
         "_id": "Q2",
         "title": "Is Iris left-handed?",
-        "status": "idea",
         "question": "Settled: she is.",
         "state": "decided",
         "decision": "Left-handed.",
-        "links": [{ "targetId": "H5", "kind": "about" }]
+        "aboutIds": ["H5"]
       },
       {
         "_id": "Q3",
         "title": "Where does Jun live?",
-        "status": "idea",
         "question": "Guangzhou or Shenzhen?",
         "state": "open",
-        "links": [{ "targetId": "Z4", "kind": "about" }]
+        "aboutIds": ["Z4"]
       },
       {
         "_id": "Q4",
         "title": "How cheap are grid batteries?",
-        "status": "idea",
         "question": "Can a household afford one in the forties?",
         "state": "open",
-        "links": [{ "targetId": "ERA-2040", "kind": "about" }]
+        "aboutIds": ["ERA-2040"]
       }
     ]
   }

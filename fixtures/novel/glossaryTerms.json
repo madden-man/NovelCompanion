@@ -2,8 +2,6 @@
   {
     "_id": "GL1",
     "title": "晓曦",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "characters": "晓曦",
@@ -15,8 +13,6 @@
   {
     "_id": "GL2",
     "title": "周美玲",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "characters": "周美玲",
@@ -28,8 +24,6 @@
   {
     "_id": "GL3",
     "title": "团圆",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "characters": "团圆",
@@ -41,8 +35,6 @@
   {
     "_id": "GL4",
     "title": "外婆",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "characters": "外婆",
@@ -54,8 +46,6 @@
   {
     "_id": "GL5",
     "title": "月饼",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "characters": "月饼",

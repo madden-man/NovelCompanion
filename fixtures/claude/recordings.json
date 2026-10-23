@@ -334,8 +334,7 @@
             "characterId": "Z3",
             "year": 2034,
             "title": "Lives in Seattle",
-            "body": "<p>She leaves Portland when the water is rationed.</p>",
-            "status": "idea"
+            "body": "<p>She leaves Portland when the water is rationed.</p>"
           },
           "reason": "The capture says Zhou Lan moved to Seattle; the text gives no year, so the story year 2034 is used."
         }
@@ -352,8 +351,7 @@
             },
             "categoryId": "climate",
             "regions": ["Pacific Northwest"],
-            "characterIds": ["Z3"],
-            "status": "idea"
+            "characterIds": ["Z3"]
           },
           "reason": "The capture names Portland's water rationing as what made Zhou Lan move; no event holds it yet."
         }
@@ -471,8 +469,7 @@
             "title": "Jinan in 2045",
             "communityId": "new:jinan",
             "startYear": 2045,
-            "endYear": 2045,
-            "status": "idea"
+            "endYear": 2045
           },
           "reason": "The capture asks for culture in Jinan in 2045; the line uses the new community."
         }

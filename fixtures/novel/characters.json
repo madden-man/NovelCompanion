@@ -2,8 +2,6 @@
   {
     "_id": "H1",
     "title": "Margaret Hale",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -12,14 +10,11 @@
     "birth": { "year": 1958 },
     "death": { "year": 2041 },
     "familyIds": ["FAM-HALE"],
-    "backstory": "A schoolteacher who kept every letter the family ever sent.",
-    "links": []
+    "backstory": "A schoolteacher who kept every letter the family ever sent."
   },
   {
     "_id": "H2",
     "title": "Peter Hale",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Peter Hale" },
@@ -31,8 +26,6 @@
   {
     "_id": "H3",
     "title": "Daniel Hale",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Daniel Hale" },
@@ -44,8 +37,6 @@
   {
     "_id": "H4",
     "title": "Ruth Hale",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Ruth Hale" },
@@ -57,8 +48,6 @@
   {
     "_id": "H5",
     "title": "Iris Hale-Zhou",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -73,8 +62,6 @@
   {
     "_id": "H6",
     "title": "Sam Hale",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Sam Hale" },
@@ -86,8 +73,6 @@
   {
     "_id": "Z1",
     "title": "Zhou Meiling",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -102,8 +87,6 @@
   {
     "_id": "Z2",
     "title": "Zhou Wei",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -117,8 +100,6 @@
   {
     "_id": "Z3",
     "title": "Zhou Lan",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -133,8 +114,6 @@
   {
     "_id": "Z4",
     "title": "Zhou Jun",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": {
@@ -148,8 +127,6 @@
   {
     "_id": "X1",
     "title": "Tomas Reyes",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Tomas Reyes" },
@@ -161,8 +138,6 @@
   {
     "_id": "Z5",
     "title": "Noor Zhou",
-    "status": "planned",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "Noor Zhou" },
@@ -173,8 +148,6 @@
   {
     "_id": "U1",
     "title": "The Archivist",
-    "status": "idea",
-    "provenance": null,
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "names": { "full": "The Archivist" },

@@ -2,8 +2,6 @@
   {
     "_id": "PLC1",
     "title": "Portland",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "parentId": null,
@@ -19,8 +17,6 @@
   {
     "_id": "PLC2",
     "title": "The Hale house",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "parentId": "PLC1",
@@ -36,8 +32,6 @@
   {
     "_id": "PLC3",
     "title": "Guangzhou",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "parentId": null,
@@ -53,8 +47,6 @@
   {
     "_id": "PLC4",
     "title": "The Archive",
-    "status": "canon",
-    "provenance": "invented",
     "createdAt": "2026-01-15T09:00:00.000Z",
     "modifiedAt": "2026-01-15T09:00:00.000Z",
     "parentId": "PLC1",
