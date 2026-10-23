@@ -24,9 +24,8 @@ import { PANEL_INSTRUCTIONS, PANEL_MAX_TURNS, panelPrompt } from './features/pan
 import { bibleTools } from './tools';
 
 /**
- * A feature that runs Claude once over a deterministic input (AI-1): session
- * briefs (SB-4, DB-2), alignment checks (CC-3), chapter summaries (MS-2), and
- * import proposals (IM-5). Each lives in `features/` and is started with
+ * A feature that runs Claude once over a deterministic input (AI-1):
+ * alignment checks (CC-3), chapter summaries (MS-2), and capture (KB-6). Each lives in `features/` and is started with
  * `ClaudeRuntime.runFeature`. See docs/ARCHITECTURE.md, "Claude runtime".
  */
 export interface FeatureDefinition<I, O> {
@@ -37,7 +36,7 @@ export interface FeatureDefinition<I, O> {
   input: z.ZodType<I>;
   /** The structured output Claude must return; validated with zod before anything is saved. */
   output: z.ZodType<O>;
-  /** History title, for example "Brief for Chapter 4". */
+  /** History title, for example "Summary of Chapter 4". */
   title(input: I, session: OpenBible): string;
   /** The prompt and the entries it contains. Must be deterministic: same input and data, same prompt. */
   build(input: I, session: OpenBible): { prompt: string; given: EntryRefWire[] };

@@ -29,8 +29,8 @@ export function modelsWithDefaults(s: ClaudeSettings): Record<ClaudeFeature, str
 }
 
 /**
- * A53: a saved file can name a feature the app no longer has (`briefs`,
- * `importProposals`). Its model is dropped so the rest of the file still reads.
+ * A53: a saved file can name a feature the app no longer has (briefs, import
+ * proposals). Its model is dropped so the rest of the file still reads.
  */
 function knownFeaturesOnly(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;

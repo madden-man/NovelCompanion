@@ -127,13 +127,13 @@ describe('ARCH-4 the Claude Agent SDK client', () => {
 
   test('ARCH-4 a feature with an output schema passes outputFormat json_schema and returns structured_output', async () => {
     calls.length = 0;
-    const structured = { summary: 'ok', proposals: [] };
+    const structured = { summary: 'ok' };
     script = [success({ result: '', structured_output: structured })];
     const client = new SdkClaudeClient(opts);
     const schema = { type: 'object', properties: { summary: { type: 'string' } } };
     const events = await drain(
       client.run(
-        request({ feature: 'importProposals', tools: [], outputSchema: schema }),
+        request({ feature: 'summaries', tools: [], outputSchema: schema }),
         new AbortController().signal,
       ),
     );

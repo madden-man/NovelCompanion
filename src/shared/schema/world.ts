@@ -28,7 +28,7 @@ export const worldEventFields: FieldSpec[] = [
   f.listItems('regions', 'Regions', 'regions'),
   f.refs('characterIds', 'Characters affected', ['characters']),
   f.boolean('formative', 'Formative', {
-    hint: 'Formative events reach briefs for anyone who lived through them.',
+    hint: 'Formative events reach the session selection for anyone who lived through them.',
   }),
 ];
 

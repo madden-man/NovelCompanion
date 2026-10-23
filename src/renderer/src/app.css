@@ -1851,7 +1851,7 @@ label.check {
   }
 }
 
-/* The top bar: story year, the chapter being written, and Start session, above every screen. */
+/* The top bar: story year, the chapter being written, and Relevant to Session, above every screen. */
 .ws-topbar {
   grid-area: top;
   display: flex;

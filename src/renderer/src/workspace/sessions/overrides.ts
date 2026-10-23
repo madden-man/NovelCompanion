@@ -1,10 +1,8 @@
 /**
- * SB-9, IP-2 (a47-desk): entries taken out of (or put back into) a selection
- * before any brief is written. Relevant to Session and the Start session
- * preview share them, so what is removed on the desk is left out of the
- * brief Start session writes. They belong to one section of one bible: a
- * change of section forgets the others, writing the brief forgets its own,
- * and opening another bible forgets them all. Kept for the app session only.
+ * SB-9, IP-2 (a47-desk): entries taken out of (or put back into) the
+ * selection on Relevant to Session. They belong to one section of one bible:
+ * a change of section forgets the others, and opening another bible forgets
+ * them all. Kept for the app session only.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
@@ -52,12 +50,11 @@ export function OverridesBible({ id }: { id: string }): null {
 export const overridesKey = (input: unknown): string =>
   input ? `${bible}|${JSON.stringify(input)}` : '';
 
-/** The overrides of a section, and Remove, Keep and Clear over them. */
+/** The overrides of a section, and Remove and Keep over them. */
 export function useOverrides(input: unknown): {
   overrides: Overrides;
   remove: (id: string) => void;
   keep: (id: string) => void;
-  clear: () => void;
 } {
   const key = overridesKey(input);
   const overrides = useSyncExternalStore(subscribe, () => (key && store.get(key)) || EMPTY);
@@ -90,8 +87,5 @@ export function useOverrides(input: unknown): {
     },
     [key],
   );
-  const clear = useCallback(() => {
-    if (key) put(key, EMPTY);
-  }, [key]);
-  return useMemo(() => ({ overrides, remove, keep, clear }), [overrides, remove, keep, clear]);
+  return useMemo(() => ({ overrides, remove, keep }), [overrides, remove, keep]);
 }

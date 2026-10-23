@@ -29,7 +29,7 @@ export function WorldEventsStrip(props: {
   /** Columns for the years with no event, else only the years that have one. */
   everyYear: boolean;
   onOpen: (id: string) => void;
-  /** Something to show after an event's title, such as a Remove button in the brief view. */
+  /** Something to show after an event's title, such as a Remove button on the desk. */
   action?: (id: string) => ReactNode;
   /** a47-desk (IP-2): draws an event's title, such as a field, in place of the link. */
   renderTitle?: (e: StripEvent) => ReactNode;

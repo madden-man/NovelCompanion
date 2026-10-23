@@ -236,7 +236,7 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     writeFileSync(
       path,
       JSON.stringify({
-        models: { briefs: 'claude-opus-5-5', importProposals: 'x', panel: 'claude-haiku-5-5' },
+        models: { briefs: 'claude-opus-5-5', retired: 'x', panel: 'claude-haiku-5-5' },
         acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
       }),
     );

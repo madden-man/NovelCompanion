@@ -40,7 +40,7 @@ const SAVE_DELAY_MS = 250;
 /**
  * The current story time for the open bible (TM-3): one shared store that the
  * tree year control, the timeline cursor, the year view, character pages, the
- * status bar, and later the brief inputs all read.
+ * status bar, and the session selection all read.
  */
 export function StoryTimeProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<Stored | null>(null);

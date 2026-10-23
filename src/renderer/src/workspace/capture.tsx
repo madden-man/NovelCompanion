@@ -275,7 +275,7 @@ export function CaptureBox() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        // Another modal dialog (Story Time, the stop prompt) holds focus: two focus traps would fight.
+        // Another modal dialog (Story Time) holds focus: two focus traps would fight.
         if (!boxOpen && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
         captureNav.open();
       }
