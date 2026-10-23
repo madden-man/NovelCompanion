@@ -421,6 +421,29 @@ test('SM-9 a click on an empty spot in a row adds a moment for that person at th
   expect((await getMoment(id)).deletedAt).toBeTruthy();
 });
 
+test('SM-9 IP-4 A49 a marker is a 14px dot in a 48px row, and a click just beside it picks the moment instead of adding one', async () => {
+  await zoomTo('Close');
+  await showRow('H1');
+  await showYear(2028);
+  const box = (await marker('H1-voice-0').boundingBox())!;
+  expect(box.width).toBeCloseTo(14, 0);
+  expect(box.height).toBeCloseTo(14, 0);
+  expect((await row('H1').boundingBox())!.height).toBeCloseTo(48, 0);
+  const before = (await liveMoments()).length;
+  // 5px past the dot's right edge is still the marker's hit area, not the empty track.
+  const at = { x: box.x + box.width + 5, y: box.y + box.height / 2 };
+  expect(
+    await marker('H1-voice-0').evaluate(
+      (el, p) => el.contains(document.elementFromPoint(p.x, p.y)),
+      at,
+    ),
+  ).toBe(true);
+  await page.mouse.click(at.x, at.y);
+  await expect(label('H1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(tableRow('H1-voice-0')).toHaveAttribute('aria-current', 'true');
+  expect((await liveMoments()).length).toBe(before);
+});
+
 test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it; ArrowRight does the same', async () => {
   await zoomTo('Close');
   await showRow('H1');

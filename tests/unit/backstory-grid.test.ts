@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, test } from 'vitest';
 import { readFixture } from '../helpers/loadFixture';
 import {
+  BACKSTORY_MARKERS,
   BACKSTORY_METRICS,
   NO_FAMILY,
   ageIn,
@@ -26,7 +27,14 @@ import {
   withYear,
 } from '../../src/shared/domain/backstoryGrid';
 import { eventSpans, fromCollections, strandSpans } from '../../src/shared/domain/timeline';
-import { makeScale, writingBand, yearMid, yearX } from '../../src/shared/domain/worldGrid';
+import {
+  MARKER_DEFAULTS,
+  hitTest,
+  makeScale,
+  writingBand,
+  yearMid,
+  yearX,
+} from '../../src/shared/domain/worldGrid';
 import type { Doc } from '../../src/shared/domain/paths';
 import { DEFAULT_NUMBERS } from '../../src/shared/schema/settings';
 
@@ -221,6 +229,55 @@ describe('SM-9 SM-3 moments on the grid', () => {
     expect(hitBackstory(layout, grid, 10, 5)).toBeNull();
   });
 
+  test('SM-9 A49 rows are 48px for one lane and 76px for two; markers are 14px dots with 10px bars', () => {
+    const s = makeScale(grid.span, 10);
+    const layout = layoutBackstory(grid, s);
+    expect(layout.markers).toBe(BACKSTORY_MARKERS);
+    const rows = layout.lines.filter((l) => l.kind === 'row');
+    const one = rows.find((l) => l.layout.lanes === 1)!;
+    expect(one.height).toBe(48);
+    // Two moments a year apart in one row cannot share a lane.
+    const twoLane = backstoryGrid({
+      ...input,
+      moments: [
+        ...input.moments,
+        { ...input.moments[0]!, _id: 'H1-next', year: 2029, title: 'Next' } as Doc,
+      ],
+    });
+    const h1 = layoutBackstory(twoLane, s).lines.find(
+      (l) => l.kind === 'row' && l.row.key === 'H1',
+    )!;
+    expect(h1.kind === 'row' && h1.layout.lanes).toBe(2);
+    expect(h1.height).toBe(76);
+    const dot = rows.flatMap((l) => l.layout.markers).find((m) => m.id === 'H1-voice-0')!;
+    expect(dot.width).toBe(14);
+    expect(dot.x).toBe(yearMid(s, 2028) - 7);
+    expect(BACKSTORY_MARKERS.barHeight).toBe(10);
+    expect(BACKSTORY_MARKERS.bigBarHeight).toBe(14);
+    // The World events grid keeps its own sizes.
+    expect(MARKER_DEFAULTS).toMatchObject({
+      dot: 10,
+      bigDot: 16,
+      gap: 4,
+      barHeight: 8,
+      bigBarHeight: 12,
+    });
+  });
+
+  test('SM-9 A49 the hit test finds a marker across its 14px, and the track beside it is empty', () => {
+    const s = makeScale(grid.span, 10);
+    const layout = layoutBackstory(grid, s);
+    const h1 = layout.lines.find((l) => l.kind === 'row' && l.row.key === 'H1')!;
+    if (h1.kind !== 'row') throw new Error('H1 is a row');
+    const m = h1.layout.markers.find((x) => x.id === 'H1-voice-0')!;
+    const y = h1.y + BACKSTORY_METRICS.rowPad + m.lane * BACKSTORY_METRICS.lane + 14;
+    for (const x of [m.x, m.x + 7, m.x + 14]) {
+      const h = hitTest(layout, x, y);
+      expect(h?.kind === 'marker' && h.marker.id).toBe('H1-voice-0');
+    }
+    expect(hitTest(layout, m.x + 20, y)?.kind).toBe('empty');
+  });
+
   test('SM-9 a closed family merges its people’s markers onto the heading line', () => {
     const s = makeScale(grid.span, 10);
     const layout = layoutBackstory(grid, s, new Set(['FAM-ZHOU']));
@@ -238,7 +295,7 @@ describe('SM-9 SM-3 moments on the grid', () => {
         .showLabel;
     const s = makeScale(grid.span, 10);
     expect(label(layoutBackstory(grid, s), 'H1-voice-0')).toBe(true);
-    // A moment three years later shares the lane and leaves 16 pixels: too few for "Voice".
+    // A moment three years later shares the lane and leaves 10 pixels: too few for "Voice".
     const crowded = backstoryGrid({
       ...input,
       moments: [

@@ -382,38 +382,27 @@ export function BackstoryView(props: {
           <button type="button" className="btn small" onClick={story.openDialog}>
             Change
           </button>
+          <span className="row tight wg-toolbar bs-zoom" role="group" aria-label="Zoom">
+            <span className="wg-toolbar-label">Zoom</span>
+            {ZOOMS.map((z) => (
+              <button
+                key={z.zoom}
+                type="button"
+                className="btn small"
+                aria-pressed={zoom === z.zoom}
+                onClick={() => setZoom(z.zoom)}
+              >
+                {z.label}
+              </button>
+            ))}
+          </span>
         </span>
-      </div>
-      <div className="tree-toolbar wg-toolbar bs-toolbar">
-        <div className="row tight" role="group" aria-label="Zoom">
-          <span className="wg-toolbar-label">Zoom</span>
-          {ZOOMS.map((z) => (
-            <button
-              key={z.zoom}
-              type="button"
-              className="btn small"
-              aria-pressed={zoom === z.zoom}
-              onClick={() => setZoom(z.zoom)}
-            >
-              {z.label}
-            </button>
-          ))}
-        </div>
       </div>
       {error && (
         <p className="callout crit" role="alert">
           {error}
         </p>
       )}
-      <p className="bs-help">
-        Pick a row to list that person&apos;s moments below; their name opens their page. Click an
-        empty spot in a row to add a moment at that year. Drag a marker to change its year, and
-        double-click it or press F2 to rename it. Drag either end of a lifespan to change the birth
-        or the death, and the end of an era to move it; double-click a gap in the era band to add an
-        era. From the keyboard, Tab to the markers, Up and Down move between them, Enter picks one,
-        and Left and Right change its year. On a lifespan or an era, Shift with Left or Right moves
-        the start a year, Shift and Alt with Left or Right the end.
-      </p>
       <BackstoryGrid
         grid={grid}
         eras={eras}

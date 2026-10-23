@@ -274,10 +274,17 @@ export interface MarkerOptions {
   maxLanes: number;
   /** The width a label needs. */
   labelWidth: (label: string) => number;
+  /** Height of a bar across several years, and of a big one (8 and 12 when not given). */
+  barHeight?: number;
+  bigBarHeight?: number;
 }
 
 /** A rough label width for 11 to 12 pixel text, enough to decide whether it fits. */
 export const roughLabelWidth = (label: string) => Math.ceil(label.length * 6.4) + 4;
+
+/** A bar's height when the options do not say, and a big bar's. */
+const BAR_HEIGHT = 8;
+const BIG_BAR_HEIGHT = 12;
 
 export const MARKER_DEFAULTS: MarkerOptions = {
   dot: 10,
@@ -285,7 +292,14 @@ export const MARKER_DEFAULTS: MarkerOptions = {
   gap: 4,
   maxLanes: 4,
   labelWidth: roughLabelWidth,
+  barHeight: BAR_HEIGHT,
+  bigBarHeight: BIG_BAR_HEIGHT,
 };
+
+/** How tall a bar across several years draws under these options, big or not. */
+export function barHeightOf(opts: MarkerOptions, big: boolean): number {
+  return big ? (opts.bigBarHeight ?? BIG_BAR_HEIGHT) : (opts.barHeight ?? BAR_HEIGHT);
+}
 
 /** Reading order: by start year, then end year, then label. */
 export function byYear(a: GridItem, b: GridItem): number {
@@ -384,6 +398,8 @@ export interface GridLayout {
   height: number;
   width: number;
   metrics: GridMetrics;
+  /** The marker options the lines were placed with; the markers draw their bars from them. */
+  markers: MarkerOptions;
 }
 
 /**
@@ -428,7 +444,7 @@ export function layoutGrid(
       y += height;
     }
   }
-  return { scale: s, lines, height: y, width: scaleWidth(s), metrics };
+  return { scale: s, lines, height: y, width: scaleWidth(s), metrics, markers: opts };
 }
 
 /** The line under a vertical position in the grid, or null in the header or past the end. */

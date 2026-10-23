@@ -7,6 +7,7 @@ import type {
 } from 'react';
 import {
   bandGaps,
+  barHeightOf,
   dragYears,
   makeScale,
   moveEdge,
@@ -318,7 +319,7 @@ export function GridMarker(props: {
   const drag = ctl.drag;
   const dragging = drag?.id === m.id && drag.moved;
   const shift = dragging ? drag.delta * layout.scale.ppy : 0;
-  const size = m.bar ? (m.big ? 12 : 8) : m.width;
+  const size = m.bar ? barHeightOf(layout.markers, m.big) : m.width;
   const top = metrics.rowPad + m.lane * metrics.lane + (metrics.lane - size) / 2;
   const liveYear = dragging ? m.startYear + drag.delta : null;
   const renaming = ctl.renaming === m.id && props.onRename !== undefined;
