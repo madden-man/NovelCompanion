@@ -240,6 +240,8 @@ export interface GridItem {
   /** Drawn larger (a formative event). */
   big?: boolean;
   label: string;
+  /** What the grid's caller hands through to the marker (A51: a moment's kind). */
+  data?: Readonly<Record<string, string>>;
 }
 
 export interface PlacedMarker {
@@ -256,6 +258,8 @@ export interface PlacedMarker {
   /** Pixels free to the right before the next marker in the lane, or the end of the track. */
   labelRoom: number;
   showLabel: boolean;
+  /** The item's `data`, when it has any. */
+  data?: Readonly<Record<string, string>>;
 }
 
 export interface RowLayout {
@@ -366,6 +370,7 @@ export function placeRow(
       lane,
       labelRoom: 0,
       showLabel: false,
+      ...(it.data ? { data: it.data } : {}),
     };
     (lanes[lane] ??= []).push(m);
     markers.push(m);
