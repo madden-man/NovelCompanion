@@ -48,6 +48,8 @@ const EXTRA_MOMENTS = [
   moment('M-lower-voice', 'voice'),
   moment('M-moves', 'Moves to Portland'),
   moment('M-trashed-move', 'Lives in Hong Kong', { deletedAt: TRASHED }),
+  // A kind already set is never overwritten, whatever the title says.
+  moment('M-kept', 'Lives in Macau', { kind: 'life' }),
 ];
 
 /**
@@ -73,7 +75,7 @@ async function v11Bible(label: string, ownList?: Document): Promise<BibleHandle>
     const docs = raw.map((d) => entrySchemas[c].parse(d) as Document);
     if (c === 'moments') {
       docs.push(...EXTRA_MOMENTS.map((m) => entrySchemas.moments.parse(m) as Document));
-      for (const d of docs) delete d.kind;
+      for (const d of docs) if (d._id !== 'M-kept') delete d.kind;
     }
     await bible.collection(c).insertMany(docs);
   }
@@ -99,6 +101,7 @@ const expected = Object.fromEntries([
   ['M-lower-voice', null],
   ['M-moves', null],
   ['M-trashed-move', 'move'],
+  ['M-kept', 'life'],
 ]);
 
 describe('A51 migration 12 on a copy of the fixture at version 11', () => {
@@ -118,7 +121,8 @@ describe('A51 migration 12 on a copy of the fixture at version 11', () => {
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION12_SNAPSHOT_LABEL, schemaVersion: 11 });
     const data = await open.snapshots!.read(before[0]!.id);
-    expect(data.collections.moments!.every((m) => !('kind' in m))).toBe(true);
+    // Only the moment seeded with a kind of its own carries one before the migration.
+    expect(data.collections.moments!.every((m) => m._id === 'M-kept' || !('kind' in m))).toBe(true);
   });
 
   test('IP-9 a bible with no kinds list gets the seeded one: four kinds, Voice with no colour, all plain', async () => {
