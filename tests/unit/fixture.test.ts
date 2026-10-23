@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { configSchemas, entrySchemas, isEntryCollection } from '../../src/shared/schema';
 import type { Chapter, Character, EraState, Moment, WorldEvent } from '../../src/shared/schema';
-import ExcelJS from 'exceljs';
 import { readFixture } from '../helpers/loadFixture';
 import { readZipEntry } from '../helpers/zip';
 
@@ -302,36 +301,6 @@ describe('Section 7 fixture novel', () => {
         .sort(),
     ).toEqual(['H1', 'H2', 'H4', 'Z1', 'Z2', 'Z4']);
     for (const n of [2040, 2041, 2075]) expect(y(n).unknown).toEqual(['U1']);
-  });
-
-  test('Section 7 fixture workbook has one table sheet and one grid sheet', async () => {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(join(ROOT, 'fixtures/files/fixture-workbook.xlsx'));
-    expect(wb.worksheets.map((w) => w.name)).toEqual([
-      'People',
-      'High Level',
-      'Hale and Zhou families',
-      'Lives by year',
-    ]);
-    const table = wb.getWorksheet('People')!;
-    expect(table.getRow(1).values).toEqual([
-      undefined,
-      'ID',
-      'Name',
-      'Chinese name',
-      'Born',
-      'Died',
-      'Family',
-      'Notes',
-    ]);
-    expect(table.rowCount).toBeGreaterThan(5);
-    const grid = wb.getWorksheet('High Level')!;
-    const header = (grid.getRow(1).values as unknown[]).slice(2);
-    expect(header.every((v) => typeof v === 'number' && v >= 2025)).toBe(true);
-    // A heading row has a label and no cells; a data row has a label and dated cells.
-    expect(grid.getRow(2).cellCount).toBe(1);
-    expect(grid.getRow(3).getCell(1).value).toBe('Robotics');
-    expect(grid.getRow(3).getCell(2).value).toBe('Care robots common');
   });
 
   test('Section 7 fixture Word document has a heading and an italic run', () => {

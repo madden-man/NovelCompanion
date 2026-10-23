@@ -62,7 +62,6 @@ describe('MS-1 MS-4 manuscript text and the re-import diff', () => {
       sourceId: 'word',
       locator: '/Users/t/Chapter 3.docx',
     });
-    expect(parseLocator('gdoc:1AbC')).toEqual({ sourceId: 'gdoc', locator: '1AbC' });
     expect(parseLocator('')).toBeNull();
   });
 });
@@ -82,14 +81,14 @@ describe('MS-3 the planned entries a chapter establishes', () => {
 });
 
 describe('MS-5 the app never writes to a manuscript', () => {
-  test('MS-5 a manuscript source can only pick and read (and say where it is picked)', () => {
+  test('MS-5 a manuscript source can only pick and read', () => {
     const src = readFileSync(join(ROOT, 'src/main/session/sources.ts'), 'utf8');
     const iface = /export interface ManuscriptSource \{([\s\S]*?)\n\}/.exec(src)![1]!;
     const members = [...iface.matchAll(/^\s{2}(\w+)[(:?]/gm)].map((m) => m[1]);
-    expect(members).toEqual(['id', 'label', 'picker', 'pick', 'read']);
+    expect(members).toEqual(['id', 'label', 'pick', 'read']);
   });
 
-  test("MS-5 every file write in the main process is a backup, an export, a temporary print page, or the app's own settings files", () => {
+  test("MS-5 every file write in the main process is a backup, an export, or the app's own settings files", () => {
     const writers = sourceFiles(join(ROOT, 'src'))
       .filter((f) =>
         /\b(writeFile|writeFileSync|createWriteStream|appendFile|copyFile)\b/.test(
@@ -104,17 +103,14 @@ describe('MS-5 the app never writes to a manuscript', () => {
       'src/main/backup/snapshots.ts',
       // The Claude settings file in the app's data folder (models, AI-6 confirmations).
       'src/main/claude/settings.ts',
+      'src/main/ipc/backupHandlers.ts',
       'src/main/ipc/exportTree.ts',
-      'src/main/ipc/importHandlers.ts',
-      'src/main/ipc/sessionHandlers.ts',
-      'src/main/session/pdf.ts',
     ]);
-    // The session handlers write only to the path the export dialog returned.
-    const session = readFileSync(join(ROOT, 'src/main/ipc/sessionHandlers.ts'), 'utf8');
-    const targets = [...session.matchAll(/writeFile\((\w+)/g)].map((m) => m[1]);
-    expect(targets.length).toBeGreaterThan(0);
+    // The backup handlers write only to the path the export dialog returned.
+    const backup = readFileSync(join(ROOT, 'src/main/ipc/backupHandlers.ts'), 'utf8');
+    const targets = [...backup.matchAll(/writeFile\((\w+)/g)].map((m) => m[1]);
     expect(new Set(targets)).toEqual(new Set(['path']));
-    expect(session).toMatch(/const path = deps\.pickExportPath \?/);
+    expect(backup).toMatch(/const path = await deps\.pickSavePath\?\./);
     // The Claude settings store (M6) writes only its own JSON file, through a temporary beside it.
     const settings = readFileSync(join(ROOT, 'src/main/claude/settings.ts'), 'utf8');
     expect([...settings.matchAll(/writeFileSync\((\w+)/g)].map((m) => m[1])).toEqual(['tmp']);

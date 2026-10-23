@@ -1,5 +1,5 @@
 {
-  "$comment": "M7 brief supplement to the section 7 fixture novel, as A39 cut it. The base fixture has few moments, no open questions, session logs, or place communities, so SB-2 step 1's moments and steps 4, 9, and 10 would select little from it. Brief selection tests load the fixture, apply these patches, and add these entries. The moments are the plot beats this file held before A39, as migration 9 makes them (B8 and B9 had no point of view, so they made none). Written by hand; never generated.",
+  "$comment": "M7 brief supplement to the section 7 fixture novel, as A39 cut it. The base fixture has few moments, no open questions or place communities, so SB-2 step 1's moments and steps 4 and 9 would select little from it. Brief selection tests load the fixture, apply these patches, and add these entries. The moments are the plot beats this file held before A39, as migration 9 makes them (B8 and B9 had no point of view, so they made none). Written by hand; never generated.",
   "patches": {
     "places": {
       "PLC1": { "communityId": "portland" },
@@ -117,32 +117,6 @@
         "question": "Can a household afford one in the forties?",
         "state": "open",
         "links": [{ "targetId": "ERA-2040", "kind": "about" }]
-      }
-    ],
-    "sessionLogs": [
-      {
-        "_id": "SL1",
-        "title": "Session 2026-10-01",
-        "status": "canon",
-        "date": "2026-10-01",
-        "chapterId": "CH6",
-        "stoppedAt": "Iris holds the envelope."
-      },
-      {
-        "_id": "SL2",
-        "title": "Session 2026-10-05",
-        "status": "canon",
-        "date": "2026-10-05",
-        "chapterId": "CH6",
-        "stoppedAt": "Iris reads the first line."
-      },
-      {
-        "_id": "SL3",
-        "title": "Session 2026-10-09",
-        "status": "canon",
-        "date": "2026-10-09",
-        "chapterId": "CH5",
-        "stoppedAt": "Margaret blows out the candles."
       }
     ]
   }

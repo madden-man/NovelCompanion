@@ -41,7 +41,7 @@ describe('IP-15 Claude instructions per feature', () => {
     expect(panel).toContain(PROSE_REFUSAL_RULE);
     expect(featureSystemPrompt(FEATURES.capture, mine)).toContain(PROSE_REFUSAL_RULE);
     // Blank text is no text: the footer alone still carries the sentence.
-    expect(featureSystemPrompt(FEATURES.briefs, '   ')).toBe(PROMPT_FOOTER);
+    expect(featureSystemPrompt(FEATURES.summaries, '   ')).toBe(PROMPT_FOOTER);
   });
 
   test('IP-15 with nothing stored each feature runs its default, then the footer, and the refusal rule is said once', () => {
@@ -57,17 +57,17 @@ describe('IP-15 Claude instructions per feature', () => {
   });
 
   test('IP-15 the instructions view lists every feature with its default and the read-only footer', () => {
-    const views = instructionViews({ briefs: 'Mine.' });
+    const views = instructionViews({ summaries: 'Mine.' });
     expect(views.map((v) => v.feature)).toEqual([...CLAUDE_FEATURES]);
     for (const v of views) {
       expect(v.default).toBe(defaultInstructions(v.feature));
       expect(v.footer).toContain(PROSE_PROHIBITION);
-      expect(v.text).toBe(v.feature === 'briefs' ? 'Mine.' : null);
+      expect(v.text).toBe(v.feature === 'summaries' ? 'Mine.' : null);
     }
     expect(defaultInstructions('panel')).toBe(PANEL_INSTRUCTIONS);
     const set = claudeContract['claude.instructions.set'].request;
-    expect(set.safeParse({ feature: 'briefs', text: null }).success).toBe(true);
-    expect(set.safeParse({ feature: 'briefs', text: 'x'.repeat(20_001) }).success).toBe(false);
+    expect(set.safeParse({ feature: 'summaries', text: null }).success).toBe(true);
+    expect(set.safeParse({ feature: 'summaries', text: 'x'.repeat(20_001) }).success).toBe(false);
   });
 });
 

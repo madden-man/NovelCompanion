@@ -70,26 +70,6 @@ const extra = {
       decision: '',
     },
   ],
-  sessionLogs: [
-    {
-      _id: 'L1',
-      title: 'Session',
-      ...base,
-      date: '2026-10-09',
-      stoppedAt: 'Halfway through the wedding scene',
-      notes: '',
-    },
-  ],
-  briefs: [
-    {
-      _id: 'B1',
-      title: 'Brief for chapter 3',
-      ...base,
-      status: 'planned',
-      storyYear: 2029,
-      content: 'Rain on the wedding day.',
-    },
-  ],
 };
 const all: Record<string, Record<string, unknown>[]> = {
   ...fx,
@@ -117,16 +97,15 @@ function run(query: string, filters: SearchFilters = {}): string[] {
     .map((h) => h.id);
 }
 
-describe('SR-1 one search box over entries, chapter text, and briefs', () => {
+describe('SR-1 one search box over entries and chapter text', () => {
   test('SR-1 finds entries from every section with one query', () => {
     const ids = run('letter');
     expect(ids).toEqual(expect.arrayContaining(['M3', 'Q1', 'H5-voice-0']));
   });
 
-  test('SR-1 finds words inside chapter text and inside a saved brief', () => {
+  test('SR-1 finds words inside chapter text', () => {
     expect(run('rice')).toContain('CH2');
-    expect(run('wedding')).toEqual(expect.arrayContaining(['CH3', 'B1', 'L1']));
-    expect(index.search('wedding').find((h) => h.id === 'B1')!.collection).toBe('briefs');
+    expect(run('wedding')).toContain('CH3');
   });
 
   test('SR-1 finds Chinese by characters, by one character, and by romanization with or without tones', () => {
@@ -199,9 +178,7 @@ describe('SR-2 search filters', () => {
   test('SR-2 year range filter applies to any entry with a year or range field', () => {
     // Moments: 1980 and 1985.
     expect(run('seeds clams', { yearFrom: 1984, yearTo: 1990 })).toEqual(['M2']);
-    // A brief has a story year, a moment a year range, a world event a date range.
-    expect(run('wedding', { yearFrom: 2029, yearTo: 2029 })).toContain('B1');
-    expect(run('wedding', { yearFrom: 2030, yearTo: 2040 })).not.toContain('B1');
+    // A moment has a year range, a world event a date range.
     expect(run('letter', { yearFrom: 2063, yearTo: 2063 })).toContain('M3');
     expect(run('letter', { yearFrom: 2066 })).not.toContain('M3');
     // An entry with no year is left out once a year filter is set.

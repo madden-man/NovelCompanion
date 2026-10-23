@@ -24,18 +24,12 @@ import {
 import { gridSpan, yearWindow } from '../../src/shared/domain/worldGrid';
 import { backstoryGrid, eventsNear } from '../../src/shared/domain/backstoryGrid';
 import { selectForSession } from '../../src/shared/domain/brief/selection';
-import {
-  isCanon,
-  missingLeadSections,
-  structuredBrief,
-} from '../../src/shared/domain/brief/render';
 import { establishedPlanned } from '../../src/shared/domain/manuscript';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { computeWarnings } from '../../src/shared/domain/warnings';
 import {
   BibleSettings,
   DEFAULT_BIBLE_SETTINGS,
-  DEFAULT_BRIEF_HEADINGS,
   DEFAULT_TEMPLATES,
   Family,
   ListDoc,
@@ -46,8 +40,6 @@ import {
   manifests,
   templates,
 } from '../../src/shared/schema';
-import { coerceCell } from '../../src/shared/domain/import';
-import type { ListAdd } from '../../src/shared/domain/import';
 import { briefCollections } from '../helpers/briefFixture';
 import { readFixture } from '../helpers/loadFixture';
 
@@ -185,8 +177,6 @@ describe('IP-9 statuses and provenance are lists with colours, and a status has 
     expect(statusKind([], 'planned')).toBe('planned');
     expect(statusKind([], 'drafted')).toBe('idea');
     expect(statusKind([], undefined)).toBe('idea');
-    expect(isCanon({ status: 'drafted' })).toBe(false);
-    expect(isCanon({ status: 'drafted', kind: 'canon' })).toBe(true);
   });
 
   test('IP-9 the seeded colours draw through their theme tokens; any other hex as it is', () => {
@@ -214,7 +204,7 @@ describe('IP-9 statuses and provenance are lists with colours, and a status has 
     }
   });
 
-  test('IP-9 SB-5 the structured brief files an item by its status kind: a canon-kind status is canon, an idea-kind one is not', () => {
+  test('IP-9 SB-5 a selected item carries the kind of its status: a canon-kind status is canon, an idea-kind one is idea', () => {
     const cols = briefCollections(true);
     cols.lists = cols.lists!.map((l) =>
       l._id === 'statuses'
@@ -251,29 +241,12 @@ describe('IP-9 statuses and provenance are lists with colours, and a status has 
         moments: cols.moments!.map((m) => (m._id === 'B4' ? { ...m, status } : m)),
       };
       const sel = selectForSession(fromCollections(c), { kind: 'chapter', chapterId: 'CH6' });
-      const md = structuredBrief(sel);
-      const section = md.slice(md.indexOf('## 5. Backstory'), md.indexOf('## 6.'));
-      return {
-        item: sel.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!,
-        canon:
-          section.indexOf('Canon:') >= 0 && section.indexOf('[[B4]]') > section.indexOf('Canon:'),
-        underIdea:
-          section.indexOf('Planned or idea:') >= 0 &&
-          section.indexOf('[[B4]]') > section.indexOf('Planned or idea:'),
-      };
+      return sel.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!;
     };
     const settled = asStatus('settled');
-    expect([settled.item.status, settled.item.kind, settled.canon]).toEqual([
-      'settled',
-      'canon',
-      true,
-    ]);
+    expect([settled.status, settled.kind]).toEqual(['settled', 'canon']);
     const shelved = asStatus('shelved');
-    expect([shelved.item.status, shelved.item.kind, shelved.underIdea]).toEqual([
-      'shelved',
-      'idea',
-      true,
-    ]);
+    expect([shelved.status, shelved.kind]).toEqual(['shelved', 'idea']);
   });
 
   test('IP-9 MS-3 a written chapter establishes entries whose status kind is planned', () => {
@@ -513,7 +486,6 @@ describe('IP-14 templates', () => {
       strandBackstory: 'backstory',
       eraName: 'New era',
     });
-    expect(DEFAULT_TEMPLATES.briefHeadings).toEqual([...DEFAULT_BRIEF_HEADINGS]);
     expect(DEFAULT_TEMPLATES.linkTypeLabels.biological).toBe('Biological parent');
   });
 
@@ -522,13 +494,11 @@ describe('IP-14 templates', () => {
       templates: {
         chapterTitle: 'Untitled scene',
         sectionTitle: '',
-        briefHeadings: ['too short'],
         linkTypeLabels: { step: 'Stepparent' },
       },
     });
     expect(t.chapterTitle).toBe('Untitled scene');
     expect(t.sectionTitle).toBe('New section');
-    expect(t.briefHeadings).toEqual([...DEFAULT_BRIEF_HEADINGS]);
     expect(t.linkTypeLabels).toMatchObject({ step: 'Stepparent', married: 'Married' });
   });
 
@@ -536,64 +506,5 @@ describe('IP-14 templates', () => {
     expect(fillTemplate('Part {n}', 2)).toBe('Part 2');
     expect(fillTemplate('Book {n} of the saga', 1)).toBe('Book 1 of the saga');
     expect(fillTemplate('New chapter')).toBe('New chapter');
-  });
-
-  test('IP-14 DB-2 the structured brief uses the bible headings, and the lead check accepts them', () => {
-    const sel = selectForSession(fromCollections(briefCollections(true)), {
-      kind: 'chapter',
-      chapterId: 'CH6',
-    });
-    const headings: string[] = [...DEFAULT_BRIEF_HEADINGS];
-    headings[0] = '1. Who is in the scene';
-    headings[3] = '4. Where';
-    const md = structuredBrief(sel, headings);
-    expect(md).toContain('## 1. Who is in the scene');
-    expect(md).toContain('## 4. Where');
-    expect(md).not.toContain('## 1. Characters and their ages');
-    expect(missingLeadSections(md, headings)).toEqual([]);
-    expect(missingLeadSections(structuredBrief(sel))).toEqual([]);
-    expect(missingLeadSections('## Places\n', headings)).toEqual([
-      '1. Who is in the scene',
-      '2. World events ongoing',
-      '3. Cultural expectations',
-    ]);
-  });
-});
-
-describe('IP-8 IP-12 the importer fills region and colour fields', () => {
-  const env = (add: boolean) => ({
-    ctx: {
-      file: { fileName: 'x.xlsx', modifiedAt: AT },
-      newId: () => 'N1',
-      list: (id: string) => fixture.lists!.find((l) => l._id === id) as never,
-      entries: () => [],
-    },
-    addMissingListItems: add,
-    createMissing: false,
-    listAdds: [] as ListAdd[],
-    resolveName: () => null,
-  });
-  const regions = manifests.worldEvents.find((s) => s.name === 'regions')!;
-
-  test('IP-8 a regions cell names regions by label; a new one is added to the list when the import may add', () => {
-    const e = env(true);
-    expect(coerceCell(regions, 'Oregon; China; Mars', e)).toEqual({
-      ok: true,
-      value: ['oregon', 'china', 'mars'],
-    });
-    expect(e.listAdds).toEqual([{ listId: 'regions', id: 'mars', label: 'Mars', parentId: null }]);
-    expect(coerceCell(regions, 'Mars', env(false))).toEqual({
-      ok: false,
-      reason: '"Mars" is not in the Regions list',
-    });
-  });
-
-  test('IP-12 a colour cell takes a hex value and refuses anything else', () => {
-    const color = manifests.families.find((s) => s.name === 'color')!;
-    expect(coerceCell(color, '#1BAF7A', env(false))).toEqual({ ok: true, value: '#1baf7a' });
-    expect(coerceCell(color, 'green', env(false))).toEqual({
-      ok: false,
-      reason: '"green" is not a hex colour such as #2a78d6',
-    });
   });
 });

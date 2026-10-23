@@ -8,7 +8,6 @@ import {
   markdownToText,
   plainText,
 } from '../../src/shared/domain/markdown';
-import { blocksToBody, blocksToMarkdown, parseBlocks } from '../../src/shared/domain/import';
 import { plain } from '../../src/shared/domain/brief/selection';
 import {
   mentionRanges,
@@ -73,16 +72,6 @@ describe('A44 HTML to Markdown, the shapes the importer wrote', () => {
 
   test('bold a style turns off, as Google Docs wraps a paste, is not bold', () => {
     expect(htmlToMarkdown('<b style="font-weight:normal"><p>Plain</p></b>')).toBe('Plain');
-  });
-
-  test('blocksToMarkdown is the Markdown of what blocksToBody wrote', () => {
-    const blocks = parseBlocks(
-      '<h1>Chapter 3: Wedding Weather</h1><p>It was <em>lucky</em> rain.</p><p>* * *</p><ul><li>Red</li></ul><p>After.</p>',
-    );
-    expect(blocksToMarkdown(blocks)).toBe(htmlToMarkdown(blocksToBody(blocks)));
-    expect(blocksToMarkdown(blocks)).toBe(
-      '## Chapter 3: Wedding Weather\n\nIt was *lucky* rain.\n\n---\n\n- Red\n\nAfter.',
-    );
   });
 
   test('looksLikeHtml finds stored HTML and not a tag the writer escaped', () => {

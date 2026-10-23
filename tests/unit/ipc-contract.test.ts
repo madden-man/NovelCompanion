@@ -280,7 +280,6 @@ const BAD: Record<string, unknown[]> = {
     { runId: 'r', chapterId: '' },
     { runId: 'r', chapterId: 'CH1', extra: 1 },
   ],
-  'claude.importProposals': [{}, { runId: 'run-12345678' }, { runId: 'bad', fileId: 'f' }],
   'claude.capture': [
     {},
     { runId: 'run-12345678', text: 'Lan moved.' },
@@ -290,20 +289,20 @@ const BAD: Record<string, unknown[]> = {
     { runId: 'run-12345678', text: 'Lan moved.', storyTime: { year: 2034, strandId: 'S1' } },
     { runId: 'run-12345678', text: 'Lan moved.', storyTime: { year: 2034 }, extra: 1 },
   ],
-  'session.start': [{}, { input: { kind: 'chapter' } }, { input: { kind: 'nope' } }],
   'session.relevant': [{}, { input: { kind: 'chapter' } }, { input: 5 }],
   'brief.settings.get': [{ extra: 1 }],
   'brief.settings.set': [{ window: -1 }, { window: 1.5 }, { budget: 10_000_001 }, { window: 'a' }],
-  'brief.regenerate': [{}, { id: '' }, { id: 'b', runId: 'short' }, { id: 'b', add: [''] }],
-  'brief.export': [{}, { id: 'b' }, { id: 'b', format: 'docx' }],
   'manuscript.sources': [{ extra: 1 }],
-  'manuscript.read': [{}, { chapterId: '' }, { chapterId: 'c', sourceId: LONG }],
+  'manuscript.read': [
+    {},
+    { chapterId: '' },
+    { chapterId: 'c', sourceId: LONG },
+    { chapterId: 'c', locator: 'doc' },
+  ],
   'manuscript.apply': [{}, { token: '', baseModifiedAt: 'x' }, { token: 't' }],
   'chapter.page': [{}, { id: '' }, { id: LONG }],
   'chapter.establishes': [{}, { chapterId: '' }],
   'chapter.summarize': [{}, { chapterId: '' }, { chapterId: 'c', runId: 'short' }],
-  'dashboard.get': [{ extra: 1 }],
-  'drive.cancelConnect': [{ extra: 1 }, null, 'x'],
   // a47-guard
   'claude.instructions.get': [{ extra: 1 }],
   'claude.instructions.set': [
@@ -325,12 +324,8 @@ const BAD: Record<string, unknown[]> = {
 };
 
 describe('ARCH-1 every newer channel rejects bad input on the request side', () => {
-  test('ARCH-1 each claude, session, brief, manuscript, chapter, dashboard and drive.cancelConnect channel has bad-input rows', () => {
-    const wanted = CHANNELS.filter(
-      (c) =>
-        /^(claude|session|brief|manuscript|chapter|dashboard)\./.test(c) ||
-        c === 'drive.cancelConnect',
-    );
+  test('ARCH-1 each claude, session, brief, manuscript and chapter channel has bad-input rows', () => {
+    const wanted = CHANNELS.filter((c) => /^(claude|session|brief|manuscript|chapter)\./.test(c));
     expect(Object.keys(BAD).sort()).toEqual([...wanted].sort());
   });
 

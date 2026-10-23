@@ -190,8 +190,7 @@
         "previousChapters": ["CH1", "CH3", "CH4", "CH5"],
         "glossary": ["GL3", "GL1"],
         "openQuestions": ["Q1", "Q4"],
-        "decidedQuestions": ["Q2"],
-        "sessionNote": ["SL2"]
+        "decidedQuestions": ["Q2"]
       },
       "sharedNotes": {
         "previousChapters": {
@@ -205,8 +204,7 @@
           "GL1": "in the name of Iris Hale-Zhou"
         },
         "openQuestions": { "Q1": "linked to Daniel Hale", "Q4": "linked to The forties" },
-        "decidedQuestions": { "Q2": "linked to Iris Hale-Zhou" },
-        "sessionNote": { "SL2": "2026-10-05" }
+        "decidedQuestions": { "Q2": "linked to Iris Hale-Zhou" }
       },
       "ids": [
         "B4",
@@ -227,8 +225,7 @@
         "PLC2",
         "Q1",
         "Q2",
-        "Q4",
-        "SL2"
+        "Q4"
       ]
     }
   ],
@@ -246,8 +243,7 @@
       ["previousChapters", "CH3"],
       ["previousChapters", "CH1"],
       ["moments", "B4"],
-      ["era", "ERA-2040"],
-      ["sessionNote", "SL2"]
+      ["era", "ERA-2040"]
     ],
     "ids": ["CH6", "CU4", "E1", "E3", "E4", "E5", "H3", "H5"]
   },

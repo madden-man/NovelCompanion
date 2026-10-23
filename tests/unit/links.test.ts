@@ -4,13 +4,7 @@ import { EXTERNAL_HOSTS, checkExternalUrl } from '../../src/main/links';
 describe('ARCH-1 external links', () => {
   test('ARCH-1 only allowlisted https hosts are opened', () => {
     expect([...EXTERNAL_HOSTS].sort()).toEqual(
-      [
-        'accounts.google.com',
-        'console.anthropic.com',
-        'docs.google.com',
-        'drive.google.com',
-        'github.com',
-      ].sort(),
+      ['console.anthropic.com', 'github.com'].sort(),
     );
     for (const host of EXTERNAL_HOSTS) {
       expect(checkExternalUrl(`https://${host}/some/path?x=1`)).toEqual({

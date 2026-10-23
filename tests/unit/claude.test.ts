@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -29,8 +29,8 @@ import {
 } from '../../src/main/claude/runtime';
 import { FileSettingsStore, modelsWithDefaults } from '../../src/main/claude/settings';
 import { FEATURE_LIST, FEATURES } from '../../src/main/claude/features';
-import { ImportProposalsOutput } from '../../src/main/claude/features/importProposals';
 import { PANEL_INSTRUCTIONS } from '../../src/main/claude/features/panel';
+import { summaries } from '../../src/main/claude/features/summaries';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -49,9 +49,7 @@ describe('AI-4 Claude never drafts prose', () => {
     ];
     expect(prompts.map((p) => p.name)).toEqual([
       'panel',
-      'briefs',
       'summaries',
-      'importProposals',
       'alignment',
       'capture',
       'captureFast',
@@ -73,8 +71,8 @@ describe('AI-4 Claude never drafts prose', () => {
     expect(PANEL_INSTRUCTIONS).toMatch(/offers to list the bible facts/);
   });
 
-  test('AI-4 the session, brief and summary channels take IDs and choices only, never prose', () => {
-    for (const channel of ['session.start', 'brief.regenerate', 'chapter.summarize'] as const) {
+  test('AI-4 the summary channel takes IDs and choices only, never prose', () => {
+    for (const channel of ['chapter.summarize'] as const) {
       const schema = z.toJSONSchema(contract[channel].request, { io: 'input' }) as Record<
         string,
         unknown
@@ -130,15 +128,17 @@ describe('AI-4 Claude never drafts prose', () => {
     ]);
   });
 
-  test('AI-6 the disclosure says what is sent, where the bible lives, and that Drive export is the other way out', () => {
+  test('AI-6 the disclosure says what is sent and where the bible lives', () => {
     const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/claude.tsx'), 'utf8');
     expect(src).toMatch(/stored in the MongoDB deployment you set up/);
     expect(src).not.toMatch(/off this computer/);
-    expect(src).toMatch(/Google Drive/);
-    expect(FEATURE_INFO.importProposals.sends).toMatch(
-      /up to 600 existing entries from every section/,
-    );
-    expect(FEATURE_INFO.importProposals.sends).not.toMatch(/matching/);
+    expect(src).not.toMatch(/Google Drive/);
+  });
+
+  test('AI-4 the summary prompt carries the prohibition and the material rule, and its output becomes JSON Schema', () => {
+    expect(featureSystemPrompt(summaries)).toContain(PROSE_PROHIBITION);
+    expect(featureSystemPrompt(summaries)).toContain(MATERIAL_RULE);
+    expect(jsonSchemaFor(summaries.output)).toMatchObject({ required: ['summary'] });
   });
 
   test('AI-4 no screen or control in the renderer asks Claude for prose', () => {
@@ -232,6 +232,18 @@ describe('ARCH-4 ARCH-5 the API key', () => {
       'acknowledged',
       'models',
     ]);
+    // A53: a model saved for a feature the app no longer has is dropped; the rest still reads.
+    writeFileSync(
+      path,
+      JSON.stringify({
+        models: { briefs: 'claude-opus-5-5', importProposals: 'x', panel: 'claude-haiku-5-5' },
+        acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
+      }),
+    );
+    expect(store.read()).toEqual({
+      models: { panel: 'claude-haiku-5-5' },
+      acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
+    });
     // A missing or broken file reads as the defaults.
     expect(new FileSettingsStore(join(path, 'nope.json')).read()).toEqual({
       models: {},
@@ -250,12 +262,10 @@ describe('ARCH-4 ARCH-5 the API key', () => {
 });
 
 describe('DB-4 model per feature', () => {
-  test('DB-4 CC-3 briefs and alignment checks default to claude-opus-5-5; the rest have recorded defaults', () => {
+  test('DB-4 CC-3 alignment checks default to claude-opus-5-5; the rest have recorded defaults', () => {
     expect(DEFAULT_MODELS).toEqual({
-      briefs: 'claude-opus-5-5',
       alignment: 'claude-opus-5-5',
       summaries: 'claude-sonnet-5-5',
-      importProposals: 'claude-sonnet-5-5',
       panel: 'claude-sonnet-5-5',
       capture: 'claude-sonnet-5-5',
       captureFast: 'claude-haiku-5-5',
@@ -331,24 +341,5 @@ describe('T-3 recorded responses', () => {
         void _;
     };
     await expect(run()).rejects.toThrow(/No recorded response/);
-  });
-
-  test('IM-5 the import proposal output schema becomes JSON Schema for structured output, with no delete', () => {
-    const schema = jsonSchemaFor(ImportProposalsOutput) as {
-      properties: { proposals: { items: { properties: { op: { enum: string[] } } } } };
-    };
-    expect(schema.properties.proposals.items.properties.op.enum).toEqual([
-      'create',
-      'update',
-      'link',
-    ]);
-    expect(Object.keys(FEATURES)).toEqual([
-      'briefs',
-      'summaries',
-      'importProposals',
-      'alignment',
-      'capture',
-      'captureFast',
-    ]);
   });
 });

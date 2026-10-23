@@ -160,7 +160,6 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'places',
       'glossaryTerms',
       'openQuestions',
-      'sessionLogs',
     ];
     for (const gone of [
       'facts',
@@ -171,6 +170,8 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
       'arcs',
       'relationships',
       'plotBeats',
+      'sessionLogs',
+      'briefs',
     ]) {
       expect(ENTRY_COLLECTIONS, gone).not.toContain(gone);
     }
@@ -193,11 +194,10 @@ describe('ED-1 every entity in section 4 has a schema and an editor manifest', (
 });
 
 describe('ED-6 generated content is ordinary editable fields', () => {
-  test('ED-6 chapter summaries, briefs, and continuity findings are editable long text in the manifest', () => {
+  test('ED-6 chapter summaries and continuity findings are editable long text in the manifest', () => {
     const kindOf = (c: keyof typeof manifests, name: string) =>
       manifests[c].find((s) => s.name === name)?.kind;
     expect(kindOf('chapters', 'summary')).toBe('longText');
-    expect(kindOf('briefs', 'content')).toBe('longText');
     expect(kindOf('findings', 'text')).toBe('longText');
     expect(kindOf('findings', 'resolutionNote')).toBe('longText');
     // IP-18 supersedes ED-6 for the imported manuscript: its text and source file are system fields.
