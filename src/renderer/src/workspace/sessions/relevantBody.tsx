@@ -15,7 +15,7 @@ import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { captureNav } from '../capture';
 import { relativesLine } from '../character';
 import { useEntries, useList, useStore } from '../data';
@@ -132,13 +132,6 @@ function useStrandWriter(chapterId: string | null) {
   );
 }
 
-/** IP-2: the status a thing made on the desk is written with: planned if the list has one, else canon. */
-function usePlannedStatus(): string {
-  const statuses = useList('statuses');
-  const statusOf = useDefaultStatus();
-  return statuses?.items.find((i) => i.extra?.kind === 'planned')?.id ?? statusOf('canon');
-}
-
 /** SM-10, IP-2: one character of the chapter as a tile; its values are fields. */
 function Tile(props: {
   item: Item;
@@ -155,7 +148,6 @@ function Tile(props: {
   const { version } = useStore();
   const undo = useUndo();
   const ro = useWriteGuard();
-  const statusOf = useDefaultStatus();
   const [open, setOpen] = useState(false);
   const [rel, setRel] = useState<Relatives | null>(null);
   const [newMoment, setNewMoment] = useState<string | null>(null);
@@ -199,7 +191,7 @@ function Tile(props: {
     try {
       const { entry } = await call('entry.create', {
         collection: 'moments',
-        data: { title: '', characterId: item.id, year: props.year, status: statusOf('idea') },
+        data: { title: '', characterId: item.id, year: props.year },
       });
       undo.record(createCommand('moments', entry._id, `a moment of ${name} in ${props.year}`));
       setNewMoment(entry._id);
@@ -612,7 +604,6 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
   const undo = useUndo();
   const ro = useWriteGuard();
   const unit = useBibleSettings().cultureUnit;
-  const status = usePlannedStatus();
   const pickId = useId();
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>(strand.placeIds);
@@ -649,7 +640,6 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
           communityId: nearest.id,
           ...unitSpan(unitOf(strand.year, unit), unit),
           demographic: 'all',
-          status,
         },
       });
       undo.record(
@@ -824,7 +814,6 @@ function DeskEvents(props: {
   const events = useEntries('worldEvents');
   const byId = useMemo(() => new Map(events.map((e) => [e._id, e])), [events]);
   const categories = useList('eventCategories');
-  const status = usePlannedStatus();
   const undo = useUndo();
   const ro = useWriteGuard();
   const [made, setMade] = useState<string | null>(null);
@@ -839,7 +828,7 @@ function DeskEvents(props: {
     try {
       const { entry } = await call('entry.create', {
         collection: 'worldEvents',
-        data: { title: '', start: { year: strand.year }, categoryId, status },
+        data: { title: '', start: { year: strand.year }, categoryId },
       });
       undo.record(createCommand('worldEvents', entry._id, `an event in ${strand.year}`));
       setMade(entry._id);

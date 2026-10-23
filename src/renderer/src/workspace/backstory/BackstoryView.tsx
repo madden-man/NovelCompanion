@@ -9,7 +9,6 @@ import {
   lifespanOf,
   momentsOf,
   moveLifeEnd,
-  withMentionLink,
   withYear,
 } from '../../../../shared/domain/backstoryGrid';
 import type { BackstoryMoment } from '../../../../shared/domain/backstoryGrid';
@@ -39,7 +38,7 @@ import type { AddedItem } from '../editable';
 import { useEraEdits, useTitleRename } from '../timeline/gridShared';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -86,7 +85,6 @@ export function BackstoryView(props: {
   const characters = useEntries('characters');
   const families = useEntries('families');
   const { numbers } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const unions = useEntries('unions');
   const parentLinks = useEntries('parentLinks');
   const momentEntries = useEntries('moments');
@@ -277,7 +275,6 @@ export function BackstoryView(props: {
     const data: Record<string, unknown> = {
       ...blankEntry(manifests.moments),
       title: '',
-      status: statusOf('idea'),
       characterId,
       year: at,
       endYear: null,
@@ -310,14 +307,15 @@ export function BackstoryView(props: {
   };
 
   /**
-   * `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9);
-   * `added`: the list item a select's Add new made, joined to the step.
+   * `_mentioned`: entries picked with `@` in the text; A53 stores no link for
+   * them (wave 2C removes the picker). `added`: the list item a select's Add
+   * new made, joined to the step.
    */
   const save = (
     id: string,
     field: MomentField,
     value: unknown,
-    mentioned: readonly string[] = [],
+    _mentioned: readonly string[] = [],
     added?: AddedItem,
   ) => {
     setError(null);
@@ -329,13 +327,6 @@ export function BackstoryView(props: {
         unknown
       >;
       const patch: Record<string, unknown> = { [field]: value };
-      if (mentioned.length) {
-        let links = Array.isArray(before.links)
-          ? (before.links as { targetId: string; kind: string }[])
-          : [];
-        for (const t of mentioned) links = withMentionLink(links, t);
-        patch.links = links;
-      }
       // A moment over several years keeps its length when its year changes.
       if (field === 'year' && typeof value === 'number' && typeof before.endYear === 'number') {
         patch.endYear = before.endYear + (value - Number(before.year));
@@ -410,16 +401,13 @@ export function BackstoryView(props: {
         unknown
       >;
       const text = typeof before.worldContext === 'string' ? before.worldContext : '';
-      const links = Array.isArray(before.links)
-        ? (before.links as { targetId: string; kind: string }[])
-        : [];
+      // A53: the title is inserted with no link stored; wave 2C makes it plain text.
       const worldContext = insertMention(text, event.title);
-      const nextLinks = withMentionLink(links, event.id);
-      if (worldContext === text && nextLinks.length === links.length) return;
+      if (worldContext === text) return;
       const { entry } = await call('entry.update', {
         collection: 'moments',
         id,
-        patch: { worldContext, links: nextLinks },
+        patch: { worldContext },
       });
       const title = entryTitle(entry) || 'a moment';
       undo.record(

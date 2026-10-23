@@ -21,18 +21,15 @@ export const StoryDate = z.union([
 ]);
 export type StoryDate = z.infer<typeof StoryDate>;
 
-/**
- * A47 (IP-9): an item ID in the `statuses` list. The seeded IDs are `canon`,
- * `planned` and `idea`; the write path refuses an ID the list does not hold.
- */
+/** A53 shim, wave 3 deletes it. Was the item ID in the removed `statuses` list. */
 export const Status = z.string().min(1).max(64);
 export type Status = z.infer<typeof Status>;
 
-/** A47 (IP-9): an item ID in the `provenance` list (seeded `researched`, `invented`). */
+/** A53 shim, wave 3 deletes it. Was the item ID in the removed `provenance` list. */
 export const Provenance = z.string().min(1).max(64);
 export type Provenance = z.infer<typeof Provenance>;
 
-/** A link from this entry to another. Backlinks are derived in the read model. */
+/** A53 shim, wave 3 deletes it. Was the removed `{ targetId, kind }` link. */
 export const Link = z.strictObject({
   targetId: Id,
   kind: z.string().min(1).max(64),
@@ -41,24 +38,14 @@ export type Link = z.infer<typeof Link>;
 
 export const Timestamp = z.iso.datetime({ offset: true });
 
-/**
- * Fields every entry shares (SPEC section 4, top paragraph). Revision history
- * lives in the `revisions` collection, keyed by entry ID.
- */
+/** Fields every entry shares (SPEC section 4, top paragraph). */
 export const EntryBase = z.strictObject({
   _id: Id,
   title: z.string().max(500),
   /** Rich text, stored as sanitized HTML. */
   body: z.string().default(''),
-  status: Status,
-  provenance: Provenance.nullable().default(null),
-  sourceNote: z.string().default(''),
-  /** Where an import found this entry: file, sheet, row and column, or paragraph (IM-6). */
-  sourceRef: z.string().default(''),
-  tags: z.array(z.string().min(1).max(100)).default([]),
   createdAt: Timestamp,
   modifiedAt: Timestamp,
-  links: z.array(Link).default([]),
   /** Set when the entry is in the trash; absent otherwise (ARCHITECTURE rule 5). */
   deletedAt: Timestamp.optional(),
 });

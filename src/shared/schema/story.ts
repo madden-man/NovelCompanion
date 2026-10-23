@@ -5,8 +5,6 @@ import type { FieldSpec } from './manifest';
 
 /** A5, A53: parts contain chapters; parts are the outline's dividers. */
 export const Part = entry({
-  /** A53 0b: stored until migration 013 unsets it; not in the manifest. */
-  bookId: z.string().optional(),
   number: z.int().min(1),
   summary: z.string().default(''),
 });
@@ -96,6 +94,8 @@ export const chapterFields: FieldSpec[] = [
 /** Open question (OQ-1). Linked entries are the shared links. */
 export const OpenQuestion = entry({
   question: z.string().default(''),
+  /** A52, A53 (OQ-1): the entries this question is about. */
+  aboutIds: z.array(Id).default([]),
   state: z.enum(['open', 'decided']).default('open'),
   decision: z.string().default(''),
 });
@@ -104,6 +104,7 @@ export type OpenQuestion = z.infer<typeof OpenQuestion>;
 export const openQuestionFields: FieldSpec[] = [
   ...commonFields,
   f.longText('question', 'Question'),
+  f.refs('aboutIds', 'About', ANY),
   f.enum('state', 'State', [
     { value: 'open', label: 'Open' },
     { value: 'decided', label: 'Decided' },

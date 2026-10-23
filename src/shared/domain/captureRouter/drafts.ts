@@ -239,7 +239,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           startYear: years.start,
           endYear: years.end ?? index.timelineEnd,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -269,7 +268,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
             title: momentTitle,
             body,
             ...(kind ? { kind } : {}),
-            status: 'idea',
           },
         });
       }
@@ -294,7 +292,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
             characters: quoted,
             language: 'english',
             usageNote: text,
-            status: 'idea',
           },
         });
         reasons.push(`"${quoted}" may also be a glossary term`);
@@ -326,7 +323,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           ...(categoryId ? { categoryId } : {}),
           regions: regions.values,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -344,7 +340,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           parentId: parent?.id ?? null,
           communityId: parent?.communityId ?? ctx.communityId ?? null,
           body,
-          status: 'idea',
         },
       });
       break;
@@ -360,7 +355,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           characters: term ?? '',
           language: term && hasHan(term) ? 'mandarin' : 'english',
           usageNote: text,
-          status: 'idea',
         },
       });
       break;
@@ -369,7 +363,7 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
       drafts.push({
         op: 'create',
         collection: 'openQuestions',
-        data: { title, question: text, body: '', tags: ['capture'], status: 'idea' },
+        data: { title, question: text, body: '' },
       });
       break;
     }
@@ -384,7 +378,6 @@ export function draftsFor(ctx: DraftContext, lexicon: Lexicon = LEXICON): DraftR
           names: { full: name ?? '' },
           birth: { unknown: true },
           body,
-          status: 'idea',
         },
       });
       break;

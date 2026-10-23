@@ -189,7 +189,7 @@ const TreePersonWire = z.strictObject({
   birth: StoryDateWire.nullable(),
   death: StoryDateWire.nullable(),
   familyIds: z.array(z.string()),
-  status: z.string(),
+  status: z.string().optional(), // A53: optional; wave 3 removes it
   createdAt: z.string(),
 });
 
@@ -338,7 +338,7 @@ const EventWire = z.strictObject({
   regions: z.array(z.string()),
   characterIds: z.array(z.string()),
   formative: z.boolean(),
-  status: z.string(),
+  status: z.string().optional(), // A53: optional; wave 3 removes it
 });
 
 const ChartEventWire = EventWire.extend({ categoryPath: z.string(), categoryRoot: z.string() });
@@ -347,7 +347,7 @@ const StrandWire = z.strictObject({
   chapterId: z.string(),
   chapterTitle: z.string(),
   readingOrder: z.number().nullable(),
-  chapterStatus: z.string(),
+  chapterStatus: z.string().optional(), // A53: optional; wave 3 removes it
   written: z.boolean(),
   strandId: z.string(),
   label: z.string(),
@@ -379,7 +379,7 @@ const PersonInYearWire = z.strictObject({
   name: z.string(),
   chinese: z.string(),
   familyIds: z.array(z.string()),
-  status: z.string(),
+  status: z.string().optional(), // A53: optional; wave 3 removes it
   birthYear: z.number().nullable(),
   state: LifeStateWire,
 });
@@ -902,7 +902,7 @@ export const contract = {
         z.strictObject({
           id: z.string(),
           name: z.string(),
-          status: z.string(),
+          status: z.string().optional(), // A53: optional; wave 3 removes it
           familyIds: z.array(z.string()),
           placeNames: z.array(z.string()),
           birthYear: z.number(),

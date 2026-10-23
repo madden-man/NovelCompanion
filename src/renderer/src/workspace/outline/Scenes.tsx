@@ -50,7 +50,7 @@ import { registerTextTarget, useUndo } from '../undo';
 import type { Op } from '../undo';
 import { Zh } from '../Zh';
 import { useOutlineWrites } from './actions';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings';
 import { NumberField } from './NumberField';
 import { EntryEditable } from '../editable';
@@ -543,7 +543,6 @@ const SCROLL_STEP = 14;
 export function SceneOutline(props: { onOpen: Open }) {
   const { version } = useStore();
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const ro = useWriteGuard();
   const writes = useOutlineWrites();
   const story = useStoryTime();
@@ -632,7 +631,7 @@ export function SceneOutline(props: { onOpen: Open }) {
     const last = parts.at(-1);
     if (last) return last.id;
     const title = fillTemplate(templates.partTitle, 1);
-    return writes.create('parts', { title, number: 1, status: statusOf('idea') });
+    return writes.create('parts', { title, number: 1 });
   };
 
   /**
@@ -782,7 +781,6 @@ export function SceneOutline(props: { onOpen: Open }) {
         data: {
           title: fillTemplate(templates.sectionTitle, n + 1),
           number: n + 1,
-          status: statusOf('idea'),
         },
       });
       steps.push(createCommand('parts', entry._id, entryTitle(entry)));

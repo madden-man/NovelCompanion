@@ -1,4 +1,4 @@
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
@@ -1187,14 +1187,8 @@ function TreePersonForm({ id }: { id: string }) {
   if (!draft) return <p aria-live="polite">Loading the person.</p>;
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
-  const onMention = (targetId: string) => {
-    const links = Array.isArray(draft.links)
-      ? (draft.links as { targetId: string; kind: string }[])
-      : [];
-    if (!links.some((l) => l.targetId === targetId)) {
-      ed.setField('links', [...links, { targetId, kind: 'mention' }]);
-    }
-  };
+  // A53: an `@` pick stores no link; wave 2B removes the picker and this prop.
+  const onMention = () => undefined;
   const field = (name: string, opts: { label?: string; grow?: boolean } = {}) => {
     const base = fieldByName(PERSON_FIELDS, name);
     if (!base) return null;
@@ -1311,8 +1305,8 @@ function AddRelativeForm(props: {
   const partners = anchor ? partnersOf(graph, anchor.id) : [];
   const [name, setName] = useState('');
   const [born, setBorn] = useState('');
-  const defaultStatus = useDefaultStatus();
-  const [status, setStatus] = useState<Status>(() => defaultStatus('idea') as Status);
+  // A53: the planners write no status; wave 2B removes this select.
+  const [status, setStatus] = useState<Status>('idea');
   const [linkType, setLinkType] = useState('biological');
   const [unionType, setUnionType] = useState('married');
   const [coParent, setCoParent] = useState(partners[0] ?? '');
@@ -1340,7 +1334,6 @@ function AddRelativeForm(props: {
           anchorId: anchor?.id ?? null,
           name,
           birthYear: year,
-          status,
           linkType,
           unionType,
           coParentId: kind === 'child' && coParent ? coParent : null,
@@ -1400,7 +1393,7 @@ function AddRelativeForm(props: {
             id={ids.status}
             listId="statuses"
             value={status}
-            onChange={(v) => setStatus((v ?? defaultStatus('idea')) as Status)}
+            onChange={(v) => setStatus((v ?? 'idea') as Status)}
           />
         </div>
         {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
@@ -1761,7 +1754,7 @@ function DropMenu(props: {
       // The dropped person is the parent, child or partner of the one they landed on.
       const plan = planLinkExisting(
         graph,
-        { kind, anchorId: drop.onto, otherId: drop.id, type, status: 'idea' },
+        { kind, anchorId: drop.onto, otherId: drop.id, type },
         () => ulid(),
       );
       const { entry } = await call('entry.create', {

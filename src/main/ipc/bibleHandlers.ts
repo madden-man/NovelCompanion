@@ -476,7 +476,6 @@ export function bibleHandlers(
             title: title.trim(),
             partId,
             readingOrder: place.readingOrder,
-            status: 'idea',
             strands: [
               {
                 id: newNestedId(),

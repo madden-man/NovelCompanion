@@ -1,4 +1,3 @@
-import { useDefaultStatus } from './bibleSettings';
 import { createContext, useContext, useId, useMemo, useState } from 'react';
 import { useWriteGuard } from '../connection';
 import type { KeyboardEvent } from 'react';
@@ -43,7 +42,6 @@ function ZhRun(props: { text: string; term: ZhTerm | null; actions: boolean }) {
   };
 
   const ro = useWriteGuard();
-  const statusOf = useDefaultStatus();
   const add = async () => {
     setMessage(null);
     try {
@@ -53,7 +51,7 @@ function ZhRun(props: { text: string; term: ZhTerm | null; actions: boolean }) {
         'mandarin';
       const { entry } = await call('entry.create', {
         collection: 'glossaryTerms',
-        data: { title: text, characters: text, language, status: statusOf('idea') },
+        data: { title: text, characters: text, language },
       });
       undo.record(createCommand('glossaryTerms', entry._id, text));
       nav?.('glossaryTerms', entry._id);

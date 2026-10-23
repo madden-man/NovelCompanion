@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { entryTitle } from '../../../../shared/schema';
 import { fillTemplate } from '../../../../shared/schema/settings';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 import { useEntries } from '../data';
 import type { Entry } from '../data';
 import { EntryEditable } from '../editable';
@@ -26,7 +26,6 @@ const byNumber = (a: Entry, b: Entry) =>
 export function Parts(props: { writes: OutlineWrites }) {
   const { writes } = props;
   const { templates } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const allParts = useEntries('parts');
   const parts = useMemo(() => allParts.filter(live).sort(byNumber), [allParts]);
   const off = writes.ro.off;
@@ -36,7 +35,6 @@ export function Parts(props: { writes: OutlineWrites }) {
     void writes.create('parts', {
       title: fillTemplate(templates.partTitle, n),
       number: n,
-      status: statusOf('idea'),
     });
   };
 

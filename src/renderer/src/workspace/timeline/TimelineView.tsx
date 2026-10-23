@@ -33,7 +33,7 @@ import { WorldEventsGrid } from './WorldEventsGrid';
 import { useEraEdits, useTitleRename } from './gridShared';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
-import { useBibleSettings, useDefaultStatus } from '../bibleSettings';
+import { useBibleSettings } from '../bibleSettings';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -59,7 +59,6 @@ export function TimelineView() {
   const categories = useList('eventCategories');
   // A47: the bible's numbers (IP-11) and its regions list, in its order, by label (IP-8).
   const { numbers } = useBibleSettings();
-  const statusOf = useDefaultStatus();
   const regionItems = useList('regions')?.items;
   const [selected, setSelected] = useState<{ collection: EntryCollection; id: string } | null>(
     null,
@@ -202,7 +201,6 @@ export function TimelineView() {
     const data: Record<string, unknown> = {
       ...base,
       title: n.title,
-      status: statusOf('idea'),
       start: { year: n.year },
       end: n.endYear !== null && n.endYear !== n.year ? { year: n.endYear } : null,
       categoryId: n.categoryId,

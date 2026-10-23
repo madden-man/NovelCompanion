@@ -260,6 +260,7 @@ export function parentProblem(
 const isKind = (v: unknown): v is StatusKind =>
   typeof v === 'string' && (STATUS_KINDS as readonly string[]).includes(v);
 
+/** A53 shim, wave 3 deletes it. */
 /**
  * IP-9, SB-5: what a status means to the brief rules: canon, planned or idea,
  * read from the item's `extra.kind`. `lists` is the bible's list documents
@@ -337,6 +338,7 @@ const itemsOf = (lists: ListDocs, listId: string): Partial<ListItem>[] => {
   return Array.isArray(list?.items) ? (list.items as Partial<ListItem>[]) : [];
 };
 
+/** A53 shim, wave 3 deletes it. */
 /**
  * IP-9: the status to write when code means "a status of this kind": the
  * first status item of that kind, else the item whose ID is the kind (a list
@@ -351,6 +353,7 @@ export function defaultStatus(lists: ListDocs, kind: StatusKind): string {
   return typeof hit?.id === 'string' ? hit.id : kind;
 }
 
+/** A53 shim, wave 3 deletes it. */
 /**
  * IP-9: the provenance to write when code means a seeded one (`researched`,
  * `invented`): that item while the list holds it, else none (provenance may

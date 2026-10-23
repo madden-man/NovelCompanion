@@ -181,18 +181,12 @@ export function storyTimeWords(
 }
 
 /**
- * What a capture files carries the capture (KB-6): a new entry is an idea
- * unless Claude says otherwise, and its source note names the capture and
- * its date when Claude left it empty.
+ * What a capture files (KB-6). A52, A53: a new entry is no longer marked as
+ * an idea or given a source note; `checkDraft` drops those fields if Claude
+ * sets them. Wave 2C removes this pass-through and its date.
  */
-export function prepareCaptureDraft(draft: ProposalDraft, capturedOn: string): ProposalDraft {
-  if (draft.op !== 'create') return draft;
-  const data = { ...(draft.data ?? {}) };
-  if (data.status === undefined) data.status = 'idea';
-  if (typeof data.sourceNote !== 'string' || !data.sourceNote.trim()) {
-    data.sourceNote = `From a capture on ${capturedOn}.`;
-  }
-  return { ...draft, data };
+export function prepareCaptureDraft(draft: ProposalDraft, _capturedOn: string): ProposalDraft {
+  return draft;
 }
 
 /** KB-6 names create, change and link; a capture never moves an entry to the trash. */

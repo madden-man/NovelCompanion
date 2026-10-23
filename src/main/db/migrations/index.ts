@@ -10,6 +10,7 @@ import { simplifiedModel } from './009-simplified-model';
 import { markdownText } from './010-markdown-text';
 import { vocabulary } from './011-vocabulary';
 import { momentKinds } from './012-moment-kinds';
+import { cuts } from './013-cuts';
 import type { Migration } from './types';
 
 export type { Migration } from './types';
@@ -28,6 +29,7 @@ export const migrations: readonly Migration[] = [
   markdownText,
   vocabulary,
   momentKinds,
+  cuts,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.length;

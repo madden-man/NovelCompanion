@@ -4,7 +4,7 @@ import { Id, Timestamp } from './common';
 /**
  * IP-17: a new list item a proposal set names before it exists, such as
  * `new:jinan`. Entries in the same set use it as the value of a list field;
- * approval swaps in the item's real ID (or, for a tag, its label).
+ * approval swaps in the item's real ID.
  */
 export const ListRef = z
   .string()
@@ -17,7 +17,6 @@ export const MINTABLE_LISTS = [
   'eventCategories',
   'regions',
   'languages',
-  'tags',
 ] as const;
 
 /** IP-17: what a `listAdd` proposal adds. */

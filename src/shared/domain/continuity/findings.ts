@@ -207,7 +207,6 @@ export function newFindingData(f: FreshFinding): Doc {
     key: f.key,
     kind: f.kind,
     chapterId: f.chapterId,
-    status: 'planned',
     state: 'open',
   };
 }

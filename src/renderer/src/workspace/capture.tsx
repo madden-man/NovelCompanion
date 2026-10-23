@@ -1,4 +1,4 @@
-import { useBibleSettings, useDefaultStatus } from './bibleSettings';
+import { useBibleSettings } from './bibleSettings';
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import type { ClaudeStatusWire, RunError } from '../../../shared/claude';
 import type { ProposalView } from '../../../shared/ipc';
@@ -236,7 +236,6 @@ function standOf(routed: Routed, runs: readonly RunState[], i: number): FactStan
  * still saved as an open question (KB-7).
  */
 export function CaptureBox() {
-  const statusOf = useDefaultStatus();
   const settings = useBibleSettings();
   const { lists } = useStore();
   const open = useBoxOpen();
@@ -329,12 +328,7 @@ export function CaptureBox() {
   const writeQuestion = useCallback(
     async (body: string): Promise<{ id: string; title: string } | null> => {
       try {
-        const data = captureQuestionData(
-          body,
-          time.words,
-          localDateString(new Date()),
-          statusOf('idea'),
-        );
+        const data = captureQuestionData(body, time.words);
         const { entry } = await call('entry.create', { collection: 'openQuestions', data });
         undo.record(createCommand('openQuestions', entry._id, entryTitle(entry)));
         return { id: entry._id, title: entryTitle(entry) };
@@ -344,7 +338,7 @@ export function CaptureBox() {
         return null;
       }
     },
-    [time.words, undo, statusOf],
+    [time.words, undo],
   );
 
   /** KB-7: keep the text as an open question; the text stays in the box until this succeeds. */
@@ -683,7 +677,7 @@ export function CaptureBox() {
       await undo.flush();
       // CR-9: the box's own drafts, then the proposals, as one undo step.
       const local = drafts.length
-        ? await fileLocalDrafts(call, drafts, capturedOn, statusOf('idea'))
+        ? await fileLocalDrafts(call, drafts)
         : NO_FILING;
       const approved = allCards.length
         ? await fileCapture(call, tickedCards, untickedCards)
@@ -782,7 +776,8 @@ export function CaptureBox() {
           routed={routed}
           runs={runs}
           lists={lists}
-          ideaStatus={statusOf('idea')}
+          // A53: entries are filed with no status; wave 2C removes the Status row and this prop.
+          ideaStatus="idea"
           capturedOn={capturedOn}
           noKey={noKey}
           claudeOff={claudeOff}

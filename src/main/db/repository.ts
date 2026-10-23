@@ -9,7 +9,6 @@ import {
   HexColor,
   LIST_IDS,
   ListDoc,
-  STATUS_KINDS,
   bibleSettings,
   Proposal,
   collectionInfo,
@@ -26,7 +25,6 @@ import type {
   EntryOf,
   ListItem,
   ListItemInput,
-  StatusKind,
   StoredListItem,
 } from '../../shared/schema';
 import type { BibleSettings } from '../../shared/schema';
@@ -37,17 +35,14 @@ import { StoryTimeValue } from '../../shared/storyTime';
 import {
   countListUsage,
   derivedRename,
-  defaultProvenance,
-  defaultStatus,
   moveItem,
   newItemId,
   parentProblem,
   renameCascade,
-  tagsUsed,
 } from '../../shared/domain/lists';
 import type { CollectionDocs } from '../../shared/domain/lists';
 import type { SelectionSettings } from '../../shared/domain/brief/selection';
-import { familyHexFrom, regionIdsFrom } from './migrations/011-vocabulary';
+import { regionIdsFrom } from './migrations/011-vocabulary';
 import { eraRangeFromItem } from '../../shared/domain/timeline';
 import { shiftStrand } from '../../shared/domain/strands';
 import { computeWarnings } from '../../shared/domain/warnings';
@@ -275,24 +270,6 @@ export class Repository {
     }
   }
 
-  /** Tag labels the changes use that the tags list does not have yet. */
-  private newTags(changes: Change[]): ListItem[] {
-    const tags = this.model.get('lists', 'tags') as ListDoc | undefined;
-    const known = new Set((tags?.items ?? []).map((i) => i.label));
-    const draft: ListDoc = { _id: 'tags', label: 'Tags', items: [...(tags?.items ?? [])] };
-    const out: ListItem[] = [];
-    for (const ch of changes) {
-      for (const label of tagsUsed(manifests[ch.collection], ch.next)) {
-        if (known.has(label)) continue;
-        known.add(label);
-        const item = { id: newItemId(draft, label), label, parentId: null };
-        draft.items.push(item);
-        out.push(item);
-      }
-    }
-    return out;
-  }
-
   /**
    * Write every change and its revision in one transaction, then update the
    * read model and search index and announce each change. `extra` runs inside
@@ -303,18 +280,7 @@ export class Repository {
     extra?: (session: ClientSession) => Promise<void>,
     listsAfter: ListDoc[] = [],
   ): Promise<void> {
-    const addTags = this.newTags(changes);
     const listUpdates = [...listsAfter];
-    if (addTags.length) {
-      const base =
-        listUpdates.find((l) => l._id === 'tags') ??
-        (this.model.get('lists', 'tags') as ListDoc | undefined) ??
-        ({ _id: 'tags', label: 'Tags', items: [] } as ListDoc);
-      const merged = { ...base, items: [...base.items, ...addTags] };
-      const i = listUpdates.findIndex((l) => l._id === 'tags');
-      if (i >= 0) listUpdates[i] = merged;
-      else listUpdates.push(merged);
-    }
     this.settleRegions(changes, listUpdates); // a47-model
     await this.transact(async (session) => {
       await this.writeChanges(changes, session);
@@ -694,9 +660,8 @@ export class Repository {
     const revision = await this.revision(c, id, revisionId);
     const prior = await this.current(c, id);
     const doc = this.validate(c, {
-      // a47-model: a revision from before migration 11 holds region names and colour tokens.
       // a47-guard (IP-18): the manuscript fields keep their current values.
-      ...withoutLocked(c, this.fromBeforeMigration11(c, contentOf(revision.snapshot))),
+      ...withoutLocked(c, contentOf(revision.snapshot)),
       ...this.lockedValues(c, prior),
       _id: prior._id,
       createdAt: prior.createdAt,
@@ -817,13 +782,10 @@ export class Repository {
     const from = item.label;
     if (from === to) return { updated: 0, from };
     const clash = list.items.find((i) => i.id !== itemId && i.label === to);
-    if (clash && listId !== 'tags') {
+    if (clash) {
       throw new RepositoryError(`The ${list.label} list already has an item called ${to}.`);
     }
-    // Renaming a tag onto an existing tag merges the two.
-    const items = clash
-      ? list.items.filter((i) => i.id !== itemId)
-      : list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
+    const items = list.items.map((i) => (i.id === itemId ? { ...i, label: to } : i));
     const patches = renameCascade(listId, from, to, this.allDocs());
     const changes: Change[] = [];
     for (const p of patches) {
@@ -844,7 +806,7 @@ export class Repository {
     parentId: string | null = null,
     /** The ID to use when it is free (an undo putting an item back); otherwise one is made from the label. */
     wantedId?: string,
-    /** A47 (IP-9, IP-10): the item's colour and extra values, such as a status's kind. */
+    /** A47 (IP-9, IP-10): the item's colour and extra values, such as an age group's range. */
     look: { color?: string | null; extra?: Record<string, string | number> } = {},
   ): Promise<StoredListItem> {
     if (isDerived(listId)) {
@@ -887,12 +849,6 @@ export class Repository {
     }
     if (list.items.some((i) => i.parentId === itemId)) {
       throw new RepositoryError(`${item.label} has items under it. Move or remove them first.`);
-    }
-    if (listId === 'statuses') {
-      this.keepEveryKind(
-        list.items,
-        list.items.filter((i) => i.id !== itemId),
-      );
     }
     await this.commit([], undefined, [
       { ...list, items: list.items.filter((i) => i.id !== itemId) },
@@ -1212,8 +1168,6 @@ export class Repository {
       ...this.buildCreate('eraStates', {
         title: r.name,
         name: r.name,
-        status: defaultStatus(this.model.all('lists'), 'planned'),
-        provenance: defaultProvenance(this.model.all('lists'), 'invented'),
         startYear: r.startYear,
         endYear: r.endYear,
       }),
@@ -1763,7 +1717,7 @@ export class Repository {
     const add = { ...input.listAdd, label: input.listAdd.label.trim() };
     if (!(MINTABLE_LISTS as readonly string[]).includes(add.listId)) {
       throw new RepositoryError(
-        `New items can be proposed only for communities, event categories, regions, languages and tags, not ${add.listId}.`,
+        `New items can be proposed only for communities, event categories, regions and languages, not ${add.listId}.`,
       );
     }
     const list = this.storedList(add.listId);
@@ -1857,12 +1811,12 @@ export class Repository {
             `${item.label} is no longer in ${list.label}. Edit this proposal to use an item the list has.`,
           );
         }
-        values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+        values.set(u.ref, made.id);
         continue;
       }
       const { made, next, existed } = this.mintItem(list, item);
       if (!existed) lists.set(item.listId, next);
-      values.set(u.ref, item.listId === 'tags' ? made.label : made.id);
+      values.set(u.ref, made.id);
       decided.push({
         ...add,
         state: 'approved',
@@ -1929,58 +1883,23 @@ export class Repository {
   // ---------- a47-model: list order and parents, item looks, bible settings, era defaults ----------
 
   /**
-   * A47 (IP-9): a status or provenance ID the list does not hold is refused,
-   * with the field named. Only a value that changes is checked, so an entry
-   * restored from the trash with an item removed since can still be edited.
-   * A seeded word the list no longer holds (code that writes `idea`, `planned`
-   * or `invented`) is settled to the bible's own: the first status of that
-   * kind (`defaultStatus`), or no provenance. A51: a moment's kind is checked
-   * against the `momentKinds` list the same way.
+   * A51 (IP-9): a moment's kind the `momentKinds` list does not hold is
+   * refused, with the field named. Only a value that changes is checked, so an
+   * entry restored from the trash with an item removed since can still be edited.
    */
   private checkVocabulary(c: EntryCollection, doc: StoredDoc, prior: StoredDoc | null): void {
-    const fields: [string, string, string][] = [
-      ['status', 'statuses', 'Status'],
-      ['provenance', 'provenance', 'Provenance'],
-      ...(c === 'moments' ? [['kind', 'momentKinds', 'Kind'] as [string, string, string]] : []),
-    ];
+    const fields: [string, string, string][] =
+      c === 'moments' ? [['kind', 'momentKinds', 'Kind']] : [];
     for (const [field, listId, label] of fields) {
       const v = doc[field];
       if (typeof v !== 'string' || (prior && prior[field] === v)) continue;
       const list = this.model.get('lists', listId) as ListDoc | undefined;
       if (!list || list.items.some((i) => i.id === v)) continue;
-      const lists = this.model.all('lists');
-      if (field === 'status' && (STATUS_KINDS as readonly string[]).includes(v)) {
-        doc.status = defaultStatus(lists, v as StatusKind);
-        continue;
-      }
-      if (field === 'provenance' && ['researched', 'invented'].includes(v)) {
-        doc.provenance = defaultProvenance(lists, v);
-        continue;
-      }
       const message = `${label} ${v} is not in the ${listId} list.`;
       throw new ValidationError(message, [
         { code: 'custom', message, path: [field], input: v } as z.core.$ZodIssue,
       ]);
     }
-  }
-
-  /**
-   * A47 (IP-8, IP-12): an entry's content as migration 11 would have left it,
-   * for restoring a revision written before it: region names become region
-   * item IDs and a family colour token becomes its hex.
-   */
-  private fromBeforeMigration11<T extends Record<string, unknown>>(
-    c: EntryCollection,
-    content: T,
-  ): T {
-    if (c === 'worldEvents' && Array.isArray(content.regions)) {
-      const regions = this.model.get('lists', 'regions') as ListDoc | undefined;
-      return { ...content, regions: regionIdsFrom(content.regions, regions?.items ?? []) };
-    }
-    if (c === 'families' && 'color' in content) {
-      return { ...content, color: familyHexFrom(content.color) };
-    }
-    return content;
   }
 
   /**
@@ -2018,20 +1937,7 @@ export class Repository {
     else listUpdates.push(grown);
   }
 
-  /** IP-9: every kind the statuses had keeps at least one status. */
-  private keepEveryKind(
-    before: readonly Pick<ListItem, 'extra'>[],
-    after: readonly Pick<ListItem, 'extra'>[],
-  ): void {
-    for (const kind of STATUS_KINDS) {
-      const had = before.some((i) => i.extra?.kind === kind);
-      if (had && !after.some((i) => i.extra?.kind === kind)) {
-        throw new RepositoryError(`Keep at least one status of kind ${kind}.`);
-      }
-    }
-  }
-
-  /** An item's colour and extra values, checked for its list: a status always has a kind. */
+  /** An item's colour and extra values, checked for its list. */
   private itemLook(
     listId: string,
     look: { color: string | null; extra: Record<string, string | number> },
@@ -2040,12 +1946,6 @@ export class Repository {
       throw new RepositoryError('A colour is a hex value such as #2a78d6.');
     }
     const extra = { ...look.extra };
-    if (listId === 'statuses') {
-      extra.kind ??= 'idea';
-      if (!(STATUS_KINDS as readonly unknown[]).includes(extra.kind)) {
-        throw new RepositoryError('A status has the kind canon, planned or idea.');
-      }
-    }
     if (listId === 'ageGroups') {
       for (const k of ['from', 'to'] as const) {
         const v = extra[k];
@@ -2112,7 +2012,7 @@ export class Repository {
 
   /**
    * IP-9, IP-10: change an item's colour (null clears it) or its extra
-   * values (merged; a value of null removes that key). A status keeps a kind.
+   * values (merged; a value of null removes that key).
    */
   async setListItemLook(
     listId: string,
@@ -2140,7 +2040,6 @@ export class Repository {
       }),
     };
     const items = list.items.map((i) => (i.id === itemId ? next : i));
-    if (listId === 'statuses') this.keepEveryKind(list.items, items);
     await this.commit([], undefined, [{ ...list, items }]);
     return next;
   }
@@ -2343,7 +2242,6 @@ const LIST_ITEM_LABELS: Record<string, string> = {
   eventCategories: 'Event category',
   regions: 'Region',
   languages: 'Language',
-  tags: 'Tag',
 };
 
 /** A list's item in the singular, as the diff names it. */

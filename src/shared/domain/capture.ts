@@ -12,7 +12,6 @@ import { plainErrorMessage } from '../errors';
 import { patchBetween } from './diff';
 import type { Op, UndoCommand } from './undoRunner';
 import type { ListItemRef } from '../undoCommands';
-import { localSourceNote } from './captureRouter/types';
 import type { CaptureDraft } from './captureRouter/types';
 
 type Invoke = <C extends Channel>(channel: C, request: Request<C>) => Promise<Response<C>>;
@@ -214,9 +213,7 @@ function withRefs(value: unknown, refs: ReadonlyMap<string, string>): unknown {
 /**
  * CR-6 "File it" for Route A: write the router's ticked drafts through the
  * entry and list channels, without Claude. New list items first (IP-17), each
- * `ref` replaced by the minted ID; every entry gets the bible's idea status
- * and the source note "From a capture on <date>, filed without Claude." The
- * whole filing is one undo step (ED-3). A list that already holds an item of
+ * `ref` replaced by the minted ID. The whole filing is one undo step (ED-3). A list that already holds an item of
  * that name (in any case) gives its ID and adds nothing, so undo leaves it. A
  * draft that cannot be written is reported in `failed` (its `id` is
  * "draft <n>", its place in `drafts`) and the rest still file; an entry that
@@ -225,9 +222,6 @@ function withRefs(value: unknown, refs: ReadonlyMap<string, string>): unknown {
 export async function fileLocalDrafts(
   invoke: Invoke,
   drafts: readonly CaptureDraft[],
-  capturedOn: string,
-  /** A47 (IP-9): the bible's first status of kind idea (`defaultStatus`). */
-  status = 'idea',
 ): Promise<Filing> {
   const filed: FiledEntry[] = [];
   const failed: Filing['failed'] = [];
@@ -282,11 +276,7 @@ export async function fileLocalDrafts(
       }
       const missingItem = [...lost].find((ref) => JSON.stringify(d.data ?? {}).includes(ref));
       if (missingItem) throw new Error('The new list item it uses could not be added.');
-      const data = {
-        ...(withRefs(d.data ?? {}, refs) as Record<string, unknown>),
-        status,
-        sourceNote: localSourceNote(capturedOn),
-      };
+      const data = withRefs(d.data ?? {}, refs) as Record<string, unknown>;
       const { entry } = await invoke('entry.create', { collection: d.collection, data });
       filed.push({
         collection: d.collection,
@@ -340,25 +330,18 @@ export function mergeFilings(...filings: readonly Filing[]): Filing {
  * KB-7: the open question a capture becomes when Claude cannot file it (no
  * key, offline, or a failed run), or when the writer picks Review later on a
  * fact the box would file (CR-6). Title: the first line. Body (Markdown,
- * A44): the text, a blank line, the story time. Tagged `capture`, so it can
- * be found and filed later.
+ * A44): the text, a blank line, the story time.
  */
 export function captureQuestionData(
   text: string,
   storyTime: string,
-  capturedOn: string,
-  /** A47 (IP-9): the bible's first status of kind idea (`defaultStatus`). */
-  status = 'idea',
 ): Record<string, unknown> {
   const trimmed = text.trim();
   const first = (trimmed.split('\n')[0] ?? '').trim();
   const title = first.length > 120 ? `${first.slice(0, 119)}…` : first;
   return {
     title,
-    status,
     question: trimmed,
     body: `${trimmed}\n\n${storyTime}`,
-    tags: ['capture'],
-    sourceNote: `From a capture on ${capturedOn} that Claude could not file.`,
   };
 }

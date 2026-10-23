@@ -28,6 +28,8 @@ export const MIGRATION10_SNAPSHOT_LABEL = 'Before migration 10';
 export const MIGRATION11_SNAPSHOT_LABEL = 'Before migration 11';
 /** A51: the label of the snapshot taken before migration 12 gives moments their kinds. */
 export const MIGRATION12_SNAPSHOT_LABEL = 'Before migration 12';
+/** A53: the label of the snapshot taken before migration 13 removes the cut fields and collections. */
+export const MIGRATION13_SNAPSHOT_LABEL = 'Before migration 13';
 
 /** `manifest.json` of a snapshot (BK-1): what was dumped, when, why, and the schema version. */
 export const SnapshotManifest = z.strictObject({
