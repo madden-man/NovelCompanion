@@ -208,6 +208,30 @@
 .bs-dialog .editable-rich > .editable-text {
   max-width: none;
 }
+/* A50: More, the rest of the moment, at the foot of the dialog. */
+.bs-more {
+  align-items: flex-start;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.bs-more-caret::before {
+  content: '\25B8';
+  display: inline-block;
+  margin-right: 6px;
+}
+.bs-more-toggle[aria-expanded='true'] .bs-more-caret::before {
+  content: '\25BE';
+}
+.bs-more-body,
+.bs-more-fields {
+  width: 100%;
+  gap: 12px;
+}
+.bs-more-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .bs-dialog-foot {
   justify-content: space-between;
   align-items: flex-start;

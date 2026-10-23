@@ -537,6 +537,40 @@ test('SM-9 ED-3 IP-1 a field edit in the dialog saves over IPC on Enter or blur,
   await closeMoment();
 });
 
+test('SM-9 A50 ED-1 ED-3 More in the dialog: Add new makes a status and picks it, a tag adds, one undo step each', async () => {
+  const id = 'Z3-lives-1';
+  const d = await openMoment(page, id);
+  const more = d.getByRole('button', { name: 'More', exact: true });
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await more.click();
+  const start = await getMoment(id);
+  const statuses = async () =>
+    (await invoke('lists.get', {})).lists
+      .find((l) => l._id === 'statuses')!
+      .items.map((i) => i.label);
+  const st = cell(id, 'status');
+  await openEditable(st);
+  await st.locator('select').selectOption({ label: 'Add new...' });
+  const name = st.getByRole('textbox');
+  await name.fill('Rumoured');
+  await name.press('Enter');
+  await expect(cellText(id, 'status')).toHaveText('Rumoured');
+  expect(await statuses()).toContain('Rumoured');
+  const tags = d.locator('.ed-field[data-field="tags"]');
+  await tags.locator('.add-row > input').fill('river');
+  await tags.locator('.add-row > input').press('Enter');
+  const withRiver = [...((start.tags as string[]) ?? []), 'river'];
+  await expect.poll(async () => (await getMoment(id)).tags).toEqual(withRiver);
+  await expect(tags.locator('.chip').last()).toContainText('river');
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment(id)).tags).toEqual(start.tags);
+  // The status and the list item Add new made go back together.
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await getMoment(id)).status).toBe(start.status);
+  await expect.poll(statuses).not.toContain('Rumoured');
+  await closeMoment();
+});
+
 test('SM-9 Add a moment in the head makes a moment at the story year and opens it with What happens open, and the grid shows its marker', async () => {
   await pickRow('Z3');
   const before = (await liveMoments()).length;
@@ -1055,6 +1089,9 @@ test('SM-9 NF-2 the screen works from the keyboard and its labels use the primar
   await expect(dialog()).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(dialog().getByRole('button', { name: /^Pick events/ })).toBeFocused();
+  // A50: More, closed, then the foot.
+  await page.keyboard.press('Tab');
+  await expect(dialog().getByRole('button', { name: 'More', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(dialog().getByRole('button', { name: 'Delete' })).toBeFocused();
   await page.keyboard.press('Tab');
@@ -1501,10 +1538,31 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
     }
     await off(d.getByRole('button', { name: /^Pick events/ }));
     await off(d.getByRole('button', { name: 'Delete' }));
+    // A50: More holds the rest of the moment; its fields are off too, and History still opens.
+    await d.getByRole('button', { name: 'More', exact: true }).click();
+    for (const f of ['status', 'provenance', 'sourceNote', 'sourceRef']) {
+      await off(cellText('Z3-lives-0', f));
+    }
+    // Tags and Links sit in a fieldset that is off with the reason, as in the entry editor.
+    const rest = d.locator('fieldset.bs-more-group');
+    await expect(rest).toHaveAttribute('disabled', '');
+    await expect(rest).toHaveAttribute('title', READ_ONLY_REASON);
+    await expect(rest).toHaveAttribute('aria-describedby', 'read-only-reason');
+    await expect(rest.locator('[data-field="tags"] .add-row > input')).toBeDisabled();
+    await expect(rest.getByLabel('Link kind')).toBeDisabled();
+    const history = d.getByRole('button', { name: 'History', exact: true });
+    await history.click();
+    await expect(page.getByTestId('history')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('history')).toHaveCount(0);
+    await expect(d).toBeVisible();
+    await expect(history).toBeFocused();
     // Reading still works: the age, and Previous and Next through the person's moments.
     await expect(d.getByTestId('moment-age')).toHaveText('0');
     await d.getByRole('button', { name: 'Next' }).click();
     await expect(d).toHaveAttribute('data-id', later._id);
+    // More stays open from one moment to the next.
+    await expect(d.getByTestId('moment-more')).toBeVisible();
     await expect(d.getByTestId('moment-age')).toHaveText('45');
     await d.getByRole('button', { name: 'Previous' }).click();
     await expect(d).toHaveAttribute('data-id', 'Z3-lives-0');

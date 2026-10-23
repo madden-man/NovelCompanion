@@ -10,6 +10,7 @@ import {
 } from '../../src/shared/schema';
 import type { EntryCollection } from '../../src/shared/schema';
 import { build, t5Verify, t5Write } from '../helpers/t5';
+import { openBackstory } from '../../src/renderer/src/workspace/backstory/nav';
 import type { GenContext, Invoke, T5Plan } from '../helpers/t5';
 import {
   changes,
@@ -110,13 +111,16 @@ test('ED-1 every field of every entity can be created and changed through the ed
   test.setTimeout(600_000);
   const ctx = await genContext();
   const failures: string[] = [];
-  // A50: a moment has no entry editor; it is made and edited in the Backstory dialog
-  // (backstory.spec.ts), and the T-5 test above covers its every field over IPC.
-  for (const c of ENTRY_COLLECTIONS.filter((x) => x !== 'moments')) {
+  for (const c of ENTRY_COLLECTIONS) {
     const info = collectionInfo[c];
     const manifest = manifests[c];
     const a = build(manifest, 0, ctx, 'full', true);
     const b = build(manifest, 1, ctx, 'full', true);
+    if (c === 'moments') {
+      // A50: a moment's editor is its Backstory dialog, with the rest of the entry under More.
+      failures.push(...(await momentThroughDialog(ctx, a, b)));
+      continue;
+    }
     const { newButton, preset } = await openListFor(page, ctx, c, a);
     await page.getByRole('button', { name: newButton, exact: true }).click();
     const form = page.getByTestId('new-entry');
@@ -159,6 +163,89 @@ test('ED-1 every field of every entity can be created and changed through the ed
   }
   expect(failures).toEqual([]);
 });
+
+/**
+ * ED-1, A50: make a moment the way a person does on Backstory (their timeline,
+ * Add a moment), set every field to `b` in its dialog, the rest under More,
+ * and return what the stored moment does not match.
+ */
+async function momentThroughDialog(
+  ctx: UiContext,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): Promise<string[]> {
+  const manifest = manifests.moments;
+  await rail(page, 'Backstory').click();
+  await expect(page.getByTestId('backstory-grid')).toBeVisible();
+  await page.evaluate(openBackstory, String(a.characterId));
+  await page.getByTestId('backstory-view').getByRole('button', { name: 'Add a moment' }).click();
+  const dialog = page.getByTestId('moment-dialog');
+  await expect(dialog).toBeVisible();
+  const id = await dialog.getAttribute('data-id');
+  if (!id) throw new Error('The moment dialog shows no moment ID');
+  const ed = (name: string) => dialog.locator(`.editable[data-field="${name}"]`);
+  const rich = async (name: string, value: string) => {
+    const f = ed(name);
+    await openEditable(f);
+    const box = f.locator('[role="textbox"]');
+    const [first = '', ...rest] = value.split('\n');
+    await box.fill(first);
+    for (const line of rest) {
+      await box.press('Shift+Enter');
+      await box.pressSequentially(line);
+    }
+    await box.press('Enter');
+    await expect(box).toHaveCount(0);
+  };
+  const select = async (name: string, value: string) => {
+    const f = ed(name);
+    await openEditable(f);
+    await f.locator('select').selectOption(value);
+    await expect(f.locator('select')).toHaveCount(0);
+  };
+  // What happens opens at once on a new moment.
+  await fillEditable(ed('title'), String(b.title));
+  await rich('body', String(b.body));
+  await rich('worldContext', String(b.worldContext));
+  // The year first: a moment over several years keeps its length when its year moves.
+  await fillEditable(ed('year'), String(b.year));
+  await fillEditable(ed('endYear'), b.endYear === null ? '' : String(b.endYear));
+  await select('characterId', String(b.characterId));
+  await expect(dialog).toHaveAttribute('data-person', String(b.characterId));
+  const more = dialog.getByRole('button', { name: 'More', exact: true });
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  for (const name of ['status', 'provenance', 'tags', 'links']) {
+    const s = fieldByName(manifest, name)!;
+    await setField(ctx, dialog, s, name, b[name], b);
+  }
+  await rich('sourceNote', String(b.sourceNote));
+  await fillEditable(ed('sourceRef'), String(b.sourceRef));
+  const want = withoutSystem(manifest, b) as Record<string, unknown>;
+  const failures: string[] = [];
+  const fields = editableFields(manifest);
+  // Every change saves at once; wait for the last of them to land.
+  await expect
+    .poll(async () => {
+      const { entry } = await invoke('entry.get', { collection: 'moments', id });
+      const got = withoutSystem(manifest, entry) as Record<string, unknown>;
+      return fields.filter(
+        (s) => JSON.stringify(got[s.name] ?? null) !== JSON.stringify(want[s.name] ?? null),
+      ).length;
+    })
+    .toBe(0)
+    .catch(() => undefined);
+  const { entry } = await invoke('entry.get', { collection: 'moments', id });
+  const got = withoutSystem(manifest, entry) as Record<string, unknown>;
+  for (const s of fields) {
+    const g = JSON.stringify(got[s.name] ?? null);
+    const w = JSON.stringify(want[s.name] ?? null);
+    if (g !== w) failures.push(`moments.${s.name}: expected ${w}, found ${g}`);
+  }
+  await dialog.locator('.bs-dialog-head').getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toHaveCount(0);
+  return failures;
+}
 
 /**
  * SM-1: the fields the character page edits. The rest (provenance, source

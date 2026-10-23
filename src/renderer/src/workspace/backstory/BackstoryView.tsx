@@ -33,6 +33,8 @@ import { BackstoryGrid } from './BackstoryGrid';
 import { MomentDialog } from './MomentDialog';
 import type { MomentField } from './MomentDialog';
 import { MomentCreate } from './MomentCreate';
+import { mergeCommands } from '../editable';
+import type { AddedItem } from '../editable';
 import { useEraEdits, useTitleRename } from '../timeline/gridShared';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
@@ -51,6 +53,12 @@ const FIELD_WORDS: Record<MomentField, string> = {
   body: 'how they experience it',
   worldContext: 'the relevant world events',
   characterId: 'whose moment it is',
+  status: 'the status',
+  provenance: 'the provenance',
+  sourceNote: 'the source note',
+  sourceRef: 'the source location',
+  tags: 'the tags',
+  links: 'the links',
 };
 
 /**
@@ -276,12 +284,16 @@ export function BackstoryView(props: {
     return run;
   };
 
-  /** `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9). */
+  /**
+   * `mentioned`: entries picked with `@` in the text, linked in the same step (ED-9);
+   * `added`: the list item a select's Add new made, joined to the step.
+   */
   const save = (
     id: string,
     field: MomentField,
-    value: string | number | null,
+    value: unknown,
     mentioned: readonly string[] = [],
+    added?: AddedItem,
   ) => {
     setError(null);
     if (ro.off) return Promise.resolve();
@@ -305,9 +317,14 @@ export function BackstoryView(props: {
       }
       const { entry } = await call('entry.update', { collection: 'moments', id, patch });
       const title = entryTitle(entry) || 'a moment';
-      undo.record(
-        editCommand(`Changed ${FIELD_WORDS[field]} of ${title}`, 'moments', id, before, entry),
+      const step = editCommand(
+        `Changed ${FIELD_WORDS[field]} of ${title}`,
+        'moments',
+        id,
+        before,
+        entry,
       );
+      undo.record(added?.command ? mergeCommands(step.label, added.command, step) : step);
       // Only a field of this moment's dialog counts the stored value as saved (ED-3).
       const dialog = (document.activeElement as HTMLElement | null)?.closest(
         '[data-testid="moment-dialog"]',
@@ -571,7 +588,8 @@ export function BackstoryView(props: {
           fresh={fresh}
           freshKey={freshKey}
           onOpenTitle={() => openTitle(open.id, open.characterId)}
-          onSave={(field, value, mentioned) => save(open.id, field, value, mentioned)}
+          entry={momentEntries.find((e) => e._id === open.id) ?? null}
+          onSave={(field, value, mentioned, added) => save(open.id, field, value, mentioned, added)}
           onMention={(e) => mention(open.id, e)}
           onTrashed={() => trashedOne(open)}
           onClose={closeDialog}
