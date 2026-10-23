@@ -212,6 +212,8 @@ async function momentThroughDialog(
   await fillEditable(ed('endYear'), b.endYear === null ? '' : String(b.endYear));
   await select('characterId', String(b.characterId));
   await expect(dialog).toHaveAttribute('data-person', String(b.characterId));
+  // A51: the kind sits in the When and who row.
+  await select('kind', typeof b.kind === 'string' ? b.kind : '');
   const more = dialog.getByRole('button', { name: 'More', exact: true });
   await more.click();
   await expect(more).toHaveAttribute('aria-expanded', 'true');
