@@ -76,7 +76,12 @@ function KindContrastReadout({ color }: { color: string | null | undefined }) {
     ...(c.hardOnDark ? ['Hard to see on the dark grid'] : []),
   ];
   return (
-    <span className="vocab-contrast" data-testid="item-contrast">
+    <span
+      className="vocab-contrast"
+      data-testid="item-contrast"
+      title="How well the colour stands out on the light and the dark grid"
+    >
+      <span className="vocab-contrast-word">Contrast</span>{' '}
       <span data-testid="item-contrast-ratios">
         Light {ratioText(c.light)}, Dark {ratioText(c.dark)}
       </span>
