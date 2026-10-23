@@ -104,7 +104,7 @@ export const continuityContract = {
     request: z.strictObject({
       id: EntryId,
       action: z.enum(['manuscriptWins', 'rewrite', 'dismiss', 'done']),
-      /** Manuscript wins: the revisions the diff was shown against; an entry changed since refuses the apply. */
+      /** Manuscript wins: each entry as the diff was shown against it; an entry changed since refuses the apply. */
       shown: z.array(ShownEntry).max(200).optional(),
     }),
     response: z.strictObject({

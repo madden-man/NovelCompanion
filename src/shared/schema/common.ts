@@ -21,21 +21,6 @@ export const StoryDate = z.union([
 ]);
 export type StoryDate = z.infer<typeof StoryDate>;
 
-/** A53 shim, wave 3 deletes it. Was the item ID in the removed `statuses` list. */
-export const Status = z.string().min(1).max(64);
-export type Status = z.infer<typeof Status>;
-
-/** A53 shim, wave 3 deletes it. Was the item ID in the removed `provenance` list. */
-export const Provenance = z.string().min(1).max(64);
-export type Provenance = z.infer<typeof Provenance>;
-
-/** A53 shim, wave 3 deletes it. Was the removed `{ targetId, kind }` link. */
-export const Link = z.strictObject({
-  targetId: Id,
-  kind: z.string().min(1).max(64),
-});
-export type Link = z.infer<typeof Link>;
-
 export const Timestamp = z.iso.datetime({ offset: true });
 
 /** Fields every entry shares (SPEC section 4, top paragraph). */

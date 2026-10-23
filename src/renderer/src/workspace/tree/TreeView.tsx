@@ -1170,8 +1170,6 @@ function TreePersonForm({ id }: { id: string }) {
   if (!draft) return <p aria-live="polite">Loading the person.</p>;
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
-  // A53: an `@` pick stores no link; wave 2B removes the picker and this prop.
-  const onMention = () => undefined;
   const field = (name: string, opts: { label?: string; grow?: boolean } = {}) => {
     const base = fieldByName(PERSON_FIELDS, name);
     if (!base) return null;
@@ -1184,7 +1182,6 @@ function TreePersonForm({ id }: { id: string }) {
         messages={messages}
         root={draft}
         grow={opts.grow}
-        onMention={onMention}
         onChange={(v) => ed.setField(name, v)}
       />
     );
@@ -1201,7 +1198,6 @@ function TreePersonForm({ id }: { id: string }) {
         path={`names.${part}`}
         messages={messages}
         root={draft}
-        onMention={onMention}
         onChange={(v) => {
           const text = typeof v === 'string' ? v : '';
           ed.setField('names', { ...names, [part]: text });

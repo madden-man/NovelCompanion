@@ -23,7 +23,7 @@ import type {
 } from '../../../shared/domain/captureRouter';
 import { Editable, fieldLabel } from './editable';
 import type { EditableOption } from './editable';
-import { showValue } from './history';
+import { showValue } from './showValue';
 import { TYPED_ASKS, draftsWith, openAsks } from './captureLocal';
 import type { FactChoice } from './captureLocal';
 

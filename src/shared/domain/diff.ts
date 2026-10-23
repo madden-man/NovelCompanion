@@ -23,8 +23,8 @@ function walk(a: unknown, b: unknown, path: string, out: FieldChange[]): void {
 }
 
 /**
- * A field-by-field comparison of two versions of an entry, for the revision
- * history's side-by-side view (ED-4). Nested groups are compared field by
+ * A field-by-field comparison of two versions of an entry, for a proposal's
+ * side-by-side view (ED-7). Nested groups are compared field by
  * field; lists and single values are compared whole. Bookkeeping fields are
  * left out.
  */

@@ -49,10 +49,6 @@ export interface RichTextProps {
   testId?: string;
   className?: string;
   placeholder?: string;
-  /** A53 shim, wave 3 deletes it: `@` types an `@` (A52), so nothing calls this. */
-  onMention?: (hit: { id: string; title: string }) => void;
-  /** A53 shim, wave 3 deletes it: no mention chips are drawn (A52). */
-  mentionTitles?: readonly string[];
   handle?: Ref<RichTextHandle>;
 }
 

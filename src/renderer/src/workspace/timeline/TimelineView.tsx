@@ -141,7 +141,6 @@ export function TimelineView() {
       inWindow(spans, win).map((e) => ({
         id: e.id,
         title: e.title,
-        status: e.status,
         startYear: e.startYear,
         endYear: e.endYear,
         formative: e.formative,

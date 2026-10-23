@@ -112,7 +112,7 @@ export function dismissalFor(
         : ''
       : // The empty middle slot held facts in play before A39; kept so earlier dismissals still match.
         JSON.stringify([chapter.strands ?? [], [], chapter.links ?? []]);
-  const revisions = [...new Set(f.entryIds)]
+  const stamps = [...new Set(f.entryIds)]
     .sort()
     .map((id) => {
       const c = collectionOf(data, id);
@@ -120,7 +120,7 @@ export function dismissalFor(
       return `${id}@${d ? String(d.modifiedAt) : 'missing'}`;
     })
     .join('|');
-  return { textHash: textHash(text), entryHash: textHash(revisions) };
+  return { textHash: textHash(text), entryHash: textHash(stamps) };
 }
 
 /** True while a dismissed finding should stay hidden: neither the text nor a cited entry changed. */

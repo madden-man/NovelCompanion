@@ -95,9 +95,6 @@ export type EditableKindProps =
       allowEmpty?: boolean;
       mode?: RichMode;
       size?: RichSize;
-      /** A53 shims, wave 3 deletes them: `@` types an `@` and no chips are drawn (A52). */
-      mentionTitles?: readonly string[];
-      onMention?: (hit: { id: string; title: string }) => void;
     }
   | {
       kind: 'select';

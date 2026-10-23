@@ -76,10 +76,12 @@ function linkTargets(links: unknown): string[] {
  * 3. Status, provenance, source note, source location, tags and links are
  *    unset on every entry, trashed ones too.
  * 4. Parts lose `bookId`, and the parts index on it goes.
- * 5. `revisions`, `importSources`, `briefs`, `sessionLogs` and `books` are dropped.
- * 6. The `statuses`, `provenance` and `tags` lists and the `importMappings`
+ * 5. The `links.targetId` index (migrations 2 and 9 made it) goes from every
+ *    entry collection that has it.
+ * 6. `revisions`, `importSources`, `briefs`, `sessionLogs` and `books` are dropped.
+ * 7. The `statuses`, `provenance` and `tags` lists and the `importMappings`
  *    and `drive` meta documents are removed.
- * 7. The counts are written once to `meta.migration13`.
+ * 8. The counts are written once to `meta.migration13`.
  * Modified times are not touched. `openBibleSession` takes a snapshot first.
  * Running it again changes nothing.
  */
@@ -136,7 +138,20 @@ export const cuts: Migration = {
       }
     }
 
-    // 5. The dropped collections, counted first.
+    // 5. The links index leaves every entry collection.
+    for (const name of ENTRY_COLLECTIONS) {
+      if (!existing.has(name)) continue;
+      const c = bible.collection<Document>(name);
+      for (const index of await c.indexes()) {
+        const key = index.key as Record<string, unknown>;
+        const names = Object.keys(key);
+        if (names.length === 1 && key['links.targetId'] === 1 && index.name) {
+          await c.dropIndex(index.name);
+        }
+      }
+    }
+
+    // 6. The dropped collections, counted first.
     const dropped = Object.fromEntries(DROPPED_COLLECTIONS_V13.map((n) => [n, 0])) as Record<
       (typeof DROPPED_COLLECTIONS_V13)[number],
       number
@@ -147,7 +162,7 @@ export const cuts: Migration = {
       await bible.db.dropCollection(bible.qualified(name));
     }
 
-    // 6. The lists and meta documents of the removed features.
+    // 7. The lists and meta documents of the removed features.
     const listsRemoved = Object.fromEntries(REMOVED_LISTS.map((n) => [n, 0])) as Record<
       (typeof REMOVED_LISTS)[number],
       number
@@ -162,7 +177,7 @@ export const cuts: Migration = {
     const meta = bible.collection<Document>('meta');
     await meta.deleteMany({ _id: { $in: [...REMOVED_META] } } as Document);
 
-    // 7. The summary, written once; a second run keeps the first.
+    // 8. The summary, written once; a second run keeps the first.
     const summary: Migration13Summary = {
       _id: MIGRATION13_META_ID,
       questionsTrashed,

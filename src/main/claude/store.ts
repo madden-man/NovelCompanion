@@ -9,7 +9,7 @@ const COLLECTION = 'conversations';
  * Saved Claude runs (AI-1) in the bible's `conversations` collection, created
  * by schema version 7 with a `{ modifiedAt: -1 }` index. Panel conversations
  * and feature runs share it, told apart by `feature`. A run is not an entry:
- * it has no revisions and no undo, like proposals and settings, and this is
+ * it has no undo, like proposals and settings, and this is
  * the one place that writes it. The read model is kept in step.
  *
  * Writes touch one turn at a time (`$push` a new turn, `$set` the matching

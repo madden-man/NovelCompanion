@@ -9,10 +9,7 @@ import {
   plainText,
 } from '../../src/shared/domain/markdown';
 import { plain } from '../../src/shared/domain/brief/selection';
-import {
-  mentionRanges,
-  richExtensions,
-} from '../../src/renderer/src/workspace/richText/extensions';
+import { richExtensions } from '../../src/renderer/src/workspace/richText/extensions';
 import {
   parseMarkdown,
   serializeMarkdown,
@@ -158,14 +155,5 @@ describe('A44 Markdown as plain text, for search and briefs', () => {
   test('the escape leaves what this Markdown does not read', () => {
     expect(escapeMarkdown('[a] `b` 3 < 4', false)).toBe('[a] `b` 3 < 4');
     expect(escapeMarkdown('<p>', false)).toBe('\\<p>');
-  });
-});
-
-describe('A44 @mentions show as chips where the text names a linked entry', () => {
-  test('the longest linked title wins, and other @ text is left alone', () => {
-    const doc = parseMarkdown(full, '@Wei Li Jr and @Wei Li met @nobody.');
-    const ranges = mentionRanges(doc, ['Wei Li', 'Wei Li Jr']);
-    const texts = ranges.map((r) => doc.textBetween(r.from, r.to));
-    expect(texts).toEqual(['@Wei Li Jr', '@Wei Li']);
   });
 });

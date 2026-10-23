@@ -57,13 +57,8 @@ export type BibleChannel =
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
-  | 'entry.linkedFrom'
-  | 'entry.backlinks'
   | 'entry.lookup'
   | 'trash.list'
-  | 'revisions.list'
-  | 'revisions.diff'
-  | 'revisions.restore'
   | 'lists.get'
   | 'lists.rename'
   | 'lists.addItem'
@@ -155,15 +150,6 @@ export function bibleHandlers(
     entry: wire(entry),
     warnings: session().repo.warnings(c, entry),
   });
-  const titled = (links: { collection: string; id: string; kind: string }[]) =>
-    links
-      .filter((b): b is typeof b & { collection: EntryCollection } =>
-        isEntryCollection(b.collection),
-      )
-      .map((b) => ({
-        ...b,
-        title: entryTitle(session().model.get(b.collection, b.id)),
-      }));
 
   const graph = () => {
     const { model } = session();
@@ -236,7 +222,7 @@ export function bibleHandlers(
       const { repo } = session();
       const entry = repo.get(collection, id, { includeDeleted: true }) as StoredDoc | undefined;
       if (!entry) throw new Error(`No ${collection} entry has the ID ${id}.`);
-      return { ...withWarnings(collection, entry), backlinks: titled(repo.backlinks(id)) };
+      return withWarnings(collection, entry);
     },
     'entry.create': async ({ collection, data }) => {
       const entry = (await session().repo.create(collection, data as never)) as StoredDoc;
@@ -449,7 +435,6 @@ export function bibleHandlers(
             id: p.id,
             patch: { number: p.number },
           })),
-          { note: 'Reordered parts' },
         );
         return {
           collection,
@@ -560,11 +545,6 @@ export function bibleHandlers(
       const entry = (await session().repo.restore(collection, id)) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.linkedFrom': ({ id }) => {
-      const { count, entries } = session().repo.linkedFrom(id);
-      return { count, entries: titled(entries) };
-    },
-    'entry.backlinks': ({ id }) => ({ backlinks: titled(session().repo.backlinks(id)) }),
     'entry.lookup': ({ ids }) => {
       const { model } = session();
       const entries = [];
@@ -586,22 +566,6 @@ export function bibleHandlers(
         .repo.trash()
         .map((t) => ({ collection: t.collection, entry: wire(t.entry) })),
     }),
-    'revisions.list': async ({ collection, id }) => {
-      const history = await session().repo.history(collection, id);
-      return { revisions: history.map(({ snapshot: _s, ...r }) => r) };
-    },
-    'revisions.diff': async ({ collection, id, revisionId }) => {
-      const d = await session().repo.revisionDiff(collection, id, revisionId);
-      return {
-        revision: { ...d.revision, snapshot: wire(d.revision.snapshot) },
-        current: wire(d.current),
-        changes: d.changes,
-      };
-    },
-    'revisions.restore': async ({ collection, id, revisionId }) => {
-      const entry = (await session().repo.restoreRevision(collection, id, revisionId)) as StoredDoc;
-      return withWarnings(collection, entry);
-    },
     'lists.get': () => ({ lists: session().repo.lists() }),
     'lists.rename': ({ listId, itemId, label }) =>
       session().repo.renameListItem(listId, itemId, label),
@@ -643,8 +607,6 @@ export function bibleHandlers(
         return {
           ...h,
           title: entryTitle(doc),
-          status: typeof doc.status === 'string' ? doc.status : null,
-          provenance: typeof doc.provenance === 'string' ? doc.provenance : null,
           snippet: entrySnippet(doc),
         };
       });

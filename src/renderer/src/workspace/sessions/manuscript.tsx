@@ -60,9 +60,9 @@ export function ManuscriptView({
               >
                 {`Chapter ${String(c.readingOrder)}: ${entryTitle(c)}`}
               </button>{' '}
-              {c.written === true && <span className="chip canon">written</span>}
+              {c.written === true && <span className="chip now">written</span>}
               {c.summaryOutOfDate === true && (
-                <span className="chip planned">summary may be out of date</span>
+                <span className="chip todo">summary may be out of date</span>
               )}
             </li>
           ))}
@@ -167,9 +167,9 @@ function ChapterManuscript({
       <div className="row">
         <h3>{entryTitle(chapter)}</h3>
         {chapter.written === true ? (
-          <span className="chip canon">written</span>
+          <span className="chip now">written</span>
         ) : (
-          <span className="chip planned">not written</span>
+          <span className="chip todo">not written</span>
         )}
         <button type="button" className="link-btn" onClick={() => onOpen('chapters', chapter._id)}>
           Open the chapter

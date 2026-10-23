@@ -28,8 +28,6 @@ export interface FieldProps {
   messages: Messages;
   /** The entry being edited, for fields that depend on another (custom values). */
   root: Doc;
-  /** A53 shim, wave 3 deletes it: `@` stores no link, so nothing reads this. */
-  onMention?: (targetId: string) => void;
   /** SM-1: a long text box that grows with its text. Since A44 every long text box does. */
   grow?: boolean;
 }
@@ -435,12 +433,10 @@ function ListItemsField({ spec, value, onChange, path, messages }: FieldProps) {
   );
 }
 
-/** Free strings and tags: chips with a box to add more. */
+/** Free strings: chips with a box to add more. */
 function StringsField({ spec, value, onChange, path, messages }: FieldProps) {
   const id = useId();
-  const listId = useId();
   const [draft, setDraft] = useState('');
-  const tags = useList(spec.kind === 'tags' ? 'tags' : undefined);
   const values = asArray(value).map(String);
   const add = () => {
     const t = draft.trim();
@@ -469,8 +465,7 @@ function StringsField({ spec, value, onChange, path, messages }: FieldProps) {
         <input
           id={id}
           value={draft}
-          list={tags ? listId : undefined}
-          placeholder={spec.kind === 'tags' ? 'Add a tag' : 'Add one'}
+          placeholder="Add one"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -483,13 +478,6 @@ function StringsField({ spec, value, onChange, path, messages }: FieldProps) {
           Add
         </button>
       </div>
-      {tags && (
-        <datalist id={listId}>
-          {tags.items.map((t) => (
-            <option key={t.id} value={t.label} />
-          ))}
-        </datalist>
-      )}
     </FieldShell>
   );
 }

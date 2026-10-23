@@ -62,7 +62,6 @@ export interface PersonInYear {
   name: string;
   chinese: string;
   familyIds: string[];
-  status: string;
   birthYear: number | null;
   state: LifeState;
 }
@@ -103,7 +102,6 @@ export function everyoneIn(data: TimelineData, at: StoryMoment): EveryoneIn {
       name: characterName(c, id),
       chinese: isPlainObject(c.names) ? str(c.names.chinese) : '',
       familyIds: ids(c.familyIds),
-      status: str(c.status),
       birthYear: yearOf(asDate(c.birth)),
       state,
     });
@@ -130,7 +128,6 @@ export interface EventSpan {
   regions: string[];
   characterIds: string[];
   formative: boolean;
-  status: string;
 }
 
 function eventSpan(e: Doc): EventSpan | null {
@@ -150,7 +147,6 @@ function eventSpan(e: Doc): EventSpan | null {
     regions: ids(e.regions),
     characterIds: ids(e.characterIds),
     formative: e.formative === true,
-    status: str(e.status),
   };
 }
 
@@ -410,7 +406,6 @@ export interface StrandSpan {
   chapterId: string;
   chapterTitle: string;
   readingOrder: number | null;
-  chapterStatus: string;
   written: boolean;
   strandId: string;
   label: string;
@@ -436,7 +431,6 @@ export function strandSpans(data: TimelineData): StrandSpan[] {
         chapterId: String(c._id),
         chapterTitle: str(c.title) || 'Untitled chapter',
         readingOrder: num(c.readingOrder),
-        chapterStatus: str(c.status),
         written: c.written === true,
         strandId: str(s.id),
         label: str(s.label),
@@ -516,7 +510,6 @@ export function compare(
 export interface LifespanBar {
   id: string;
   name: string;
-  status: string;
   familyIds: string[];
   /** Places the character is tied to: the places of their "Lives in" moments (SM-3), as written. */
   placeNames: string[];
@@ -578,7 +571,6 @@ export function timelineChart(data: TimelineData): TimelineChart {
     lifespans.push({
       id,
       name: characterName(c, id),
-      status: str(c.status),
       familyIds: ids(c.familyIds),
       placeNames: (livedIn.get(id) ?? []).filter(Boolean),
       birthYear: born,
@@ -604,7 +596,6 @@ export interface ChartFilters {
   familyId: string | null;
   /** A place entry ID, or null. */
   placeId: string | null;
-  status: string | null;
   /** A category item ID; its subcategories match too. */
   categoryId: string | null;
 }
@@ -612,7 +603,6 @@ export interface ChartFilters {
 export const NO_FILTERS: ChartFilters = {
   familyId: null,
   placeId: null,
-  status: null,
   categoryId: null,
 };
 
@@ -620,15 +610,15 @@ export const NO_FILTERS: ChartFilters = {
  * TL-6 filters. Family keeps the lifespans of that family, the events that
  * affect its members, and the strands its members appear in. Place keeps what
  * is tied to that place (or a place inside it); world events have no places
- * since A39, so a place leaves them as they are. Status and category act on
- * every item that has one. Eras are never filtered out.
+ * since A39, so a place leaves them as they are. Category acts on every
+ * event. Eras are never filtered out.
  */
 export function filterChart(
   chart: TimelineChart,
   filters: ChartFilters,
   context: { places?: readonly Doc[]; categories?: ListDoc } = {},
 ): TimelineChart {
-  const { familyId, placeId, status, categoryId } = filters;
+  const { familyId, placeId, categoryId } = filters;
   const inFamily = (fids: string[]) =>
     familyId === null || (familyId === 'none' ? fids.length === 0 : fids.includes(familyId));
   const members = new Set(chart.lifespans.filter((l) => inFamily(l.familyIds)).map((l) => l.id));
@@ -672,7 +662,6 @@ export function filterChart(
     events: chart.events.filter(
       (e) =>
         (familyId === null || e.characterIds.some((c) => members.has(c))) &&
-        (status === null || e.status === status) &&
         (categoryId === null || categoryIds.has(e.categoryId)),
     ),
     strands: chart.strands.filter(
@@ -680,13 +669,11 @@ export function filterChart(
         (familyId === null ||
           s.characterIds.some((c) => members.has(c)) ||
           (s.povCharacterId !== null && members.has(s.povCharacterId))) &&
-        atPlace(s.placeIds) &&
-        (status === null || s.chapterStatus === status),
+        atPlace(s.placeIds),
     ),
     lifespans: chart.lifespans.filter(
       (l) =>
         members.has(l.id) &&
-        (status === null || l.status === status) &&
         (placeId === null || l.placeNames.some((n) => placeNames.has(n.trim().toLowerCase()))),
     ),
     undrawn: chart.undrawn,

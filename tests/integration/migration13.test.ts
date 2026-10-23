@@ -171,6 +171,8 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
     );
     const parts = await bible.collection('parts').indexes();
     expect(parts.map((i) => i.key)).toContainEqual({ bookId: 1, number: 1 });
+    const characters = await bible.collection('characters').indexes();
+    expect(characters.map((i) => i.key)).toContainEqual({ 'links.targetId': 1 });
     open = await openBibleSession(store, bible.id, { snapshotRoot: root });
   });
 
@@ -213,7 +215,7 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
     expect(q('Q-PLAIN').aboutIds).toEqual([]);
     expect(q('Q-ABOUT').aboutIds).toEqual(['Z1']);
     // About is a reference field, so the question is found from what it is about.
-    expect(open.repo.backlinks('E1').map((b) => b.id)).toContain('Q-LINKED');
+    expect(open.model.backlinks('E1').map((b) => b.id)).toContain('Q-LINKED');
   });
 
   test('A53 step 3: the six fields are gone from every entry, live and trashed, in every collection', async () => {
@@ -243,12 +245,26 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
     expect(indexes.map((i) => i.key)).not.toContainEqual({ bookId: 1, number: 1 });
   });
 
-  test('A53 step 5: revisions, import sources, briefs, session logs and books are dropped', async () => {
+  test('A53 step 5: the links index goes from every entry collection; the trash index stays', async () => {
+    const names = await open.handle.collectionNames();
+    let checked = 0;
+    for (const c of ENTRY_COLLECTIONS) {
+      if (!names.includes(c)) continue;
+      const keys = (await open.handle.collection(c).indexes()).map((i) => i.key);
+      expect(keys, c).not.toContainEqual({ 'links.targetId': 1 });
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(5);
+    const characters = (await open.handle.collection('characters').indexes()).map((i) => i.key);
+    expect(characters).toContainEqual({ deletedAt: 1 });
+  });
+
+  test('A53 step 6: revisions, import sources, briefs, session logs and books are dropped', async () => {
     const names = await open.handle.collectionNames();
     for (const c of Object.keys(DROPPED)) expect(names, c).not.toContain(c);
   });
 
-  test('A53 step 6: the three lists and the import and Drive meta documents go; every other list and the brief settings stay', async () => {
+  test('A53 step 7: the three lists and the import and Drive meta documents go; every other list and the brief settings stay', async () => {
     const lists = await open.handle.collection('lists').find({}).sort({ _id: 1 }).toArray();
     const ids = lists.map((l) => l._id);
     for (const gone of ['statuses', 'provenance', 'tags']) expect(ids).not.toContain(gone);
@@ -265,7 +281,7 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
     });
   });
 
-  test('A53 step 7: the summary in meta counts what each step did', async () => {
+  test('A53 step 8: the summary in meta counts what each step did', async () => {
     const summary = (await open.handle
       .collection('meta')
       .findOne({ _id: MIGRATION13_META_ID as never })) as unknown as Migration13Summary;
@@ -293,8 +309,17 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
 
   test('A53 running it again changes nothing, and a bible at version 13 is not snapshotted again', async () => {
     const before = await dump(open.handle);
+    const indexes = async () => {
+      const out: Record<string, unknown[]> = {};
+      for (const name of await open.handle.collectionNames()) {
+        out[name] = (await open.handle.collection(name).indexes()).map((i) => i.key);
+      }
+      return out;
+    };
+    const indexesBefore = await indexes();
     await migrations[12]!.up(open.handle);
     expect(await dump(open.handle)).toEqual(before);
+    expect(await indexes()).toEqual(indexesBefore);
     await openBibleSession(store, bible.id, { snapshotRoot: root });
     expect((await open.snapshots!.list()).filter((s) => s.reason === 'migration')).toHaveLength(1);
   });
@@ -306,6 +331,11 @@ describe('A53 migration 13 on the fixture as it ships', () => {
     expect(await schemaVersion(handle)).toBe(13);
     const names = await handle.collectionNames();
     for (const c of Object.keys(DROPPED)) expect(names, c).not.toContain(c);
+    for (const c of ENTRY_COLLECTIONS) {
+      if (!names.includes(c)) continue;
+      const keys = (await handle.collection(c).indexes()).map((i) => i.key);
+      expect(keys, c).not.toContainEqual({ 'links.targetId': 1 });
+    }
     const lists = (await handle.collection('lists').find({}).toArray()).map((l) => l._id);
     for (const gone of ['statuses', 'provenance', 'tags']) expect(lists).not.toContain(gone);
     expect(lists).toContain('momentKinds');

@@ -13,4 +13,4 @@ export {
 } from './bibles';
 export type { BibleHandle, BibleRecord } from './bibles';
 export { Repository, RepositoryError, ValidationError } from './repository';
-export type { ChangeEvent, ChangeOp, Revision } from './repository';
+export type { ChangeEvent, ChangeOp } from './repository';
