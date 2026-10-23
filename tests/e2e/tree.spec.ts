@@ -556,9 +556,9 @@ test('FT-7 FT-2 A45 the inspector edits Name, In the story, Description, Birth, 
   await select('Daniel Hale');
   const ed = editor();
   // The fields, in order; status, provenance, source, tags, links and the backstory box are gone.
-  const fields = await ed
-    .locator('form.editor-fields > fieldset > [data-field]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('data-field')));
+  const shown = ed.locator('form.editor-fields > fieldset > [data-field]');
+  await expect(shown).toHaveCount(7);
+  const fields = await shown.evaluateAll((els) => els.map((e) => e.getAttribute('data-field')));
   expect(fields).toEqual([
     'names.full',
     'names.chinese',
