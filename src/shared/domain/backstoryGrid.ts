@@ -293,8 +293,6 @@ export interface BackstoryMoment {
   title: string;
   body: string;
   worldContext: string;
-  /** The entries the moment links to (ED-9), by ID. */
-  linkIds: string[];
   /** A51: the moment's kind, an item ID of the momentKinds list, or null. */
   kind: string | null;
 }
@@ -318,11 +316,6 @@ export function momentRows(moments: readonly Doc[]): BackstoryMoment[] {
       title: str(m.title),
       body: str(m.body),
       worldContext: str(m.worldContext),
-      linkIds: Array.isArray(m.links)
-        ? m.links.flatMap((l) =>
-            isPlainObject(l) && typeof l.targetId === 'string' ? [l.targetId] : [],
-          )
-        : [],
       kind: str(m.kind) || null,
     });
   }
@@ -606,32 +599,8 @@ export function eventsNear<T extends { startYear: number; endYear: number }>(
 }
 
 /**
- * IP-4, ED-9: the text after inserting a mention of an event (`@Title`) on a
- * line of its own after what is there, and not again when the text already
- * mentions it.
- */
-export function insertMention(text: string, title: string): string {
-  const t = title.trim();
-  if (!t) return text;
-  const at = `@${t}`;
-  const lines = text.split('\n').map((l) => l.trim());
-  if (lines.some((l) => l === at || l.includes(at))) return text;
-  const base = text.replace(/\s+$/, '');
-  return base ? `${base}\n${at}` : at;
-}
-
-/** The links an entry holds after it mentions another (ED-9): the mention added once. */
-export function withMentionLink(
-  links: readonly { targetId: string; kind: string }[],
-  targetId: string,
-): { targetId: string; kind: string }[] {
-  if (links.some((l) => l.targetId === targetId)) return [...links];
-  return [...links, { targetId, kind: 'mention' }];
-}
-
-/**
- * The text after inserting an event title: on a line of its own after what
- * is there, and not again when it is already in the text.
+ * IP-4: the text after inserting an event title as plain text: on a line of
+ * its own after what is there, and not again when it is already in the text.
  */
 export function insertEventTitle(text: string, title: string): string {
   const t = title.trim();

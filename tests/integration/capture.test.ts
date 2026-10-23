@@ -173,7 +173,7 @@ afterAll(async () => {
 });
 
 describe('KB-6 capture', () => {
-  test('KB-6 SM-3 AI-3 AI-5 a recorded capture queues a Lives in moment and a world event in the story year, from Claude, as ideas naming the capture, and writes nothing', async () => {
+  test('KB-6 SM-3 AI-3 AI-5 a recorded capture queues a Lives in moment and a world event in the story year, from Claude, with no status or source note, and writes nothing', async () => {
     const eventsBefore = bible.model.all('worldEvents').length;
     const momentsBefore = bible.model.all('moments').length;
     const { fake, turn, run } = await capture(MOVE);
@@ -216,7 +216,11 @@ describe('KB-6 capture', () => {
       title: 'Portland rations water',
       start: { year: 2034 },
     });
-    expect(event!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
+    // A52: a recording that still sets status or a source note has them dropped before queueing.
+    for (const p of [place!, event!]) {
+      expect(p.data).not.toHaveProperty('status');
+      expect(p.data).not.toHaveProperty('sourceNote');
+    }
 
     // AI-3: nothing is written before File it.
     expect(bible.model.all('worldEvents')).toHaveLength(eventsBefore);
@@ -274,8 +278,8 @@ describe('KB-6 capture', () => {
     const proposals = proposalsOf(turn.proposalIds);
     expect(turn.proposalIds).toHaveLength(2);
     expect(proposals.map((p) => [p!.collection, p!.data.characterId, p!.data.status])).toEqual([
-      ['moments', 'Z1', 'idea'],
-      ['moments', 'H4', 'idea'],
+      ['moments', 'Z1', undefined],
+      ['moments', 'H4', undefined],
     ]);
     const filing = await fileCapture(
       invoke,
@@ -359,7 +363,7 @@ describe('SM-2 a capture never files to a dropped kind', () => {
 });
 
 describe('KB-7 capture offline', () => {
-  test('KB-7 AI-7 a failed run proposes nothing, keeps the text, and the box saves it as an open question tagged capture with the story time', async () => {
+  test('KB-7 AI-7 a failed run proposes nothing, keeps the text, and the box saves the text as an open question with the story time', async () => {
     const { turn } = await capture(FERRY);
     expect(turn).toMatchObject({ status: 'failed', error: { kind: 'network' }, proposalIds: [] });
     // AI-7: the input is kept in the saved run.
@@ -370,6 +374,7 @@ describe('KB-7 capture offline', () => {
       title: FERRY,
       question: FERRY,
     });
+    expect(bible.model.get('openQuestions', entry._id)).not.toHaveProperty('tags');
     expect(String(bible.model.get('openQuestions', entry._id)?.body)).toContain('Story time 2034');
   });
 
@@ -413,7 +418,7 @@ describe('IP-17 capture can mint a list item', () => {
     // The tool description tells Claude it may add a list item when none fits.
     const propose = fake.requests.at(-1)!.tools.find((t) => t.name === 'propose_change')!;
     expect(propose.description).toMatch(
-      /community, event category, region, language or tag fits, first propose a new one/,
+      /community, event category, region or language fits, first propose a new one/,
     );
     expect(add).toMatchObject({
       op: 'listAdd',
@@ -653,7 +658,7 @@ describe('CR-7 the fast file', () => {
       startYear: 2065,
       endYear: 2100,
     });
-    expect(line!.data.sourceNote).toMatch(/^From a capture on \d{4}-\d{2}-\d{2}\.$/);
+    expect(line!.data).not.toHaveProperty('sourceNote');
     expect(line!.reason).toMatch(/\(Claude, capture, fast file, run /);
     expect(bible.model.all('culturalEntries')).toHaveLength(before);
   });
@@ -726,20 +731,20 @@ describe('CR-9 the handler reruns the router with the hints', () => {
     expect(full.turns[0]!.proposalIds).toHaveLength(2);
   });
 
-  test('CR-8 the capture view of get_entry is what Claude reads in a capture run: the whole entry, with the entries that link to it', async () => {
+  test('CR-8 A52 the capture view of get_entry is what Claude reads in a capture run: the whole entry, with no links', async () => {
     const { fake } = await capture(MOVE);
     const reads = fake.toolResults.filter((t) => t.name === 'get_entry');
     expect(reads).toHaveLength(1);
     const out = JSON.parse(reads[0]!.output.text) as {
       section: string;
       entry: Record<string, unknown>;
-      linkedFrom: unknown[];
+      linkedFrom?: unknown[];
     };
     expect(out.section).toBe('characters');
     expect(Object.keys(out.entry).sort()).toEqual(
       Object.keys(bible.model.get('characters', 'Z3')!).sort(),
     );
-    expect(out.linkedFrom.length).toBeGreaterThan(0);
+    expect(out.linkedFrom).toBeUndefined();
   });
 
   test('CR-9 AI-4 a capture with only local facts starts no run and sends nothing', async () => {
@@ -835,7 +840,7 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     return { calls, via };
   }
 
-  test('CR-6 CR-10 a clear cultural line routes locally, writes nothing until File it, then files an idea with the local source note', async () => {
+  test('CR-6 CR-10 a clear cultural line routes locally, writes nothing until File it, then files it with no status or source note', async () => {
     const before = live('culturalEntries').length;
     const runsBefore = bible.model.all('conversations').length;
     const [line] = route(MOONCAKES).facts;
@@ -858,6 +863,8 @@ describe('CR-6 Route A files from the box, without Claude', () => {
       endYear: 2100,
       body: MOONCAKES,
     });
+    expect(made).not.toHaveProperty('status');
+    expect(made).not.toHaveProperty('sourceNote');
     const undo = new UndoManager();
     undo.record(filing.command!);
     await undo.step('undo', undoIO(invoke));
@@ -894,10 +901,10 @@ describe('CR-6 Route A files from the box, without Claude', () => {
     ]);
     const made = bible.model.get('culturalEntries', filing.filed[0]!.id)!;
     expect(made).toMatchObject({ communityId: 'jinan' });
-    // The approved proposals keep Claude's source note; only the local line says without Claude.
-    expect(String(bible.model.get('moments', filing.filed[1]!.id)!.sourceNote)).not.toContain(
-      'without Claude',
-    );
+    // A52: neither the local line nor the approved proposals carry a source note.
+    for (const f of filing.filed) {
+      expect(bible.model.get(f.collection, f.id)).not.toHaveProperty('sourceNote');
+    }
     expect(filing.command!.label).toBe(
       'Filed a capture: Teenagers in Guangzhou start to eat mooncakes with coffee, Lives in Seattle and 2 more',
     );

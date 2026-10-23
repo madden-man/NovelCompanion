@@ -13,7 +13,6 @@ import {
 } from '../../../shared/domain/capture';
 import type { CaptureProposal, FiledEntry, Filing } from '../../../shared/domain/capture';
 import type { CaptureFact, CaptureHint } from '../../../shared/domain/captureRouter';
-import { localDateString } from '../../../shared/domain/dates';
 import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { ClaudeErrorNote, Disclosure, claudeNav, newRunId, useRunStream, watchRun } from './claude';
@@ -268,7 +267,6 @@ export function CaptureBox() {
   const [notFiled, setNotFiled] = useState(0);
   /** Sentences the last File it put back in the box (unsent, or a draft that failed). */
   const [left, setLeft] = useState(0);
-  const capturedOn = localDateString(new Date());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -774,9 +772,6 @@ export function CaptureBox() {
           routed={routed}
           runs={runs}
           lists={lists}
-          // A53: entries are filed with no status; wave 2C removes the Status row and this prop.
-          ideaStatus="idea"
-          capturedOn={capturedOn}
           noKey={noKey}
           claudeOff={claudeOff}
           waiting={waiting.length}
@@ -837,8 +832,6 @@ function CaptureDialog(props: {
   routed: Routed | null;
   runs: RunState[];
   lists: ReturnType<typeof useStore>['lists'];
-  ideaStatus: string;
-  capturedOn: string;
   noKey: boolean;
   claudeOff: string | null;
   /** Route A facts waiting for a chip. */
@@ -1070,8 +1063,6 @@ function CaptureDialog(props: {
                     first={i === 0}
                     lists={props.lists}
                     index={routed.bible.index}
-                    status={props.ideaStatus}
-                    capturedOn={props.capturedOn}
                     busy={props.busy || phase === 'running'}
                     claudeOff={props.claudeOff}
                     onTick={(t) => props.setFactTicked(i, t)}

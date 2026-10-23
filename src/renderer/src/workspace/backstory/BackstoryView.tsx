@@ -4,7 +4,7 @@ import type { EntryCollection } from '../../../../shared/schema';
 import { blankEntry } from '../../../../shared/domain/blank';
 import {
   backstoryGrid,
-  insertMention,
+  insertEventTitle,
   lifeProblem,
   lifespanOf,
   momentsOf,
@@ -54,12 +54,6 @@ const FIELD_WORDS: Record<MomentField, string> = {
   worldContext: 'the relevant world events',
   characterId: 'whose moment it is',
   kind: 'the kind',
-  status: 'the status',
-  provenance: 'the provenance',
-  sourceNote: 'the source note',
-  sourceRef: 'the source location',
-  tags: 'the tags',
-  links: 'the links',
 };
 
 /**
@@ -306,18 +300,8 @@ export function BackstoryView(props: {
     return run;
   };
 
-  /**
-   * `_mentioned`: entries picked with `@` in the text; A53 stores no link for
-   * them (wave 2C removes the picker). `added`: the list item a select's Add
-   * new made, joined to the step.
-   */
-  const save = (
-    id: string,
-    field: MomentField,
-    value: unknown,
-    _mentioned: readonly string[] = [],
-    added?: AddedItem,
-  ) => {
+  /** `added`: the list item a select's Add new made, joined to the step. */
+  const save = (id: string, field: MomentField, value: unknown, added?: AddedItem) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -388,11 +372,11 @@ export function BackstoryView(props: {
   };
 
   /**
-   * IP-4, ED-9: mention a world event in a moment's Relevant world events: the
-   * `@Title` on a line of its own and the link to the event, one step. It joins
-   * the queue, so a cell saved on its way out (the blur before the click) lands first.
+   * IP-4: a picked world event's title in a moment's Relevant world events, on
+   * a line of its own as plain text, one step. It joins the queue, so a cell
+   * saved on its way out (the blur before the click) lands first.
    */
-  const mention = (id: string, event: { id: string; title: string }) => {
+  const pickEvent = (id: string, event: { id: string; title: string }) => {
     setError(null);
     if (ro.off) return Promise.resolve();
     return queue(async () => {
@@ -401,8 +385,7 @@ export function BackstoryView(props: {
         unknown
       >;
       const text = typeof before.worldContext === 'string' ? before.worldContext : '';
-      // A53: the title is inserted with no link stored; wave 2C makes it plain text.
-      const worldContext = insertMention(text, event.title);
+      const worldContext = insertEventTitle(text, event.title);
       if (worldContext === text) return;
       const { entry } = await call('entry.update', {
         collection: 'moments',
@@ -410,9 +393,7 @@ export function BackstoryView(props: {
         patch: { worldContext },
       });
       const title = entryTitle(entry) || 'a moment';
-      undo.record(
-        editCommand(`Mentioned ${event.title} in ${title}`, 'moments', id, before, entry),
-      );
+      undo.record(editCommand(`Added ${event.title} to ${title}`, 'moments', id, before, entry));
     });
   };
 
@@ -613,9 +594,8 @@ export function BackstoryView(props: {
           fresh={fresh}
           freshKey={freshKey}
           onOpenTitle={() => openTitle(open.id, open.characterId)}
-          entry={momentEntries.find((e) => e._id === open.id) ?? null}
-          onSave={(field, value, mentioned, added) => save(open.id, field, value, mentioned, added)}
-          onMention={(e) => mention(open.id, e)}
+          onSave={(field, value, added) => save(open.id, field, value, added)}
+          onPickEvent={(e) => pickEvent(open.id, e)}
           onTrashed={() => trashedOne(open)}
           onClose={closeDialog}
           onPrev={prev ? () => show(prev.id) : null}

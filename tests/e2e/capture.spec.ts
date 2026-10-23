@@ -201,7 +201,7 @@ test('KB-6 SM-3 Enter shows two proposal cards with diffs; unticking one and Cmd
   const events = await invoke('entry.list', { collection: 'worldEvents', trash: 'exclude' });
   const made = events.entries.find((e) => e.entry.title === 'Portland rations water')!.entry;
   expect(made).toMatchObject({ start: { year: 2034 } });
-  expect(String(made.sourceNote)).toMatch(/^From a capture on /);
+  expect(made).not.toHaveProperty('sourceNote');
   const moments = await invoke('entry.list', { collection: 'moments', trash: 'exclude' });
   expect(moments.entries.some((e) => e.entry.title === 'Lives in Seattle')).toBe(false);
   expect((await invoke('entry.get', { collection: 'characters', id: 'Z3' })).entry).toEqual(
@@ -403,13 +403,14 @@ test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothi
   await expect(card.getByTestId('capture-route')).toContainText(
     'Files here, without Claude. Placed by: a group starts to say or do something',
   );
-  // The drafts as the ED-7 table, with the status and the source note File it adds.
+  // The drafts as the ED-7 table: only the fields the line holds, no status or source note.
   const diff = card.getByTestId('draft-diff');
   await expect(diff.getByRole('columnheader')).toHaveText(['Field', 'Now', 'Proposed']);
   await expect(diff.locator('tr[data-path="communityId"]')).toContainText('Guangzhou');
   await expect(diff.locator('tr[data-path="startYear"]')).toContainText('2050');
-  await expect(diff.locator('tr[data-path="status"]')).toContainText('Idea');
-  await expect(diff.locator('tr[data-path="sourceNote"]')).toContainText('filed without Claude.');
+  await expect(diff.locator('tr[data-path="status"]')).toHaveCount(0);
+  await expect(diff.locator('tr[data-path="sourceNote"]')).toHaveCount(0);
+  await expect(diff.getByRole('rowheader', { name: 'Status' })).toHaveCount(0);
   await expect(card.getByTestId('capture-fact-tick')).toBeChecked();
   // Nothing was sent and nothing written (CR-6, AI-3).
   expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
@@ -431,18 +432,16 @@ test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothi
     endYear: 2100,
     body: MOONCAKES,
   });
-  expect(String(made.sourceNote)).toMatch(
-    /^From a capture on \d{4}-\d{2}-\d{2}, filed without Claude\.$/,
-  );
+  expect(made).not.toHaveProperty('status');
+  expect(made).not.toHaveProperty('sourceNote');
   expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
-  // The link opens the entry; its provenance names the capture and says Claude was not used.
+  // The link opens the entry.
   await link.click();
   await expect(box()).toBeHidden();
   const editor = page.getByTestId('editor');
   await expect(field(editor, 'title').locator('input')).toHaveValue(
     'Teenagers in Guangzhou start to eat mooncakes with coffee',
   );
-  await expect(field(editor, 'sourceNote')).toContainText('filed without Claude.');
 });
 
 test('CR-6 changing the Section chip re-routes', async () => {
@@ -720,7 +719,7 @@ test('CR-9 AI-1 Stop stops a split capture the fake holds; its sentences come ba
   await page.keyboard.press('Escape');
 });
 
-test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, with a link', async () => {
+test('KB-7 AI-7 a failed run saves the text as an open question, with a link', async () => {
   await sendAll(FERRY);
   const saved = box().getByTestId('capture-saved');
   await expect(saved).toContainText('Saved as an open question');
@@ -728,6 +727,7 @@ test('KB-7 AI-7 a failed run saves the text as an open question tagged capture, 
   const list = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
   const q = list.entries.find((e) => e.entry.title === FERRY)!.entry;
   expect(q).toMatchObject({ question: FERRY });
+  expect(q).not.toHaveProperty('tags');
   expect(String(q.body)).toContain('Story time 2034');
   await saved.getByRole('button', { name: FERRY }).click();
   await expect(box()).toBeHidden();
@@ -740,7 +740,9 @@ test('KB-7 with the key removed, Enter saves an open question and sends nothing'
   await send(TRAM);
   await expect(box().getByTestId('capture-saved')).toContainText('Saved as an open question');
   const list = await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' });
-  expect(list.entries.find((e) => e.entry.title === TRAM)?.entry.tags).toEqual(['capture']);
+  const q = list.entries.find((e) => e.entry.title === TRAM)?.entry;
+  expect(q).toMatchObject({ question: TRAM });
+  expect(q).not.toHaveProperty('tags');
   expect((await invoke('claude.runs', { feature: 'capture' })).runs).toHaveLength(before);
   // Add another clears the box for the next one.
   await box().getByRole('button', { name: 'Add another' }).click();
