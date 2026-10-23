@@ -722,6 +722,53 @@ test('SM-9 IP-4 A50 in the person view a marker is a 14px dot in a row at least 
   await expect(label('H1')).toBeFocused();
 });
 
+test('SM-9 A50 in the person view a row taller than the frame scrolls, and the name stays at the top of what shows', async () => {
+  // Ten moments in one year fill the eight lanes the person view has.
+  const made: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const { entry } = await invoke('entry.create', {
+      collection: 'moments',
+      data: { title: `Crowded year ${i + 1}`, characterId: 'U1', year: 2030, status: 'idea' },
+    });
+    made.push(entry._id);
+  }
+  try {
+    await openPerson('U1');
+    await expect(personView()).toHaveCount(1);
+    await expect(row('U1').locator('.bs-marker')).toHaveCount(10);
+    // A short frame, so the row is taller than it.
+    await grid().evaluate((el) => {
+      el.style.flex = 'none';
+      el.style.height = '220px';
+    });
+    await expect
+      .poll(async () => grid().evaluate((el) => el.scrollHeight > el.clientHeight))
+      .toBe(true);
+    const names = row('U1').locator('.bs-person-text');
+    const g = (await grid().boundingBox())!;
+    const top0 = (await names.boundingBox())!.y;
+    await grid().evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect.poll(async () => grid().evaluate((el) => el.scrollTop)).toBeGreaterThan(40);
+    const shown = (await names.boundingBox())!;
+    expect(shown.y).toBeCloseTo(top0, 0);
+    expect(shown.y).toBeGreaterThanOrEqual(g.y + 56);
+    expect(shown.y + shown.height).toBeLessThanOrEqual(g.y + g.height);
+    await expect(names.locator('.bs-name')).toBeVisible();
+    await grid().evaluate((el) => {
+      el.style.flex = '';
+      el.style.height = '';
+      el.scrollTop = 0;
+    });
+    await showEveryone().click();
+    await expect(personView()).toHaveCount(0);
+  } finally {
+    for (const id of made) {
+      await invoke('entry.delete', { collection: 'moments', id });
+      await invoke('entry.purge', { collection: 'moments', id });
+    }
+  }
+});
+
 test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it; ArrowRight does the same', async () => {
   await zoomTo('Close');
   await showRow('H1');

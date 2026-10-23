@@ -401,8 +401,14 @@
 .bs-person-row .bs-row-cell {
   align-items: flex-start;
   padding-top: 10px;
+  /* Clip, not hidden: a hidden overflow would make the cell the names' scroll box (sticky). */
+  overflow: clip;
 }
+/* The row may be taller than the frame (many lanes); the names stay at the top of what shows,
+   under the 56px year header, with the cell's 10px top padding. */
 .bs-person-text {
+  position: sticky;
+  top: 66px;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
