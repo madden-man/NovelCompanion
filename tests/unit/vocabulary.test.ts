@@ -24,7 +24,6 @@ import {
 import { gridSpan, yearWindow } from '../../src/shared/domain/worldGrid';
 import { backstoryGrid, eventsNear } from '../../src/shared/domain/backstoryGrid';
 import { selectForSession } from '../../src/shared/domain/brief/selection';
-import { establishedPlanned } from '../../src/shared/domain/manuscript';
 import { fromCollections } from '../../src/shared/domain/timeline';
 import { computeWarnings } from '../../src/shared/domain/warnings';
 import {
@@ -202,77 +201,6 @@ describe('IP-9 statuses and provenance are lists with colours, and a status has 
       expect([status.kind, status.listId, status.required]).toEqual(['listItem', 'statuses', true]);
       expect([prov.kind, prov.listId, prov.nullable]).toEqual(['listItem', 'provenance', true]);
     }
-  });
-
-  test('IP-9 SB-5 a selected item carries the kind of its status: a canon-kind status is canon, an idea-kind one is idea', () => {
-    const cols = briefCollections(true);
-    cols.lists = cols.lists!.map((l) =>
-      l._id === 'statuses'
-        ? {
-            ...l,
-            items: [
-              ...(l.items as object[]),
-              {
-                id: 'settled',
-                label: 'Settled',
-                parentId: null,
-                color: null,
-                extra: { kind: 'canon' },
-              },
-              {
-                id: 'shelved',
-                label: 'Shelved',
-                parentId: null,
-                color: null,
-                extra: { kind: 'idea' },
-              },
-            ],
-          }
-        : l,
-    );
-    const b4 = cols.moments!.find((m) => m._id === 'B4')!;
-    const before = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH6' });
-    const b4Item = before.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!;
-    expect(b4Item.kind).toBe(b4.status === 'canon' ? 'canon' : b4.status);
-
-    const asStatus = (status: string) => {
-      const c = {
-        ...cols,
-        moments: cols.moments!.map((m) => (m._id === 'B4' ? { ...m, status } : m)),
-      };
-      const sel = selectForSession(fromCollections(c), { kind: 'chapter', chapterId: 'CH6' });
-      return sel.strands[0]!.groups.flatMap((g) => g.items).find((i) => i.id === 'B4')!;
-    };
-    const settled = asStatus('settled');
-    expect([settled.status, settled.kind]).toEqual(['settled', 'canon']);
-    const shelved = asStatus('shelved');
-    expect([shelved.status, shelved.kind]).toEqual(['shelved', 'idea']);
-  });
-
-  test('IP-9 MS-3 a written chapter establishes entries whose status kind is planned', () => {
-    const cols = briefCollections(true);
-    const plannedIds = establishedPlanned(fromCollections(cols), 'CH6').map((e) => e.id);
-    expect(plannedIds.length).toBeGreaterThan(0);
-    const withKind = (kind: string) =>
-      cols.lists!.map((l) =>
-        l._id === 'statuses'
-          ? {
-              ...l,
-              items: (l.items as { id: string; extra?: object }[]).map((i) =>
-                i.id === 'planned' ? { ...i, extra: { kind } } : i,
-              ),
-            }
-          : l,
-      );
-    // The same entries, their status now meaning idea: nothing is established.
-    expect(
-      establishedPlanned(fromCollections({ ...cols, lists: withKind('idea') }), 'CH6'),
-    ).toEqual([]);
-    expect(
-      establishedPlanned(fromCollections({ ...cols, lists: withKind('planned') }), 'CH6').map(
-        (e) => e.id,
-      ),
-    ).toEqual(plannedIds);
   });
 });
 

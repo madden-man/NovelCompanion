@@ -357,7 +357,37 @@ describe('SB-3 SB-5 A24 more known answers', () => {
     expect(sel.ids).not.toContain('M-LATER');
   });
 
-  test('A24 decided questions are selected by the same link rule and shown under Decided with their decision', () => {
+  test('SB-2 step 9 A53 a question joins through About alone, a glossary term through a name alone', () => {
+    const cols = briefCollections(true);
+    cols.openQuestions = cols.openQuestions!.map((q) =>
+      q._id === 'Q3'
+        ? { ...q, aboutIds: ['Z4', 'H5', 'H3'] }
+        : q._id === 'Q4'
+          ? { ...q, aboutIds: [] }
+          : q,
+    );
+    // A stray link left from before A53 joins nothing.
+    cols.glossaryTerms = [
+      ...cols.glossaryTerms!,
+      {
+        _id: 'GL9',
+        characters: '雨',
+        romanization: 'yu',
+        links: [{ targetId: 'H5', kind: 'about' }],
+      },
+    ];
+    const sel = selectForSession(fromCollections(cols), { kind: 'chapter', chapterId: 'CH6' });
+    const questions = group(sel.shared, 'openQuestions');
+    expect(questions.map((it) => [it.id, it.note])).toEqual([
+      ['Q1', 'about Daniel Hale'],
+      ['Q3', 'about Daniel Hale, Iris Hale-Zhou'],
+    ]);
+    expect(group(sel.shared, 'glossary').map((it) => it.id)).toEqual(['GL1']);
+    expect(sel.ids).not.toContain('GL9');
+    expect(sel.ids).not.toContain('Q4');
+  });
+
+  test('A24 decided questions are selected by the same About rule and shown under Decided with their decision', () => {
     const sel = selectForSession(briefData(true), { kind: 'chapter', chapterId: 'CH6' });
     expect(group(sel.shared, 'decidedQuestions').map((it) => [it.id, it.detail])).toEqual([
       ['Q2', 'Settled: she is. Decision: Left-handed.'],

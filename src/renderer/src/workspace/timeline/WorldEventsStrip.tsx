@@ -6,7 +6,6 @@ import { span } from './common';
 export interface StripEvent {
   id: string;
   title: string;
-  status: string;
   startYear: number;
   endYear: number;
   formative?: boolean;
@@ -85,9 +84,9 @@ export function WorldEventsStrip(props: {
                     {props.renderTitle?.(e) ?? (
                       <button
                         type="button"
-                        className={`link-btn we-event ${e.status}${e.formative ? ' formative' : ''}`}
+                        className={`link-btn we-event${e.formative ? ' formative' : ''}`}
                         onClick={() => props.onOpen(e.id)}
-                        title={`${span(e.startYear, e.endYear)}${e.status ? `, ${e.status}` : ''}${e.formative ? ', formative' : ''}`}
+                        title={`${span(e.startYear, e.endYear)}${e.formative ? ', formative' : ''}`}
                       >
                         {e.title}
                       </button>

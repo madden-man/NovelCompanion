@@ -60,9 +60,6 @@ const ItemWire = z.strictObject({
   id: z.string(),
   collection: z.string(),
   title: z.string(),
-  status: z.string(),
-  /** a47-model (IP-9): the status kind SB-5 reads. */
-  kind: z.enum(['canon', 'planned', 'idea']).optional(),
   note: z.string(),
   detail: z.string(),
   refs: z.array(z.string()),
@@ -120,7 +117,6 @@ export const SelectionWire = z.strictObject({
                 title: z.string(),
                 body: z.string(),
                 worldContext: z.string(),
-                status: z.string(),
               }),
             ),
           }),
@@ -230,20 +226,6 @@ export const sessionContract = {
   'manuscript.apply': {
     request: z.strictObject({ token: z.string().min(1), baseModifiedAt: z.string().min(1) }),
     response: z.strictObject({ entry: Entry, before: z.record(z.string(), z.unknown()) }),
-  },
-  /** MS-3: the planned entries a chapter establishes, for promotion to canon one by one. */
-  'chapter.establishes': {
-    request: z.strictObject({ chapterId: EntryId }),
-    response: z.strictObject({
-      items: z.array(
-        z.strictObject({
-          id: z.string(),
-          collection: z.string(),
-          title: z.string(),
-          why: z.string(),
-        }),
-      ),
-    }),
   },
   /** MS-2: a generated summary to approve or edit. Nothing is saved. */
   'chapter.summarize': {

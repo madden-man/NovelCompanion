@@ -35,7 +35,6 @@ const CH6_IDS = [
   'E5',
   'ERA-2040',
   'GL1',
-  'GL3',
   'H3',
   'H5',
   'PLC2',
@@ -210,7 +209,7 @@ describe('MS-1 MS-4 MS-5 manuscript import from Word, re-import, and the diff', 
   });
 });
 
-describe('MS-2 MS-3 marking a chapter as written', () => {
+describe('MS-2 marking a chapter as written', () => {
   test('MS-2 without Claude the summary is written by hand; with Claude a draft is offered and nothing is saved', async () => {
     claude = { summaries: null };
     const none = await invoke('chapter.summarize', { chapterId: 'CH6' });
@@ -226,18 +225,6 @@ describe('MS-2 MS-3 marking a chapter as written', () => {
     });
     expect(bible.model.get('chapters', 'CH6')!.summary).toBe(before);
     claude = { summaries: null };
-  });
-
-  test('MS-3 SM-3 the planned entries the chapter establishes are listed, and promote one at a time', async () => {
-    const r = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    // Hand-checked: B4 is Iris's planned moment of 2045, CH6's year and point of view (SM-3: beats
-    // became moments, found by year and strand). E10 (2090) is after the chapter.
-    expect(r.items.map((i) => [i.id, i.why])).toEqual([
-      ['B4', 'a moment of the point of view in these years'],
-    ]);
-    await invoke('entry.update', { collection: 'moments', id: 'B4', patch: { status: 'canon' } });
-    const again = await invoke('chapter.establishes', { chapterId: 'CH6' });
-    expect(again.items.map((i) => i.id)).toEqual([]);
   });
 });
 

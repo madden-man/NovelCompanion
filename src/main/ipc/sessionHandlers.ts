@@ -13,11 +13,7 @@ import type { OpenBible } from '../db/session';
 import type { Handler } from './validate';
 import { selectForSession } from '../../shared/domain/brief/selection';
 import type { BriefInput } from '../../shared/domain/brief/selection';
-import {
-  establishedPlanned,
-  manuscriptChange,
-  manuscriptLines,
-} from '../../shared/domain/manuscript';
+import { manuscriptChange, manuscriptLines } from '../../shared/domain/manuscript';
 import { entryTitle } from '../../shared/schema';
 import { SUMMARY_MODEL_SETTING, sessionClaude } from '../session/claude';
 import type { SessionClaude } from '../session/claude';
@@ -31,7 +27,6 @@ export type SessionChannel =
   | 'manuscript.sources'
   | 'manuscript.read'
   | 'manuscript.apply'
-  | 'chapter.establishes'
   | 'chapter.summarize';
 
 export type SessionHandlers = { [C in SessionChannel]: Handler<C & Channel> };
@@ -177,9 +172,6 @@ export function sessionHandlers(
       pending.delete(token);
       return { entry: entry as unknown as Response<'manuscript.apply'>['entry'], before };
     },
-    'chapter.establishes': ({ chapterId }) => ({
-      items: establishedPlanned(session().model, chapterId),
-    }),
     'chapter.summarize': async ({ chapterId, runId }) => {
       const chapter = session().model.get('chapters', chapterId);
       if (!chapter || chapter.deletedAt) throw new Error('That chapter is not in the bible.');

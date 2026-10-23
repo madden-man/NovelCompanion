@@ -8,7 +8,6 @@ import { RowEditor } from '../rowEditor';
 import type { Picked } from '../rowEditor';
 import { NewEntryForm } from '../views';
 import { Zh } from '../Zh';
-import { StatusChip } from './common';
 import './sessions.css';
 
 /**
@@ -136,7 +135,6 @@ function Questions(props: {
                   <span className="chip" data-state={String(q.state ?? 'open')}>
                     {q.state === 'decided' ? 'decided' : 'open'}
                   </span>
-                  {typeof q.status === 'string' && <StatusChip status={String(q.status ?? '')} />}
                 </span>
               </button>
               {props.open?.id === q._id && (

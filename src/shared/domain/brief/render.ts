@@ -25,9 +25,6 @@ export interface BriefMaterial {
   group: GroupKind;
   strand: string | null;
   title: string;
-  status: string;
-  /** A47 (IP-9): the status kind SB-5 reads; absent on runs saved before A47. */
-  kind?: 'canon' | 'planned' | 'idea';
   note: string;
   detail: string;
   refs: string[];
@@ -50,8 +47,6 @@ export function briefMaterial(sel: Selection): BriefMaterial[] {
     group: m.group,
     strand: m.strand,
     title: m.title,
-    status: m.status,
-    ...(m.kind ? { kind: m.kind } : {}),
     note: m.note,
     detail: m.detail,
     refs: m.refs,
