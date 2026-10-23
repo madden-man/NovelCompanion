@@ -64,7 +64,7 @@ describe('OQ-1, SL-1 questions and the log', () => {
       await make('openQuestions', {
         title: 'Who owns the house?',
         question: 'Does Ada own the house outright?',
-        links: [{ targetId: person._id, kind: 'about' }],
+        aboutIds: [person._id],
       })
     ).entry;
     expect(q.state).toBe('open');

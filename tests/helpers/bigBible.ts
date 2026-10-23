@@ -35,12 +35,9 @@ const CATEGORIES = [
   'demographics',
   'culture',
 ];
-const STATUSES = ['canon', 'planned', 'idea'] as const;
-
-const base = (id: string, title: string, i: number) => ({
+const base = (id: string, title: string, _i: number) => ({
   _id: id,
   title,
-  status: STATUSES[i % 3]!,
   createdAt: AT,
   modifiedAt: AT,
 });
@@ -89,7 +86,6 @@ export function bigBibleDocs(): Record<EntryCollection, Doc[]> {
         i % 97 === 0 ? { unknown: true } : { year: born, month: 1 + (i % 12), day: 1 + (i % 28) },
       death: i % 3 === 0 ? { year: born + 60 + (i % 30) } : null,
       familyIds: [`FAM${i % 5}`],
-      tags: i % 10 === 0 ? ['keeper'] : [],
     });
   }
   const people = out.characters.map((c) => c._id);

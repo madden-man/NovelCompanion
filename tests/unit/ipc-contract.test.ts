@@ -234,13 +234,15 @@ describe('ARCH-1 IPC contract', () => {
   });
 
   test('ED-8 lists.rename needs a list it knows and a non-empty name', () => {
-    expect(parseRequest('lists.rename', { listId: 'tags', itemId: 't', label: ' New ' })).toEqual({
-      listId: 'tags',
+    expect(
+      parseRequest('lists.rename', { listId: 'communities', itemId: 't', label: ' New ' }),
+    ).toEqual({
+      listId: 'communities',
       itemId: 't',
       label: 'New',
     });
     expect(() =>
-      parseRequest('lists.rename', { listId: 'tags', itemId: 't', label: '  ' }),
+      parseRequest('lists.rename', { listId: 'communities', itemId: 't', label: '  ' }),
     ).toThrow(/needs a name/);
     expect(() =>
       parseRequest('lists.rename', { listId: 'shoes', itemId: 't', label: 'x' }),

@@ -87,7 +87,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
       }),
     ).rejects.toThrow(CONNECTION_LOST_MESSAGE);
     await expect(ipc('brief.settings.set', { window: 3 })).rejects.toThrow(CONNECTION_LOST_MESSAGE);
-    await expect(ipc('lists.addItem', { listId: 'tags', label: 'Ghost' })).rejects.toThrow(
+    await expect(ipc('lists.addItem', { listId: 'communities', label: 'Ghost' })).rejects.toThrow(
       CONNECTION_LOST_MESSAGE,
     );
     expect(lost).toBe(3);
@@ -97,8 +97,8 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const after = (await ipc('entry.get', { collection: 'characters', id: 'H1' })).entry;
     expect(after).toEqual(before);
     expect(session.repo.briefSettings()).toEqual(settingsBefore);
-    const tags = (await ipc('lists.get', {})).lists.find((l) => l._id === 'tags');
-    expect(tags?.items.some((i) => i.label === 'Ghost') ?? false).toBe(false);
+    const communities = (await ipc('lists.get', {})).lists.find((l) => l._id === 'communities');
+    expect(communities?.items.some((i) => i.label === 'Ghost') ?? false).toBe(false);
 
     // And MongoDB holds nothing of it.
     const doc = await store.db
@@ -107,7 +107,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
     expect(doc?.role).toEqual(before.role);
     const stored = await store.db
       .collection<{ _id: string; [k: string]: unknown }>(`${handle.id}.lists`)
-      .findOne({ _id: 'tags' });
+      .findOne({ _id: 'communities' });
     expect(JSON.stringify(stored ?? {})).not.toContain('Ghost');
   });
 
@@ -213,9 +213,9 @@ describe('ARCH-6 a snapshot opens read-only', () => {
       ipc('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'Changed' } }),
     ).rejects.toThrow(READ_ONLY_REASON);
     await expect(ipc('brief.settings.set', { window: 4 })).rejects.toThrow(READ_ONLY_REASON);
-    await expect(ipc('lists.addItem', { listId: 'tags', label: 'New tag' })).rejects.toThrow(
-      READ_ONLY_REASON,
-    );
+    await expect(
+      ipc('lists.addItem', { listId: 'communities', label: 'New community' }),
+    ).rejects.toThrow(READ_ONLY_REASON);
     // Below the IPC guard, the write path itself refuses: the handle has no way to write.
     await expect(
       session.repo.update('characters', 'H1', { role: 'Changed' } as never),
