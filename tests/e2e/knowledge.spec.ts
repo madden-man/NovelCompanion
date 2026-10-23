@@ -144,7 +144,7 @@ test('SR-1 one search box finds entries, chapter text, and Chinese by characters
   await expect(page.getByTestId('backstory-grid')).toHaveClass(/\bbs-person\b/);
 });
 
-test('SR-2 filters narrow the results by section, status, provenance, family, place, tag, and year range', async () => {
+test('SR-2 filters narrow the results by section, family, place, and year range', async () => {
   const place = (
     await invoke('entry.create', {
       collection: 'places',
@@ -180,13 +180,12 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   await expect(results).not.toContainText('The Letter');
   await view.getByLabel('Section').selectOption('');
 
-  await view.getByLabel('Status').selectOption('idea');
-  await expect(voice).toHaveCount(0);
-  await view.getByLabel('Status').selectOption('');
-
-  await view.getByLabel('Provenance').selectOption('researched');
-  await expect(page.getByTestId('search-empty')).toBeVisible();
-  await view.getByLabel('Provenance').selectOption('');
+  // A53: no status, provenance or tag filter, and no status chip on a hit.
+  const filters = view.getByRole('group', { name: 'Search filters' });
+  for (const gone of ['Status', 'Provenance', 'Tag']) {
+    await expect(filters.getByLabel(gone, { exact: true })).toHaveCount(0);
+  }
+  await expect(results.locator('.chip')).toHaveCount(0);
 
   await view.getByLabel('From year').fill('2060');
   await view.getByLabel('To year').fill('2060');
@@ -210,9 +209,6 @@ test('SR-2 filters narrow the results by section, status, provenance, family, pl
   await view.getByLabel('Place').selectOption(place._id);
   await expect(results).toContainText("The Archivist's Door");
   await view.getByLabel('Place').selectOption('');
-  await view.getByLabel('Tag').selectOption('opening');
-  await expect(results).toContainText("The Archivist's Door");
-  await view.getByLabel('Tag').selectOption('');
   await expect(count).toContainText('match');
 });
 
