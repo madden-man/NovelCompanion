@@ -1,7 +1,11 @@
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import {
+  KIND_DARK_HEX,
   KIND_HEX_TOKENS,
   kindColorCss,
+  kindContrast,
+  kindDrawnHex,
   kindWeight,
   listColorCss,
   momentKindItem,
@@ -16,6 +20,7 @@ import { defaultLists } from '../../src/main/db/defaultLists';
 import { MOMENT_KIND_SEED, kindFromTitle } from '../../src/main/db/migrations/012-moment-kinds';
 import { LIST_IDS, Moment, ListDoc, momentFields } from '../../src/shared/schema';
 import { LIVES_IN_PREFIX, VOICE_MOMENT_TITLE } from '../../src/shared/schema/moment';
+import { mediaDarkTokens, readRules, themeTokens } from '../helpers/contrast';
 
 const seeded = defaultLists().find((l) => l._id === 'momentKinds')!;
 
@@ -131,5 +136,51 @@ describe('A51 NF-2 contrastRatio', () => {
       expect(r(hex, CHART_SURFACE_DARK), hex).toBe(want);
       expect(contrastRatio(hex, CHART_SURFACE_DARK)).toBeGreaterThanOrEqual(MIN_MARKER_CONTRAST);
     }
+  });
+});
+
+describe('A51 NF-2 IP-9 the Lists screen contrast check of a kind colour', () => {
+  const r = (n: number) => Math.round(n * 10) / 10;
+
+  test('NF-2 KIND_DARK_HEX holds the dark value of each seeded kind token, as theme.css defines it', () => {
+    const rules = readRules([join(import.meta.dirname, '../../src/renderer/src/theme.css')]);
+    const light = themeTokens(rules, 'light');
+    const dark = themeTokens(rules, 'dark');
+    const media = mediaDarkTokens(rules);
+    expect(Object.keys(KIND_DARK_HEX)).toEqual(Object.keys(KIND_HEX_TOKENS));
+    for (const [hex, token] of Object.entries(KIND_HEX_TOKENS)) {
+      expect(light.get(`--${token}`), token).toBe(hex);
+      expect(dark.get(`--${token}`), token).toBe(KIND_DARK_HEX[hex]);
+      expect(media.get(`--${token}`), token).toBe(KIND_DARK_HEX[hex]);
+    }
+  });
+
+  test('NF-2 a seeded colour is checked on the dark grid by the hex its token draws there, not the stored one', () => {
+    expect(kindDrawnHex('#4A3AA7')).toEqual({ light: '#4a3aa7', dark: '#9085e9' });
+    const work = kindContrast('#4a3aa7')!;
+    expect([r(work.light), r(work.dark)]).toEqual([8.3, 5.6]);
+    expect(work).toMatchObject({ hardOnLight: false, hardOnDark: false });
+    // The stored hex on the dark surface would read as hard to see.
+    expect(contrastRatio('#4a3aa7', CHART_SURFACE_DARK)).toBeLessThan(MIN_MARKER_CONTRAST);
+    for (const hex of Object.keys(KIND_HEX_TOKENS)) {
+      expect(kindContrast(hex), hex).toMatchObject({ hardOnLight: false, hardOnDark: false });
+    }
+  });
+
+  test('NF-2 a colour the writer picks is checked as its hex on both grids, and under 3:1 is flagged', () => {
+    expect(kindDrawnHex('#123456')).toEqual({ light: '#123456', dark: '#123456' });
+    const pale = kindContrast('#f0f0f0')!;
+    expect(pale.hardOnLight).toBe(true);
+    expect(pale.hardOnDark).toBe(false);
+    expect(pale.light).toBeCloseTo(contrastRatio('#f0f0f0', CHART_SURFACE_LIGHT), 10);
+    expect(pale.dark).toBeCloseTo(contrastRatio('#f0f0f0', CHART_SURFACE_DARK), 10);
+    expect(kindContrast('#202020')).toMatchObject({ hardOnLight: false, hardOnDark: true });
+  });
+
+  test('IP-9 Voice, with no colour, and a value that is not a hex have no readout', () => {
+    expect(kindContrast(null)).toBeNull();
+    expect(kindContrast(undefined)).toBeNull();
+    expect(kindContrast('')).toBeNull();
+    expect(kindContrast('var(--fg)')).toBeNull();
   });
 });

@@ -7,6 +7,12 @@ import type { FieldSpec } from '../schema/manifest';
 import { STATUS_KINDS } from '../schema/lists';
 import type { ListItem, StatusKind } from '../schema/lists';
 import { FAMILY_COLORS, FAMILY_TOKEN_HEX } from '../schema/family';
+import {
+  CHART_SURFACE_DARK,
+  CHART_SURFACE_LIGHT,
+  MIN_MARKER_CONTRAST,
+  contrastRatio,
+} from './colour';
 import { deepEqual, isPlainObject } from './paths';
 import type { Doc } from './paths';
 
@@ -394,4 +400,52 @@ export function kindColorCss(
   if (!color) return null;
   const token = KIND_HEX_TOKENS[color.toLowerCase()];
   return token ? `var(--${token})` : listColorCss(color);
+}
+
+/**
+ * A51: the dark theme value of each seeded kind's `--kind-*` token, by the
+ * light hex the list stores (as in `theme.css`). A seeded colour is drawn
+ * through its token, so in the dark theme it is this hex, not the stored one.
+ */
+export const KIND_DARK_HEX: Record<string, string> = {
+  '#008300': '#008300',
+  '#e34948': '#e66767',
+  '#4a3aa7': '#9085e9',
+};
+
+/**
+ * A51: the hex a kind colour is drawn in, in each theme. A seeded colour
+ * takes its token's dark value; a colour the writer picked is drawn as its
+ * hex in both themes.
+ */
+export function kindDrawnHex(color: string): { light: string; dark: string } {
+  const light = color.toLowerCase();
+  return { light, dark: KIND_DARK_HEX[light] ?? light };
+}
+
+/** A51 (NF-2): a kind colour's contrast against the light and the dark chart surface. */
+export interface KindContrast {
+  light: number;
+  dark: number;
+  /** True when the marker is under 3:1 on that surface. */
+  hardOnLight: boolean;
+  hardOnDark: boolean;
+}
+
+/**
+ * A51 (NF-2, IP-9): the Lists screen's check of a kind colour against both
+ * chart surfaces, by the colour it is drawn in there. Null for a kind with no
+ * colour (Voice) or a value that is not a `#rrggbb` hex.
+ */
+export function kindContrast(color: string | null | undefined): KindContrast | null {
+  if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return null;
+  const drawn = kindDrawnHex(color);
+  const light = contrastRatio(drawn.light, CHART_SURFACE_LIGHT);
+  const dark = contrastRatio(drawn.dark, CHART_SURFACE_DARK);
+  return {
+    light,
+    dark,
+    hardOnLight: light < MIN_MARKER_CONTRAST,
+    hardOnDark: dark < MIN_MARKER_CONTRAST,
+  };
 }

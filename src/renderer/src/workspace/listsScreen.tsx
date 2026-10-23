@@ -2,14 +2,22 @@
  * The Lists screen (ED-8, A47 IP-8 to IP-12): every list the bible keeps, each
  * item a row of fields. Items move with a drag or the Up and Down buttons, a
  * hierarchical list takes a parent in place, a name renames on Enter, statuses
- * and provenance carry a colour (and a status its kind), age groups their
+ * and provenance carry a colour (and a status its kind), moment kinds a
+ * colour, its contrast on the grid, and a weight (A51), age groups their
  * ages, families their colour, eras their years. Each change is one undo step.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { WireList } from '../../../shared/ipc';
 import { renameCommand } from '../../../shared/domain/undoRunner';
-import { isUnder, itemPath, listColorCss } from '../../../shared/domain/lists';
+import {
+  isUnder,
+  itemPath,
+  kindContrast,
+  kindWeight,
+  listColorCss,
+} from '../../../shared/domain/lists';
+import type { MomentKindWeight } from '../../../shared/domain/lists';
 import { STATUS_KINDS } from '../../../shared/schema/lists';
 import type { StatusKind } from '../../../shared/schema/lists';
 import {
@@ -40,10 +48,51 @@ const KIND_LABELS: Record<StatusKind, string> = {
 };
 const KIND_OPTIONS = STATUS_KINDS.map((k) => ({ value: k, label: KIND_LABELS[k] }));
 
+const WEIGHT_LABELS: Record<MomentKindWeight, string> = {
+  plain: 'Plain marker',
+  big: 'Large marker',
+};
+const WEIGHT_OPTIONS = (['plain', 'big'] as const).map((w) => ({
+  value: w,
+  label: WEIGHT_LABELS[w],
+}));
+
+/** A ratio to one decimal, never rounded up to 3 when it is under 3. */
+function ratioText(r: number): string {
+  const t = Math.round(r * 10) / 10;
+  return `${(r < 3 && t >= 3 ? 2.9 : t).toFixed(1)}:1`;
+}
+
+/**
+ * A51 (NF-2): a moment kind colour's contrast against the light and the dark
+ * grid, in the text tokens, with a note when either is under 3:1. Nothing for
+ * a kind with no colour.
+ */
+function KindContrastReadout({ color }: { color: string | null | undefined }) {
+  const c = kindContrast(color);
+  if (!c) return null;
+  const notes = [
+    ...(c.hardOnLight ? ['Hard to see on the light grid'] : []),
+    ...(c.hardOnDark ? ['Hard to see on the dark grid'] : []),
+  ];
+  return (
+    <span className="vocab-contrast" data-testid="item-contrast">
+      <span data-testid="item-contrast-ratios">
+        Light {ratioText(c.light)}, Dark {ratioText(c.dark)}
+      </span>
+      {notes.map((n) => (
+        <span key={n} className="vocab-contrast-note" data-testid="item-contrast-note">
+          {n}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Lists whose items sit under one another. */
 const HIERARCHICAL = new Set(['eventCategories']);
 /** Lists whose items carry a colour on this screen. */
-const COLOURED = new Set(['statuses', 'provenance']);
+const COLOURED = new Set(['statuses', 'provenance', 'momentKinds']);
 
 /** Every editable list, with rename, reorder, add, and remove (ED-8, IP-8). */
 export function ListsView() {
@@ -52,9 +101,9 @@ export function ListsView() {
     <section className="ws-wide stack" aria-labelledby="lists-title" data-testid="lists-view">
       <h2 id="lists-title">Lists</h2>
       <p className="lede">
-        Types, communities, regions, age groups, statuses, tags, families, and eras. Renaming an
-        item updates every entry that uses it. The order here is the order every list and select
-        shows.
+        Types, communities, regions, age groups, statuses, moment kinds, tags, families, and eras.
+        Renaming an item updates every entry that uses it. The order here is the order every list
+        and select shows.
       </p>
       <div className="lists-grid">
         {lists.map((l) =>
@@ -103,6 +152,7 @@ function ListPanel({ list }: { list: WireList }) {
   const coloured = COLOURED.has(list._id);
   const isStatus = list._id === 'statuses';
   const isAges = list._id === 'ageGroups';
+  const isMomentKinds = list._id === 'momentKinds';
   const asDoc = { _id: list._id, label: list.label, items: list.items };
   const addParent = useListAddNew(list._id);
   const listRef = useRef<HTMLUListElement>(null);
@@ -261,6 +311,7 @@ function ListPanel({ list }: { list: WireList }) {
                     onPick={(hex) => setLook(item, { color: hex })}
                   />
                 )}
+                {isMomentKinds && <KindContrastReadout color={item.color} />}
                 <span className="vocab-name">
                   {!coloured && listColorCss(item.color) && (
                     <span
@@ -291,6 +342,16 @@ function ListPanel({ list }: { list: WireList }) {
                     testId="item-kind"
                     display={(s) => `kind ${s.toLowerCase()}`}
                     onSave={(next) => setExtra(item, 'kind', next ?? 'idea')}
+                  />
+                )}
+                {isMomentKinds && (
+                  <Editable
+                    kind="select"
+                    label={`Weight of ${item.label}`}
+                    value={kindWeight(item)}
+                    options={WEIGHT_OPTIONS}
+                    testId="item-weight"
+                    onSave={(next) => setExtra(item, 'weight', next === 'big' ? 'big' : null)}
                   />
                 )}
                 {isAges && (

@@ -866,6 +866,78 @@ test('IP-9 removing a status in use is refused on the Lists screen with the reas
   expect((await listItems('statuses')).some((i) => i.id === 'idea')).toBe(true);
 });
 
+test('IP-9 A51 the Moment kinds list on the Lists screen recolours a kind, changes its weight to Large marker as one step, and shows the contrast note for a colour under 3:1', async () => {
+  await rail(page, 'Lists').click();
+  const kind = async (id: string) => (await listItems('momentKinds')).find((i) => i.id === id);
+  const move = itemRow('momentKinds', 'move');
+  // A seeded colour is checked on the dark grid by the hex its token draws there.
+  await expect(itemRow('momentKinds', 'work').getByTestId('item-contrast-ratios')).toHaveText(
+    'Light 8.3:1, Dark 5.6:1',
+  );
+  await expect(itemRow('momentKinds', 'work').getByTestId('item-contrast-note')).toHaveCount(0);
+  await expect(move.getByTestId('item-contrast-ratios')).toHaveText('Light 4.8:1, Dark 3.5:1');
+  // Voice has no colour, so no readout.
+  await expect(itemRow('momentKinds', 'voice').getByTestId('item-contrast')).toHaveCount(0);
+
+  await move.getByTestId('item-colour').fill('#f0f0f0');
+  await expect.poll(async () => (await kind('move'))?.color).toBe('#f0f0f0');
+  await expect(move.getByTestId('item-contrast-note')).toHaveText([
+    'Hard to see on the light grid',
+  ]);
+  await expect(move.getByTestId('item-contrast-ratios')).toHaveText(
+    /^Light 1\.\d:1, Dark \d+\.\d:1$/,
+  );
+  // The readout is in the text tokens, never the kind colour.
+  const ink = await move
+    .getByTestId('item-contrast-ratios')
+    .evaluate((el) => getComputedStyle(el).color);
+  expect(ink).not.toBe('rgb(240, 240, 240)');
+
+  const weight = move.getByTestId('item-weight');
+  await expect(move.getByTestId('item-weight-text')).toHaveText('Plain marker');
+  await openEditable(weight);
+  await weight.locator('select').selectOption('big');
+  await expect.poll(async () => (await kind('move'))?.extra.weight).toBe('big');
+  await expect(move.getByTestId('item-weight-text')).toHaveText('Large marker');
+  await undoStep();
+  await expect.poll(async () => (await kind('move'))?.extra.weight).toBeUndefined();
+  await expect(move.getByTestId('item-weight-text')).toHaveText('Plain marker');
+  expect((await kind('move'))?.color).toBe('#f0f0f0');
+  await undoStep();
+  await expect.poll(async () => (await kind('move'))?.color).toBe('#008300');
+  await expect(move.getByTestId('item-contrast-note')).toHaveCount(0);
+});
+
+test('IP-9 A51 removing a moment kind in use is refused on the Lists screen with the reason', async () => {
+  const { entry: who } = await invoke('entry.create', {
+    collection: 'characters',
+    data: {
+      title: 'Ada Kind',
+      status: 'canon',
+      names: { full: 'Ada Kind' },
+      birth: { year: 2001 },
+    },
+  });
+  await invoke('entry.create', {
+    collection: 'moments',
+    data: { title: 'Marries Ben', characterId: who._id, year: 2030, kind: 'life', status: 'canon' },
+  });
+  await rail(page, 'Lists').click();
+  const life = (await listItems('momentKinds')).find((i) => i.id === 'life')!;
+  // Earlier tests may have given other moments this kind too.
+  expect(life.usage).toBeGreaterThan(0);
+  await expect(itemRow('momentKinds', 'life').locator('.vocab-usage')).toHaveText(
+    life.usage === 1 ? 'used once' : `used ${life.usage} times`,
+  );
+  await itemRow('momentKinds', 'life')
+    .getByRole('button', { name: `Remove ${life.label}` })
+    .click();
+  const note = listPanel('momentKinds').locator('p[role="status"]');
+  await expect(note).toContainText(new RegExp(`(entry uses|entries use) ${life.label}\\.`));
+  await expect(note).toContainText('Change them first, or rename the item instead.');
+  expect((await listItems('momentKinds')).some((i) => i.id === 'life')).toBe(true);
+});
+
 test('IP-8 renaming a region on the Lists screen renames it on every event that names it', async () => {
   const cat = (await invoke('lists.addItem', { listId: 'eventCategories', label: 'Sea walls' }))
     .item;
