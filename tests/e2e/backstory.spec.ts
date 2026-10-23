@@ -69,8 +69,28 @@ const row = (id: string) => grid().locator(`.bs-row[data-person="${id}"]`);
 const label = (id: string) => row(id).locator('.bs-row-label');
 /** The row's label cell: the name (a link to the page) and the Chinese name (IP-4). */
 const rowCell = (id: string) => row(id).locator('.bs-row-cell');
-/** Pick a person: a click in the label cell clear of the name, which opens their page (IP-4). */
-const pickRow = (id: string) => label(id).click({ position: { x: LABEL_W - 12, y: 6 } });
+/**
+ * A50: open a person's timeline: a click in the label cell clear of the name, which opens their
+ * page (IP-4).
+ */
+const openPerson = (id: string) => label(id).click({ position: { x: LABEL_W - 12, y: 6 } });
+/** A50: true while one person's timeline fills the grid's frame. */
+const personView = () => grid().and(page.locator('.bs-person'));
+const showEveryone = () => view().getByRole('button', { name: 'Show everyone', exact: true });
+/** Pick a person: open their timeline and go back to everyone, which keeps them picked (A50). */
+async function pickRow(id: string) {
+  await openPerson(id);
+  await expect(personView()).toHaveCount(1);
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
+}
+/** A50: the person's row sits inside the grid's frame, below the sticky year header. */
+async function expectRowInView(id: string) {
+  const g = (await grid().boundingBox())!;
+  const r = (await row(id).boundingBox())!;
+  expect(r.y).toBeGreaterThanOrEqual(g.y + 56 - 1);
+  expect(r.y + r.height).toBeLessThanOrEqual(g.y + g.height + 1);
+}
 const marker = (id: string) => grid().locator(`.bs-marker[data-id="${id}"]`);
 /** A49: the moment dialog, and the same dialog only while it shows a given moment. */
 const dialog = () => page.getByTestId('moment-dialog');
@@ -293,16 +313,62 @@ test('SM-9 SM-3 the fixture moments sit at their years in their people’s rows;
   await expect(marker('H5-voice-0').locator('.wg-mlabel')).toHaveText('Voice');
 });
 
-test('SM-9 TL-3 picking a person highlights the row and shows their name and Add a moment in the head; the dialog shows the ages through Next', async () => {
+test('SM-9 TL-3 A50 a click on a name opens that person’s timeline: only their row, every title drawn, the name and Add a moment and Show everyone in the head; Show everyone, Escape and the name cell each return to the grid with the row in view and the name focused; the dialog shows the ages through Next', async () => {
   // With nobody picked, the head offers New moment.
   await expect(picked()).toHaveCount(0);
   await expect(view().getByRole('button', { name: 'New moment' })).toBeVisible();
-  await pickRow('Z3');
+  await openPerson('Z3');
+  await expect(personView()).toHaveCount(1);
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
+  await expect(grid().locator('.wg-group')).toHaveCount(0);
   await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
-  await expect(row('Z3')).toHaveClass(/\bpicked\b/);
+  await expect(label('Z3')).toHaveAccessibleName('Zhou Lan 周兰, 1988, show everyone');
+  // The label cell: the family swatch, the name, the Chinese name, the life years under them.
+  await expect(rowCell('Z3').locator('.bs-swatch')).toHaveCount(1);
+  await expect(rowCell('Z3').locator('.bs-name')).toHaveText('Zhou Lan');
+  await expect(rowCell('Z3').locator('.bs-zh')).toHaveText('周兰');
+  await expect(row('Z3').getByTestId('person-years')).toHaveText('1988');
+  // Every title is drawn beside its marker, with no hover.
+  await expect(marker('Z3-lives-0').locator('.wg-mlabel')).toHaveText('Lives in Guangzhou');
+  await expect(marker('Z3-lives-1').locator('.wg-mlabel')).toHaveText('Lives in Portland, Oregon');
+  await expect(grid().getByTestId('grid-tip')).toHaveCount(0);
+  // The one row fills the frame under the year header.
+  const inner = await grid().evaluate((el) => el.clientHeight);
+  expect((await row('Z3').boundingBox())!.height).toBeCloseTo(inner - 56, 0);
+  // The head: the name, Add a moment, Show everyone.
   await expect(picked()).toHaveText('Zhou Lan 周兰, 1988');
   await expect(view().getByRole('button', { name: 'Add a moment' })).toBeVisible();
+  await expect(showEveryone()).toBeVisible();
+  await expect(view().getByRole('button', { name: 'Clear pick' })).toHaveCount(0);
   await expect(view().getByRole('button', { name: 'New moment' })).toHaveCount(0);
+
+  // Show everyone: the grid again, the person still picked, their row in view, their name focused.
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
+  await expect(grid().locator('.bs-row')).toHaveCount(13);
+  await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
+  await expect(row('Z3')).toHaveClass(/\bpicked\b/);
+  await expect(label('Z3')).toBeFocused();
+  await expectRowInView('Z3');
+  await expect(picked()).toHaveText('Zhou Lan 周兰, 1988');
+  await expect(view().getByRole('button', { name: 'Add a moment' })).toBeVisible();
+  await expect(view().getByRole('button', { name: 'Clear pick' })).toBeVisible();
+  await expect(showEveryone()).toHaveCount(0);
+  // Escape in the person view goes back the same way.
+  await openPerson('Z3');
+  await expect(personView()).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('Z3')).toBeFocused();
+  await expectRowInView('Z3');
+  // So does the name cell again: it is a toggle.
+  await openPerson('Z3');
+  await expect(personView()).toHaveCount(1);
+  await openPerson('Z3');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
+  await expect(label('Z3')).toBeFocused();
+  await expectRowInView('Z3');
   const d = await openMoment(page, 'Z3-lives-0');
   await expect(d.locator('.bs-field-title')).toHaveText([
     'Year',
@@ -523,16 +589,43 @@ test('SM-9 a click on an empty spot in a row adds a moment for that person at th
   await expect(marker(id)).toHaveCount(0);
   await expect(dialog()).toHaveCount(0);
   expect((await getMoment(id)).deletedAt).toBeTruthy();
+  // A50: the same inside the person's timeline, which stays open on them.
+  await openPerson('H4');
+  await expect(personView()).toHaveCount(1);
+  const inside = await pointAt('H4', 2052);
+  await page.mouse.click(inside.x, inside.y);
+  await expect
+    .poll(async () => (await liveMoments()).some((m) => m.characterId === 'H4'))
+    .toBe(true);
+  const again = (await liveMoments()).find((m) => m.characterId === 'H4')!;
+  expect(again.year).toBe(2052);
+  const id2 = String(again._id);
+  await expect(dialog()).toHaveAttribute('data-id', id2);
+  await expect(cell(id2, 'title').locator('input')).toBeFocused();
+  await expect(dialog().getByTestId('moment-age')).toHaveText('62');
+  await page.keyboard.type('Moves to the coast');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await getMoment(id2)).title).toBe('Moves to the coast');
+  await expect(personView()).toHaveCount(1);
+  await expect(marker(id2)).toHaveAttribute('data-year', '2052');
+  await expect(marker(id2).locator('.wg-mlabel')).toHaveText('Moves to the coast');
+  await blurAndUndo();
+  await page.keyboard.press('Meta+z');
+  await expect(marker(id2)).toHaveCount(0);
+  await expect(dialog()).toHaveCount(0);
+  expect((await getMoment(id2)).deletedAt).toBeTruthy();
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
 });
 
-test('SM-9 IP-4 A49 a marker is a 14px dot in a 48px row, and a click just beside it opens the moment instead of adding one', async () => {
+test('SM-9 IP-4 A50 on the grid a marker is a 10px dot in a 36px row, and a click just beside it opens the moment instead of adding one', async () => {
   await zoomTo('Close');
   await showRow('H1');
   await showYear(2028);
   const box = (await marker('H1-voice-0').boundingBox())!;
-  expect(box.width).toBeCloseTo(14, 0);
-  expect(box.height).toBeCloseTo(14, 0);
-  expect((await row('H1').boundingBox())!.height).toBeCloseTo(48, 0);
+  expect(box.width).toBeCloseTo(10, 0);
+  expect(box.height).toBeCloseTo(10, 0);
+  expect((await row('H1').boundingBox())!.height).toBeCloseTo(36, 0);
   const before = (await liveMoments()).length;
   // 5px past the dot's right edge is still the marker's hit area, not the empty track.
   const at = { x: box.x + box.width + 5, y: box.y + box.height / 2 };
@@ -548,6 +641,39 @@ test('SM-9 IP-4 A49 a marker is a 14px dot in a 48px row, and a click just besid
   await expect(marker('H1-voice-0')).toHaveAttribute('aria-current', 'true');
   expect((await liveMoments()).length).toBe(before);
   await closeMoment();
+  // A marker click picks its person and leaves the grid as it is.
+  await expect(personView()).toHaveCount(0);
+});
+
+test('SM-9 IP-4 A50 in the person view a marker is a 14px dot in a row at least 48px tall, and a click just beside it opens the moment instead of adding one', async () => {
+  await zoomTo('Close');
+  await openPerson('H1');
+  await expect(personView()).toHaveCount(1);
+  await showYear(2028);
+  const box = (await marker('H1-voice-0').boundingBox())!;
+  expect(box.width).toBeCloseTo(14, 0);
+  expect(box.height).toBeCloseTo(14, 0);
+  expect((await row('H1').boundingBox())!.height).toBeGreaterThanOrEqual(48);
+  const before = (await liveMoments()).length;
+  const at = { x: box.x + box.width + 5, y: box.y + box.height / 2 };
+  expect(
+    await marker('H1-voice-0').evaluate(
+      (el, p) => el.contains(document.elementFromPoint(p.x, p.y)),
+      at,
+    ),
+  ).toBe(true);
+  await page.mouse.click(at.x, at.y);
+  await expect(momentDialog('H1-voice-0')).toBeVisible();
+  await expect(marker('H1-voice-0')).toHaveAttribute('aria-current', 'true');
+  expect((await liveMoments()).length).toBe(before);
+  // Escape closes the dialog first; the person view stays until the next one.
+  await page.keyboard.press('Escape');
+  await expect(dialog()).toHaveCount(0);
+  await expect(personView()).toHaveCount(1);
+  await expect(marker('H1-voice-0')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('H1')).toBeFocused();
 });
 
 test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it; ArrowRight does the same', async () => {
@@ -791,44 +917,72 @@ test('SM-9 TM-3 the story year line and the writing band sit where the story tim
   await expect(band).toHaveCount(0);
 });
 
-test('SM-9 SM-10 Backstory opens on a person given to it: that person is picked and the head shows them, every time it is asked', async () => {
+test('SM-9 SM-10 A50 Backstory opens on a person given to it: that person’s timeline is open and the head shows them, every time it is asked', async () => {
   // From another screen, through openBackstory, which Relevant to Session's "Their backstory" calls.
   await rail(page, 'Family tree').click();
   await expect(view()).toHaveCount(0);
   await page.evaluate(openBackstory, 'H5');
   await expect(grid()).toBeVisible();
   await expect(rail(page, 'Backstory')).toHaveAttribute('aria-current', 'page');
+  await expect(personView()).toHaveCount(1);
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
   await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
   await expect(picked()).toHaveText('Iris Hale-Zhou 晓曦, 2031');
   await expect(view().getByRole('button', { name: 'Add a moment' })).toBeVisible();
+  await expect(showEveryone()).toBeVisible();
   // With the screen already open, another person.
   await page.evaluate(openBackstory, 'Z3');
   await expect(label('Z3')).toHaveAttribute('aria-pressed', 'true');
-  await expect(label('H5')).toHaveAttribute('aria-pressed', 'false');
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
+  await expect(row('H5')).toHaveCount(0);
   await expect(picked()).toHaveText('Zhou Lan 周兰, 1988');
-  // The same person asked for again after another was picked in the grid is picked again.
+  // The same person asked for again after another was opened in the grid opens again.
   await page.evaluate(openBackstory, 'H5');
   await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
-  await pickRow('Z1');
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
+  await openPerson('Z1');
   await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
   await page.evaluate(openBackstory, 'H5');
+  await expect(personView()).toHaveCount(1);
   await expect(label('H5')).toHaveAttribute('aria-pressed', 'true');
-  await expect(label('Z1')).toHaveAttribute('aria-pressed', 'false');
+  await expect(row('Z1')).toHaveCount(0);
   await expect(picked()).toHaveText('Iris Hale-Zhou 晓曦, 2031');
+  // And again after going back to everyone.
+  await showEveryone().click();
+  await expect(personView()).toHaveCount(0);
+  await page.evaluate(openBackstory, 'H5');
+  await expect(personView()).toHaveCount(1);
+  await expect(grid().locator('.bs-row')).toHaveCount(1);
 });
 
 test('SM-9 NF-2 the screen works from the keyboard and its labels use the primary text colour in both themes', async () => {
   await rail(page, 'Family tree').click();
   await showBackstory();
-  // A row label picks the person with Enter.
+  // A row label opens the person's timeline with Enter (A50), and Escape goes back.
   await view().getByRole('button', { name: 'Change' }).focus();
   await tabTo(label('Z1'));
   await expect(label('Z1')).toHaveAccessibleName(
     'Zhou Meiling 周美玲, 1962 to 2050, show their moments',
   );
   await page.keyboard.press('Enter');
+  await expect(personView()).toHaveCount(1);
   await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
+  await expect(label('Z1')).toBeFocused();
+  await expect(label('Z1')).toHaveAccessibleName(
+    'Zhou Meiling 周美玲, 1962 to 2050, show everyone',
+  );
   await expect(picked()).toHaveText('Zhou Meiling 周美玲, 1962 to 2050');
+  await page.keyboard.press('Escape');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('Z1')).toBeFocused();
+  await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
+  // Enter on the name cell in the timeline goes back too.
+  await page.keyboard.press('Enter');
+  await expect(personView()).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(personView()).toHaveCount(0);
+  await expect(label('Z1')).toBeFocused();
   // A family heading collapses with Enter.
   const heading = grid().locator('.wg-group[data-group="FAM-HALE"] .wg-group-label');
   await heading.focus();
@@ -1103,14 +1257,21 @@ test('IP-4 A49 F2 on a moment marker renames its label in place as one step; Esc
   expect((await liveMoments()).length).toBe(before);
 });
 
-test('IP-4 the name opens the person’s page; a click elsewhere in the row still picks them', async () => {
-  await pickRow('Z1');
+test('IP-4 A50 the name opens the person’s page; a click elsewhere in the cell opens their timeline', async () => {
+  await openPerson('Z1');
+  await expect(personView()).toHaveCount(1);
   await expect(label('Z1')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('character-page')).toHaveCount(0);
+  // In the timeline too the name is the link to the page.
+  await expect(
+    rowCell('Z1').getByRole('link', { name: 'Open the page of Zhou Meiling' }),
+  ).toBeVisible();
+  await showEveryone().click();
   await rowCell('H1').getByRole('link', { name: 'Open the page of Margaret Hale' }).click();
   await expect(page.getByTestId('character-page')).toBeVisible();
   await expect(page.getByTestId('character-page')).toContainText('Margaret Hale');
   await showBackstory();
+  await expect(personView()).toHaveCount(0);
 });
 
 test('IP-4 a moment moves to another person through Whose moment in the dialog as one step; the grid redraws', async () => {
@@ -1290,6 +1451,18 @@ test("SM-9 ARCH-6 read-only: Add a moment, the dialog's fields, the picker, Dele
       await expect(l).toHaveAttribute('aria-describedby', 'read-only-reason');
     };
     await off(view().getByRole('button', { name: 'Add a moment' }));
+    // A50: the person's timeline opens and closes; nothing in it writes.
+    await page.keyboard.press('Escape');
+    await expect(dialog()).toHaveCount(0);
+    await openPerson('Z3');
+    await expect(personView()).toHaveCount(1);
+    await expect(grid().locator('.wg-track.addable')).toHaveCount(0);
+    await expect(grid().getByTestId('life-handle-start')).toHaveCount(0);
+    await off(view().getByRole('button', { name: 'Add a moment' }));
+    await expect(showEveryone()).toBeEnabled();
+    await showEveryone().click();
+    await expect(personView()).toHaveCount(0);
+    await openMoment(page, 'Z3-lives-0');
     for (const f of ['year', 'endYear', 'characterId', 'title', 'body', 'worldContext']) {
       await off(cellText('Z3-lives-0', f));
     }

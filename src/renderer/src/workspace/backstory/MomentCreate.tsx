@@ -7,8 +7,9 @@ import { personLabel } from './MomentDialog';
 /**
  * SM-9, IP-13, A49: the head bar's creation controls, where the moments table
  * had them. With a person picked: their name and life, and Add a moment, at
- * the story year. With nobody picked: New moment, which asks whose it is
- * first. Either opens the new moment in the dialog. Off with the reason while
+ * the story year, and Clear pick; while their timeline is open (A50), Show
+ * everyone in place of Clear pick. With nobody picked: New moment, which asks
+ * whose it is first. Either opens the new moment in the dialog. Off with the reason while
  * a snapshot is open read-only (ARCH-6).
  */
 export function MomentCreate(props: {
@@ -16,8 +17,12 @@ export function MomentCreate(props: {
   person: BackstoryPerson | null;
   /** Everyone, in the grid's order: the "Whose moment" choices. */
   people: readonly BackstoryPerson[];
+  /** A50: true while the picked person's timeline fills the section. */
+  viewing?: boolean;
   /** A new moment for the person at the story year. */
   onAdd: (characterId: string) => Promise<void>;
+  /** A50: back to everyone from the person's timeline, the pick kept. */
+  onShowEveryone?: () => void;
   /** Back to nobody picked. */
   onClear: () => void;
 }) {
@@ -52,9 +57,15 @@ export function MomentCreate(props: {
         >
           Add a moment
         </button>
-        <button type="button" className="btn small" onClick={props.onClear}>
-          Clear pick
-        </button>
+        {props.viewing && props.onShowEveryone ? (
+          <button type="button" className="btn small" onClick={props.onShowEveryone}>
+            Show everyone
+          </button>
+        ) : (
+          <button type="button" className="btn small" onClick={props.onClear}>
+            Clear pick
+          </button>
+        )}
       </span>
     );
   }

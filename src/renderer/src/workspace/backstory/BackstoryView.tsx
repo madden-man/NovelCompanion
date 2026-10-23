@@ -56,7 +56,8 @@ const FIELD_WORDS: Record<MomentField, string> = {
 /**
  * The Backstory screen (SM-9): the character grid on the World events axis,
  * which is the list of moments; a moment opens in a dialog to edit (A49), and
- * the head bar makes new ones. Every write goes through the write path with
+ * the head bar makes new ones. A click on a name opens that person's timeline
+ * across the section (A50); Show everyone, Escape or the name again go back. Every write goes through the write path with
  * one undo step (ED-3); nothing here is computed by a model.
  */
 export function BackstoryView(props: {
@@ -82,6 +83,8 @@ export function BackstoryView(props: {
   const chapters = useEntries('chapters');
   const [positions, setPositions] = useState<StoredPositions | null>(null);
   const [picked, setPicked] = useState<string | null>(props.characterId ?? null);
+  // A50: the person whose timeline fills the section, or null for everyone.
+  const [person, setPerson] = useState<string | null>(props.characterId ?? null);
   const [selected, setSelected] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [freshKey, setFreshKey] = useState(0);
@@ -109,6 +112,7 @@ export function BackstoryView(props: {
     setOpenedFor(props.openedAt);
     if (props.characterId) {
       setPicked(props.characterId);
+      setPerson(props.characterId);
       setSelected(null);
     }
   }
@@ -141,7 +145,9 @@ export function BackstoryView(props: {
       ),
     [chapters, story.time?.chapterId, story.time?.strandId],
   );
-  const person = picked ? grid.people.get(picked) : undefined;
+  const pickedPerson = picked ? grid.people.get(picked) : undefined;
+  // A person no longer in the grid (trashed meanwhile) leaves the view for everyone.
+  const viewing = person !== null && grid.people.has(person) ? person : null;
   const everyone = useMemo(() => grid.families.flatMap((f) => f.people), [grid.families]);
   const eraEdits = useEraEdits({ eras, span, readOnly: ro.off, onError: setError });
   const renameMoment = useTitleRename('moments');
@@ -179,10 +185,38 @@ export function BackstoryView(props: {
     setFreshKey((k) => k + 1);
   };
 
+  /** A50: the name cell opens the person's timeline, and in it goes back to everyone. */
   const pick = (id: string) => {
+    if (viewing === id) {
+      setPerson(null);
+      return;
+    }
     setPicked(id);
+    setPerson(id);
     setSelected(null);
   };
+  /** A50: back to everyone; the pick stays. */
+  const showEveryone = useCallback(() => setPerson(null), []);
+
+  // A50: on the way back to everyone the person's row scrolls into view and their name cell
+  // takes the focus; on the way in, the name cell keeps it when nothing else has it.
+  const shownFor = useRef(viewing);
+  useEffect(() => {
+    const was = shownFor.current;
+    shownFor.current = viewing;
+    if (was === viewing) return;
+    const id = viewing ?? was;
+    if (!id) return;
+    const row = document.querySelector<HTMLElement>(
+      `[data-testid="backstory-grid"] .bs-row[data-person="${CSS.escape(id)}"]`,
+    );
+    if (!row) return;
+    const now = document.activeElement;
+    if (viewing === null) row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (viewing === null || !now || now === document.body) {
+      row.querySelector<HTMLElement>('.bs-row-label')?.focus({ preventScroll: true });
+    }
+  }, [viewing]);
 
   /** A new moment picks its person and opens in the dialog with What happens open. */
   const create = async (characterId: string, at: number) => {
@@ -427,9 +461,11 @@ export function BackstoryView(props: {
           </span>
         </span>
         <MomentCreate
-          person={person ?? null}
+          person={(viewing !== null ? grid.people.get(viewing) : pickedPerson) ?? null}
           people={everyone}
+          viewing={viewing !== null}
           onAdd={(id) => create(id, year)}
+          onShowEveryone={showEveryone}
           onClear={() => {
             setPicked(null);
             setSelected(null);
@@ -449,9 +485,11 @@ export function BackstoryView(props: {
         storyYear={year}
         writing={writing}
         pickedId={picked}
+        personId={viewing}
         selectedMomentId={selected}
         readOnly={ro.off}
         onPick={pick}
+        onLeavePerson={showEveryone}
         onPickMoment={(id, characterId) => {
           setPicked(characterId);
           setSelected(id);

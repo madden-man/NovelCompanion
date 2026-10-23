@@ -362,3 +362,51 @@
   font-weight: 600;
   color: var(--fg);
 }
+
+/* A50: one person's timeline. The row fills the frame; the name cell holds the swatch, the name
+   and the Chinese name, with the life years on a second line. Every title draws, at most 240px. */
+.bs-row {
+  scroll-margin-top: 56px;
+}
+.bs-person-row .bs-row-cell {
+  align-items: flex-start;
+  padding-top: 10px;
+}
+.bs-person-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.bs-person-names {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.bs-person-text .bs-years {
+  font-size: 0.8rem;
+}
+.bs-person .wg-mlabel {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The row is as tall as the frame, so the frame must not take its height from the row: the
+   section keeps its full height and the frame gets what the head and legend leave. */
+.bs-area:has(> .wg-scroll.bs-person) {
+  height: calc(100vh - var(--ws-chrome));
+}
+.bs-area > .wg-scroll.bs-scroll.bs-person {
+  flex: 1 1 0;
+}
+@media (max-width: 760px) {
+  /* The page scrolls on a phone, so the person view keeps a height of its own to fill. */
+  .bs-area:has(> .wg-scroll.bs-person) {
+    height: auto;
+  }
+  .bs-area > .wg-scroll.bs-scroll.bs-person {
+    min-height: 60vh;
+    max-height: 60vh;
+  }
+}
