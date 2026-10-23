@@ -303,7 +303,6 @@ const BAD: Record<string, unknown[]> = {
   ],
   'manuscript.apply': [{}, { token: '', baseModifiedAt: 'x' }, { token: 't' }],
   'chapter.page': [{}, { id: '' }, { id: LONG }],
-  'chapter.establishes': [{}, { chapterId: '' }],
   'chapter.summarize': [{}, { chapterId: '' }, { chapterId: 'c', runId: 'short' }],
   // a47-guard
   'claude.instructions.get': [{ extra: 1 }],

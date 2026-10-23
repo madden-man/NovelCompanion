@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { ListChip } from '../listChip';
 import { isEntryCollection } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import type { Response } from '../../../../shared/ipc';
@@ -36,12 +35,6 @@ export async function updateWithUndo(
   return after;
 }
 
-/** A status chip: canon, planned, or idea (SB-5 keeps them visibly apart). */
-export function StatusChip({ status }: { status: string }) {
-  // A47 (IP-9): the status list's label and colour (a47-vocab).
-  return <ListChip listId="statuses" id={status} />;
-}
-
 function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) => ReactNode }) {
   const { item, onOpen } = props;
   const collection = item.collection;
@@ -60,7 +53,6 @@ function ItemRow(props: { item: Item; onOpen: OpenEntry; action?: (item: Item) =
         ) : (
           <strong>{item.title}</strong>
         )}
-        <StatusChip status={item.status} />
         {item.note && <span data-testid="sel-note">{item.note}</span>}
         {props.action?.(item)}
       </div>
@@ -116,7 +108,7 @@ function stripEvents(groups: Group[], from: number, to: number): StripEvent[] {
       if (typeof it.year !== 'number' || it.year > to) continue;
       const endYear = it.endYear ?? it.year;
       if (endYear < from) continue;
-      out.push({ id: it.id, title: it.title, status: it.status, startYear: it.year, endYear });
+      out.push({ id: it.id, title: it.title, startYear: it.year, endYear });
     }
   }
   return out;

@@ -837,7 +837,7 @@ function DeskEvents(props: {
     }
   };
   const renderTitle = (e: StripEvent) => (
-    <span className={`rel-event ${e.status}`}>
+    <span className="rel-event">
       <EntryEditable
         collection="worldEvents"
         id={e.id}

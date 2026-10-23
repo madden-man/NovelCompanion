@@ -126,7 +126,7 @@ export function alignmentMaterial(
     seen.add(m.id);
     given.set(`${m.collection}:${m.id}`, { collection: m.collection, id: m.id, title: m.title });
     const parts = [m.note, m.detail].map(one).filter(Boolean);
-    entries.push(`[${m.id}] ${m.title} (${m.collection}; ${m.status}): ${parts.join('. ')}`);
+    entries.push(`[${m.id}] ${m.title} (${m.collection}): ${parts.join('. ')}`);
   }
 
   return {

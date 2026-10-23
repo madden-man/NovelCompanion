@@ -657,7 +657,7 @@ test('IP-2 Add an event makes an event at the story year with its title typed on
       .map((e) => e.entry)
       .find((e) => e.title === 'Typhoon closes the port');
   await expect.poll(async () => (await made())?.start).toEqual({ year: 2045 });
-  // The first category, and the first status of kind planned.
+  // The first category.
   const first = (await invoke('lists.get', {})).lists.find((l) => l._id === 'eventCategories')!
     .items[0]!.id;
   expect(await made()).toMatchObject({ categoryId: first });
@@ -762,7 +762,7 @@ test('IP-2 SB-9 removals are forgotten when the section changes', async () => {
   await expect(left()).toHaveCount(0);
 });
 
-test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written, approve the summary, promote, and re-import with a diff', async () => {
+test('MS-1 MS-2 MS-4 MS-5 SM-11 import a chapter from Word, mark it written, approve the summary, and re-import with a diff', async () => {
   // T-3: the recorded Claude drafts the summary, so the app runs with a key held in memory.
   await app.evaluate(({ app: electron }) => electron.exit(0)).catch(() => undefined);
   await start({
@@ -795,7 +795,7 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   expect(stored.manuscriptText).toContain('<em>attic</em>');
   expect(stored.manuscriptSource).toBe(`word:${docPath}`);
 
-  // MS-2, MS-3: mark it written.
+  // MS-2: mark it written; the summary is all it offers (MS-3 withdrawn by A52).
   await ch.getByRole('button', { name: 'Mark as written' }).click();
   const flow = ch.getByTestId('written-flow');
   const draft = flow.getByLabel('Summary to approve');
@@ -810,16 +810,8 @@ test('MS-1 MS-2 MS-3 MS-4 MS-5 SM-11 import a chapter from Word, mark it written
   await flow.getByRole('button', { name: 'Approve summary' }).click();
   await expect(flow.getByTestId('summary-done')).toHaveText('Summary saved.');
   await expect(ch.getByTestId('summary-stale')).toHaveCount(0);
-  const list = flow.getByTestId('promote-list');
-  // SM-3: Iris's planned moment of 2045 is the one this chapter establishes.
-  const label = 'Iris finds the letter (a moment of the point of view in these years)';
-  await expect(list.locator('label')).toHaveText([label]);
-  await list.getByLabel(label).check();
-  await flow.getByRole('button', { name: 'Promote checked to canon' }).click();
-  await expect(list.locator('label')).toHaveCount(0);
-  expect((await invoke('entry.get', { collection: 'moments', id: 'B4' })).entry.status).toBe(
-    'canon',
-  );
+  await expect(flow.getByTestId('promote-step')).toHaveCount(0);
+  await expect(flow).not.toContainText('canon');
 
   // MS-4: the file changes; reading it again shows the diff and marks the summary.
   await writeDoc('Daniel left the table before dessert.');
@@ -883,7 +875,7 @@ test('DB-4 AI-1 AI-6 MS-2 with an API key, summaries run through the Claude runt
   await screenTab(page, 'Continuity checker', 'Manuscript');
   const ms = page.getByTestId('manuscript-view');
   await ms.locator('[data-chapter="CH6"]').click();
-  await ms.getByRole('button', { name: 'Summary and promotions' }).click();
+  await ms.getByRole('button', { name: 'Summary', exact: true }).click();
   const flow = ms.getByTestId('written-flow');
   // AI-6: the first Claude use in this bible says what is sent before anything is.
   await flow.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
@@ -1006,7 +998,7 @@ test('SB-1 Relevant to Session takes places and other characters present for a s
   await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
 });
 
-test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and promotion flow on the Continuity checker', async () => {
+test('MS-2 SM-11 ticking Written in the chapter editor offers the summary on the Continuity checker', async () => {
   await invoke('entry.update', { collection: 'chapters', id: 'CH3', patch: { written: false } });
   await sectionList(page, 'Chapters');
   const title = String(
@@ -1021,6 +1013,8 @@ test('MS-2 SM-11 ticking Written in the chapter editor offers the summary and pr
   await field(editor, 'written').locator('input[type="checkbox"]').check();
   await editor.getByTestId('written-offer').getByRole('button').click();
   await expect(page.getByTestId('written-flow')).toBeVisible();
+  await expect(page.getByTestId('summary-step')).toBeVisible();
+  await expect(page.getByTestId('promote-step')).toHaveCount(0);
   await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('tab', { name: 'Manuscript' })).toHaveAttribute(
     'aria-selected',

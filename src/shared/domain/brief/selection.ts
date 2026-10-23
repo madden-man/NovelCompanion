@@ -50,8 +50,6 @@ import type { Doc } from '../paths';
 import { characterName, eraFor, eventSpans, eventsAhead, eventsUpTo, stateIn } from '../timeline';
 import type { EventSpan, TimelineData } from '../timeline';
 import { ENTRY_COLLECTIONS } from '../../schema';
-import type { StatusKind } from '../../schema/lists';
-import { statusKind } from '../lists';
 import { LIVES_IN_PREFIX, VOICE_MOMENT_TITLE } from '../../schema/moment';
 
 // ---------- inputs and settings ----------
@@ -180,10 +178,6 @@ export interface SelectedItem {
   id: string;
   collection: string;
   title: string;
-  /** The item ID in the statuses list (seeded canon, planned, idea). */
-  status: string;
-  /** A47 (IP-9): what the status means to SB-5, from the item's `extra.kind`. Set on every selected item. */
-  kind?: StatusKind;
   /** Why it was selected, or the computed fact about it (an age, a year). */
   note: string;
   /** The entry's text as the brief shows it; its length is what SB-6 counts. */
@@ -221,7 +215,6 @@ export interface BackstoryRow {
   /** How they experience it, plain. */
   body: string;
   worldContext: string;
-  status: string;
 }
 
 /** A35, SM-3: the moments of the chapter's backstory years, for Relevant to Session. Not in the manifest. */
@@ -346,11 +339,9 @@ function index(data: TimelineData, collection: string): Map<string, Doc> {
   return new Map(data.all(collection).map((d) => [str(d._id), d]));
 }
 
-function linksOf(d: Doc | undefined): string[] {
-  return (Array.isArray(d?.links) ? d.links : [])
-    .filter(isPlainObject)
-    .map((l) => str(l.targetId))
-    .filter(Boolean);
+/** A53: what an open question is about (`aboutIds`). */
+function aboutOf(d: Doc | undefined): string[] {
+  return (Array.isArray(d?.aboutIds) ? d.aboutIds : []).map(str).filter(Boolean);
 }
 
 interface StrandSpec {
@@ -578,7 +569,6 @@ function characterItem(c: Doc, year: number, voice: Doc | null): SelectedItem {
     id,
     collection: 'characters',
     title: characterName(c, id),
-    status: str(c.status),
     note: describeState(state),
     detail: joinText(
       str(names.chinese),
@@ -600,7 +590,6 @@ function momentItem(m: Doc, c: Doc): SelectedItem {
     id: str(m._id),
     collection: 'moments',
     title: title(m, 'Untitled moment'),
-    status: str(m.status),
     note: joinText(`${characterName(c, str(c._id))}, ${when}${age ? ',' : ''}`, age),
     detail: joinText(plain(m.body), plain(m.worldContext)),
     refs: [],
@@ -725,7 +714,6 @@ export function selectForSession(
           title: title(m, 'Untitled moment'),
           body: plain(m.body),
           worldContext: plain(m.worldContext),
-          status: str(m.status),
         }));
       if (!rows.length) continue;
       const ages =
@@ -753,7 +741,6 @@ export function selectForSession(
     id: e.id,
     collection: 'worldEvents',
     title: e.title,
-    status: e.status,
     note: joinText(eventDates(e) + (note ? ',' : ''), note),
     detail: joinText(plain(eventDocs.get(e.id)?.body), e.regions.map(regionLabel).join(', ')),
     refs: [],
@@ -803,7 +790,6 @@ export function selectForSession(
         id: era.id,
         collection: 'eraStates',
         title: era.name,
-        status: str(data.all('eraStates').find((d) => d._id === era.id)?.status),
         note: rangeText(era.startYear, era.endYear),
         detail: plain(data.all('eraStates').find((d) => d._id === era.id)?.body),
         refs: [],
@@ -857,7 +843,6 @@ export function selectForSession(
           id: str(c._id),
           collection: 'culturalEntries',
           title: title(c),
-          status: str(c.status),
           note: `${communityLabel(community)}, ${rangeText(num(c.startYear), num(c.endYear))}`,
           detail: plain(c.body),
           refs: [],
@@ -876,7 +861,6 @@ export function selectForSession(
         id: p,
         collection: 'places',
         title: placePath(places, p) || title(place),
-        status: str(place.status),
         note: rangeText(d.startYear, d.endYear),
         detail: d.text,
         refs: [],
@@ -924,7 +908,6 @@ export function selectForSession(
         found.collection === 'characters'
           ? characterName(found.doc, id)
           : title(found.doc, 'Untitled'),
-      status: str(found.doc.status),
       note: 'added by you',
       detail: genericText(found.doc),
       refs: [],
@@ -996,10 +979,6 @@ export function selectForSession(
     }
   }
 
-  // A47 (IP-9, SB-5): each item's status kind, read from the statuses list.
-  const listDocs = data.all('lists');
-  for (const g of all()) for (const it of g.items) it.kind = statusKind(listDocs, it.status);
-
   const ids = new Set<string>(section.chapters.map((c) => str(c._id)));
   for (const g of all()) {
     for (const it of g.items) {
@@ -1052,18 +1031,7 @@ function entryLookup(data: TimelineData): Lookup {
   };
 }
 
-const SKIP_KEYS = new Set([
-  '_id',
-  'createdAt',
-  'modifiedAt',
-  'deletedAt',
-  'status',
-  'provenance',
-  'links',
-  'sourceRef',
-  'tags',
-  'manuscriptText',
-]);
+const SKIP_KEYS = new Set(['_id', 'createdAt', 'modifiedAt', 'deletedAt', 'manuscriptText']);
 
 /** Every string an entry holds, for entries added by hand (SB-9). */
 function genericText(doc: Doc): string {
@@ -1144,7 +1112,6 @@ function sharedSteps(
       id: str(c._id),
       collection: 'chapters',
       title: chapterLabel(c),
-      status: str(c.status),
       note:
         (reasons.get(str(c._id)) ?? []).join('; ') +
         (c.summaryOutOfDate === true ? '; the summary may be out of date' : ''),
@@ -1163,23 +1130,16 @@ function sharedSteps(
     }
   }
   previous.forEach((p) => selected.add(p.id));
-  const selectedDocs = [...selected].map((id) => findEntry(id)?.doc).filter((d): d is Doc => !!d);
-  const linkedFrom = new Set(selectedDocs.flatMap(linksOf));
-  const isLinked = (d: Doc) =>
-    linkedFrom.has(str(d._id)) || linksOf(d).some((t) => selected.has(t));
-  const linkedTo = (d: Doc) => {
-    const names = [...new Set(linksOf(d).filter((t) => selected.has(t)))]
-      .concat(selectedDocs.filter((s) => linksOf(s).includes(str(d._id))).map((s) => str(s._id)))
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .sort(byText)
-      .map((id) => {
-        const f = findEntry(id);
-        return f?.collection === 'characters' ? characterName(f.doc, id) : title(f?.doc, id);
-      });
-    return names.length ? `linked to ${names.join(', ')}` : '';
+  const isAbout = (q: Doc) => aboutOf(q).some((t) => selected.has(t));
+  const aboutNote = (q: Doc) => {
+    const names = [...new Set(aboutOf(q).filter((t) => selected.has(t)))].sort(byText).map((id) => {
+      const f = findEntry(id);
+      return f?.collection === 'characters' ? characterName(f.doc, id) : title(f?.doc, id);
+    });
+    return names.length ? `about ${names.join(', ')}` : '';
   };
 
-  // 9. Glossary terms and open questions linked to anything selected (A18).
+  // 9. Glossary terms in the names of selected characters, and open questions about anything selected (A18, A53).
   const selectedCharacters = strands
     .flatMap((s) => s.groups.find((g) => g.kind === 'characters')?.items ?? [])
     .map((it) => it.id)
@@ -1198,12 +1158,9 @@ function sharedSteps(
       const inNames = chars
         ? selectedCharacters.filter((c) => nameStrings(c).some((n) => n.includes(chars)))
         : [];
-      const why = [
-        isLinked(g) ? linkedTo(g) : '',
-        inNames.length
-          ? `in the name of ${inNames.map((c) => characterName(c, str(c._id))).join(', ')}`
-          : '',
-      ].filter(Boolean);
+      const why = inNames.length
+        ? [`in the name of ${inNames.map((c) => characterName(c, str(c._id))).join(', ')}`]
+        : [];
       return { g, why };
     })
     .filter((x) => x.why.length)
@@ -1215,7 +1172,6 @@ function sharedSteps(
       id: str(g._id),
       collection: 'glossaryTerms',
       title: joinText(str(g.characters), str(g.romanization)),
-      status: str(g.status),
       note: why.join('; '),
       detail: joinText(str(g.meaning), str(g.usageNote)),
       refs: [],
@@ -1225,28 +1181,26 @@ function sharedSteps(
   const decided: SelectedItem[] = data
     .all('openQuestions')
     .filter(live)
-    .filter((q) => q.state === 'decided' && isLinked(q))
+    .filter((q) => q.state === 'decided' && isAbout(q))
     .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)))
     .map((q) => ({
       id: str(q._id),
       collection: 'openQuestions',
       title: title(q),
-      status: str(q.status),
-      note: linkedTo(q),
+      note: aboutNote(q),
       detail: joinText(plain(q.question), `Decision: ${plain(q.decision) || 'not recorded'}`),
       refs: [],
     }));
   const questions: SelectedItem[] = data
     .all('openQuestions')
     .filter(live)
-    .filter((q) => q.state !== 'decided' && isLinked(q))
+    .filter((q) => q.state !== 'decided' && isAbout(q))
     .sort((a, b) => byText(title(a), title(b)) || byText(str(a._id), str(b._id)))
     .map((q) => ({
       id: str(q._id),
       collection: 'openQuestions',
       title: title(q),
-      status: str(q.status),
-      note: linkedTo(q),
+      note: aboutNote(q),
       detail: plain(q.question),
       refs: [],
     }));

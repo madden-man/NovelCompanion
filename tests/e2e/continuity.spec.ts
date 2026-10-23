@@ -79,7 +79,7 @@ test.afterAll(async () => {
 const view = () => page.getByTestId('alignment-view');
 const finding = (check: string) => view().locator(`[data-testid="finding"][data-check="${check}"]`);
 
-test('CC-1 CC-2 CC-3 CC-5 SM-11 the Continuity checker opens on the alignment check, which finds S1 and S3 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2)', async () => {
+test('CC-1 CC-2 CC-3 CC-5 SM-11 the Continuity checker opens on the alignment check, which finds S1 in code and the recorded P1 and P2 by Claude (SM-2: no facts, so no S2; A52: no S3)', async () => {
   await rail(page, 'Continuity checker').click();
   await expect(rail(page, 'Continuity checker')).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('tab', { name: 'Alignment check' })).toHaveAttribute(
@@ -92,18 +92,16 @@ test('CC-1 CC-2 CC-3 CC-5 SM-11 the Continuity checker opens on the alignment ch
   // AI-6: the first Claude run in a bible says what is sent, before anything is.
   await page.getByTestId('claude-acknowledge').click();
   await expect(view().getByTestId('alignment-status')).toContainText(
-    'Done. Structural checks: 2 found. Claude read 8 chapters and found 2.',
+    'Done. Structural checks: 1 found. Claude read 8 chapters and found 2.',
     { timeout: 30_000 },
   );
   const structural = view().getByTestId('structural-findings').getByTestId('finding');
-  await expect(structural).toHaveCount(2);
+  await expect(structural).toHaveCount(1);
   await expect(finding('character-present-while-dead')).toContainText(
     'Chapter 4 is set in 2032 and lists Peter Hale (H2) as present. Peter Hale died in 2030.',
   );
   await expect(finding('fact-acted-on-before-learned')).toHaveCount(0);
-  await expect(finding('event-linked-as-happened-after-story-year')).toContainText(
-    'E10 is dated 2090',
-  );
+  await expect(finding('event-linked-as-happened-after-story-year')).toHaveCount(0);
   const p1 = finding('age');
   await expect(p1).toContainText('Chapter 5: Candles');
   await expect(p1).toContainText('line 1');
@@ -179,24 +177,21 @@ test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and wha
 
 test('CC-4 Dismiss hides a finding, and it stays hidden when the check runs again', async () => {
   await rail(page, 'Continuity checker').click();
-  await finding('character-present-while-dead').getByRole('button', { name: 'Dismiss' }).click();
+  // NF-2: the actions are buttons reached by Tab and pressed with Enter.
+  const dismiss = finding('character-present-while-dead').getByRole('button', { name: 'Dismiss' });
+  await dismiss.focus();
+  await page.keyboard.press('Enter');
   await expect(finding('character-present-while-dead')).toHaveCount(0);
   await expect(view().getByTestId('findings-dismissed')).toContainText(
     '1 dismissed finding is hidden',
   );
   await view().getByTestId('alignment-run').click();
   await expect(view().getByTestId('alignment-status')).toContainText(
-    'Done. Structural checks: 2 found, 1 dismissed and unchanged.',
+    'Done. Structural checks: 1 found, 1 dismissed and unchanged.',
     { timeout: 30_000 },
   );
   await expect(finding('character-present-while-dead')).toHaveCount(0);
-  await expect(view().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(1);
-  // NF-2: the actions are buttons reached by Tab and pressed with Enter.
-  const check = 'event-linked-as-happened-after-story-year';
-  const dismiss = finding(check).getByRole('button', { name: 'Dismiss' });
-  await dismiss.focus();
-  await page.keyboard.press('Enter');
-  await expect(finding(check)).toHaveCount(0);
+  await expect(view().getByTestId('structural-findings').getByTestId('finding')).toHaveCount(0);
 });
 
 test('CC-1 AI-1 Stop ends an alignment run part way: it says Stopped and records no new findings', async () => {

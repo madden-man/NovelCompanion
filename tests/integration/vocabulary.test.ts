@@ -221,27 +221,6 @@ describe('IP-9 statuses and provenance are lists the write path holds entries to
     const again = (await items('statuses')).find((i) => i.id === 'loose-end')!;
     expect(again.extra).toEqual({ kind: 'idea' });
   });
-
-  test('IP-9 SB-5 an entry under a canon-kind status is selected as canon', async () => {
-    const input = { kind: 'chapter' as const, chapterId: 'CH6' };
-    const first = (await invoke('session.relevant', { input })).selection.strands[0]!.groups.find(
-      (g) => g.kind === 'characters',
-    )!.items[0]!;
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: first.id,
-      patch: { status: 'settled' },
-    });
-    const again = (await invoke('session.relevant', { input })).selection.strands[0]!.groups.find(
-      (g) => g.kind === 'characters',
-    )!.items.find((i) => i.id === first.id)!;
-    expect([again.status, again.kind]).toEqual(['settled', 'canon']);
-    await invoke('entry.update', {
-      collection: 'characters',
-      id: first.id,
-      patch: { status: first.status },
-    });
-  });
 });
 
 describe('IP-10 IP-11 IP-14 the bible settings', () => {

@@ -1,14 +1,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import {
-  establishedPlanned,
-  lineDiff,
-  manuscriptChange,
-  manuscriptLines,
-} from '../../src/shared/domain/manuscript';
+import { lineDiff, manuscriptChange, manuscriptLines } from '../../src/shared/domain/manuscript';
 import { parseLocator } from '../../src/main/session/sources';
-import { briefData } from '../helpers/briefFixture';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -63,20 +57,6 @@ describe('MS-1 MS-4 manuscript text and the re-import diff', () => {
       locator: '/Users/t/Chapter 3.docx',
     });
     expect(parseLocator('')).toBeNull();
-  });
-});
-
-describe('MS-3 the planned entries a chapter establishes', () => {
-  test('MS-3 SM-3 CH6 with the supplement establishes its point of view moment of 2045, not a 2090 event', () => {
-    expect(establishedPlanned(briefData(true), 'CH6').map((e) => [e.id, e.why])).toEqual([
-      ['B4', 'a moment of the point of view in these years'],
-    ]);
-  });
-
-  test('MS-3 SM-3 CH7 establishes its planned characters and the planned moment of its point of view', () => {
-    // Hand-checked against the fixture: X1 Tomas is planned and present; B6 is Lan's planned
-    // moment of 2060, CH7's year, and Lan is its point of view; Z3, H5, PLC3 are canon.
-    expect(establishedPlanned(briefData(true), 'CH7').map((e) => e.id)).toEqual(['X1', 'B6']);
   });
 });
 
