@@ -62,11 +62,39 @@ export interface SessionOptions {
   readOnly?: boolean;
 }
 
+/**
+ * The opens in flight, one per store and bible. A second open of the same
+ * bible while the first is still migrating joins it instead of running the
+ * migrations again against the same collections (the two runs would race,
+ * and one would fail on a collection the other had just dropped).
+ */
+const inFlight = new WeakMap<Store, Map<string, Promise<OpenBible>>>();
+
 /** Open a bible, bring its schema up to date, and load the read model and index. */
-export async function openBibleSession(
+export function openBibleSession(
   store: Store,
   id: string,
   options: SessionOptions = {},
+): Promise<OpenBible> {
+  let opens = inFlight.get(store);
+  if (!opens) {
+    opens = new Map();
+    inFlight.set(store, opens);
+  }
+  const key = `${id}${options.readOnly ? ':read-only' : ''}`;
+  const joined = opens.get(key);
+  if (joined) return joined;
+  const open = openBibleSessionOnce(store, id, options).finally(() => {
+    if (opens.get(key) === open) opens.delete(key);
+  });
+  opens.set(key, open);
+  return open;
+}
+
+async function openBibleSessionOnce(
+  store: Store,
+  id: string,
+  options: SessionOptions,
 ): Promise<OpenBible> {
   const handle = await openBible(store, id);
   if (options.readOnly) {

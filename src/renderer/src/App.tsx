@@ -56,13 +56,20 @@ function Shell() {
     };
   }, [connectionState]);
 
+  // While a bible opens (its migrations can take seconds), every Open button waits,
+  // so a second click cannot start a second open of the same bible.
+  const [opening, setOpening] = useState(false);
   const open = async (id: string) => {
+    if (opening) return;
     setError(null);
+    setOpening(true);
     try {
       const { bible } = await window.api.invoke('bible.open', { slug: id });
       setCurrent(bible);
     } catch (e) {
       setError(plainError(e));
+    } finally {
+      setOpening(false);
     }
   };
 
@@ -70,7 +77,7 @@ function Shell() {
     <>
       <section className="panel stack" aria-labelledby="bibles-heading">
         <h2 id="bibles-heading">Bibles</h2>
-        <BibleSwitcher list={list} current={current} onOpen={open} />
+        <BibleSwitcher list={list} current={current} opening={opening} onOpen={open} />
       </section>
       {list?.connection === 'connected' && <NewBible onError={setError} />}
       {list?.connection === 'unavailable' && !current && (
@@ -116,9 +123,10 @@ function Shell() {
 function BibleSwitcher(props: {
   list: BibleList | null;
   current: Bible | null;
+  opening: boolean;
   onOpen: (id: string) => Promise<void>;
 }) {
-  const { list, current, onOpen } = props;
+  const { list, current, opening, onOpen } = props;
   // The connection banner already says why MongoDB is out of reach.
   const state = useConnection().status?.state;
   const banner = state === 'unavailable' || state === 'readOnly';
@@ -144,7 +152,8 @@ function BibleSwitcher(props: {
                   type="button"
                   className="btn small"
                   aria-pressed={isOpen}
-                  disabled={isOpen}
+                  aria-busy={opening && !isOpen}
+                  disabled={isOpen || opening}
                   onClick={() => void onOpen(b.id)}
                 >
                   {isOpen ? 'Open now' : `Open ${b.name}`}
