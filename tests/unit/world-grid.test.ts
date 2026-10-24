@@ -21,6 +21,7 @@ import {
   lineAt,
   makeScale,
   MARKER_DEFAULTS,
+  markerExtent,
   placeRow,
   roughLabelWidth,
   scaleWidth,
@@ -272,6 +273,101 @@ describe('SM-9 A50 placeRow with reserveLabel', () => {
     const clear = 115 + 4 + 240 + 4;
     expect(placeRow('r', [first, titled('b', at(clear), 'b')], s, reserve).lanes).toBe(1);
     expect(placeRow('r', [first, titled('b', at(clear) - 1, 'b')], s, reserve).lanes).toBe(2);
+  });
+});
+
+describe('SM-9 A54 unbounded lanes with every title reserved', () => {
+  const s = makeScale({ from: 2025, to: 2100 }, 20);
+  const open = { ...MARKER_DEFAULTS, maxLanes: Infinity, reserveLabel: true };
+  const titled = (id: string, start: number, end: number, label: string): GridItem => ({
+    id,
+    row: 'r',
+    startYear: start,
+    endYear: end,
+    label,
+  });
+  /** True when two markers in a lane have dot, bar or title within the gap of each other. */
+  const touching = (row: ReturnType<typeof placeRow>) =>
+    row.markers.some((a) =>
+      row.markers.some(
+        (b) => a !== b && a.lane === b.lane && a.x <= b.x && markerExtent(a, open) + open.gap > b.x,
+      ),
+    );
+
+  test('SM-9 A54 N markers in the same year land in N distinct lanes, in reading order', () => {
+    for (const n of [1, 5, 12]) {
+      const same = Array.from({ length: n }, (_, i) =>
+        titled(`m${i}`, 2040, 2040, `Moment ${String(i).padStart(2, '0')}`),
+      );
+      const row = placeRow('r', same, s, open);
+      expect(row.lanes).toBe(n);
+      expect(new Set(row.markers.map((m) => m.lane)).size).toBe(n);
+      expect(row.markers.map((m) => m.lane)).toEqual(Array.from({ length: n }, (_, i) => i));
+      expect(row.markers.every((m) => m.showLabel)).toBe(true);
+    }
+    // The other grids keep their cap.
+    const capped = placeRow(
+      'r',
+      Array.from({ length: 9 }, (_, i) => titled(`m${i}`, 2040, 2040, 'x')),
+      s,
+    );
+    expect(capped.lanes).toBe(MARKER_DEFAULTS.maxLanes);
+  });
+
+  test('SM-9 A54 a bar reserves its title after its end; a dot that lands on the title takes another lane', () => {
+    const bar = titled('bar', 2030, 2032, 'Apprenticed to the printer');
+    const row = placeRow('r', [bar], s, open);
+    const m = row.markers[0]!;
+    expect(m.bar).toBe(true);
+    const title = roughLabelWidth(bar.label);
+    expect(markerExtent(m, open)).toBe(m.x + m.width + 4 + title);
+    // Without reserveLabel only the bar counts.
+    expect(markerExtent(m, MARKER_DEFAULTS)).toBe(m.x + m.width);
+    // 2034 is past the bar's end but under its title: a lane of its own.
+    const under = placeRow('r', [bar, titled('d', 2034, 2034, 'Marries')], s, open);
+    expect(under.markers.map((x) => x.lane)).toEqual([0, 1]);
+    // Past the title and the gap, it shares the lane again.
+    const clear = m.x + m.width + 4 + title + 4;
+    const past = 2025 + Math.ceil((clear - 5) / 20);
+    const after = placeRow('r', [bar, titled('d', past, past, 'Marries')], s, open);
+    expect(after.markers.map((x) => x.lane)).toEqual([0, 0]);
+  });
+
+  test('SM-9 A54 markers whose dot and title would touch never share a lane', () => {
+    // A dense, mixed row: dots, bars and titles of every length, years close together.
+    const items: GridItem[] = [];
+    for (let i = 0; i < 60; i++) {
+      const start = 2026 + ((i * 7) % 50);
+      const end = i % 4 === 0 ? start + (i % 6) : start;
+      items.push(titled(`m${i}`, start, end, 'Event '.repeat(1 + (i % 5)).trim()));
+    }
+    const row = placeRow('r', items, s, open);
+    expect(touching(row)).toBe(false);
+    expect(row.markers.every((m) => m.showLabel)).toBe(true);
+    // With the default cap of four lanes the same row does crowd.
+    expect(touching(placeRow('r', items, s, { ...open, maxLanes: 4 }))).toBe(true);
+  });
+
+  test('SM-9 A54 the row grows a lane height for every lane it needs', () => {
+    const groups = [
+      {
+        id: 'g',
+        label: 'G',
+        open: true,
+        rows: [{ key: 'r', label: 'R', groupId: 'g', own: false }],
+      },
+    ];
+    const same = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ ...titled(`m${i}`, 2040, 2040, `T${i}`), row: 'r' }));
+    const heightOf = (n: number) => {
+      const layout = layoutGrid(groups, same(n), s, open);
+      const row = layout.lines.find((l) => l.kind === 'row');
+      return row!.height;
+    };
+    const lane = GRID_METRICS.lane;
+    expect(heightOf(1)).toBe(lane + 2 * GRID_METRICS.rowPad);
+    expect(heightOf(7)).toBe(7 * lane + 2 * GRID_METRICS.rowPad);
+    expect(heightOf(7) - heightOf(6)).toBe(lane);
   });
 });
 

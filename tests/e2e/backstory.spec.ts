@@ -737,6 +737,91 @@ test('SM-9 A50 in the person view a row taller than the frame scrolls, and the n
   }
 });
 
+/**
+ * A54: every pair of text boxes in the grid that overlap: the marker titles and the unknown
+ * birth notes, each against the others and against every marker but its own. Empty when no text
+ * sits on other text or on another marker.
+ */
+async function overlaps(): Promise<string[]> {
+  return grid().evaluate((g) => {
+    type Box = { name: string; owner: Element | null; r: DOMRect };
+    const texts: Box[] = [];
+    for (const el of g.querySelectorAll<HTMLElement>('.wg-mlabel, .bs-life-unknown')) {
+      if (!el.textContent?.trim()) continue;
+      const owner = el.closest('.wg-marker');
+      texts.push({
+        name: `${owner?.getAttribute('data-id') ?? 'note'} "${el.textContent}"`,
+        owner,
+        r: el.getBoundingClientRect(),
+      });
+    }
+    const marks: Box[] = [...g.querySelectorAll<HTMLElement>('.wg-marker')].map((el) => ({
+      name: `marker ${el.dataset.id}`,
+      owner: el,
+      r: el.getBoundingClientRect(),
+    }));
+    const hit = (a: DOMRect, b: DOMRect) =>
+      a.left < b.right - 0.5 &&
+      b.left < a.right - 0.5 &&
+      a.top < b.bottom - 0.5 &&
+      b.top < a.bottom - 0.5;
+    const out: string[] = [];
+    texts.forEach((a, i) => {
+      for (const b of texts.slice(i + 1)) if (hit(a.r, b.r)) out.push(`${a.name} on ${b.name}`);
+      for (const m of marks)
+        if (m.owner !== a.owner && hit(a.r, m.r)) out.push(`${a.name} on ${m.name}`);
+    });
+    return out;
+  });
+}
+
+test('SM-9 A54 five moments in one year: every title shows and no text sits on other text, in the person view and with everyone', async () => {
+  const titles = [
+    'Signs on with the Pacific freight line',
+    'Meets Zhou Lan',
+    'Loses the house in the flood',
+    'Moves north',
+    'Writes the first letter home after eleven years',
+  ];
+  const made: string[] = [];
+  for (const title of titles) {
+    const { entry } = await invoke('entry.create', {
+      collection: 'moments',
+      data: { title, characterId: 'H1', year: 2035 },
+    });
+    made.push(entry._id);
+  }
+  try {
+    for (const zoom of ['Whole span', 'Close'] as const) {
+      await zoomTo(zoom);
+      await openPerson('H1');
+      await expect(personView()).toHaveCount(1);
+      for (const id of made) await expect(marker(id).locator('.wg-mlabel')).toHaveCount(1);
+      const lanes = await Promise.all(made.map((id) => marker(id).evaluate((el) => el.style.top)));
+      expect(new Set(lanes).size).toBe(5);
+      expect(await overlaps()).toEqual([]);
+      await showEveryone().click();
+      await expect(personView()).toHaveCount(0);
+      // With everyone, every title shows too, and the row grows to hold the five lanes.
+      const shown = grid().locator('.bs-marker');
+      const count = await shown.count();
+      expect(count).toBeGreaterThan(5);
+      await expect(grid().locator('.bs-marker .wg-mlabel')).toHaveCount(count);
+      expect((await row('H1').boundingBox())!.height).toBeGreaterThanOrEqual(5 * 22 + 14);
+      expect(await overlaps()).toEqual([]);
+      // The name cell keeps to its row.
+      const cellBox = (await rowCell('H1').boundingBox())!;
+      const rowBox = (await row('H1').boundingBox())!;
+      expect(cellBox.y).toBeCloseTo(rowBox.y, 0);
+    }
+  } finally {
+    for (const id of made) {
+      await invoke('entry.delete', { collection: 'moments', id });
+      await invoke('entry.purge', { collection: 'moments', id });
+    }
+  }
+});
+
 test('SM-9 ED-3 a marker drags along its row to a new year and Undo restores it; ArrowRight does the same', async () => {
   await zoomTo('Close');
   await showRow('H1');

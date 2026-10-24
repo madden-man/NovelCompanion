@@ -430,18 +430,36 @@ export const PERSON_METRICS: GridMetrics = {
   rowPad: 10,
 };
 
+/**
+ * A54: the band at the foot of a row whose birth is unknown, where "Birth year unknown" sits clear
+ * of the lanes and their titles.
+ */
+export const UNKNOWN_BAND = 14;
+
 /** A50: the widest a title draws in the person view; a longer one ends in an ellipsis. */
 export const PERSON_LABEL_MAX = 240;
 
 /**
+ * A54: the grid's markers, the World events grid's sizes, but every title drawn and its room kept
+ * in its lane, and the lanes unbounded: a marker that fits no lane opens a new one, so no title
+ * ever sits on another. The row grows with its lanes.
+ */
+export const BACKSTORY_MARKERS: MarkerOptions = {
+  ...MARKER_DEFAULTS,
+  maxLanes: Infinity,
+  reserveLabel: true,
+};
+
+/**
  * A50, IP-4: the person view's markers, the A49 sizes (14px dots, 20px big dots, 10px and 14px
- * bars), each with its title drawn and the title's room kept in its lane, up to eight lanes.
+ * bars), each with its title drawn and the title's room kept in its lane. A54: as many lanes as
+ * the titles need.
  */
 export const PERSON_MARKERS: MarkerOptions = {
   dot: 14,
   bigDot: 20,
   gap: 6,
-  maxLanes: 8,
+  maxLanes: Infinity,
   labelWidth: (label) => Math.min(roughLabelWidth(label), PERSON_LABEL_MAX),
   barHeight: 10,
   bigBarHeight: 14,
@@ -488,20 +506,36 @@ export function backstoryGrid(input: BackstoryGridInput): BackstoryGrid {
   };
 }
 
-/** Lay the grid out on a scale through the World events grid's layout. */
+/**
+ * Lay the grid out on a scale through the World events grid's layout. The renderer passes
+ * BACKSTORY_MARKERS with a `labelWidth` that measures the drawn text (A54).
+ */
 export function layoutBackstory(
   g: BackstoryGrid,
   s: YearScale,
   closed: ReadonlySet<string> = new Set(),
-  opts: MarkerOptions = MARKER_DEFAULTS,
+  opts: MarkerOptions = BACKSTORY_MARKERS,
 ): GridLayout {
-  return layoutGrid(
+  const layout = layoutGrid(
     gridGroups(g.families, closed),
     momentItems(g.moments, g.kinds),
     s,
     opts,
     BACKSTORY_METRICS,
   );
+  // A54: a row whose birth is unknown says so in a band at its foot, under the lanes.
+  let shift = 0;
+  for (const line of layout.lines) {
+    line.y += shift;
+    if (line.kind !== 'row') continue;
+    const p = g.people.get(line.row.key);
+    if (p && lifespanOf(p).kind === 'unknown') {
+      line.height += UNKNOWN_BAND;
+      shift += UNKNOWN_BAND;
+    }
+  }
+  layout.height += shift;
+  return layout;
 }
 
 /** A50: the person view's layout: the grid's, with the person's lifespan beside it. */
@@ -522,6 +556,7 @@ export function layoutPerson(
   personId: string,
   s: YearScale,
   minHeight = 0,
+  markers: MarkerOptions = PERSON_MARKERS,
 ): PersonLayout {
   const metrics = PERSON_METRICS;
   const person = g.people.get(personId) ?? null;
@@ -532,9 +567,11 @@ export function layoutPerson(
       g.kinds,
     ),
     s,
-    PERSON_MARKERS,
+    markers,
   );
-  const height = Math.max(layout.lanes * metrics.lane + 2 * metrics.rowPad, minHeight);
+  const life: Lifespan = person ? lifespanOf(person) : { kind: 'unknown', from: null, to: null };
+  const band = person && life.kind === 'unknown' ? UNKNOWN_BAND : 0;
+  const height = Math.max(layout.lanes * metrics.lane + 2 * metrics.rowPad + band, minHeight);
   const row = {
     key: personId,
     label: person?.name ?? '',
@@ -547,9 +584,9 @@ export function layoutPerson(
     height: metrics.header + height,
     width: scaleWidth(s),
     metrics,
-    markers: PERSON_MARKERS,
+    markers,
     person,
-    life: person ? lifespanOf(person) : { kind: 'unknown', from: null, to: null },
+    life,
   };
 }
 
