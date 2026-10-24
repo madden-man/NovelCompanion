@@ -127,8 +127,8 @@ describe('A44 migration 10 on a version 9 bible', () => {
   });
 
   test('A44 opening takes a snapshot of the HTML first, then runs migration 10', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(13);
-    expect(await schemaVersion(open.handle)).toBe(13);
+    expect(LATEST_SCHEMA_VERSION).toBe(14);
+    expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const before = (await open.snapshots!.list()).find((s) => s.reason === 'migration')!;
     expect(before).toMatchObject({ label: MIGRATION10_SNAPSHOT_LABEL, schemaVersion: 9 });
     const data = await open.snapshots!.read(before.id);

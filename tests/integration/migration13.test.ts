@@ -177,8 +177,8 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
   });
 
   test('A53 opening takes a snapshot of the version 12 bible first, then runs migration 13', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(13);
-    expect(await schemaVersion(open.handle)).toBe(13);
+    expect(LATEST_SCHEMA_VERSION).toBe(14);
+    expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION13_SNAPSHOT_LABEL, schemaVersion: 12 });
@@ -328,7 +328,7 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
 describe('A53 migration 13 on the fixture as it ships', () => {
   test('A53 a new bible ends at version 13 with none of what migration 13 removes', async () => {
     const handle = await createBible(store, freshSlug('mig13-new'), 'New');
-    expect(await schemaVersion(handle)).toBe(13);
+    expect(await schemaVersion(handle)).toBe(LATEST_SCHEMA_VERSION);
     const names = await handle.collectionNames();
     for (const c of Object.keys(DROPPED)) expect(names, c).not.toContain(c);
     for (const c of ENTRY_COLLECTIONS) {

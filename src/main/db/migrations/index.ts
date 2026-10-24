@@ -11,6 +11,7 @@ import { markdownText } from './010-markdown-text';
 import { vocabulary } from './011-vocabulary';
 import { momentKinds } from './012-moment-kinds';
 import { cuts } from './013-cuts';
+import { partOrder } from './014-part-order';
 import type { Migration } from './types';
 
 export type { Migration } from './types';
@@ -30,6 +31,7 @@ export const migrations: readonly Migration[] = [
   vocabulary,
   momentKinds,
   cuts,
+  partOrder,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.length;
