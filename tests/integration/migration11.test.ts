@@ -122,9 +122,9 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
   const list11 = (id: string) =>
     at11.collection('lists').findOne({ _id: id as never }) as Promise<Document>;
 
-  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 to 13', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(13);
-    expect(await schemaVersion(open.handle)).toBe(13);
+  test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 to the latest', async () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(14);
+    expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);
     expect(before[0]).toMatchObject({ label: MIGRATION11_SNAPSHOT_LABEL, schemaVersion: 10 });
@@ -231,9 +231,9 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
 });
 
 describe('A47 migration 11 on the fixture as it ships', () => {
-  test('A47 the fixture loads at version 13 and migration 11 leaves its events, families and lists as they are', async () => {
+  test('A47 the fixture loads at the latest version and migration 11 leaves its events, families and lists as they are', async () => {
     const handle = await loadFixture(store, freshSlug('mig11-fx'));
-    expect(await schemaVersion(handle)).toBe(13);
+    expect(await schemaVersion(handle)).toBe(LATEST_SCHEMA_VERSION);
     // A53: migration 11 seeds statuses and provenance, which migration 13 removed; they are left out.
     const snapshot = async () => ({
       events: await handle.collection('worldEvents').find({}).sort({ _id: 1 }).toArray(),
