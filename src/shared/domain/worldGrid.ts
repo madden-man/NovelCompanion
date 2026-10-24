@@ -708,7 +708,7 @@ export function writingBand(
     primary: boolean;
     startYear: number;
     endYear: number;
-    readingOrder: number | null;
+    number: number | null;
     chapterTitle: string;
     label: string;
   }[],
@@ -726,6 +726,6 @@ export function writingBand(
   return {
     from: s.startYear,
     to: s.endYear,
-    label: `Chapter ${s.readingOrder ?? '?'}: ${s.chapterTitle}, ${s.label}, being written (${years})`,
+    label: `Chapter ${s.number ?? '?'}: ${s.chapterTitle}, ${s.label}, being written (${years})`,
   };
 }

@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
-import { useEntries } from '../data';
+import { useChapterNumbers, useEntries } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
 import { OpenSettingsButton } from '../claude';
@@ -35,6 +35,7 @@ export function ManuscriptView({
   openFlow?: boolean;
 }) {
   const chapters = useEntries('chapters');
+  const numbers = useChapterNumbers();
   const [selected, setSelected] = useState<string | null>(chapterId ?? null);
   const sorted = useMemo(
     () => [...chapters].sort((a, b) => Number(a.readingOrder ?? 0) - Number(b.readingOrder ?? 0)),
@@ -58,7 +59,7 @@ export function ManuscriptView({
                 onClick={() => setSelected(c._id)}
                 data-chapter={c._id}
               >
-                {`Chapter ${String(c.readingOrder)}: ${entryTitle(c)}`}
+                {`Chapter ${numbers.get(c._id) ?? '?'}: ${entryTitle(c)}`}
               </button>{' '}
               {c.written === true && <span className="chip now">written</span>}
               {c.summaryOutOfDate === true && (

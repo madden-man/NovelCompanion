@@ -12,6 +12,7 @@ import type { LifeState, Lifespan, StoryMoment, YearStates } from './ages';
 import { compareStoryDates, isKnown, yearOf } from './dates';
 import type { KnownDate } from './dates';
 import { itemPath } from './lists';
+import { chapterNumbers } from './numbering';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 
@@ -406,6 +407,8 @@ export interface StrandSpan {
   chapterId: string;
   chapterTitle: string;
   readingOrder: number | null;
+  /** The chapter's shown number, its place among the live chapters (A54). */
+  number: number | null;
   written: boolean;
   strandId: string;
   label: string;
@@ -420,7 +423,9 @@ export interface StrandSpan {
 /** Every strand of every live chapter, in reading order. */
 export function strandSpans(data: TimelineData): StrandSpan[] {
   const out: StrandSpan[] = [];
-  for (const c of data.all('chapters')) {
+  const chapters = data.all('chapters');
+  const numbers = chapterNumbers(chapters);
+  for (const c of chapters) {
     if (!live(c)) continue;
     const strands = Array.isArray(c.strands) ? c.strands.filter(isPlainObject) : [];
     for (const s of strands) {
@@ -431,6 +436,7 @@ export function strandSpans(data: TimelineData): StrandSpan[] {
         chapterId: String(c._id),
         chapterTitle: str(c.title) || 'Untitled chapter',
         readingOrder: num(c.readingOrder),
+        number: numbers.get(String(c._id)) ?? null,
         written: c.written === true,
         strandId: str(s.id),
         label: str(s.label),

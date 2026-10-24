@@ -14,6 +14,7 @@
  */
 import { lifeState } from '../ages';
 import type { LifeState } from '../ages';
+import { chapterNumbers } from '../numbering';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { characterName } from '../timeline';
@@ -99,16 +100,20 @@ function strandsOf(chapter: Doc): StrandOf[] {
   return out;
 }
 
-/** The shown chapter number is the reading order, never a number in the title (PL-3). */
-const chapterLabel = (c: Doc) => `Chapter ${num(c.readingOrder) ?? '?'}`;
+/**
+ * The shown chapter number is the chapter's place among the live chapters in
+ * reading order (A54), never a number in the title (PL-3).
+ */
+const chapterLabel = (c: Doc, numbers: Map<string, number>) =>
+  `Chapter ${numbers.get(str(c._id)) ?? '?'}`;
 const yearText = (s: StrandOf) =>
   s.startYear === s.endYear ? String(s.startYear) : `${s.startYear} to ${s.endYear}`;
 
 /** "Chapter 4 is set in 2032", or "Chapter 2's backstory strand is set in 2032". */
-function setIn(c: Doc, s: StrandOf): string {
+function setIn(c: Doc, s: StrandOf, numbers: Map<string, number>): string {
   return s.primary
-    ? `${chapterLabel(c)} is set in ${yearText(s)}`
-    : `${chapterLabel(c)}'s ${s.label} strand is set in ${yearText(s)}`;
+    ? `${chapterLabel(c, numbers)} is set in ${yearText(s)}`
+    : `${chapterLabel(c, numbers)}'s ${s.label} strand is set in ${yearText(s)}`;
 }
 
 /** Dead or unborn for the whole of a strand's years, or null when alive at some point or unknown. */
@@ -124,7 +129,11 @@ function outsideLife(
   return null;
 }
 
-function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] {
+function chapterFindings(
+  data: TimelineData,
+  chapter: Doc,
+  numbers: Map<string, number>,
+): StructuralFinding[] {
   const out: StructuralFinding[] = [];
   const chapterId = str(chapter._id);
   const characters = new Map(
@@ -165,7 +174,7 @@ function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] 
           s,
           [cid],
           `${name} is present after their death`,
-          `${setIn(chapter, s)} and lists ${name} (${cid}) as present. ${name} died in ${state.deathYear}.`,
+          `${setIn(chapter, s, numbers)} and lists ${name} (${cid}) as present. ${name} died in ${state.deathYear}.`,
         );
       } else {
         add(
@@ -173,7 +182,7 @@ function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] 
           s,
           [cid],
           `${name} is present before their birth`,
-          `${setIn(chapter, s)} and lists ${name} (${cid}) as present. ${name} is born in ${state.birthYear}.`,
+          `${setIn(chapter, s, numbers)} and lists ${name} (${cid}) as present. ${name} is born in ${state.birthYear}.`,
         );
       }
     }
@@ -189,7 +198,7 @@ function chapterFindings(data: TimelineData, chapter: Doc): StructuralFinding[] 
           s,
           [s.povCharacterId],
           `${name} tells a strand outside their lifetime`,
-          `${setIn(chapter, s)} with ${name} (${s.povCharacterId}) as the point of view. ${name} ${life}.`,
+          `${setIn(chapter, s, numbers)} with ${name} (${s.povCharacterId}) as the point of view. ${name} ${life}.`,
         );
       }
     }
@@ -222,7 +231,8 @@ export function structuralFindings(
   const chapters = chaptersInOrder(data).filter(
     (c) => scope.chapterId === null || str(c._id) === scope.chapterId,
   );
-  const out = chapters.flatMap((c) => chapterFindings(data, c));
+  const numbers = chapterNumbers(data.all('chapters'));
+  const out = chapters.flatMap((c) => chapterFindings(data, c, numbers));
   if (scope.chapterId !== null) return out;
   const g = buildGraph(data.all('characters'), data.all('unions'), data.all('parentLinks'));
   for (const w of treeWarnings(g)) {

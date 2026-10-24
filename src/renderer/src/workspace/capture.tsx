@@ -17,7 +17,7 @@ import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { ClaudeErrorNote, Disclosure, claudeNav, newRunId, useRunStream, watchRun } from './claude';
 import type { LiveRun } from './claude';
-import { useEntries, useStore } from './data';
+import { useChapterNumbers, useEntries, useStore } from './data';
 import { useFocusTrap } from './focusTrap';
 import { ProposalDiff } from './review';
 import { formatMoment, useStoryTime } from './storyTime';
@@ -151,6 +151,7 @@ interface Routed {
 function useStoryTimeWords(): { value: StoryTimeValue; words: string } {
   const story = useStoryTime();
   const chapters = useEntries('chapters');
+  const numbers = useChapterNumbers();
   const value: StoryTimeValue = story.time ?? { year: story.year };
   const chapter = value.chapterId ? chapters.find((c) => c._id === value.chapterId) : undefined;
   const strands = Array.isArray(chapter?.strands)
@@ -158,7 +159,7 @@ function useStoryTimeWords(): { value: StoryTimeValue; words: string } {
     : [];
   const strand = strands.find((s) => s.id === value.strandId);
   const where = chapter
-    ? `, writing Chapter ${String(chapter.readingOrder ?? '')}: ${entryTitle(chapter)}${strand ? `, ${strand.label}` : ''}`
+    ? `, writing Chapter ${numbers.get(chapter._id) ?? ''}: ${entryTitle(chapter)}${strand ? `, ${strand.label}` : ''}`
     : '';
   const set = story.time ? '' : ' (from the current position)';
   return { value, words: `Story time ${formatMoment(value)}${set}${where}` };

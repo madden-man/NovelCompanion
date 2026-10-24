@@ -10,6 +10,7 @@ import { lifeState } from '../ages';
 import { selectForSession } from '../brief/selection';
 import type { SelectionSettings } from '../brief/selection';
 import { briefMaterial } from '../brief/render';
+import { chapterNumbers } from '../numbering';
 import { isPlainObject } from '../paths';
 import type { Doc } from '../paths';
 import { chapterYear } from '../position';
@@ -84,8 +85,8 @@ export function alignmentMaterial(
   const places = byId(data, 'places');
   const year = chapterYear(chapter);
   const title = entryTitle(chapter);
-  const order = num(chapter.readingOrder);
-  const heading = `Chapter ${order ?? '?'}: ${title} [${chapterId}]`;
+  const numbers = chapterNumbers(data.all('chapters'));
+  const heading = `Chapter ${numbers.get(chapterId) ?? '?'}: ${title} [${chapterId}]`;
   const given = new Map<string, { collection: string; id: string; title: string }>();
   const give = (collection: string, d: Doc) =>
     given.set(`${collection}:${str(d._id)}`, { collection, id: str(d._id), title: entryTitle(d) });
@@ -114,7 +115,7 @@ export function alignmentMaterial(
   plot.push('Chapter order (reading order, story year):');
   for (const c of chaptersInOrder(data)) {
     plot.push(
-      `${num(c.readingOrder) ?? '?'}. ${entryTitle(c)} [${str(c._id)}], ${chapterYear(c) ?? 'no year'}${str(c._id) === chapterId ? ' (this chapter)' : ''}`,
+      `${numbers.get(str(c._id)) ?? '?'}. ${entryTitle(c)} [${str(c._id)}], ${chapterYear(c) ?? 'no year'}${str(c._id) === chapterId ? ' (this chapter)' : ''}`,
     );
   }
 

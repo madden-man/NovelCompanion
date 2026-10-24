@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { AlignmentOutput } from '../../../shared/domain/continuity/alignment';
 import { alignmentMaterial } from '../../../shared/domain/continuity/plot';
 import { numberedText, textHash } from '../../../shared/domain/continuity/lines';
+import { chapterNumbers } from '../../../shared/domain/numbering';
 import { entryTitle } from '../../../shared/schema';
 import type { OpenBible } from '../../db/session';
 import { material } from '../prompts';
@@ -39,7 +40,8 @@ export const alignment: FeatureDefinition<AlignmentInput, AlignmentOutput> = {
   title: (input, session: OpenBible) => {
     const ch = session.model.get('chapters', input.chapterId);
     if (!ch || ch.deletedAt) throw new Error('That chapter is not in the bible.');
-    return `Alignment check of Chapter ${String(ch.readingOrder ?? '?')}: ${entryTitle(ch)}`;
+    const n = chapterNumbers(session.model.all('chapters')).get(input.chapterId);
+    return `Alignment check of Chapter ${n ?? '?'}: ${entryTitle(ch)}`;
   },
   build(input, session) {
     const m = alignmentMaterial(session.model, input.chapterId, session.repo.selectionSettings());

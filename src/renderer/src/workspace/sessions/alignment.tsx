@@ -16,7 +16,7 @@ import {
   useRunStream,
   watchRun,
 } from '../claude';
-import { useEntries, useStore } from '../data';
+import { useChapterNumbers, useEntries, useStore } from '../data';
 import type { Entry } from '../data';
 import { Editable, EntryEditable, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
@@ -50,8 +50,8 @@ const linesText = (f: Pick<FindingWire, 'lineStart' | 'lineEnd'>) =>
       ? `lines ${f.lineStart} to ${f.lineEnd}`
       : `line ${f.lineStart}`;
 
-const chapterText = (f: Pick<FindingWire, 'readingOrder' | 'chapter'>) =>
-  f.chapter ? `Chapter ${f.readingOrder ?? '?'}: ${f.chapter}` : 'Whole bible';
+const chapterText = (f: Pick<FindingWire, 'number' | 'chapter'>) =>
+  f.chapter ? `Chapter ${f.number ?? '?'}: ${f.chapter}` : 'Whole bible';
 
 /** Findings for a scope, reloaded whenever the bible changes. */
 export function useFindings(chapterId: Scope, states?: FindingWire['state'][]) {
@@ -158,7 +158,7 @@ function useAlignmentRun() {
           watchRun(runId);
           setCurrent({
             runId,
-            title: `Chapter ${c.readingOrder ?? '?'}: ${c.title}`,
+            title: `Chapter ${c.number ?? '?'}: ${c.title}`,
             i: i + 1,
             n: targets.length,
           });
@@ -847,6 +847,7 @@ export function RewriteTasks(props: { chapterId: Scope; onOpenChapter?: (id: str
 /** CC-1: the alignment check screen, the Continuity checker's first tab. */
 export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | null }) {
   const chapters = useEntries('chapters');
+  const numbers = useChapterNumbers();
   const [scope, setScope] = useState<Scope>(props.chapterId ?? null);
   const scopeId = useId();
   const sorted = [...chapters].sort(
@@ -854,7 +855,7 @@ export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | n
   );
   const chosen = sorted.find((c) => c._id === scope);
   const label = chosen
-    ? `Chapter ${String(chosen.readingOrder)}: ${String(chosen.title)}`
+    ? `Chapter ${numbers.get(chosen._id) ?? '?'}: ${String(chosen.title)}`
     : 'the whole manuscript';
   return (
     <div className="ws-wide stack" data-testid="alignment-view">
@@ -874,7 +875,7 @@ export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | n
           <option value="">The whole manuscript</option>
           {sorted.map((c) => (
             <option key={c._id} value={c._id}>
-              Chapter {String(c.readingOrder)}: {String(c.title)}
+              Chapter {numbers.get(c._id) ?? '?'}: {String(c.title)}
             </option>
           ))}
         </select>

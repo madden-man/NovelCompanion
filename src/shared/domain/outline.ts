@@ -4,7 +4,7 @@
  * story year are separate fields (PL-3): the grid can show either order and
  * reordering changes only the reading order.
  */
-import { groupLabel } from './numbering';
+import { chapterNumbers, groupLabel } from './numbering';
 import type { LifeState } from './ages';
 import { placePath } from './culture';
 import { chapterYear } from './position';
@@ -39,7 +39,10 @@ export interface OutlineChapter {
   kind: 'chapter';
   id: string;
   title: string;
+  /** The stored sort key. */
   readingOrder: number;
+  /** The shown number: the place among the live chapters in reading order, from 1 (A54). */
+  number: number;
   partId: string;
   storyYear: number | null;
   written: boolean;
@@ -148,23 +151,23 @@ export function outlineGrid(
 ): Outline {
   const parts = data.all('parts').filter(live);
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
+  const allChapters = data.all('chapters');
+  const numbers = chapterNumbers(allChapters);
 
-  const chapters: OutlineChapter[] = data
-    .all('chapters')
-    .filter(live)
-    .map((c) => {
-      const strands = strandsOf(c, characters);
-      return {
-        kind: 'chapter' as const,
-        id: str(c._id),
-        title: title(c, 'Untitled chapter'),
-        readingOrder: num(c.readingOrder) ?? 0,
-        partId: str(c.partId),
-        storyYear: chapterYear(c),
-        written: c.written === true,
-        strands,
-      };
-    });
+  const chapters: OutlineChapter[] = allChapters.filter(live).map((c) => {
+    const strands = strandsOf(c, characters);
+    return {
+      kind: 'chapter' as const,
+      id: str(c._id),
+      title: title(c, 'Untitled chapter'),
+      readingOrder: num(c.readingOrder) ?? 0,
+      number: numbers.get(str(c._id)) ?? 0,
+      partId: str(c.partId),
+      storyYear: chapterYear(c),
+      written: c.written === true,
+      strands,
+    };
+  });
 
   const byReading = (a: OutlineChapter, b: OutlineChapter) =>
     a.readingOrder - b.readingOrder || a.title.localeCompare(b.title);
@@ -299,6 +302,8 @@ export interface ChapterPage {
   id: string;
   title: string;
   readingOrder: number;
+  /** The shown number, as on the outline (A54); 0 for a chapter in the trash. */
+  number: number;
   storyYear: number | null;
   written: boolean;
   strands: {
@@ -315,7 +320,8 @@ export interface ChapterPage {
 
 /** A chapter with who is present and how old in each strand, and its places. */
 export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
-  const chapter = data.all('chapters').find((c) => str(c._id) === id);
+  const allChapters = data.all('chapters');
+  const chapter = allChapters.find((c) => str(c._id) === id);
   if (!chapter) return null;
   const characters = new Map(data.all('characters').map((c) => [str(c._id), c]));
   const places = data.all('places');
@@ -346,6 +352,7 @@ export function chapterPage(data: OutlineData, id: string): ChapterPage | null {
     id,
     title: title(chapter, 'Untitled chapter'),
     readingOrder: num(chapter.readingOrder) ?? 0,
+    number: chapterNumbers(allChapters).get(id) ?? 0,
     storyYear: chapterYear(chapter),
     written: chapter.written === true,
     strands,

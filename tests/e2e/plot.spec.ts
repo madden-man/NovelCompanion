@@ -457,6 +457,26 @@ test('A46 a chapter dragged onto the trash pinned at the top goes, its lines joi
   await expect.poll(async () => (await stored()).breaks).toEqual(before.breaks);
 });
 
+test('PL-3 KB-3 A54 chapter numbers count the live chapters from 1: trashing the second chapter makes the next one 2, and Undo brings 3 back', async () => {
+  const no = (id: string) => bar(id).locator('.cbar-no');
+  await expect(no('CH2')).toHaveText('Ch 2');
+  await expect(no('CH3')).toHaveText('Ch 3');
+  await expect(no('CH4')).toHaveText('Ch 4');
+  await bar('CH2').focus();
+  await page.keyboard.press('Delete');
+  await expect(bar('CH2')).toHaveCount(0);
+  // The stored reading order keeps its gap; the shown numbers do not.
+  expect(await readingOrder('CH3')).toBe(3);
+  await expect(no('CH3')).toHaveText('Ch 2');
+  await expect(no('CH4')).toHaveText('Ch 3');
+  await expect(bar('CH3')).toHaveAttribute('aria-label', /^Chapter 2, /);
+  await undo();
+  await expect(bar('CH2')).toHaveCount(1);
+  await expect(no('CH2')).toHaveText('Ch 2');
+  await expect(no('CH3')).toHaveText('Ch 3');
+  await expect(no('CH4')).toHaveText('Ch 4');
+});
+
 test('A46 a bar dragged across a divider joins the section on the other side; Undo puts it back', async () => {
   const lowerOf = () =>
     view()

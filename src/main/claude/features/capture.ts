@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { entryTitle } from '../../../shared/schema';
+import { chapterNumbers } from '../../../shared/domain/numbering';
 import { StoryTimeValue } from '../../../shared/storyTime';
 import type { EntryRefWire } from '../../../shared/claude';
 import type { OpenBible } from '../../db/session';
@@ -163,6 +164,7 @@ export function storyTimeWords(
   const chapter = t.chapterId ? session.model.get('chapters', t.chapterId) : undefined;
   if (!chapter || chapter.deletedAt) return { words: `Story year ${date}.`, given: [] };
   const title = entryTitle(chapter);
+  const number = chapterNumbers(session.model.all('chapters')).get(String(t.chapterId));
   const strands = Array.isArray(chapter.strands)
     ? (chapter.strands as { id: string; label: string }[])
     : [];
@@ -170,7 +172,7 @@ export function storyTimeWords(
   return {
     // AI-5: the chapter title and strand label are the writer's words, wrapped as material.
     words: [
-      `Story year ${date}. The writer is writing Chapter ${String(chapter.readingOrder ?? '')} [${t.chapterId}], titled:`,
+      `Story year ${date}. The writer is writing Chapter ${number ?? ''} [${t.chapterId}], titled:`,
       material(`chapter ${t.chapterId}`, title),
       ...(strand ? [`in the strand labelled:`, material(`strand ${strand.id}`, strand.label)] : []),
     ].join('\n'),

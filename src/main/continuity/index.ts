@@ -37,6 +37,7 @@ import {
 import type { FreshFinding, ReconcilePlan } from '../../shared/domain/continuity/findings';
 import { numberedLines, textHash } from '../../shared/domain/continuity/lines';
 import { chapterYear } from '../../shared/domain/position';
+import { chapterNumbers } from '../../shared/domain/numbering';
 import type { Doc } from '../../shared/domain/paths';
 import type { OpenBible } from '../db/session';
 
@@ -83,6 +84,7 @@ export async function checkStructure(session: OpenBible, chapterId: string | nul
   );
   await write(session, plan);
   const chapters = chaptersInOrder(data).filter((c) => chapterId === null || c._id === chapterId);
+  const numbers = chapterNumbers(data.all('chapters'));
   return {
     found: fresh.length,
     hidden: plan.hidden,
@@ -90,6 +92,7 @@ export async function checkStructure(session: OpenBible, chapterId: string | nul
       id: str(c._id),
       title: entryTitle(c),
       readingOrder: num(c.readingOrder),
+      number: numbers.get(str(c._id)) ?? null,
       lines: numberedLines(c.manuscriptText).length,
     })),
   };
@@ -166,7 +169,11 @@ function shownRevisions(
 }
 
 /** A stored finding as the screens show it, with the change set compared against the bible now. */
-export function findingWire(session: OpenBible, f: Doc): FindingWire {
+export function findingWire(
+  session: OpenBible,
+  f: Doc,
+  numbers: Map<string, number> = chapterNumbers(session.model.all('chapters')),
+): FindingWire {
   const data = session.model;
   const chapter = str(f.chapterId) ? findEntry(data, 'chapters', str(f.chapterId)) : undefined;
   const start = num(f.lineStart);
@@ -193,6 +200,7 @@ export function findingWire(session: OpenBible, f: Doc): FindingWire {
     chapterId: str(f.chapterId) || null,
     chapter: chapter ? entryTitle(chapter) : null,
     readingOrder: chapter ? num(chapter.readingOrder) : null,
+    number: chapter ? (numbers.get(str(chapter._id)) ?? null) : null,
     strandId: str(f.strandId) || null,
     storyYear: num(f.storyYear),
     title: entryTitle(f),
@@ -228,6 +236,7 @@ export function listFindings(
     const c = str(f.chapterId) ? findEntry(session.model, 'chapters', str(f.chapterId)) : undefined;
     return c ? (num(c.readingOrder) ?? 0) : Number.MAX_SAFE_INTEGER;
   };
+  const numbers = chapterNumbers(session.model.all('chapters'));
   const shown = all
     .filter((f) => states.includes(str(f.state) as FindingWire['state']))
     .sort(
@@ -239,7 +248,7 @@ export function listFindings(
         str(a._id).localeCompare(str(b._id)),
     );
   return {
-    findings: shown.map((f) => findingWire(session, f)),
+    findings: shown.map((f) => findingWire(session, f, numbers)),
     dismissed: all.filter((f) => f.state === 'dismissed').length,
   };
 }

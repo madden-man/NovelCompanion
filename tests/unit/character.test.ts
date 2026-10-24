@@ -21,6 +21,7 @@ describe('SM-1 CH-3 the character page', () => {
       chapterId: 'CH5',
       chapter: expect.any(String),
       readingOrder: 5,
+      number: 5,
       state: { state: 'alive', age: 82, dyingThisYear: false },
     });
     expect(p.storyTime).toBeNull();
