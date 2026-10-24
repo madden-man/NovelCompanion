@@ -4,13 +4,18 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type {
   EdgeSide,
   GridLine,
+  MarkerOptions,
   YearScale,
   YearSpan,
   Zoom,
 } from '../../../../shared/domain/worldGrid';
 import {
+  BACKSTORY_MARKERS,
   NO_FAMILY,
+  PERSON_LABEL_MAX,
+  PERSON_MARKERS,
   PERSON_METRICS,
+  UNKNOWN_BAND,
   ageText,
   kindOf,
   layoutBackstory,
@@ -46,7 +51,18 @@ import {
 } from '../timeline/gridShared';
 import type { EdgeDrag, EraEdits, GridBand, GridEra, MovePart } from '../timeline/gridShared';
 import { KindSwatch, kindStyle } from './KindSwatch';
+import { measureLabel } from './labelWidth';
 import './backstory.css';
+
+/**
+ * A54: the markers as both views lay them out, each title's room measured from the drawn text so
+ * no title ever reaches another marker or title.
+ */
+const GRID_MARKERS: MarkerOptions = { ...BACKSTORY_MARKERS, labelWidth: measureLabel };
+const ALONE_MARKERS: MarkerOptions = {
+  ...PERSON_MARKERS,
+  labelWidth: (label) => Math.min(measureLabel(label), PERSON_LABEL_MAX),
+};
 
 /**
  * SM-9: the Backstory grid. The World events grid's axis, header, era band,
@@ -106,11 +122,11 @@ export function BackstoryGrid(props: {
   // scrollbar coming and going) never lays the whole grid out again.
   const fill = vp.viewHeight - PERSON_METRICS.header;
   const personLayout = useMemo(
-    () => (personId !== null ? layoutPerson(grid, personId, scale, fill) : null),
+    () => (personId !== null ? layoutPerson(grid, personId, scale, fill, ALONE_MARKERS) : null),
     [grid, personId, scale, fill],
   );
   const layout = useMemo(
-    () => personLayout ?? layoutBackstory(grid, scale, closed),
+    () => personLayout ?? layoutBackstory(grid, scale, closed, GRID_MARKERS),
     [personLayout, grid, scale, closed],
   );
   const byId = useMemo(() => new Map(grid.moments.map((m) => [m.id, m])), [grid.moments]);
@@ -338,6 +354,7 @@ export function BackstoryGrid(props: {
                 person={p}
                 scale={scale}
                 storyYear={storyYear}
+                rowHeight={line.height}
                 color={families.get(p.familyId)?.color ?? null}
                 drag={lifeDrag}
                 canEdit={canEdit}
@@ -399,6 +416,8 @@ function Lifespan(props: {
   person: BackstoryPerson;
   scale: YearScale;
   storyYear: number;
+  /** A54: the row's height, so an unknown birth's note sits in the band at its foot. */
+  rowHeight: number;
   color: string | null;
   drag: EdgeDrag;
   canEdit: boolean;
@@ -413,7 +432,12 @@ function Lifespan(props: {
   const bar = lifespanBar(life, props.scale, props.storyYear);
   if (!bar) {
     return (
-      <span className="bs-life-unknown" data-testid="lifespan" data-kind={life.kind}>
+      <span
+        className="bs-life-unknown"
+        data-testid="lifespan"
+        data-kind={life.kind}
+        style={{ marginTop: Math.max(0, props.rowHeight - UNKNOWN_BAND) }}
+      >
         {life.kind === 'unknown' ? 'Birth year unknown' : ''}
       </span>
     );

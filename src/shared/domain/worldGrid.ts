@@ -274,7 +274,11 @@ export interface MarkerOptions {
   bigDot: number;
   /** Space kept between markers in a lane, and before a label. */
   gap: number;
-  /** Most lanes a row grows to; further overlaps share the least-full lane. */
+  /**
+   * Most lanes a row grows to; further overlaps share the least-full lane. `Infinity` leaves the
+   * row unbounded: a marker that fits no lane opens a new one, so no two ever share (A54, the
+   * Backstory grid).
+   */
   maxLanes: number;
   /** The width a label needs. */
   labelWidth: (label: string) => number;
@@ -288,6 +292,9 @@ export interface MarkerOptions {
    */
   reserveLabel?: boolean;
 }
+
+/** The space the CSS keeps between a marker's right edge and its title (`.wg-mlabel`). */
+export const LABEL_OFFSET = 4;
 
 /** A rough label width for 11 to 12 pixel text, enough to decide whether it fits. */
 export const roughLabelWidth = (label: string) => Math.ceil(label.length * 6.4) + 4;
@@ -319,6 +326,19 @@ export function byYear(a: GridItem, b: GridItem): number {
     (a.label < b.label ? -1 : a.label > b.label ? 1 : 0) ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   );
+}
+
+/**
+ * How far right a placed marker holds its lane: its own right edge, and with `reserveLabel` its
+ * title too, which draws after the dot or the bar (A54).
+ */
+export function markerExtent(
+  m: Pick<PlacedMarker, 'x' | 'width' | 'label'>,
+  opts: MarkerOptions,
+): number {
+  const end = m.x + m.width;
+  if (!opts.reserveLabel) return end;
+  return end + Math.max(opts.gap, LABEL_OFFSET) + opts.labelWidth(m.label);
 }
 
 /**
@@ -356,7 +376,7 @@ export function placeRow(
       if (laneEnds.length < opts.maxLanes) lane = laneEnds.length;
       else lane = laneEnds.indexOf(Math.min(...laneEnds));
     }
-    const end = opts.reserveLabel ? x + width + opts.gap + opts.labelWidth(it.label) : x + width;
+    const end = markerExtent({ x, width, label: it.label }, opts);
     laneEnds[lane] = Math.max(laneEnds[lane] ?? -Infinity, end);
     const m: PlacedMarker = {
       id: it.id,

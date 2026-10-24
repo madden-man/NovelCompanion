@@ -88,6 +88,20 @@
   border: 1px solid var(--border-strong);
 }
 
+/* A54: an unknown birth says so in the band at the foot of its row (the row's height less the
+   band, set inline), clear of every lane and title. */
+.bs-life-unknown {
+  position: sticky;
+  left: 8px;
+  display: inline-block;
+  vertical-align: top;
+  padding: 0 4px;
+  font-size: 0.75rem;
+  line-height: 14px;
+  color: var(--fg-2);
+  pointer-events: none;
+}
+
 /* The lifespan runs along the foot of the row, under the marker lanes: solid in the family color,
    dashed past the story year. Clicks pass through to the row. */
 .bs-life {
@@ -113,16 +127,6 @@
   background: repeating-linear-gradient(to right, var(--bs-fam) 0 6px, transparent 6px 10px);
   border-radius: 3px;
   opacity: 0.85;
-}
-.bs-life-unknown {
-  position: sticky;
-  left: 8px;
-  display: inline-block;
-  margin-top: 4px;
-  padding: 0 4px;
-  font-size: 0.75rem;
-  color: var(--fg-2);
-  pointer-events: none;
 }
 
 /* Markers sit over the lifespan bar in the primary text color, ringed so they read on any family color. */

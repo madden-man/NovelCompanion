@@ -2,7 +2,9 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, test } from 'vitest';
 import { readFixture } from '../helpers/loadFixture';
 import {
+  BACKSTORY_MARKERS,
   BACKSTORY_METRICS,
+  UNKNOWN_BAND,
   NO_FAMILY,
   PERSON_LABEL_MAX,
   PERSON_MARKERS,
@@ -297,7 +299,14 @@ describe('SM-9 SM-3 moments on the grid', () => {
   test('SM-9 A50 rows are 36px for one lane and 58px for two; markers are 10px dots with 8px bars', () => {
     const s = makeScale(grid.span, 10);
     const layout = layoutBackstory(grid, s);
-    expect(layout.markers).toBe(MARKER_DEFAULTS);
+    expect(layout.markers).toBe(BACKSTORY_MARKERS);
+    expect(BACKSTORY_MARKERS).toMatchObject({
+      dot: 10,
+      bigDot: 16,
+      gap: 4,
+      maxLanes: Infinity,
+      reserveLabel: true,
+    });
     expect(BACKSTORY_METRICS).toEqual({ ...GRID_METRICS, rowPad: 7 });
     const rows = layout.lines.filter((l) => l.kind === 'row');
     const one = rows.find((l) => l.layout.lanes === 1)!;
@@ -333,7 +342,7 @@ describe('SM-9 SM-3 moments on the grid', () => {
       dot: 14,
       bigDot: 20,
       gap: 6,
-      maxLanes: 8,
+      maxLanes: Infinity,
       barHeight: 10,
       bigBarHeight: 14,
       reserveLabel: true,
@@ -366,13 +375,12 @@ describe('SM-9 SM-3 moments on the grid', () => {
     expect(layout.lines.some((l) => l.kind === 'row' && l.row.groupId === 'FAM-ZHOU')).toBe(false);
   });
 
-  test('SM-9 a label shows beside a marker only when its lane leaves room', () => {
-    const label = (l: ReturnType<typeof layoutBackstory>, id: string) =>
-      l.lines.flatMap((x) => (x.kind === 'row' ? x.layout.markers : [])).find((m) => m.id === id)!
-        .showLabel;
+  test('SM-9 A54 every label shows in the grid: a moment that would land on a title takes the next lane', () => {
+    const at = (l: ReturnType<typeof layoutBackstory>, id: string) =>
+      l.lines.flatMap((x) => (x.kind === 'row' ? x.layout.markers : [])).find((m) => m.id === id)!;
     const s = makeScale(grid.span, 10);
-    expect(label(layoutBackstory(grid, s), 'H1-voice-0')).toBe(true);
-    // A moment three years later shares the lane and leaves 16 pixels: too few for "Voice".
+    expect(at(layoutBackstory(grid, s), 'H1-voice-0').showLabel).toBe(true);
+    // A moment three years later would sit on "Voice": it takes the next lane, both titles show.
     const crowded = backstoryGrid({
       ...input,
       moments: [
@@ -381,8 +389,61 @@ describe('SM-9 SM-3 moments on the grid', () => {
       ],
     });
     const l = layoutBackstory(crowded, s);
-    expect(label(l, 'H1-voice-0')).toBe(false);
-    expect(label(l, 'H1-later')).toBe(true);
+    expect([at(l, 'H1-voice-0').lane, at(l, 'H1-voice-0').showLabel]).toEqual([0, true]);
+    expect([at(l, 'H1-later').lane, at(l, 'H1-later').showLabel]).toEqual([1, true]);
+  });
+
+  test('SM-9 A54 five moments in one year take five lanes in the grid and the person view; the rows grow', () => {
+    const s = makeScale(grid.span, 10);
+    const five = backstoryGrid({
+      ...input,
+      moments: [
+        ...input.moments,
+        ...[1, 2, 3, 4, 5].map(
+          (i) =>
+            ({
+              ...input.moments[0]!,
+              _id: `H1-same-${i}`,
+              year: 2035,
+              endYear: null,
+              title: `Same year ${i}`,
+            }) as Doc,
+        ),
+      ],
+    });
+    const h1 = layoutBackstory(five, s).lines.find((l) => l.kind === 'row' && l.row.key === 'H1')!;
+    if (h1.kind !== 'row') throw new Error('H1 is a row');
+    const same = h1.layout.markers.filter((m) => m.id.startsWith('H1-same-'));
+    expect(new Set(same.map((m) => m.lane)).size).toBe(5);
+    expect(same.map((m) => m.id)).toEqual([1, 2, 3, 4, 5].map((i) => `H1-same-${i}`));
+    expect(h1.height).toBe(h1.layout.lanes * BACKSTORY_METRICS.lane + 2 * BACKSTORY_METRICS.rowPad);
+    expect(h1.layout.lanes).toBeGreaterThanOrEqual(5);
+    // The lines below move down by what the row grew.
+    const lines = layoutBackstory(five, s).lines;
+    lines.forEach((l, i) => {
+      const next = lines[i + 1];
+      if (next) expect(next.y).toBe(l.y + l.height);
+    });
+    const alone = layoutPerson(five, 'H1', s, 0).lines[0]!;
+    if (alone.kind !== 'row') throw new Error('one row');
+    const lanes = alone.layout.markers
+      .filter((m) => m.id.startsWith('H1-same-'))
+      .map((m) => m.lane);
+    expect(new Set(lanes).size).toBe(5);
+    expect(alone.height).toBe(alone.layout.lanes * 28 + 20);
+  });
+
+  test('SM-9 A54 a row with an unknown birth keeps a band at its foot for the note, and the lines below follow', () => {
+    const s = makeScale(grid.span, 10);
+    const layout = layoutBackstory(grid, s);
+    const u1 = layout.lines.find((l) => l.kind === 'row' && l.row.key === 'U1')!;
+    if (u1.kind !== 'row') throw new Error('U1 is a row');
+    expect(u1.height).toBe(u1.layout.lanes * 22 + 14 + UNKNOWN_BAND);
+    expect(layout.height).toBe(layout.lines.at(-1)!.y + layout.lines.at(-1)!.height);
+    const alone = layoutPerson(grid, 'U1', s, 0).lines[0]!;
+    expect(alone.height).toBe(
+      (alone.kind === 'row' ? alone.layout.lanes : 0) * 28 + 20 + UNKNOWN_BAND,
+    );
   });
 });
 
@@ -465,8 +526,9 @@ describe('SM-9 A50 one person’s timeline', () => {
       (l) => l.kind === 'row' && l.row.key === 'H1',
     )!;
     if (inGrid.kind !== 'row') throw new Error('H1 is a row');
-    expect(inGrid.layout.lanes).toBe(1);
-    expect(inGrid.layout.markers.find((m) => m.id === 'H1-voice-0')!.showLabel).toBe(false);
+    // A54: the grid draws both titles too, in two lanes.
+    expect(inGrid.layout.lanes).toBe(2);
+    expect(inGrid.layout.markers.every((m) => m.showLabel)).toBe(true);
     const alone = layoutPerson(retires, 'H1', s, 0).lines[0]!;
     if (alone.kind !== 'row') throw new Error('one row');
     expect(alone.layout.lanes).toBe(2);
