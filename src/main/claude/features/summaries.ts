@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { entryTitle } from '../../../shared/schema';
 import { manuscriptLines } from '../../../shared/domain/manuscript';
+import { chapterNumbers } from '../../../shared/domain/numbering';
 import { chapterYear } from '../../../shared/domain/position';
 import type { OpenBible } from '../../db/session';
 import { material } from '../prompts';
@@ -44,7 +45,7 @@ export const summaries: FeatureDefinition<SummariesInput, SummariesOutput> = {
     if (!text) throw new Error('This chapter has no manuscript text to summarize.');
     const year = chapterYear(ch);
     const prompt = [
-      `Chapter ${String(ch.readingOrder ?? '')}: ${title}${year !== null ? `, story year ${year}` : ''}.`,
+      `Chapter ${chapterNumbers(session.model.all('chapters')).get(input.chapterId) ?? ''}: ${title}${year !== null ? `, story year ${year}` : ''}.`,
       'The chapter text, one paragraph per line:',
       material(title, text),
       'Summarize this chapter for the bible.',

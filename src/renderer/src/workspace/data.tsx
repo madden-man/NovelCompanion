@@ -12,6 +12,7 @@ import type { EntryCollection } from '../../../shared/schema';
 import { entryTitle } from '../../../shared/schema';
 import type { WireEntry, WireList } from '../../../shared/ipc';
 import { call } from '../api';
+import { chapterNumbers } from '../../../shared/domain/numbering';
 
 export type Entry = WireEntry & Record<string, unknown>;
 
@@ -97,6 +98,16 @@ export function useEntries(c: EntryCollection): Entry[] {
   const store = useStore();
   useEffect(() => store.request(c), [store, c]);
   return store.entries(c) ?? [];
+}
+
+/**
+ * A54: the number each live chapter is shown by, its place among the live
+ * chapters in reading order, from 1. It follows every move, trash, restore and
+ * new chapter because the chapters reload on each change.
+ */
+export function useChapterNumbers(): Map<string, number> {
+  const chapters = useEntries('chapters');
+  return useMemo(() => chapterNumbers(chapters), [chapters]);
 }
 
 export function useList(listId: string | undefined): WireList | undefined {

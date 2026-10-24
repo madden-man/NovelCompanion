@@ -39,7 +39,7 @@
  *   (SB-9) never drop.
  * - An entry is reported as left out only once it leaves the manifest.
  */
-import { groupLabel } from '../numbering';
+import { chapterNumbers, groupLabel } from '../numbering';
 import type { LifeState } from '../ages';
 import { describeState } from '../ages';
 import { descriptionFor, entriesFor, placeForText, placePath } from '../culture';
@@ -376,17 +376,18 @@ function strandsOf(chapter: Doc): Doc[] {
     .map((x) => x.s);
 }
 
-function chapterLabel(c: Doc): string {
-  return `Chapter ${num(c.readingOrder) ?? '?'}: ${title(c, 'Untitled chapter')}`;
+/** "Chapter 3: The Storm", numbered by place among the live chapters (A54). */
+function chapterLabel(c: Doc, numbers: Map<string, number>): string {
+  return `Chapter ${numbers.get(str(c._id)) ?? '?'}: ${title(c, 'Untitled chapter')}`;
 }
 
-function strandSpec(chapter: Doc, s: Doc, prefix = true): StrandSpec {
+function strandSpec(chapter: Doc, s: Doc, numbers: Map<string, number>, prefix = true): StrandSpec {
   const year = num(s.startYear) ?? 0;
   const label = `${str(s.label) || 'strand'}, ${year}`;
   return {
     chapter,
     strandId: str(s.id) || null,
-    label: prefix ? `${chapterLabel(chapter)}, ${label}` : label,
+    label: prefix ? `${chapterLabel(chapter, numbers)}, ${label}` : label,
     primary: s.primary === true,
     year,
     endYear: num(s.endYear),
@@ -400,6 +401,7 @@ function strandSpec(chapter: Doc, s: Doc, prefix = true): StrandSpec {
 function resolveSection(data: TimelineData, input: BriefInput): Section {
   const chapters = index(data, 'chapters');
   const characters = index(data, 'characters');
+  const numbers = chapterNumbers(data.all('chapters'));
   if (input.kind === 'chapter' || input.kind === 'strand') {
     const ch = chapters.get(input.chapterId);
     if (!live(ch)) throw new Error('That chapter is not in the bible.');
@@ -413,10 +415,12 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
       .map((s) => str(s.label) || 'strand');
     const specs = strands
       .filter((s) => num(s.startYear) !== null)
-      .map((s) => strandSpec(ch, s, false));
+      .map((s) => strandSpec(ch, s, numbers, false));
     const first = specs[0];
     const label =
-      input.kind === 'strand' && first ? `${chapterLabel(ch)}, ${first.label}` : chapterLabel(ch);
+      input.kind === 'strand' && first
+        ? `${chapterLabel(ch, numbers)}, ${first.label}`
+        : chapterLabel(ch, numbers);
     return { label, year: first?.year ?? 0, chapters: [ch], strands: specs, skipped };
   }
   if (input.kind === 'part') {
@@ -432,12 +436,12 @@ function resolveSection(data: TimelineData, input: BriefInput): Section {
     const skipped = list.flatMap((c) =>
       strandsOf(c)
         .filter((s) => !dated(s))
-        .map((s) => `${chapterLabel(c)}, ${str(s.label) || 'strand'}`),
+        .map((s) => `${chapterLabel(c, numbers)}, ${str(s.label) || 'strand'}`),
     );
     const specs = list.flatMap((c) =>
       strandsOf(c)
         .filter(dated)
-        .map((s) => strandSpec(c, s)),
+        .map((s) => strandSpec(c, s, numbers)),
     );
     return {
       skipped,
@@ -1059,6 +1063,7 @@ function sharedSteps(
   const chapters = data.all('chapters').filter(live);
   const chapterById = new Map(chapters.map((c) => [str(c._id), c]));
   const sectionIds = section.chapters.map((c) => str(c._id));
+  const numbers = chapterNumbers(chapters);
   const order = (c: Doc) => num(c.readingOrder) ?? 0;
   const byOrder = (a: Doc, b: Doc) => order(a) - order(b) || byText(str(a._id), str(b._id));
   const povs = [...new Set(section.strands.map((s) => s.pov).filter((p): p is string => !!p))];
@@ -1111,7 +1116,7 @@ function sharedSteps(
     .map((c) => ({
       id: str(c._id),
       collection: 'chapters',
-      title: chapterLabel(c),
+      title: chapterLabel(c, numbers),
       note:
         (reasons.get(str(c._id)) ?? []).join('; ') +
         (c.summaryOutOfDate === true ? '; the summary may be out of date' : ''),

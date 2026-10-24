@@ -28,6 +28,8 @@ export const FindingWire = z.strictObject({
   chapterId: z.string().nullable(),
   chapter: z.string().nullable(),
   readingOrder: z.int().nullable(),
+  /** The chapter's shown number, its place among the live chapters (A54). */
+  number: z.int().nullable(),
   strandId: z.string().nullable(),
   storyYear: z.int().nullable(),
   title: z.string(),
@@ -81,6 +83,7 @@ export const continuityContract = {
           id: z.string(),
           title: z.string(),
           readingOrder: z.int().nullable(),
+          number: z.int().nullable(),
           lines: z.int().min(0),
         }),
       ),

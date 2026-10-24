@@ -8,6 +8,7 @@ import type { StoryDate } from '../schema/common';
 import { lifeState, lifeYears } from './ages';
 import type { LifeState } from './ages';
 import { isKnown } from './dates';
+import { chapterNumbers } from './numbering';
 import { isPlainObject } from './paths';
 import type { Doc } from './paths';
 import type { Position } from './position';
@@ -33,6 +34,8 @@ export interface CharacterPage {
     chapterId: string | null;
     chapter: string | null;
     readingOrder: number | null;
+    /** The chapter's shown number, its place among the live chapters (A54). */
+    number: number | null;
     state: LifeState | null;
   };
   /** The story time, when one is set (TM-3): a year, or a full date judged exactly. */
@@ -125,6 +128,7 @@ export function characterPage(
       readingOrder: current.chapterId
         ? ((chapterById.get(current.chapterId)?.readingOrder as number | undefined) ?? null)
         : null,
+      number: current.chapterId ? (chapterNumbers(chapters).get(current.chapterId) ?? null) : null,
       state: current.year === null ? null : lifeState(life, current.year),
     },
     storyTime: storyTime ? storyTimeState(life, storyTime) : null,

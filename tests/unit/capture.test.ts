@@ -111,8 +111,15 @@ describe('KB-6 the capture feature', () => {
       },
       'lists communities': { items: [{ id: 'portland', label: 'Portland' }] },
     };
-    const session = { model: { get: (c: string, id: string) => docs[`${c} ${id}`] } } as never;
+    const session = {
+      model: {
+        get: (c: string, id: string) => docs[`${c} ${id}`],
+        all: (c: string) => (c === 'chapters' ? [docs['chapters CH4']] : []),
+      },
+    } as never;
     const { prompt, given } = FEATURES.capture.build(input, session);
+    // A54: the only live chapter is shown as Chapter 1, whatever its reading order.
+    expect(prompt).toContain('The writer is writing Chapter 1 [CH4]');
     expect(prompt).toContain('<material source="chapter CH4">\nRain\n</material>');
     expect(prompt).toContain('<material source="strand S1">\nLan in Portland\n</material>');
     expect(prompt).toContain(

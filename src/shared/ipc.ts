@@ -255,6 +255,7 @@ const CharacterPageWire = z.strictObject({
     chapterId: z.string().nullable(),
     chapter: z.string().nullable(),
     readingOrder: z.number().nullable(),
+    number: z.number().nullable(),
     state: LifeStateWire.nullable(),
   }),
   storyTime: z
@@ -336,6 +337,7 @@ const StrandWire = z.strictObject({
   chapterId: z.string(),
   chapterTitle: z.string(),
   readingOrder: z.number().nullable(),
+  number: z.number().nullable(),
   written: z.boolean(),
   strandId: z.string(),
   label: z.string(),
@@ -443,6 +445,7 @@ const OutlineWire = z.strictObject({
         id: z.string(),
         title: z.string(),
         readingOrder: z.number(),
+        number: z.number(),
         partId: z.string(),
         storyYear: z.number().nullable(),
         written: z.boolean(),
@@ -466,6 +469,7 @@ const ChapterPageWire = z.strictObject({
   id: z.string(),
   title: z.string(),
   readingOrder: z.number(),
+  number: z.number(),
   storyYear: z.number().nullable(),
   written: z.boolean(),
   strands: z.array(

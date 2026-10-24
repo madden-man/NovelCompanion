@@ -1087,7 +1087,7 @@ export function SceneOutline(props: { onOpen: Open }) {
                   <option value="">Go to chapter</option>
                   {chapters.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.readingOrder}. {c.title}
+                      {c.number}. {c.title}
                     </option>
                   ))}
                 </select>
@@ -1205,7 +1205,7 @@ export function SceneOutline(props: { onOpen: Open }) {
                       disabled={ro.off}
                       tip={ro.tip}
                       handlers={handlers}
-                      chapter={row?.readingOrder}
+                      chapter={row?.number}
                       tall={chapters.length === 0}
                     />
                     <div className="sb-track">
@@ -1488,7 +1488,7 @@ function ChapterBar(p: BarProps) {
       'chapters',
       row.id,
       { strands: shift.next },
-      `Moved chapter ${row.readingOrder} to ${y}`,
+      `Moved chapter ${row.number} to ${y}`,
     );
     return ok === true;
   };
@@ -1534,7 +1534,7 @@ function ChapterBar(p: BarProps) {
         role="group"
         tabIndex={0}
         aria-roledescription="chapter bar"
-        aria-label={`Chapter ${row.readingOrder}, ${title}, ${span}`}
+        aria-label={`Chapter ${row.number}, ${title}, ${span}`}
         aria-keyshortcuts="ArrowUp ArrowDown Delete"
         title="Drag to move this chapter, or onto the trash to delete it. Up and Down move it, Delete deletes it."
         data-testid="chapter-bar"
@@ -1551,14 +1551,14 @@ function ChapterBar(p: BarProps) {
       >
         <span className="cbar-main">
           <span className="cbar-line">
-            <span className="cbar-no">Ch {row.readingOrder}</span>
+            <span className="cbar-no">Ch {row.number}</span>
             <EntryEditable
               collection="chapters"
               id={row.id}
               entry={doc ?? null}
               path="title"
               kind="text"
-              label={`Title of chapter ${row.readingOrder}`}
+              label={`Title of chapter ${row.number}`}
               allowEmpty={false}
               className="cbar-title"
               testId="chapter-title"
@@ -1570,7 +1570,7 @@ function ChapterBar(p: BarProps) {
             <span className="cbar-year">
               <span>Year</span>
               <NumberField
-                label={`Story year of chapter ${row.readingOrder}`}
+                label={`Story year of chapter ${row.number}`}
                 testId="chapter-year"
                 value={row.storyYear}
                 min={MIN_YEAR}
@@ -1585,7 +1585,7 @@ function ChapterBar(p: BarProps) {
               type="button"
               className="link-btn cbar-open"
               data-testid="chapter-open"
-              aria-label={`Open chapter ${row.readingOrder}, ${title}`}
+              aria-label={`Open chapter ${row.number}, ${title}`}
               onClick={() => p.onOpen('chapters', row.id)}
             >
               Open
@@ -1598,7 +1598,7 @@ function ChapterBar(p: BarProps) {
               className="cbar-strand"
               aria-expanded={strandOpen}
               aria-haspopup="dialog"
-              aria-label={`Strands of chapter ${row.readingOrder}: ${doc ? strandChipText(doc.strands) : 'loading'}`}
+              aria-label={`Strands of chapter ${row.number}: ${doc ? strandChipText(doc.strands) : 'loading'}`}
               data-testid="strand-chip"
               onClick={() => setStrandOpen((o) => !o)}
             >
@@ -1621,7 +1621,7 @@ function ChapterBar(p: BarProps) {
       {strandOpen && doc && (
         <StrandPopover
           chapter={doc}
-          chapterNo={row.readingOrder}
+          chapterNo={row.number}
           anchor={chip}
           writes={writes}
           onClose={closeStrand}

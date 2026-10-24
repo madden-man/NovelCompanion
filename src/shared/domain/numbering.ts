@@ -160,7 +160,7 @@ export interface TitleCleanupPlan {
 /**
  * Which part and chapter titles repeat a structural number (PL-3). A
  * chapter's number agrees when it is the chapter's place in its part (not
- * counting an introduction or prologue) or its reading order; a part's when
+ * counting an introduction or prologue), its shown number or its reading order; a part's when
  * it equals the number field. Nothing is guessed: a
  * disagreeing title is listed, not renamed.
  */
@@ -198,6 +198,7 @@ export function planTitleCleanup(data: {
   const chapters = live('chapters').sort(
     (a, b) => (n(a.readingOrder) ?? 0) - (n(b.readingOrder) ?? 0) || a._id.localeCompare(b._id),
   );
+  const shown = chapterNumbers(chapters);
   const counted = (c: Entry) => !UNNUMBERED.test(String(c.title ?? '').trim());
   const inPart = new Map<string, number>();
   for (const c of chapters) {
@@ -218,7 +219,7 @@ export function planTitleCleanup(data: {
     }
     const order = n(c.readingOrder);
     const part = inPart.get(c._id);
-    if (split.number === part || split.number === order)
+    if (split.number === part || split.number === order || split.number === shown.get(c._id))
       plan.renames.push({
         collection: 'chapters',
         id: c._id,
@@ -236,4 +237,29 @@ export function planTitleCleanup(data: {
       });
   }
   return plan;
+}
+
+/**
+ * PL-3, KB-3 (A54): the number each chapter is shown by, its 1-based place
+ * among the live chapters sorted by reading order, then title, then id.
+ * Reading order stays the stored sort key; trashed chapters get no number and
+ * leave no gap, and a move, trash, restore or new chapter renumbers the rest.
+ */
+export function chapterNumbers(chapters: readonly Record<string, unknown>[]): Map<string, number> {
+  const order = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const live = chapters
+    .filter((c) => !c.deletedAt && typeof c._id === 'string')
+    .map((c) => ({
+      id: c._id as string,
+      order: order(c.readingOrder),
+      title: text(c.title).trim() || text(c.name).trim(),
+    }))
+    .sort(
+      (a, b) =>
+        a.order - b.order ||
+        a.title.localeCompare(b.title) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+  return new Map(live.map((c, i) => [c.id, i + 1]));
 }

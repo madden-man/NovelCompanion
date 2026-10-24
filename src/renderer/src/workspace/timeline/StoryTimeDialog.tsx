@@ -5,6 +5,7 @@ import type { Response } from '../../../../shared/ipc';
 import type { StoryTimeValue } from '../../../../shared/storyTime';
 import type { LifeState } from '../../../../shared/domain/ages';
 import { eventSpans, fromCollections } from '../../../../shared/domain/timeline';
+import { chapterNumbers } from '../../../../shared/domain/numbering';
 import type { EntryCollection } from '../../../../shared/schema';
 import { call, plainError } from '../../api';
 import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
@@ -40,6 +41,7 @@ export function useStrandOptions(): StrandOption[] {
   const chapters = useEntries('chapters');
   return useMemo(() => {
     const out: StrandOption[] = [];
+    const numbers = chapterNumbers(chapters);
     const sorted = [...chapters].sort(
       (a, b) => Number(a.readingOrder ?? 0) - Number(b.readingOrder ?? 0),
     );
@@ -52,7 +54,7 @@ export function useStrandOptions(): StrandOption[] {
           key: `${c._id}|${s.id}`,
           chapterId: c._id,
           strandId: s.id,
-          label: `Chapter ${String(c.readingOrder)}: ${String(c.title)}, ${s.label}${typeof s.startYear === 'number' ? ` (${s.startYear})` : ''}`,
+          label: `Chapter ${numbers.get(c._id) ?? '?'}: ${String(c.title)}, ${s.label}${typeof s.startYear === 'number' ? ` (${s.startYear})` : ''}`,
           year: typeof s.startYear === 'number' ? s.startYear : null,
         });
       }
@@ -708,7 +710,7 @@ export function StoryTimeDialog(props: {
                         title="Open this chapter on the Outline"
                         onClick={() => openChapter(s.chapterId)}
                       >
-                        Chapter {s.readingOrder ?? '?'}: {s.chapterTitle}, {s.label}
+                        Chapter {s.number ?? '?'}: {s.chapterTitle}, {s.label}
                         {s.primary ? ' (primary)' : ''}
                       </button>
                     </li>

@@ -18,7 +18,7 @@ import { call, plainError } from '../../api';
 import { useBibleSettings } from '../bibleSettings';
 import { captureNav } from '../capture';
 import { relativesLine } from '../character';
-import { useEntries, useList, useStore } from '../data';
+import { useChapterNumbers, useEntries, useList, useStore } from '../data';
 import type { Entry } from '../data';
 import {
   Editable,
@@ -899,6 +899,7 @@ function DeskEvents(props: {
 function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: boolean }) {
   const { strand, chapter } = props;
   const story = useStoryTime();
+  const chapterNo = useChapterNumbers().get(chapter?._id ?? '');
   const characters = useEntries('characters');
   const options = useMemo(() => entryOptions(characters), [characters]);
   const write = useStrandWriter(strand.chapterId);
@@ -909,9 +910,7 @@ function DeskHeading(props: { strand: Strand; chapter: Entry | null; isWriting: 
   const editable = !!stored && !!strandId;
   return (
     <div className="row rel-head">
-      {typeof chapter?.readingOrder === 'number' && (
-        <span className="chip">Ch. {chapter.readingOrder}</span>
-      )}
+      {chapterNo !== undefined && <span className="chip">Ch. {chapterNo}</span>}
       <h3 data-testid="relevant-label">
         {chapter ? (
           <EntryEditable
