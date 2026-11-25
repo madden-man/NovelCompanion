@@ -180,6 +180,8 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
     ),
     name: record.name,
     onError: logBridgeError,
+    // A56 (FN-7): each question the phone changed becomes a step in the page's undo history.
+    onQuestions: (steps) => broadcast('notebook.questions', { bible: slug, steps }),
   });
   const opened = await adopt(session, record.name, false, bridge);
   // Never holds up opening (NF-1); a failure is quiet and the next pull tries again.

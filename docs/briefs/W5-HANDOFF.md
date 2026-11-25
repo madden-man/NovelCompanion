@@ -3,13 +3,13 @@
 Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR against `worlds-w3`. Never push main; push with `NC_AUTO_INSTALL=0 git push origin worlds-w5`.
 
 ## Done
+- FN-7 questions: `src/shared/domain/phoneQuestions.ts` (pure), applied first in `BridgeService.pullOnce` (`applyQuestions`), event `notebook.questions` recorded by `undo.tsx`. Tests: `tests/unit/phone-questions.test.ts`, `tests/integration/phone-questions.test.ts` (both seen failing with the call removed).
 - SPEC section 5.27 (FN-1 to FN-9), the A56 amendments row, SM-1 and SB-10 notes, the W5 milestone row; PROGRESS rows at `pending`.
 
 ## Half done
 - Nothing.
 
 ## Not started
-- FN-7 questions (pure planner in `src/shared/domain/phoneQuestions.ts`, applied in `BridgeService.pullOnce`, event `notebook.questions` recorded by the renderer's undo).
 - FN-1 to FN-6 the tray (pure `src/shared/domain/tray.ts`, meta `notebookTray`, channels `tray.state` and `tray.mark`, screen `workspace/tray.tsx`, App menu item, capture box `captureNav.send`).
 - FN-8 Voice list, FN-9 Relevant to Session group.
 

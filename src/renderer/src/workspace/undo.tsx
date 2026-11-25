@@ -12,6 +12,7 @@ import { UndoManager, stepNotice } from '../../../shared/domain/undoRunner';
 import { plainErrorMessage } from '../../../shared/errors';
 import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner';
 import { undoIO } from '../../../shared/undoIO';
+import { questionCommand } from '../../../shared/domain/phoneQuestions';
 import { savedFieldText } from '../../../shared/domain/undoText';
 import { call } from '../api';
 
@@ -191,6 +192,10 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     const off = window.api.on('app.command', ({ command: c }) => {
       if (c === 'undo' || c === 'redo') command(c);
     });
+    // A56 (FN-7): a question the phone answered, resolved, took back or asked is one step.
+    const offPhone = window.api.on('notebook.questions', ({ steps }) => {
+      for (const s of steps) record(questionCommand(s));
+    });
     // Fallback for key presses that reach the page directly.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
@@ -201,10 +206,11 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey);
     return () => {
       off();
+      offPhone();
       document.removeEventListener('focusin', onFocus);
       window.removeEventListener('keydown', onKey);
     };
-  }, [command]);
+  }, [command, record]);
 
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushes.current.add(fn);

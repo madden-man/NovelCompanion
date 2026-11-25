@@ -5,6 +5,8 @@ import { assembleNotebook, linkNotebook, planNotebook } from '../../shared/domai
 import type { LinkContext } from '../../shared/domain/notebook';
 import { chapterNumbers } from '../../shared/domain/numbering';
 import { buildPocket, pocketText } from '../../shared/domain/pocket';
+import { phoneQuestions, planQuestions } from '../../shared/domain/phoneQuestions';
+import type { BibleQuestion, QuestionStep } from '../../shared/domain/phoneQuestions';
 import { positionYear } from '../../shared/domain/position';
 import { plainText } from '../../shared/domain/markdown';
 import type { StoredDoc } from '../readmodel';
@@ -95,6 +97,8 @@ export interface BridgeServiceOptions {
   publishAfterMs?: number;
   /** A failed publish or pull: offline, or Atlas refused. The next one tries again. */
   onError?: (e: unknown) => void;
+  /** A56 (FN-7): the questions a pull changed from the phone, for the undo history. */
+  onQuestions?: (steps: QuestionStep[]) => void;
 }
 
 /**
@@ -114,6 +118,7 @@ export class BridgeService {
   private readonly pullEveryMs: number;
   private readonly publishAfterMs: number;
   private readonly onError: (e: unknown) => void;
+  private readonly onQuestions: (steps: QuestionStep[]) => void;
   private timer: ReturnType<typeof setInterval> | null = null;
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private offs: (() => void)[] = [];
@@ -131,6 +136,7 @@ export class BridgeService {
     this.pullEveryMs = opts.pullEveryMs ?? PULL_EVERY_MS;
     this.publishAfterMs = opts.publishAfterMs ?? PUBLISH_AFTER_MS;
     this.onError = opts.onError ?? (() => undefined);
+    this.onQuestions = opts.onQuestions ?? (() => undefined);
   }
 
   /** The bible opened: publish, pull, then follow its changes and the clock. */
@@ -223,6 +229,10 @@ export class BridgeService {
     try {
       const rows = await this.store.readUp(world);
       const { model, repo } = this.session;
+      if (this.stopped) return 0;
+      // A56 (FN-7): questions answered, resolved, taken back or asked on the phone come first,
+      // so a thread on a question asked there is linked to it in the same pull.
+      const changed = await this.applyQuestions(rows, world);
       const questions = new Map<string, string>();
       for (const q of live(model.all('openQuestions'))) {
         questions.set(q._id, plainText(q.question).trim() || String(q.title ?? ''));
@@ -236,12 +246,60 @@ export class BridgeService {
       const ops = planNotebook(assembled, stored, (p) => linkNotebook(p, ctx));
       if (this.stopped) return 0;
       // NB-4: a page that fails the schema is skipped and reported; the rest land.
-      return await repo.applyNotebook(ops, (id, reason) =>
+      const pages = await repo.applyNotebook(ops, (id, reason) =>
         this.onError(new Error(`The notebook page ${id} from the phone was skipped: ${reason}`)),
       );
+      return pages + changed;
     } catch (e) {
       this.onError(e);
       return 0;
     }
+  }
+
+  /**
+   * A56 (FN-7): write the phone's question pages into the open questions,
+   * through the one write path, the newer change winning. Each question is
+   * its own write; one that fails is reported and the rest still land.
+   * Returns how many questions changed.
+   */
+  private async applyQuestions(rows: Parameters<typeof phoneQuestions>[0], world: string) {
+    const { model, repo } = this.session;
+    const bible = new Map<string, BibleQuestion>();
+    for (const q of model.all('openQuestions')) {
+      bible.set(q._id, {
+        id: q._id,
+        state: q.state === 'decided' ? 'decided' : 'open',
+        decision: typeof q.decision === 'string' ? q.decision : '',
+        modifiedAt: String(q.modifiedAt),
+        ...(q.deletedAt ? { deletedAt: String(q.deletedAt) } : {}),
+      });
+    }
+    const steps: QuestionStep[] = [];
+    for (const op of planQuestions(phoneQuestions(rows, world), bible)) {
+      if (this.stopped) break;
+      try {
+        if (op.op === 'ask') {
+          const made = await repo.create('openQuestions', { _id: op.id, ...op.data });
+          steps.push({
+            id: op.id,
+            title: String(made.title ?? op.data.title),
+            before: null,
+            after: { state: op.data.state, decision: op.data.decision },
+          });
+        } else {
+          const next = await repo.update('openQuestions', op.id, op.after);
+          steps.push({
+            id: op.id,
+            title: String(next.title ?? ''),
+            before: op.before,
+            after: op.after,
+          });
+        }
+      } catch (e) {
+        this.onError(e);
+      }
+    }
+    if (steps.length) this.onQuestions(steps);
+    return steps.length;
   }
 }
