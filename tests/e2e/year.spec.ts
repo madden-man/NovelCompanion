@@ -371,7 +371,8 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await expect(appMenu().getByRole('menuitem', { name: 'Continuity findings' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  // A56: From the notebook sits after Review queue, so Lists is four down.
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Lists' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(appMenu()).toBeHidden();

@@ -1,25 +1,34 @@
 # W5 handoff: facts and questions from the notebook (A56), 2026-11-25
 
-Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR against `worlds-w3`. Never push main; push with `NC_AUTO_INSTALL=0 git push origin worlds-w5`.
+Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR #2 against `worlds-w3`. Never push main; push with `NC_AUTO_INSTALL=0 git push origin worlds-w5`.
 
 ## Done
-- Contract change (Tommy, 2026-11-25): the bridge lives once in `flowstate_bridge`. `Store.bridge` is a `BridgeDb` handle (connection.ts) reaching only bridge_worlds, bridge_down, bridge_up; `BridgeStore` takes it, never overwrites a non-novel registry row (`WorldTaken`), writes a pocket only for a novel world, reads only pages/messages/inquiries/songs. ARCH-8, NB-1 to NB-3, ARCHITECTURE.md amended. Tests: `tests/unit/single-database.test.ts`, `tests/integration/bridge-shared.test.ts`.
-- FN-10 song stubs (kind `song`, title and characters only, caption "Song · in Music Companion", does not open, follows the phone, comes back when live again). Tests in `tests/integration/bridge-shared.test.ts` and `tests/unit/notebook.test.ts`.
-- FN-7 questions: `src/shared/domain/phoneQuestions.ts` (pure), applied first in `BridgeService.pullOnce` (`applyQuestions`), event `notebook.questions` recorded by `undo.tsx`. Tests: `tests/unit/phone-questions.test.ts`, `tests/integration/phone-questions.test.ts` (both seen failing with the call removed).
-- SPEC section 5.27 (FN-1 to FN-9), the A56 amendments row, SM-1 and SB-10 notes, the W5 milestone row; PROGRESS rows at `pending`.
+- SPEC section 5.27 (FN-1 to FN-10), the A56 row, ARCH-8 and NB-1 to NB-3 amended for `flowstate_bridge`, SM-1 and SB-10 notes, the W5 milestone row. PROGRESS rows at `pending` with evidence.
+- FN-7 questions from the phone (`phoneQuestions.ts`, `BridgeService.applyQuestions`, event `notebook.questions`, `undo.tsx`).
+- FN-1 to FN-6 the tray (`tray.ts`, meta `notebookTray`, channels, `workspace/tray.tsx`, App menu item, `captureNav.send`, Year chip).
+- FN-8 Voice, FN-9 Relevant to Session group, FN-10 song stubs.
+- The shared bridge database `flowstate_bridge` through the `BridgeDb` handle (Tommy, 2026-11-25), with the reach and Songbook tests.
+- ARCHITECTURE.md: "The phone bridge" updated and a new A56 section.
+- Tests: unit `phone-questions`, `tray`, `single-database`, `notebook`; integration `phone-questions`, `tray`, `bridge-shared`, `bridge`; e2e `tray.spec.ts` (9), `year.spec.ts` updated for the menu item.
 
 ## Half done
-- Main side of the tray, Voice and Relevant built and tested (`tests/integration/tray.test.ts`): repository `trayMarks()`/`setTrayMarks()` (meta `notebookTray`), channels `notebook.offered`, `notebook.voice`, `notebook.relevant`, `tray.state`, `tray.mark` (write channel); pure `voiceRows`, `relevantRows`, `rowOf` in notebook.ts. Renderer begun: `captureNav.send` in capture.tsx (box sends a handed-over sentence in its own year with its chips; returns sent, busy or not sent), `openAsks` treats 'Year' as open, the Year chip shows empty and highlighted, `FactCard` takes `onDismiss`. Tray screen written: `workspace/tray.tsx` (`NotebookTray`), App menu Manage item "From the notebook" (view kind `tray`). Typechecks and lints; no e2e yet (`tests/e2e/tray.spec.ts` to write; update `APP_MENU_ITEMS` and the SM-6 test in `tests/e2e/year.spec.ts`).
-- FN-1 to FN-5 pure model: `src/shared/domain/tray.ts`, typechecked, tested in `tests/unit/tray.test.ts` (7 tests). Not wired to a screen yet.
+- The whole `npm test` run (see PR body for the numbers once run).
 
 ## Not started
-- Tray renderer: screen `workspace/tray.tsx` reusing `FactCard`, `draftsWith`, `fileLocalDrafts` (File it command gets `run` ops that unmark/mark filed keys so undo re-offers); Dismiss as an undo step with `run` ops; App menu Manage item "From the notebook" (update the SM-6 e2e test in tests/e2e/year.spec.ts, APP_MENU_ITEMS); `captureLocal.openAsks` must treat 'Year' as open until `hint.startYear` is set, and `captureChips` must show the Year chip highlighted and empty when needed.
-- FN-6: `captureNav.send({ text, year, hints, force })` in capture.tsx (store storyTime in Routed and use it in startRuns), mark the key `sent` only when a run starts; AI-6 Disclosure shown in the tray; Send off with no key or while the Year is needed.
-- E2E for FN-8 (`VoiceList` in notebook.tsx, on the character page) and FN-9 (`NotebookTouches` in RelevantBody; the page opens across the desk from `RelevantView`). Both are written, typecheck and lint, untested in e2e.
-- ARCHITECTURE.md section for A56; PROGRESS rows evidence; whole `npm test` once.
+- Nothing in scope.
 
-## Decisions
-- See the A56 row in SPEC.md: no status or source note; no provenance; no brief or tick; Voice read from the pages; paper lines not offered; a question taken back keeps its decision text.
+## Decisions (Tommy has not ruled on the starred ones)
+- File it writes plain new entries; no status, no source note (Tommy, 2026-11-25).
+- * Voice is read from the in-story councils' pages, not stored, not moments.
+- * A paper's or another voice's line is not offered; a character's line in a council about the story is.
+- * A question taken back on the phone keeps its decision text (state Open).
+- * The tray is an App menu item, "From the notebook", after Review queue.
+- * Send to Claude hands the single sentence to the capture box, with the page's year and the card's chips; the proposals are filed in the box.
+- * A Send needs the year picked first when the tray would otherwise guess it.
+- * A fact is marked filed only when every draft of it filed; Dismiss and File it are undo steps (undo offers the fact again).
+- * A question asked on the phone keeps the phone's ID as its entry ID.
+- * Steps from a pull before the window listens (the first pull on open) have no undo step.
+- A song stub links only the characters the phone gave it, never names found in its title.
 
 ## How to resume
-Read SPEC 5.27, then this file's Not started list in order.
+Run `npm test`; the two known e2e failures are `backstory.spec.ts` SM-9 empty spot and `tree.spec.ts` SM-1 the character page.
