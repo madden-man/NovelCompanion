@@ -6,8 +6,8 @@
  * `docs/BRIDGE.md` in the FlowState repository), copied, not shared: a
  * change there is a change here, by hand.
  *
- * The three collections sit in `novel_companion` beside `bibles`, outside
- * every bible's `<bibleId>.` prefix, so ARCH-8's one database holds.
+ * Since A56 the collections live once, in the shared database
+ * `flowstate_bridge`, reached only through the `BridgeDb` handle (ARCH-8).
  */
 import { BIBLE_SLUG_PATTERN } from './bible';
 
