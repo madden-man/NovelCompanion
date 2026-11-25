@@ -39,6 +39,9 @@ import { claudeDeps } from '../claude';
 import type { ClaudeRuntime } from '../claude';
 import { CLAUDE_CHANNELS, claudeHandlers } from '../claude/handlers';
 import type { ClaudeChannel } from '../claude/handlers';
+import { BridgeService } from '../bridge/service';
+import { BridgeStore } from '../db/bridge';
+import { worldForBible } from '../../shared/bridge';
 
 let claudeRuntime: ClaudeRuntime | null = null;
 let current: {
@@ -47,6 +50,8 @@ let current: {
   unsubscribe: () => void;
   /** ARCH-6: set when this is a local snapshot open read-only. */
   readOnly?: true;
+  /** A55: the phone bridge while this bible is open; none on a read-only snapshot. */
+  bridge?: BridgeService;
 } | null = null;
 
 /**
@@ -159,12 +164,31 @@ async function bibleCreate(slug: string, name: string): Promise<Response<'bible.
 
 async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   const s = await requireStore();
-  const record = (await listBibles(s)).find((b) => b._id === slug);
+  const bibles = await listBibles(s);
+  const record = bibles.find((b) => b._id === slug);
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
   const session = await openBibleForApp(s, slug, {
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
   });
-  return adopt(session, record.name, false);
+  // A55 (NB-1): the bible is published to the phone under its world ID.
+  const bridge = new BridgeService({
+    store: new BridgeStore(s.db),
+    session,
+    world: worldForBible(
+      slug,
+      bibles.map((b) => b._id),
+    ),
+    name: record.name,
+  });
+  const opened = await adopt(session, record.name, false, bridge);
+  // Never holds up opening (NF-1); a failure is quiet and the next pull tries again.
+  void bridge.start();
+  return opened;
+}
+
+/** A55 (NB-3): the window came to the front, so the phone's pages are pulled. */
+export function bridgeFocus(): void {
+  void current?.bridge?.focus();
 }
 
 /** Make an opened bible (or a read-only snapshot of one) the current one, and follow its changes. */
@@ -172,6 +196,7 @@ async function adopt(
   session: OpenBible,
   name: string,
   readOnly: boolean,
+  bridge?: BridgeService,
 ): Promise<Response<'bible.open'>> {
   const slug = session.handle.id;
   // A Claude run belongs to the bible it started in: stop it (saved as stopped) before switching.
@@ -194,6 +219,7 @@ async function adopt(
     broadcast('bible.reloaded', { bible: slug, message }),
   );
   const unsubscribe = () => {
+    bridge?.stop();
     offReload();
     offChange();
     offLists();
@@ -202,7 +228,13 @@ async function adopt(
     offTree();
     offSettings();
   };
-  current = { session, name, unsubscribe, ...(readOnly ? { readOnly: true as const } : {}) };
+  current = {
+    session,
+    name,
+    unsubscribe,
+    ...(readOnly ? { readOnly: true as const } : {}),
+    ...(bridge && !readOnly ? { bridge } : {}),
+  };
   conn().lastBible = slug;
   const bible = { id: slug, name };
   broadcast('bibles.changed', { current: bible });

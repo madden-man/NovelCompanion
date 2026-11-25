@@ -23,6 +23,8 @@ export function SearchView(props: {
   onOpen: (collection: EntryCollection, id: string) => void;
   /** SM-6: every section's own list, which left the rail, opens from its Section filter. */
   onOpenSection?: (collection: EntryCollection) => void;
+  /** A55 (SR-1): a notebook page found opens across the screen. */
+  onOpenNotebook?: (id: string) => void;
 }) {
   const { query } = props;
   const { version } = useStore();
@@ -65,7 +67,7 @@ export function SearchView(props: {
   useEffect(() => {
     if (!query.trim()) return;
     let live = true;
-    call('search.query', { query, filters, limit: LIMIT })
+    call('search.query', { query, filters, limit: LIMIT, notebook: true })
       .then((r) => {
         if (!live) return;
         setSettled({ key: queryKey, hits: r.hits, total: r.total });
@@ -181,7 +183,9 @@ export function SearchView(props: {
         data-query-key={queryKey}
       >
         {!query.trim() ? (
-          <p className="example-note">Type to search every entry and chapter text.</p>
+          <p className="example-note">
+            Type to search every entry, chapter text and notebook page.
+          </p>
         ) : shown.length === 0 ? (
           <p className="example-note" data-testid="search-empty" role="status">
             Nothing matches.
@@ -199,10 +203,19 @@ export function SearchView(props: {
                     type="button"
                     className="entry-row"
                     data-hit={h.id}
-                    onClick={() => props.onOpen(h.collection, h.id)}
+                    data-collection={h.collection}
+                    onClick={() =>
+                      h.collection === 'notebookPages'
+                        ? props.onOpenNotebook?.(h.id)
+                        : props.onOpen(h.collection, h.id)
+                    }
                   >
                     <span className="row tight">
-                      <span className="eyebrow">{collectionInfo[h.collection].singular}</span>
+                      <span className="eyebrow">
+                        {h.collection === 'notebookPages'
+                          ? 'Notebook page'
+                          : collectionInfo[h.collection].singular}
+                      </span>
                       <span className="entry-title">
                         <Zh text={h.title} actions={false} />
                       </span>

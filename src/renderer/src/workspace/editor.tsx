@@ -22,6 +22,7 @@ import { Field } from './fields';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
+import { NotebookList, NotebookPageView, hasNotebook } from './notebook';
 import { ChapterAlignment } from './sessions/alignment';
 import { ChapterStrands } from './outline/ChapterPage';
 import { Zh } from './Zh';
@@ -366,6 +367,9 @@ export function EntryPane(props: {
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
+  // A55 (NB-8): a page from the phone open across the screen, and the row to focus when it closes.
+  const [notebookPage, setNotebookPage] = useState<string | null>(null);
+  const [notebookReturn, setNotebookReturn] = useState<string | null>(null);
   const [offerWritten, setOfferWritten] = useState(false);
   const writtenNow = ed.draft?.written === true;
   const [seenWritten, setSeenWritten] = useState<boolean | null>(null);
@@ -404,6 +408,21 @@ export function EntryPane(props: {
         : `${ed.warnings.length} fields have warnings. They still saved.`}
     </span>
   );
+
+  if (notebookPage) {
+    return (
+      <div className="ws-editor" data-testid="editor" data-entry-id={id}>
+        <NotebookPageView
+          id={notebookPage}
+          onOpen={props.onOpen}
+          onClose={() => {
+            setNotebookReturn(notebookPage);
+            setNotebookPage(null);
+          }}
+        />
+      </div>
+    );
+  }
 
   // SM-1, A43: every section is the list and the page, and the page takes the whole width.
   // Dates and trash sit at its foot; undo is in the top bar.
@@ -491,6 +510,16 @@ export function EntryPane(props: {
         )}
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
+        )}
+        {hasNotebook(collection) && (
+          <NotebookList
+            collection={collection}
+            id={id}
+            returnTo={notebookReturn}
+            onOpenPage={(pageId) => {
+              void ed.flush().then(() => setNotebookPage(pageId));
+            }}
+          />
         )}
         <aside className="entry-tools" aria-label="Dates and trash" data-testid="entry-tools">
           <dl className="kv">

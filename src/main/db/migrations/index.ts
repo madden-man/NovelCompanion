@@ -12,6 +12,7 @@ import { vocabulary } from './011-vocabulary';
 import { momentKinds } from './012-moment-kinds';
 import { cuts } from './013-cuts';
 import { partOrder } from './014-part-order';
+import { notebookPages } from './015-notebook-pages';
 import type { Migration } from './types';
 
 export type { Migration } from './types';
@@ -32,6 +33,7 @@ export const migrations: readonly Migration[] = [
   momentKinds,
   cuts,
   partOrder,
+  notebookPages,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.length;

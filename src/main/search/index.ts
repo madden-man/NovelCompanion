@@ -1,5 +1,7 @@
 import MiniSearch from 'minisearch';
-import { ENTRY_COLLECTIONS } from '../../shared/schema';
+import { ENTRY_COLLECTIONS, NOTEBOOK_COLLECTION } from '../../shared/schema';
+import type { NotebookPage } from '../../shared/schema';
+import { firstLine, notebookText } from '../../shared/domain/notebook';
 import { plainText } from '../../shared/domain/markdown';
 import type { ReadModel, StoredDoc } from '../readmodel';
 import { tokenizeForIndex, tokenizeForQuery } from './tokenize';
@@ -80,7 +82,31 @@ export function entrySnippet(doc: StoredDoc, max = 140): string {
   return '';
 }
 
+/** A55 (SR-1): a notebook page's words, its first line as its title. */
+function notebookIndexed(doc: StoredDoc): IndexedDoc {
+  const page = doc as unknown as NotebookPage;
+  return {
+    key: `${NOTEBOOK_COLLECTION}:${doc._id}`,
+    collection: NOTEBOOK_COLLECTION,
+    id: doc._id,
+    title: firstLine(page),
+    body: notebookText(page),
+    names: '',
+  };
+}
+
+/** A55: the first words of a notebook page for a result row. */
+export function notebookSnippet(doc: StoredDoc, max = 140): string {
+  const page = doc as unknown as NotebookPage;
+  const lines = page.kind === 'kept' ? [] : page.lines.map((l) => l.text);
+  const text = (lines.find((t) => t.trim() && t.trim() !== firstLine(page)) ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max).trimEnd()}...` : text;
+}
+
 function toIndexed(collection: string, doc: StoredDoc): IndexedDoc {
+  if (collection === NOTEBOOK_COLLECTION) return notebookIndexed(doc);
   const body: string[] = [];
   for (const f of BODY_FIELDS) {
     const v = doc[f];
@@ -132,6 +158,9 @@ export class SearchIndex {
       const docs = model.all(collection).filter((d) => !d.deletedAt);
       this.mini.addAll(docs.map((d) => toIndexed(collection, d)));
     }
+    // A55 (SR-1): the notebook pages from the phone are searched with the entries.
+    const pages = model.all(NOTEBOOK_COLLECTION).filter((d) => !d.deletedAt);
+    this.mini.addAll(pages.map((d) => toIndexed(NOTEBOOK_COLLECTION, d)));
   }
 
   /** Add or replace one entry. Entries in the trash are removed instead. */

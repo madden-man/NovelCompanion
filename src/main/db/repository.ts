@@ -69,12 +69,16 @@ import { CLAUDE_FEATURES } from '../../shared/claude';
 import type { ClaudeFeature } from '../../shared/claude';
 import { ListRef, MINTABLE_LISTS } from '../../shared/schema';
 import type { ListAddProposal } from '../../shared/schema';
+// A55
+import { NOTEBOOK_COLLECTION, NotebookPage } from '../../shared/schema';
+import type { NotebookOp } from '../../shared/domain/notebook';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
 export interface ChangeEvent {
   bible: string;
-  collection: EntryCollection;
+  /** A55: `notebookPages` is not an entry collection, but its pages change like entries. */
+  collection: EntryCollection | typeof NOTEBOOK_COLLECTION;
   id: string;
   op: ChangeOp | 'purge';
 }
@@ -1397,18 +1401,34 @@ export class Repository {
   /** IP-16: delete every entry in the trash forever, in one transaction. */
   async emptyTrash(): Promise<PurgeCounts> {
     const items = this.trash().map((t) => ({ collection: t.collection, id: t.entry._id }));
-    if (!items.length) return { entries: 0 };
+    // A55 (NB-6): the notebook pages the phone deleted go with the rest.
+    const pages = this.notebookPages({ onlyDeleted: true }).map((p) => p._id);
+    if (!items.length && !pages.length) return { entries: 0 };
     await this.bulkGuard('empty trash');
-    return this.purgeAll(items);
+    return this.purgeAll(items, pages);
   }
 
   private async purgeAll(
     items: { collection: EntryCollection; id: string }[],
+    notebookIds: string[] = [],
   ): Promise<PurgeCounts> {
     const counts: PurgeCounts = { entries: 0 };
     await this.transact(async (session) => {
       // A retried transaction counts again from nothing.
       counts.entries = 0;
+      if (notebookIds.length) {
+        const gone = await this.bible
+          .collection<StoredDoc>(NOTEBOOK_COLLECTION)
+          .deleteMany({ _id: { $in: notebookIds }, deletedAt: { $type: 'string' } } as Document, {
+            session,
+          });
+        if (gone.deletedCount !== notebookIds.length) {
+          throw new RepositoryError(
+            'A notebook page left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
+          );
+        }
+        counts.entries += gone.deletedCount;
+      }
       const byCollection = new Map<EntryCollection, string[]>();
       for (const it of items) {
         byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
@@ -1431,7 +1451,17 @@ export class Repository {
       this.model.remove(it.collection, it.id);
       this.index.remove(it.collection, it.id);
     }
-    for (const it of items) {
+    for (const id of notebookIds) {
+      this.model.remove(NOTEBOOK_COLLECTION, id);
+      this.index.remove(NOTEBOOK_COLLECTION, id);
+    }
+    for (const it of [
+      ...items,
+      ...notebookIds.map((id) => ({
+        collection: NOTEBOOK_COLLECTION as typeof NOTEBOOK_COLLECTION,
+        id,
+      })),
+    ]) {
       this.emitter.emit('change', {
         bible: this.bible.id,
         collection: it.collection,
@@ -1440,6 +1470,115 @@ export class Repository {
       } satisfies ChangeEvent);
     }
     return counts;
+  }
+
+  // ---------- A55: notebook pages from the phone (NB-4 to NB-8) ----------
+
+  /** The notebook pages, live ones unless asked; read-only everywhere but `applyNotebook`. */
+  notebookPages(opts: { includeDeleted?: boolean; onlyDeleted?: boolean } = {}): NotebookPage[] {
+    return (this.model.all(NOTEBOOK_COLLECTION) as unknown as NotebookPage[]).filter((p) =>
+      opts.onlyDeleted ? Boolean(p.deletedAt) : opts.includeDeleted || !p.deletedAt,
+    );
+  }
+
+  notebookPage(id: string): NotebookPage | undefined {
+    return this.model.get(NOTEBOOK_COLLECTION, id) as unknown as NotebookPage | undefined;
+  }
+
+  /**
+   * A55 (NB-4, NB-6): write what a bridge pull found, in one transaction:
+   * each page put whole (its links read again) and each page the phone
+   * deleted moved to the trash. This is the only write to `notebookPages`:
+   * no IPC channel, no proposal and no undo step reaches it, because the
+   * desktop copy follows the phone. Returns how many pages changed.
+   */
+  async applyNotebook(ops: readonly NotebookOp[]): Promise<number> {
+    if (!ops.length) return 0;
+    const at = this.now().toISOString();
+    const changes: { prior: StoredDoc | null; next: StoredDoc; op: ChangeOp }[] = [];
+    const seen = new Set<string>();
+    for (const o of ops) {
+      const id = o.op === 'put' ? o.page._id : o.id;
+      if (seen.has(id))
+        throw new RepositoryError(`One pull changes the notebook page ${id} twice.`);
+      seen.add(id);
+      const prior = this.model.get(NOTEBOOK_COLLECTION, id) ?? null;
+      let next: unknown;
+      let op: ChangeOp;
+      if (o.op === 'put') {
+        next = {
+          ...o.page,
+          createdAt: prior ? prior.createdAt : at,
+          modifiedAt: prior ? this.stamp(prior) : at,
+        };
+        op = !prior ? 'create' : prior.deletedAt ? 'restore' : 'update';
+      } else {
+        if (!prior || prior.deletedAt) continue;
+        const stamp = this.stamp(prior);
+        next = { ...prior, sig: o.sig, deletedAt: stamp, modifiedAt: stamp };
+        op = 'softDelete';
+      }
+      const r = NotebookPage.safeParse(next);
+      if (!r.success) {
+        throw new ValidationError(
+          `This notebook page is not valid: ${z.prettifyError(r.error)}`,
+          r.error.issues,
+        );
+      }
+      changes.push({ prior, next: r.data as unknown as StoredDoc, op });
+    }
+    if (!changes.length) return 0;
+    const target = this.bible.collection<StoredDoc>(NOTEBOOK_COLLECTION);
+    await this.transact(async (session) => {
+      for (const ch of changes) {
+        if (!ch.prior) {
+          await target.insertOne(ch.next, { session });
+          continue;
+        }
+        const res = await target.replaceOne(
+          { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
+          ch.next,
+          { session },
+        );
+        if (res.matchedCount !== 1) {
+          throw new RepositoryError(
+            'A notebook page changed somewhere else. The next pull reads it again.',
+          );
+        }
+      }
+      await this.options.midTransaction?.(session);
+    });
+    for (const ch of changes) {
+      this.model.put(NOTEBOOK_COLLECTION, ch.next);
+      this.index.upsert(NOTEBOOK_COLLECTION, ch.next);
+    }
+    for (const ch of changes) {
+      this.emitter.emit('change', {
+        bible: this.bible.id,
+        collection: NOTEBOOK_COLLECTION,
+        id: ch.next._id,
+        op: ch.op,
+      } satisfies ChangeEvent);
+    }
+    return changes.length;
+  }
+
+  /**
+   * A55 (NB-2, plan question 6): when this bible was first given to the
+   * phone, in milliseconds, kept in the `meta` document `bridge`. The pocket
+   * carries decided questions changed after it. Null before the first time.
+   */
+  bridgeSince(): number | null {
+    const doc = this.model.get('meta', BRIDGE_META_ID);
+    return typeof doc?.since === 'number' ? doc.since : null;
+  }
+
+  /** Records the first time; a second call keeps the first. */
+  async markBridgeSince(ms: number): Promise<number> {
+    const have = this.bridgeSince();
+    if (have !== null) return have;
+    await this.writeMeta({ _id: BRIDGE_META_ID, since: ms });
+    return ms;
   }
 
   /**
@@ -1983,6 +2122,8 @@ export const BIBLE_SETTINGS_ID = 'bibleSettings';
 const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const TREE_LAYOUT_ID = 'treeLayout';
+/** A55: the bridge's own note in `meta`: when the bible was first given to the phone. */
+export const BRIDGE_META_ID = 'bridge';
 
 // ---------- a47-guard ----------
 

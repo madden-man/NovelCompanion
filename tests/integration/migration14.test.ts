@@ -119,8 +119,8 @@ describe('A54 migration 14: parts numbered from 1 in reading order', () => {
   test('KB-3 A54 opening a version 13 bible numbers the parts 1 to n in reading order, trashed parts last, and records the order', async () => {
     const bible = await v13Bible('mig14');
     const open = await openBibleSession(store, bible.id);
-    expect(LATEST_SCHEMA_VERSION).toBe(14);
-    expect(await schemaVersion(open.handle)).toBe(14);
+    expect(LATEST_SCHEMA_VERSION).toBe(15);
+    expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     expect(await titlesByNumber(open.handle)).toEqual(EXPECTED);
     const parts = await open.handle.collection('parts').find({}).toArray();
     expect(parts.map((p) => p.number).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);

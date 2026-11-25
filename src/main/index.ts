@@ -4,6 +4,7 @@ import { applyContentSecurityPolicy } from './csp';
 import { testDatabaseHonoured } from './secrets';
 import {
   applyStoredAppearance,
+  bridgeFocus,
   closeStore,
   hasOpenBible,
   onFlushed,
@@ -113,6 +114,8 @@ function createWindow(): BrowserWindow {
     flushTimer = setTimeout(finishClose, FLUSH_TIMEOUT_MS);
   });
   onFlushed(finishClose);
+  // A55 (NB-3): coming to the front pulls what the phone sent.
+  win.on('focus', () => bridgeFocus());
   // ED-3: undo and redo are the app's own command stacks, replayed through
   // the write path. Catch the keys here, before the page or the Edit menu,
   // so one key press is one app-level undo everywhere, text fields included.

@@ -4,6 +4,7 @@ import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
 import { EntryPane } from './editor';
+import { NotebookPageView } from './notebook';
 import { RelevantView } from './sessions/relevant';
 import { OverridesBible } from './sessions/overrides';
 import { QuestionsView } from './sessions/SessionsView';
@@ -66,6 +67,8 @@ type View =
   | { kind: 'backups' }
   | { kind: 'settings' }
   | { kind: 'bibles' }
+  /** A55 (NB-8): a notebook page found by search, across the screen; Close goes back. */
+  | { kind: 'notebook'; id: string; back: View }
   /** PC-1, GL-1, GL-3: the reference views that left the rail, in the App menu. */
   | { kind: 'places' }
   | { kind: 'romanization' }
@@ -289,7 +292,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               onQuery={setQuery}
               onOpen={open}
               onOpenSection={openSection}
+              onOpenNotebook={(id) => setView({ kind: 'notebook', id, back: view })}
             />
+          </div>
+        ) : view.kind === 'notebook' ? (
+          <div className="ws-wide-area">
+            <div className="ws-wide">
+              <NotebookPageView id={view.id} onOpen={open} onClose={() => setView(view.back)} />
+            </div>
           </div>
         ) : view.kind === 'tree' ? (
           <TreeView onOpen={open} focus={view.focus} />
