@@ -66,12 +66,30 @@ function setBoxOpen(open: boolean): void {
 /** A35: who hears a prefill such as "Cultural context for Pacific States, 2055: ". */
 const prefillListeners = new Set<(text: string) => void>();
 
+/**
+ * A56 (FN-6): a sentence handed over from the From the notebook tray, with
+ * its year and chips, to send on its route as if typed and entered here.
+ */
+export interface CaptureSendRequest {
+  text: string;
+  year: number;
+  hint?: Omit<CaptureHint, 'fact'>;
+  /** Ask Claude instead: Route C (CR-5). */
+  all?: boolean;
+}
+/** What came of a hand-over: sent to Claude, the box busy with another capture, or not sent. */
+export type CaptureSendResult = 'sent' | 'busy' | 'not sent';
+let sendHandler: ((r: CaptureSendRequest) => Promise<CaptureSendResult>) | null = null;
+
 export const captureNav = {
   open: (prefill?: string) => {
     if (prefill) for (const l of prefillListeners) l(prefill);
     setBoxOpen(true);
   },
   close: () => setBoxOpen(false),
+  /** A56 (FN-6): open the box on the sentence and send it; nothing is sent before this is called. */
+  send: (r: CaptureSendRequest): Promise<CaptureSendResult> =>
+    sendHandler ? sendHandler(r) : Promise.resolve('not sent'),
 };
 
 function useBoxOpen(): boolean {
@@ -138,6 +156,8 @@ interface Routed {
   text: string;
   bible: CaptureBible;
   storyYear: number;
+  /** The story time sent with it: the top bar's, or the year a tray sentence was written in (FN-6). */
+  storyTime: StoryTimeValue;
   facts: CaptureFact[];
   choices: FactChoice[];
   ticks: boolean[];
@@ -480,7 +500,7 @@ export function CaptureBox() {
       const res = await call('claude.capture', {
         runId: requestId,
         text: r.text,
-        storyTime: time.value,
+        storyTime: r.storyTime,
         hints,
       });
       if (!res.started) return false;
@@ -520,10 +540,16 @@ export function CaptureBox() {
     }
   };
 
-  /** Enter (CR-6): route first. Alt+Enter: send every fact to Claude on Route C (CR-5). */
-  const send = async (all = false) => {
-    const body = text.trim();
-    if (!body || phase !== 'edit' || busy || ro.off) return;
+  /**
+   * Enter (CR-6): route first. Alt+Enter: send every fact to Claude on Route C (CR-5).
+   * `from` is a sentence handed over by the tray (FN-6), sent in its own year with its
+   * chips. True when a run to Claude started.
+   */
+  const send = async (all = false, from?: CaptureSendRequest): Promise<boolean> => {
+    const body = from ? from.text.trim() : text.trim();
+    if (!body || phase !== 'edit' || busy || ro.off) return false;
+    const storyTime: StoryTimeValue = from ? { year: from.year } : time.value;
+    const firstChoices: FactChoice[] = from?.hint ? [{ hint: from.hint, typed: {} }] : [];
     setMessage(null);
     setRunError(null);
     setBusy(true);
@@ -533,17 +559,17 @@ export function CaptureBox() {
     } catch (e) {
       setBusy(false);
       setMessage(`The bible could not be read to place the text: ${plainError(e)}`);
-      return;
+      return false;
     }
-    const facts = routeWith(body, bible, time.value.year, []);
+    const facts = routeWith(body, bible, storyTime.year, firstChoices);
     if (facts.length > CAPTURE_MAX_FACTS) {
       setBusy(false);
       setMessage(CAPTURE_TOO_MANY_FACTS);
-      return;
+      return false;
     }
     if (!facts.length) {
       setBusy(false);
-      return;
+      return false;
     }
     const fresh = await call('claude.status', {}).catch(() => status);
     if (fresh) setStatus(fresh);
@@ -551,15 +577,15 @@ export function CaptureBox() {
     const keySet = !!fresh?.key.set;
     if (all && !keySet) {
       setMessage('No Anthropic key is set. Add one in Settings to ask Claude.');
-      return;
+      return false;
     }
     const toClaude = new Set(facts.filter((f) => all || f.route !== 'local').map((f) => f.index));
     // KB-7: with no key nothing can be sent, so a capture that needs Claude is kept as an open question.
     if (toClaude.size === facts.length && !keySet) {
       await saveAsQuestion(body);
-      return;
+      return false;
     }
-    if (toClaude.size && keySet && !fresh?.acknowledgedAt) return;
+    if (toClaude.size && keySet && !fresh?.acknowledgedAt) return false;
     // No key and a mixed capture: the box files its own facts and keeps the rest as the question.
     let asked: { id: string; title: string } | null = null;
     if (toClaude.size && !keySet) {
@@ -569,14 +595,15 @@ export function CaptureBox() {
           .map((f) => f.text)
           .join(' '),
       );
-      if (!asked) return;
+      if (!asked) return false;
     }
     const r: Routed = {
       text: body,
       bible,
-      storyYear: time.value.year,
+      storyYear: storyTime.year,
+      storyTime,
       facts,
-      choices: facts.map(() => NO_CHOICE),
+      choices: facts.map((_, i) => firstChoices[i] ?? NO_CHOICE),
       ticks: facts.map(() => true),
       sentTo: facts.map(() => null),
       asked: facts.map((f) => asked !== null && toClaude.has(f.index)),
@@ -588,16 +615,38 @@ export function CaptureBox() {
     setRouted(r);
     setSaved(asked);
     setNoKey(!keySet);
-    setText('');
+    if (!from) setText('');
     setPhase('routed');
-    if (!toClaude.size || !keySet) return;
+    if (!toClaude.size || !keySet) return false;
     const ok = await startRuns(r, toClaude, all ? 'full' : undefined);
     // The run never started (the bible could not save it, for example): keep it as a question.
     if (!ok && toClaude.size === facts.length) {
       settled.current = true;
       await saveAsQuestion(body);
     }
+    return ok;
   };
+
+  // A56 (FN-6): the tray hands a sentence over; the box opens on it and sends it.
+  const sendRef = useRef(send);
+  const stateRef = useRef({ phase, busy });
+  useEffect(() => {
+    sendRef.current = send;
+    stateRef.current = { phase, busy };
+  });
+  useEffect(() => {
+    sendHandler = async (r) => {
+      if (stateRef.current.phase !== 'edit' || stateRef.current.busy) {
+        setBoxOpen(true);
+        return 'busy';
+      }
+      setBoxOpen(true);
+      return (await sendRef.current(r.all ?? false, r)) ? 'sent' : 'not sent';
+    };
+    return () => {
+      sendHandler = null;
+    };
+  }, []);
 
   /** A chip changed (CR-6): route the text again with the writer's choices; sent facts stay as sent. */
   const choose = (
