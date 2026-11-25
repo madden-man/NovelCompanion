@@ -1,3 +1,4 @@
+import { NotebookPageView } from '../notebook';
 import { WriteFieldset } from '../../connection';
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { Request, Response } from '../../../../shared/ipc';
@@ -182,6 +183,16 @@ export function RelevantView({
   const { result, error } = useSelection(input, overrides, bump);
   const povId = useId();
   const sel: SelectionView | null = result?.selection ?? null;
+  // A56 (FN-9): a page from the notebook opens across the desk; Close comes back.
+  const [notebookPage, setNotebookPage] = useState<string | null>(null);
+
+  if (notebookPage) {
+    return (
+      <div className="ws-wide stack" data-testid="relevant-view">
+        <NotebookPageView id={notebookPage} onOpen={onOpen} onClose={() => setNotebookPage(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="ws-wide stack" data-testid="relevant-view">
@@ -231,6 +242,7 @@ export function RelevantView({
           onOpenTree={onOpenTree}
           onRemove={remove}
           onKeep={keep}
+          onOpenPage={setNotebookPage}
           writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
         />
       )}

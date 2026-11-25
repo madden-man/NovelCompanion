@@ -15,8 +15,7 @@ Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR against `worl
 ## Not started
 - Tray renderer: screen `workspace/tray.tsx` reusing `FactCard`, `draftsWith`, `fileLocalDrafts` (File it command gets `run` ops that unmark/mark filed keys so undo re-offers); Dismiss as an undo step with `run` ops; App menu Manage item "From the notebook" (update the SM-6 e2e test in tests/e2e/year.spec.ts, APP_MENU_ITEMS); `captureLocal.openAsks` must treat 'Year' as open until `hint.startYear` is set, and `captureChips` must show the Year chip highlighted and empty when needed.
 - FN-6: `captureNav.send({ text, year, hints, force })` in capture.tsx (store storyTime in Routed and use it in startRuns), mark the key `sent` only when a run starts; AI-6 Disclosure shown in the tray; Send off with no key or while the Year is needed.
-- FN-8 renderer: `VoiceList` beside `NotebookList` in editor.tsx for characters.
-- FN-9 renderer: the group on Relevant to Session calling `notebook.relevant`.
+- E2E for FN-8 (`VoiceList` in notebook.tsx, on the character page) and FN-9 (`NotebookTouches` in RelevantBody; the page opens across the desk from `RelevantView`). Both are written, typecheck and lint, untested in e2e.
 - ARCHITECTURE.md section for A56; PROGRESS rows evidence; whole `npm test` once.
 
 ## Decisions
