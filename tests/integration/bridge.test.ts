@@ -242,16 +242,30 @@ describe('NB-3 to NB-6 the pull', () => {
     ).toThrow(IpcValidationError);
     expect(isWriteChannel('notebook.list')).toBe(false);
     expect(isWriteChannel('notebook.get')).toBe(false);
-    // A page that fails the schema is refused and nothing is written.
-    await expect(
-      ctx.session.repo.applyNotebook([
+    // A page that fails the schema is skipped and named; the others in the same pull land.
+    const skipped: string[] = [];
+    const n = await ctx.session.repo.applyNotebook(
+      [
         {
           op: 'put',
           page: { ...(page(ctx.session, 'K1') as NotebookPage), kind: 'diary' as never },
         },
-      ]),
-    ).rejects.toThrow(/not valid/);
+        {
+          op: 'put',
+          page: {
+            ...(page(ctx.session, 'K1') as NotebookPage),
+            _id: 'K-other',
+            sig: 'x',
+            world: 'elsewhere',
+          },
+        },
+      ],
+      (id) => skipped.push(id),
+    );
+    expect(skipped).toEqual(['K1']);
+    expect(n).toBe(1);
     expect(page(ctx.session, 'K1')!.kind).toBe('kept');
+    expect(page(ctx.session, 'K-other')).toBeDefined();
   });
 
   test('NB-5 the line is linked to the characters, places, chapters and years it names, through the router against the bible', () => {
@@ -381,6 +395,100 @@ describe('NB-3 to NB-6 the pull', () => {
     await send('someone-else', 'messages', 'X1', 1, keptRow('X1', 'Not mine.'));
     expect(await ctx.service.pull()).toBe(0);
     expect(page(ctx.session, 'X1')).toBeUndefined();
+  });
+});
+
+describe('NB-4 one page never stops a pull', () => {
+  test('NB-4 NB-3 a 420-line council and a kept line in one pull both land, and nothing is reported', async () => {
+    const ctx = await openWithBridge('nb-long');
+    const errors: unknown[] = [];
+    const service = new BridgeService({
+      store: new BridgeStore(store.db),
+      session: ctx.session,
+      world: ctx.world,
+      name: 'F',
+      onError: (e) => errors.push(e),
+    });
+    await send(ctx.world, 'pages', 'LONG', 10, {
+      id: 'LONG',
+      kind: 'council',
+      title: 'A long night',
+      state: 'open',
+      createdAt: NOV25,
+      updatedAt: NOV25,
+      reading: 'about',
+      year: 2045,
+    });
+    for (let i = 0; i < 420; i++) {
+      const id = `0f7c3b1e-5a2d-4c3e-9f1a-${String(i).padStart(12, '0')}`;
+      await send(ctx.world, 'messages', id, 100 + i, {
+        id,
+        pageId: 'LONG',
+        at: NOV25 + i,
+        text: `Line ${i}`,
+        kept: false,
+      });
+    }
+    await send(ctx.world, 'messages', 'K-short', 9, keptRow('K-short', 'Daniel Hale stays.'));
+    expect(await service.pull()).toBe(2);
+    expect(errors).toEqual([]);
+    expect(page(ctx.session, 'LONG')!.lines).toHaveLength(420);
+    expect(page(ctx.session, 'K-short')).toBeDefined();
+    service.stop();
+  });
+
+  test('NB-4 a page that cannot be stored is skipped and reported; the rest of the pull lands', async () => {
+    const ctx = await openWithBridge('nb-bad');
+    const errors: Error[] = [];
+    const service = new BridgeService({
+      store: new BridgeStore(store.db),
+      session: ctx.session,
+      world: ctx.world,
+      name: 'F',
+      onError: (e) => errors.push(e as Error),
+    });
+    // A chip ID longer than any phone row ID is dropped on arrival; a speaker voice that long cannot be.
+    await send(ctx.world, 'pages', 'BAD', 10, {
+      id: 'BAD',
+      kind: 'council',
+      title: 'Bad',
+      createdAt: NOV25,
+      seats: [],
+      year: 2045,
+    });
+    await send(ctx.world, 'messages', 'BAD-1', 11, {
+      id: 'BAD-1',
+      pageId: 'BAD',
+      at: NOV25,
+      voiceId: `c:${'x'.repeat(300)}`,
+      text: 'x',
+      kept: false,
+    });
+    await send(ctx.world, 'messages', 'K-ok', 12, keptRow('K-ok', 'Sam Hale is fine.'));
+    expect(await service.pull()).toBe(1);
+    expect(page(ctx.session, 'K-ok')).toBeDefined();
+    expect(page(ctx.session, 'BAD')).toBeUndefined();
+    expect(errors.map((e) => e.message)).toEqual([
+      expect.stringMatching(/notebook page BAD .*skipped/),
+    ]);
+    service.stop();
+  });
+
+  test('NB-5 a chip or a name for a character, place or chapter in the trash is not linked', async () => {
+    const ctx = await openWithBridge('nb-trashed');
+    await ctx.session.repo.softDelete('characters', 'H6');
+    await ctx.session.repo.softDelete('places', 'PLC4');
+    await send(
+      ctx.world,
+      'messages',
+      'K-t',
+      5,
+      keptRow('K-t', 'Noor keeps a key.', {
+        chips: { characterIds: ['H6', 'Z5'], placeIds: ['PLC4'] },
+      }),
+    );
+    await ctx.service.pull();
+    expect(page(ctx.session, 'K-t')).toMatchObject({ characterIds: ['Z5'], placeIds: [] });
   });
 });
 

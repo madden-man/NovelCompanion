@@ -70,7 +70,8 @@ export function buildPocket(input: PocketInput): NovelPocket {
       const fullName = str(names.full).trim() || str(c.title).trim() || c._id;
       const chineseName = str(names.chinese).trim();
       const families = Array.isArray(c.familyIds) ? (c.familyIds as unknown[]) : [];
-      const familyColour = families.map((id) => colourOf.get(String(id))).find(Boolean);
+      // NB-2: the first family's colour; none when the first family has none.
+      const familyColour = families.length ? colourOf.get(String(families[0])) : undefined;
       const born = yearOf(c.birth as StoryDate | null);
       const died = yearOf(c.death as StoryDate | null);
       const out: PocketCharacter = {

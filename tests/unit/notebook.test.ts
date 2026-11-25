@@ -8,7 +8,9 @@ import {
   notebookCaption,
   notebookRows,
   planNotebook,
+  hashText,
   speakerOf,
+  voiceOf,
 } from '../../src/shared/domain/notebook';
 import type { LinkContext, NotebookDraft } from '../../src/shared/domain/notebook';
 import type { UpRow } from '../../src/shared/bridge';
@@ -100,12 +102,14 @@ describe('NB-4 the notebook pages a world rows hold', () => {
       research: null,
       questionId: null,
     });
-    expect(p.lines.map((l) => [l.id, l.speakerId, l.text, l.wise])).toEqual([
-      ['L1', 'SIYUAN', 'After. Always after.', false],
-      ['L2', 'DAWN', 'I can keep it.', true],
-      ['L3', null, 'He leaves in spring.', false],
+    expect(p.lines.map((l) => [l.id, l.voice, l.speakerId, l.text, l.wise])).toEqual([
+      ['L1', 'character', 'SIYUAN', 'After. Always after.', false],
+      ['L2', 'character', 'DAWN', 'I can keep it.', true],
+      ['L3', 'ink', null, 'He leaves in spring.', false],
     ]);
-    expect(p.sig).toBe('messages:L1:101 messages:L2:102 messages:L3:103 pages:P-council:100');
+    expect(p.sig).toBe(
+      hashText('messages:L1:101 messages:L2:102 messages:L3:103 pages:P-council:100'),
+    );
   });
 
   test('NB-4 a council in the story keeps its reading; one with no reading is about the story; null year is the whole book', () => {
@@ -130,7 +134,9 @@ describe('NB-4 the notebook pages a world rows hold', () => {
         lines: [
           {
             id: 'M-kept',
+            voice: 'ink',
             speakerId: null,
+            paper: null,
             text: 'She keeps it for a year.',
             wise: false,
             kept: true,
@@ -246,14 +252,137 @@ describe('NB-4 the notebook pages a world rows hold', () => {
     }
   });
 
-  test('NB-4 a council voice c:<id> is that character; plain ink and every other voice is nobody', () => {
+  test('NB-4 a line is his ink, a character, or another voice: a c:<id> voice is that character, a paper or any other voice is not his ink', () => {
     expect(speakerOf('c:Z3')).toBe('Z3');
     expect(speakerOf(undefined)).toBeNull();
-    expect(speakerOf('v:architect')).toBeNull();
+    expect(voiceOf({ text: 'mine' })).toEqual({ voice: 'ink', speakerId: null, paper: null });
+    expect(voiceOf({ voiceId: 'c:Z3' })).toEqual({
+      voice: 'character',
+      speakerId: 'Z3',
+      paper: null,
+    });
+    expect(voiceOf({ voiceId: 'v:architect' })).toEqual({
+      voice: 'other',
+      speakerId: null,
+      paper: null,
+    });
+    expect(voiceOf({ paper: { paperId: 'p1', side: 'against' } })).toEqual({
+      voice: 'other',
+      speakerId: null,
+      paper: { side: 'against' },
+    });
+    const [p] = assembleNotebook(
+      [
+        council(),
+        line('LP', 101, NOV25, { text: 'Flood duration', paper: { paperId: 'p1', side: 'for' } }),
+        line('LV', 102, NOV25 + 1, { voiceId: 'v:architect', text: 'Build higher.' }),
+      ],
+      W,
+      ctx,
+    ).pages;
+    expect(p!.lines.map((l) => [l.id, l.voice, l.speakerId, l.paper])).toEqual([
+      ['LP', 'other', null, { side: 'for' }],
+      ['LV', 'other', null, null],
+    ]);
+  });
+
+  test('NB-4 year: a number is that year, null is the whole book, absent is no year known, and each is captioned so', () => {
+    const [none] = assembleNotebook([council({ year: undefined, chips: {} })], W, ctx).pages;
+    expect('year' in none!).toBe(false);
+    expect(notebookCaption(none!)).toBe('Council, about the story · no story year');
+    const [whole] = assembleNotebook([council({ year: null })], W, ctx).pages;
+    expect(whole!.year).toBeNull();
+    expect(notebookCaption(whole!)).toBe('Council, about the story · the whole book');
+    const keptNone = assembleNotebook([keptLine(200, { year: undefined, chips: {} })], W, ctx)
+      .pages[0]!;
+    expect('year' in keptNone).toBe(false);
+    expect(notebookCaption(keptNone)).toBe('Kept line · no story year');
+    const keptWhole = assembleNotebook([keptLine(200, { year: null })], W, ctx).pages[0]!;
+    expect(notebookCaption(keptWhole)).toBe('Kept line · the whole book');
+    // The chips' year stands in when the page has none.
+    expect(assembleNotebook([council({ year: undefined })], W, ctx).pages[0]!.year).toBe(2071);
+  });
+
+  test('NB-4 over-long values are cut on arrival and the signature stays short, so a 420-line council is still a valid page', () => {
+    const lines = Array.from({ length: 420 }, (_, i) =>
+      line(`0f7c3b1e-5a2d-4c3e-9f1a-${String(i).padStart(12, '0')}`, 1000 + i, NOV25 + i),
+    );
+    const [p] = assembleNotebook(
+      [council({ title: 'T'.repeat(5000), createdAt: 9e15 }), ...lines],
+      W,
+      ctx,
+    ).pages;
+    expect(p!.lines).toHaveLength(420);
+    expect(p!.title).toHaveLength(2000);
+    expect(p!.sig.length).toBeLessThan(40);
+    const at = '2026-11-25T22:00:00.000Z';
+    const r = NotebookPage.safeParse({
+      ...p,
+      characterIds: [],
+      placeIds: [],
+      chapterIds: [],
+      years: [],
+      createdAt: at,
+      modifiedAt: at,
+    });
+    expect(r.success, JSON.stringify(r.error?.issues.slice(0, 2))).toBe(true);
   });
 });
 
 describe('NB-6 deletes and the trash', () => {
+  test('NB-6 a thread on a bible question built from its lines goes to the trash when its last line is deleted', () => {
+    const lineRow = up('messages', 'QL1', 301, {
+      id: 'QL1',
+      pageId: 'Q-flood',
+      at: NOV25,
+      text: 'Spring.',
+      kept: false,
+    });
+    const noLinks = () => ({ characterIds: [], placeIds: [], chapterIds: [], years: [] });
+    const first = assembleNotebook([lineRow], W, ctx);
+    expect(first.pages.map((p) => p._id)).toEqual(['Q-flood']);
+    const stored = [{ _id: 'Q-flood', sig: first.pages[0]!.sig, world: W }];
+    const gone = assembleNotebook([up('messages', 'QL1', 302, null)], W, ctx);
+    const ops = planNotebook(gone, stored, noLinks);
+    expect(ops).toEqual([{ op: 'trash', id: 'Q-flood', sig: expect.stringMatching(/^gone /) }]);
+    // Trashed once: the next pull plans nothing.
+    expect(
+      planNotebook(
+        gone,
+        [
+          {
+            ...stored[0]!,
+            sig: ops[0]!.op === 'trash' ? ops[0]!.sig : '',
+            deletedAt: '2026-11-26T00:00:00.000Z',
+          },
+        ],
+        noLinks,
+      ),
+    ).toEqual([]);
+  });
+
+  test('NB-4 lines on a thread already stored keep it built after its bible question is gone', () => {
+    const lineRow = up('messages', 'QL1', 301, {
+      id: 'QL1',
+      pageId: 'Q-old',
+      at: NOV25,
+      text: 'Still mine.',
+      kept: false,
+    });
+    const none = { questions: new Map<string, string>() };
+    expect(assembleNotebook([lineRow], W, none).pages).toEqual([]);
+    const [p] = assembleNotebook([lineRow], W, {
+      ...none,
+      threads: new Map([['Q-old', 'The old question']]),
+    }).pages;
+    expect(p).toMatchObject({
+      _id: 'Q-old',
+      kind: 'thread',
+      title: 'The old question',
+      questionId: null,
+    });
+  });
+
   test('NB-6 a deleted council and a line no longer kept are listed to trash; a deleted council line only leaves its page', () => {
     const rows = [
       up('pages', 'P-gone', 500, null),
@@ -264,7 +393,7 @@ describe('NB-6 deletes and the trash', () => {
     ];
     const { pages, deleted } = assembleNotebook(rows, W, ctx);
     expect([...deleted.keys()].sort()).toEqual(['L2', 'M-kept', 'P-gone']);
-    expect(deleted.get('P-gone')).toBe('deleted pages:P-gone:500');
+    expect(deleted.get('P-gone')).toBe(`deleted ${hashText('pages:P-gone:500')}`);
     expect(pages[0]!.lines.map((l) => l.id)).toEqual(['L1']);
   });
 
@@ -279,10 +408,14 @@ describe('NB-6 deletes and the trash', () => {
 
     const gone = assembleNotebook([up('messages', 'M-kept', 250, null)], W, ctx);
     expect(planNotebook(gone, stored, noLinks)).toEqual([
-      { op: 'trash', id: 'M-kept', sig: 'deleted messages:M-kept:250' },
+      { op: 'trash', id: 'M-kept', sig: `deleted ${hashText('messages:M-kept:250')}` },
     ]);
     const trashed = [
-      { ...stored[0]!, sig: 'deleted messages:M-kept:250', deletedAt: '2026-11-26T00:00:00.000Z' },
+      {
+        ...stored[0]!,
+        sig: `deleted ${hashText('messages:M-kept:250')}`,
+        deletedAt: '2026-11-26T00:00:00.000Z',
+      },
     ];
     expect(planNotebook(gone, trashed, noLinks)).toEqual([]);
     // Kept again on the phone, a newer rev: it comes back with its links read again.
@@ -335,7 +468,9 @@ const draft = (o: Partial<NotebookDraft>): NotebookDraft => ({
 });
 const ln = (text: string, speakerId: string | null = null) => ({
   id: `l-${text.length}`,
+  voice: (speakerId ? 'character' : 'ink') as 'character' | 'ink',
   speakerId,
+  paper: null,
   text,
   wise: false,
   kept: false,

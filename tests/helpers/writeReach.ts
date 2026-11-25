@@ -46,6 +46,9 @@ export const REPOSITORY_WRITES = new Set([
   'setListItemLook',
   'setBibleSettings',
   'setEraDefaults',
+  // A55: notebook pages from the phone, and the first publish to it
+  'applyNotebook',
+  'markBridgeSince',
 ]);
 
 const DRIVER_WRITES = new Set([

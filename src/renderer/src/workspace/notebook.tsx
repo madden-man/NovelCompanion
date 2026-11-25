@@ -186,11 +186,17 @@ export function NotebookPageView(props: {
             <li
               key={l.id}
               data-line-id={l.id}
-              className={[l.wise ? 'wise' : '', l.speakerId ? 'voice' : 'ink']
-                .filter(Boolean)
-                .join(' ')}
+              data-voice={l.voice}
+              className={[l.wise ? 'wise' : '', l.voice].filter(Boolean).join(' ')}
             >
-              {l.speaker && <strong className="nb-speaker">{l.speaker}</strong>}
+              {l.voice === 'character' && l.speaker && (
+                <strong className="nb-speaker">{l.speaker}</strong>
+              )}
+              {l.paper && (
+                <span className="nb-voice-note">
+                  {l.paper.side ? `Paper, ${l.paper.side}` : 'Paper'}
+                </span>
+              )}
               <span className="nb-text">
                 <Zh text={l.text} actions={false} />
               </span>
@@ -210,7 +216,7 @@ export function NotebookPageView(props: {
                 <li key={p.id || p.title}>
                   <span className="nb-paper-title">{p.title}</span>
                   <span className="nb-paper-meta">
-                    {[p.journal, p.year, p.side ? `for the ${p.side} side` : null, p.doi]
+                    {[p.journal, p.year, p.side, p.doi]
                       .filter((x) => x !== null && x !== '')
                       .join(' · ')}
                   </span>

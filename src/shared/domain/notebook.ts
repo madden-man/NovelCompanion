@@ -7,7 +7,14 @@
  * Electron, MongoDB or React (ARCHITECTURE rule 1).
  */
 import type { UpRow } from '../bridge';
-import type { NotebookKind, NotebookLine, NotebookPage, NotebookPaper } from '../schema/notebook';
+import { NOTEBOOK_QUESTION_MAX, NOTEBOOK_TEXT_MAX, NOTEBOOK_TITLE_MAX } from '../schema/notebook';
+import type {
+  LineVoice,
+  NotebookKind,
+  NotebookLine,
+  NotebookPage,
+  NotebookPaper,
+} from '../schema/notebook';
 import { parseYears } from './captureRouter/parse';
 import { routeCapture } from './captureRouter/route';
 import type { RouterIndex } from './captureRouter/types';
@@ -31,19 +38,28 @@ export interface NotebookLinks {
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const strOrNull = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+/** A string cut to `max` characters, so one over-long value never stops a page landing. */
+const cut = (v: unknown, max: number): string => str(v).slice(0, max);
+const strOrNull = (v: unknown, max = 500): string | null =>
+  typeof v === 'string' && v ? v.slice(0, max) : null;
 const int = (v: unknown): number | null =>
   typeof v === 'number' && Number.isInteger(v) && v >= -10000 && v <= 10000 ? v : null;
 const ids = (v: unknown): string[] =>
   Array.isArray(v)
-    ? [...new Set(v.filter((x): x is string => typeof x === 'string' && x.length > 0))]
+    ? [
+        ...new Set(
+          v.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 120),
+        ),
+      ]
     : [];
 
 /** A phone time (milliseconds) as an ISO time; null when it is not one. */
 export function isoOf(ms: unknown): string | null {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
   const d = new Date(ms);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  // A time outside years 0 to 9999 has no plain ISO form; it is no time.
+  if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 0 || d.getUTCFullYear() > 9999) return null;
+  return d.toISOString();
 }
 
 /** The character a council voice is, or null for plain ink and every other voice. */
@@ -52,14 +68,26 @@ export function speakerOf(voiceId: unknown): string | null {
   return m?.[1] ?? null;
 }
 
-/** A page's year: its own (null is the whole book), else its chips' year, else none. */
-function yearOf(row: Record<string, unknown>): number | null {
-  if (row.year === null) return null;
-  const own = int(row.year);
-  if (own !== null) return own;
-  const chips = isObj(row.chips) ? row.chips : {};
-  return int(chips.year);
+/**
+ * A year as the phone sends it: a number is that year, null is the whole
+ * book, and absent (or anything else) is no year known.
+ */
+function yearField(holder: Record<string, unknown>): number | null | undefined {
+  if (!('year' in holder) || holder.year === undefined) return undefined;
+  if (holder.year === null) return null;
+  return int(holder.year) ?? undefined;
 }
+
+/** A page's year: its own, else its chips' year; undefined when neither is known. */
+function yearOf(row: Record<string, unknown>): number | null | undefined {
+  const own = yearField(row);
+  if (own !== undefined) return own;
+  return yearField(isObj(row.chips) ? row.chips : {});
+}
+
+/** The page with its year set only when one is known (absent stays absent). */
+const withYear = <T extends object>(page: T, year: number | null | undefined) =>
+  year === undefined ? page : { ...page, year };
 
 function chipsOf(row: Record<string, unknown>): NotebookDraft['chips'] {
   const chips = isObj(row.chips) ? row.chips : {};
@@ -69,20 +97,54 @@ function chipsOf(row: Record<string, unknown>): NotebookDraft['chips'] {
 /** A row that holds a row (not a delete). */
 type LiveRow = Omit<UpRow, 'row'> & { row: Record<string, unknown> };
 
+/**
+ * A short fixed-length hash of a text (two 32-bit FNV-1a passes with
+ * different seeds, and the length): pure, so the renderer could run it too.
+ * A page's signature is a hash, so a council of any length fits the schema.
+ */
+export function hashText(text: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995) ^ (b >>> 13);
+  }
+  const hex = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
+  return `${hex(a)}${hex(b)}-${text.length.toString(36)}`;
+}
+
 const sigOf = (rows: readonly UpRow[]): string =>
-  rows
-    .map((r) => `${r.table}:${r.id}:${r.rev}`)
-    .sort()
-    .join(' ');
+  hashText(
+    rows
+      .map((r) => `${r.table}:${r.id}:${r.rev}`)
+      .sort()
+      .join(' '),
+  );
 
 /** The signature a page is trashed with: the delete that took it, so a second pull changes nothing. */
-export const deletedSig = (r: UpRow): string => `deleted ${r.table}:${r.id}:${r.rev}`;
+export const deletedSig = (r: UpRow): string =>
+  `deleted ${hashText(`${r.table}:${r.id}:${r.rev}`)}`;
+
+/** Who a line is by (see `LINE_VOICES`): no voice is his own ink, `c:<id>` a character, anything else another voice. */
+export function voiceOf(row: Record<string, unknown>): {
+  voice: LineVoice;
+  speakerId: string | null;
+  paper: NotebookLine['paper'];
+} {
+  const paper = isObj(row.paper) ? { side: strOrNull(row.paper.side, 40) } : null;
+  if (paper) return { voice: 'other', speakerId: null, paper };
+  const speakerId = speakerOf(row.voiceId);
+  if (speakerId) return { voice: 'character', speakerId, paper: null };
+  const hasVoice = typeof row.voiceId === 'string' && row.voiceId !== '';
+  return { voice: hasVoice ? 'other' : 'ink', speakerId: null, paper: null };
+}
 
 function lineOf(row: Record<string, unknown>, fallbackAt: string | null): NotebookLine {
   return {
     id: str(row.id),
-    speakerId: speakerOf(row.voiceId),
-    text: str(row.text),
+    ...voiceOf(row),
+    text: cut(row.text, NOTEBOOK_TEXT_MAX),
     wise: row.wise === true,
     kept: row.kept === true,
     at: isoOf(row.at) ?? fallbackAt,
@@ -97,17 +159,22 @@ function paperOf(p: unknown): NotebookPaper | null {
   if (!isObj(p) || typeof p.title !== 'string') return null;
   return {
     id: str(p.id).slice(0, 200),
-    title: p.title,
+    title: p.title.slice(0, NOTEBOOK_TITLE_MAX),
     journal: strOrNull(p.journal),
     year: int(p.year),
     doi: strOrNull(p.doi),
-    side: strOrNull(p.side),
+    side: strOrNull(p.side, 40),
   };
 }
 
 export interface AssembleContext {
   /** The bible's live open questions by ID, their text, so a thread on one is named for it. */
   questions: ReadonlyMap<string, string>;
+  /**
+   * Threads already stored by ID, with their title: lines on one keep it
+   * built even when its bible question has gone since.
+   */
+  threads?: ReadonlyMap<string, string>;
 }
 
 export interface Assembled {
@@ -177,29 +244,36 @@ export function assembleNotebook(
       .map(speakerOf)
       .filter((x): x is string => !!x);
     const chips = chipsOf(row);
-    pages.push({
-      _id: id,
-      world,
-      kind: council ? 'council' : 'thread',
-      reading: council ? (row.reading === 'in' ? 'in' : 'about') : null,
-      title: str(row.title),
-      date,
-      year: yearOf(row),
-      lines: linesFor(id, date),
-      chips: {
-        characterIds: [...new Set([...chips.characterIds, ...seated])],
-        placeIds: chips.placeIds,
-      },
-      research: null,
-      questionId: !council && ctx.questions.has(id) ? id : null,
-      sig: sigOf([r, ...(lineRows.get(id) ?? [])]),
-    });
+    pages.push(
+      withYear(
+        {
+          _id: id,
+          world,
+          kind: council ? 'council' : 'thread',
+          reading: council ? (row.reading === 'in' ? 'in' : 'about') : null,
+          title: cut(row.title, NOTEBOOK_TITLE_MAX),
+          date,
+          lines: linesFor(id, date),
+          chips: {
+            characterIds: [...new Set([...chips.characterIds, ...seated])],
+            placeIds: chips.placeIds,
+          },
+          research: null,
+          questionId: !council && ctx.questions.has(id) ? id : null,
+          sig: sigOf([r, ...(lineRows.get(id) ?? [])]),
+        } satisfies NotebookDraft,
+        yearOf(row),
+      ),
+    );
     deleted.delete(id);
   }
 
-  // Lines on one of the bible's questions whose page row has not come up: the thread is the question's.
+  // Lines on one of the bible's questions (or a thread already stored) whose page row has not
+  // come up: the thread is the question's. Its year is not known.
   for (const [pageId, list] of lineRows) {
-    if (pageRows.has(pageId) || !ctx.questions.has(pageId)) continue;
+    if (pageRows.has(pageId)) continue;
+    const title = ctx.questions.get(pageId) ?? ctx.threads?.get(pageId);
+    if (title === undefined) continue;
     const [first] = list.slice().sort((a, b) => byAt(a.row, b.row));
     if (!first) continue;
     const date = isoOf(first.row.at) ?? isoOf(first.at) ?? new Date(0).toISOString();
@@ -208,13 +282,12 @@ export function assembleNotebook(
       world,
       kind: 'thread',
       reading: null,
-      title: ctx.questions.get(pageId) ?? '',
+      title: title.slice(0, NOTEBOOK_TITLE_MAX),
       date,
-      year: null,
       lines: linesFor(pageId, date),
       chips: { characterIds: [], placeIds: [] },
       research: null,
-      questionId: pageId,
+      questionId: ctx.questions.has(pageId) ? pageId : null,
       sig: sigOf(list),
     });
     deleted.delete(pageId);
@@ -223,46 +296,55 @@ export function assembleNotebook(
   for (const r of kept) {
     const row = r.row;
     const date = isoOf(row.date) ?? isoOf(row.at) ?? isoOf(r.at) ?? new Date(0).toISOString();
-    pages.push({
-      _id: r.id,
-      world,
-      kind: 'kept',
-      reading: null,
-      title: '',
-      date,
-      year: yearOf(row),
-      lines: [{ ...lineOf(row, date), speakerId: null, kept: true }],
-      chips: chipsOf(row),
-      research: null,
-      questionId: null,
-      sig: sigOf([r]),
-    });
+    pages.push(
+      withYear(
+        {
+          _id: r.id,
+          world,
+          kind: 'kept',
+          reading: null,
+          title: '',
+          date,
+          // A kept journal line is his own words.
+          lines: [{ ...lineOf(row, date), voice: 'ink', speakerId: null, paper: null, kept: true }],
+          chips: chipsOf(row),
+          research: null,
+          questionId: null,
+          sig: sigOf([r]),
+        } satisfies NotebookDraft,
+        yearOf(row),
+      ),
+    );
     deleted.delete(r.id);
   }
 
   const byId = new Map(pages.map((p) => [p._id, p]));
   for (const r of inquiries) {
     const row = r.row;
-    const pageId = strOrNull(row.pageId);
+    const pageId = strOrNull(row.pageId, 120);
     const asked = pageId ? byId.get(pageId) : undefined;
     const date = isoOf(row.askedAt) ?? isoOf(r.at) ?? new Date(0).toISOString();
     const papers = Array.isArray(row.papers)
       ? row.papers.map(paperOf).filter((p): p is NotebookPaper => !!p)
       : [];
-    pages.push({
-      _id: r.id,
-      world,
-      kind: 'research',
-      reading: null,
-      title: str(row.question),
-      date,
-      year: asked?.year ?? null,
-      lines: [],
-      chips: { characterIds: [], placeIds: [] },
-      research: { question: str(row.question), papers },
-      questionId: pageId && ctx.questions.has(pageId) ? pageId : (asked?.questionId ?? null),
-      sig: sigOf([r]),
-    });
+    pages.push(
+      withYear(
+        {
+          _id: r.id,
+          world,
+          kind: 'research',
+          reading: null,
+          title: cut(row.question, NOTEBOOK_TITLE_MAX),
+          date,
+          lines: [],
+          chips: { characterIds: [], placeIds: [] },
+          research: { question: cut(row.question, NOTEBOOK_QUESTION_MAX), papers },
+          questionId: pageId && ctx.questions.has(pageId) ? pageId : (asked?.questionId ?? null),
+          sig: sigOf([r]),
+        } satisfies NotebookDraft,
+        asked?.year,
+      ),
+    );
     deleted.delete(r.id);
   }
   return { pages, deleted };
@@ -313,11 +395,11 @@ export function linkNotebook(page: NotebookDraft, ctx: LinkContext): NotebookLin
   const places = new Set<string>(page.chips.placeIds);
   const chapters = new Set<string>();
   const years = new Set<number>();
-  if (page.year !== null) years.add(page.year);
+  if (typeof page.year === 'number') years.add(page.year);
   for (const l of page.lines) if (l.speakerId) characters.add(l.speakerId);
   const texts = [page.title, ...page.lines.map((l) => l.text)];
   if (page.research) texts.push(...page.research.papers.map((p) => p.title));
-  const storyYear = page.year ?? ctx.storyYear;
+  const storyYear = typeof page.year === 'number' ? page.year : ctx.storyYear;
   for (const text of texts) {
     if (!text.trim()) continue;
     const routed = routeCapture(text, ctx.index, { storyYear });
@@ -368,10 +450,19 @@ export function planNotebook(
     if (have && have.sig === page.sig && !have.deletedAt) continue;
     ops.push({ op: 'put', page: { ...page, ...link(page) } });
   }
+  const trashed = new Set<string>();
   for (const [id, sig] of assembled.deleted) {
     const have = byId.get(id);
     if (!have || have.deletedAt) continue;
     ops.push({ op: 'trash', id, sig });
+    trashed.add(id);
+  }
+  // A live page the rows no longer make (a thread on a bible question whose every line was
+  // deleted, with no page row) is gone from the phone too.
+  const made = new Set(assembled.pages.map((p) => p._id));
+  for (const have of stored) {
+    if (have.deletedAt || made.has(have._id) || trashed.has(have._id)) continue;
+    ops.push({ op: 'trash', id: have._id, sig: `gone ${have.sig}`.slice(0, 200) });
   }
   return ops;
 }
@@ -397,8 +488,9 @@ export function kindLabel(kind: NotebookKind, reading: NotebookPage['reading']):
   }
 }
 
-/** "story year 2071", or "the whole book". */
-export function yearLabel(year: number | null): string {
+/** "story year 2071", "the whole book" for null, or "no story year" when none is known. */
+export function yearLabel(year: number | null | undefined): string {
+  if (year === undefined) return 'no story year';
   return year === null ? 'the whole book' : `story year ${year}`;
 }
 
@@ -412,7 +504,7 @@ export interface NotebookRow {
   kind: NotebookKind;
   reading: NotebookPage['reading'];
   date: string;
-  year: number | null;
+  year?: number | null;
   firstLine: string;
   caption: string;
   /** A kept line is all there is to read; the rest open across the screen. */

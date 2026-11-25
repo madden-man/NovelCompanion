@@ -20,11 +20,29 @@ export const NotebookId = z
 export const NOTEBOOK_KINDS = ['kept', 'council', 'thread', 'research'] as const;
 export type NotebookKind = (typeof NOTEBOOK_KINDS)[number];
 
-/** One line as written on the phone. `speakerId` is a character ID, or null for plain ink (his own). */
+/**
+ * Who a line is by: `ink` is his own (no voice), `character` a council voice
+ * `c:<characterId>` (then `speakerId` names the character), `other` any other
+ * voice, a research paper brought to a council among them (then `paper` says
+ * which side it was picked for). Only `ink` is his.
+ */
+export const LINE_VOICES = ['ink', 'character', 'other'] as const;
+export type LineVoice = (typeof LINE_VOICES)[number];
+
+/** Caps a line, a title and a question are cut to on arrival, so one long value never stops a page landing. */
+export const NOTEBOOK_TEXT_MAX = 65536;
+export const NOTEBOOK_TITLE_MAX = 2000;
+export const NOTEBOOK_QUESTION_MAX = 4000;
+
+/** One line as written on the phone. */
 export const NotebookLine = z.strictObject({
   id: NotebookId,
+  voice: z.enum(LINE_VOICES),
+  /** The character who spoke it, when `voice` is `character`; otherwise null. */
   speakerId: z.string().min(1).max(120).nullable(),
-  text: z.string().max(65536),
+  /** A paper's line (`voice` is `other`): the side it was picked for. */
+  paper: z.strictObject({ side: z.string().max(40).nullable() }).nullable(),
+  text: z.string().max(NOTEBOOK_TEXT_MAX),
   wise: z.boolean(),
   kept: z.boolean(),
   at: Timestamp.nullable(),
@@ -34,7 +52,7 @@ export type NotebookLine = z.infer<typeof NotebookLine>;
 /** A paper a question was researched with: its public record and the side it was picked for. */
 export const NotebookPaper = z.strictObject({
   id: z.string().max(200),
-  title: z.string().max(2000),
+  title: z.string().max(NOTEBOOK_TITLE_MAX),
   journal: z.string().max(500).nullable(),
   year: z.int().nullable(),
   doi: z.string().max(500).nullable(),
@@ -52,17 +70,23 @@ export const NotebookPage = z.strictObject({
   kind: z.enum(NOTEBOOK_KINDS),
   /** A council's reading: in the story or about it. Null for every other kind. */
   reading: z.enum(['in', 'about']).nullable(),
-  title: z.string().max(2000),
+  title: z.string().max(NOTEBOOK_TITLE_MAX),
   /** The page's date on the phone (a kept line: its page's date). */
   date: Timestamp,
-  /** The story year it was written in; null for the whole book. */
-  year: Year.nullable(),
+  /**
+   * The story year it was written in; null for the whole book; absent when no
+   * year is known (a page written before the phone had a pocket).
+   */
+  year: Year.nullable().optional(),
   lines: z.array(NotebookLine),
   /** The chips the phone sent: characters and places. */
   chips: z.strictObject({ characterIds: Ids, placeIds: Ids }),
   /** A research page: the question and the papers picked. */
   research: z
-    .strictObject({ question: z.string().max(4000), papers: z.array(NotebookPaper) })
+    .strictObject({
+      question: z.string().max(NOTEBOOK_QUESTION_MAX),
+      papers: z.array(NotebookPaper),
+    })
     .nullable(),
   /** The bible's open question a thread or research page belongs to, when there is one. */
   questionId: z.string().max(120).nullable(),
@@ -71,8 +95,11 @@ export const NotebookPage = z.strictObject({
   placeIds: Ids,
   chapterIds: Ids,
   years: z.array(Year),
-  /** The phone rows and revisions it was built from; a pull that brings the same ones changes nothing. */
-  sig: z.string().max(20000),
+  /**
+   * A hash of the phone rows and revisions it was built from (or of the delete
+   * that trashed it); a pull that brings the same ones changes nothing.
+   */
+  sig: z.string().max(200),
   createdAt: Timestamp,
   modifiedAt: Timestamp,
   deletedAt: Timestamp.optional(),

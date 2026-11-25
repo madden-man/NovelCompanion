@@ -16,7 +16,8 @@ export const NotebookRowWire = z.strictObject({
   kind: Kind,
   reading: Reading,
   date: z.string(),
-  year: Year.nullable(),
+  /** Null is the whole book; absent is no year known. */
+  year: Year.nullable().optional(),
   firstLine: z.string(),
   caption: z.string(),
   /** False for a kept line: the row is all there is to read. */
@@ -38,13 +39,15 @@ export const NotebookPageWire = z.strictObject({
   firstLine: z.string(),
   caption: z.string(),
   date: z.string(),
-  year: Year.nullable(),
+  year: Year.nullable().optional(),
   inTrash: z.boolean(),
   lines: z.array(
     z.strictObject({
       id: z.string(),
-      /** The character who spoke it, or null for plain ink, his own words. */
+      /** ink: his own words; character: `speakerId` spoke it; other: another voice, a paper among them. */
+      voice: z.enum(['ink', 'character', 'other']),
       speakerId: z.string().nullable(),
+      paper: z.strictObject({ side: z.string().nullable() }).nullable(),
       speaker: z.string().nullable(),
       text: z.string(),
       wise: z.boolean(),

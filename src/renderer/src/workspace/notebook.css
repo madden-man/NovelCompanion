@@ -93,6 +93,15 @@ button.nb-row .nb-first {
 .nb-lines li.wise .nb-text {
   font-style: italic;
 }
+/* NB-8: another voice (a paper brought to a council) is set apart from his plain ink. */
+.nb-lines li.other {
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+}
+.nb-voice-note {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 .nb-speaker {
   font-weight: 600;
 }

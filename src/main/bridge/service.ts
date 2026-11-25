@@ -67,8 +67,9 @@ export function linkContextOf(session: OpenBible): LinkContext {
   const chapters = model.all('chapters');
   const numbers = chapterNumbers(chapters);
   const known = new Set<string>();
+  // Only live entries: a chip naming one in the trash is dropped like an unknown one.
   for (const c of ['characters', 'places', 'chapters']) {
-    for (const d of model.all(c)) known.add(d._id);
+    for (const d of live(model.all(c))) known.add(d._id);
   }
   return {
     index: buildIndex(indexFromSession(session)),
@@ -226,12 +227,18 @@ export class BridgeService {
       for (const q of live(model.all('openQuestions'))) {
         questions.set(q._id, plainText(q.question).trim() || String(q.title ?? ''));
       }
-      const assembled = assembleNotebook(rows, world, { questions });
       const stored = repo.notebookPages({ includeDeleted: true }).filter((p) => p.world === world);
+      const threads = new Map(
+        stored.filter((p) => p.kind === 'thread').map((p) => [p._id, p.title]),
+      );
+      const assembled = assembleNotebook(rows, world, { questions, threads });
       const ctx = linkContextOf(this.session);
       const ops = planNotebook(assembled, stored, (p) => linkNotebook(p, ctx));
       if (this.stopped) return 0;
-      return await repo.applyNotebook(ops);
+      // NB-4: a page that fails the schema is skipped and reported; the rest land.
+      return await repo.applyNotebook(ops, (id, reason) =>
+        this.onError(new Error(`The notebook page ${id} from the phone was skipped: ${reason}`)),
+      );
     } catch (e) {
       this.onError(e);
       return 0;

@@ -1492,7 +1492,11 @@ export class Repository {
    * no IPC channel, no proposal and no undo step reaches it, because the
    * desktop copy follows the phone. Returns how many pages changed.
    */
-  async applyNotebook(ops: readonly NotebookOp[]): Promise<number> {
+  async applyNotebook(
+    ops: readonly NotebookOp[],
+    /** A page that fails the schema is skipped, never the batch, and named here. */
+    onSkip: (id: string, reason: string) => void = () => undefined,
+  ): Promise<number> {
     if (!ops.length) return 0;
     const at = this.now().toISOString();
     const changes: { prior: StoredDoc | null; next: StoredDoc; op: ChangeOp }[] = [];
@@ -1520,10 +1524,8 @@ export class Repository {
       }
       const r = NotebookPage.safeParse(next);
       if (!r.success) {
-        throw new ValidationError(
-          `This notebook page is not valid: ${z.prettifyError(r.error)}`,
-          r.error.issues,
-        );
+        onSkip(id, z.prettifyError(r.error));
+        continue;
       }
       changes.push({ prior, next: r.data as unknown as StoredDoc, op });
     }

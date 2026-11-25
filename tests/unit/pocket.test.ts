@@ -109,6 +109,32 @@ describe('NB-2 the pocket', () => {
     );
   });
 
+  test("NB-2 the family colour is the first family's; none when the first family has none", () => {
+    const p = buildPocket(
+      input({
+        families: [...docs('families'), { _id: 'FAM-PLAIN', name: 'Plain', color: null }],
+        characters: [
+          {
+            _id: 'A',
+            title: 'Ann Plain',
+            names: { full: 'Ann Plain' },
+            birth: { year: 2000 },
+            familyIds: ['FAM-PLAIN', 'FAM-ZHOU'],
+          },
+          {
+            _id: 'B',
+            title: 'Bo Zhou',
+            names: { full: 'Bo Zhou' },
+            birth: { year: 2000 },
+            familyIds: ['FAM-ZHOU', 'FAM-HALE'],
+          },
+        ],
+      }),
+    );
+    expect(p.characters.find((c) => c.id === 'A')!.familyColour).toBeUndefined();
+    expect(p.characters.find((c) => c.id === 'B')!.familyColour).toBe('#1baf7a');
+  });
+
   test('NB-2 places with their community, chapters in reading order with their story year, events with their year, the story year and the span', () => {
     const p = buildPocket(
       input({

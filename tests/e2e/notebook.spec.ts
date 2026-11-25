@@ -265,6 +265,106 @@ test("NB-7 NB-8 on the Places tab, Edit shows the place's Notebook list; a page 
   await expect(row.getByTestId('place-editor')).toHaveCount(0);
 });
 
+test('NB-8 a question thread shows its kept mark, a paper line as the paper and another voice without a name; a page with no year says so', async () => {
+  await send('pages', 'T1', 50, {
+    id: 'T1',
+    kind: 'question',
+    title: 'Where does Zhou Lan hide the key?',
+    state: 'open',
+    createdAt: NOV25 + 20,
+    updatedAt: NOV25 + 20,
+  });
+  await send('messages', 'T1-a', 51, {
+    id: 'T1-a',
+    pageId: 'T1',
+    at: NOV25 + 21,
+    text: 'Under the stair.',
+    kept: true,
+  });
+  await send('messages', 'T1-b', 52, {
+    id: 'T1-b',
+    pageId: 'T1',
+    at: NOV25 + 22,
+    voiceId: 'v:for',
+    text: 'Hiding places in old houses',
+    kept: false,
+    paper: { paperId: 'p9', side: 'for' },
+  });
+  await send('messages', 'T1-c', 53, {
+    id: 'T1-c',
+    pageId: 'T1',
+    at: NOV25 + 23,
+    voiceId: 'v:architect',
+    text: 'Behind the stove.',
+    kept: false,
+  });
+  await focusWindow();
+  await openCharacter('Zhou Lan');
+  const row = list().locator('[data-notebook-id="T1"]');
+  await expect(row).toContainText('Question thread · no story year');
+  await row.getByRole('button').click();
+  const view = page.getByTestId('notebook-page');
+  const lines = view.getByRole('list', { name: 'Lines' }).getByRole('listitem');
+  await expect(lines).toHaveCount(3);
+  await expect(lines.nth(0).locator('.nb-kept')).toHaveText('kept');
+  await expect(lines.nth(0)).toHaveAttribute('data-voice', 'ink');
+  await expect(lines.nth(1)).toHaveAttribute('data-voice', 'other');
+  await expect(lines.nth(1).locator('.nb-voice-note')).toHaveText('Paper, for');
+  await expect(lines.nth(1)).toContainText('Hiding places in old houses');
+  await expect(lines.nth(2)).toHaveAttribute('data-voice', 'other');
+  await expect(lines.nth(2).locator('.nb-speaker, .nb-voice-note')).toHaveCount(0);
+  // Another voice is set apart from his plain ink.
+  await expect(lines.nth(2)).toHaveCSS('border-left-style', 'solid');
+  await expect(lines.nth(0)).toHaveCSS('border-left-style', 'none');
+  await page.keyboard.press('Escape');
+  await expect(view).toHaveCount(0);
+});
+
+test('NB-8 a research page lists its question and the papers picked, each with its journal, year, side and DOI', async () => {
+  await send('inquiries', 'R1', 60, {
+    id: 'R1',
+    askedAt: NOV25 + 30,
+    question: 'How long can Zhou Lan keep a secret?',
+    state: 'done',
+    papers: [
+      {
+        id: 'p1',
+        title: 'Secrecy and health',
+        journal: 'Psych Review',
+        year: 2019,
+        doi: '10.1/abc',
+        kind: 'study',
+        tier: 1,
+        side: 'for',
+      },
+      {
+        id: 'p2',
+        title: 'Keeping quiet',
+        journal: 'Mind',
+        year: 2021,
+        doi: '10.1/def',
+        kind: 'study',
+        tier: 2,
+        side: 'against',
+      },
+    ],
+  });
+  await focusWindow();
+  const row = list().locator('[data-notebook-id="R1"]');
+  await expect(row).toContainText('Research · no story year');
+  await row.getByRole('button').click();
+  const view = page.getByTestId('notebook-page');
+  await expect(view.getByRole('heading', { level: 2 })).toHaveText(
+    'How long can Zhou Lan keep a secret?',
+  );
+  const papers = view.getByRole('region', { name: 'Papers' }).getByRole('listitem');
+  await expect(papers).toHaveCount(2);
+  await expect(papers.nth(0)).toContainText('Secrecy and health');
+  await expect(papers.nth(0)).toContainText('Psych Review · 2019 · for · 10.1/abc');
+  await expect(papers.nth(1)).toContainText('Mind · 2021 · against · 10.1/def');
+  await page.keyboard.press('Escape');
+});
+
 test('NB-9 search finds a notebook page and opens it across the screen; Close goes back to the results', async () => {
   await rail(page, 'Search and filters').click();
   const view = page.getByTestId('search-view');
