@@ -590,3 +590,17 @@ Review fixes on `worlds-w3` (after the review of 41611b3), each with a test that
 - Absent year is no year known: `tests/unit/notebook.test.ts` "NB-4 year: a number is that year, null is the whole book, absent is no year known, and each is captioned so".
 
 Suite counts after the review fixes (`npm test`, local replica set, hidden): lint and typecheck clean; unit 848 of 848 (69 files); integration 343 of 343 (31 files); end-to-end 298 passed, 2 failed, 38 not run. The two failures are the same two that fail on main at db286e5 (backstory SM-9 empty spot, tree SM-1 window size).
+
+## A56: facts and questions from the notebook, FlowState Worlds package W5 (FN-1 to FN-9), 2026-11-25
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| FN-1 | pending | Being built on `worlds-w5`. |
+| FN-2 | pending | Being built on `worlds-w5`. |
+| FN-3 | pending | Being built on `worlds-w5`. |
+| FN-4 | pending | Being built on `worlds-w5`. |
+| FN-5 | pending | Being built on `worlds-w5`. |
+| FN-6 | pending | Being built on `worlds-w5`. |
+| FN-7 | pending | Being built on `worlds-w5`. |
+| FN-8 | pending | Being built on `worlds-w5`. |
+| FN-9 | pending | Being built on `worlds-w5`. |
