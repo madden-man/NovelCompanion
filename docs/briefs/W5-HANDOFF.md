@@ -12,7 +12,7 @@ Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR #2 against `w
 - Tests: unit `phone-questions`, `tray`, `single-database`, `notebook`; integration `phone-questions`, `tray`, `bridge-shared`, `bridge`; e2e `tray.spec.ts` (9), `year.spec.ts` updated for the menu item.
 
 ## Half done
-- The whole `npm test` run (see PR body for the numbers once run).
+- Nothing. Last full `npm test` (before the FN-6 test fix): lint and typecheck clean; unit 865/865 (71 files); integration 357/357 (34 files); e2e 299 passed, 4 failed, 44 not run. The failures were the two known ones, `tray.spec.ts` FN-8 (the FN-6 test left the capture box open; fixed in f9381d9, tray and year specs then 25/25) and `year.spec.ts` IP-5 (passed on rerun). A second whole e2e run after the fix: 302 passed, 3 failed (the two known, plus `richtext.spec.ts` A44 typing shortcuts, which passes and fails intermittently when run alone on this branch; W5 touches no rich text or culture file), 42 not run.
 
 ## Not started
 - Nothing in scope.
