@@ -25,7 +25,7 @@ import { CharacterPage } from './character';
 import { NotebookList, NotebookPageView, hasNotebook } from './notebook';
 import { ChapterAlignment } from './sessions/alignment';
 import { ChapterStrands } from './outline/ChapterPage';
-import { Zh } from './Zh';
+import { Zh, useWorkspaceOpen } from './Zh';
 import { useBibleSettings } from './bibleSettings';
 import { autosaveMaxMs } from '../../../shared/schema/settings';
 
@@ -560,6 +560,10 @@ export function EmbeddedEditor(props: {
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
+  // A55 (NB-7, NB-8): the Notebook list here too (a place on the Places tab), its page in place of the editor.
+  const [notebookPage, setNotebookPage] = useState<string | null>(null);
+  const [notebookReturn, setNotebookReturn] = useState<string | null>(null);
+  const workspaceOpen = useWorkspaceOpen();
   const manifest = manifests[collection];
   const draft = ed.draft;
   const close = props.onClose && (
@@ -576,6 +580,18 @@ export function EmbeddedEditor(props: {
     );
   }
   if (!draft) return <p aria-live="polite">Loading the entry.</p>;
+  if (notebookPage) {
+    return (
+      <NotebookPageView
+        id={notebookPage}
+        onOpen={(c, target) => workspaceOpen?.(c, target)}
+        onClose={() => {
+          setNotebookReturn(notebookPage);
+          setNotebookPage(null);
+        }}
+      />
+    );
+  }
   const inTrash = Boolean(draft.deletedAt);
   const messages = { warnings: ed.warnings, issues: ed.issues };
   return (
@@ -637,6 +653,16 @@ export function EmbeddedEditor(props: {
           ))}
         </WriteFieldset>
       </form>
+      {collection === 'places' && (
+        <NotebookList
+          collection={collection}
+          id={id}
+          returnTo={notebookReturn}
+          onOpenPage={(pageId) => {
+            void ed.flush().then(() => setNotebookPage(pageId));
+          }}
+        />
+      )}
     </section>
   );
 }

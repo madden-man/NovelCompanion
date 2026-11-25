@@ -12,6 +12,8 @@ import { useUndo } from './undo';
 /** Opens an entry in its section; the workspace provides it so a name can link to its term (GL-3). */
 const NavContext = createContext<((collection: EntryCollection, id: string) => void) | null>(null);
 export const ZhNavProvider = NavContext.Provider;
+/** A55: the workspace's way to open an entry, for screens that are not handed one (a row editor). */
+export const useWorkspaceOpen = () => useContext(NavContext);
 
 /** Glossary terms as the matcher wants them. */
 export function useGlossary(): ZhTerm[] {

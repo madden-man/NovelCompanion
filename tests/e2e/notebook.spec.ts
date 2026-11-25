@@ -6,7 +6,16 @@ import { BRIDGE_DOWN, BRIDGE_UP, BRIDGE_WORLDS } from '../../src/shared/bridge';
 import type { NovelPocket } from '../../src/shared/bridge';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
-import { connectTo, fileDb, invokeVia, launch, rail, sectionList, seedFixture } from './helpers';
+import {
+  connectTo,
+  fileDb,
+  invokeVia,
+  launch,
+  rail,
+  screenTab,
+  sectionList,
+  seedFixture,
+} from './helpers';
 import type { TestDb } from './helpers';
 
 /**
@@ -231,6 +240,29 @@ test('NB-7 the place and the chapter a page names list it too', async () => {
   await expect(list().locator('[data-notebook-id="K2"]')).toContainText(
     'Two Kitchens needs a second table.',
   );
+});
+
+test("NB-7 NB-8 on the Places tab, Edit shows the place's Notebook list; a page opens in place of the editor and Escape goes back", async () => {
+  await screenTab(page, 'Cultural data', 'Places');
+  const view = page.getByTestId('cultural-data').getByTestId('places-view');
+  const row = view.locator('li[data-place="PLC3"]');
+  await row.getByRole('button', { name: 'Edit Guangzhou' }).click();
+  const box = row.getByTestId('place-editor');
+  const nb = box.getByTestId('notebook-list');
+  await expect(nb.locator('[data-notebook-id="C1"]')).toContainText(
+    'Does Zhou Lan open the letter?',
+  );
+  await expect(nb.locator('[data-notebook-id="K1"]')).toHaveCount(0);
+  await nb.locator('[data-notebook-id="C1"] button').click();
+  const pageView = box.getByTestId('notebook-page');
+  await expect(pageView).toBeVisible();
+  await expect(box.getByTestId('editor')).toHaveCount(0);
+  await expect(pageView.getByRole('list', { name: 'Lines' }).getByRole('listitem')).toHaveCount(2);
+  await page.keyboard.press('Escape');
+  await expect(box.getByTestId('editor')).toBeVisible();
+  await expect(box.locator('[data-notebook-id="C1"] button')).toBeFocused();
+  await box.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(row.getByTestId('place-editor')).toHaveCount(0);
 });
 
 test('NB-9 search finds a notebook page and opens it across the screen; Close goes back to the results', async () => {
