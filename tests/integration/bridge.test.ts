@@ -35,7 +35,7 @@ async function openWithBridge(prefix: string, opts: { pullEveryMs?: number } = {
   const changes: { collection: string; id: string; op: string }[] = [];
   session.repo.onChange((e) => changes.push(e));
   const service = new BridgeService({
-    store: new BridgeStore(store.db),
+    store: new BridgeStore(store.bridge),
     session,
     world,
     name: 'Fixture novel',
@@ -57,7 +57,7 @@ async function send(
 ): Promise<void> {
   const _id = `${world}:${table}:${id}`;
   const doc = { world, table, id, rev, deleted: row === null, row, at: rev };
-  await store.db.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
+  await store.bridge.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
 }
 
 const keptRow = (id: string, text: string, extra: Record<string, unknown> = {}) => ({
@@ -93,20 +93,24 @@ describe('NB-1 NB-2 the registry row and the pocket', () => {
   });
   afterAll(() => ctx.service.stop());
 
-  test('NB-1 opening writes the registry row in novel_companion outside the bible prefix, exactly { _id, name, kind }', async () => {
+  test('NB-1 ARCH-8 opening writes the registry row in flowstate_bridge, exactly { _id, name, kind }, and nothing of the bridge in novel_companion', async () => {
     expect(store.db.databaseName).toBe('novel_companion');
-    const row = await store.db.collection(BRIDGE_WORLDS).findOne({ _id: ctx.world as never });
+    expect(store.bridge.databaseName).toBe('flowstate_bridge');
+    const row = await store.bridge.collection(BRIDGE_WORLDS).findOne({ _id: ctx.world as never });
     expect(row).toEqual({ _id: ctx.world, name: 'Fixture novel', kind: 'novel' });
-    const names = (await store.db.listCollections({}, { nameOnly: true }).toArray()).map(
+    const bridgeNames = (
+      await store.client.db('flowstate_bridge').listCollections({}, { nameOnly: true }).toArray()
+    ).map((c) => c.name);
+    expect(bridgeNames).toEqual(expect.arrayContaining([BRIDGE_WORLDS, BRIDGE_DOWN]));
+    const own = (await store.db.listCollections({}, { nameOnly: true }).toArray()).map(
       (c) => c.name,
     );
-    expect(names).toEqual(expect.arrayContaining([BRIDGE_WORLDS, BRIDGE_DOWN]));
-    expect(names.filter((n) => n.startsWith(`${ctx.slug}.bridge`))).toEqual([]);
+    expect(own.filter((n) => n.startsWith('bridge_') || n.includes('.bridge_'))).toEqual([]);
     expect(await ctx.session.handle.collectionNames()).not.toContain(BRIDGE_WORLDS);
   });
 
   test("NB-2 opening writes the pocket { _id, stamp, pocket } with the bible's characters, places, chapters, events, span and questions", async () => {
-    const row = await store.db.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
+    const row = await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
     expect(Object.keys(row!).sort()).toEqual(['_id', 'pocket', 'stamp']);
     const pocket = row!.pocket as NovelPocket;
     expect(pocket.kind).toBe('novel');
@@ -137,7 +141,7 @@ describe('NB-1 NB-2 the registry row and the pocket', () => {
   });
 
   test('NB-2 the stamp moves only when the pocket content moves: no change keeps it and writes nothing', async () => {
-    const coll = store.db.collection(BRIDGE_DOWN);
+    const coll = store.bridge.collection(BRIDGE_DOWN);
     const stamp0 = (await coll.findOne({ _id: ctx.world as never }))!.stamp;
     expect(await ctx.service.publish()).toBe(false);
     // A moment is not in the pocket: its change publishes nothing new.
@@ -168,7 +172,7 @@ describe('NB-1 NB-2 the registry row and the pocket', () => {
       state: 'open',
     } as never);
     await until(async () => {
-      const row = await store.db.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
+      const row = await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
       return (row!.pocket as NovelPocket).questions.some((x) => x.id === q._id);
     });
     await ctx.session.repo.update('openQuestions', q._id, {
@@ -176,7 +180,7 @@ describe('NB-1 NB-2 the registry row and the pocket', () => {
       decision: 'Ruth',
     } as never);
     await until(async () => {
-      const row = await store.db.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
+      const row = await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
       const got = (row!.pocket as NovelPocket).questions.find((x) => x.id === q._id);
       return got?.state === 'decided' && got.decision === 'Ruth';
     });
@@ -403,7 +407,7 @@ describe('NB-4 one page never stops a pull', () => {
     const ctx = await openWithBridge('nb-long');
     const errors: unknown[] = [];
     const service = new BridgeService({
-      store: new BridgeStore(store.db),
+      store: new BridgeStore(store.bridge),
       session: ctx.session,
       world: ctx.world,
       name: 'F',
@@ -441,7 +445,7 @@ describe('NB-4 one page never stops a pull', () => {
     const ctx = await openWithBridge('nb-bad');
     const errors: Error[] = [];
     const service = new BridgeService({
-      store: new BridgeStore(store.db),
+      store: new BridgeStore(store.bridge),
       session: ctx.session,
       world: ctx.world,
       name: 'F',
@@ -508,7 +512,7 @@ describe('NB-3 when the pull runs', () => {
     const ctx = await openWithBridge('nb-fail');
     const errors: unknown[] = [];
     let fail = true;
-    const store2 = new BridgeStore(store.db);
+    const store2 = new BridgeStore(store.bridge);
     const flaky = Object.assign(Object.create(BridgeStore.prototype) as BridgeStore, store2, {
       readUp: async (w: string) => {
         if (fail) throw new Error('offline');
@@ -533,14 +537,14 @@ describe('NB-3 when the pull runs', () => {
   test('NB-1 a bible with no world ID is never published', async () => {
     const ctx = await openWithBridge('nb-none');
     const service = new BridgeService({
-      store: new BridgeStore(store.db),
+      store: new BridgeStore(store.bridge),
       session: ctx.session,
       world: null,
       name: 'F',
     });
     await service.start();
     expect(
-      await store.db.collection(BRIDGE_WORLDS).findOne({ _id: ctx.world as never }),
+      await store.bridge.collection(BRIDGE_WORLDS).findOne({ _id: ctx.world as never }),
     ).toBeNull();
     service.stop();
   });

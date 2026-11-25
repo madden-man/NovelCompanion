@@ -172,7 +172,7 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   });
   // A55 (NB-1): the bible is published to the phone under its world ID.
   const bridge = new BridgeService({
-    store: new BridgeStore(s.db),
+    store: new BridgeStore(s.bridge),
     session,
     world: worldForBible(
       slug,

@@ -3,6 +3,8 @@
 Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR against `worlds-w3`. Never push main; push with `NC_AUTO_INSTALL=0 git push origin worlds-w5`.
 
 ## Done
+- Contract change (Tommy, 2026-11-25): the bridge lives once in `flowstate_bridge`. `Store.bridge` is a `BridgeDb` handle (connection.ts) reaching only bridge_worlds, bridge_down, bridge_up; `BridgeStore` takes it, never overwrites a non-novel registry row (`WorldTaken`), writes a pocket only for a novel world, reads only pages/messages/inquiries/songs. ARCH-8, NB-1 to NB-3, ARCHITECTURE.md amended. Tests: `tests/unit/single-database.test.ts`, `tests/integration/bridge-shared.test.ts`.
+- FN-10 song stubs (kind `song`, title and characters only, caption "Song · in Music Companion", does not open, follows the phone, comes back when live again). Tests in `tests/integration/bridge-shared.test.ts` and `tests/unit/notebook.test.ts`.
 - FN-7 questions: `src/shared/domain/phoneQuestions.ts` (pure), applied first in `BridgeService.pullOnce` (`applyQuestions`), event `notebook.questions` recorded by `undo.tsx`. Tests: `tests/unit/phone-questions.test.ts`, `tests/integration/phone-questions.test.ts` (both seen failing with the call removed).
 - SPEC section 5.27 (FN-1 to FN-9), the A56 amendments row, SM-1 and SB-10 notes, the W5 milestone row; PROGRESS rows at `pending`.
 

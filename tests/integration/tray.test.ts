@@ -30,7 +30,7 @@ async function send(
 ): Promise<void> {
   const _id = `${world}:${table}:${id}`;
   const doc = { world, table, id, rev, deleted: row === null, row, at: rev };
-  await store.db.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
+  await store.bridge.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
 }
 
 const councilPage = (id: string, reading: 'in' | 'about', year: number | null, at: number) => ({
@@ -67,7 +67,7 @@ describe('A56 the tray, Voice and Relevant channels over the pages the phone sen
     session = await openBibleSession(store, slug);
     world = worldIdFor(slug)!;
     service = new BridgeService({
-      store: new BridgeStore(store.db),
+      store: new BridgeStore(store.bridge),
       session,
       world,
       name: 'Fixture novel',

@@ -16,8 +16,12 @@ export const NotebookId = z
   .string()
   .regex(/^[A-Za-z0-9._:-]{1,120}$/, 'A notebook page ID is the phone row ID');
 
-/** kept: one kept journal line; council and thread: a page whole; research: a question researched. */
-export const NOTEBOOK_KINDS = ['kept', 'council', 'thread', 'research'] as const;
+/**
+ * kept: one kept journal line; council and thread: a page whole; research: a
+ * question researched; song (A56, FN-10): a song's stub, its title only, the
+ * song itself living in Music Companion.
+ */
+export const NOTEBOOK_KINDS = ['kept', 'council', 'thread', 'research', 'song'] as const;
 export type NotebookKind = (typeof NOTEBOOK_KINDS)[number];
 
 /**

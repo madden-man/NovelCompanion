@@ -2,7 +2,10 @@ import type { Collection, Db, Document, MongoClient } from 'mongodb';
 import { MongoServerError } from 'mongodb';
 import { LATEST_SCHEMA_VERSION, migrations } from './migrations';
 import type { Migration } from './migrations';
-import type { Store } from './connection';
+import type { Store as FullStore } from './connection';
+
+/** The app's own database: the bible registry and every bible's collections (never the bridge). */
+type Store = Pick<FullStore, 'client' | 'db'>;
 import { BIBLE_SLUG_RULE, BibleSlug } from '../../shared/bible';
 
 /** The registry of bibles inside `novel_companion` (ARCH-8, A22). */

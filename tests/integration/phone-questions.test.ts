@@ -30,7 +30,7 @@ async function open(prefix: string) {
   const steps: QuestionStep[] = [];
   const errors: unknown[] = [];
   const service = new BridgeService({
-    store: new BridgeStore(store.db),
+    store: new BridgeStore(store.bridge),
     session,
     world,
     name: 'Fixture novel',
@@ -51,7 +51,7 @@ async function send(
 ): Promise<void> {
   const _id = `${world}:${table}:${id}`;
   const doc = { world, table, id, rev, deleted: row === null, row, at: rev };
-  await store.db.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
+  await store.bridge.collection(BRIDGE_UP).replaceOne({ _id } as Document, doc, { upsert: true });
 }
 
 const until = async (fn: () => Promise<boolean> | boolean, ms = 4000) => {
@@ -128,7 +128,7 @@ describe('FN-7 questions from the phone, through the bridge pull', () => {
     ]);
     expect(ctx.session.repo.notebookPage(qid)?.questionId).toBe(qid);
     await until(async () => {
-      const down = await store.db.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
+      const down = await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
       const pq = (down?.pocket as NovelPocket | undefined)?.questions.find((x) => x.id === qid);
       return pq?.state === 'decided' && pq.decision === 'After the flood, in the spring.';
     });
@@ -237,7 +237,7 @@ describe('FN-7 questions from the phone, through the bridge pull', () => {
     ]);
     expect(ctx.session.repo.notebookPage(id)).toMatchObject({ kind: 'thread', questionId: id });
     await until(async () => {
-      const down = await store.db.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
+      const down = await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: ctx.world as never });
       return !!(down?.pocket as NovelPocket | undefined)?.questions.some((x) => x.id === id);
     });
     // Moved to the trash in the bible, it is not asked again by the next pull.
