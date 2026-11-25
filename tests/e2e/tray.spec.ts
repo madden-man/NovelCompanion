@@ -254,8 +254,9 @@ test('FN-6 Send to Claude hands the sentence to the capture box, which sends it 
   await expect(box).toBeVisible();
   await expect(box.getByTestId('capture-sent')).toHaveText(MOVE);
   await expect(box.getByTestId('capture-run').first()).toBeVisible();
-  await page.keyboard.press('Escape');
   await expect(item(MOVE)).toHaveCount(0);
+  await box.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await expect(box).toBeHidden();
 });
 
 test('FN-8 a character speaking in a council in the story has Voice on their page, by year, opening the council', async () => {
