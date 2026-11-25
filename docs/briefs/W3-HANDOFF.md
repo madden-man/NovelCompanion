@@ -10,10 +10,10 @@ Branch `worlds-w3`, draft PR against main. Never push main.
 - Tests: `tests/unit/notebook.test.ts`, `tests/unit/pocket.test.ts`, `tests/integration/bridge.test.ts`, `tests/integration/migration15.test.ts`, `tests/e2e/notebook.spec.ts`; migration tests 9 to 14 now expect version 15. PROGRESS rows for A55, status pending.
 
 ## Full `npm test` (one run)
-Lint, typecheck clean; unit 842/842; integration 340/340; e2e 278 passed, 3 failed, 54 not run: backstory "SM-9 a click on an empty spot...", plot "IP-3 each field in the popover...", tree "SM-1 the character page ..." (window 1200x770 not 800). Rerun of those three files alone was in progress at checkpoint; not yet known whether they are flakes or regressions.
+Lint, typecheck clean; unit 842/842; integration 340/340; e2e 278 passed, 3 failed, 54 not run: backstory "SM-9 a click on an empty spot...", plot "IP-3 each field in the popover...", tree "SM-1 the character page ..." (window 1200x770 not 800). Rerun of the three files alone (`--workers=1`): backstory SM-9 empty spot and tree SM-1 (window 1200x770) failed again; plot failed a different test (IP-3 first part divider) while the first IP-3 test passed, so plot looks flaky. Not yet compared with origin/main.
 
 ## Half done
-- The rerun of the three failing e2e files, and if any still fails, the same files on origin/main to compare.
+- Run backstory.spec.ts line 586 and tree.spec.ts line 1055 on origin/main in a clean worktree to see whether they fail there too (both look like hidden-window geometry, but unproven).
 
 ## Not started
 - Notebook list on the embedded row editor (Cultural data, Places tab; RowEditor/EmbeddedEditor). Today a place shows it only on its page opened from All sections or search.
