@@ -9,8 +9,11 @@ Branch `worlds-w3`, draft PR #1 against main. Never push main.
 ## The two e2e failures are pre-existing
 `tests/e2e/backstory.spec.ts:586` "SM-9 a click on an empty spot in a row adds a moment..." and `tests/e2e/tree.spec.ts:1055` "SM-1 the character page is ... nothing else" fail the same way on origin/main db286e5 (throwaway worktree, whole files, `--workers=1`): backstory at `pointAt` (`document.elementFromPoint` is not the track), tree with the window `[1200, 770]` for `[1200, 800]`. On main the tree test passes when run alone, so an earlier test in the file leaves the window 30px short. Neither is touched by this branch.
 
+## Review fixes (after the review of 41611b3)
+One bad page never halts a pull (hashed signature, values cut on arrival, per-page skip and log); a thread whose last line is deleted goes to the trash; lines record ink, character or other voice; first family's colour only; trashed entries not linked; absent year is no year known; tests for research pages, threads, the kept mark and a read-only snapshot never starting the bridge. Details and test names in PROGRESS.md.
+
 ## Last full `npm test` on the branch
-Lint and typecheck clean; unit 842/842 (68 files); integration 340/340 (31 files); e2e 296 passed, 2 failed (the two above), 38 not run (the rest of those two serial files).
+Lint and typecheck clean; unit 848/848 (69 files); integration 343/343 (31 files); e2e 298 passed, 2 failed (the two above), 38 not run (the rest of those two serial files).
 
 ## Decisions taken
 - `notebookPages` is outside `entrySchemas`, read-only with its own reader.

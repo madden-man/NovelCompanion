@@ -588,3 +588,5 @@ Review fixes on `worlds-w3` (after the review of 41611b3), each with a test that
 - Trashed entries not linked: `tests/integration/bridge.test.ts` "NB-5 a chip or a name for a character, place or chapter in the trash is not linked".
 - Test gaps: `tests/e2e/notebook.spec.ts` "NB-8 a research page lists its question and the papers picked, each with its journal, year, side and DOI"; `tests/unit/bridge-start.test.ts` "NB-1 NB-3 opening a snapshot read-only never starts the bridge: nothing it reaches writes".
 - Absent year is no year known: `tests/unit/notebook.test.ts` "NB-4 year: a number is that year, null is the whole book, absent is no year known, and each is captioned so".
+
+Suite counts after the review fixes (`npm test`, local replica set, hidden): lint and typecheck clean; unit 848 of 848 (69 files); integration 343 of 343 (31 files); end-to-end 298 passed, 2 failed, 38 not run. The two failures are the same two that fail on main at db286e5 (backstory SM-9 empty spot, tree SM-1 window size).
