@@ -1,3 +1,5 @@
+import { withMarks } from '../../shared/domain/tray';
+import type { TrayMarks } from '../../shared/domain/tray';
 import { EventEmitter } from 'node:events';
 import { monotonicFactory } from 'ulid';
 import type { ClientSession, Collection, Document } from 'mongodb';
@@ -1575,6 +1577,25 @@ export class Repository {
     return typeof doc?.since === 'number' ? doc.since : null;
   }
 
+  /** A56 (FN-3, FN-4): the tray's marks, kept in the `meta` document `notebookTray`. */
+  trayMarks(): TrayMarks {
+    const doc = this.model.get('meta', TRAY_META_ID);
+    const keys = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : [];
+    return { dismissed: keys(doc?.dismissed), filed: keys(doc?.filed), sent: keys(doc?.sent) };
+  }
+
+  /**
+   * A56 (FN-3, FN-4, FN-6): mark facts of the tray dismissed, filed or sent,
+   * or clear their mark (null, for undo). Not an entry write: the tray's own
+   * undo steps call it back.
+   */
+  async setTrayMarks(keys: readonly string[], mark: keyof TrayMarks | null): Promise<TrayMarks> {
+    const next = withMarks(this.trayMarks(), keys, mark);
+    await this.writeMeta({ _id: TRAY_META_ID, ...next });
+    return next;
+  }
+
   /** Records the first time; a second call keeps the first. */
   async markBridgeSince(ms: number): Promise<number> {
     const have = this.bridgeSince();
@@ -2126,6 +2147,8 @@ const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const TREE_LAYOUT_ID = 'treeLayout';
 /** A55: the bridge's own note in `meta`: when the bible was first given to the phone. */
 export const BRIDGE_META_ID = 'bridge';
+/** A56: the From the notebook tray's marks. */
+export const TRAY_META_ID = 'notebookTray';
 
 // ---------- a47-guard ----------
 

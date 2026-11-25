@@ -529,16 +529,92 @@ export function notebookRows(
   return pages
     .filter((p) => !p.deletedAt && p[field].includes(id))
     .sort((a, b) => b.date.localeCompare(a.date) || a._id.localeCompare(b._id))
-    .map((p) => ({
-      id: p._id,
-      kind: p.kind,
-      reading: p.reading,
-      date: p.date,
-      year: p.year,
-      firstLine: firstLine(p),
-      caption: notebookCaption(p),
-      opens: p.kind !== 'kept',
-    }));
+    .map(rowOf);
+}
+
+/** One page as a row of a Notebook list (NB-7). */
+export function rowOf(p: NotebookPage): NotebookRow {
+  return {
+    id: p._id,
+    kind: p.kind,
+    reading: p.reading,
+    date: p.date,
+    year: p.year,
+    firstLine: firstLine(p),
+    caption: notebookCaption(p),
+    opens: p.kind !== 'kept',
+  };
+}
+
+/** What the scene being written is: its cast, its places (with every place inside them) and its year. */
+export interface SceneTouch {
+  characterIds: readonly string[];
+  placeIds: readonly string[];
+  year: number | null;
+}
+
+/**
+ * A56 (FN-9): the live pages that touch the scene, newest first: a page
+ * naming one of its characters or places, or set in its story year.
+ */
+export function relevantRows(pages: readonly NotebookPage[], scene: SceneTouch): NotebookRow[] {
+  const cast = new Set(scene.characterIds);
+  const places = new Set(scene.placeIds);
+  return pages
+    .filter(
+      (p) =>
+        !p.deletedAt &&
+        (p.characterIds.some((id) => cast.has(id)) ||
+          p.placeIds.some((id) => places.has(id)) ||
+          (scene.year !== null && p.year === scene.year)),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || a._id.localeCompare(b._id))
+    .map(rowOf);
+}
+
+/** One line a character speaks in a council in the story (FN-8). */
+export interface VoiceRow {
+  pageId: string;
+  lineId: string;
+  date: string;
+  /** The council's story year: a number, null for the whole book, absent when none is known. */
+  year?: number | null;
+  text: string;
+}
+
+const yearRank = (y: number | null | undefined) => (typeof y === 'number' ? 0 : y === null ? 1 : 2);
+
+/**
+ * A56 (FN-8): a character's Voice, read from the pages themselves: every line
+ * they speak in a live council in the story, by story year (a year first,
+ * then the whole book, then no year known), then by date and line order.
+ */
+export function voiceRows(pages: readonly NotebookPage[], characterId: string): VoiceRow[] {
+  const rows: (VoiceRow & { order: number })[] = [];
+  for (const p of pages) {
+    if (p.deletedAt || p.kind !== 'council' || p.reading !== 'in') continue;
+    p.lines.forEach((l, order) => {
+      if (l.voice !== 'character' || l.speakerId !== characterId || !l.text.trim()) return;
+      rows.push({
+        pageId: p._id,
+        lineId: l.id,
+        date: p.date,
+        ...(p.year !== undefined ? { year: p.year } : {}),
+        text: l.text,
+        order,
+      });
+    });
+  }
+  return rows
+    .sort(
+      (a, b) =>
+        yearRank(a.year) - yearRank(b.year) ||
+        (a.year ?? 0) - (b.year ?? 0) ||
+        a.date.localeCompare(b.date) ||
+        a.pageId.localeCompare(b.pageId) ||
+        a.order - b.order,
+    )
+    .map(({ order: _order, ...r }) => r);
 }
 
 /** The words search indexes for a page (SR-1). */

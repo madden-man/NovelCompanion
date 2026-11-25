@@ -74,6 +74,9 @@ export const NotebookPageWire = z.strictObject({
   years: z.array(Year),
 });
 
+const TrayKeys = z.array(z.string());
+const TrayMarksWire = z.strictObject({ dismissed: TrayKeys, filed: TrayKeys, sent: TrayKeys });
+
 export const notebookContract = {
   /** NB-7: the Notebook list of one character, place or chapter. */
   'notebook.list': {
@@ -87,5 +90,60 @@ export const notebookContract = {
   'notebook.get': {
     request: z.strictObject({ id: z.string().min(1).max(120) }),
     response: z.strictObject({ page: NotebookPageWire }),
+  },
+  /** A56 (FN-8): a character's Voice, their lines in councils in the story. */
+  'notebook.voice': {
+    request: z.strictObject({ id: z.string().min(1).max(64) }),
+    response: z.strictObject({
+      rows: z.array(
+        z.strictObject({
+          pageId: z.string(),
+          lineId: z.string(),
+          date: z.string(),
+          year: Year.nullable().optional(),
+          text: z.string(),
+        }),
+      ),
+    }),
+  },
+  /** A56 (FN-9): the pages that touch the scene being written, for Relevant to Session. */
+  'notebook.relevant': {
+    request: z.strictObject({
+      characterIds: z.array(z.string().min(1).max(64)).max(500),
+      placeIds: z.array(z.string().min(1).max(64)).max(500),
+      year: Year.nullable(),
+    }),
+    response: z.strictObject({ rows: z.array(NotebookRowWire) }),
+  },
+  /** A56 (FN-1): the kept lines and councils about the story the tray offers, as they are now. */
+  'notebook.offered': {
+    request: z.strictObject({}),
+    response: z.strictObject({
+      pages: z.array(
+        z.strictObject({
+          id: z.string(),
+          kind: z.enum(['kept', 'council']),
+          title: z.string(),
+          date: z.string(),
+          year: Year.nullable().optional(),
+          lines: z.array(
+            z.strictObject({ id: z.string(), text: z.string(), speakerId: z.string().nullable() }),
+          ),
+        }),
+      ),
+    }),
+  },
+  /** A56 (FN-3, FN-4): the facts dismissed, filed and sent, by key. */
+  'tray.state': {
+    request: z.strictObject({}),
+    response: TrayMarksWire,
+  },
+  /** A56 (FN-3, FN-4, FN-6): mark facts dismissed, filed or sent; null clears (undo). */
+  'tray.mark': {
+    request: z.strictObject({
+      keys: z.array(z.string().min(1).max(300)).min(1).max(1000),
+      mark: z.enum(['dismissed', 'filed', 'sent']).nullable(),
+    }),
+    response: TrayMarksWire,
   },
 } as const;

@@ -49,7 +49,16 @@ import { guardHandlers } from './guardHandlers';
 // A55
 import { NOTEBOOK_COLLECTION } from '../../shared/schema';
 import type { NotebookPage } from '../../shared/schema';
-import { firstLine, notebookCaption, notebookRows } from '../../shared/domain/notebook';
+import {
+  firstLine,
+  notebookCaption,
+  notebookRows,
+  relevantRows,
+  voiceRows,
+} from '../../shared/domain/notebook';
+import { offeredPages } from '../../shared/domain/tray';
+import type { TrayMarks } from '../../shared/domain/tray';
+import { placeAndDescendants } from '../../shared/domain/searchFilters';
 import { notebookAccepts, notebookPageView } from '../bridge/views';
 import type { GuardChannel } from './guardHandlers';
 
@@ -120,7 +129,13 @@ export type BibleChannel =
   | 'eraDefaults.set'
   // A55
   | 'notebook.list'
-  | 'notebook.get';
+  | 'notebook.get'
+  // A56
+  | 'notebook.voice'
+  | 'notebook.relevant'
+  | 'notebook.offered'
+  | 'tray.state'
+  | 'tray.mark';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose' | 'test.seed';
@@ -663,8 +678,29 @@ export function bibleHandlers(
       if (!page) throw new Error('That notebook page is not in this bible.');
       return { page: notebookPageView(page, model) };
     },
+    // A56 (FN-1, FN-3, FN-4, FN-8, FN-9).
+    'notebook.voice': ({ id }) => ({ rows: voiceRows(session().repo.notebookPages(), id) }),
+    'notebook.relevant': ({ characterIds, placeIds, year }) => {
+      const { repo, model } = session();
+      const places = new Set<string>();
+      const all = model.all('places').filter((p) => !p.deletedAt);
+      for (const id of placeIds) for (const p of placeAndDescendants(all, id)) places.add(p);
+      return {
+        rows: relevantRows(repo.notebookPages(), { characterIds, placeIds: [...places], year }),
+      };
+    },
+    'notebook.offered': () => ({ pages: offeredPages(session().repo.notebookPages()) }),
+    'tray.state': () => copyMarks(session().repo.trayMarks()),
+    'tray.mark': async ({ keys, mark }) => copyMarks(await session().repo.setTrayMarks(keys, mark)),
   };
 }
+
+/** The tray's marks as the wire takes them (plain arrays). */
+const copyMarks = (m: TrayMarks) => ({
+  dismissed: [...m.dismissed],
+  filed: [...m.filed],
+  sent: [...m.sent],
+});
 
 /** Test-only handlers: never registered in a packaged app. */
 export function testHandlers(current: () => OpenBible | null): { [C in TestChannel]: Handler<C> } {
