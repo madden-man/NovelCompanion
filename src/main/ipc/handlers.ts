@@ -190,10 +190,11 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
 /**
  * A55 (NB-3): a failed publish or pull, or a notebook page skipped, is logged
  * and nothing else: the bible works the same and the next run tries again.
- * The message names the page or the driver's error, never a connection string.
+ * The error names the page or the driver's failure, never a connection string.
  */
 export function logBridgeError(e: unknown): void {
-  console.error(`Novel Companion bridge: ${e instanceof Error ? e.message : String(e)}`);
+  // A log line for the developer console, never shown to a person (NF-3).
+  console.error('Novel Companion bridge:', e);
 }
 
 /** A55 (NB-3): the window came to the front, so the phone's pages are pulled. */
