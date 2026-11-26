@@ -8,6 +8,7 @@ import {
   YEAR_ASK,
   factKey,
   lineKey,
+  localDay,
   offeredPages,
   trayGroups,
   withMarks,
@@ -254,5 +255,26 @@ describe('FN-4 FN-5 keys and marks', () => {
       }),
     ]);
     expect(trayGroups(trashed, index, { storyYear: 2066 })).toEqual([]);
+  });
+});
+
+describe('FN-1 days are the local days the headings show', () => {
+  test('FN-1 a line kept before 09:00 in Japan groups with that day, not the UTC day before', () => {
+    const at = (id: string, date: string): OfferedPage => ({
+      id,
+      kind: 'kept',
+      title: '',
+      date,
+      year: 2066,
+      lines: [{ id, text: MOVE, speakerId: null }],
+    });
+    // 08:30 and 11:00 on 26 November in Tokyo; 25 and 26 November in UTC.
+    const pages = [at('E', '2026-11-25T23:30:00.000Z'), at('L', '2026-11-26T02:00:00.000Z')];
+    const tokyo = trayGroups(pages, index, { storyYear: 2066, timeZone: 'Asia/Tokyo' });
+    expect(tokyo.map((g) => g.id)).toEqual(['day:2026-11-26']);
+    expect(tokyo[0]!.items.map((i) => i.pageId)).toEqual(['L', 'E']);
+    expect(localDay('2026-11-25T23:30:00.000Z', 'Asia/Tokyo')).toBe('2026-11-26');
+    const utc = trayGroups(pages, index, { storyYear: 2066, timeZone: 'UTC' });
+    expect(utc.map((g) => g.id)).toEqual(['day:2026-11-26', 'day:2026-11-25']);
   });
 });

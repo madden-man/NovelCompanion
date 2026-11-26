@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ClaudeStatusWire } from '../../../shared/claude';
 import { collectionInfo } from '../../../shared/schema';
-import { fileLocalDrafts } from '../../../shared/domain/capture';
 import type { FiledEntry } from '../../../shared/domain/capture';
-import type { CaptureDraft, CaptureHint } from '../../../shared/domain/captureRouter';
+import type { CaptureHint } from '../../../shared/domain/captureRouter';
 import { NO_MARKS, trayGroups } from '../../../shared/domain/tray';
 import type { OfferedPage, TrayGroup, TrayItem, TrayMarks } from '../../../shared/domain/tray';
-import type { Op, UndoCommand } from '../../../shared/domain/undoRunner';
+import type { Op } from '../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { useBibleSettings } from './bibleSettings';
@@ -19,6 +18,7 @@ import { useStore } from './data';
 import { notebookDate } from './notebook';
 import { useStoryTime } from './storyTime';
 import { useUndo } from './undo';
+import { fileTrayGroup, markOp } from './trayFile';
 import './capture.css';
 import './notebook.css';
 
@@ -102,12 +102,8 @@ export function NotebookTray() {
   const choiceOf = (i: TrayItem) => choices[i.key] ?? NO_CHOICE;
 
   /** A `run` step that sets or clears marks, for undo and redo (FN-3, FN-4). */
-  const markOp = useCallback(
-    (keys: string[], mark: Mark): Op => ({
-      kind: 'run',
-      apply: async () => setMarks(await call('tray.mark', { keys, mark })),
-      check: async () => null,
-    }),
+  const markStep = useCallback(
+    (keys: string[], mark: Mark): Op => markOp(call, keys, mark, setMarks),
     [],
   );
 
@@ -120,8 +116,8 @@ export function NotebookTray() {
       setMarks(await call('tray.mark', { keys, mark: 'dismissed' }));
       undo.record({
         label: `Dismissed ${label}`,
-        undo: [markOp(keys, null)],
-        redo: [markOp(keys, 'dismissed')],
+        undo: [markStep(keys, null)],
+        redo: [markStep(keys, 'dismissed')],
       });
     } catch (e) {
       setMessage(`Nothing was dismissed: ${plainError(e)}`);
@@ -146,32 +142,27 @@ export function NotebookTray() {
     setFiled([]);
     try {
       await undo.flush();
-      const drafts: CaptureDraft[] = [];
-      const owner: string[] = [];
-      for (const i of items) {
-        for (const d of draftsWith(i.fact, choiceOf(i))) {
-          drafts.push(d);
-          owner.push(i.key);
-        }
-      }
-      const r = await fileLocalDrafts(call, drafts);
-      const failed = new Set(r.failed.map((f) => owner[Number(f.id.replace('draft ', ''))]));
-      const done = items.map((i) => i.key).filter((k) => !failed.has(k));
-      if (done.length) setMarks(await call('tray.mark', { keys: done, mark: 'filed' }));
-      if (r.command) {
-        const command: UndoCommand = {
-          ...r.command,
-          undo: [...r.command.undo, ...(done.length ? [markOp(done, null)] : [])],
-          redo: [...r.command.redo, ...(done.length ? [markOp(done, 'filed')] : [])],
-        };
-        undo.record(command);
-      }
+      const r = await fileTrayGroup(
+        call,
+        items.map((i) => ({ key: i.key, drafts: draftsWith(i.fact, choiceOf(i)) })),
+        marks,
+        undo.record,
+        setMarks,
+      );
+      setMarks(r.marks);
       setFiled(r.filed);
-      if (r.failed.length) {
-        setMessage(
-          `${failed.size === 1 ? 'One fact was' : `${failed.size} facts were`} not filed and still wait here: ${r.failed[0]?.message ?? ''}`,
+      const notes: string[] = [];
+      if (r.failedKeys.length) {
+        notes.push(
+          `${r.failedKeys.length === 1 ? 'One fact was' : `${r.failedKeys.length} facts were`} not filed and still wait here: ${r.firstFailure ?? ''}`,
         );
       }
+      if (r.markError) {
+        notes.push(
+          `Filed, but the tray could not remember it, so it may be offered again after a restart: ${r.markError}`,
+        );
+      }
+      if (notes.length) setMessage(notes.join(' '));
     } catch (e) {
       setMessage(plainError(e));
     } finally {

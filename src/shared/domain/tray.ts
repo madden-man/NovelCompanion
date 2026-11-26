@@ -100,7 +100,7 @@ export interface TrayItem {
 }
 
 export interface TrayGroup {
-  /** `day:2026-11-25` for the day's kept lines, `council:<page ID>` for a council. */
+  /** `day:2026-11-25` (the local day) for the day's kept lines, `council:<page ID>` for a council. */
   id: string;
   kind: 'day' | 'council';
   /** The newest page's date in the group. */
@@ -118,6 +118,8 @@ export interface TrayOptions {
   /** The writer's chips, by fact key. */
   hints?: Readonly<Record<string, Omit<CaptureHint, 'fact'>>>;
   marks?: TrayMarks;
+  /** The time zone the days are read in; the computer's own when absent. */
+  timeZone?: string;
 }
 
 /** FN-2: whether each fact of a line knows its year, and the line's facts with the Year ask added. */
@@ -134,8 +136,23 @@ function withYears(facts: CaptureFact[], pageYear: number | null | undefined): C
   });
 }
 
-/** The UTC day of an ISO time, `2026-11-25`. */
-const dayOf = (iso: string): string => iso.slice(0, 10);
+/**
+ * The local day of an ISO time, `2026-11-25`: the day the group's heading
+ * shows (in `timeZone`, else the computer's own). A line kept at 08:30 in
+ * Japan is that morning's, not the UTC day before.
+ */
+export function localDay(iso: string, timeZone?: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
 
 /**
  * FN-1 to FN-5: the tray's groups, newest first. Each offered line is routed
@@ -186,7 +203,8 @@ export function trayGroups(
       }
     }
     if (!items.length) continue;
-    const id = page.kind === 'kept' ? `day:${dayOf(page.date)}` : `council:${page.id}`;
+    const id =
+      page.kind === 'kept' ? `day:${localDay(page.date, opts.timeZone)}` : `council:${page.id}`;
     const have = groups.get(id);
     if (have) {
       have.items.push(...items);
