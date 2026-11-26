@@ -369,16 +369,23 @@ test('ED-5 Move to trash asks once, moves the entry to the trash, and restores i
   expect((await currentEntry('characters', 'Ada Sullivan')).deletedAt).toBeUndefined();
   await tools.getByRole('button', { name: 'Move to trash' }).click();
   await dialog.getByRole('button', { name: 'Move to trash' }).click();
-  await expect(page.getByTestId('editor')).toContainText(
-    'This entry is in the trash. Restore it to bring it back.',
-  );
+  // A57: the page says where the entry is and stops; Restore from trash is beside it.
+  await expect(
+    page.getByTestId('editor').getByText('This entry is in the trash.', { exact: true }),
+  ).toBeVisible();
   expect((await currentEntry('characters', 'Ada Sullivan')).deletedAt).toBeTruthy();
 
   await rail(page, 'Trash').click();
   const trash = page.getByTestId('trash-list');
   await expect(trash).toContainText('Ada Sullivan');
-  await trash.getByRole('button', { name: 'Restore Ada Sullivan' }).click();
-  await expect(page.getByTestId('trash-notice')).toHaveText('Ada Sullivan is back.');
+  // A57: the row's buttons say Restore and Delete forever; their names carry the entry.
+  const restore = trash.getByRole('button', { name: 'Restore Ada Sullivan' });
+  await expect(restore).toHaveText('Restore');
+  await expect(trash.getByRole('button', { name: 'Delete Ada Sullivan forever' })).toHaveText(
+    'Delete forever',
+  );
+  await restore.click();
+  await expect(page.getByTestId('undo-notice')).toHaveText('Ada Sullivan is back.');
   await expect(page.getByRole('button', { name: 'Restore Ada Sullivan' })).toHaveCount(0);
   const ada = await currentEntry('characters', 'Ada Sullivan');
   expect(ada.deletedAt).toBeUndefined();
@@ -488,9 +495,8 @@ test('IP-16 ED-5 Delete forever asks for the title typed, then the entry is gone
   await row.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
   await confirm.getByLabel('Type Purge Wharf to confirm').fill('Purge Wharf');
   await confirm.getByRole('button', { name: 'Delete Purge Wharf forever' }).click();
-  await expect(page.getByTestId('trash-notice')).toContainText(
-    'Deleted Purge Wharf forever. This is not an undo step.',
-  );
+  // A57: the consequence was said once, in the confirm; the notice says what happened.
+  await expect(page.getByTestId('trash-notice')).toHaveText('Deleted Purge Wharf forever.');
   await expect(row).toHaveCount(0);
   expect(await fromMongo('places', entry._id)).toBeNull();
   // Nothing was added to the undo history.
@@ -520,9 +526,8 @@ test('IP-16 Empty trash asks for the word empty, shows the count, and is not an 
   await confirm.getByLabel('Type empty to confirm').fill('Empty');
   await go.click();
   await expect(page.getByTestId('trash-notice')).toHaveText(
-    `Emptied the trash: ${count} entries deleted forever. This is not an undo step.`,
+    `Emptied the trash: ${count} entries deleted forever.`,
   );
-  await expect(page.getByTestId('trash-notice')).toContainText('This is not an undo step.');
   await expect(page.getByTestId('trash-empty')).toHaveText('The trash is empty.');
   expect((await invoke('trash.list', {})).entries).toEqual([]);
   for (const id of ids) {
@@ -542,7 +547,7 @@ test('ED-10 a death date before the birth date is flagged at the field in plain 
   );
   expect((await currentEntry('characters', 'Warned Hale')).death).toEqual({ year: 1990 });
   await expect(page.getByTestId('editor').getByTestId('warning-count')).toHaveText(
-    '1 field has a warning. It still saved.',
+    '1 field has a warning.',
   );
   // Fixing it clears the warning.
   await fillDateBox(death, '2070');
@@ -638,24 +643,32 @@ test('ED-8 renaming a union type changes the name every union shows', async () =
   ).toHaveCount(1);
 });
 
-test('IP-8 a list item moves up and down by its buttons and by drag, each move one undo step, and selects show the stored order', async () => {
+test('IP-8 A57 a list item moves by its grip, with Alt+Up and Alt+Down or a drag, each move one undo step, and selects show the stored order', async () => {
   await rail(page, 'Lists').click();
   const ids = async () => (await listItems('parentLinkTypes')).map((i) => i.id);
   const start = await ids();
   expect(start.length).toBeGreaterThanOrEqual(3);
   const [a, b, c] = start as [string, string, string];
   const second = (await listItems('parentLinkTypes'))[1]!;
-  await itemRow('parentLinkTypes', b)
-    .getByRole('button', { name: `Move ${second.label} up` })
-    .click();
-  await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
-  // The focus stays with the item: at the top its Up is off, so Down has it.
+  // A57: no Up and Down buttons; the grip is the control, reachable with Tab.
   await expect(
-    itemRow('parentLinkTypes', b).getByRole('button', { name: `Move ${second.label} down` }),
-  ).toBeFocused();
-  // By keyboard: Enter on Down moves it back.
-  await page.keyboard.press('Enter');
+    listPanel('parentLinkTypes').getByRole('button', { name: /^Move .* up$/ }),
+  ).toHaveCount(0);
+  const grip = itemRow('parentLinkTypes', b).getByRole('button', {
+    name: `Move ${second.label}`,
+    exact: true,
+  });
+  await expect(grip).not.toHaveAttribute('title');
+  await expect(grip).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
+  await grip.focus();
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
+  // The focus stays on the moved item's grip; at the top, Alt+Up does nothing.
+  await expect(grip).toBeFocused();
+  await page.keyboard.press('Alt+ArrowUp');
+  await page.keyboard.press('Alt+ArrowDown');
   await expect.poll(ids).toEqual(start);
+  await expect(grip).toBeFocused();
   await undoStep();
   await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
   await undoStep();
@@ -1119,4 +1132,174 @@ test('ED-7 a proposal whose entry changed since is refused until compared again'
   await card.getByRole('button', { name: 'Approve' }).click();
   await expect(card).toHaveCount(0);
   expect((await fromMongo('characters', ada._id))!.role).toBe('Modesto');
+});
+
+/** The live entries of a section in the list's order (by title). */
+async function titlesInOrder(collection: EntryCollection) {
+  const { entries } = await invoke('entry.list', { collection, trash: 'exclude' });
+  return entries
+    .map((e) => ({ id: e.entry._id, title: String(e.entry.title ?? '') }))
+    .sort((x, y) => x.title.localeCompare(y.title));
+}
+
+test('A57 a section opens on the entry last open there, else the first, and an empty section says it is empty', async () => {
+  const places = await titlesInOrder('places');
+  expect(places.length).toBeGreaterThanOrEqual(2);
+  await openSection('places');
+  const editor = page.getByTestId('editor');
+  // No "pick an entry" pane: an entry is open.
+  await expect(page.getByTestId('empty-editor')).toHaveCount(0);
+  await expect(editor).toBeVisible();
+  const opened = await editor.getAttribute('data-entry-id');
+  expect(places.map((p) => p.id)).toContain(opened);
+  // Open another; leave the section and come back: that one is open again.
+  const other = places.find((p) => p.id !== opened)!;
+  await page.getByTestId('entry-list').locator(`.entry-row[data-entry-id="${other.id}"]`).click();
+  await expect(editor).toHaveAttribute('data-entry-id', other.id);
+  await openSection('characters');
+  await expect(editor).toBeVisible();
+  await openSection('places');
+  await expect(editor).toHaveAttribute('data-entry-id', other.id);
+
+  // A bible with no characters: the list says so, and the pane stays empty with no instruction.
+  await invoke('bible.create', { slug: 'editing-empty', name: 'Empty bible' });
+  await invoke('bible.open', { slug: 'editing-empty' });
+  await rail(page, 'Characters').click();
+  await expect(page.getByTestId('list-empty')).toHaveText('No characters yet.');
+  await expect(page.getByTestId('empty-editor')).toHaveText('');
+  await expect(page.getByTestId('editor')).toHaveCount(0);
+  await invoke('bible.open', { slug: BIBLE });
+  await expect(page.getByTestId('rail')).toBeVisible();
+});
+
+test('A57 the filter box finds or adds: a new name offers New with its Enter key, Enter makes the entry, and a section that needs more opens the form with the name', async () => {
+  await openSection('characters');
+  const box = page.getByTestId('find-or-add');
+  await expect(box).toHaveAttribute('placeholder', 'Find or add a character');
+  // An existing name offers no new entry; Enter opens it.
+  await box.fill('ada sullivan');
+  await expect(page.getByTestId('find-add-new')).toHaveCount(0);
+  await box.press('Enter');
+  await expect(page.getByTestId('char-heading')).toContainText('Ada Sullivan');
+  // A new name: the offer names it and shows its key.
+  await box.fill('Noor Lindqvist');
+  const offer = page.getByTestId('find-add-new');
+  await expect(offer).toContainText('New character Noor Lindqvist');
+  await expect(offer.locator('kbd')).toHaveText('Enter');
+  await box.press('Enter');
+  const editor = page.getByTestId('editor');
+  await expect(
+    editor.getByTestId('char-heading').getByRole('heading', { name: 'Noor Lindqvist' }),
+  ).toBeVisible();
+  await expect(box).toHaveValue('');
+  const made = await currentEntry('characters', 'Noor Lindqvist');
+  expect(made.names).toMatchObject({ full: 'Noor Lindqvist' });
+  expect(await undoLabels()).toContain('Created Noor Lindqvist');
+  // The New character dialog sentence is gone.
+  await expect(page.getByText('Fill in what this entry needs to exist')).toHaveCount(0);
+
+  // Clicking the offer works too, in a section where a title is enough.
+  await openSection('places');
+  await box.fill('Lantern Quay');
+  await page.getByTestId('find-add-new').click();
+  await expect(editor.getByRole('heading', { name: 'Lantern Quay' })).toBeVisible();
+  expect((await currentEntry('places', 'Lantern Quay')).title).toBe('Lantern Quay');
+
+  // A world event needs a category: the form opens with the name in it and asks only the rest.
+  await openSection('worldEvents');
+  await box.fill('Harbor strike');
+  await box.press('Enter');
+  const form = page.getByTestId('new-entry');
+  await expect(form).toBeVisible();
+  await expect(field(form, 'title')).toHaveCount(0);
+  await expect(field(form, 'categoryId')).toHaveCount(1);
+  await expect(form).not.toContainText('Fill in what this entry needs');
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(form).toHaveCount(0);
+});
+
+test('A57 a toast says what was done, with an Undo button that takes it back', async () => {
+  // Move to trash from an entry page.
+  await openSection('places');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /^Lantern Quay/ })
+    .click();
+  const tools = page.getByTestId('entry-tools');
+  await tools.getByRole('button', { name: 'Move to trash' }).click();
+  await tools
+    .getByRole('dialog', { name: 'Move to trash' })
+    .getByRole('button', { name: 'Move to trash' })
+    .click();
+  await expect(page.getByTestId('undo-notice')).toHaveText('Moved Lantern Quay to the trash.');
+  const undoButton = page.getByTestId('undo-notice-undo');
+  await expect(undoButton).toHaveText('Undo Cmd Z');
+  await expect(undoButton.locator('kbd')).toHaveText('Cmd Z');
+  await undoButton.click();
+  await expect
+    .poll(async () => Boolean((await currentEntry('places', 'Lantern Quay')).deletedAt))
+    .toBe(false);
+  await expect(page.getByTestId('undo-notice')).toHaveText(
+    'Undid: Moved Lantern Quay to the trash',
+  );
+  await expect(undoButton).toHaveCount(0);
+
+  // Remove a list item on the Lists screen.
+  const { item } = await invoke('lists.addItem', { listId: 'communities', label: 'Toast row' });
+  await rail(page, 'Lists').click();
+  await itemRow('communities', item.id).getByRole('button', { name: 'Remove Toast row' }).click();
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed Toast row from Communities.');
+  await expect
+    .poll(async () => (await listItems('communities')).some((i) => i.id === item.id))
+    .toBe(false);
+  await undoButton.click();
+  await expect
+    .poll(async () => (await listItems('communities')).some((i) => i.id === item.id))
+    .toBe(true);
+});
+
+test('A57 Review queue, Trash, Lists, Search and Writing tools open with no intro, and empty says empty', async () => {
+  const noLede = async (scope: ReturnType<Page['getByTestId']>) =>
+    expect(scope.locator('.lede')).toHaveCount(0);
+  await rail(page, 'Review queue').click();
+  const queue = page.getByTestId('review-queue');
+  await expect(queue).toContainText('Nothing is waiting for review.');
+  await expect(queue).not.toContainText('Nothing is saved until you approve it');
+  await noLede(queue);
+
+  await rail(page, 'Trash').click();
+  const trash = page.getByTestId('trash-view');
+  await expect(trash.getByRole('heading', { name: 'Trash' })).toBeVisible();
+  await expect(trash).not.toContainText('Deleted entries wait here');
+  await noLede(trash);
+
+  await rail(page, 'Lists').click();
+  const lists = page.getByTestId('lists-view');
+  await noLede(lists);
+  await expect(lists).not.toContainText('The order here is the order');
+  // The add row: a field and the Enter key, which adds the item.
+  const add = listPanel('communities').getByLabel('New item for Communities');
+  await expect(add).toHaveAttribute('placeholder', 'Add to Communities');
+  const addButton = listPanel('communities').getByRole('button', { name: 'Add to Communities' });
+  await expect(addButton.locator('kbd')).toHaveText('Enter');
+  await add.fill('Added by Enter');
+  await add.press('Enter');
+  await expect
+    .poll(async () => (await listItems('communities')).some((i) => i.label === 'Added by Enter'))
+    .toBe(true);
+
+  await rail(page, 'Search and filters').click();
+  const search = page.getByTestId('search-view');
+  await expect(search.getByTestId('search-region')).toHaveText('');
+  // A year filter takes digits only, so no "a year is a whole number" note can show.
+  const from = search.getByLabel('From year');
+  await from.pressSequentially('20a4x5');
+  await expect(from).toHaveValue('2045');
+  await expect(search).not.toContainText('whole number');
+
+  await rail(page, 'Writing tools').click();
+  const tools = page.getByTestId('writing-tools-screen');
+  await noLede(tools);
+  await expect(tools).not.toContainText('Datamuse, a free service');
+  await expect(tools.getByRole('button', { name: 'Look up' })).toBeDisabled();
 });

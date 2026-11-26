@@ -89,9 +89,10 @@
 .editable > .editable-text:focus-visible::after {
   opacity: 1;
 }
+/* Opacity, not display: toggling display here sets off the pane scroll traced in scrollHold. */
 .editable[data-save-state='saved'] > .editable-text::after,
 .editable.is-disabled > .editable-text::after {
-  display: none;
+  opacity: 0;
 }
 .editable-inline > .editable-text:focus-visible,
 .editable-labelled > .editable-text:focus-visible {

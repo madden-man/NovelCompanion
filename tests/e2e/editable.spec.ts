@@ -225,6 +225,9 @@ test('IP-1 a character list row renames in place with F2 or a double-click, and 
   await openCharacter('Zhou Lan');
   const list = page.getByTestId('entry-list');
   const row = list.getByRole('button', { name: /^Zhou Lan/ });
+  // A57: no tooltip explains the gesture; the key is named to assistive technology only.
+  await expect(row).not.toHaveAttribute('title');
+  await expect(row).toHaveAttribute('aria-keyshortcuts', 'F2');
   await row.focus();
   await page.keyboard.press('F2');
   const rename = list.getByTestId('row-rename').getByRole('textbox', { name: 'Full name' });
@@ -257,13 +260,13 @@ test('IP-1 a year field saves on blur as one undo step and Cmd+Z puts the old ye
   const input = year.getByRole('textbox', { name: 'Era start year' });
   await expect(input).toBeFocused();
   expectSameBox(at, await box(after), 'the words after the year while open');
-  // Digits only: anything else is refused at the field.
+  // A57: digits only. Anything else never reaches the box, so no message is needed.
   await input.fill('20x4');
-  await input.press('Enter');
-  await expect(year.getByRole('alert')).toHaveText(
-    'Not saved: 20x4 is not a year. Write it as digits, for example 2045.',
-  );
-  await input.fill('2024');
+  await expect(input).toHaveValue('2025');
+  await input.fill('');
+  await input.pressSequentially('20x2.4');
+  await expect(input).toHaveValue('2024');
+  await expect(year.getByRole('alert')).toHaveCount(0);
   await g.getByRole('heading', { name: 'Editable fields' }).click();
   await expect(input).toHaveCount(0);
   await expect.poll(async () => (await era()).startYear).toBe(2024);
@@ -276,6 +279,32 @@ test('IP-1 a year field saves on blur as one undo step and Cmd+Z puts the old ye
   await expect(page.getByTestId('undo-notice').first()).toHaveText(
     /^Undid: Changed Era start year on /,
   );
+});
+
+test('A57 a value shows a pencil on hover and keyboard focus, and one click opens it', async () => {
+  const g = await openGallery();
+  const text = g.getByTestId('g-text').locator('.editable-text');
+  const pencil = (l: Locator) =>
+    l.evaluate((el) => {
+      const after = getComputedStyle(el, '::after');
+      return { content: after.content, opacity: after.opacity, display: after.display };
+    });
+  await g.getByRole('heading', { name: 'Editable fields' }).hover();
+  expect(await pencil(text)).toMatchObject({ content: '"\u270E"', opacity: '0' });
+  await text.hover();
+  await expect.poll(async () => (await pencil(text)).opacity).toBe('1');
+  await g.getByRole('heading', { name: 'Editable fields' }).hover();
+  await text.focus();
+  await expect.poll(async () => (await pencil(text)).opacity).toBe('1');
+  // One click opens it; no double-click, no tooltip naming a gesture.
+  await expect(text).not.toHaveAttribute('title');
+  await text.click();
+  await expect(g.getByTestId('g-text').locator('input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  // A field that cannot open shows no pencil.
+  const ro = g.locator('.editable.is-disabled > .editable-text').first();
+  await ro.hover();
+  expect((await pencil(ro)).opacity).toBe('0');
 });
 
 test('IP-1 a select with Add new creates the list item and picks it', async () => {

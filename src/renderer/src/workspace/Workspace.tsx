@@ -258,6 +258,17 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               collection={view.collection}
               selected={view.selected}
               autoOpen={!view.creating}
+              onAutoOpen={(id) =>
+                // A click that landed first (New, a row) wins over the list opening an entry.
+                setView((v) =>
+                  v.kind === 'section' &&
+                  v.collection === view.collection &&
+                  !v.selected &&
+                  !v.creating
+                    ? { ...v, selected: id }
+                    : v,
+                )
+              }
               onSelect={(id) =>
                 setView({ ...view, selected: id, creating: false, preset: undefined })
               }

@@ -95,15 +95,28 @@ export function EntryList(props: {
   onNew: (preset?: Record<string, unknown>) => void;
   /** A57: nothing is open and no form is up, so the list may open an entry. */
   autoOpen?: boolean;
+  /** A57: open this entry unless something else was opened meanwhile. */
+  onAutoOpen?: (id: string) => void;
 }) {
-  const { collection, selected, autoOpen, onSelect } = props;
+  const { collection, selected, autoOpen, onSelect, onAutoOpen } = props;
   const { version } = useStore();
   const undo = useUndo();
-  const [entries, setEntries] = useState<Listed[] | null>(null);
+  // The rows and the section they were read for, so a switch never shows another section's rows.
+  const [loaded, setLoaded] = useState<{ collection: EntryCollection; rows: Listed[] } | null>(
+    null,
+  );
+  const entries = loaded?.collection === collection ? loaded.rows : null;
   const [filter, setFilter] = useState('');
   const [state, setState] = useState<QuestionFilter>('all');
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [filterFor, setFilterFor] = useState(collection);
+  if (filterFor !== collection) {
+    // Adjusted during render: a name typed for one section is not carried to the next.
+    setFilterFor(collection);
+    setFilter('');
+    setAddError(null);
+  }
   const info = collectionInfo[collection];
   const singular = info.singular.toLowerCase();
   const filterId = useId();
@@ -114,7 +127,7 @@ export function EntryList(props: {
   useEffect(() => {
     let live = true;
     void call('entry.list', { collection, trash: 'exclude' }).then((r) => {
-      if (live) setEntries(r.entries);
+      if (live) setLoaded({ collection, rows: r.entries });
     });
     return () => {
       live = false;
@@ -126,14 +139,14 @@ export function EntryList(props: {
     if (selected) rememberOpen(collection, selected);
   }, [collection, selected]);
   useEffect(() => {
-    if (!autoOpen || selected || !entries || entries.length === 0) return;
+    if (!autoOpen || !onAutoOpen || selected || !entries || entries.length === 0) return;
     const live = new Set(entries.map((e) => e.entry._id));
     const first = [...entries].sort((a, b) =>
       entryTitle(a.entry).localeCompare(entryTitle(b.entry)),
     )[0];
     const id = readLastOpen(collection).find((x) => live.has(x)) ?? first?.entry._id;
-    if (id) onSelect(id);
-  }, [autoOpen, selected, entries, collection, onSelect]);
+    if (id) onAutoOpen(id);
+  }, [autoOpen, selected, entries, collection, onAutoOpen]);
 
   const counts = useMemo(() => questionCounts((entries ?? []).map((e) => e.entry)), [entries]);
   const shown = useMemo(() => {

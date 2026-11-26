@@ -830,10 +830,7 @@ function ChipRow(props: {
       ))}
       {props.off ? null : choosing || naming ? (
         <span className="editable-combo">
-          <span
-            className="editable-sizer"
-            data-value={text || (naming ? 'New item name' : label)}
-          >
+          <span className="editable-sizer" data-value={text || (naming ? 'New item name' : label)}>
             <input
               className="editable-input"
               role={choosing ? 'combobox' : undefined}
