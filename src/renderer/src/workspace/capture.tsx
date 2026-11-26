@@ -1257,9 +1257,10 @@ function CaptureDialog(props: {
             e.key === 'Enter' &&
             (e.metaKey || e.ctrlKey) &&
             phase === 'edit' &&
-            !e.defaultPrevented
+            !(e.target instanceof Element && e.target.closest('.capture-input'))
           ) {
-            // Cmd+Enter from a chip or a button while typing: the same as Enter in the field.
+            // Cmd+Enter from a chip or a button while typing: the same as Enter in the field,
+            // which handles its own keys.
             e.preventDefault();
             props.onSend(false);
           }

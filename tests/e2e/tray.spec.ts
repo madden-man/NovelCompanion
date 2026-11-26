@@ -203,21 +203,28 @@ test('FN-1 the tray offers kept lines and councils about the story, grouped by d
   await expect(yee.getByTestId('capture-fact')).toHaveAttribute('data-stand', 'local');
   await expect(yee.getByTestId('chip-section')).toBeVisible();
   await expect(yee.getByTestId('draft-diff')).toBeVisible();
-  // The Route B or C card waits behind Send to Claude.
+  // The Route B or C card waits for Claude; with no key yet, behind Add a Claude key (A57).
   const move = item(MOVE);
   await expect(move.getByTestId('capture-fact')).toHaveAttribute('data-stand', 'unsent');
-  await expect(move.getByTestId('capture-send-fact')).toBeVisible();
+  await expect(move.getByTestId('capture-add-key')).toBeVisible();
   // Showing the tray wrote nothing anywhere, and sent nothing to Claude.
   expect(await everything()).toBe(before);
   expect(await invoke('tray.state', {})).toEqual({ dismissed: [], filed: [], sent: [] });
   expect(await captures()).toBe(0);
 });
 
-test('FN-6 with no key Send to Claude is off and says why; nothing is sent until it is pressed', async () => {
-  const sendButton = item(MOVE).getByTestId('capture-send-fact');
-  await expect(sendButton).toBeDisabled();
-  await expect(sendButton).toHaveAttribute('title', /No Anthropic key/);
-  await expect(item(MOVE).getByTestId('capture-ask-claude')).toBeDisabled();
+test('A57 FN-6 with no key the Claude buttons read Add a Claude key and open the key field in place; nothing is sent', async () => {
+  await expect(item(MOVE).getByTestId('capture-send-fact')).toHaveCount(0);
+  await expect(item(MOVE).getByTestId('capture-ask-claude')).toHaveCount(0);
+  await expect(tray()).not.toContainText('No Anthropic key is set');
+  const addKey = item(MOVE).getByTestId('capture-add-key');
+  await expect(addKey).toHaveText('Add a Claude key');
+  await addKey.click();
+  const keyField = tray().getByTestId('capture-key-field');
+  await expect(keyField).toBeVisible();
+  await expect(keyField.getByTestId('capture-key-input')).toBeFocused();
+  await keyField.getByRole('button', { name: 'Cancel' }).click();
+  await expect(keyField).toBeHidden();
   expect(await captures()).toBe(0);
 });
 

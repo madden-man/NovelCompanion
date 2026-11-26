@@ -7,10 +7,11 @@ import type { TestDb } from './helpers';
 
 /**
  * KB-6, KB-7 and A48 (CR-6, CR-9) through the interface: Cmd+K (or Add in
- * the status bar) opens the capture box on every screen. Enter runs the
- * capture router: a fact the router places (Route A) shows its chips and its
- * drafts and files without Claude; the rest go to the recorded Claude with
- * hints. Alt+Enter (Send it all to Claude) sends every fact on Route C, the
+ * the status bar) opens the capture box on every screen. The capture router
+ * runs on a pause in the typing (A57): a fact the router places (Route A)
+ * shows its chips and its drafts before any key, and Enter files it without
+ * Claude; Enter sends the rest to the recorded Claude with hints. Alt+Enter
+ * (Ask Claude instead) sends every fact on Route C, the
  * KB-6 capture with tools, which the recordings of MOVE, RECIPE, FERRY and
  * Jinan answer. The proposals show with their diffs, File it approves the
  * ticked ones and writes the ticked drafts as one undo step, Review later
@@ -83,12 +84,22 @@ test.afterAll(async () => {
 const box = () => page.getByTestId('capture-box');
 const input = () => box().getByTestId('capture-input');
 const cards = () => box().getByTestId('capture-card');
+const facts = () => box().getByTestId('capture-fact');
 
 async function send(text: string) {
   await page.keyboard.press('Meta+k');
   await expect(input()).toBeFocused();
   await input().fill(text);
   await input().press('Enter');
+}
+
+/** A57: type the text and wait for the router to place it; no key is pressed. */
+async function type(text: string, count: number) {
+  await page.keyboard.press('Meta+k');
+  await expect(input()).toBeFocused();
+  await input().fill(text);
+  await expect(facts()).toHaveCount(count);
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
 }
 
 /** CR-5: Alt+Enter sends every fact to Claude on Route C, the KB-6 capture the recordings answer. */
@@ -106,9 +117,12 @@ test('KB-6 NF-2 Cmd+K opens the box from Characters and from the tree with the s
   await expect(box().getByRole('heading', { name: 'Add to the bible' })).toBeVisible();
   await expect(box().getByTestId('capture-time')).toContainText('Story time 2034');
   await expect(input()).toBeFocused();
-  await expect(box()).toContainText(
-    'Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.',
-  );
+  // A57: no line says how to use the box; the buttons carry their keys.
+  await expect(box()).not.toContainText('Enter shows where each sentence goes');
+  await expect(box().locator('.capture-hint')).toHaveCount(0);
+  await expect(box().getByTestId('capture-file').locator('kbd')).toHaveText('Enter');
+  await expect(box().getByTestId('capture-send-all')).toContainText('Ask Claude instead');
+  await expect(box().getByTestId('capture-send-all').locator('kbd')).toHaveText('Alt Enter');
   // Shift+Enter is a new line, and the unsent text is there when the box opens again.
   await input().pressSequentially('First line');
   await input().press('Shift+Enter');
@@ -371,7 +385,6 @@ test('IP-17 ED-7 the review queue shows the new community as a field and its nam
 
 // ---------- A48: capture routing in the box (CR-6, CR-9, CR-10) ----------
 
-const facts = () => box().getByTestId('capture-fact');
 const runCount = async (feature: 'capture' | 'captureFast') =>
   (await invoke('claude.runs', { feature })).runs.length;
 const chip = (card: Locator, name: string) => card.getByTestId(`chip-${name}`);
@@ -382,11 +395,9 @@ async function pick(card: Locator, name: string, value: string) {
   await expect(f.locator('select')).toHaveCount(0);
 }
 
-test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothing; Cmd+Enter files it and the Filed list links it', async () => {
+test('A57 CR-6 a clear cultural line shows its chips and diff while typing, before any key; Enter (File 1) files it and the Filed list links it', async () => {
   const before = [await runCount('capture'), await runCount('captureFast')];
-  await send(MOONCAKES);
-  await expect(box()).toHaveAttribute('data-phase', 'routed');
-  await expect(facts()).toHaveCount(1);
+  await type(MOONCAKES, 1);
   const card = facts().first();
   await expect(card).toHaveAttribute('data-stand', 'local');
   await expect(card).toContainText(
@@ -412,13 +423,15 @@ test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothi
   await expect(diff.locator('tr[data-path="sourceNote"]')).toHaveCount(0);
   await expect(diff.getByRole('rowheader', { name: 'Status' })).toHaveCount(0);
   await expect(card.getByTestId('capture-fact-tick')).toBeChecked();
+  // The File button says how many it files and carries Enter.
+  await expect(box().getByTestId('capture-file')).toHaveText('File 1 Enter');
   // Nothing was sent and nothing written (CR-6, AI-3).
   expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
   expect(
     await lineTitled('Teenagers in Guangzhou start to eat mooncakes with coffee'),
   ).toBeUndefined();
 
-  await page.keyboard.press('Meta+Enter');
+  await input().press('Enter');
   const filed = box().getByTestId('capture-filed');
   const link = filed.getByRole('button', {
     name: 'Teenagers in Guangzhou start to eat mooncakes with coffee',
@@ -446,7 +459,7 @@ test('CR-6 Enter on a clear cultural line shows chips and a diff and sends nothi
 
 test('CR-6 changing the Section chip re-routes', async () => {
   const before = await runCount('captureFast');
-  await send(YEE_HAW);
+  await type(YEE_HAW, 1);
   const card = facts().first();
   await expect(card).toHaveAttribute('data-stand', 'local');
   await expect(chip(card, 'community')).toContainText('Portland');
@@ -461,6 +474,8 @@ test('CR-6 changing the Section chip re-routes', async () => {
   await expect(card.getByTestId('capture-route')).toContainText('category to choose');
   await expect(card.getByTestId('capture-send-fact')).toBeVisible();
   await expect(card.getByTestId('draft-diff')).toHaveCount(0);
+  // A57: Enter now sends it, and its button says so.
+  await expect(box().getByTestId('capture-file')).toHaveText('Send 1 to Claude Enter');
   // Back to cultural data: filed from the box again, with its chips and diff.
   await pick(card, 'section', 'culturalEntries');
   await expect(card).toHaveAttribute('data-stand', 'local');
@@ -473,29 +488,51 @@ test('CR-6 changing the Section chip re-routes', async () => {
   expect(await lineTitled('Teenagers in Portland begin to say yee haw ironically')).toBeUndefined();
 });
 
-test('CR-6 a missing community is a highlighted chip and File it waits for it', async () => {
-  await send(MASKS);
+test('A57 a chip set while typing stays with its sentence when another sentence is typed', async () => {
+  // The box from the row above still holds YEE_HAW.
+  await page.keyboard.press('Meta+k');
+  await expect(facts()).toHaveCount(1);
+  await pick(facts().first(), 'section', 'worldEvents');
+  await expect(facts().first()).toHaveAttribute('data-stand', 'unsent');
+  await input().press('End');
+  await input().pressSequentially(` ${MOONCAKES}`);
+  await expect(facts()).toHaveCount(2);
+  await expect(chip(facts().nth(0), 'section')).toContainText('World event');
+  await expect(chip(facts().nth(1), 'section')).toContainText('Cultural data');
+  await input().fill('');
+  await expect(facts()).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+});
+
+test('A57 CR-6 a missing community is a highlighted chip and the File button waits for it, with no sentence saying so; Enter and Cmd+Enter file nothing', async () => {
+  await type(MASKS, 1);
   const card = facts().first();
   await expect(card).toHaveAttribute('data-stand', 'local');
   await expect(chip(card, 'community')).toHaveAttribute('data-needed', 'true');
   await expect(chip(card, 'community')).toContainText('Community (needed)');
-  await expect(card.getByTestId('capture-needed')).toContainText('Pick the community');
+  await expect(card).toHaveClass(/is-waiting/);
+  await expect(box()).not.toContainText('File it waits');
+  await expect(box()).not.toContainText('Pick the community');
   await expect(card.getByTestId('capture-fact-tick')).toBeDisabled();
   await expect(card.getByTestId('capture-fact-tick')).not.toBeChecked();
   await expect(box().getByTestId('capture-file')).toBeDisabled();
-  await expect(box().getByTestId('capture-file-waits')).toBeVisible();
-  // Cmd+Enter waits too: nothing is filed.
-  await page.keyboard.press('Meta+Enter');
-  await expect(box()).toHaveAttribute('data-phase', 'routed');
+  await expect(box().getByTestId('capture-file')).toHaveText('File 0 Enter');
+  // Enter and Cmd+Enter wait too: nothing is filed.
+  await input().press('Enter');
+  await input().press('Meta+Enter');
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
   expect(await lineTitled('Teenagers start to wear paper masks')).toBeUndefined();
 
   await pick(card, 'community', 'portland');
   await expect(chip(card, 'community')).not.toHaveAttribute('data-needed', 'true');
   await expect(card.getByTestId('capture-fact-tick')).toBeChecked();
   await expect(box().getByTestId('capture-file')).toBeEnabled();
+  await expect(box().getByTestId('capture-file')).toHaveText('File 1 Enter');
   await expect(card.getByTestId('draft-diff').locator('tr[data-path="communityId"]')).toContainText(
     'Portland',
   );
+  // Cmd+Enter from the chip files it, as Enter in the field does.
   await page.keyboard.press('Meta+Enter');
   await expect(box().getByTestId('capture-filed')).toContainText(
     'Teenagers start to wear paper masks',
@@ -508,7 +545,7 @@ test('CR-6 a missing community is a highlighted chip and File it waits for it', 
 });
 
 test('CR-6 KB-7 Review later keeps a fact the box would file as an open question; nothing else is written', async () => {
-  await send(YEE_HAW);
+  await type(YEE_HAW, 1);
   await expect(facts().first()).toHaveAttribute('data-stand', 'local');
   await box().getByTestId('capture-later').click();
   await expect(box().getByTestId('capture-saved')).toContainText('Saved as an open question');
@@ -541,14 +578,12 @@ test('CR-9 CR-7 a two-sentence capture shows two cards; the Route A one files lo
   await expect(fast.getByTestId('capture-ask-claude')).toBeVisible();
   expect(await runCount('captureFast')).toBe(fastBefore + 1);
   expect(await runCount('capture')).toBe(fullBefore);
-  // File it writes the Route A line and says the other sentence stays behind.
-  await expect(box().getByTestId('capture-file')).toContainText('File 1 of 2');
-  await expect(box().getByTestId('capture-stays')).toContainText(
-    'One sentence needs Claude and was not sent. File it leaves it in the box.',
-  );
+  // File it writes the Route A line; its count says the other sentence stays behind (A57).
+  await expect(box().getByTestId('capture-file')).toHaveText('File 1 of 2 Cmd Enter');
+  await expect(box()).not.toContainText('File it leaves');
   await page.keyboard.press('Meta+Enter');
   const filed = box().getByTestId('capture-filed');
-  await expect(filed.getByTestId('capture-left')).toContainText(
+  await expect(filed.getByTestId('capture-left')).toHaveText(
     'One sentence was not filed and is back in the box.',
   );
   await expect(
@@ -570,8 +605,9 @@ test('CR-9 CR-7 a two-sentence capture shows two cards; the Route A one files lo
 test('CR-6 Ask Claude instead sends the fact on Route C', async () => {
   const fastBefore = await runCount('captureFast');
   const fullBefore = await runCount('capture');
-  await send(`${MOONCAKES} ${RECIPE_MAYBE}`);
-  await expect(facts()).toHaveCount(2);
+  // A57: both facts file here, so Ask Claude instead is pressed on the card while typing.
+  await type(`${MOONCAKES} ${RECIPE_MAYBE}`, 2);
+  await expect(box().getByTestId('capture-file')).toHaveText('File 2 Enter');
   const [line, recipe] = [facts().nth(0), facts().nth(1)];
   await expect(line).toHaveAttribute('data-stand', 'local');
   await expect(recipe).toHaveAttribute('data-stand', 'local');
@@ -592,7 +628,7 @@ test('CR-6 Ask Claude instead sends the fact on Route C', async () => {
   await expect(line).toHaveAttribute('data-stand', 'local');
   expect(await runCount('capture')).toBe(fullBefore + 1);
   expect(await runCount('captureFast')).toBe(fastBefore);
-  await expect(box().getByTestId('capture-file')).toContainText('File it');
+  await expect(box().getByTestId('capture-file')).toHaveText('File 3 Cmd Enter');
 });
 
 test('CR-6 CR-9 ED-3 Cmd+Z undoes a mixed filing in one step', async () => {
@@ -752,15 +788,13 @@ test('KB-7 with the key removed, Enter saves an open question and sends nothing'
   await expect(box()).toBeHidden();
 });
 
-test('CR-6 KB-7 with no key, the Route A facts still file without Claude and only the rest is saved as the open question; Send it all to Claude waits for a key', async () => {
+test('A57 CR-6 KB-7 with no key, the Route A facts still file without Claude and only the rest is saved as the open question; the Claude buttons read Add a Claude key', async () => {
   // The key was removed in the row above.
-  await page.keyboard.press('Meta+k');
-  await input().fill(`${MASKS} ${TRAM}`);
-  await expect(box().getByTestId('capture-send-all')).toBeDisabled();
-  await expect(box().getByTestId('capture-send-all')).toHaveAttribute(
-    'title',
-    'No Anthropic key is set. Add one in Settings to ask Claude.',
-  );
+  await type(`${MASKS} ${TRAM}`, 2);
+  await expect(box().getByTestId('capture-send-all')).toHaveCount(0);
+  await expect(box().getByTestId('capture-add-key').first()).toHaveText('Add a Claude key');
+  await expect(box()).not.toContainText('No Anthropic key is set');
+  await expect(box().getByTestId('capture-file')).toHaveText('Save 1 as a question Enter');
   const tramQuestions = async () =>
     (await invoke('entry.list', { collection: 'openQuestions', trash: 'exclude' })).entries.filter(
       (e) => e.entry.title === TRAM,
@@ -771,14 +805,13 @@ test('CR-6 KB-7 with no key, the Route A facts still file without Claude and onl
   const card = facts().first();
   await expect(card).toHaveAttribute('data-stand', 'local');
   await expect(facts().nth(1)).toHaveAttribute('data-stand', 'question');
-  await expect(box().getByTestId('capture-no-key')).toHaveText(
-    'No Anthropic key is set, so these file here without Claude.',
-  );
+  await expect(box().getByTestId('capture-no-key')).toHaveCount(0);
   await expect(box().getByTestId('capture-asked')).toContainText(TRAM);
   expect(await tramQuestions()).toBe(before + 1);
-  await expect(card.getByTestId('capture-ask-claude')).toBeDisabled();
+  await expect(card.getByTestId('capture-ask-claude')).toHaveCount(0);
+  await expect(card.getByTestId('capture-add-key')).toBeVisible();
   await pick(card, 'community', 'guangzhou');
-  await expect(box().getByTestId('capture-file')).toContainText('File it');
+  await expect(box().getByTestId('capture-file')).toHaveText('File 1 Cmd Enter');
   await page.keyboard.press('Meta+Enter');
   await expect(box().getByTestId('capture-filed')).toContainText(
     'Teenagers start to wear paper masks',
@@ -792,4 +825,31 @@ test('CR-6 KB-7 with no key, the Route A facts still file without Claude and onl
     ),
   ).toBe(true);
   await page.keyboard.press('Escape');
+});
+
+test('A57 with no key, Alt+Enter and Add a Claude key open the key field in place; a saved key turns the button back into Ask Claude instead', async () => {
+  // The key is still removed.
+  await page.keyboard.press('Meta+k');
+  await input().fill(TRAM);
+  await input().press('Alt+Enter');
+  const keyField = box().getByTestId('capture-key-field');
+  await expect(keyField).toBeVisible();
+  await expect(keyField.getByTestId('capture-key-input')).toBeFocused();
+  // Escape closes the field, not the box, and the text stays.
+  await page.keyboard.press('Escape');
+  await expect(keyField).toBeHidden();
+  await expect(box()).toBeVisible();
+  await expect(input()).toHaveText(TRAM);
+  // The button opens it too; nothing was sent or saved meanwhile.
+  await box().getByTestId('capture-add-key').first().click();
+  await expect(keyField).toBeVisible();
+  await keyField.getByTestId('capture-key-input').fill(KEY);
+  await keyField.getByTestId('capture-key-save').click();
+  await expect(keyField).toBeHidden();
+  expect((await invoke('claude.status', {})).key.set).toBe(true);
+  await expect(box().getByTestId('capture-add-key')).toHaveCount(0);
+  await expect(box().getByTestId('capture-send-all')).toContainText('Ask Claude instead');
+  await input().fill('');
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
 });
