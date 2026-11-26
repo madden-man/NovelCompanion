@@ -11,6 +11,16 @@ Branch `worlds-w5`, stacked on `worlds-w3` (draft PR #1). Draft PR #2 against `w
 - ARCHITECTURE.md: "The phone bridge" updated and a new A56 section.
 - Tests: unit `phone-questions`, `tray`, `single-database`, `notebook`; integration `phone-questions`, `tray`, `bridge-shared`, `bridge`; e2e `tray.spec.ts` (9), `year.spec.ts` updated for the menu item.
 
+## Review fixes (after the review of 728c349)
+1. A question held once (given to the phone, made from it, deleted forever) never comes back: `meta.bridge.questionIds`, carried over a restore.
+2. Question steps wait in `BridgeService.claimSteps()`; `UndoProvider` claims on mount and per event for its own bible (`notebook.claimSteps`).
+3. File it records its undo step before the mark (`trayFile.ts`).
+4. A desk edit mid-pull stands (`expectModifiedAt`, `EntryMoved`).
+5. A wise line edited on the phone counts as a change.
+6. Kept lines group by local day (`localDay`).
+7. A sent card comes back if its run fails or stops, or the box closes unfiled (`onUnfiled`).
+8. Test gaps closed (see PROGRESS).
+
 ## Half done
 - Nothing. Last full `npm test` (before the FN-6 test fix): lint and typecheck clean; unit 865/865 (71 files); integration 357/357 (34 files); e2e 299 passed, 4 failed, 44 not run. The failures were the two known ones, `tray.spec.ts` FN-8 (the FN-6 test left the capture box open; fixed in f9381d9, tray and year specs then 25/25) and `year.spec.ts` IP-5 (passed on rerun). A second whole e2e run after the fix: 302 passed, 3 failed (the two known, plus `richtext.spec.ts` A44 typing shortcuts, which passes and fails intermittently when run alone on this branch; W5 touches no rich text or culture file), 42 not run.
 
