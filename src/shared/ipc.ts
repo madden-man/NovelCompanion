@@ -17,6 +17,7 @@ import { SnapshotManifest } from './domain/snapshots';
 import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
 import { wordsContract } from './ipcWords';
+import { notebookContract } from './ipcNotebook';
 import type { EntryCollection } from './schema';
 // a47-guard
 import { guardContract } from './ipcGuard';
@@ -609,6 +610,17 @@ export const contract = {
     request: z.strictObject({}),
     response: z.strictObject({
       entries: z.array(z.strictObject({ collection: CollectionName, entry: WireEntry })),
+      /** A55 (NB-6): notebook pages the phone deleted; they come back only from the phone. */
+      notebookPages: z
+        .array(
+          z.strictObject({
+            id: z.string(),
+            firstLine: z.string(),
+            caption: z.string(),
+            deletedAt: z.string(),
+          }),
+        )
+        .default([]),
     }),
   },
   /** Every editable list with usage counts (ED-8). */
@@ -653,11 +665,13 @@ export const contract = {
       collections: z.array(CollectionName).optional(),
       filters: SearchFiltersWire.optional(),
       limit: z.int().min(1).max(100).default(20),
+      /** A55 (SR-1): the Search screen also finds notebook pages; pickers leave this off. */
+      notebook: z.boolean().optional(),
     }),
     response: z.strictObject({
       hits: z.array(
         z.strictObject({
-          collection: CollectionName,
+          collection: z.union([CollectionName, z.literal('notebookPages')]),
           id: z.string(),
           title: z.string(),
           score: z.number(),
@@ -1087,6 +1101,8 @@ export const contract = {
   ...appContract,
   /** WT-1 writing tools over Datamuse (src/shared/ipcWords.ts). */
   ...wordsContract,
+  // A55
+  ...notebookContract,
   /** M7 sessions and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,
@@ -1183,6 +1199,11 @@ export const events = {
   // a47-model
   /** The bible's settings changed (A47: numbers, the culture unit, templates). */
   'settings.changed': z.strictObject({ bible: z.string() }),
+  /**
+   * A56 (FN-7): a bridge pull changed questions from the phone; the page's
+   * undo history claims the steps with `notebook.claimSteps`.
+   */
+  'notebook.questions': z.strictObject({ bible: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;

@@ -241,13 +241,16 @@ function Chips(props: {
       />
     </Chip>
   );
+  // A56 (FN-2): a year the tray will not guess shows empty and highlighted until picked.
+  const yearNeeded = open.includes('Year');
   const year = (label: string) => (
-    <Chip key="year" label={label} testId="chip-year">
+    <Chip key="year" label={label} needed={yearNeeded} testId="chip-year">
       <Editable
         {...common}
         kind="year"
         label={label}
-        value={fact.years.start}
+        value={yearNeeded ? null : fact.years.start}
+        placeholder={yearNeeded ? 'Pick a year' : undefined}
         testId="chip-year-field"
         onSave={async (v) => {
           if (v !== null) props.onChoose({ hint: { startYear: v } });
@@ -377,6 +380,8 @@ export function FactCard(props: {
   onChoose(patch: { hint?: Omit<CaptureHint, 'fact'>; typed?: Record<string, string> }): void;
   onAskClaude(): void;
   onSend(): void;
+  /** A56 (FN-4): the tray's Dismiss; the capture box has none. */
+  onDismiss?: () => void;
   children?: ReactNode;
 }) {
   const { fact, choice, stand } = props;
@@ -467,6 +472,17 @@ export function FactCard(props: {
           >
             Ask Claude instead
           </button>
+          {props.onDismiss && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={props.busy}
+              onClick={props.onDismiss}
+              data-testid="tray-dismiss"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
       {props.children}

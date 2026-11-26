@@ -12,6 +12,7 @@ import { UndoManager, stepNotice } from '../../../shared/domain/undoRunner';
 import { plainErrorMessage } from '../../../shared/errors';
 import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner';
 import { undoIO } from '../../../shared/undoIO';
+import { questionCommand } from '../../../shared/domain/phoneQuestions';
 import { savedFieldText } from '../../../shared/domain/undoText';
 import { call } from '../api';
 
@@ -110,7 +111,7 @@ const UndoContext = createContext<Undo | null>(null);
  * browser's own text undo, or a rich text box's own history, A44); everywhere
  * else they step through the app's history.
  */
-export function UndoProvider({ children }: { children: ReactNode }) {
+export function UndoProvider({ children, bible }: { children: ReactNode; bible?: string }) {
   const manager = useRef(new UndoManager());
   const flushes = useRef(new Set<() => Promise<void>>());
   const busy = useRef(Promise.resolve());
@@ -205,6 +206,25 @@ export function UndoProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('keydown', onKey);
     };
   }, [command]);
+
+  // A56 (FN-7): a question the phone answered, resolved, took back or asked is one step.
+  // The steps wait in main until this bible's history takes them: on mount (the first pull
+  // on open, or the one after a reload, can run before this listens) and whenever a pull
+  // says it made some. A claimed step is always recorded, even if this unmounted meanwhile.
+  useEffect(() => {
+    if (!bible) return;
+    const claim = () =>
+      void call('notebook.claimSteps', { bible }).then(
+        ({ steps }) => {
+          for (const s of steps) record(questionCommand(s));
+        },
+        () => undefined,
+      );
+    claim();
+    return window.api.on('notebook.questions', (e) => {
+      if (e.bible === bible) claim();
+    });
+  }, [bible, record]);
 
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushes.current.add(fn);

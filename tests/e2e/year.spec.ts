@@ -108,6 +108,7 @@ const SCREEN_SHOWS: Record<(typeof RAIL_SCREENS)[number], () => Locator> = {
 const MENU_SHOWS: Record<(typeof APP_MENU_ITEMS)[number], () => Locator> = {
   'Search and filters': () => page.getByTestId('search-view'),
   'Review queue': () => page.getByTestId('review-queue'),
+  'From the notebook': () => page.getByTestId('notebook-tray'),
   Backups: () => page.getByTestId('backups-view'),
   Lists: () => page.getByRole('heading', { name: 'Lists', level: 2 }),
   Trash: () => page.getByRole('heading', { name: 'Trash', level: 2 }),
@@ -179,14 +180,14 @@ test('SM-6 each of the nine screens opens from its rail button', async () => {
   );
 });
 
-test('SM-6 the App menu holds the seven utilities and the reference views, and each item opens its screen', async () => {
+test('SM-6 A56 the App menu holds the eight utilities (From the notebook among them) and the reference views, and each item opens its screen', async () => {
   await appButton().click();
   await expect(appButton()).toHaveAttribute('aria-expanded', 'true');
   await expect(appMenu()).toBeVisible();
   // IP-13: a third group, All sections, follows (app.spec.ts covers it).
   await expect(appMenu().getByRole('group')).toHaveCount(3);
   await expect(appMenu().getByRole('group', { name: 'Manage' }).getByRole('menuitem')).toHaveText(
-    APP_MENU_ITEMS.slice(0, 7),
+    APP_MENU_ITEMS.slice(0, 8),
   );
   await expect(
     appMenu().getByRole('group', { name: 'Reference' }).getByRole('menuitem'),
@@ -370,7 +371,8 @@ test('KB-8 NF-2 SM-6 by keyboard: the App menu opens from the rail, the top bar 
   await expect(appMenu().getByRole('menuitem', { name: 'Continuity findings' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Search and filters' })).toBeFocused();
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  // A56: From the notebook sits after Review queue, so Lists is four down.
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await expect(appMenu().getByRole('menuitem', { name: 'Lists' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(appMenu()).toBeHidden();

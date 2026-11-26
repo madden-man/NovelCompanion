@@ -38,6 +38,7 @@ export * from './lists';
 export * from './manifest';
 export * from './proposal';
 export * from './settings';
+export * from './notebook';
 
 /**
  * Every collection written through the one write path, and its schema. These

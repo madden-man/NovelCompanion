@@ -1,7 +1,14 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { DATABASE_NAME } from '../../src/main/db/connection';
+import type { Db } from 'mongodb';
+import {
+  BRIDGE_DATABASE_NAME,
+  BRIDGE_REACH,
+  DATABASE_NAME,
+  bridgeDatabaseFor,
+  bridgeHandle,
+} from '../../src/main/db/connection';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -15,7 +22,7 @@ function sourceFiles(dir: string): string[] {
 const DB_DIR = join(ROOT, 'src/main/db');
 const MAIN_DIR = join(ROOT, 'src/main');
 
-describe('ARCH-8 the app uses only the novel_companion database', () => {
+describe('ARCH-8 the app uses only novel_companion, and flowstate_bridge through the bridge handle', () => {
   test('ARCH-8 the database name is novel_companion', () => {
     expect(DATABASE_NAME).toBe('novel_companion');
   });
@@ -34,15 +41,21 @@ describe('ARCH-8 the app uses only the novel_companion database', () => {
         calls += 1;
         const arg = (m[1] ?? '').trim();
         // `database` is the end-to-end test seam's name (testDatabaseName in secrets.ts), null otherwise.
-        const allowed = ["'novel_companion'", 'DATABASE_NAME', 'database ?? DATABASE_NAME'];
+        // A56: the bridge handle's database, flowstate_bridge (or the test seam's name with _bridge).
+        const allowed = [
+          "'novel_companion'",
+          'DATABASE_NAME',
+          'database ?? DATABASE_NAME',
+          'bridgeDatabaseFor(database', // the pattern stops at the first closing bracket
+        ];
         if (!allowed.includes(arg)) {
           problems.push(`${rel}: .db(${arg})`);
         }
       }
     }
     expect(problems).toEqual([]);
-    // One place selects the database: connect() in connection.ts.
-    expect(calls).toBe(1);
+    // One place selects the databases: connect() in connection.ts, the app's own and the bridge's.
+    expect(calls).toBe(2);
   });
 
   test('ARCH-8 the rest of the main process has no other database access', () => {
@@ -61,5 +74,47 @@ describe('ARCH-8 the app uses only the novel_companion database', () => {
       ...'client.db(name); client.db("other"); client.db(DATABASE_NAME)'.matchAll(pattern),
     ].map((m) => m[1]);
     expect(args).toEqual(['name', '"other"', 'DATABASE_NAME']);
+  });
+});
+
+describe('ARCH-8 A56 the bridge handle reaches flowstate_bridge and its three collections, nothing else', () => {
+  test('ARCH-8 the bridge database is flowstate_bridge, or the test seam name with _bridge', () => {
+    expect(BRIDGE_DATABASE_NAME).toBe('flowstate_bridge');
+    expect(bridgeDatabaseFor(null)).toBe('flowstate_bridge');
+    expect(bridgeDatabaseFor('e2e-notebook')).toBe('e2e-notebook_bridge');
+    expect(BRIDGE_REACH).toEqual(['bridge_worlds', 'bridge_down', 'bridge_up']);
+  });
+
+  test('ARCH-8 the handle opens only the three bridge collections and exposes no database, client or admin', () => {
+    const opened: string[] = [];
+    const fake = {
+      databaseName: 'flowstate_bridge',
+      collection: (n: string) => {
+        opened.push(n);
+        return { name: n };
+      },
+    } as unknown as Db;
+    const h = bridgeHandle(fake);
+    expect(Object.keys(h).sort()).toEqual(['collection', 'databaseName']);
+    for (const n of BRIDGE_REACH) h.collection(n);
+    for (const bad of ['bridge_clips', 'bibles', 'eastwinds.characters', 'system.users']) {
+      expect(() => h.collection(bad as never)).toThrow(/reaches only/);
+    }
+    expect(opened).toEqual([...BRIDGE_REACH]);
+  });
+
+  test('ARCH-8 the bridge code takes the handle, never a Db, a client or a database name', () => {
+    const files = [
+      join(ROOT, 'src/main/db/bridge.ts'),
+      ...sourceFiles(join(ROOT, 'src/main/bridge')),
+    ];
+    const hits = files
+      .filter((f) =>
+        /\.db\s*\(|\bclient\b|\bDb\b|listDatabases|\.admin\s*\(|bridge_clips|BRIDGE_CLIPS/.test(
+          readFileSync(f, 'utf8'),
+        ),
+      )
+      .map((f) => relative(ROOT, f));
+    expect(hits).toEqual([]);
   });
 });

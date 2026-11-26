@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { BSON } from 'mongodb';
 import type { Document } from 'mongodb';
 import { COLLECTION_FILE } from '../../shared/domain/snapshots';
-import { configSchemas, entrySchemas, isEntryCollection } from '../../shared/schema';
+import {
+  NOTEBOOK_COLLECTION,
+  NotebookPage,
+  configSchemas,
+  entrySchemas,
+  isEntryCollection,
+} from '../../shared/schema';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 import type { BibleHandle } from '../db/bibles';
 import { dumpBible, replaceBible } from './dump';
@@ -64,7 +70,9 @@ function validateCollections(collections: Record<string, Record<string, unknown>
       ? entrySchemas[name]
       : Object.hasOwn(configSchemas, name)
         ? configSchemas[name as keyof typeof configSchemas]
-        : null;
+        : name === NOTEBOOK_COLLECTION
+          ? NotebookPage // A55: notebook pages are checked like entries
+          : null;
     if (!schema) continue;
     for (const doc of docs) {
       const r = schema.safeParse(doc);

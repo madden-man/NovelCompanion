@@ -4,6 +4,7 @@ import { ENTRY_COLLECTIONS, collectionInfo } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import { DataProvider } from './data';
 import { EntryPane } from './editor';
+import { NotebookPageView } from './notebook';
 import { RelevantView } from './sessions/relevant';
 import { OverridesBible } from './sessions/overrides';
 import { QuestionsView } from './sessions/SessionsView';
@@ -12,6 +13,7 @@ import type { ContinuityTab } from './sessions/ContinuityView';
 import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
+import { NotebookTray } from './tray';
 import { UndoProvider, useUndo } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
@@ -63,9 +65,13 @@ type View =
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
+  /** A56 (FN-1): the facts drawn from the phone's notebook, waiting for File it. */
+  | { kind: 'tray' }
   | { kind: 'backups' }
   | { kind: 'settings' }
   | { kind: 'bibles' }
+  /** A55 (NB-8): a notebook page found by search, across the screen; Close goes back. */
+  | { kind: 'notebook'; id: string; back: View }
   /** PC-1, GL-1, GL-3: the reference views that left the rail, in the App menu. */
   | { kind: 'places' }
   | { kind: 'romanization' }
@@ -75,6 +81,7 @@ type Simple = Extract<
   View['kind'],
   | 'search'
   | 'review'
+  | 'tray'
   | 'backups'
   | 'lists'
   | 'trash'
@@ -92,6 +99,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
     items: [
       { label: 'Search and filters', kind: 'search' },
       { label: 'Review queue', kind: 'review' },
+      { label: 'From the notebook', kind: 'tray' },
       { label: 'Backups', kind: 'backups' },
       { label: 'Lists', kind: 'lists' },
       { label: 'Trash', kind: 'trash' },
@@ -113,7 +121,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
 export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   return (
     <DataProvider key={props.bibleId}>
-      <UndoProvider key={props.bibleId}>
+      <UndoProvider key={props.bibleId} bible={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
           <OverridesBible id={props.bibleId} />
           <Frame bibles={props.bibles} />
@@ -289,7 +297,14 @@ function Frame({ bibles }: { bibles: ReactNode }) {
               onQuery={setQuery}
               onOpen={open}
               onOpenSection={openSection}
+              onOpenNotebook={(id) => setView({ kind: 'notebook', id, back: view })}
             />
+          </div>
+        ) : view.kind === 'notebook' ? (
+          <div className="ws-wide-area">
+            <div className="ws-wide">
+              <NotebookPageView id={view.id} onOpen={open} onClose={() => setView(view.back)} />
+            </div>
           </div>
         ) : view.kind === 'tree' ? (
           <TreeView onOpen={open} focus={view.focus} />
@@ -317,6 +332,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {view.kind === 'trash' && <TrashView onOpen={open} />}
             {view.kind === 'lists' && <ListsView />}
             {view.kind === 'review' && <ReviewQueue />}
+            {view.kind === 'tray' && <NotebookTray />}
             {view.kind === 'backups' && <BackupsView />}
             {view.kind === 'settings' && <SettingsView />}
             {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}

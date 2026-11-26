@@ -1,3 +1,4 @@
+import { NotebookTouches } from '../notebook';
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { placePath, unitOf, unitSpan } from '../../../../shared/domain/culture';
 import {
@@ -998,6 +999,8 @@ export function RelevantBody(props: {
   /** SB-9: take an entry out of the selection, or put it back. */
   onRemove?: (id: string) => void;
   onKeep?: (id: string) => void;
+  /** A56 (FN-9): a notebook page opens across the desk. */
+  onOpenPage?: (pageId: string) => void;
 }) {
   const { selection: sel, onOpen } = props;
   const chapters = useEntries('chapters');
@@ -1050,6 +1053,17 @@ export function RelevantBody(props: {
         <Culture key={strand.strandId ?? ''} strand={strand} group={culture} onOpen={onOpen} />
       )}
       <Backstory strand={strand} onOpen={onOpen} />
+      {props.onOpenPage && (
+        <NotebookTouches
+          characterIds={[
+            ...(characters?.items.map((it) => it.id) ?? []),
+            ...(strand.povCharacterId ? [strand.povCharacterId] : []),
+          ]}
+          placeIds={strand.placeIds}
+          year={strand.year}
+          onOpenPage={props.onOpenPage}
+        />
+      )}
       <details className="rel-more" data-testid="relevant-more">
         <summary>
           More for this chapter{' '}

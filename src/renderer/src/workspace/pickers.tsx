@@ -6,7 +6,8 @@ import type { Response } from '../../../shared/ipc';
 import { call } from '../api';
 import { useStore } from './data';
 
-type Hit = Response<'search.query'>['hits'][number];
+/** A55: a search hit on an entry; notebook pages never reach a picker. */
+type Hit = Response<'search.query'>['hits'][number] & { collection: EntryCollection };
 
 /** Search the bible as the query changes. */
 export function useSearch(query: string | null, collections?: EntryCollection[]): Hit[] {
@@ -17,7 +18,8 @@ export function useSearch(query: string | null, collections?: EntryCollection[])
     let live = true;
     const cs = key ? (key.split(',') as EntryCollection[]) : undefined;
     void call('search.query', { query, limit: 8, ...(cs ? { collections: cs } : {}) }).then((r) => {
-      if (live) setHits(r.hits);
+      // A55: pickers pick entries; notebook pages are only found on the Search screen.
+      if (live) setHits(r.hits.filter((h): h is Hit => h.collection !== 'notebookPages'));
     });
     return () => {
       live = false;

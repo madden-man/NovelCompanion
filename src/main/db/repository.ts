@@ -1,3 +1,6 @@
+import { BRIDGE_META_ID } from '../../shared/bridge';
+import { withMarks } from '../../shared/domain/tray';
+import type { TrayMarks } from '../../shared/domain/tray';
 import { EventEmitter } from 'node:events';
 import { monotonicFactory } from 'ulid';
 import type { ClientSession, Collection, Document } from 'mongodb';
@@ -69,12 +72,16 @@ import { CLAUDE_FEATURES } from '../../shared/claude';
 import type { ClaudeFeature } from '../../shared/claude';
 import { ListRef, MINTABLE_LISTS } from '../../shared/schema';
 import type { ListAddProposal } from '../../shared/schema';
+// A55
+import { NOTEBOOK_COLLECTION, NotebookPage } from '../../shared/schema';
+import type { NotebookOp } from '../../shared/domain/notebook';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
 export interface ChangeEvent {
   bible: string;
-  collection: EntryCollection;
+  /** A55: `notebookPages` is not an entry collection, but its pages change like entries. */
+  collection: EntryCollection | typeof NOTEBOOK_COLLECTION;
   id: string;
   op: ChangeOp | 'purge';
 }
@@ -443,6 +450,9 @@ export class Repository {
   ): Promise<EntryOf<C>> {
     this.assertCollection(c);
     const prior = await this.current(c, id);
+    if (opts.expectModifiedAt !== undefined && String(prior.modifiedAt) !== opts.expectModifiedAt) {
+      throw new EntryMoved();
+    }
     const change = this.buildUpdate(c, prior, patch as Record<string, unknown>, opts);
     await this.commit([change]);
     return change.next as EntryOf<C>;
@@ -1397,18 +1407,45 @@ export class Repository {
   /** IP-16: delete every entry in the trash forever, in one transaction. */
   async emptyTrash(): Promise<PurgeCounts> {
     const items = this.trash().map((t) => ({ collection: t.collection, id: t.entry._id }));
-    if (!items.length) return { entries: 0 };
+    // A55 (NB-6): the notebook pages the phone deleted go with the rest.
+    const pages = this.notebookPages({ onlyDeleted: true }).map((p) => p._id);
+    if (!items.length && !pages.length) return { entries: 0 };
     await this.bulkGuard('empty trash');
-    return this.purgeAll(items);
+    return this.purgeAll(items, pages);
   }
 
   private async purgeAll(
     items: { collection: EntryCollection; id: string }[],
+    notebookIds: string[] = [],
   ): Promise<PurgeCounts> {
     const counts: PurgeCounts = { entries: 0 };
+    const purgedQuestions = items
+      .filter((it) => it.collection === 'openQuestions')
+      .map((it) => it.id);
+    const held = this.bridgeQuestionIds();
+    const heldDoc: StoredDoc | null = purgedQuestions.some((id) => !held.has(id))
+      ? {
+          ...(this.model.get('meta', BRIDGE_META_ID) ?? {}),
+          _id: BRIDGE_META_ID,
+          questionIds: [...new Set([...held, ...purgedQuestions])].sort(),
+        }
+      : null;
     await this.transact(async (session) => {
       // A retried transaction counts again from nothing.
       counts.entries = 0;
+      if (notebookIds.length) {
+        const gone = await this.bible
+          .collection<StoredDoc>(NOTEBOOK_COLLECTION)
+          .deleteMany({ _id: { $in: notebookIds }, deletedAt: { $type: 'string' } } as Document, {
+            session,
+          });
+        if (gone.deletedCount !== notebookIds.length) {
+          throw new RepositoryError(
+            'A notebook page left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
+          );
+        }
+        counts.entries += gone.deletedCount;
+      }
       const byCollection = new Map<EntryCollection, string[]>();
       for (const it of items) {
         byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
@@ -1425,13 +1462,30 @@ export class Repository {
         }
         counts.entries += gone.deletedCount;
       }
+      // A56 (FN-7): a question deleted forever is never made again from the phone's page.
+      if (heldDoc) {
+        await this.bible
+          .collection<StoredDoc>('meta')
+          .replaceOne({ _id: BRIDGE_META_ID }, heldDoc, { session, upsert: true });
+      }
       await this.options.midTransaction?.(session);
     });
+    if (heldDoc) this.model.put('meta', heldDoc);
     for (const it of items) {
       this.model.remove(it.collection, it.id);
       this.index.remove(it.collection, it.id);
     }
-    for (const it of items) {
+    for (const id of notebookIds) {
+      this.model.remove(NOTEBOOK_COLLECTION, id);
+      this.index.remove(NOTEBOOK_COLLECTION, id);
+    }
+    for (const it of [
+      ...items,
+      ...notebookIds.map((id) => ({
+        collection: NOTEBOOK_COLLECTION as typeof NOTEBOOK_COLLECTION,
+        id,
+      })),
+    ]) {
       this.emitter.emit('change', {
         bible: this.bible.id,
         collection: it.collection,
@@ -1440,6 +1494,163 @@ export class Repository {
       } satisfies ChangeEvent);
     }
     return counts;
+  }
+
+  // ---------- A55: notebook pages from the phone (NB-4 to NB-8) ----------
+
+  /** The notebook pages, live ones unless asked; read-only everywhere but `applyNotebook`. */
+  notebookPages(opts: { includeDeleted?: boolean; onlyDeleted?: boolean } = {}): NotebookPage[] {
+    return (this.model.all(NOTEBOOK_COLLECTION) as unknown as NotebookPage[]).filter((p) =>
+      opts.onlyDeleted ? Boolean(p.deletedAt) : opts.includeDeleted || !p.deletedAt,
+    );
+  }
+
+  notebookPage(id: string): NotebookPage | undefined {
+    return this.model.get(NOTEBOOK_COLLECTION, id) as unknown as NotebookPage | undefined;
+  }
+
+  /**
+   * A55 (NB-4, NB-6): write what a bridge pull found, in one transaction:
+   * each page put whole (its links read again) and each page the phone
+   * deleted moved to the trash. This is the only write to `notebookPages`:
+   * no IPC channel, no proposal and no undo step reaches it, because the
+   * desktop copy follows the phone. Returns how many pages changed.
+   */
+  async applyNotebook(
+    ops: readonly NotebookOp[],
+    /** A page that fails the schema is skipped, never the batch, and named here. */
+    onSkip: (id: string, reason: string) => void = () => undefined,
+  ): Promise<number> {
+    if (!ops.length) return 0;
+    const at = this.now().toISOString();
+    const changes: { prior: StoredDoc | null; next: StoredDoc; op: ChangeOp }[] = [];
+    const seen = new Set<string>();
+    for (const o of ops) {
+      const id = o.op === 'put' ? o.page._id : o.id;
+      if (seen.has(id))
+        throw new RepositoryError(`One pull changes the notebook page ${id} twice.`);
+      seen.add(id);
+      const prior = this.model.get(NOTEBOOK_COLLECTION, id) ?? null;
+      let next: unknown;
+      let op: ChangeOp;
+      if (o.op === 'put') {
+        next = {
+          ...o.page,
+          createdAt: prior ? prior.createdAt : at,
+          modifiedAt: prior ? this.stamp(prior) : at,
+        };
+        op = !prior ? 'create' : prior.deletedAt ? 'restore' : 'update';
+      } else {
+        if (!prior || prior.deletedAt) continue;
+        const stamp = this.stamp(prior);
+        next = { ...prior, sig: o.sig, deletedAt: stamp, modifiedAt: stamp };
+        op = 'softDelete';
+      }
+      const r = NotebookPage.safeParse(next);
+      if (!r.success) {
+        onSkip(id, z.prettifyError(r.error));
+        continue;
+      }
+      changes.push({ prior, next: r.data as unknown as StoredDoc, op });
+    }
+    if (!changes.length) return 0;
+    const target = this.bible.collection<StoredDoc>(NOTEBOOK_COLLECTION);
+    await this.transact(async (session) => {
+      for (const ch of changes) {
+        if (!ch.prior) {
+          await target.insertOne(ch.next, { session });
+          continue;
+        }
+        const res = await target.replaceOne(
+          { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
+          ch.next,
+          { session },
+        );
+        if (res.matchedCount !== 1) {
+          throw new RepositoryError(
+            'A notebook page changed somewhere else. The next pull reads it again.',
+          );
+        }
+      }
+      await this.options.midTransaction?.(session);
+    });
+    for (const ch of changes) {
+      this.model.put(NOTEBOOK_COLLECTION, ch.next);
+      this.index.upsert(NOTEBOOK_COLLECTION, ch.next);
+    }
+    for (const ch of changes) {
+      this.emitter.emit('change', {
+        bible: this.bible.id,
+        collection: NOTEBOOK_COLLECTION,
+        id: ch.next._id,
+        op: ch.op,
+      } satisfies ChangeEvent);
+    }
+    return changes.length;
+  }
+
+  /**
+   * A55 (NB-2, plan question 6): when this bible was first given to the
+   * phone, in milliseconds, kept in the `meta` document `bridge`. The pocket
+   * carries decided questions changed after it. Null before the first time.
+   */
+  bridgeSince(): number | null {
+    const doc = this.model.get('meta', BRIDGE_META_ID);
+    return typeof doc?.since === 'number' ? doc.since : null;
+  }
+
+  /** A56 (FN-3, FN-4): the tray's marks, kept in the `meta` document `notebookTray`. */
+  trayMarks(): TrayMarks {
+    const doc = this.model.get('meta', TRAY_META_ID);
+    const keys = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : [];
+    return { dismissed: keys(doc?.dismissed), filed: keys(doc?.filed), sent: keys(doc?.sent) };
+  }
+
+  /**
+   * A56 (FN-3, FN-4, FN-6): mark facts of the tray dismissed, filed or sent,
+   * or clear their mark (null, for undo). Not an entry write: the tray's own
+   * undo steps call it back.
+   */
+  async setTrayMarks(keys: readonly string[], mark: keyof TrayMarks | null): Promise<TrayMarks> {
+    const next = withMarks(this.trayMarks(), keys, mark);
+    await this.writeMeta({ _id: TRAY_META_ID, ...next });
+    return next;
+  }
+
+  /** Records the first time; a second call keeps the first. */
+  async markBridgeSince(ms: number): Promise<number> {
+    const have = this.bridgeSince();
+    if (have !== null) return have;
+    const doc = this.model.get('meta', BRIDGE_META_ID) ?? { _id: BRIDGE_META_ID };
+    await this.writeMeta({ ...doc, _id: BRIDGE_META_ID, since: ms });
+    return ms;
+  }
+
+  /**
+   * A56 (FN-7): every open question ID this bible has held that the phone may
+   * still hold a page for: those published in the pocket, made from the
+   * phone, or deleted forever. A question page with one of these IDs is never
+   * made again. Kept in the `meta` document `bridge`, and carried over a
+   * restore or a file import (`replaceBible`).
+   */
+  bridgeQuestionIds(): Set<string> {
+    const doc = this.model.get('meta', BRIDGE_META_ID);
+    const ids = Array.isArray(doc?.questionIds) ? doc.questionIds : [];
+    return new Set(ids.filter((x): x is string => typeof x === 'string'));
+  }
+
+  /** A56 (FN-7): add question IDs to the held set; writes only when one is new. */
+  async noteBridgeQuestions(ids: readonly string[]): Promise<void> {
+    const have = this.bridgeQuestionIds();
+    const fresh = ids.filter((id) => !have.has(id));
+    if (!fresh.length) return;
+    const doc = this.model.get('meta', BRIDGE_META_ID) ?? { _id: BRIDGE_META_ID };
+    await this.writeMeta({
+      ...doc,
+      _id: BRIDGE_META_ID,
+      questionIds: [...have, ...fresh].sort(),
+    });
   }
 
   /**
@@ -1983,12 +2194,29 @@ export const BIBLE_SETTINGS_ID = 'bibleSettings';
 const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const TREE_LAYOUT_ID = 'treeLayout';
+/** A55: the bridge's own note in `meta`: when the bible was first given to the phone. */
+export { BRIDGE_META_ID };
+/** A56: the From the notebook tray's marks. */
+export const TRAY_META_ID = 'notebookTray';
 
 // ---------- a47-guard ----------
 
 /** Options for a write; `importer` is set only by the manuscript importer, never from IPC (IP-18). */
 export interface WriteOptions {
   importer?: boolean;
+  /**
+   * A56 (FN-7): the `modifiedAt` the writer planned against. If the stored
+   * entry has moved since, `update` throws `EntryMoved` and writes nothing.
+   */
+  expectModifiedAt?: string;
+}
+
+/** A56 (FN-7): the entry changed after the write was planned, so the write was skipped. */
+export class EntryMoved extends RepositoryError {
+  constructor() {
+    super('This entry changed after the change was planned, so it was left as it is.');
+    this.name = 'EntryMoved';
+  }
 }
 
 /** What `propose` takes for a `listAdd` proposal (IP-17). */

@@ -478,6 +478,8 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   const undo = useUndo();
   const ro = useWriteGuard();
   const [entries, setEntries] = useState<Response<'trash.list'>['entries'] | null>(null);
+  // A55 (NB-6): notebook pages the phone deleted.
+  const [pages, setPages] = useState<Response<'trash.list'>['notebookPages']>([]);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
@@ -486,7 +488,9 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   useEffect(() => {
     let live = true;
     void call('trash.list', {}).then((r) => {
-      if (live) setEntries(r.entries);
+      if (!live) return;
+      setEntries(r.entries);
+      setPages(r.notebookPages);
     });
     return () => {
       live = false;
@@ -518,7 +522,7 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     );
     setReloads((n) => n + 1);
   };
-  const count = entries?.length ?? 0;
+  const count = (entries?.length ?? 0) + pages.length;
 
   return (
     <section className="ws-wide stack" aria-labelledby="trash-title" data-testid="trash-view">
@@ -570,11 +574,11 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
       )}
       {entries === null ? (
         <p>Loading.</p>
-      ) : entries.length === 0 ? (
+      ) : count === 0 ? (
         <p className="example-note" data-testid="trash-empty">
           The trash is empty.
         </p>
-      ) : (
+      ) : entries.length === 0 ? null : (
         <ul className="trash-list" data-testid="trash-list">
           {entries.map(({ collection, entry }) => {
             const key = `${collection}:${entry._id}`;
@@ -634,6 +638,29 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
             );
           })}
         </ul>
+      )}
+      {pages.length > 0 && (
+        <section
+          className="stack tight"
+          aria-labelledby="trash-notebook"
+          data-testid="trash-notebook"
+        >
+          <h3 id="trash-notebook">Notebook pages</h3>
+          <p className="example-note">
+            The phone deleted these, or stopped keeping the line. They follow the phone, so a page
+            comes back when the phone sends it again. Empty trash deletes them forever.
+          </p>
+          <ul className="trash-list">
+            {pages.map((p) => (
+              <li key={p.id} data-id={p.id}>
+                <span>
+                  <span className="eyebrow">{p.caption}</span> <strong>{p.firstLine}</strong>{' '}
+                  <span className="example-note">moved {formatTime(p.deletedAt)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </section>
   );

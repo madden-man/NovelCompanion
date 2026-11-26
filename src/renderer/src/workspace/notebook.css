@@ -1,0 +1,141 @@
+/* A55 (NB-7, NB-8): the Notebook list on an entry page, and a page from the phone across the screen. */
+
+.nb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.nb-section h3 {
+  margin: 0;
+}
+.nb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nb-row {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  color: var(--fg);
+}
+button.nb-row {
+  cursor: pointer;
+}
+button.nb-row:hover {
+  background: var(--surface-2);
+}
+/* A div row never takes the focus; a button row shows the ring (NF-2). */
+.nb-row:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.nb-row time {
+  grid-row: span 2;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.nb-first {
+  overflow-wrap: anywhere;
+}
+button.nb-row .nb-first {
+  font-weight: 600;
+}
+.nb-caption {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+
+.nb-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 75ch;
+}
+.nb-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.nb-page-head h2 {
+  margin: 0;
+}
+.nb-page-head h2:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.nb-page-head time {
+  color: var(--fg-2);
+}
+.nb-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nb-lines li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.5;
+}
+.nb-lines li.wise .nb-text {
+  font-style: italic;
+}
+/* NB-8: another voice (a paper brought to a council) is set apart from his plain ink. */
+.nb-lines li.other {
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+}
+.nb-voice-note {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.nb-speaker {
+  font-weight: 600;
+}
+.nb-kept {
+  align-self: flex-start;
+  font-size: 0.8rem;
+  color: var(--fg-2);
+}
+.nb-research ul,
+.nb-links ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nb-links ul {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.nb-research h3,
+.nb-links h3 {
+  margin: 0 0 6px;
+}
+.nb-research li {
+  display: flex;
+  flex-direction: column;
+}
+.nb-paper-title {
+  font-weight: 600;
+}
+.nb-paper-meta {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}

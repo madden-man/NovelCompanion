@@ -166,6 +166,8 @@ export function openAsks(fact: CaptureFact, choice: FactChoice): string[] {
     if (typed) return !choice.typed[typed.key]?.trim();
     if (ask === 'Community') return !choice.hint.communityId;
     if (ask === 'Character') return !choice.hint.characterId;
+    // A56 (FN-2): the tray asks for a year it will not guess, until one is picked.
+    if (ask === 'Year') return choice.hint.startYear === undefined;
     return true;
   });
 }

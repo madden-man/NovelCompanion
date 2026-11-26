@@ -42,10 +42,24 @@ import { newNestedId } from '../../shared/domain/blank';
 import { descriptionFor, entriesFor, placePath } from '../../shared/domain/culture';
 import { NO_CHECKER_NOTE, systemFor, termProblem } from '../../shared/domain/romanization';
 import { compileFilters } from '../../shared/domain/searchFilters';
-import { entrySnippet } from '../search';
+import { entrySnippet, notebookSnippet } from '../search';
 import type { ListDoc } from '../../shared/schema';
 // a47-guard
 import { guardHandlers } from './guardHandlers';
+// A55
+import { NOTEBOOK_COLLECTION } from '../../shared/schema';
+import type { NotebookPage } from '../../shared/schema';
+import {
+  firstLine,
+  notebookCaption,
+  notebookRows,
+  relevantRows,
+  voiceRows,
+} from '../../shared/domain/notebook';
+import { offeredPages } from '../../shared/domain/tray';
+import type { TrayMarks } from '../../shared/domain/tray';
+import { placeAndDescendants } from '../../shared/domain/searchFilters';
+import { notebookAccepts, notebookPageView } from '../bridge/views';
 import type { GuardChannel } from './guardHandlers';
 
 /** Channels that act on the open bible. */
@@ -112,7 +126,16 @@ export type BibleChannel =
   | 'settings.get'
   | 'settings.set'
   | 'eraDefaults.get'
-  | 'eraDefaults.set';
+  | 'eraDefaults.set'
+  // A55
+  | 'notebook.list'
+  | 'notebook.get'
+  // A56
+  | 'notebook.voice'
+  | 'notebook.relevant'
+  | 'notebook.offered'
+  | 'tray.state'
+  | 'tray.mark';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose' | 'test.seed';
@@ -565,6 +588,16 @@ export function bibleHandlers(
       entries: session()
         .repo.trash()
         .map((t) => ({ collection: t.collection, entry: wire(t.entry) })),
+      // A55 (NB-6): the notebook pages the phone deleted, newest first.
+      notebookPages: session()
+        .repo.notebookPages({ onlyDeleted: true })
+        .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)))
+        .map((p) => ({
+          id: p._id,
+          firstLine: firstLine(p),
+          caption: notebookCaption(p),
+          deletedAt: String(p.deletedAt),
+        })),
     }),
     'lists.get': () => ({ lists: session().repo.lists() }),
     'lists.rename': ({ listId, itemId, label }) =>
@@ -576,7 +609,7 @@ export function bibleHandlers(
       await session().repo.removeListItem(listId, itemId);
       return { ok: true as const };
     },
-    'search.query': ({ query, collections, filters, limit }) => {
+    'search.query': ({ query, collections, filters, limit, notebook }) => {
       const { search, model } = session();
       // `collections` (the link picker) and `filters.sections` both narrow the sections.
       const asked = [collections, filters?.sections].filter(
@@ -593,17 +626,29 @@ export function bibleHandlers(
           places: model.all('places').filter((p) => !p.deletedAt),
         },
       );
+      // A55 (SR-1): the Search screen finds notebook pages too, unless a link picker is asking.
+      const pages = notebook === true && !collections?.length;
+      const acceptsPage = notebookAccepts(filters ?? {}, model);
       const matched = search
         .search(query, ({ collection, id }) => {
+          if (collection === NOTEBOOK_COLLECTION) {
+            const page = model.get(collection, id) as NotebookPage | undefined;
+            return pages && page !== undefined && !page.deletedAt && acceptsPage(page);
+          }
           if (!isEntryCollection(collection)) return false;
           const doc = model.get(collection, id);
           return doc !== undefined && !doc.deletedAt && accepts(collection, doc);
         })
-        .filter((h): h is typeof h & { collection: EntryCollection } =>
-          isEntryCollection(h.collection),
+        .filter(
+          (h): h is typeof h & { collection: EntryCollection | typeof NOTEBOOK_COLLECTION } =>
+            isEntryCollection(h.collection) || (pages && h.collection === NOTEBOOK_COLLECTION),
         );
       const hits = matched.slice(0, limit).map((h) => {
         const doc = model.get(h.collection, h.id) as StoredDoc;
+        if (h.collection === NOTEBOOK_COLLECTION) {
+          const page = doc as unknown as NotebookPage;
+          return { ...h, title: firstLine(page), snippet: notebookSnippet(doc) };
+        }
         return {
           ...h,
           title: entryTitle(doc),
@@ -623,8 +668,39 @@ export function bibleHandlers(
     'settings.set': (patch) => session().repo.setBibleSettings(patch),
     'eraDefaults.get': () => ({ rows: session().repo.eraDefaults() }),
     'eraDefaults.set': async ({ rows }) => ({ rows: await session().repo.setEraDefaults(rows) }),
+    // A55 (NB-7, NB-8): the Notebook list of an entry, and one page across the screen.
+    'notebook.list': ({ collection, id }) => ({
+      rows: notebookRows(session().repo.notebookPages(), collection, id),
+    }),
+    'notebook.get': ({ id }) => {
+      const { repo, model } = session();
+      const page = repo.notebookPage(id);
+      if (!page) throw new Error('That notebook page is not in this bible.');
+      return { page: notebookPageView(page, model) };
+    },
+    // A56 (FN-1, FN-3, FN-4, FN-8, FN-9).
+    'notebook.voice': ({ id }) => ({ rows: voiceRows(session().repo.notebookPages(), id) }),
+    'notebook.relevant': ({ characterIds, placeIds, year }) => {
+      const { repo, model } = session();
+      const places = new Set<string>();
+      const all = model.all('places').filter((p) => !p.deletedAt);
+      for (const id of placeIds) for (const p of placeAndDescendants(all, id)) places.add(p);
+      return {
+        rows: relevantRows(repo.notebookPages(), { characterIds, placeIds: [...places], year }),
+      };
+    },
+    'notebook.offered': () => ({ pages: offeredPages(session().repo.notebookPages()) }),
+    'tray.state': () => copyMarks(session().repo.trayMarks()),
+    'tray.mark': async ({ keys, mark }) => copyMarks(await session().repo.setTrayMarks(keys, mark)),
   };
 }
+
+/** The tray's marks as the wire takes them (plain arrays). */
+const copyMarks = (m: TrayMarks) => ({
+  dismissed: [...m.dismissed],
+  filed: [...m.filed],
+  sent: [...m.sent],
+});
 
 /** Test-only handlers: never registered in a packaged app. */
 export function testHandlers(current: () => OpenBible | null): { [C in TestChannel]: Handler<C> } {

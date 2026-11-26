@@ -124,6 +124,7 @@ export const RAIL_SCREENS = [
 export const APP_MENU_ITEMS = [
   'Search and filters',
   'Review queue',
+  'From the notebook',
   'Backups',
   'Lists',
   'Trash',
