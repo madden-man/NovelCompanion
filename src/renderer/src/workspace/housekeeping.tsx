@@ -15,7 +15,7 @@ export function typedMatches(typed: string, word: string): boolean {
 }
 
 /**
- * Type the word, then the action runs. Escape or Keep closes it; an error
+ * The word typed (shown as the field's placeholder), the action runs. Escape or Keep closes it; an error
  * stays here in plain words and the box stays open.
  */
 export function TypedConfirm(props: {
@@ -67,13 +67,12 @@ export function TypedConfirm(props: {
       }}
     >
       <div className="hk-confirm-text">{props.children}</div>
-      <label htmlFor={id}>
-        Type <strong className="hk-word">{props.word}</strong> to confirm
-      </label>
       <div className="row tight hk-confirm-row">
         <input
           ref={input}
           id={id}
+          aria-label={`Type ${props.word} to confirm`}
+          placeholder={props.word}
           value={typed}
           autoComplete="off"
           spellCheck={false}

@@ -1084,7 +1084,8 @@ export const contract = {
   },
   /** BK-3: make a new bible from an exported file the person chooses. Null bible when cancelled. */
   'backup.import': {
-    request: z.strictObject({ slug: BibleSlug, name: BibleName }),
+    // A57: without a slug and name, the new bible takes the file's name and a free ID.
+    request: z.strictObject({ slug: BibleSlug.optional(), name: BibleName.optional() }),
     response: z.strictObject({
       bible: BibleSummary.nullable(),
       counts: z.record(z.string(), z.int().min(0)),

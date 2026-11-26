@@ -9,10 +9,6 @@
 .hk-confirm label {
   color: var(--fg);
 }
-.hk-word {
-  font-family: inherit;
-  white-space: pre-wrap;
-}
 .hk-confirm-row {
   align-items: center;
   flex-wrap: wrap;
@@ -20,6 +16,11 @@
 .hk-confirm-row input {
   flex: 1 1 200px;
   min-width: 140px;
+}
+/* A57: the word to type is the placeholder, so it reads at 4.5 to 1 (NF-2). */
+.hk-confirm-row input::placeholder {
+  color: var(--fg-2);
+  opacity: 1;
 }
 .hk-line {
   display: flex;
