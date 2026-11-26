@@ -1,0 +1,700 @@
+<title>Novel Companion Without Instructions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a numbered step rail over one app window per step; the window flips between Today and Proposed. Tokens are the app's own theme.css. */
+:root{
+  --bg:#f3f5f7;--surface:#fff;--surface-2:#e9edf1;--border:#cfd6dd;--border-strong:#74808c;
+  --fg:#16202b;--fg-2:#3f4d5b;--fg-3:#5f6e7d;
+  --accent:#1b705f;--accent-ink:#fff;--accent-soft:#d7efe8;
+  --time:#c9641f;--time-soft:#fbe6d4;
+  --critical-ink:#c43636;--warning:#fab219;--warn-soft:#fff3d6;
+  --mark:#ffe58a;--mark-ink:#3d2f00;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#4a3aa7;
+  --s1-soft:#cde2fb;--s2-soft:#fde0d2;--s3-soft:#cdeedf;--s4-soft:#ddd9f5;
+  --chart:#fcfcfb;--grid:#e1e0d9;
+  --display:Georgia,'Times New Roman',serif;
+  --body:system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:ui-monospace,Menlo,monospace;
+  --radius:6px;--shadow:0 1px 2px rgba(22,32,43,.08),0 4px 16px rgba(22,32,43,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#0f151c;--surface:#171f28;--surface-2:#1f2933;--border:#2e3a46;--border-strong:#6b7c8d;
+  --fg:#e8edf2;--fg-2:#b8c3ce;--fg-3:#93a1af;--accent:#4fc3a8;--accent-ink:#0f151c;--accent-soft:#1b3a34;
+  --time:#f0924f;--time-soft:#3d2715;--critical-ink:#ec7373;--warn-soft:#3a2f12;--mark:#6b5a14;--mark-ink:#fff3c4;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#9085e9;--s1-soft:#1c3a5e;--s2-soft:#4a2414;--s3-soft:#16402f;--s4-soft:#2d2a55;
+  --chart:#1a1a19;--grid:#2c2c2a;--shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.35)}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#0f151c;--surface:#171f28;--surface-2:#1f2933;--border:#2e3a46;--border-strong:#6b7c8d;
+  --fg:#e8edf2;--fg-2:#b8c3ce;--fg-3:#93a1af;--accent:#4fc3a8;--accent-ink:#0f151c;--accent-soft:#1b3a34;
+  --time:#f0924f;--time-soft:#3d2715;--critical-ink:#ec7373;--warn-soft:#3a2f12;--mark:#6b5a14;--mark-ink:#fff3c4;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#9085e9;--s1-soft:#1c3a5e;--s2-soft:#4a2414;--s3-soft:#16402f;--s4-soft:#2d2a55;
+  --chart:#1a1a19;--grid:#2c2c2a;--shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.35)}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--body);padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.page{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+nav.steps{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+nav.steps a{min-width:30px;height:30px;padding:0 6px;display:grid;place-items:center;border-radius:15px;border:1px solid var(--border);
+  color:var(--fg-2);text-decoration:none;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;background:var(--surface)}
+nav.steps a[aria-current]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+nav.steps a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.step{display:none;flex-direction:column;gap:10px}
+.step.on{display:flex}
+.count{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin:0}
+h1{font:400 28px/1.15 var(--display);margin:0;text-wrap:balance}
+.line{margin:0;color:var(--fg-2);max-width:62ch}
+.bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--radius);overflow:hidden}
+.seg button{all:unset;cursor:pointer;padding:5px 14px;font-weight:600;font-size:13px;color:var(--fg-2);background:var(--surface)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--surface)}
+.pn{display:flex;gap:6px}
+/* the app window */
+.win{border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:150px minmax(0,1fr)}
+.rail{background:var(--surface-2);padding:10px 8px;display:flex;flex-direction:column;gap:1px;font-weight:600;font-size:13px;border-right:1px solid var(--border)}
+.rail span,.rail a{padding:5px 8px;border-radius:var(--radius);color:var(--fg);text-decoration:none;display:flex;justify-content:space-between;gap:6px;align-items:center}
+.rail .cur{background:var(--accent-soft)}
+.rail .sub{font-weight:400;color:var(--fg-2);padding-left:16px}
+.rail hr{border:0;border-top:1px solid var(--border);width:100%;margin:6px 0}
+.pane{padding:14px 16px;min-width:0;display:flex;flex-direction:column;gap:10px;min-height:340px}
+.pane h2{font:400 20px/1.2 var(--display);margin:0}
+.pane h3{font:400 16px/1.2 var(--display);margin:0}
+.win.solo{grid-template-columns:minmax(0,1fr)}
+@media (max-width:640px){.win{grid-template-columns:minmax(0,1fr)}.rail{display:none}.win.keep .rail{display:flex;border-right:0;border-bottom:1px solid var(--border)}}
+.was,.now{display:none;flex-direction:column;gap:10px;min-width:0}
+[data-view="was"] .was,[data-view="now"] .now{display:flex}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.btn{font:600 13px var(--body);padding:5px 10px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--fg);cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--critical-ink);border-color:var(--critical-ink)}
+.btn.ghost{border-style:dashed;color:var(--fg-2)}
+.btn[disabled]{opacity:.5;cursor:default}
+kbd{white-space:nowrap;font:600 11px var(--body);border:1px solid currentColor;border-radius:4px;padding:0 4px;opacity:.85}
+.in{font:14px var(--body);padding:6px 8px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--fg);min-width:0}
+textarea.in{width:100%;resize:vertical}
+.lab{font-weight:600;font-size:13px}
+.hint{color:var(--fg-3);font-size:13px;margin:0;max-width:60ch}
+.chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--border-strong);border-radius:12px;padding:1px 9px;font-size:12.5px;font-weight:600;background:var(--surface)}
+.chip.time{background:var(--time-soft);border-color:var(--time)}
+.chip.warn{background:var(--warn-soft);border-color:var(--warning)}
+.chip.ok{background:var(--accent-soft);border-color:var(--accent)}
+.panel{border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;gap:8px}
+mark.ins{background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.pen{border-bottom:1px dashed transparent;cursor:text;border-radius:3px;padding:0 2px}
+.pen:hover{border-bottom-color:var(--border-strong);background:var(--surface-2)}
+.pen:hover::after{content:" ✎";color:var(--fg-3);font-size:12px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px}
+.tabs span{padding:5px 12px}
+.tabs .cur{border:1px solid var(--border);border-bottom-color:var(--surface);border-top:2px solid var(--accent);border-radius:6px 6px 0 0;margin-bottom:-1px}
+.empty{color:var(--fg-3);margin:auto;text-align:center}
+/* map */
+.badge{font:700 11px var(--mono);background:var(--mark);color:var(--mark-ink);border-radius:9px;padding:1px 6px}
+.bars{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(40px,1fr) auto;gap:6px 10px;align-items:center;font-size:13px}
+.bars i{display:block;height:12px;background:var(--mark);border:1px solid var(--warning);border-radius:3px}
+.bars b{font-variant-numeric:tabular-nums}
+/* dialog */
+.dlg{border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:9px;max-width:620px;width:100%;margin:6px auto;background:var(--surface)}
+/* list + editor */
+.two{display:grid;grid-template-columns:170px minmax(0,1fr);gap:0;flex:1}
+.two>.col:first-child{border-right:1px solid var(--border);padding-right:10px}
+.two>.col:last-child{padding-left:14px}
+.li{padding:4px 6px;border-radius:var(--radius);font-weight:600;font-size:13.5px}
+.li.cur{background:var(--accent-soft)}
+@media (max-width:520px){.two{grid-template-columns:minmax(0,1fr)}.two>.col:first-child{border:0;padding:0}.two>.col:last-child{padding:10px 0 0}}
+.fld{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 10px;font-size:14px}
+.fld dt{color:var(--fg-2);font-weight:600;font-size:13px}.fld dd{margin:0}
+/* tree */
+.treewrap{display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:12px;flex:1}
+@media (max-width:700px){.treewrap{grid-template-columns:minmax(0,1fr)}}
+.tree{position:relative;background:var(--chart);border:1px solid var(--border);border-radius:var(--radius);height:290px;overflow:hidden}
+.tn{position:absolute;width:118px;border:1px solid var(--border-strong);border-left:4px solid var(--s1);border-radius:4px;background:var(--surface);padding:4px 7px;font-size:11px;line-height:1.3}
+.tn b{display:block;font-size:11.5px}.tn.z{border-left-color:var(--s3)}
+.tn.sel{outline:2px solid var(--accent);outline-offset:1px}
+.tree svg{position:absolute;inset:0;width:100%;height:100%}
+.tree svg path{stroke:var(--border-strong);stroke-width:1.5;fill:none}
+.stub{position:absolute;display:none;font:700 10px var(--body);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:1px 7px;white-space:nowrap;cursor:pointer;z-index:2}
+.tn:hover .stub,.tn.sel .stub{display:block}
+.stub.p{top:-17px;left:50%;transform:translateX(-50%)}
+.stub.c{bottom:-17px;left:50%;transform:translateX(-50%)}
+.stub.s{right:-62px;top:50%;transform:translateY(-50%)}
+.drop{position:absolute;width:150px;display:grid;border:2px solid var(--accent);border-radius:6px;overflow:hidden;font:700 11px var(--body);background:var(--surface)}
+.drop span{padding:5px 8px;border-bottom:1px solid var(--border)}.drop span:last-child{border:0}
+.drop .hot{background:var(--accent-soft)}
+.ghost{position:absolute;opacity:.75;transform:rotate(-3deg);box-shadow:var(--shadow)}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;align-items:center}
+.legend i{display:inline-block;width:26px;height:14px;border:1px solid var(--border-strong);border-radius:3px;vertical-align:middle;margin-right:4px}
+/* outline */
+.board{border:1px solid var(--border-strong);border-radius:var(--radius)}.now .board{margin-bottom:130px}
+.board .hd{display:grid;grid-template-columns:minmax(0,1fr) 250px;background:var(--surface-2);font:700 11px var(--body);letter-spacing:.08em}
+.board .hd span{padding:5px 10px}
+.orow{display:grid;grid-template-columns:minmax(0,1fr) 250px;border-top:1px solid var(--border);position:relative}
+.scenes{padding:8px 12px;border-left:4px solid var(--s1);font-size:13.5px;color:var(--fg-2);min-height:62px}
+.scenes ul{margin:0;padding-left:18px}
+.cbar{margin:5px;border:1px solid var(--s1);background:var(--s1-soft);border-radius:var(--radius);padding:5px 8px;font-size:12.5px;display:flex;gap:6px;align-items:flex-start;position:relative}
+.orow.b .scenes{border-left-color:var(--s2)}.orow.b .cbar{border-color:var(--s2);background:var(--s2-soft)}
+.orow.c .scenes{border-left-color:var(--s3)}.orow.c .cbar{border-color:var(--s3);background:var(--s3-soft)}
+.grip{cursor:grab;color:var(--fg-2);font-weight:700;letter-spacing:-2px;user-select:none}
+.seam{position:absolute;left:0;right:250px;top:-9px;height:18px;display:grid;place-items:center;cursor:row-resize;z-index:1}
+.seam i{width:44px;height:8px;border-radius:4px;background:var(--surface);border:1px solid var(--border-strong);display:block}
+.seam:hover i{background:var(--accent);border-color:var(--accent)}
+.gap{position:absolute;right:60px;top:-11px;z-index:2;font:700 11px var(--body);padding:1px 8px;border-radius:10px;border:1px dashed var(--border-strong);background:var(--surface);color:var(--fg-2);cursor:pointer;opacity:.35}
+.orow:hover .gap,.gap:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
+.menu{border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow);font-size:12.5px;padding:4px;display:flex;flex-direction:column;position:absolute;right:6px;top:30px;z-index:3;min-width:190px}
+.menu span{white-space:nowrap;display:flex;justify-content:space-between;gap:14px;padding:4px 8px;border-radius:4px}
+.menu span:hover{background:var(--surface-2)}
+.more{all:unset;cursor:pointer;margin-left:auto;font-weight:700;padding:0 5px;border-radius:4px}
+@media (max-width:560px){.board .hd,.orow{grid-template-columns:minmax(0,1fr) 140px}.seam{right:140px}}
+/* grid */
+.wg{border:1px solid var(--border);border-radius:var(--radius);background:var(--chart);font-size:12px;overflow:hidden}
+.wgr{display:grid;grid-template-columns:110px minmax(0,1fr);border-top:1px solid var(--grid);min-height:30px}
+.wgr:first-child{border-top:0}
+.wgr>b,.wgr>span{padding:6px 8px;border-right:1px solid var(--border);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.track{position:relative;min-height:30px}
+.track.add{cursor:copy}
+.yr{position:absolute;top:6px;transform:translateX(-50%);color:var(--fg-2);font-weight:700;font-variant-numeric:tabular-nums}
+.era{position:absolute;top:4px;height:22px;border:1px solid var(--border-strong);border-radius:4px;background:var(--surface-2);font-weight:600;padding:2px 6px;overflow:hidden;white-space:nowrap}
+.era.h::before,.era.h::after{content:"";position:absolute;top:3px;bottom:3px;width:4px;border-radius:2px;background:var(--border-strong);cursor:col-resize}
+.era.h::before{left:1px}.era.h::after{right:1px}
+.era.new{border-style:dashed;background:transparent;color:var(--accent);border-color:var(--accent);cursor:pointer}
+.dot{position:absolute;top:10px;width:10px;height:10px;border-radius:50%;background:var(--fg-2);transform:translateX(-50%);cursor:grab}
+.dot.sel{outline:2px solid var(--accent);outline-offset:2px}
+.now-line{position:absolute;top:0;bottom:0;width:2px;background:var(--time)}
+.gh{position:absolute;top:5px;transform:translateX(-50%);pointer-events:none;font:700 11px var(--body);color:var(--accent);border:1px dashed var(--accent);border-radius:10px;padding:1px 7px;background:var(--surface);white-space:nowrap}
+.life{position:absolute;top:8px;height:14px;border-radius:7px;background:var(--s1-soft);border:1px solid var(--s1)}
+.life::before,.life::after{content:"";position:absolute;top:-4px;width:8px;height:20px;border-radius:4px;background:var(--s1);cursor:col-resize}
+.life::before{left:-4px}.life::after{right:-4px}
+.tool{position:absolute;top:-8px;left:16px;display:flex;gap:2px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow);padding:2px;z-index:3;white-space:nowrap}
+.tool span{padding:1px 7px;font-weight:600;border-radius:4px;cursor:pointer}.tool span:hover{background:var(--surface-2)}
+.plus{all:unset;cursor:pointer;color:var(--accent);font-weight:700;padding:0 5px;border-radius:4px}
+/* tables in mocks + build notes */
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-weight:600;color:var(--fg-2);white-space:nowrap}
+details.built{border-top:1px solid var(--border);padding-top:8px}
+details.built summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--fg-2)}
+details.built .scroll{overflow-x:auto;margin-top:6px}
+details.built code{font:12px var(--mono);color:var(--fg-2)}
+.stat{display:inline-flex;gap:6px;align-items:center;font-weight:600;font-size:13px}
+.stat::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--s3)}
+</style>
+
+<div class="page" id="page" data-view="was">
+<nav class="steps" id="steps" aria-label="Steps"></nav>
+
+<!-- 1 -->
+<section class="step" id="map">
+  <p class="count">Step 1 of 13</p>
+  <h1>78 instructions on 20 screens</h1>
+  <p class="line">Each number is text you have to read before the screen makes sense.</p>
+  <div class="win keep" data-mock>
+    <div class="rail">
+      <a href="#entries">Characters <b class="badge">4</b></a>
+      <a href="#tree">Family tree <b class="badge">5</b></a>
+      <a href="#outline">Outline <b class="badge">8</b></a>
+      <a href="#world">World events <b class="badge">9</b></a>
+      <a href="#world">Backstory <b class="badge">2</b></a>
+      <a href="#check">Continuity checker <b class="badge">6</b></a>
+      <span>Questions <b class="chip ok">0</b></span>
+      <a href="#culture">Cultural data <b class="badge">9</b></a>
+      <a href="#queue">Writing tools <b class="badge">1</b></a>
+      <hr>
+      <a href="#queue" class="sub">Review, Trash, Lists, Search <b class="badge">7</b></a>
+      <a href="#backups" class="sub">Backups <b class="badge">5</b></a>
+      <a href="#setup" class="sub">Settings <b class="badge">12</b></a>
+      <hr>
+      <a href="#open" class="sub">Start screen <b class="badge">2</b></a>
+      <a href="#add" class="sub">Add box <b class="badge">5</b></a>
+      <a href="#time" class="sub">Story time <b class="badge">3</b></a>
+    </div>
+    <div class="pane">
+      <h2>The longest things you are asked to read</h2>
+      <div class="bars">
+        <span>World events, how to use the grid</span><i style="width:100%"></i><b>108 words</b>
+        <span>Family tree, two paragraphs</span><i style="width:86%"></i><b>93</b>
+        <span>Outline, drags and keys</span><i style="width:57%"></i><b>62</b>
+        <span>Settings, Test and Replace connection</span><i style="width:45%"></i><b>49</b>
+        <span>Glossary table</span><i style="width:26%"></i><b>28</b>
+        <span>Add box, three key rules</span><i style="width:21%"></i><b>23</b>
+      </div>
+      <h3>What the text is standing in for</h3>
+      <table>
+        <tr><th>31</th><td>A drag, click or key that leaves no visible trace on the screen</td></tr>
+        <tr><th>22</th><td>A paragraph describing the screen you are already looking at</td></tr>
+        <tr><th>14</th><td>A reassurance (nothing is saved yet, this still saves, undo brings it back)</td></tr>
+        <tr><th>11</th><td>A rule about what to type (digits, lowercase, leave blank)</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="step" id="open">
+  <p class="count">Step 2 of 13</p>
+  <h1>Opening the app</h1>
+  <p class="line">It opens the bible you last used, and its name in the corner switches.</p>
+  <div class="win solo" data-mock><div class="pane">
+    <div class="was">
+      <h2>Novel Companion</h2>
+      <p class="hint"><mark class="ins">Choose a bible to open, or make a new one.</mark></p>
+      <div class="panel"><h3>Bibles</h3><span class="hint">No bibles yet</span></div>
+      <div class="panel"><h3>New bible</h3>
+        <span class="lab">Name</span><input class="in" id="o1" aria-label="Name">
+        <span class="lab">ID</span><input class="in" id="o2" aria-label="ID">
+        <p class="hint"><mark class="ins">The ID names the bible in the database. Use up to 40 lowercase letters, digits, dashes, or underscores, starting with a letter or digit.</mark></p>
+        <div><button class="btn primary">Create bible</button></div>
+      </div>
+    </div>
+    <div class="now">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <h2>Novel Companion</h2>
+        <div class="col" style="align-items:flex-end;position:relative">
+          <button class="btn" aria-expanded="true">East Winds (example data) ▾</button>
+          <div class="menu" style="position:static;min-width:260px">
+            <span><b>✓ East Winds</b><i class="hint">open</i></span>
+            <span>Harbor Lights<i class="hint">last week</i></span>
+            <div class="row" style="padding:6px 4px 2px;border-top:1px solid var(--border);margin-top:4px"><input class="in" id="o3" style="flex:1" placeholder="New bible" aria-label="Name of a new bible"><kbd>⏎</kbd></div>
+            <span class="hint" id="o3id" style="padding:0 8px"></span>
+          </div>
+        </div>
+      </div>
+      <div class="two" style="border-top:1px solid var(--border);padding-top:10px">
+        <div class="col"><span class="li cur">Characters</span><span class="li">Family tree</span><span class="li">Outline</span><span class="li">World events</span><hr style="border:0;border-top:1px solid var(--border);width:100%"><span class="li">App ▾</span><span class="li" style="font-weight:400;padding-left:16px">Bibles</span><span class="li" style="font-weight:400;padding-left:16px">Settings</span></div>
+        <div class="col"><h2>Margaret Hale</h2><span class="hint">where you left off</span></div>
+      </div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>App.tsx:101</code>, <code>App.tsx:220</code></td></tr>
+    <tr><th>Built</th><td>Today <code>lastBible</code> in <code>main/connection.ts:48</code> lives in memory only, so every launch shows the chooser. Persist the slug in the app's user data and open it on launch; fall back to the chooser only when it is gone or there is none. The header's bible name becomes the switcher (open another, or type a name to make one; the ID is derived). App, Bibles stays as the full screen for rename and delete.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 3 -->
+<section class="step" id="add">
+  <p class="count">Step 3 of 13</p>
+  <h1>Adding a thought</h1>
+  <p class="line">Sentences sort themselves while you type, and each button shows its key.</p>
+  <div class="win solo" data-mock><div class="pane">
+    <div class="was"><div class="dlg">
+      <div class="row" style="justify-content:space-between"><h2>Add to the bible</h2><button class="btn">Close</button></div>
+      <span class="hint">Story time 2040 (from the current position)</span>
+      <span class="lab">What do you want to add?</span>
+      <textarea class="in" rows="2" id="a1" aria-label="What do you want to add?">Mei moved to Portland in 2031. She hates the rain.</textarea>
+      <p class="hint"><mark class="ins">Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.</mark></p>
+      <p class="hint"><mark class="ins">File it waits for the highlighted chips.</mark> <mark class="ins">No Anthropic key is set. Add one in Settings to ask Claude.</mark></p>
+      <div><button class="btn" disabled>Send it all to Claude <kbd>Alt Enter</kbd></button></div>
+    </div></div>
+    <div class="now"><div class="dlg">
+      <div class="row" style="justify-content:space-between"><h2>Add to the bible</h2><span class="chip time">2040</span></div>
+      <textarea class="in" rows="2" id="a2" aria-label="Add to the bible">Mei moved to Portland in 2031. She hates the rain.</textarea>
+      <div class="col" id="a2chips"></div>
+      <div class="row"><button class="btn primary" id="a2file">File 2 <kbd>⏎</kbd></button><button class="btn">Ask Claude instead <kbd>⌥⏎</kbd></button></div>
+    </div></div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>capture.tsx:56</code>, <code>:1241</code>, <code>:594</code>, <code>:1247</code>, <code>captureChips.tsx:395</code></td></tr>
+    <tr><th>Built</th><td>The router already runs locally: call it on a 300 ms pause instead of on Enter. File button counts what it will file. With no key, the Claude button reads "Add a Claude key" and opens the key field in place.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 4 -->
+<section class="step" id="entries">
+  <p class="count">Step 4 of 13</p>
+  <h1>Editing a character</h1>
+  <p class="line">Every value shows it can be edited, and a new person starts in the list.</p>
+  <div class="win" data-mock data-rail="Characters"><div class="pane">
+    <div class="was"><div class="two">
+      <div class="col"><button class="btn">New character</button><input class="in" id="e1" placeholder="Filter characters" aria-label="Filter characters">
+        <span class="li">Daniel Hale</span><span class="li">Iris Hale-Zhou</span><span class="li">Margaret Hale</span><span class="li">Zhou Lan</span></div>
+      <div class="col"><p class="empty"><mark class="ins">Pick an entry to edit it, or make a new character.</mark></p>
+        <p class="hint"><mark class="ins">Fill in what this entry needs to exist. Every other field is editable once it is made.</mark></p>
+        <p class="hint">Tooltip: <mark class="ins">Double-click or press F2 to rename</mark></p>
+        <p class="hint">Error: <mark class="ins">Needs a year. Write it as digits, for example 2045.</mark></p></div>
+    </div></div>
+    <div class="now"><div class="two">
+      <div class="col"><input class="in" id="e2" placeholder="Find or add a character" aria-label="Find or add a character" value="Noor">
+        <span class="li" style="color:var(--accent)">+ New character "Noor" <kbd>⏎</kbd></span>
+        <span class="li">Noor Zhou</span></div>
+      <div class="col">
+        <h2><span class="pen">Margaret Hale</span></h2>
+        <dl class="fld">
+          <dt>Born</dt><dd><span class="pen">1958</span></dd>
+          <dt>Died</dt><dd><span class="pen">2041</span></dd>
+          <dt>Family</dt><dd><span class="chip">Hale</span> <button class="plus" aria-label="Add a family">+</button></dd>
+          <dt>Lived in</dt><dd><span class="chip">Portland</span> <button class="plus" aria-label="Add a place">+</button></dd>
+          <dt>Voice</dt><dd><span class="pen" style="color:var(--fg-3)">Add how she talks</span></dd>
+        </dl>
+      </div>
+    </div></div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>Workspace.tsx:286</code>, <code>views.tsx:173</code>, <code>:419</code>, <code>InlineName.tsx:92</code>, <code>editable/model.ts:75-112</code></td></tr>
+    <tr><th>Built</th><td>The screen opens on the last entry you had open. One edit gesture everywhere: single click, with the hover pencil from <code>Editable</code>. Year and number boxes take digits only, so their error messages cannot occur.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 5 -->
+<section class="step" id="tree">
+  <p class="count">Step 5 of 13</p>
+  <h1>Growing the family tree</h1>
+  <p class="line">A person offers parent, partner and child right where you would add them.</p>
+  <div class="win" data-mock data-rail="Family tree"><div class="pane">
+    <div class="was"><div class="treewrap">
+      <div class="col"><div class="row"><button class="btn primary">Add person</button><button class="btn">Tidy layout</button><button class="btn">Legend</button></div>
+        <div class="tree">
+          <svg viewBox="0 0 400 290" preserveAspectRatio="none"><path d="M100 78v40M40 118h120M40 118v30M160 118v30"/></svg>
+          <div class="tn" style="left:8%;top:38px"><b>Margaret Hale</b>1958 to 2041 · age 82</div>
+          <div class="tn" style="left:2%;top:150px"><b>Ruth Hale</b>1990 to 2067 · age 50</div>
+          <div class="tn" style="left:34%;top:150px"><b>Daniel Hale</b>1985 · age 55</div>
+        </div>
+        <p class="hint"><mark class="ins">Drag a person to move them. Drop them on someone to make them that person's parent, child or partner. Keys on a person: Enter or Space collapses or expands their branch when they have one, and opens the inspector when they do not. I opens the inspector for anyone. Alt with an arrow moves them one slot.</mark></p>
+      </div>
+      <div class="col"><span class="count">Inspector</span>
+        <p class="hint"><mark class="ins">Add person above the tree starts someone new. Pick a person in the tree to edit them here. Drag a person to move them, and drop them on someone to make them that person's parent, child or partner.</mark></p>
+        <p class="hint"><mark class="ins">Warnings never block saving. The one thing the tree refuses is a person becoming their own ancestor.</mark></p>
+        <p class="hint"><mark class="ins">Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.</mark></p>
+      </div>
+    </div></div>
+    <div class="now"><div class="treewrap">
+      <div class="col">
+        <div class="tree">
+          <svg viewBox="0 0 400 290" preserveAspectRatio="none"><path d="M100 78v40M40 118h120M40 118v30M160 118v30"/></svg>
+          <div class="tn" style="left:8%;top:38px"><b>Margaret Hale</b>1958 to 2041 · age 82<span class="stub p">+ parent</span><span class="stub s">+ partner</span><span class="stub c">+ child</span></div>
+          <div class="tn" style="left:2%;top:150px"><b>Ruth Hale</b>1990 to 2067 · age 50<span class="stub p">+ parent</span><span class="stub s">+ partner</span><span class="stub c">+ child</span></div>
+          <div class="tn sel" style="left:34%;top:150px"><b>Daniel Hale</b>1985 · age 55<span class="stub p">+ parent</span><span class="stub s">+ partner</span><span class="stub c">+ child</span></div>
+          <div class="drop" style="right:4%;top:40px"><span style="background:var(--s3-soft)">Zhou Lan 周兰</span><span>as her parent</span><span class="hot">as her partner</span><span>as her child</span></div>
+          <div class="tn ghost" style="right:20%;top:165px"><b>Tomas Reyes</b>2030 · age 10</div>
+        </div>
+        <div class="legend"><span><i style="border-style:dashed;opacity:.5"></i>not born yet</span><span><i style="border-width:3px"></i>dead by 2040</span><span><i style="border-style:dotted"></i>birth unknown</span></div>
+      </div>
+      <div class="col"><h3><span class="pen">Daniel Hale</span></h3>
+        <dl class="fld" style="grid-template-columns:70px minmax(0,1fr)"><dt>Born</dt><dd><span class="pen">1985</span></dd><dt>Parents</dt><dd><span class="chip">Margaret</span> <span class="chip">Peter</span></dd><dt>Partner</dt><dd><span class="chip">Zhou Lan</span></dd></dl>
+      </div>
+    </div></div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>TreeView.tsx:998</code>, <code>:1001</code>, <code>:1055</code>, <code>:1075</code>, <code>:738</code></td></tr>
+    <tr><th>Built</th><td>Three stubs on hover and selection open the existing add-relative form. A dragged person splits the target into three labelled drop zones. The legend sits under the tree as drawn swatches. Tidy layout runs at once as an undo step. The inspector appears only with a selection.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 6 -->
+<section class="step" id="outline">
+  <p class="count">Step 6 of 13</p>
+  <h1>Shaping the outline</h1>
+  <p class="line">Handles, a button in the gap and one menu replace the paragraph.</p>
+  <div class="win" data-mock data-rail="Outline"><div class="pane">
+    <div class="was">
+      <div class="row" style="justify-content:space-between"><h2>Outline</h2><button class="btn ghost">🗑 Trash</button></div>
+      <p class="hint"><mark class="ins">Drag the line between two chapters to move lines from one to the other. Drag a chapter to a new place, or onto the trash to delete it. Add a divider between two chapters to start a new section. Enter adds the next scene, Cmd+] indents, Cmd+[ outdents, and Cmd+Enter starts a new chapter at the line you are on.</mark></p>
+      <div class="board"><div class="hd"><span>SCENES</span><span>CHAPTERS</span></div>
+        <div class="orow"><div class="scenes">- The first scene of this chapter</div><div class="cbar"><b>CH 1</b> The Archivist's Door</div></div>
+        <div class="orow b"><div class="scenes">- The first scene of this chapter</div><div class="cbar"><b>CH 2</b> Two Kitchens</div></div>
+      </div>
+      <p class="hint">Tooltips: <mark class="ins">Drag to move lines between these chapters</mark> · <mark class="ins">Start a new section of chapters here</mark> · <mark class="ins">Drag to move this chapter, or onto the trash to delete it. Up and Down move it, Delete deletes it.</mark> · <mark class="ins">Click or press Enter to rename. Alt+Up and Alt+Down move it.</mark></p>
+    </div>
+    <div class="now">
+      <h2>Outline</h2>
+      <div class="board"><div class="hd"><span>SCENES</span><span>CHAPTERS</span></div>
+        <div class="orow"><div class="scenes"><ul><li>Iris finds the door already open</li><li>The Archivist offers her the ledger</li></ul></div>
+          <div class="cbar"><span class="grip">⋮⋮</span><span><b>CH 1</b> <span class="pen">The Archivist's Door</span></span><button class="more" aria-label="Chapter 1 actions">⋯</button>
+            </div></div>
+        <div class="orow b"><div class="seam" aria-label="Line between chapters 1 and 2"><i></i></div><button class="gap">+ Section</button>
+          <div class="scenes"><ul><li>Lan cooks in Margaret's kitchen</li><li>Daniel calls from the ferry</li><li style="color:var(--fg-3);list-style:'+ '">Next scene</li></ul></div>
+          <div class="cbar"><span class="grip">⋮⋮</span><span><b>CH 2</b> <span class="pen">Two Kitchens</span></span><button class="more" aria-label="Chapter 2 actions">⋯</button></div></div>
+        <div class="orow c"><div class="seam" aria-label="Line between chapters 2 and 3"><i></i></div><button class="gap">+ Section</button>
+          <div class="scenes"><ul><li style="color:var(--fg-3);list-style:'+ '">First scene</li></ul></div>
+          <div class="cbar"><span class="grip">⋮⋮</span><span><b>CH 3</b> <span class="pen">Wedding Weather</span></span><button class="more" aria-label="Chapter 3 actions">⋯</button><div class="menu"><span>Move up <kbd>⌥↑</kbd></span><span>Move down <kbd>⌥↓</kbd></span><span>New chapter at this line <kbd>⌘⏎</kbd></span><span>Indent scene <kbd>⇥</kbd></span><span style="color:var(--critical-ink)">Delete chapter <kbd>⌫</kbd></span></div></div></div>
+      </div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>outline/Scenes.tsx:1120</code>, <code>:1113</code>, <code>:1340</code>, <code>:1382</code>, <code>:1424</code>, <code>:1539</code>, <code>InlineName.tsx:92</code>, <code>Parts.tsx:45</code></td></tr>
+    <tr><th>Built</th><td>A grip on each chapter card and a pill on each seam (row-resize cursor). The trash target appears only while a chapter is being dragged. Tab and Shift+Tab indent alongside Cmd+] and Cmd+[. The chapter menu is where every key is listed.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 7 -->
+<section class="step" id="world">
+  <p class="count">Step 7 of 13</p>
+  <h1>Placing events in time</h1>
+  <p class="line">The grid shows what a click will do before you click.</p>
+  <div class="win" data-mock data-rail="World events"><div class="pane">
+    <div class="was">
+      <h2>World events</h2>
+      <p class="hint"><mark class="ins">Click an empty spot in a row, or a row name, to add an event there. Click a marker, an era, or a title above to edit it under the grid. Drag a marker to change its year, and double-click it or press F2 to rename it. Drag the end of an era to move it, and double-click a gap in the era band to add an era there. From the keyboard, Tab to the markers, Up and Down move between them, Enter opens one, Left and Right change its year, and Shift with Left or Right changes the end year. On an era, Shift with Left or Right moves its start, Shift and Alt with Left or Right its end.</mark></p>
+      <div class="wg">
+        <div class="wgr"><b>Era</b><div class="track"><div class="era" style="left:22%;width:11%">2030s</div><div class="era" style="left:33%;width:11%">2040s</div><div class="era" style="left:55%;width:11%">2060s</div></div></div>
+        <div class="wgr"><span>Geopolitics</span><div class="track"><div class="dot" style="left:28%"></div><div class="dot" style="left:49%"></div><div class="now-line" style="left:33.3%"></div></div></div>
+        <div class="wgr"><span>Margaret Hale</span><div class="track"><div class="life" style="left:0;width:34%;pointer-events:none"></div></div></div>
+      </div>
+      <p class="hint">Lifespan tooltip on Backstory: <mark class="ins">Shift with Left or Right moves the birth a year; Shift and Alt with Left or Right move the death.</mark></p>
+    </div>
+    <div class="now">
+      <h2>World events</h2>
+      <div class="wg" style="overflow:visible">
+        <div class="wgr"><b>&nbsp;</b><div class="track"><span class="yr" style="left:11.1%">2020</span><span class="yr" style="left:33.3%;color:var(--time)">2040</span><span class="yr" style="left:55.5%">2060</span><span class="yr" style="left:77.7%">2080</span></div></div>
+        <div class="wgr"><b>Era</b><div class="track"><div class="era h" style="left:22%;width:11%">2030s</div><div class="era h" style="left:33%;width:11%">2040s</div><div class="era new" style="left:44.5%;width:10%">+ era</div><div class="era h" style="left:55%;width:11%">2060s</div></div></div>
+        <div class="wgr"><span>Geopolitics <button class="plus" aria-label="Add a geopolitics event">+</button></span><div class="track add" data-years><div class="dot" style="left:28%"></div><div class="dot sel" style="left:49%"><div class="tool"><span>‹</span><b style="padding:1px 4px">2054 Trade accord</b><span>›</span><span>✎</span><span style="color:var(--critical-ink)">🗑</span></div></div><div class="now-line" style="left:33.3%"></div></div></div>
+        <div class="wgr"><span>Climate <button class="plus" aria-label="Add a climate event">+</button></span><div class="track add" data-years><div class="dot" style="left:39%"></div><div class="now-line" style="left:33.3%"></div><div class="gh" style="left:70%">+ 2073</div></div></div>
+        <div class="wgr"><span>Margaret Hale</span><div class="track"><div class="life" style="left:0;width:34%"></div></div></div>
+      </div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>timeline/TimelineView.tsx:332</code>, <code>gridShared.tsx:884</code>, <code>:900</code>, <code>backstory/BackstoryGrid.tsx:456</code></td></tr>
+    <tr><th>Built</th><td>In <code>gridShared.tsx</code>, so World events and Backstory both get it: a ghost "+ year" under the pointer on empty track, a "+ era" ghost in every era gap, end handles on eras and lifespans, and a small bar on the selected marker (year back and forward, rename, delete).</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 8 -->
+<section class="step" id="culture">
+  <p class="count">Step 8 of 13</p>
+  <h1>Describing a community</h1>
+  <p class="line">Four intro paragraphs go, and the stepper says what it steps through.</p>
+  <div class="win" data-mock data-rail="Cultural data"><div class="pane">
+    <div class="was">
+      <h2>Cultural data</h2><div class="tabs"><span class="cur">Communities</span><span>Eras</span><span>Places</span><span>Glossary</span></div>
+      <p class="hint"><mark class="ins">What a community is like, and what its people do in each span of years, by age group. Step through the years with Previous and Next; the story year does not move.</mark></p>
+      <div class="row"><span class="in">Portland ▾</span><span class="hint">Rename</span><button class="btn danger">Remove</button></div>
+      <div class="row"><button class="btn">Previous</button><b>2040s</b><button class="btn">Next</button></div>
+      <input class="in" id="c1" aria-label="New line" placeholder="Add a line and press Enter">
+      <p class="hint">Eras: <mark class="ins">The state of the world in the story year's era. Move the year at the top to see another era. Edit a field and leave it to save; each change is one undo step.</mark> <mark class="ins">Their years overlap. This is a flag only; every era still saves.</mark></p>
+      <p class="hint">Places: <mark class="ins">Places sit inside larger places. Each shows its description for the year you pick. Click a name to rename it; Edit opens its parent and its descriptions by year under it.</mark></p>
+      <p class="hint">Glossary: <mark class="ins">Click a value to change it. Hover over the characters or focus them with the keyboard for the meaning.</mark></p>
+    </div>
+    <div class="now">
+      <h2>Cultural data</h2><div class="tabs"><span class="cur">Communities</span><span>Eras <b class="chip warn">2 overlap</b></span><span>Places</span><span>Glossary</span></div>
+      <div class="row" style="justify-content:space-between">
+        <div class="row"><h3><span class="pen">Portland</span> ▾</h3></div>
+        <div class="row"><button class="btn" aria-label="The 2030s">‹ 2030s</button><b class="chip time">2040s</b><button class="btn" aria-label="The 2050s">2050s ›</button></div>
+      </div>
+      <div class="panel"><b>Everyone</b>
+        <span><span class="pen">Flood memorial walk.</span> <span class="pen" style="color:var(--fg-2)">Each January people walk the old waterline with lanterns.</span></span>
+        <div class="row"><input class="in" id="c2" style="flex:1" aria-label="New line for everyone" placeholder="Something everyone in Portland does in the 2040s"><kbd>⏎</kbd></div></div>
+      <div class="panel"><b>Children</b>
+        <div class="row"><input class="in" id="c3" style="flex:1" aria-label="New line for children" placeholder="Something children do"><kbd>⏎</kbd></div></div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>culture.tsx:313</code>, <code>:582</code>, <code>:831</code>, <code>:836</code>, <code>:1089</code>, <code>:1182</code>, <code>:1267</code>, <code>listsScreen.tsx:100</code></td></tr>
+    <tr><th>Built</th><td>Stepper buttons carry the decade they go to; the current one is orange only when it matches the story year. Overlaps become a chip on the Eras tab that opens the list. Places indent under their parent and edit in place like every other value.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 9 -->
+<section class="step" id="time">
+  <p class="count">Step 9 of 13</p>
+  <h1>Setting story time</h1>
+  <p class="line">Finer dates and the strand write each wait behind their own button.</p>
+  <div class="win solo" data-mock><div class="pane">
+    <div class="was"><div class="dlg">
+      <div class="row" style="justify-content:space-between"><span class="count">Story time</span><button class="btn">Close</button></div>
+      <div class="row"><span class="in">2040</span><span class="in" style="color:var(--fg-3)">Month</span><span class="in" style="color:var(--fg-3)">Day</span><button class="btn">-10</button><button class="btn">-1</button><button class="btn">+1</button><button class="btn">+10</button></div>
+      <p class="hint"><mark class="ins">Leave month and day blank to work by year.</mark></p>
+      <span class="count">Anchor by a chapter strand</span>
+      <p class="hint"><mark class="ins">None set. Anchor by a strand to record it.</mark></p>
+      <p class="hint"><mark class="ins">Setting the time never changes an entry. This writes the strand's year only after you approve it.</mark></p>
+    </div></div>
+    <div class="now"><div class="dlg">
+      <div class="row"><button class="btn">‹‹</button><button class="btn">‹</button><span class="in" style="font-weight:700;font-size:18px">2040</span><button class="btn">›</button><button class="btn">››</button><span class="chip">The forties</span><button class="btn ghost">+ month</button></div>
+      <div class="row"><span class="lab">Jump to</span><span class="in">Margaret Hale ▾</span><span class="lab">at age</span><span class="in">82</span></div>
+      <div class="row"><span class="lab">or</span><span class="in">Ch 2, present (2045) ▾</span></div>
+      <div class="row"><button class="btn">Also move that strand to 2040</button></div>
+    </div></div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>timeline/StoryTimeDialog.tsx:385</code>, <code>:472</code>, <code>:484</code>, <code>:203</code>, <code>:217</code></td></tr>
+    <tr><th>Built</th><td>Month and day appear after "+ month". Picking a character or strand moves the year at once. Writing the strand is a separate, plainly named button that only shows when the two years differ.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 10 -->
+<section class="step" id="check">
+  <p class="count">Step 10 of 13</p>
+  <h1>Checking the manuscript</h1>
+  <p class="line">Each button names its result, so the caveats can go.</p>
+  <div class="win" data-mock data-rail="Continuity checker"><div class="pane">
+    <div class="was">
+      <div class="tabs"><span class="cur">Alignment check</span><span>Manuscript</span></div>
+      <p class="hint"><mark class="ins">Compares the manuscript with the bible: structural checks in code, then Claude reads each chapter against its entries and the stored plot.</mark></p>
+      <div class="row"><span class="in">The whole manuscript ▾</span><button class="btn primary">Check alignment</button><button class="btn" disabled>Stop</button></div>
+      <p class="hint">On a finding: <mark class="ins">Changes the bible to match the chapter, every change or none. Nothing in the manuscript changes.</mark></p>
+      <p class="hint">Manuscript tab: <mark class="ins">Chapters are read from your manuscript files. The app never changes a manuscript.</mark> <mark class="ins">The manuscript text is imported, not edited here. Use Re-import.</mark></p>
+      <p class="hint">Ask Claude: <mark class="ins">Claude reads the bible to answer and can suggest changes for the review queue. It never writes prose for the novel.</mark></p>
+    </div>
+    <div class="now">
+      <div class="tabs"><span class="cur">Alignment check</span><span>Manuscript 🔒</span></div>
+      <div class="row"><button class="btn primary">Check</button><span class="in">all 8 chapters ▾</span><span class="lab">against the bible</span></div>
+      <div class="panel"><b>Ch 2 says Lan is 31. The bible says 52 in 2040.</b>
+        <span class="hint">"Lan, thirty-one that spring, ..." · line 14</span>
+        <div class="row"><button class="btn">Chapter is right: set Lan's birth to 2014</button><button class="btn">Bible is right: add a rewrite task</button><button class="btn ghost">Dismiss</button></div></div>
+      <div class="panel"><b>Ch 5 puts Peter at the wedding. He died in 2030.</b>
+        <div class="row"><button class="btn">Chapter is right: 2 bible changes</button><button class="btn">Bible is right: add a rewrite task</button><button class="btn ghost">Dismiss</button></div></div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>sessions/alignment.tsx:864</code>, <code>:310</code>, <code>:636</code>, <code>:271</code>, <code>sessions/manuscript.tsx:49</code>, <code>:273</code>, <code>:371</code>, <code>claude.tsx:576</code></td></tr>
+    <tr><th>Stays</th><td><code>claude.tsx:241</code> "What Claude sends to Anthropic" is a consent notice shown once, not an instruction. It moves to the first Claude use as a single sheet.</td></tr>
+    <tr><th>Built</th><td>Finding buttons state the outcome and the count of changes. Manuscript text gets a lock on the tab and a Re-import button, no read-only sentence.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 11 -->
+<section class="step" id="queue">
+  <p class="count">Step 11 of 13</p>
+  <h1>Review, Trash and Lists</h1>
+  <p class="line">An empty screen says it is empty and stops there.</p>
+  <div class="win" data-mock data-rail="App"><div class="pane">
+    <div class="was">
+      <h2>Review queue</h2>
+      <p class="hint"><mark class="ins">Changes proposed by an import, by Claude, or by a bulk action wait here. Each shows exactly what it would change. Nothing is saved until you approve it.</mark></p>
+      <span>Nothing is waiting for review.</span>
+      <h2>Trash</h2>
+      <p class="hint"><mark class="ins">Deleted entries wait here. Restore one to bring it back as it was. Delete forever removes it for good; undo cannot bring it back.</mark></p>
+      <h2>Lists</h2>
+      <p class="hint"><mark class="ins">Types, communities, regions, age groups, moment kinds, families, and eras. Renaming an item updates every entry that uses it. The order here is the order every list and select shows.</mark></p>
+      <p class="hint">Search: <mark class="ins">Type to search every entry, chapter text and notebook page.</mark> Writing tools: <mark class="ins">Synonyms, rhymes and related words from Datamuse, a free service. It needs an internet connection.</mark></p>
+    </div>
+    <div class="now">
+      <div class="row" style="justify-content:space-between"><h2>Review queue</h2><span class="chip ok">Nothing waiting</span></div>
+      <h2>Trash</h2>
+      <table><tr><td><b>Sam Hale</b> <span class="hint">character · deleted today</span></td><td style="text-align:right;white-space:nowrap"><button class="btn">Restore</button> <button class="btn danger">Delete forever</button></td></tr></table>
+      <h2>Lists</h2>
+      <div class="panel"><b>Communities</b>
+        <div class="row"><span class="grip">⋮⋮</span><span class="pen">Portland</span><span class="hint">on 2 entries</span></div>
+        <div class="row"><span class="grip">⋮⋮</span><span class="pen">Guangzhou</span><span class="hint">on 2 entries</span></div>
+        <div class="row"><input class="in" id="q1" style="flex:1" placeholder="Add a community" aria-label="Add a community"><kbd>⏎</kbd></div></div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>review.tsx:56</code>, <code>views.tsx:531</code>, <code>:650</code>, <code>listsScreen.tsx:100</code>, <code>search.tsx:187</code>, <code>words.tsx:64</code>, <code>culture.tsx:258</code> ("Cmd+Z brings it back" toasts become a toast with an Undo button)</td></tr>
+    <tr><th>Built</th><td>Delete forever keeps its confirm; the consequence is said once, at the moment of the press. Lists drop the Up and Down buttons for the grip, with Alt+arrows from the keyboard.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 12 -->
+<section class="step" id="backups">
+  <p class="count">Step 12 of 13</p>
+  <h1>Backing up</h1>
+  <p class="line">The table explains snapshots, and Restore says what it replaces when you press it.</p>
+  <div class="win" data-mock data-rail="App"><div class="pane">
+    <div class="was">
+      <h2>Backups</h2>
+      <p class="hint"><mark class="ins">A snapshot is a full copy of this bible saved on this computer. The app takes one on the first launch of each day, before every import, restore, and bulk change, and whenever you ask.</mark></p>
+      <div class="row"><button class="btn primary">Take a snapshot now</button><span class="lab">Snapshots to keep</span><span class="in">30</span><button class="btn">Save the number</button></div>
+      <p class="hint"><mark class="ins">Restoring replaces every entry, list, and setting in this bible. A snapshot of the present state is taken first, so you can go back.</mark></p>
+      <p class="hint"><mark class="ins">Writes every entry, list, and setting to one JSON file. The file can be loaded into an empty bible with nothing lost.</mark></p>
+      <p class="hint"><mark class="ins">Choose a file made by Export. It becomes a new bible, so nothing here is replaced.</mark></p>
+    </div>
+    <div class="now">
+      <div class="row" style="justify-content:space-between"><h2>Backups</h2><div class="row"><button class="btn primary">Snapshot now</button><button class="btn">Export…</button><button class="btn">Import as a new bible…</button></div></div>
+      <table>
+        <tr><th>Taken</th><th>Why</th><th>Entries</th><th></th></tr>
+        <tr><td>Today 9:46 AM</td><td>First launch of the day</td><td>212</td><td><button class="btn">Restore</button></td></tr>
+        <tr><td>Yesterday 4:12 PM</td><td>Before an import</td><td>198</td><td><button class="btn">Restore</button></td></tr>
+      </table>
+      <div class="panel" style="border-color:var(--border-strong)"><b>Replace East Winds with Yesterday 4:12 PM?</b>
+        <span class="hint">14 entries added since then go. Today's state is snapshotted first.</span>
+        <div class="row"><button class="btn danger">Replace</button><button class="btn">Cancel</button></div></div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>backups.tsx:60</code>, <code>:191</code>, <code>:199</code>, <code>:261</code>, <code>settings.tsx:133</code></td></tr>
+    <tr><th>Built</th><td>The confirm counts what the restore would undo. "Snapshots to keep" saves on blur and moves to Settings. Export and Import open the file dialog directly.</td></tr>
+  </table></div></details>
+</section>
+
+<!-- 13 -->
+<section class="step" id="setup">
+  <p class="count">Step 13 of 13</p>
+  <h1>Connecting Claude and MongoDB</h1>
+  <p class="line">Paste, and the field tests itself.</p>
+  <div class="win" data-mock data-rail="App"><div class="pane">
+    <div class="was">
+      <h2>Settings</h2>
+      <div class="panel"><b>Anthropic API key</b><span>No key is stored. Claude features need one.</span>
+        <input class="in" id="s1" placeholder="sk-ant-..." aria-label="Paste your key"><div><button class="btn primary" disabled>Save key</button></div>
+        <p class="hint"><mark class="ins">Create a key in the Anthropic Console under API keys. The app keeps it in the keychain and shows only its start and end.</mark></p></div>
+      <p class="hint"><mark class="ins">Test connection checks the string you pasted, or the stored one when the box is empty, and saves nothing. Replace connection tests the new string first and switches to it only when it connects. The app shows only the start of the string and the end of the cluster address.</mark></p>
+      <p class="hint"><mark class="ins">Leave a box empty, or press Reset, to go back to the default shown beside it.</mark> <mark class="ins">How long a box waits after the last key before it saves. At most 750, so a forced quit loses less than a second of typing.</mark></p>
+      <p class="hint"><mark class="ins">What Claude is told before your material. Edit a box and leave it to save. The shared rules under each box are always sent and cannot be changed.</mark></p>
+    </div>
+    <div class="now">
+      <h2>Settings</h2>
+      <div class="panel"><div class="row" style="justify-content:space-between"><b>Claude</b><span class="stat" id="s2stat" hidden>Connected · sk-ant-…4f2a</span></div>
+        <div class="row"><input class="in" id="s2" style="flex:1" placeholder="Paste an Anthropic key" aria-label="Paste an Anthropic key"><a class="btn" href="https://console.anthropic.com/settings/keys">Get a key ↗</a></div></div>
+      <div class="panel"><div class="row" style="justify-content:space-between"><b>MongoDB</b><span class="stat">Connected · cluster0…mongodb.net</span></div>
+        <div class="row"><input class="in" id="s3" style="flex:1" placeholder="Paste a new connection string to switch" aria-label="MongoDB connection string"></div></div>
+      <div class="panel"><b>World window</b>
+        <div class="row"><span class="in">3</span><span class="lab">years back,</span><span class="in">1</span><span class="lab">ahead</span><button class="btn ghost" aria-label="Reset to 3 and 1">↺ 3, 1</button></div></div>
+    </div>
+  </div></div>
+  <details class="built"><summary>How this is built</summary><div class="scroll"><table>
+    <tr><th>Goes</th><td><code>settings.tsx:253</code>, <code>:467</code>, <code>:70</code>, <code>settingsGroups.tsx:63-108</code>, <code>:132</code>, <code>:221</code>, <code>:290</code>, <code>:499</code></td></tr>
+    <tr><th>Built</th><td>A pasted key or string is tested at once and stored only when it connects, with the result as a status dot. Reset shows the value it restores and appears only on a changed setting. Save delay and version interval leave the screen (fixed defaults). First run on another Mac reuses the same paste field: <code>docs/RUN-ON-ANOTHER-MAC.md</code> shrinks to "open the DMG".</td></tr>
+  </table></div></details>
+</section>
+
+<div class="bar">
+  <div class="seg" id="seg" role="group" aria-label="Which version"><button id="vWas" aria-pressed="true">Today</button><button id="vNow" aria-pressed="false">Proposed</button></div>
+  <div class="pn"><button class="btn" id="prev">← Previous</button><button class="btn primary" id="next">Next →</button></div>
+</div>
+</div>
+
+<script>
+(function(){
+  var page=document.getElementById('page'),steps=[].slice.call(document.querySelectorAll('.step')),nav=document.getElementById('steps');
+  var RAIL=['Characters','Family tree','Outline','World events','Backstory','Continuity checker','Questions','Cultural data','Writing tools'];
+  document.querySelectorAll('.win[data-rail]').forEach(function(w){
+    var r=document.createElement('div');r.className='rail';var cur=w.getAttribute('data-rail');
+    r.innerHTML=RAIL.map(function(n){return '<span'+(n===cur?' class="cur"':'')+'>'+n+'</span>'}).join('')+'<hr><span'+(cur==='App'?' class="cur"':'')+'>App ▾</span>';
+    w.insertBefore(r,w.firstChild);
+  });
+  steps.forEach(function(s,i){var a=document.createElement('a');a.href='#'+s.id;a.textContent=i+1;a.title=s.querySelector('h1').textContent;nav.appendChild(a)});
+  var seg=document.getElementById('seg'),bar=seg.parentNode;
+  function idx(){var h=location.hash.slice(1),i=steps.findIndex(function(s){return s.id===h});return i<0?0:i}
+  function show(){var i=idx();steps.forEach(function(s,j){s.classList.toggle('on',j===i)});
+    [].forEach.call(nav.children,function(a,j){if(j===i)a.setAttribute('aria-current','step');else a.removeAttribute('aria-current')});
+    document.getElementById('prev').disabled=i===0;document.getElementById('next').disabled=i===steps.length-1;
+    seg.hidden=i===0;
+    var s=steps[i];s.insertBefore(bar,s.querySelector('.win'));}
+  function go(d){var i=Math.max(0,Math.min(steps.length-1,idx()+d));location.hash=steps[i].id}
+  function view(v){page.setAttribute('data-view',v);document.getElementById('vWas').setAttribute('aria-pressed',v==='was');document.getElementById('vNow').setAttribute('aria-pressed',v==='now')}
+  document.getElementById('prev').onclick=function(){go(-1)};document.getElementById('next').onclick=function(){go(1)};
+  document.getElementById('vWas').onclick=function(){view('was')};document.getElementById('vNow').onclick=function(){view('now')};
+  addEventListener('hashchange',show);
+  addEventListener('keydown',function(e){if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+    if(e.key==='ArrowRight')go(1);else if(e.key==='ArrowLeft')go(-1);
+    else if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();view(page.getAttribute('data-view')==='was'?'now':'was')}});
+  show();
+
+  /* Add box: sentences sort as you type */
+  var a2=document.getElementById('a2'),chips=document.getElementById('a2chips'),file=document.getElementById('a2file');
+  function esc(t){return t.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+  function route(){var ss=(a2.value.match(/[^.!?\n]+[.!?]?/g)||[]).map(function(s){return s.trim()}).filter(Boolean);
+    chips.innerHTML=ss.map(function(s){var y=s.match(/\b(1[89]|20|21)\d\d\b/),q=/\?$/.test(s);
+      var where=q?'Open question':y?'Backstory · '+y[0]:/\b(custom|festival|everyone|people)\b/i.test(s)?'Cultural data':'Character note';
+      return '<div class="row"><span class="chip '+(q?'warn':'ok')+'">'+where+' ▾</span><span class="hint">'+esc(s)+'</span></div>'}).join('');
+    file.firstChild.textContent=ss.length?'File '+ss.length+' ':'File ';file.disabled=!ss.length}
+  a2.addEventListener('input',route);route();
+
+  /* New bible: the ID writes itself */
+  var o3=document.getElementById('o3'),o3id=document.getElementById('o3id');
+  o3.addEventListener('input',function(){o3id.textContent=o3.value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)});
+
+  /* Grid: the ghost shows what a click adds */
+  document.querySelectorAll('.track[data-years]').forEach(function(t){
+    var g=t.querySelector('.gh');
+    function at(e){var r=t.getBoundingClientRect(),p=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));return {p:p*100,y:Math.round(2010+p*90)}}
+    t.addEventListener('mousemove',function(e){if(e.target!==t&&!e.target.classList.contains('now-line')){if(g)g.hidden=true;return}
+      if(!g){g=document.createElement('div');g.className='gh';t.appendChild(g)}var a=at(e);g.hidden=false;g.style.left=a.p+'%';g.textContent='+ '+a.y});
+    t.addEventListener('mouseleave',function(){if(g)g.hidden=true});
+    t.addEventListener('click',function(e){if(e.target!==t)return;var d=document.createElement('div');d.className='dot';d.style.left=at(e).p+'%';d.title=at(e).y;t.appendChild(d)});
+  });
+
+  /* Settings: a pasted key tests itself */
+  var s2=document.getElementById('s2'),st=document.getElementById('s2stat');
+  s2.addEventListener('input',function(){st.hidden=s2.value.trim().length<8});
+})();
+</script>
