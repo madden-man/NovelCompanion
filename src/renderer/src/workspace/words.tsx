@@ -13,7 +13,7 @@ type Shown = { kind: WordKind; word: string; results: WordResult[] };
  * the next. The request goes through main (the renderer has no network).
  */
 export function WritingToolsView() {
-  const ids = { word: useId(), kind: useId(), hint: useId() };
+  const ids = { word: useId(), kind: useId() };
   const [word, setWord] = useState('');
   const [kind, setKind] = useState<WordKind>('synonyms');
   const [shown, setShown] = useState<Shown | null>(null);
@@ -25,7 +25,6 @@ export function WritingToolsView() {
   const lookup = async (w: string, k: WordKind) => {
     const text = w.trim();
     if (!text) {
-      setError('Type a word first.');
       input.current?.focus();
       return;
     }
@@ -55,15 +54,10 @@ export function WritingToolsView() {
     void lookup(next, kind);
   };
 
-  const info = kindInfo(kind);
   const shownInfo = shown ? kindInfo(shown.kind) : null;
 
   return (
     <section className="stack writing-tools" aria-label="Writing tools" data-testid="writing-tools">
-      <p className="lede">
-        Synonyms, rhymes and related words from Datamuse, a free service. It needs an internet
-        connection.
-      </p>
       <form className="words-form" onSubmit={submit} aria-label="Look up a word">
         <div className="field words-word">
           <label htmlFor={ids.word}>Word</label>
@@ -74,7 +68,6 @@ export function WritingToolsView() {
             maxLength={80}
             autoComplete="off"
             spellCheck={false}
-            aria-describedby={ids.hint}
             onChange={(e) => setWord(e.target.value)}
           />
         </div>
@@ -88,13 +81,10 @@ export function WritingToolsView() {
             ))}
           </select>
         </div>
-        <button type="submit" className="btn primary" disabled={busy}>
+        <button type="submit" className="btn primary" disabled={busy || !word.trim()}>
           Look up
         </button>
       </form>
-      <p className="words-hint" id={ids.hint}>
-        {info.hint}
-      </p>
       {error && (
         <p className="callout crit" role="alert" data-testid="words-error">
           {error}
@@ -113,8 +103,7 @@ export function WritingToolsView() {
             </h3>
             {shown.results.length === 0 ? (
               <p className="example-note" data-testid="words-empty">
-                Datamuse has nothing for {shown.word} under {shownInfo.label.toLowerCase()}. Try
-                another lookup or a simpler form of the word.
+                Datamuse has nothing for {shown.word} under {shownInfo.label.toLowerCase()}.
               </p>
             ) : shown.kind === 'definition' ? (
               <Definitions results={shown.results} />
@@ -134,12 +123,7 @@ function Results(props: { shown: Shown; syllables: boolean; onFollow: (word: str
     <ul className="words-results" data-testid="words-results">
       {shown.results.map((r) => (
         <li key={r.word} className="words-result" data-word={r.word}>
-          <button
-            type="button"
-            className="words-chip"
-            title={`Look up ${r.word}`}
-            onClick={() => props.onFollow(r.word)}
-          >
+          <button type="button" className="words-chip" onClick={() => props.onFollow(r.word)}>
             {r.word}
           </button>
           {(props.syllables && r.syllables !== null) || r.partsOfSpeech.length > 0 ? (
@@ -165,8 +149,7 @@ function Definitions(props: { results: WordResult[] }) {
   if (entries.length === 0) {
     return (
       <p className="example-note" data-testid="words-empty">
-        Datamuse has no definition for this word. Check the spelling, or try a simpler form of the
-        word.
+        Datamuse has no definition for this word.
       </p>
     );
   }

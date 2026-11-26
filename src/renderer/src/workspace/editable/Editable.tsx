@@ -31,6 +31,7 @@ import {
   parseText,
   parseYear,
   shownText,
+  typedNumber,
 } from './model';
 import type { AddedItem, EditableOption, Parsed, SaveInfo } from './model';
 import './editable.css';
@@ -180,9 +181,9 @@ function parse(p: EditableKindProps, text: string, label: string): Parsed<unknow
     case 'rich':
       return parseText(text, p.allowEmpty ?? true, label);
     case 'year':
-      return parseYear(text, p.allowEmpty ?? false);
+      return parseYear(text, p.allowEmpty ?? false, label);
     case 'number':
-      return parseNumber(text, p);
+      return parseNumber(text, p, label);
     case 'date':
       return parseDate(text, p.dateBox ?? 'death');
     case 'select':
@@ -426,7 +427,7 @@ export function Editable(props: EditableProps) {
     }
     dispatch({
       type: 'failed',
-      message: `${added.label} was made, but the field did not take it. Press Enter to try again.`,
+      message: `${added.label} was made, but the field did not take it.`,
     });
   };
 
@@ -509,6 +510,7 @@ export function Editable(props: EditableProps) {
         autoComplete="off"
         spellCheck={!inputProps.numeric}
         inputMode={inputProps.numeric ? 'numeric' : undefined}
+        maxLength={kind === 'year' ? 6 : undefined}
         size={1}
         aria-label={inputProps.ariaLabel}
         aria-invalid={error ? true : undefined}
@@ -619,7 +621,7 @@ export function Editable(props: EditableProps) {
       value: text,
       onChange: (v) => dispatch({ type: 'label', label: v }),
       ariaLabel: `Name of the new item for ${label}`,
-      placeholder: 'Name the new item',
+      placeholder: 'New item name',
       onKeyDown: (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -674,7 +676,13 @@ export function Editable(props: EditableProps) {
   } else if (open) {
     body = sizedInput({
       value: draft,
-      onChange: (v) => {
+      onChange: (typed) => {
+        // A57: a year or number box takes only what its kind can read.
+        const v =
+          props.kind === 'year' || props.kind === 'number'
+            ? typedNumber(props.kind, typed, props.kind === 'number' ? props : {})
+            : typed;
+        if (v === null) return;
         setDraft(v);
         if (error) setError(null);
         if (saveState === 'error') setSaveState('idle');
@@ -824,7 +832,7 @@ function ChipRow(props: {
         <span className="editable-combo">
           <span
             className="editable-sizer"
-            data-value={text || (naming ? 'Name the new item' : 'Type to find')}
+            data-value={text || (naming ? 'New item name' : label)}
           >
             <input
               className="editable-input"
@@ -837,7 +845,7 @@ function ChipRow(props: {
                 naming ? `Name of the new item for ${label}` : (props.pickerLabel ?? addText)
               }
               aria-describedby={props.errorId}
-              placeholder={naming ? 'Name the new item' : 'Type to find'}
+              placeholder={naming ? 'New item name' : label}
               ref={inputRef}
               autoComplete="off"
               size={1}

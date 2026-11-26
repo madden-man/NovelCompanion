@@ -89,8 +89,18 @@ interface Undo {
   canUndo: boolean;
   canRedo: boolean;
   history: { undo: UndoCommand[]; redo: UndoCommand[] };
-  /** The last thing undo or redo did, or why it could not. */
+  /** The last thing undo or redo did, or why it could not, or the last `toast`. */
   notice: string | null;
+  /** A57: true while the notice is a toast that offers Undo; `UndoNotice` draws the button. */
+  noticeUndo: boolean;
+  /**
+   * A57: say what was just done in the status bar, with an Undo button that
+   * steps the history back once (in place of "Cmd+Z brings it back" sentences).
+   * Call it after `record`: a later `record` takes the button away, so it never
+   * undoes a different step from the one the toast names. `undo: false` shows
+   * the words alone.
+   */
+  toast(text: string, opts?: { undo?: boolean }): void;
   /** Editors register a flush so a pending autosave lands before an undo. */
   registerFlush(fn: () => Promise<void>): () => void;
   /** Write every pending autosave now, for example before the app closes. */
@@ -122,7 +132,16 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
     canRedo: false,
     history: { undo: [] as UndoCommand[], redo: [] as UndoCommand[] },
   }));
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNoticeText] = useState<{ text: string; undo: boolean } | null>(null);
+  const setNotice = useCallback(
+    (text: string | null) => setNoticeText(text === null ? null : { text, undo: false }),
+    [],
+  );
+  const toast = useCallback(
+    (text: string, opts?: { undo?: boolean }) =>
+      setNoticeText({ text, undo: (opts?.undo ?? true) && manager.current.stack.canUndo }),
+    [],
+  );
   const refresh = useCallback(() => {
     const s = manager.current.stack;
     setSnapshot({ canUndo: s.canUndo, canRedo: s.canRedo, history: s.history() });
@@ -131,6 +150,8 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
   const record = useCallback(
     (cmd: UndoCommand) => {
       manager.current.record(cmd);
+      // A toast's Undo names the step before this one; it goes, the words stay.
+      setNoticeText((n) => (n?.undo ? { text: n.text, undo: false } : n));
       refresh();
     },
     [refresh],
@@ -156,7 +177,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
       });
       return busy.current;
     },
-    [flushAll, refresh],
+    [flushAll, refresh, setNotice],
   );
 
   /** Undo typing in the focused field when it has unsaved typing; true when it did. */
@@ -254,15 +275,41 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
       undo: () => step('undo'),
       redo: () => step('redo'),
       ...snapshot,
-      notice,
+      notice: notice?.text ?? null,
+      noticeUndo: notice?.undo ?? false,
+      toast,
       registerFlush,
       flush: flushAll,
       markSaved,
     }),
-    [record, step, notice, registerFlush, flushAll, markSaved, snapshot],
+    [record, step, notice, toast, registerFlush, flushAll, markSaved, snapshot],
   );
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;
+}
+
+/**
+ * A57: the status bar's notice: what the last undo, redo or toast said, and
+ * for a toast an Undo button with its key shown on it.
+ */
+export function UndoNotice() {
+  const undo = useUndo();
+  if (!undo.notice) return null;
+  return (
+    <>
+      <span data-testid="undo-notice">{undo.notice}</span>
+      {undo.noticeUndo && (
+        <button
+          type="button"
+          className="btn small"
+          data-testid="undo-notice-undo"
+          onClick={() => void undo.undo()}
+        >
+          Undo <kbd>Cmd Z</kbd>
+        </button>
+      )}
+    </>
+  );
 }
 
 export function useUndo(): Undo {

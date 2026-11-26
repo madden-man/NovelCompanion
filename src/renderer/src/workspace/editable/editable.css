@@ -57,6 +57,54 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* A57: a pencil beside the value on hover and keyboard focus says it edits on a click.
+   It takes no room, so nothing moves when it shows, and hides while the saved tick shows. */
+.editable-inline > .editable-text,
+.editable-labelled > .editable-text,
+.editable-block > .editable-text {
+  position: relative;
+}
+.editable > .editable-text::after {
+  content: '\270E';
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 3px;
+  font-family: var(--font-body);
+  font-size: 0.8em;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.editable-block > .editable-text::after {
+  left: auto;
+  right: 4px;
+  top: 4px;
+}
+.editable > .editable-text:hover::after,
+.editable > .editable-text:focus-visible::after {
+  opacity: 1;
+}
+.editable[data-save-state='saved'] > .editable-text::after,
+.editable.is-disabled > .editable-text::after {
+  display: none;
+}
+.editable-inline > .editable-text:focus-visible,
+.editable-labelled > .editable-text:focus-visible {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .editable > .editable-text::after {
+    transition: none;
+  }
+}
 .editable.is-disabled .editable-text {
   cursor: default;
 }

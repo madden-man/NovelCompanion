@@ -278,6 +278,8 @@ export function TrashControls(props: {
     try {
       await call('entry.delete', { collection, id });
       undo.record(deleteCommand(collection, id, title));
+      // A57: the status bar says it, with Undo.
+      undo.toast(`Moved ${title} to the trash.`);
       setConfirmDelete(false);
       props.onChanged();
     } catch (e) {
@@ -404,8 +406,8 @@ export function EntryPane(props: {
   const warningCount = ed.warnings.length > 0 && (
     <span className="chip warn-chip" data-testid="warning-count">
       {ed.warnings.length === 1
-        ? '1 field has a warning. It still saved.'
-        : `${ed.warnings.length} fields have warnings. They still saved.`}
+        ? '1 field has a warning.'
+        : `${ed.warnings.length} fields have warnings.`}
     </span>
   );
 
@@ -453,7 +455,7 @@ export function EntryPane(props: {
         </header>
         {inTrash && (
           <p className="callout warn" role="status">
-            This entry is in the trash. Restore it to bring it back.
+            This entry is in the trash.
           </p>
         )}
         {offerWritten && props.onWritten && (
@@ -623,14 +625,14 @@ export function EmbeddedEditor(props: {
       </header>
       {inTrash && (
         <p className="callout warn" role="status">
-          This entry is in the trash. Restore it to bring it back.
+          This entry is in the trash.
         </p>
       )}
       {ed.warnings.length > 0 && (
         <p className="callout warn" data-testid="warning-count">
           {ed.warnings.length === 1
-            ? '1 field has a warning. It still saved.'
-            : `${ed.warnings.length} fields have warnings. They still saved.`}
+            ? '1 field has a warning.'
+            : `${ed.warnings.length} fields have warnings.`}
         </p>
       )}
       {props.trash !== false && (

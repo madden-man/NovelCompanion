@@ -1,6 +1,7 @@
 /**
  * The Lists screen (ED-8, A47 IP-8 to IP-12): every list the bible keeps, each
- * item a row of fields. Items move with a drag or the Up and Down buttons, a
+ * item a row of fields. Items move by their grip, with a drag or Alt+Up and
+ * Alt+Down on the focused row (A57), a
  * hierarchical list takes a parent in place, a name renames on Enter, moment
  * kinds carry a colour, its contrast on the grid, and a weight (A51), age
  * groups their ages, families their colour, eras their years. Each change is
@@ -32,9 +33,11 @@ import { useStore } from './data';
 import { useUndo } from './undo';
 import { Editable, EntryEditable, mergeCommands, saveEntryField, useListAddNew } from './editable';
 import type { SaveInfo } from './editable';
+import { typedNumber } from './editable/model';
 import { ListSelect } from './listSelect';
 import { ColourBox } from './colourBox';
 import './vocab.css';
+import './entries.css';
 
 type Item = WireList['items'][number];
 type Note = { text: string; bad: boolean } | null;
@@ -96,10 +99,6 @@ export function ListsView() {
   return (
     <section className="ws-wide stack" aria-labelledby="lists-title" data-testid="lists-view">
       <h2 id="lists-title">Lists</h2>
-      <p className="lede">
-        Types, communities, regions, age groups, moment kinds, families, and eras. Renaming an item
-        updates every entry that uses it. The order here is the order every list and select shows.
-      </p>
       <div className="lists-grid">
         {lists.map((l) =>
           l._id === 'families' ? (
@@ -136,7 +135,7 @@ const usageText = (n: number) => (n === 1 ? 'used once' : `used ${n} times`);
 
 const lookOf = (i: Item): ItemLook => ({ color: i.color ?? null, extra: { ...i.extra } });
 
-/** One stored list: rows of fields, a drag handle and Up and Down on each, an add row at the foot. */
+/** One stored list: rows of fields, a grip on each that drags or takes Alt+arrows, an add row at the foot. */
 function ListPanel({ list }: { list: WireList }) {
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -150,16 +149,12 @@ function ListPanel({ list }: { list: WireList }) {
   const asDoc = { _id: list._id, label: list.label, items: list.items };
   const addParent = useListAddNew(list._id);
   const listRef = useRef<HTMLUListElement>(null);
-  /** After a move by button, the focus stays on that button of the same item (or its twin at an end). */
+  /** After a move from the keyboard, the focus stays on the moved item's grip (A57). */
   const [moved, setMoved] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
   useEffect(() => {
     if (!moved || !listRef.current) return;
     const row = listRef.current.querySelector(`[data-item="${CSS.escape(moved.id)}"]`);
-    const same = row?.querySelector<HTMLButtonElement>(`[data-move="${moved.dir}"]`);
-    const other = row?.querySelector<HTMLButtonElement>(
-      `[data-move="${moved.dir === 'up' ? 'down' : 'up'}"]`,
-    );
-    (same && !same.disabled ? same : other)?.focus({ preventScroll: true });
+    row?.querySelector<HTMLElement>('[data-testid="drag-handle"]')?.focus({ preventScroll: true });
   }, [moved, list.items]);
 
   const fail = (e: unknown) => setMessage({ text: plainError(e), bad: true });
@@ -228,6 +223,8 @@ function ListPanel({ list }: { list: WireList }) {
           extra: item.extra,
         }),
       );
+      // A57: the status bar says it, with Undo.
+      undo.toast(`Removed ${item.label} from ${list.label}.`);
     } catch (e) {
       fail(e);
     }
@@ -266,6 +263,19 @@ function ListPanel({ list }: { list: WireList }) {
                 key={item.id}
                 className={`vocab-row${over === item.id ? ' drop-target' : ''}${dragging === item.id ? ' dragging' : ''}`}
                 data-item={item.id}
+                onKeyDown={(e) => {
+                  // A57: Alt+Up and Alt+Down move the row from anywhere in it but an open field.
+                  if (!e.altKey || e.metaKey || e.ctrlKey || ro.off) return;
+                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                  if ((e.target as Element).closest('input, select, textarea, [role="textbox"]')) {
+                    return;
+                  }
+                  e.preventDefault();
+                  const dir = e.key === 'ArrowUp' ? 'up' : 'down';
+                  const to = dir === 'up' ? index - 1 : index + 1;
+                  if (to < 0 || to > last) return;
+                  void move(item, to, dir);
+                }}
                 onDragOver={(e) => {
                   if (!dragging) return;
                   e.preventDefault();
@@ -281,8 +291,11 @@ function ListPanel({ list }: { list: WireList }) {
                 <span
                   className="drag-handle"
                   draggable={!ro.off}
-                  title={`Drag to move ${item.label}`}
-                  aria-hidden="true"
+                  role="button"
+                  tabIndex={ro.off ? -1 : 0}
+                  aria-label={`Move ${item.label}`}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  aria-disabled={ro.off || undefined}
                   data-testid="drag-handle"
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = 'move';
@@ -386,26 +399,6 @@ function ListPanel({ list }: { list: WireList }) {
                 <span className="row tight vocab-actions">
                   <button
                     type="button"
-                    className="btn small"
-                    aria-label={`Move ${item.label} up`}
-                    data-move="up"
-                    disabled={index === 0}
-                    onClick={() => void move(item, index - 1, 'up')}
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    className="btn small"
-                    aria-label={`Move ${item.label} down`}
-                    data-move="down"
-                    disabled={index === last}
-                    onClick={() => void move(item, index + 1, 'down')}
-                  >
-                    Down
-                  </button>
-                  <button
-                    type="button"
                     className="btn small danger"
                     aria-label={`Remove ${item.label}`}
                     onClick={() => void remove(item)}
@@ -471,7 +464,7 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
       <input
         id={ids.add}
         value={label}
-        placeholder="New item"
+        placeholder={`Add to ${list.label}`}
         onChange={(e) => setLabel(e.target.value)}
       />
       {hierarchical && (
@@ -496,7 +489,10 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
             className="num"
             inputMode="numeric"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              const v = typedNumber('number', e.target.value, { integer: true, min: 0 });
+              if (v !== null) setFrom(v);
+            }}
           />
           <label htmlFor={ids.to}>To age</label>
           <input
@@ -504,12 +500,20 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
             className="num"
             inputMode="numeric"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              const v = typedNumber('number', e.target.value, { integer: true, min: 0 });
+              if (v !== null) setTo(v);
+            }}
           />
         </>
       )}
-      <button type="submit" className="btn small" disabled={!label.trim()}>
-        Add to {list.label}
+      <button
+        type="submit"
+        className="btn small"
+        aria-label={`Add to ${list.label}`}
+        disabled={!label.trim()}
+      >
+        <kbd>Enter</kbd>
       </button>
     </form>
   );
@@ -525,7 +529,7 @@ function FamiliesPanel({ list }: { list: WireList }) {
       <h3>{list.label}</h3>
       <WriteFieldset className="stack tight">
         {list.items.length === 0 ? (
-          <p className="example-note">No families yet. Make one under All sections, Families.</p>
+          <p className="example-note">No families yet.</p>
         ) : (
           <ul className="list-items vocab-items">
             {list.items.map((item) => (
