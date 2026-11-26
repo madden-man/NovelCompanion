@@ -345,6 +345,19 @@ export function BackstoryGrid(props: {
                   {zh}
                 </span>
               )}
+              {/* A57: the row's "+" adds a moment for them at the story year, as an empty spot does. */}
+              {!props.readOnly && (
+                <button
+                  type="button"
+                  className="wg-plus bs-row-add"
+                  tabIndex={-1}
+                  aria-label={`Add a ${storyYear} moment for ${p.name}`}
+                  data-testid="row-add"
+                  onClick={() => void props.onCreate(p.id, storyYear)}
+                >
+                  +
+                </button>
+              )}
             </div>
             <GridTrack
               layout={layout}
@@ -452,9 +465,6 @@ function Lifespan(props: {
     stored.to === null
       ? `born ${stored.from}, no death on record`
       : `${stored.from} to ${stored.to}`;
-  const keys = props.canEdit
-    ? ' Shift with Left or Right moves the birth a year; Shift and Alt with Left or Right move the death.'
-    : '';
   return (
     <span
       className={`bs-life${shown.side ? ' dragging' : ''}${shown.refused ? ' refused' : ''}`}
@@ -468,7 +478,7 @@ function Lifespan(props: {
       role="group"
       tabIndex={props.tabbable ? 0 : -1}
       aria-label={`Lifespan of ${p.name}, ${years}`}
-      title={`Lifespan of ${p.name}, ${years}.${keys}`}
+      title={`Lifespan of ${p.name}, ${years}`}
       onFocus={props.onFocus}
       onKeyDown={props.onKeyDown}
     >

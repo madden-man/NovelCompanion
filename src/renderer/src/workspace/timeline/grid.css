@@ -280,7 +280,7 @@
   border-radius: 3px;
   background: var(--fg);
   border: 1px solid var(--chart-surface);
-  cursor: ew-resize;
+  cursor: col-resize;
   touch-action: none;
   opacity: 0;
 }
@@ -291,7 +291,7 @@
   right: -1px;
 }
 .wg-era:hover .wg-handle,
-.wg-era:focus-visible .wg-handle,
+.wg-era:focus .wg-handle,
 .wg-era.dragging .wg-handle {
   opacity: 1;
 }
@@ -309,12 +309,13 @@
   top: 0;
   height: 22px;
   box-sizing: border-box;
-  border: 1px dashed transparent;
+  overflow: hidden;
+  border: 1px dashed var(--border-strong);
   border-radius: 4px;
-  cursor: cell;
+  cursor: copy;
 }
 .wg-gap:hover {
-  border-color: var(--border-strong);
+  border-color: var(--fg);
   background: color-mix(in oklab, var(--accent-soft) 50%, transparent);
 }
 .wg-gap:focus-visible {
@@ -355,4 +356,114 @@
   border-radius: 4px;
   box-shadow: var(--shadow);
   white-space: nowrap;
+}
+
+/* a57-grids: what a click will do shows before the click. */
+.wg-gap-text {
+  display: block;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.wg-ghost {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  padding: 0 5px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--surface);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.wg-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wg-plus {
+  flex: none;
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fg);
+  background: var(--surface);
+}
+.wg-label:hover .wg-plus,
+.wg-label:focus-visible .wg-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wg-plus {
+  border-color: var(--fg);
+}
+/* The bar over the selected marker: a year back and forward, rename, delete, each with its key. */
+.wg-bar {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  transform: translate(-50%, calc(-100% - 6px));
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.wg-bar > * {
+  pointer-events: auto;
+}
+.wg-bar-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.wg-bar-btn:hover {
+  background: var(--surface-2);
+}
+.wg-bar-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.wg-bar-btn.danger {
+  color: var(--critical-ink);
+}
+.wg-bar-btn kbd {
+  font-size: 0.7rem;
+  padding: 0 3px;
+}
+.wg-bar-ask {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.wg-bar-error {
+  padding: 0 4px;
+  color: var(--critical-ink);
 }

@@ -613,3 +613,63 @@ test('IP-5 NF-2 by keyboard in both themes: a name link and a birth field are re
     theme0,
   );
 });
+
+test('A57 the dialog carries no instructions; month and day appear after "+ month", and Year only puts them away', async () => {
+  await invoke('storyTime.set', { time: { year: 2040 } });
+  await page.keyboard.press('Meta+t');
+  await expect(dialog()).toBeVisible();
+  for (const gone of [
+    'Leave month and day blank',
+    'None set',
+    'Setting the time never changes an entry',
+    'Enter an age',
+    'no start year yet',
+  ]) {
+    await expect(dialog()).not.toContainText(gone);
+  }
+  await expect(dialog().getByTestId('time-chapter')).toContainText('None');
+  await expect(dialog().getByLabel('Month', { exact: true })).toHaveCount(0);
+  await dialog().getByRole('button', { name: '+ month' }).click();
+  const month = dialog().getByLabel('Month', { exact: true });
+  await expect(month).toBeFocused();
+  await month.fill('3');
+  await expect(dialog().getByTestId('time-now')).toHaveText('2040-03');
+  await dialog().getByLabel('Day', { exact: true }).fill('14');
+  await expect(dialog().getByTestId('time-now')).toHaveText('2040-03-14');
+  await closeDialog();
+  // A time with a month opens with the boxes showing.
+  await page.keyboard.press('Meta+t');
+  await expect(dialog().getByLabel('Month', { exact: true })).toHaveValue('3');
+  await dialog().getByRole('button', { name: 'Year only' }).click();
+  await expect(dialog().getByTestId('time-now')).toHaveText('2040');
+  await expect(dialog().getByLabel('Month', { exact: true })).toHaveCount(0);
+  await expect(dialog().getByRole('button', { name: '+ month' })).toBeVisible();
+  await expect.poll(async () => (await invoke('storyTime.get', {})).time).toEqual({ year: 2040 });
+  await closeDialog();
+});
+
+test('A57 the age box takes digits only and the year moves as it is typed; a strand moves it as it is picked', async () => {
+  await page.keyboard.press('Meta+t');
+  await expect(dialog()).toBeVisible();
+  await dialog().getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
+  const age = dialog().getByLabel('Age', { exact: true });
+  await age.pressSequentially('1x9.');
+  await expect(age).toHaveValue('19');
+  await expect(dialog().getByTestId('time-now')).toHaveText('2050');
+  await expect(dialog().getByTestId('time-note')).toContainText('Iris Hale-Zhou is 19 in 2050');
+  await age.fill('');
+  await expect(dialog().getByTestId('time-now')).toHaveText('2050');
+  await dialog()
+    .getByLabel('Strand')
+    .selectOption({ label: 'Chapter 2: Two Kitchens, backstory (2032)' });
+  await expect(dialog().getByTestId('time-now')).toHaveText('2032');
+  // The strand and the year agree, so there is nothing to move; one year on, there is.
+  await expect(dialog().getByRole('button', { name: /^Also move that strand/ })).toHaveCount(0);
+  await dialog().getByRole('button', { name: 'Forward 1 year' }).click();
+  await expect(
+    dialog().getByRole('button', { name: 'Also move that strand to 2033' }),
+  ).toBeVisible();
+  await dialog().getByRole('button', { name: 'Clear the chapter' }).click();
+  await closeDialog();
+  await invoke('storyTime.set', { time: { year: 2040 } });
+});

@@ -390,7 +390,7 @@
   pointer-events: auto;
 }
 .bs-row:hover .bs-handle,
-.bs-life:focus-visible .bs-handle,
+.bs-life:focus .bs-handle,
 .bs-life.dragging .bs-handle {
   opacity: 1;
 }
@@ -471,4 +471,23 @@
     min-height: 60vh;
     max-height: 60vh;
   }
+}
+
+/* a57-grids: the row's "+" sits at the end of the name cell, over the cell's pick button. */
+.bs-row-add {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.bs-row-add:hover {
+  border-color: var(--fg);
+  background: var(--surface-2);
+}
+.bs-row-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

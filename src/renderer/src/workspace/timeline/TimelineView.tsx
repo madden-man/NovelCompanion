@@ -20,7 +20,7 @@ import {
   yearWindow,
 } from '../../../../shared/domain/worldGrid';
 import type { Zoom } from '../../../../shared/domain/worldGrid';
-import { createCommand, editCommand } from '../../../../shared/domain/undoRunner';
+import { createCommand, deleteCommand, editCommand } from '../../../../shared/domain/undoRunner';
 import { isPlainObject } from '../../../../shared/domain/paths';
 import { useWriteGuard } from '../../connection';
 import { call, plainError } from '../../api';
@@ -194,6 +194,16 @@ export function TimelineView() {
     }
   };
 
+  /** A57: the selected marker's bar moves the event to the trash, one undo step (ED-5). */
+  const trash = async (id: string) => {
+    setError(null);
+    await undo.flush();
+    const title = spans.find((e) => e.id === id)?.title ?? id;
+    await call('entry.delete', { collection: 'worldEvents', id });
+    undo.record(deleteCommand('worldEvents', id, title));
+    setSelected((s) => (s?.collection === 'worldEvents' && s.id === id ? null : s));
+  };
+
   const create = async (n: NewEvent) => {
     setError(null);
     const base = blankEntry(manifests.worldEvents);
@@ -328,15 +338,6 @@ export function TimelineView() {
             {error}
           </p>
         )}
-        <p className="example-note">
-          Click an empty spot in a row, or a row name, to add an event there. Click a marker, an
-          era, or a title above to edit it under the grid. Drag a marker to change its year, and
-          double-click it or press F2 to rename it. Drag the end of an era to move it, and
-          double-click a gap in the era band to add an era there. From the keyboard, Tab to the
-          markers, Up and Down move between them, Enter opens one, Left and Right change its year,
-          and Shift with Left or Right changes the end year. On an era, Shift with Left or Right
-          moves its start, Shift and Alt with Left or Right its end.
-        </p>
         {/* A43: one coverage problem shows as it is; several fold under a count, so the grid stays in view. */}
         {coverage.length === 1 && (
           <p className="callout warn" data-testid="timeline-coverage">
@@ -372,6 +373,7 @@ export function TimelineView() {
             onCreate={create}
             eraEdits={eraEdits}
             onRename={ro.off ? undefined : renameEvent}
+            onDelete={ro.off ? undefined : trash}
           />
         ) : (
           <p aria-live="polite">Loading the categories.</p>

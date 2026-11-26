@@ -106,7 +106,7 @@ export function MomentCreate(props: {
         }}
       >
         <option value="" disabled>
-          Pick the person
+          None
         </option>
         {props.people.map((p) => (
           <option key={p.id} value={p.id}>
