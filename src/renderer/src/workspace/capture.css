@@ -16,11 +16,6 @@
   font-size: 1.05rem;
   line-height: 1.45;
 }
-.capture-hint {
-  margin: 4px 0 0;
-  color: var(--fg-2);
-  font-size: 0.9rem;
-}
 .capture-sent {
   margin: 0;
   padding: 8px 12px;
@@ -154,14 +149,25 @@
   color: var(--fg-2);
   font-size: 0.86rem;
 }
-.capture-needed {
-  margin: 0;
-  color: var(--warning-ink);
-  font-weight: 600;
-}
 .capture-note {
   margin: 0;
   color: var(--fg);
+}
+.capture-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A57: the Anthropic key field in place, opened by Add a Claude key. */
+.capture-key {
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.capture-key input {
+  flex: 1 1 14em;
+  min-width: 0;
 }
 .capture-fact-actions {
   justify-content: flex-start;

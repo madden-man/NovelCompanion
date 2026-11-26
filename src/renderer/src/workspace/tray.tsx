@@ -10,7 +10,7 @@ import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { useBibleSettings } from './bibleSettings';
 import { captureNav } from './capture';
-import { FactCard } from './captureChips';
+import { ClaudeKeyField, FactCard } from './captureChips';
 import { NO_CHOICE, draftsWith, loadCaptureBible, openAsks } from './captureLocal';
 import type { CaptureBible, FactChoice } from './captureLocal';
 import { Disclosure, claudeNav } from './claude';
@@ -23,8 +23,6 @@ import './capture.css';
 import './notebook.css';
 
 type Mark = keyof TrayMarks | null;
-
-const NO_KEY = 'No Anthropic key is set. Add one in Settings to ask Claude.';
 
 /** "story year 2071", "the whole book", or "no story year". */
 function yearWords(year: number | null | undefined): string {
@@ -46,6 +44,8 @@ function groupHeading(g: TrayGroup): string {
  * it as one undo step; a Route B or C card waiting behind Send to Claude,
  * which hands the sentence to the capture box. Dismiss stays dismissed until
  * the line changes. Nothing is written or sent until he presses a button.
+ * A57: no line says how; with no key the Claude buttons become Add a Claude
+ * key, which opens the key field at the top of the tray.
  */
 export function NotebookTray() {
   const settings = useBibleSettings();
@@ -62,6 +62,7 @@ export function NotebookTray() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [filed, setFiled] = useState<FiledEntry[]>([]);
+  const [keyOpen, setKeyOpen] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -196,20 +197,17 @@ export function NotebookTray() {
       );
       await sentMark;
     } else if (result === 'busy') {
-      setMessage('The Add box is busy with another capture. Finish or close it, then send again.');
+      setMessage('The Add box is busy with another capture.');
     } else {
       setMessage('Nothing was sent. The Add box says why.');
     }
   };
 
   const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
-  const claudeOff = (i: TrayItem): string | null => {
-    if (ro.off) return ro.tip.title ?? 'The bible is read-only.';
-    if (status !== null && !status.key.set) return NO_KEY;
-    if (needsAck) return 'Confirm what Claude sends first, at the top of this screen.';
-    if (openAsks(i.fact, choiceOf(i)).includes('Year')) return 'Pick the year first.';
-    return null;
-  };
+  const keyMissing = status !== null && !status.key.set;
+  /** Claude waits: read-only, the AI-6 confirmation above, or the highlighted year chip. */
+  const claudeOff = (i: TrayItem): boolean =>
+    ro.off || needsAck || openAsks(i.fact, choiceOf(i)).includes('Year');
 
   const choose = (
     key: string,
@@ -226,6 +224,15 @@ export function NotebookTray() {
   return (
     <section className="ws-wide stack" aria-labelledby="tray-title" data-testid="notebook-tray">
       <h2 id="tray-title">From the notebook</h2>
+      {keyOpen && (
+        <ClaudeKeyField
+          onSaved={(s) => {
+            setStatus(s);
+            setKeyOpen(false);
+          }}
+          onCancel={() => setKeyOpen(false)}
+        />
+      )}
       {needsAck && (
         <Disclosure onConfirm={() => void call('claude.acknowledge', {}).then(setStatus)} />
       )}
@@ -295,6 +302,8 @@ export function NotebookTray() {
                         index={bible.index}
                         busy={busy || ro.off}
                         claudeOff={claudeOff(i)}
+                        keyMissing={keyMissing}
+                        onAddKey={() => setKeyOpen(true)}
                         onTick={(t) =>
                           setUnticked((cur) => {
                             const next = new Set(cur);
@@ -322,7 +331,7 @@ export function NotebookTray() {
                     onClick={() => void file(g)}
                     data-testid="tray-file"
                   >
-                    {fileable === local ? 'File it' : `File ${fileable} of ${local}`}
+                    {fileable === local ? `File ${fileable}` : `File ${fileable} of ${local}`}
                   </button>
                 )}
                 <button

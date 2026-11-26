@@ -230,10 +230,10 @@ describe('KB-6 ED-3 filing', () => {
   test('KB-6 the capture box source asks Claude for no prose and writes only through File it', () => {
     const src = readFileSync(join(ROOT, 'src/renderer/src/workspace/capture.tsx'), 'utf8');
     expect(src).toContain('Add to the bible');
-    // CR-6: Enter routes first; nothing is filed before File it.
-    expect(src).toContain(
-      'Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.',
-    );
+    // A57: the router runs on a pause in the typing; no hint names the keys, the buttons carry them.
+    expect(src).toContain('const ROUTE_PAUSE_MS = 300;');
+    expect(src).not.toContain('Enter shows where each sentence goes');
+    expect(src).toContain('<kbd>Enter</kbd>');
     // AI-3: the only writes are the filing (approve and reject) and the KB-7 open question.
     expect(src.match(/call\('entry\.(create|update|delete)'/g)).toEqual(["call('entry.create'"]);
     expect(src).not.toMatch(/proposal\.approve/);
