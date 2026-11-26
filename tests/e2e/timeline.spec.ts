@@ -254,10 +254,8 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
   await expect(page.getByTestId('tree-inspector').getByTestId('inspector-name')).toHaveText(
     'Noor Zhou',
   );
-  // A45: the key hints sit in the legend overlay, which opens on request.
-  await page.getByRole('button', { name: 'Legend', exact: true }).click();
-  await expect(page.getByTestId('tree-keys')).toContainText('I opens the inspector for anyone');
-  await page.getByRole('button', { name: 'Hide legend' }).click();
+  // A57: the keys work without a sentence naming them.
+  await expect(page.getByTestId('tree-keys')).toHaveCount(0);
 });
 
 // ---------- SM-8: the World events grid ----------
