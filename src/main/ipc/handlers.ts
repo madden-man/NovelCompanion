@@ -172,7 +172,7 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
   });
   // A55 (NB-1): the bible is published to the phone under its world ID.
   const bridge = new BridgeService({
-    store: new BridgeStore(s.db),
+    store: new BridgeStore(s.bridge),
     session,
     world: worldForBible(
       slug,
@@ -180,6 +180,8 @@ async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
     ),
     name: record.name,
     onError: logBridgeError,
+    // A56 (FN-7): each question the phone changed becomes a step in the page's undo history.
+    onQuestions: () => broadcast('notebook.questions', { bible: slug }),
   });
   const opened = await adopt(session, record.name, false, bridge);
   // Never holds up opening (NF-1); a failure is quiet and the next pull tries again.
@@ -368,6 +370,13 @@ export function registerHandlers(): void {
   );
   handle('bible.open', ({ slug }) => bibleOpen(slug));
   handle('bible.current', () => ({ bible: currentSummary() }));
+  // A56 (FN-7): the page's undo history takes the steps the bridge made for its own bible.
+  handle('notebook.claimSteps', ({ bible }) => ({
+    steps:
+      current && !current.readOnly && current.session.handle.id === bible
+        ? (current.bridge?.claimSteps() ?? [])
+        : [],
+  }));
   handle('tree.export', (req) => exportTree(req));
   // WT-1: the writing tools read Datamuse from main; nothing in the bible changes.
   handle('words.lookup', (req) => lookupWords(req));

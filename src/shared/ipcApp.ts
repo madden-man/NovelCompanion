@@ -109,6 +109,8 @@ export const appEvents = {
  * reads, so it works on a read-only snapshot too.
  */
 export const WRITE_CHANNELS = [
+  // A56 (FN-3, FN-4): the tray's marks, in meta.
+  'tray.mark',
   'bible.create',
   'entry.create',
   'entry.createMany',

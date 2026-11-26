@@ -22,7 +22,7 @@ import { Field } from './fields';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
-import { NotebookList, NotebookPageView, hasNotebook } from './notebook';
+import { NotebookList, NotebookPageView, VoiceList, hasNotebook } from './notebook';
 import { ChapterAlignment } from './sessions/alignment';
 import { ChapterStrands } from './outline/ChapterPage';
 import { Zh, useWorkspaceOpen } from './Zh';
@@ -510,6 +510,14 @@ export function EntryPane(props: {
         )}
         {collection === 'chapters' && !inTrash && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
+        )}
+        {collection === 'characters' && (
+          <VoiceList
+            characterId={id}
+            onOpenPage={(pageId) => {
+              void ed.flush().then(() => setNotebookPage(pageId));
+            }}
+          />
         )}
         {hasNotebook(collection) && (
           <NotebookList

@@ -192,7 +192,7 @@ export interface Assembled {
  * or thread, and a line no longer kept (it arrives as a delete), is listed in
  * `deleted`. Lines whose page has not arrived wait, unless their page is one
  * of the bible's open questions (a question the bible sent down that he wrote
- * in): then the thread is named for the question. Songs and takes are not
+ * in): then the thread is named for the question. A song is a stub of its title (A56, FN-10); takes are not
  * notebook pages.
  */
 export function assembleNotebook(
@@ -205,10 +205,16 @@ export function assembleNotebook(
   const lineRows = new Map<string, LiveRow[]>();
   const kept: LiveRow[] = [];
   const inquiries: LiveRow[] = [];
+  const songs: LiveRow[] = [];
   const deleted = new Map<string, string>();
   for (const r of mine) {
     if (r.deleted || !isObj(r.row)) {
-      if (r.table === 'pages' || r.table === 'messages' || r.table === 'inquiries') {
+      if (
+        r.table === 'pages' ||
+        r.table === 'messages' ||
+        r.table === 'inquiries' ||
+        r.table === 'songs'
+      ) {
         deleted.set(r.id, deletedSig(r));
       }
       continue;
@@ -227,6 +233,7 @@ export function assembleNotebook(
         lineRows.set(row.pageId, list);
       }
     } else if (r.table === 'inquiries') inquiries.push(live);
+    else if (r.table === 'songs') songs.push(live);
   }
 
   const pages: NotebookDraft[] = [];
@@ -347,6 +354,26 @@ export function assembleNotebook(
     );
     deleted.delete(r.id);
   }
+
+  // A56 (FN-10): a song is a stub, its title and the characters it names; the lyric stays out.
+  for (const r of songs) {
+    const row = r.row;
+    const date = isoOf(row.createdAt) ?? isoOf(r.at) ?? new Date(0).toISOString();
+    pages.push({
+      _id: r.id,
+      world,
+      kind: 'song',
+      reading: null,
+      title: cut(row.title, NOTEBOOK_TITLE_MAX),
+      date,
+      lines: [],
+      chips: { characterIds: ids(row.characterIds), placeIds: [] },
+      research: null,
+      questionId: null,
+      sig: sigOf([r]),
+    });
+    deleted.delete(r.id);
+  }
   return { pages, deleted };
 }
 
@@ -391,6 +418,15 @@ export function chaptersNamed(text: string, chapters: readonly LinkChapter[]): s
  * names an entry the bible lacks is dropped.
  */
 export function linkNotebook(page: NotebookDraft, ctx: LinkContext): NotebookLinks {
+  // A56 (FN-10): a song names the characters the phone gave it, and only those.
+  if (page.kind === 'song') {
+    return {
+      characterIds: page.chips.characterIds.filter((id) => ctx.known.has(id)).sort(),
+      placeIds: [],
+      chapterIds: [],
+      years: [],
+    };
+  }
   const characters = new Set<string>([...page.chips.characterIds]);
   const places = new Set<string>(page.chips.placeIds);
   const chapters = new Set<string>();
@@ -485,6 +521,8 @@ export function kindLabel(kind: NotebookKind, reading: NotebookPage['reading']):
       return 'Question thread';
     case 'research':
       return 'Research';
+    case 'song':
+      return 'Song';
   }
 }
 
@@ -496,6 +534,8 @@ export function yearLabel(year: number | null | undefined): string {
 
 /** The caption under a row: "Kept line · story year 2071". */
 export function notebookCaption(page: Pick<NotebookPage, 'kind' | 'reading' | 'year'>): string {
+  // A56 (FN-10): a song has no story year; it lives in Music Companion.
+  if (page.kind === 'song') return 'Song · in Music Companion';
   return `${kindLabel(page.kind, page.reading)} · ${yearLabel(page.year)}`;
 }
 
@@ -529,16 +569,93 @@ export function notebookRows(
   return pages
     .filter((p) => !p.deletedAt && p[field].includes(id))
     .sort((a, b) => b.date.localeCompare(a.date) || a._id.localeCompare(b._id))
-    .map((p) => ({
-      id: p._id,
-      kind: p.kind,
-      reading: p.reading,
-      date: p.date,
-      year: p.year,
-      firstLine: firstLine(p),
-      caption: notebookCaption(p),
-      opens: p.kind !== 'kept',
-    }));
+    .map(rowOf);
+}
+
+/** One page as a row of a Notebook list (NB-7). */
+export function rowOf(p: NotebookPage): NotebookRow {
+  return {
+    id: p._id,
+    kind: p.kind,
+    reading: p.reading,
+    date: p.date,
+    year: p.year,
+    firstLine: firstLine(p),
+    caption: notebookCaption(p),
+    // A kept line and a song's stub are all there is to read here.
+    opens: p.kind !== 'kept' && p.kind !== 'song',
+  };
+}
+
+/** What the scene being written is: its cast, its places (with every place inside them) and its year. */
+export interface SceneTouch {
+  characterIds: readonly string[];
+  placeIds: readonly string[];
+  year: number | null;
+}
+
+/**
+ * A56 (FN-9): the live pages that touch the scene, newest first: a page
+ * naming one of its characters or places, or set in its story year.
+ */
+export function relevantRows(pages: readonly NotebookPage[], scene: SceneTouch): NotebookRow[] {
+  const cast = new Set(scene.characterIds);
+  const places = new Set(scene.placeIds);
+  return pages
+    .filter(
+      (p) =>
+        !p.deletedAt &&
+        (p.characterIds.some((id) => cast.has(id)) ||
+          p.placeIds.some((id) => places.has(id)) ||
+          (scene.year !== null && p.year === scene.year)),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || a._id.localeCompare(b._id))
+    .map(rowOf);
+}
+
+/** One line a character speaks in a council in the story (FN-8). */
+export interface VoiceRow {
+  pageId: string;
+  lineId: string;
+  date: string;
+  /** The council's story year: a number, null for the whole book, absent when none is known. */
+  year?: number | null;
+  text: string;
+}
+
+const yearRank = (y: number | null | undefined) => (typeof y === 'number' ? 0 : y === null ? 1 : 2);
+
+/**
+ * A56 (FN-8): a character's Voice, read from the pages themselves: every line
+ * they speak in a live council in the story, by story year (a year first,
+ * then the whole book, then no year known), then by date and line order.
+ */
+export function voiceRows(pages: readonly NotebookPage[], characterId: string): VoiceRow[] {
+  const rows: (VoiceRow & { order: number })[] = [];
+  for (const p of pages) {
+    if (p.deletedAt || p.kind !== 'council' || p.reading !== 'in') continue;
+    p.lines.forEach((l, order) => {
+      if (l.voice !== 'character' || l.speakerId !== characterId || !l.text.trim()) return;
+      rows.push({
+        pageId: p._id,
+        lineId: l.id,
+        date: p.date,
+        ...(p.year !== undefined ? { year: p.year } : {}),
+        text: l.text,
+        order,
+      });
+    });
+  }
+  return rows
+    .sort(
+      (a, b) =>
+        yearRank(a.year) - yearRank(b.year) ||
+        (a.year ?? 0) - (b.year ?? 0) ||
+        a.date.localeCompare(b.date) ||
+        a.pageId.localeCompare(b.pageId) ||
+        a.order - b.order,
+    )
+    .map(({ order: _order, ...r }) => r);
 }
 
 /** The words search indexes for a page (SR-1). */

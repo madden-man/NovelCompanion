@@ -43,7 +43,7 @@ function strip(d: Record<string, unknown>): Record<string, unknown> {
 
 async function send(table: string, id: string, rev: number, row: Record<string, unknown> | null) {
   const _id = `${WORLD}:${table}:${id}`;
-  await store.db
+  await store.bridge
     .collection(BRIDGE_UP)
     .replaceOne(
       { _id } as Document,
@@ -107,10 +107,10 @@ async function openCharacter(name: string) {
 
 test('NB-1 NB-2 opening the bible publishes its registry row and its pocket, and a new character moves the stamp', async () => {
   await expect
-    .poll(async () => store.db.collection(BRIDGE_WORLDS).findOne({ _id: WORLD as never }))
+    .poll(async () => store.bridge.collection(BRIDGE_WORLDS).findOne({ _id: WORLD as never }))
     .toEqual({ _id: WORLD, name: 'Notebook fixture', kind: 'novel' });
   const pocket = async () =>
-    (await store.db.collection(BRIDGE_DOWN).findOne({ _id: WORLD as never })) as {
+    (await store.bridge.collection(BRIDGE_DOWN).findOne({ _id: WORLD as never })) as {
       stamp: string;
       pocket: NovelPocket;
     } | null;

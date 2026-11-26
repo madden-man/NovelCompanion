@@ -13,6 +13,7 @@ import type { ContinuityTab } from './sessions/ContinuityView';
 import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
+import { NotebookTray } from './tray';
 import { UndoProvider, useUndo } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
@@ -64,6 +65,8 @@ type View =
   | { kind: 'trash' }
   | { kind: 'lists' }
   | { kind: 'review' }
+  /** A56 (FN-1): the facts drawn from the phone's notebook, waiting for File it. */
+  | { kind: 'tray' }
   | { kind: 'backups' }
   | { kind: 'settings' }
   | { kind: 'bibles' }
@@ -78,6 +81,7 @@ type Simple = Extract<
   View['kind'],
   | 'search'
   | 'review'
+  | 'tray'
   | 'backups'
   | 'lists'
   | 'trash'
@@ -95,6 +99,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
     items: [
       { label: 'Search and filters', kind: 'search' },
       { label: 'Review queue', kind: 'review' },
+      { label: 'From the notebook', kind: 'tray' },
       { label: 'Backups', kind: 'backups' },
       { label: 'Lists', kind: 'lists' },
       { label: 'Trash', kind: 'trash' },
@@ -116,7 +121,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
 export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   return (
     <DataProvider key={props.bibleId}>
-      <UndoProvider key={props.bibleId}>
+      <UndoProvider key={props.bibleId} bible={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
           <OverridesBible id={props.bibleId} />
           <Frame bibles={props.bibles} />
@@ -327,6 +332,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {view.kind === 'trash' && <TrashView onOpen={open} />}
             {view.kind === 'lists' && <ListsView />}
             {view.kind === 'review' && <ReviewQueue />}
+            {view.kind === 'tray' && <NotebookTray />}
             {view.kind === 'backups' && <BackupsView />}
             {view.kind === 'settings' && <SettingsView />}
             {view.kind === 'bibles' && <div className="ws-wide stack">{bibles}</div>}

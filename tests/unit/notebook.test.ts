@@ -227,16 +227,26 @@ describe('NB-4 the notebook pages a world rows hold', () => {
     });
   });
 
-  test('NB-4 another world, an entry page, songs and takes are not notebook pages, and every page is valid for the schema', () => {
+  test('NB-4 FN-10 another world, an entry page and takes are not notebook pages, a song is a stub with no lyric, and every page is valid for the schema', () => {
     const rows = [
       council(),
       up('pages', 'P-entry', 1, { id: 'P-entry', kind: 'entry', createdAt: NOV25 }),
-      up('songs', 'S1', 1, { id: 'S1', title: 'Low tide' }),
+      up('songs', 'S1', 1, {
+        id: 'S1',
+        title: 'Low tide',
+        lyric: 'Salt on the step',
+        characterIds: ['DAWN'],
+      }),
       up('takes', 'T1', 1, { id: 'T1' }),
       { ...keptLine(), world: 'other', _id: 'other:messages:M-kept' },
     ];
     const { pages } = assembleNotebook(rows, W, ctx);
-    expect(pages.map((p) => p._id)).toEqual(['P-council']);
+    expect(pages.map((p) => p._id)).toEqual(['P-council', 'S1']);
+    const s1 = pages.find((p) => p._id === 'S1')!;
+    expect(s1).toMatchObject({ kind: 'song', title: 'Low tide', lines: [] });
+    expect(s1.chips.characterIds).toEqual(['DAWN']);
+    expect(JSON.stringify(s1)).not.toMatch(/Salt/);
+    expect(notebookCaption({ kind: 'song', reading: null })).toBe('Song · in Music Companion');
     const at = '2026-11-25T22:00:00.000Z';
     for (const p of [...pages, ...assembleNotebook([keptLine()], W, ctx).pages]) {
       const r = NotebookPage.safeParse({

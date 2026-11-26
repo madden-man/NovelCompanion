@@ -6,15 +6,20 @@
  * `docs/BRIDGE.md` in the FlowState repository), copied, not shared: a
  * change there is a change here, by hand.
  *
- * The three collections sit in `novel_companion` beside `bibles`, outside
- * every bible's `<bibleId>.` prefix, so ARCH-8's one database holds.
+ * Since A56 the collections live once, in the shared database
+ * `flowstate_bridge`, reached only through the `BridgeDb` handle (ARCH-8).
  */
 import { BIBLE_SLUG_PATTERN } from './bible';
+
+/** The bible's `meta` document for the bridge: `{ since, questionIds }` (A55, A56). */
+export const BRIDGE_META_ID = 'bridge';
 
 export const BRIDGE_WORLDS = 'bridge_worlds';
 export const BRIDGE_DOWN = 'bridge_down';
 export const BRIDGE_UP = 'bridge_up';
-export const BRIDGE_COLLECTIONS = [BRIDGE_WORLDS, BRIDGE_DOWN, BRIDGE_UP] as const;
+/** Music Companion's: this app never touches it (A56). */
+export const BRIDGE_CLIPS = 'bridge_clips';
+export const BRIDGE_COLLECTIONS = [BRIDGE_WORLDS, BRIDGE_DOWN, BRIDGE_UP, BRIDGE_CLIPS] as const;
 export type BridgeCollection = (typeof BRIDGE_COLLECTIONS)[number];
 
 /** FlowState's world ID rule (protocol.ts `WORLD_ID`). */
@@ -33,11 +38,11 @@ export function worldIdFor(bibleId: string): string | null {
   return WORLD_ID.test(id) ? id : null;
 }
 
-/** The registry row (`bridge_worlds`), exactly as FlowState reads it. */
+/** The registry row (`bridge_worlds`), exactly as FlowState reads it; this app writes only `novel`. */
 export interface WorldRow {
   _id: string;
   name: string;
-  kind: 'novel';
+  kind: 'novel' | 'songs';
 }
 
 /** One character as the phone wears it (protocol.ts `PocketCharacter`). */
@@ -83,6 +88,13 @@ export interface DownRow {
 /** The tables an envelope may come from (protocol.ts `TRAVELS`). */
 export const TRAVELS = ['pages', 'messages', 'inquiries', 'songs', 'takes'] as const;
 export type TravelTable = (typeof TRAVELS)[number];
+/** A56: the tables Novel Companion reads from `bridge_up`; never `takes`. */
+export const NOVEL_READS = [
+  'pages',
+  'messages',
+  'inquiries',
+  'songs',
+] as const satisfies readonly TravelTable[];
 
 /**
  * One row of `bridge_up` as the function stores it:

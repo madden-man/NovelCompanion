@@ -67,29 +67,127 @@ export function NotebookList(props: {
   return (
     <section className="nb-section" aria-labelledby={`nb-${props.id}`} data-testid="notebook-list">
       <h3 id={`nb-${props.id}`}>Notebook</h3>
-      <ul className="nb-list" ref={listRef}>
-        {rows.map((r) => {
-          const body = (
-            <>
-              <time dateTime={r.date}>{notebookDate(r.date)}</time>
+      <NotebookRowList rows={rows} ref={listRef} onOpenPage={props.onOpenPage} />
+    </section>
+  );
+}
+
+/** The rows of a Notebook list: date, first line and caption; a page that opens is a button. */
+function NotebookRowList(props: {
+  rows: Row[];
+  ref?: React.Ref<HTMLUListElement>;
+  onOpenPage: (pageId: string) => void;
+}) {
+  const { rows, ref, onOpenPage } = props;
+  return (
+    <ul className="nb-list" ref={ref}>
+      {rows.map((r) => {
+        const body = (
+          <>
+            <time dateTime={r.date}>{notebookDate(r.date)}</time>
+            <span className="nb-first">
+              <Zh text={r.firstLine || 'Untitled'} actions={false} />
+            </span>
+            <em className="nb-caption">{r.caption}</em>
+          </>
+        );
+        return (
+          <li key={r.id} data-notebook-id={r.id} data-kind={r.kind}>
+            {r.opens ? (
+              <button type="button" className="nb-row" onClick={() => onOpenPage(r.id)}>
+                {body}
+              </button>
+            ) : (
+              <div className="nb-row kept">{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * A56 (FN-9): on Relevant to Session, the pages from the phone that touch the
+ * scene: its characters, its places (or a place inside one) or its story
+ * year. For him to read; nothing is ticked or sent.
+ */
+export function NotebookTouches(props: {
+  characterIds: readonly string[];
+  placeIds: readonly string[];
+  year: number | null;
+  onOpenPage: (pageId: string) => void;
+}) {
+  const { version } = useStore();
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const key = JSON.stringify([props.characterIds, props.placeIds, props.year]);
+  useEffect(() => {
+    let live = true;
+    const [characterIds, placeIds, year] = JSON.parse(key) as [string[], string[], number | null];
+    call('notebook.relevant', { characterIds, placeIds, year })
+      .then((r) => {
+        if (live) setRows(r.rows);
+      })
+      .catch(() => {
+        if (live) setRows([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [key, version]);
+  if (!rows || rows.length === 0) return null;
+  return (
+    <section className="nb-section" aria-labelledby="nb-touches" data-testid="relevant-notebook">
+      <h3 id="nb-touches">From the notebook</h3>
+      <NotebookRowList rows={rows} onOpenPage={props.onOpenPage} />
+    </section>
+  );
+}
+
+type VoiceRowWire = Response<'notebook.voice'>['rows'][number];
+
+/**
+ * A56 (FN-8): a character's Voice, their lines in councils in the story, read
+ * from the pages: by story year, each opening its council across the screen.
+ */
+export function VoiceList(props: { characterId: string; onOpenPage: (pageId: string) => void }) {
+  const { version } = useStore();
+  const [rows, setRows] = useState<VoiceRowWire[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    call('notebook.voice', { id: props.characterId })
+      .then((r) => {
+        if (live) setRows(r.rows);
+      })
+      .catch(() => {
+        if (live) setRows([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [props.characterId, version]);
+  if (!rows || rows.length === 0) return null;
+  return (
+    <section
+      className="nb-section"
+      aria-labelledby={`voice-${props.characterId}`}
+      data-testid="voice-list"
+    >
+      <h3 id={`voice-${props.characterId}`}>Voice</h3>
+      <ul className="nb-list">
+        {rows.map((r) => (
+          <li key={`${r.pageId}:${r.lineId}`} data-notebook-id={r.pageId} data-line-id={r.lineId}>
+            <button type="button" className="nb-row" onClick={() => props.onOpenPage(r.pageId)}>
+              <time dateTime={r.date}>
+                {r.year === undefined ? 'No year' : r.year === null ? 'The whole book' : r.year}
+              </time>
               <span className="nb-first">
-                <Zh text={r.firstLine || 'Untitled'} actions={false} />
+                <Zh text={r.text} actions={false} />
               </span>
-              <em className="nb-caption">{r.caption}</em>
-            </>
-          );
-          return (
-            <li key={r.id} data-notebook-id={r.id} data-kind={r.kind}>
-              {r.opens ? (
-                <button type="button" className="nb-row" onClick={() => props.onOpenPage(r.id)}>
-                  {body}
-                </button>
-              ) : (
-                <div className="nb-row kept">{body}</div>
-              )}
-            </li>
-          );
-        })}
+              <em className="nb-caption">In the story · {notebookDate(r.date)}</em>
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   );
