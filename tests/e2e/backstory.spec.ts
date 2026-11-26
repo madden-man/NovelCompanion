@@ -179,10 +179,23 @@ async function pointAt(personId: string, year: number) {
   const box = (await track.boundingBox())!;
   // Below the lane's middle, clear of the lifespan bar and any marker label.
   const at = { x: box.x + (year - from + 0.5) * ppy, y: box.y + box.height - 4 };
-  expect(await track.evaluate((el, p) => document.elementFromPoint(p.x, p.y) === el, at)).toBe(
-    true,
-  );
+  // A row that fills the frame (A50) ends under the overlay scrollbar a scroll shows; it fades.
+  await expect
+    .poll(() => track.evaluate((el, p) => document.elementFromPoint(p.x, p.y) === el, at))
+    .toBe(true);
   return at;
+}
+
+/** Wait until nothing covers the middle of an element (the overlay scrollbar fades after a scroll). */
+async function untilUncovered(target: Locator) {
+  await expect
+    .poll(() =>
+      target.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      }),
+    )
+    .toBe(true);
 }
 
 async function blurAndUndo() {
@@ -1469,6 +1482,7 @@ test('IP-4 A50 in the person view Escape during a marker or lifespan drag calls 
   await showYear(1958);
   const handle = row('H1').getByTestId('life-handle-start');
   await handle.hover({ force: true });
+  await untilUncovered(handle);
   await dragBy(handle, -2 * ppy);
   await expect(grid().getByTestId('drag-year')).toHaveText('Birth 1956');
   await page.keyboard.press('Escape');
