@@ -1199,20 +1199,11 @@ export const events = {
   // a47-model
   /** The bible's settings changed (A47: numbers, the culture unit, templates). */
   'settings.changed': z.strictObject({ bible: z.string() }),
-  /** A56 (FN-7): questions a bridge pull changed from the phone; each becomes an undo step. */
-  'notebook.questions': z.strictObject({
-    bible: z.string(),
-    steps: z.array(
-      z.strictObject({
-        id: z.string(),
-        title: z.string(),
-        before: z
-          .strictObject({ state: z.enum(['open', 'decided']), decision: z.string() })
-          .nullable(),
-        after: z.strictObject({ state: z.enum(['open', 'decided']), decision: z.string() }),
-      }),
-    ),
-  }),
+  /**
+   * A56 (FN-7): a bridge pull changed questions from the phone; the page's
+   * undo history claims the steps with `notebook.claimSteps`.
+   */
+  'notebook.questions': z.strictObject({ bible: z.string() }),
 } as const;
 
 export type EventName = keyof typeof events;

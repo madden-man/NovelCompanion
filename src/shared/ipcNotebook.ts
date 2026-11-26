@@ -74,6 +74,10 @@ export const NotebookPageWire = z.strictObject({
   years: z.array(Year),
 });
 
+const QuestionStateWire = z.strictObject({
+  state: z.enum(['open', 'decided']),
+  decision: z.string(),
+});
 const TrayKeys = z.array(z.string());
 const TrayMarksWire = z.strictObject({ dismissed: TrayKeys, filed: TrayKeys, sent: TrayKeys });
 
@@ -129,6 +133,23 @@ export const notebookContract = {
           lines: z.array(
             z.strictObject({ id: z.string(), text: z.string(), speakerId: z.string().nullable() }),
           ),
+        }),
+      ),
+    }),
+  },
+  /**
+   * A56 (FN-7): the question steps the bridge made that no window has taken
+   * yet, for this bible only; taking them clears them.
+   */
+  'notebook.claimSteps': {
+    request: z.strictObject({ bible: z.string().min(1).max(64) }),
+    response: z.strictObject({
+      steps: z.array(
+        z.strictObject({
+          id: z.string(),
+          title: z.string(),
+          before: QuestionStateWire.nullable(),
+          after: QuestionStateWire,
         }),
       ),
     }),

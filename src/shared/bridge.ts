@@ -11,6 +11,9 @@
  */
 import { BIBLE_SLUG_PATTERN } from './bible';
 
+/** The bible's `meta` document for the bridge: `{ since, questionIds }` (A55, A56). */
+export const BRIDGE_META_ID = 'bridge';
+
 export const BRIDGE_WORLDS = 'bridge_worlds';
 export const BRIDGE_DOWN = 'bridge_down';
 export const BRIDGE_UP = 'bridge_up';

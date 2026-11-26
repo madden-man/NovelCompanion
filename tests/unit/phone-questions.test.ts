@@ -72,6 +72,7 @@ describe('FN-7 questions written directly', () => {
       {
         op: 'set',
         id: 'Q1',
+        modifiedAt: new Date(T - 60_000).toISOString(),
         before: { state: 'open', decision: '' },
         after: { state: 'decided', decision: 'After it, in the spring.' },
       },
@@ -86,6 +87,7 @@ describe('FN-7 questions written directly', () => {
       {
         op: 'set',
         id: 'Q1',
+        modifiedAt: new Date(T - 60_000).toISOString(),
         before: { state: 'open', decision: 'Draft note' },
         after: { state: 'decided', decision: 'Draft note' },
       },
@@ -102,6 +104,7 @@ describe('FN-7 questions written directly', () => {
       {
         op: 'set',
         id: 'Q1',
+        modifiedAt: new Date(T - 60_000).toISOString(),
         before: { state: 'decided', decision: 'After the flood.' },
         after: { state: 'open', decision: 'After the flood.' },
       },
@@ -187,5 +190,34 @@ describe('FN-7 questions written directly', () => {
     });
     expect(asked.undo).toEqual([{ kind: 'delete', collection: 'openQuestions', id: 'u-1' }]);
     expect(asked.redo).toEqual([{ kind: 'restore', collection: 'openQuestions', id: 'u-1' }]);
+  });
+
+  test('FN-7 an ID the bible held once (given to the phone, made from it, or deleted forever) is never asked again', () => {
+    const phone = phoneQuestions([qPage('Q-gone', { state: 'answered' })], W);
+    expect(planQuestions(phone, new Map(), new Set(['Q-gone']))).toEqual([]);
+    expect(planQuestions(phone, new Map(), new Set(['other']))).toHaveLength(1);
+  });
+
+  test('FN-7 a wise line edited on the phone is a change: the newest of the page and its decision line wins', () => {
+    const rows = [
+      qPage('Q1', { state: 'answered', updatedAt: T - 100_000 }),
+      line('w1', 'Q1', 'After the flood, edited.', T - 200_000, { wise: true, updatedAt: T }),
+    ];
+    const [p] = phoneQuestions(rows, W);
+    expect(p?.changedAt).toBe(T);
+    const q = bibleQ('Q1', {
+      state: 'decided',
+      decision: 'After the flood.',
+      modifiedAt: new Date(T - 50_000).toISOString(),
+    });
+    expect(planQuestions([p!], new Map([['Q1', q]]))).toEqual([
+      {
+        op: 'set',
+        id: 'Q1',
+        modifiedAt: q.modifiedAt,
+        before: { state: 'decided', decision: 'After the flood.' },
+        after: { state: 'decided', decision: 'After the flood, edited.' },
+      },
+    ]);
   });
 });

@@ -111,7 +111,7 @@ const UndoContext = createContext<Undo | null>(null);
  * browser's own text undo, or a rich text box's own history, A44); everywhere
  * else they step through the app's history.
  */
-export function UndoProvider({ children }: { children: ReactNode }) {
+export function UndoProvider({ children, bible }: { children: ReactNode; bible?: string }) {
   const manager = useRef(new UndoManager());
   const flushes = useRef(new Set<() => Promise<void>>());
   const busy = useRef(Promise.resolve());
@@ -192,10 +192,6 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     const off = window.api.on('app.command', ({ command: c }) => {
       if (c === 'undo' || c === 'redo') command(c);
     });
-    // A56 (FN-7): a question the phone answered, resolved, took back or asked is one step.
-    const offPhone = window.api.on('notebook.questions', ({ steps }) => {
-      for (const s of steps) record(questionCommand(s));
-    });
     // Fallback for key presses that reach the page directly.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'z') return;
@@ -206,11 +202,29 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey);
     return () => {
       off();
-      offPhone();
       document.removeEventListener('focusin', onFocus);
       window.removeEventListener('keydown', onKey);
     };
-  }, [command, record]);
+  }, [command]);
+
+  // A56 (FN-7): a question the phone answered, resolved, took back or asked is one step.
+  // The steps wait in main until this bible's history takes them: on mount (the first pull
+  // on open, or the one after a reload, can run before this listens) and whenever a pull
+  // says it made some. A claimed step is always recorded, even if this unmounted meanwhile.
+  useEffect(() => {
+    if (!bible) return;
+    const claim = () =>
+      void call('notebook.claimSteps', { bible }).then(
+        ({ steps }) => {
+          for (const s of steps) record(questionCommand(s));
+        },
+        () => undefined,
+      );
+    claim();
+    return window.api.on('notebook.questions', (e) => {
+      if (e.bible === bible) claim();
+    });
+  }, [bible, record]);
 
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushes.current.add(fn);

@@ -1,4 +1,5 @@
 import type { Document } from 'mongodb';
+import { BRIDGE_META_ID } from '../../shared/bridge';
 import { REGISTRY, migrate } from '../db/bibles';
 import type { BibleHandle, BibleRecord } from '../db/bibles';
 
@@ -67,6 +68,11 @@ export async function replaceBible(
 ): Promise<void> {
   const existing = await handle.collectionNames();
   const names = [...new Set([...existing, ...Object.keys(collections)])];
+  // A56 (FN-7): the questions the phone may still hold pages for outlive a restore, so one
+  // made or deleted after the snapshot is never made again from the phone.
+  const liveBridge = existing.includes('meta')
+    ? await handle.collection('meta').findOne({ _id: BRIDGE_META_ID } as Document)
+    : null;
   const session = handle.client.startSession();
   try {
     await session.withTransaction(async () => {
@@ -77,6 +83,22 @@ export async function replaceBible(
         for (let i = 0; i < docs.length; i += CHUNK) {
           await target.insertMany(docs.slice(i, i + CHUNK), { session, ordered: true });
         }
+      }
+      const liveIds = Array.isArray(liveBridge?.questionIds) ? liveBridge.questionIds : [];
+      if (liveIds.length) {
+        const meta = handle.collection('meta');
+        const restored = await meta.findOne({ _id: BRIDGE_META_ID } as Document, { session });
+        const ids = [
+          ...new Set([
+            ...(Array.isArray(restored?.questionIds) ? restored.questionIds : []),
+            ...liveIds,
+          ]),
+        ].sort();
+        await meta.updateOne(
+          { _id: BRIDGE_META_ID } as Document,
+          { $set: { questionIds: ids } },
+          { session, upsert: true },
+        );
       }
       await handle.db
         .collection<BibleRecord>(REGISTRY)

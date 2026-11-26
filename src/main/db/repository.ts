@@ -1,3 +1,4 @@
+import { BRIDGE_META_ID } from '../../shared/bridge';
 import { withMarks } from '../../shared/domain/tray';
 import type { TrayMarks } from '../../shared/domain/tray';
 import { EventEmitter } from 'node:events';
@@ -449,6 +450,9 @@ export class Repository {
   ): Promise<EntryOf<C>> {
     this.assertCollection(c);
     const prior = await this.current(c, id);
+    if (opts.expectModifiedAt !== undefined && String(prior.modifiedAt) !== opts.expectModifiedAt) {
+      throw new EntryMoved();
+    }
     const change = this.buildUpdate(c, prior, patch as Record<string, unknown>, opts);
     await this.commit([change]);
     return change.next as EntryOf<C>;
@@ -1415,6 +1419,17 @@ export class Repository {
     notebookIds: string[] = [],
   ): Promise<PurgeCounts> {
     const counts: PurgeCounts = { entries: 0 };
+    const purgedQuestions = items
+      .filter((it) => it.collection === 'openQuestions')
+      .map((it) => it.id);
+    const held = this.bridgeQuestionIds();
+    const heldDoc: StoredDoc | null = purgedQuestions.some((id) => !held.has(id))
+      ? {
+          ...(this.model.get('meta', BRIDGE_META_ID) ?? {}),
+          _id: BRIDGE_META_ID,
+          questionIds: [...new Set([...held, ...purgedQuestions])].sort(),
+        }
+      : null;
     await this.transact(async (session) => {
       // A retried transaction counts again from nothing.
       counts.entries = 0;
@@ -1447,8 +1462,15 @@ export class Repository {
         }
         counts.entries += gone.deletedCount;
       }
+      // A56 (FN-7): a question deleted forever is never made again from the phone's page.
+      if (heldDoc) {
+        await this.bible
+          .collection<StoredDoc>('meta')
+          .replaceOne({ _id: BRIDGE_META_ID }, heldDoc, { session, upsert: true });
+      }
       await this.options.midTransaction?.(session);
     });
+    if (heldDoc) this.model.put('meta', heldDoc);
     for (const it of items) {
       this.model.remove(it.collection, it.id);
       this.index.remove(it.collection, it.id);
@@ -1600,8 +1622,35 @@ export class Repository {
   async markBridgeSince(ms: number): Promise<number> {
     const have = this.bridgeSince();
     if (have !== null) return have;
-    await this.writeMeta({ _id: BRIDGE_META_ID, since: ms });
+    const doc = this.model.get('meta', BRIDGE_META_ID) ?? { _id: BRIDGE_META_ID };
+    await this.writeMeta({ ...doc, _id: BRIDGE_META_ID, since: ms });
     return ms;
+  }
+
+  /**
+   * A56 (FN-7): every open question ID this bible has held that the phone may
+   * still hold a page for: those published in the pocket, made from the
+   * phone, or deleted forever. A question page with one of these IDs is never
+   * made again. Kept in the `meta` document `bridge`, and carried over a
+   * restore or a file import (`replaceBible`).
+   */
+  bridgeQuestionIds(): Set<string> {
+    const doc = this.model.get('meta', BRIDGE_META_ID);
+    const ids = Array.isArray(doc?.questionIds) ? doc.questionIds : [];
+    return new Set(ids.filter((x): x is string => typeof x === 'string'));
+  }
+
+  /** A56 (FN-7): add question IDs to the held set; writes only when one is new. */
+  async noteBridgeQuestions(ids: readonly string[]): Promise<void> {
+    const have = this.bridgeQuestionIds();
+    const fresh = ids.filter((id) => !have.has(id));
+    if (!fresh.length) return;
+    const doc = this.model.get('meta', BRIDGE_META_ID) ?? { _id: BRIDGE_META_ID };
+    await this.writeMeta({
+      ...doc,
+      _id: BRIDGE_META_ID,
+      questionIds: [...have, ...fresh].sort(),
+    });
   }
 
   /**
@@ -2146,7 +2195,7 @@ const COMMUNITY_NOTES_ID = 'communityNotes';
 const SNAPSHOT_SETTINGS_ID = 'snapshotSettings';
 const TREE_LAYOUT_ID = 'treeLayout';
 /** A55: the bridge's own note in `meta`: when the bible was first given to the phone. */
-export const BRIDGE_META_ID = 'bridge';
+export { BRIDGE_META_ID };
 /** A56: the From the notebook tray's marks. */
 export const TRAY_META_ID = 'notebookTray';
 
@@ -2155,6 +2204,19 @@ export const TRAY_META_ID = 'notebookTray';
 /** Options for a write; `importer` is set only by the manuscript importer, never from IPC (IP-18). */
 export interface WriteOptions {
   importer?: boolean;
+  /**
+   * A56 (FN-7): the `modifiedAt` the writer planned against. If the stored
+   * entry has moved since, `update` throws `EntryMoved` and writes nothing.
+   */
+  expectModifiedAt?: string;
+}
+
+/** A56 (FN-7): the entry changed after the write was planned, so the write was skipped. */
+export class EntryMoved extends RepositoryError {
+  constructor() {
+    super('This entry changed after the change was planned, so it was left as it is.');
+    this.name = 'EntryMoved';
+  }
 }
 
 /** What `propose` takes for a `listAdd` proposal (IP-17). */

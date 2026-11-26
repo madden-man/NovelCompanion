@@ -19,7 +19,11 @@ export interface PhoneQuestion {
   resolvedByTap: boolean;
   /** The newest wise line's text, by `at`; null when no line is wise. */
   decision: string | null;
-  /** When the phone last changed the page, in milliseconds. */
+  /**
+   * When the phone last changed the question, in milliseconds: the newest of
+   * the page's `updatedAt` and its decision line's (a wise line edited on the
+   * phone does not touch the page).
+   */
   changedAt: number;
 }
 
@@ -41,6 +45,8 @@ export type QuestionOp =
   | {
       op: 'set';
       id: string;
+      /** The question's `modifiedAt` when this was planned; the write is skipped if it moved since. */
+      modifiedAt: string;
       before: { state: 'open' | 'decided'; decision: string };
       after: { state: 'open' | 'decided'; decision: string };
     };
@@ -55,7 +61,7 @@ const TITLE_MAX = 2000;
 /** FN-7: every question page one world's rows hold, with its decision read from its wise lines. */
 export function phoneQuestions(rows: readonly UpRow[], world: string): PhoneQuestion[] {
   const mine = rows.filter((r) => r.world === world && !r.deleted && isObj(r.row));
-  const wise = new Map<string, { at: number; id: string; text: string }>();
+  const wise = new Map<string, { at: number; id: string; text: string; changed: number }>();
   for (const r of mine) {
     if (r.table !== 'messages') continue;
     const row = r.row as Record<string, unknown>;
@@ -67,7 +73,7 @@ export function phoneQuestions(rows: readonly UpRow[], world: string): PhoneQues
     const at = num(row.at) ?? 0;
     const have = wise.get(row.pageId);
     if (!have || at > have.at || (at === have.at && r.id > have.id)) {
-      wise.set(row.pageId, { at, id: r.id, text: row.text });
+      wise.set(row.pageId, { at, id: r.id, text: row.text, changed: num(row.updatedAt) ?? at });
     }
   }
   const out: PhoneQuestion[] = [];
@@ -76,8 +82,9 @@ export function phoneQuestions(rows: readonly UpRow[], world: string): PhoneQues
     const row = r.row as Record<string, unknown>;
     if (row.kind !== 'question') continue;
     const state = row.state === 'answered' ? 'answered' : 'open';
-    const changedAt =
+    const pageAt =
       num(row.updatedAt) ?? num(row.answeredAt) ?? num(row.createdAt) ?? num(r.at) ?? 0;
+    const changedAt = Math.max(pageAt, wise.get(r.id)?.changed ?? 0);
     out.push({
       id: r.id,
       title: (typeof row.title === 'string' ? row.title : '').trim().slice(0, TITLE_MAX),
@@ -94,7 +101,9 @@ export function phoneQuestions(rows: readonly UpRow[], world: string): PhoneQues
  * FN-7: what the phone's question pages write into the bible. Answered: the
  * newest wise line is the decision and the question is decided; resolved with
  * no wise line: decided, the decision left as it was; open again: open, the
- * decision kept. An ID the bible lacks is a new question with the phone's ID.
+ * decision kept. An ID the bible has never held is a new question with the
+ * phone's ID; one it held once (`held`: published to the phone, made from
+ * the phone, or deleted forever) is never made again.
  * A page changes its question only when the phone changed it after the
  * question last changed in the bible (the newer change wins), and never a
  * question in the trash or one already as the phone says.
@@ -102,12 +111,13 @@ export function phoneQuestions(rows: readonly UpRow[], world: string): PhoneQues
 export function planQuestions(
   phone: readonly PhoneQuestion[],
   bible: ReadonlyMap<string, BibleQuestion>,
+  held: ReadonlySet<string> = new Set(),
 ): QuestionOp[] {
   const ops: QuestionOp[] = [];
   for (const p of phone) {
     const q = bible.get(p.id);
     if (!q) {
-      if (!p.title) continue;
+      if (!p.title || held.has(p.id)) continue;
       const decided = p.state === 'answered';
       ops.push({
         op: 'ask',
@@ -130,7 +140,7 @@ export function planQuestions(
         ? { state: 'decided' as const, decision: p.decision ?? q.decision }
         : { state: 'open' as const, decision: q.decision };
     if (after.state === before.state && after.decision === before.decision) continue;
-    ops.push({ op: 'set', id: p.id, before, after });
+    ops.push({ op: 'set', id: p.id, modifiedAt: q.modifiedAt, before, after });
   }
   return ops;
 }

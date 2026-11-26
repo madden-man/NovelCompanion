@@ -11,6 +11,7 @@ import { positionYear } from '../../shared/domain/position';
 import { plainText } from '../../shared/domain/markdown';
 import type { StoredDoc } from '../readmodel';
 import type { BridgeStore } from '../db/bridge';
+import { EntryMoved } from '../db/repository';
 import type { OpenBible } from '../db/session';
 import { indexFromSession } from '../claude/features/captureIndex';
 
@@ -122,6 +123,7 @@ export class BridgeService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private offs: (() => void)[] = [];
+  private unclaimed: QuestionStep[] = [];
   private pulling: Promise<number> = Promise.resolve(0);
   private publishing: Promise<boolean> = Promise.resolve(false);
   private lastStamp: string | null | undefined = undefined;
@@ -203,6 +205,8 @@ export class BridgeService {
       await this.store.writeWorld(world, this.name);
       const since = await this.session.repo.markBridgeSince(this.now());
       const pocket = pocketOf(this.session, since);
+      // A56 (FN-7): a question the phone has been given is never made again from its page.
+      await this.session.repo.noteBridgeQuestions(pocket.questions.map((q) => q.id));
       const stamp = stampOf(pocket);
       if (this.lastStamp === undefined) this.lastStamp = await this.store.stamp(world);
       if (stamp === this.lastStamp) return false;
@@ -275,11 +279,15 @@ export class BridgeService {
       });
     }
     const steps: QuestionStep[] = [];
-    for (const op of planQuestions(phoneQuestions(rows, world), bible)) {
+    const held = repo.bridgeQuestionIds();
+    for (const op of planQuestions(phoneQuestions(rows, world), bible, held)) {
       if (this.stopped) break;
       try {
         if (op.op === 'ask') {
+          // Held since the plan was made (a publish, a purge): leave it.
+          if (model.get('openQuestions', op.id) || repo.bridgeQuestionIds().has(op.id)) continue;
           const made = await repo.create('openQuestions', { _id: op.id, ...op.data });
+          await repo.noteBridgeQuestions([op.id]);
           steps.push({
             id: op.id,
             title: String(made.title ?? op.data.title),
@@ -287,7 +295,10 @@ export class BridgeService {
             after: { state: op.data.state, decision: op.data.decision },
           });
         } else {
-          const next = await repo.update('openQuestions', op.id, op.after);
+          // A desk edit made since the plan wins: the write is skipped if the question moved.
+          const next = await repo.update('openQuestions', op.id, op.after, {
+            expectModifiedAt: op.modifiedAt,
+          });
           steps.push({
             id: op.id,
             title: String(next.title ?? ''),
@@ -296,10 +307,22 @@ export class BridgeService {
           });
         }
       } catch (e) {
-        this.onError(e);
+        if (!(e instanceof EntryMoved)) this.onError(e);
       }
     }
-    if (steps.length) this.onQuestions(steps);
+    if (steps.length) {
+      this.unclaimed.push(...steps);
+      this.onQuestions(steps);
+    }
     return steps.length;
+  }
+
+  /**
+   * A56 (FN-7): the question steps no window has taken yet. The page's undo
+   * history drains them when it mounts (the first pull on open, and the pull
+   * after a reload, can run before it listens) and again on each broadcast.
+   */
+  claimSteps(): QuestionStep[] {
+    return this.unclaimed.splice(0);
   }
 }

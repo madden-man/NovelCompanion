@@ -121,7 +121,7 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
 export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
   return (
     <DataProvider key={props.bibleId}>
-      <UndoProvider key={props.bibleId}>
+      <UndoProvider key={props.bibleId} bible={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
           <OverridesBible id={props.bibleId} />
           <Frame bibles={props.bibles} />
