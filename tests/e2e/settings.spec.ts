@@ -511,6 +511,38 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
   await invoke('claude.instructions.set', { feature: first.feature, text: null });
 });
 
+test('A57 IP-14 IP-15 a template shows what it makes and resets to the default it names; the shared rules are locked text', async () => {
+  const view = await openSettings();
+  for (const gone of [
+    'The names new things start with.',
+    'What Claude is told before your material.',
+    'Glossary terms that do not follow',
+    'The span of years a cultural line covers',
+    'A bible made from here starts with these eras.',
+  ]) {
+    await expect(view).not.toContainText(gone);
+  }
+  const templates = view.getByTestId('settings-templates');
+  await fillEditable(templates.getByTestId('template-partTitle'), 'Book {n}');
+  await expect(templates).toContainText('Book 2');
+  const reset = templates.getByRole('button', { name: 'Reset new part title to Part {n}' });
+  await expect(reset).toHaveText('↺ Part {n}');
+  await reset.click();
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).templates.partTitle)
+    .toBe('Part {n}');
+  await expect(reset).toHaveCount(0);
+  // Claude's prompts keep their labels; the shared rules under each are read-only text.
+  const [first] = (await invoke('claude.instructions.get', {})).instructions;
+  if (!first) throw new Error('No Claude features');
+  const card = view.locator(`[data-feature="${first.feature}"]`);
+  await expect(card).toHaveAccessibleName(`Instructions for ${first.label}`);
+  await expect(card).toContainText('Shared rules, always sent');
+  await expect(card.getByRole('button', { name: `Reset ${first.label} to default` })).toHaveCount(
+    0,
+  );
+});
+
 /** WCAG contrast of two `rgb()` colours. */
 function contrast(a: string, b: string): number {
   const lum = (c: string) => {

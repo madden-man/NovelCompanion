@@ -1122,7 +1122,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   await rail(page, 'Backups').click();
   const target = page.locator(`[data-testid="snapshot-row"][data-id="${id}"]`);
   await target.getByTestId('snapshot-restore').click();
-  await target.getByTestId('snapshot-confirm').click();
+  await page.getByTestId('snapshot-confirm').getByRole('button', { name: 'Replace' }).click();
   await expect(page.getByTestId('reload-notice')).toContainText('Restored the snapshot from');
   await expect
     .poll(
