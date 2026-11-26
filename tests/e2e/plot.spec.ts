@@ -539,7 +539,7 @@ test('A46 a divider is added between two chapters, named in place, and removed; 
   await undo();
   await expect(view().getByTestId('divider')).toHaveCount(1);
   await expect.poll(async () => (await chapterOf('CH3')).partId).toBe('PT1');
-  expect(await partNumber('PT2')).toBe(2);
+  await expect.poll(() => partNumber('PT2')).toBe(2);
   expect(
     (await invoke('entry.get', { collection: 'parts', id: made })).entry.deletedAt,
   ).toBeTruthy();
@@ -838,7 +838,7 @@ test('A57 the chapter menu lists Move up, Move down, New chapter at this line an
   await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length + 1);
   const made = (await chapterIds())[2]!;
   expect(ids).not.toContain(made);
-  await expect(section(made)).toHaveValue('- The kettle');
+  await expect(section(made)).toHaveValue(two.split('\n').at(-1)!);
   await expect(section('CH2')).toHaveValue(two.split('\n').slice(0, -1).join('\n'));
   await undo();
   await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length);
@@ -1073,7 +1073,7 @@ test("IP-3 the first part's title is a divider above the first chapter that rena
   // Removed: chapters 1 to 4 join Part Two, which is now the first and only section.
   await first.getByTestId('remove-divider').click();
   await expect.poll(async () => (await chapterOf('CH1')).partId).toBe('PT2');
-  expect((await chapterOf('CH4')).partId).toBe('PT2');
+  await expect.poll(async () => (await chapterOf('CH4')).partId).toBe('PT2');
   await expect(first.getByTestId('divider-name')).toHaveText('Part Two: The Letter');
   await expect(first.getByTestId('remove-divider')).toHaveCount(0);
   await expect(view().getByTestId('divider')).toHaveCount(0);
@@ -1376,8 +1376,13 @@ test('GL-3 a name with a term links to it; a run with no term offers Add to glos
   await expect(tip).toContainText('Not in the glossary yet.');
   await tip.getByRole('button', { name: 'Add to glossary' }).click();
   await expect(page.getByTestId('editor').getByRole('heading', { name: '文测' })).toBeVisible();
-  const terms = await invoke('entry.list', { collection: 'glossaryTerms', trash: 'exclude' });
-  expect(terms.entries.some((t) => t.entry.characters === '文测')).toBe(true);
+  await expect
+    .poll(async () =>
+      (await invoke('entry.list', { collection: 'glossaryTerms', trash: 'exclude' })).entries.some(
+        (t) => t.entry.characters === '文测',
+      ),
+    )
+    .toBe(true);
 });
 
 test('GL-3 hovering a glossary name in the place tree shows its romanization and meaning', async () => {
