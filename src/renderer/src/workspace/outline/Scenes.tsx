@@ -55,6 +55,7 @@ import { autosaveMaxMs, fillTemplate } from '../../../../shared/schema/settings'
 import { NumberField } from './NumberField';
 import { EntryEditable } from '../editable';
 import { Parts } from './Parts';
+import { ChapterMenu } from './ChapterMenu';
 import { StrandPopover, strandChipText } from './StrandPopover';
 import { clearOutlineFocus, useOpenOutline, waitingOutlineFocus } from './nav';
 
@@ -549,7 +550,15 @@ export function SceneOutline(props: { onOpen: Open }) {
   const undo = useUndo();
   const [outline, setOutline] = useState<Outline | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  /** The last chapter put in the trash: its line and the undo step that brings it back. */
+  const [done, setDone] = useState<{
+    text: string;
+    cmd: UndoCommand;
+    focus: boolean;
+  } | null>(null);
+  const undoDone = useRef<HTMLButtonElement | null>(null);
+  /** The line the caret was last on in each section, for New chapter at this line from a bar's menu. */
+  const caretLines = useRef(new Map<string, number>());
   const [grab, setGrab] = useState<Grab | null>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
   const [focusText, setFocusText] = useState<string | null>(null);
@@ -607,6 +616,13 @@ export function SceneOutline(props: { onOpen: Open }) {
     if (el && document.activeElement !== el) el.focus();
   }, [refocus, outline, flow]);
 
+  // The trash toast shows while its step is the latest one; a step undone or another step taken hides it.
+  const doneLive = done !== null && undo.history.undo[0] === done.cmd;
+  // A chapter put in the trash from the keyboard or its menu leaves the focus on the toast's Undo.
+  useEffect(() => {
+    if (done?.focus && doneLive) undoDone.current?.focus();
+  }, [done, doneLive]);
+
   // A new chapter's text takes the focus once it is on screen, with its first bullet.
   useEffect(() => {
     if (!focusText) return;
@@ -656,6 +672,12 @@ export function SceneOutline(props: { onOpen: Open }) {
     if (madeId) setRefocus(madeId);
   };
 
+  /** From a bar's menu: a new chapter at the line the caret was last on in its section, or after it. */
+  const newChapterHere = (key: string) => {
+    const lines = linesOf(key).length;
+    void newChapterAt(key, Math.min(caretLines.current.get(key) ?? lines, lines));
+  };
+
   /** New chapter at the foot: last, in the year of the chapter before it; one undo step. */
   const addChapter = async () => {
     setNotice(null);
@@ -700,7 +722,7 @@ export function SceneOutline(props: { onOpen: Open }) {
    * The trash: the chapter goes, its lines join the section above so no scene
    * is lost, and one undo step brings back both.
    */
-  const trashChapter = async (id: string): Promise<boolean> => {
+  const trashChapter = async (id: string, focusUndo = false): Promise<boolean> => {
     const row = chapters.find((c) => c.id === id);
     await scene.save();
     const snap = scene.snapshot();
@@ -716,16 +738,20 @@ export function SceneOutline(props: { onOpen: Open }) {
       return false;
     }
     const del = deleteCommand('chapters', id, row.title);
-    undo.record({
+    const cmd: UndoCommand = {
       label: del.label,
       undo: [...del.undo, outlineOp(after, before)],
       redo: [...del.redo, outlineOp(before, after)],
+    };
+    undo.record(cmd);
+    setDone({
+      text:
+        sectionScenes(linesOf(id)) > 0
+          ? `${row.title} is in the trash. Its scenes joined the chapter above.`
+          : `${row.title} is in the trash.`,
+      cmd,
+      focus: focusUndo,
     });
-    setDone(
-      sectionScenes(linesOf(id)) > 0
-        ? `${row.title} is in the trash. Its lines stay in the outline, in the chapter above. Undo brings it back.`
-        : `${row.title} is in the trash. Undo brings it back.`,
-    );
     return true;
   };
 
@@ -1053,6 +1079,7 @@ export function SceneOutline(props: { onOpen: Open }) {
       if (next) focusSection(next, by < 0 ? 'end' : 'start');
     },
     onNewChapter: (key, line) => void newChapterAt(key, line),
+    onCaret: (key, line) => caretLines.current.set(key, line),
     undoTyping: scene.undoTyping,
     redoTyping: scene.redoTyping,
   };
@@ -1105,31 +1132,35 @@ export function SceneOutline(props: { onOpen: Open }) {
               {label}
             </span>
           </span>
-          <div
-            ref={trash}
-            className={`scene-trash${moving ? ' armed' : ''}${moving?.trash ? ' over' : ''}`}
-            data-testid="scene-trash"
-            aria-label="Trash: drag a chapter here to delete it"
-            title="Drag a chapter here to delete it. Undo brings it back."
-          >
-            <TrashIcon />
-            <span>{moving ? 'Drop here to delete' : 'Trash'}</span>
-          </div>
+          {moving && (
+            <div
+              ref={trash}
+              className={`scene-trash armed${moving.trash ? ' over' : ''}`}
+              data-testid="scene-trash"
+              aria-label="Trash"
+            >
+              <TrashIcon />
+              <span>Trash</span>
+            </div>
+          )}
         </div>
-        <p className="example-note">
-          Drag the line between two chapters to move lines from one to the other. Drag a chapter to
-          a new place, or onto the trash to delete it. Add a divider between two chapters to start a
-          new section. Enter adds the next scene, Cmd+] indents, Cmd+[ outdents, and Cmd+Enter
-          starts a new chapter at the line you are on.
-        </p>
         {(scene.error ?? writes.error ?? notice) && (
           <p className="callout crit" role="alert">
             {scene.error ?? writes.error ?? notice}
           </p>
         )}
-        {done && (
-          <p className="callout" role="status" data-testid="scene-done">
-            {done}
+        {done && doneLive && (
+          <p className="callout scene-done" role="status" data-testid="scene-done">
+            <span>{done.text}</span>
+            <button
+              ref={undoDone}
+              type="button"
+              className="btn small"
+              data-testid="scene-done-undo"
+              onClick={() => void undo.undo()}
+            >
+              Undo
+            </button>
           </p>
         )}
         {!outline || !flow ? (
@@ -1218,9 +1249,12 @@ export function SceneOutline(props: { onOpen: Open }) {
                           moving={moving?.id === key}
                           onGrab={(e) => beginMove(e, row.id)}
                           onSwap={(by) => swap(row.id, by)}
+                          canUp={neighbourOf(placed, row.id, -1) !== null}
+                          canDown={neighbourOf(placed, row.id, 1) !== null}
                           onFocusBar={() => setRefocus(null)}
                           onOpen={props.onOpen}
-                          onTrash={() => void trashChapter(row.id)}
+                          onTrash={() => void trashChapter(row.id, true)}
+                          onNewChapterHere={() => newChapterHere(row.id)}
                         />
                       ) : (
                         <div className="sb-none">Not in a chapter</div>
@@ -1337,7 +1371,6 @@ function Boundary(p: {
         aria-valuemax={p.upperLines + p.lowerLines}
         aria-valuenow={p.upperLines}
         aria-label={`${p.label}. Up and Down move it a line.`}
-        title="Drag to move lines between these chapters"
         data-testid="boundary-grip"
         onKeyDown={(e) => {
           if (p.disabled || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
@@ -1366,7 +1399,6 @@ function Boundary(p: {
             className="btn small sb-divider-remove"
             disabled={p.disabled}
             aria-label={`Remove the divider ${divider.title}`}
-            title="Remove this divider"
             data-testid="remove-divider"
             onClick={p.onRemoveDivider}
           >
@@ -1379,11 +1411,10 @@ function Boundary(p: {
             type="button"
             className="btn small sb-add-divider"
             disabled={p.disabled}
-            title="Start a new section of chapters here"
             data-testid="add-divider"
             onClick={p.onAddDivider}
           >
-            + Divider
+            + Section
           </button>
         )
       )}
@@ -1421,7 +1452,6 @@ function FirstDivider(p: {
             className="btn small sb-divider-remove"
             disabled={p.disabled}
             aria-label={`Remove the divider ${p.title}`}
-            title="Remove this divider: its chapters join the section below"
             data-testid="remove-divider"
             onClick={p.onRemove}
           >
@@ -1441,13 +1471,17 @@ interface BarProps {
   moving: boolean;
   onGrab: (e: ReactPointerEvent) => void;
   onSwap: (by: -1 | 1) => void;
+  canUp: boolean;
+  canDown: boolean;
   onFocusBar: () => void;
   onOpen: Open;
   onTrash: () => void;
+  onNewChapterHere: () => void;
 }
 
 /** What a press on a bar leaves alone: its own controls and fields. */
-const BAR_CONTROLS = 'input, button, select, a, label, [data-editable], [role="button"]';
+const BAR_CONTROLS =
+  'input, button, select, a, label, [data-editable], [role="button"], [role="menu"]';
 
 /**
  * One chapter's bar, as tall as its section, in its colour, with its name
@@ -1536,7 +1570,6 @@ function ChapterBar(p: BarProps) {
         aria-roledescription="chapter bar"
         aria-label={`Chapter ${row.number}, ${title}, ${span}`}
         aria-keyshortcuts="ArrowUp ArrowDown Delete"
-        title="Drag to move this chapter, or onto the trash to delete it. Up and Down move it, Delete deletes it."
         data-testid="chapter-bar"
         data-chapter={row.id}
         data-written={written ? 'true' : 'false'}
@@ -1551,6 +1584,11 @@ function ChapterBar(p: BarProps) {
       >
         <span className="cbar-main">
           <span className="cbar-line">
+            {!off && (
+              <span className="cbar-grip" aria-hidden="true" data-testid="chapter-grip">
+                ⋮⋮
+              </span>
+            )}
             <span className="cbar-no">Ch {row.number}</span>
             <EntryEditable
               collection="chapters"
@@ -1563,6 +1601,44 @@ function ChapterBar(p: BarProps) {
               className="cbar-title"
               testId="chapter-title"
               display={(t) => <Zh text={t} actions={false} />}
+            />
+            <ChapterMenu
+              label={`Chapter ${row.number} actions`}
+              items={[
+                {
+                  label: 'Move up',
+                  keys: '↑',
+                  shortcut: 'ArrowUp',
+                  disabled: off || !p.canUp,
+                  testId: 'chapter-move-up',
+                  onSelect: () => p.onSwap(-1),
+                },
+                {
+                  label: 'Move down',
+                  keys: '↓',
+                  shortcut: 'ArrowDown',
+                  disabled: off || !p.canDown,
+                  testId: 'chapter-move-down',
+                  onSelect: () => p.onSwap(1),
+                },
+                {
+                  label: 'New chapter at this line',
+                  keys: '⌘⏎',
+                  shortcut: 'Meta+Enter',
+                  disabled: off,
+                  testId: 'chapter-new-here',
+                  onSelect: p.onNewChapterHere,
+                },
+                {
+                  label: 'Delete chapter',
+                  keys: '⌫',
+                  shortcut: 'Delete',
+                  disabled: off,
+                  danger: true,
+                  testId: 'chapter-delete',
+                  onSelect: p.onTrash,
+                },
+              ]}
             />
           </span>
           <span className="cbar-line cbar-sub">
@@ -1639,6 +1715,8 @@ interface SectionHandlers {
   onBlur: () => void;
   onLeave: (key: string, by: -1 | 1) => void;
   onNewChapter: (key: string, line: number) => void;
+  /** The caret moved to `line` of the section. */
+  onCaret: (key: string, line: number) => void;
   /** Cmd+Z and Shift+Cmd+Z in the box over typing that is not yet a step (IP-6). */
   undoTyping: () => boolean;
   redoTyping: () => boolean;
@@ -1704,8 +1782,20 @@ function SectionText(p: SectionProps) {
     h.onLines(key, asLines(value));
   };
 
+  /** Escape lets the next Tab or Shift+Tab leave the field instead of indenting (NF-2). */
+  const released = useRef(false);
+  const lineOfCaret = (el: HTMLTextAreaElement) =>
+    el.value.slice(0, el.selectionStart).split('\n').length - 1;
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
+    if (e.key === 'Escape') {
+      released.current = true;
+      return;
+    }
+    if (e.key === 'Shift') return;
+    const leave = released.current;
+    released.current = false;
     const edit = {
       text: el.value,
       selectionStart: el.selectionStart,
@@ -1714,17 +1804,21 @@ function SectionText(p: SectionProps) {
     const plain = !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
       e.preventDefault();
-      h.onNewChapter(key, el.value.slice(0, el.selectionStart).split('\n').length - 1);
+      h.onNewChapter(key, lineOfCaret(el));
     } else if (e.key === 'Enter' && plain) {
       const next = continueBullet(edit);
       if (next) {
         e.preventDefault();
         apply(next.text, next.selectionStart, next.selectionEnd);
       }
-    } else if ((e.key === ']' || e.key === '[') && (e.metaKey || e.ctrlKey) && !e.altKey) {
-      // Cmd+] indents and Cmd+[ outdents; Tab stays the key that leaves the field (NF-2).
+    } else if (
+      ((e.key === ']' || e.key === '[') && (e.metaKey || e.ctrlKey) && !e.altKey) ||
+      (e.key === 'Tab' && !leave && !e.metaKey && !e.ctrlKey && !e.altKey)
+    ) {
+      // Cmd+] and Tab indent, Cmd+[ and Shift+Tab outdent; after Escape, Tab leaves the field (NF-2).
+      if (p.disabled) return;
       e.preventDefault();
-      const next = indentLines(edit, e.key === '[');
+      const next = indentLines(edit, e.key === '[' || (e.key === 'Tab' && e.shiftKey));
       apply(next.text, next.selectionStart, next.selectionEnd);
     } else if (
       plain &&
@@ -1790,7 +1884,7 @@ function SectionText(p: SectionProps) {
         {...p.tip}
         spellCheck
         rows={1}
-        placeholder={p.chapter !== undefined ? '- The first scene of this chapter' : undefined}
+        placeholder="First scene"
         data-testid="scene-text"
         data-section={p.sectionKey}
         data-field={`scene:${p.sectionKey}`}
@@ -1800,7 +1894,11 @@ function SectionText(p: SectionProps) {
         }}
         onChange={(e) => h.onLines(key, asLines(e.target.value))}
         onKeyDown={onKeyDown}
-        onBlur={h.onBlur}
+        onSelect={(e) => h.onCaret(key, lineOfCaret(e.currentTarget))}
+        onBlur={() => {
+          released.current = false;
+          h.onBlur();
+        }}
       />
     </div>
   );
@@ -1899,7 +1997,6 @@ function when(iso: string): string {
 /** PL-5: the saved versions, newest first; one opens for a look and can be restored. */
 function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => void }) {
   const ro = useWriteGuard();
-  const days = useBibleSettings().numbers.outlineVersionDays;
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<VersionSummary[] | null>(null);
   const [picked, setPicked] = useState<Version | null>(null);
@@ -1948,11 +2045,6 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary>Versions{list ? ` (${list.length})` : ''}</summary>
-      <p className="example-note">
-        Every change is kept, with the years of the scenes. A new version opens when the latest one
-        is older than {days} {days === 1 ? 'day' : 'days'}. Restoring an older version is itself a
-        new version, so nothing is ever lost.
-      </p>
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -1961,7 +2053,7 @@ function Versions(props: { saves: number; onRestore: (r: SceneOutlineState) => v
       {list === null ? (
         <p aria-live="polite">Loading the versions.</p>
       ) : list.length === 0 ? (
-        <p className="example-note">No versions yet. The first change makes one.</p>
+        <p className="example-note">No versions yet.</p>
       ) : (
         <ul className="stack-list scene-version-list">
           {list.map((v, i) => (
