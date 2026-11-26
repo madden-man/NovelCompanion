@@ -1326,7 +1326,6 @@ function CaptureDialog(props: {
                       busy={props.busy}
                       claudeOff={props.readOnly.off}
                       keyMissing={keyMissing}
-                      onAddKey={props.onAddKey}
                       onTick={(t) => props.onTickEdit(i, t)}
                       onChoose={(patch) => props.onChooseEdit(i, patch)}
                       onAskClaude={() => props.onSendOne(i, 'full')}

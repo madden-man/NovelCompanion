@@ -446,16 +446,19 @@ export function FactCard(props: {
       {stand === 'local' && <DraftDiff drafts={drafts} lists={props.lists} index={props.index} />}
       {(stand === 'local' || stand === 'unsent') && (
         <div className="row capture-fact-actions">
-          {props.keyMissing && props.onAddKey ? (
-            <button
-              type="button"
-              className="btn small"
-              disabled={props.busy}
-              onClick={props.onAddKey}
-              data-testid="capture-add-key"
-            >
-              Add a Claude key
-            </button>
+          {props.keyMissing ? (
+            // With no key the card offers the key, or nothing where the box already does.
+            props.onAddKey && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={props.busy}
+                onClick={props.onAddKey}
+                data-testid="capture-add-key"
+              >
+                Add a Claude key
+              </button>
+            )
           ) : (
             <>
               {stand === 'unsent' && (

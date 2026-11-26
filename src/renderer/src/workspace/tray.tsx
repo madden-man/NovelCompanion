@@ -199,7 +199,7 @@ export function NotebookTray() {
     } else if (result === 'busy') {
       setMessage('The Add box is busy with another capture.');
     } else {
-      setMessage('Nothing was sent. The Add box says why.');
+      setMessage('Nothing was sent.');
     }
   };
 
