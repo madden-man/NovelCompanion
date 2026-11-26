@@ -1401,7 +1401,7 @@ function TreePersonForm({ id }: { id: string }) {
       {inTrash && (
         <>
           <p className="callout warn" role="status">
-            This person is in the trash. Restore them to bring them back with their links.
+            This person is in the trash.
           </p>
           <TrashControls
             collection="characters"
@@ -1416,8 +1416,8 @@ function TreePersonForm({ id }: { id: string }) {
       {ed.warnings.length > 0 && (
         <p className="callout warn" data-testid="warning-count">
           {ed.warnings.length === 1
-            ? '1 field has a warning. It still saved.'
-            : `${ed.warnings.length} fields have warnings. They still saved.`}
+            ? '1 field has a warning.'
+            : `${ed.warnings.length} fields have warnings.`}
         </p>
       )}
       <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
