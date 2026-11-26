@@ -1179,10 +1179,10 @@ test('A57 the selected marker shows a bar: a year back and forward, rename and d
   const bar = grid().getByTestId('marker-bar');
   await expect(bar).toHaveCount(1);
   await expect(bar.locator('kbd')).toHaveText(['←', '→', 'F2', 'Del']);
-  // Only the selected marker has one.
-  await expect(grid().locator('.wg-marker[data-id="E3"] ~ [data-testid="marker-bar"]')).toHaveCount(
-    0,
-  );
+  // Only the selected marker has one, beside it.
+  await expect(
+    grid().locator('.wg-marker[data-id="E10"] + [data-testid="marker-bar"]'),
+  ).toHaveCount(1);
   await bar.getByRole('button', { name: 'A year later' }).click();
   await expect(marker('E10')).toHaveAttribute('data-year', '2091');
   await expect

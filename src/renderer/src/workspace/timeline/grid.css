@@ -437,6 +437,8 @@
 }
 .wg-bar-btn {
   all: unset;
+  /* all: unset makes it inherit the bar's pointer-events: none. */
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
