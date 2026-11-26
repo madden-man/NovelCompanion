@@ -186,6 +186,27 @@ describe('A56 the tray, Voice and Relevant channels over the pages the phone sen
       year: null,
     });
     expect(inside.rows.map((r) => r.id)).not.toContain('CA');
+    // A page naming a place inside the strand's place (The Hale house is in Portland) is found.
+    await send(world, 'messages', 'K-house', 1, {
+      id: 'K-house',
+      at: NOV25,
+      updatedAt: NOV25,
+      text: 'The Hale house floods every spring.',
+      wise: false,
+      kept: true,
+      kind: 'kept',
+      date: NOV25,
+      year: 2090,
+      chips: { characterIds: [], placeIds: [] },
+    });
+    await service.pull();
+    expect(session.repo.notebookPage('K-house')!.placeIds).toEqual(['PLC2']);
+    const byParent = await invoke('notebook.relevant', {
+      characterIds: [],
+      placeIds: ['PLC1'],
+      year: null,
+    });
+    expect(byParent.rows.map((r) => r.id)).toContain('K-house');
     const none = await invoke('notebook.relevant', {
       characterIds: ['U1'],
       placeIds: [],

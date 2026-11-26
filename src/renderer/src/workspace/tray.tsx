@@ -176,13 +176,25 @@ export function NotebookTray() {
     const c = choiceOf(i);
     const year = c.hint.startYear ?? (typeof i.year === 'number' ? i.year : i.fact.years.start);
     setMessage(null);
-    const result = await captureNav.send({ text: i.fact.text, year, hint: c.hint, all });
+    // The sent mark is stored before an unfiled call-back can clear it, whichever comes first.
+    let sentMark: Promise<unknown> = Promise.resolve();
+    const result = await captureNav.send({
+      text: i.fact.text,
+      year,
+      hint: c.hint,
+      all,
+      // FN-6: a run that fails or stops, or a box closed unfiled, offers the card again.
+      onUnfiled: () => {
+        void sentMark
+          .then(() => call('tray.mark', { keys: [i.key], mark: null }))
+          .then(setMarks, () => undefined);
+      },
+    });
     if (result === 'sent') {
-      try {
-        setMarks(await call('tray.mark', { keys: [i.key], mark: 'sent' }));
-      } catch (e) {
-        setMessage(plainError(e));
-      }
+      sentMark = call('tray.mark', { keys: [i.key], mark: 'sent' }).then(setMarks, (e: unknown) =>
+        setMessage(plainError(e)),
+      );
+      await sentMark;
     } else if (result === 'busy') {
       setMessage('The Add box is busy with another capture. Finish or close it, then send again.');
     } else {

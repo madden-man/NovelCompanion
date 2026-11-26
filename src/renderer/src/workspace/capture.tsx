@@ -76,6 +76,12 @@ export interface CaptureSendRequest {
   hint?: Omit<CaptureHint, 'fact'>;
   /** Ask Claude instead: Route C (CR-5). */
   all?: boolean;
+  /**
+   * A56 (FN-6): called when the sentence ends unfiled after all (the run
+   * failed or was stopped, or the box closed without filing it), so the tray
+   * offers it again. Never called once it is filed or kept for review.
+   */
+  onUnfiled?: () => void;
 }
 /** What came of a hand-over: sent to Claude, the box busy with another capture, or not sent. */
 export type CaptureSendResult = 'sent' | 'busy' | 'not sent';
@@ -284,6 +290,13 @@ export function CaptureBox() {
   const [askAck, setAskAck] = useState(false);
   /** The routed capture already ended in KB-7 (saved, or the text put back). */
   const settled = useRef(false);
+  /** A56 (FN-6): the tray's hand-over still waiting to be filed; called back if it is not. */
+  const handOver = useRef<(() => void) | null>(null);
+  const releaseHandOver = useCallback(() => {
+    const back = handOver.current;
+    handOver.current = null;
+    back?.();
+  }, []);
   /** What the last File it could not do (approvals that failed stay pending). */
   const [notFiled, setNotFiled] = useState(0);
   /** Sentences the last File it put back in the box (unsent, or a draft that failed). */
@@ -447,6 +460,8 @@ export function CaptureBox() {
     settled.current = true;
     // The outcome is a write (KB-7) or the text put back; neither belongs in the render pass.
     queueMicrotask(() => {
+      // A56 (FN-6): a sentence from the tray that came to nothing goes back to the tray.
+      releaseHandOver();
       if (failed) {
         setRunError(failed.live?.error ?? null);
         void saveAsQuestion(routed.text);
@@ -458,7 +473,7 @@ export function CaptureBox() {
       setPhase('edit');
       setMessage('Stopped. Nothing was proposed; your text is back in the box.');
     });
-  }, [routed, runs, sending, saveAsQuestion]);
+  }, [routed, runs, sending, saveAsQuestion, releaseHandOver]);
 
   const running = sending > 0 || runs.some(runBusy);
   const shownPhase: ShownPhase = phase === 'routed' && running ? 'running' : phase;
@@ -624,6 +639,7 @@ export function CaptureBox() {
       settled.current = true;
       await saveAsQuestion(body);
     }
+    if (ok && from?.onUnfiled) handOver.current = from.onUnfiled;
     return ok;
   };
 
@@ -742,6 +758,9 @@ export function CaptureBox() {
       setFiled(r.filed);
       setNotFiled(approved.failed.length);
       setPhase('filed');
+      // A56 (FN-6): filed, the tray's sentence stays gone; nothing filed, it goes back.
+      if (r.filed.length) handOver.current = null;
+      else releaseHandOver();
       const notes: string[] = [];
       if (local.failed.length) {
         notes.push(
@@ -768,6 +787,8 @@ export function CaptureBox() {
    */
   const close = () => {
     setBoxOpen(false);
+    // A56 (FN-6): closed before the tray's sentence was filed: the tray offers it again.
+    if (phase !== 'filed') releaseHandOver();
     if (phase === 'routed' && !running && routed) {
       const back = routed.facts.filter((f) => {
         const st = standOf(routed, runs, f.index);
@@ -792,6 +813,8 @@ export function CaptureBox() {
       const st = standOf(routed, runs, f.index);
       return st === 'local' || st === 'unsent';
     });
+    // Review later keeps the tray's sentence (its proposals wait in the review queue).
+    handOver.current = null;
     if (!kept.length) return close();
     const body = kept.length === routed.facts.length ? routed.text : textOf(kept);
     settled.current = true;
