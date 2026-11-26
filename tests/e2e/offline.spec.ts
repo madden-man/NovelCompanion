@@ -78,7 +78,30 @@ test('ARCH-6 at launch with MongoDB unreachable and no snapshot yet, the window 
   await expect(banner).not.toContainText(/ECONNREFUSED|Mongo\w*Error/);
   // The connection string can be fixed from here, without a bible open.
   await expect(page.getByTestId('mongo-settings')).toBeVisible();
-  await expect(page.getByTestId('mongo-test')).toBeEnabled();
+  await expect(page.getByTestId('mongo-input')).toBeEnabled();
+  await stop();
+});
+
+test('A57 ARCH-6 on the launch screen the connection string field tests a paste and opens the bibles when it connects', async () => {
+  const bad = await closedUri();
+  await start(bad, mkdtempSync(join(tmpdir(), 'nc-e2e-first-')));
+  await expect(page.getByTestId('connection-banner')).toBeVisible({ timeout: 30_000 });
+  const status = page.getByTestId('mongo-status');
+  await expect(status).toContainText('Not reachable · mongodb://…');
+  await expect(page.locator('body')).not.toContainText(bad);
+  const input = page.getByTestId('mongo-input');
+  await expect(input).toHaveAttribute('type', 'password');
+  await input.focus();
+  await input.evaluate((el, t) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', t);
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  }, server.getUri());
+  await expect(page.getByTestId('connection-banner')).toHaveCount(0, { timeout: 60_000 });
+  await expect(page.getByTestId('bible-list')).toContainText(NAME);
+  await expect(page.locator('body')).not.toContainText(server.getUri());
   await stop();
 });
 

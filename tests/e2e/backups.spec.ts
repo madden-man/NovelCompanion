@@ -20,6 +20,8 @@ test.beforeAll(async () => {
   db = fileDb();
   ({ app, page } = await launch(db, {
     NOVEL_COMPANION_TEST_SAVE_PATH: join(dir, 'export.json'),
+    // A57: Import reads back the file Export wrote.
+    NOVEL_COMPANION_TEST_BIBLE_FILE: join(dir, 'export.json'),
   }));
   invoke = invokeVia(page);
   await invoke('bible.create', { slug: 'backups-fixture', name: 'Backups fixture' });
@@ -69,7 +71,9 @@ test('BK-1 BK-2 a snapshot taken on request can be restored, which takes a safet
 
   const target = page.locator(`[data-testid="snapshot-row"][data-id="${id}"]`);
   await target.getByTestId('snapshot-restore').click();
-  await target.getByTestId('snapshot-confirm').click();
+  const confirm = page.getByTestId('snapshot-confirm');
+  await expect(confirm).toContainText('Replace Backups fixture with the snapshot from');
+  await confirm.getByRole('button', { name: 'Replace' }).click();
   await expect(page.getByTestId('reload-notice')).toContainText('Restored the snapshot from');
   await expect
     .poll(
@@ -95,4 +99,60 @@ test('BK-3 the whole bible exports to one JSON file from the Backups screen', as
   await rail(page, 'Backups').click();
   await page.getByTestId('backup-export').click();
   await expect(page.getByTestId('backups-message')).toContainText('export.json');
+});
+
+test('A57 Backups carries no explanation: the actions sit in the header and the count lives in Settings', async () => {
+  await rail(page, 'Backups').click();
+  const backups = page.getByTestId('backups-view');
+  await expect(backups.getByTestId('snapshot-row').first()).toBeVisible();
+  for (const name of ['Snapshot now', 'Export…', 'Import as a new bible…']) {
+    await expect(backups.getByRole('button', { name, exact: true })).toBeVisible();
+  }
+  await expect(backups.getByRole('columnheader', { name: 'Why' })).toBeVisible();
+  for (const gone of [
+    'A snapshot is a full copy',
+    'Restoring replaces every entry',
+    'Writes every entry, list, and setting',
+    'Choose a file made by Export',
+  ]) {
+    await expect(backups).not.toContainText(gone);
+  }
+  await expect(backups.getByLabel('Snapshots to keep')).toHaveCount(0);
+  await expect(backups.getByRole('button', { name: 'Save the number' })).toHaveCount(0);
+});
+
+test('A57 Restore says what it replaces once, at the press, and Cancel or Escape keeps the bible', async () => {
+  await rail(page, 'Backups').click();
+  const backups = page.getByTestId('backups-view');
+  const row = backups.getByTestId('snapshot-row').first();
+  await row.getByTestId('snapshot-restore').click();
+  const confirm = page.getByTestId('snapshot-confirm');
+  await expect(confirm).toContainText('Everything in it now is replaced.');
+  await expect(confirm).toContainText('The present state is snapshotted first.');
+  await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(confirm).toHaveCount(0);
+  await row.getByTestId('snapshot-restore').click();
+  await page.getByTestId('snapshot-confirm').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByTestId('snapshot-confirm')).toHaveCount(0);
+  expect((await places()).map((e) => e.entry.title).sort()).toEqual([
+    'Guangzhou',
+    'Portland',
+    'The Hale house',
+  ]);
+});
+
+test('A57 BK-3 Import as a new bible opens the file dialog directly and opens the bible it makes', async () => {
+  await rail(page, 'Backups').click();
+  await page.getByTestId('backup-import').click();
+  // The file's bible is called Backups fixture, so the new one is numbered beside it.
+  await expect(page.getByTestId('current-bible')).toHaveText('Backups fixture 2', {
+    timeout: 60_000,
+  });
+  expect((await invoke('bible.current', {})).bible?.id).toBe('backups-fixture-2');
+  expect((await places()).map((e) => e.entry.title).sort()).toEqual([
+    'Guangzhou',
+    'Portland',
+    'The Hale house',
+  ]);
 });
