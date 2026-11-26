@@ -211,8 +211,9 @@ describe('ARCH-6 offline behaviour in the IPC layer', () => {
   test('ARCH-6 every renderer file that sends a write disables its controls while read-only', () => {
     // App.tsx creates bibles only from the form shown while MongoDB is connected.
     // sessions/common.tsx holds updateWithUndo, a helper whose callers (the manuscript
-    // screen) disable the controls that reach it.
-    const exempt = new Set(['App.tsx', 'common.tsx']);
+    // screen) disable the controls that reach it. A56: trayFile.ts is File it for the tray,
+    // whose only caller (tray.tsx, useWriteGuard) disables File it while read-only.
+    const exempt = new Set(['App.tsx', 'common.tsx', 'trayFile.ts']);
     const writes = new RegExp(
       `['"](${WRITE_CHANNELS.map((c) => c.replace('.', '\\.')).join('|')})['"]`,
     );
