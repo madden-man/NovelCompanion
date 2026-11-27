@@ -14,6 +14,7 @@ import { RelevantBody } from './relevantBody';
 import { useOverrides } from './overrides';
 import type { OpenEntry, SelectionView } from './common';
 import { usePhone } from '../../phone';
+import './phone.css';
 
 export type BriefInput = Request<'session.relevant'>['input'];
 

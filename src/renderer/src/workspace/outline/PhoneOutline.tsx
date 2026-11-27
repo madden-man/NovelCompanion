@@ -280,10 +280,12 @@ export function PhoneOutline(p: PhoneOutlineProps) {
     const tick = () => {
       const y = pointer.current.y;
       const by = y < EDGE + 52 ? -STEP : y > window.innerHeight - EDGE - 58 ? STEP : 0;
-      if (by !== 0) {
-        window.scrollBy(0, by);
+      const was = window.scrollY;
+      if (by !== 0) window.scrollBy(0, by);
+      const moved = window.scrollY - was;
+      if (moved !== 0) {
         const d = dragRef.current;
-        if (d) changeDrag(track({ ...d, startY: d.startY - by }, y));
+        if (d) changeDrag(track({ ...d, startY: d.startY - moved }, y));
       }
       frame = requestAnimationFrame(tick);
     };

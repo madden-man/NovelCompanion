@@ -17,5 +17,18 @@ export default defineConfig({
   reporter: 'list',
   forbidOnly: true,
   use: { serviceWorkers: 'block' },
-  projects: [{ name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } }],
+  projects: [
+    { name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } },
+    // A58 U2: real touch drags (CDP Input.dispatchTouchEvent) need Chromium; tests tagged @touch.
+    {
+      name: 'touch',
+      grep: /@touch/,
+      use: {
+        ...devices['iPhone 15'],
+        browserName: 'chromium',
+        defaultBrowserType: 'chromium',
+        serviceWorkers: 'block',
+      },
+    },
+  ],
 });

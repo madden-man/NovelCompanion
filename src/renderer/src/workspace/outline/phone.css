@@ -292,3 +292,13 @@
 :root[data-phone] .ph-frame .ph-row.danger {
   color: var(--critical-ink);
 }
+
+/* Parts, under the outline: thumb-sized too. */
+:root[data-phone] .ph-frame .ph-outline .outline-parts .btn,
+:root[data-phone] .ph-frame .ph-outline .outline-parts > summary {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .ph-outline .outline-parts > summary {
+  display: flex;
+  align-items: center;
+}
