@@ -8,7 +8,7 @@ import type { Entry } from '../data';
 import { useUndo } from '../undo';
 import { OpenSettingsButton } from '../claude';
 import { useClaudeRun } from './claudeRun';
-import { ManuscriptDiff, Reimport } from './Reimport';
+import { LockIcon, ManuscriptDiff, Reimport } from './Reimport';
 import { EntryEditable } from '../editable';
 import { numberedLines } from '../../../../shared/domain/continuity/lines';
 import { updateWithUndo } from './common';
@@ -21,8 +21,9 @@ type Read = Response<'manuscript.read'>;
 /**
  * The manuscript (MS-1 to MS-5): import a chapter from a Word file, read a
  * linked file again and see the text diff, and mark a chapter as written: a summary to approve.
- * The app only reads manuscripts; it
- * never writes to one.
+ * The app only reads manuscripts; it never writes to one. A57: it opens on
+ * the last chapter marked written, else the first, and the read-only text
+ * carries a lock and Re-import instead of a sentence.
  */
 export function ManuscriptView({
   onOpen,
@@ -36,18 +37,17 @@ export function ManuscriptView({
 }) {
   const chapters = useEntries('chapters');
   const numbers = useChapterNumbers();
-  const [selected, setSelected] = useState<string | null>(chapterId ?? null);
+  const [picked, setSelected] = useState<string | null>(chapterId ?? null);
   const sorted = useMemo(
     () => [...chapters].sort((a, b) => Number(a.readingOrder ?? 0) - Number(b.readingOrder ?? 0)),
     [chapters],
   );
+  const opening = [...sorted].reverse().find((c) => c.written === true) ?? sorted[0];
+  const selected = picked ?? opening?._id ?? null;
   const chapter = sorted.find((c) => c._id === selected) ?? null;
   return (
     <div className="ws-wide stack" data-testid="manuscript-view">
       <h2>Manuscript</h2>
-      <p className="example-note">
-        Chapters are read from your manuscript files. The app never changes a manuscript.
-      </p>
       <div className="two-col">
         <ul className="plain-list stack tight" aria-label="Chapters" data-testid="ms-chapters">
           {sorted.map((c) => (
@@ -76,7 +76,7 @@ export function ManuscriptView({
             openFlow={openFlow && chapter._id === chapterId}
           />
         ) : (
-          <p className="lede">Pick a chapter.</p>
+          <p className="example-note">No chapters yet.</p>
         )}
       </div>
     </div>
@@ -264,14 +264,20 @@ function ChapterManuscript({
       {flow && <WrittenFlow chapter={chapter} />}
       {lines.length > 0 && (
         <div className="ms-text-row" data-testid="ms-text-row">
-          {/* IP-18: the text is imported, never edited here; Re-import heads it. */}
-          <Reimport chapter={chapter} />
+          {/* IP-18, A57: the text is imported, never edited here; the lock and Re-import head it. */}
+          {source ? (
+            <Reimport chapter={chapter} />
+          ) : (
+            <span className="row tight" data-testid="ms-text-locked">
+              <LockIcon />
+              Manuscript text
+            </span>
+          )}
           <ol
             className="ms-text"
             data-testid="ms-text"
             tabIndex={0}
-            aria-label="Manuscript text, read only. Use Re-import to change it."
-            title="The manuscript text is imported, not edited here. Use Re-import."
+            aria-label="Manuscript text, read only"
           >
             {lines.map((l) => (
               <li key={l.n} value={l.n}>
@@ -340,9 +346,7 @@ function WrittenFlow({ chapter }: { chapter: Entry }) {
   return (
     <div className="stack" data-testid="written-flow">
       <div className="sunken stack tight" data-testid="summary-step">
-        <span className="eyebrow">
-          {model ? `Generated summary (${model}), edit before approving` : 'Summary'}
-        </span>
+        <span className="eyebrow">{model ? `Generated summary (${model})` : 'Summary'}</span>
         {claude.disclosure}
         {claude.progress}
         {message && (
@@ -368,7 +372,6 @@ function WrittenFlow({ chapter }: { chapter: Entry }) {
               <button type="button" className="btn small" onClick={() => setDraft(null)}>
                 Discard
               </button>
-              <span className="example-note">Nothing is saved until you approve.</span>
             </div>
           </>
         ) : (

@@ -14,6 +14,27 @@ import type { Entry } from '../data';
 type Read = Response<'manuscript.read'>;
 type DiffLine = Read['diff'][number];
 
+/**
+ * A57: the lock that marks the manuscript text as read only, on the
+ * Manuscript tab and beside Re-import, in place of a sentence saying so.
+ */
+export function LockIcon() {
+  return (
+    <svg
+      className="ms-lock"
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      aria-hidden="true"
+      focusable="false"
+      data-testid="ms-lock"
+    >
+      <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
 /** The changed lines of a manuscript read, as the Manuscript tab shows them (MS-4). */
 export function ManuscriptDiff({ diff }: { diff: readonly DiffLine[] }) {
   return (
@@ -88,7 +109,10 @@ export function Reimport(props: { chapter: Entry; onApplied?: (entry: Entry) => 
   return (
     <section className="reimport stack tight" data-testid="reimport" aria-label="Manuscript">
       <div className="row tight">
-        <span>Manuscript{file ? `: ${file}` : ''}</span>
+        <span className="row tight">
+          <LockIcon />
+          Manuscript{file ? `: ${file}` : ''}
+        </span>
         <button
           type="button"
           className="btn small"

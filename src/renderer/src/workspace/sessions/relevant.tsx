@@ -8,6 +8,7 @@ import { briefSettingsCommand } from '../../../../shared/undoCommands';
 import { useUndo } from '../undo';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
+import { useStrandOptions } from '../timeline/StoryTimeDialog';
 import { PovExtras } from './povPickers';
 import { RelevantBody } from './relevantBody';
 import { useOverrides } from './overrides';
@@ -182,6 +183,8 @@ export function RelevantView({
   const { overrides, remove, keep } = useOverrides(input);
   const { result, error } = useSelection(input, overrides, bump);
   const povId = useId();
+  const writingId = useId();
+  const strands = useStrandOptions();
   const sel: SelectionView | null = result?.selection ?? null;
   // A56 (FN-9): a page from the notebook opens across the desk; Close comes back.
   const [notebookPage, setNotebookPage] = useState<string | null>(null);
@@ -202,9 +205,33 @@ export function RelevantView({
       </div>
       {!time.chapterId && (
         <div className="field narrow">
+          {/* A57: the chapter picker in place, not a sentence pointing at Writing. */}
+          <label htmlFor={writingId}>Chapter</label>
+          <select
+            id={writingId}
+            value=""
+            onChange={(e) => {
+              const s = strands.find((o) => o.key === e.target.value);
+              if (s) {
+                story.set({
+                  year: s.year ?? time.year,
+                  chapterId: s.chapterId,
+                  strandId: s.strandId,
+                });
+              }
+            }}
+            data-testid="relevant-writing"
+          >
+            <option value="">No chapter</option>
+            {strands.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
           <label htmlFor={povId}>Point of view in {time.year}</label>
           <select id={povId} value={pov ?? ''} onChange={(e) => setPov(e.target.value || null)}>
-            <option value="">Pick a point of view</option>
+            <option value="">No point of view</option>
             {[...characters]
               .sort((a, b) => characterName(a).localeCompare(characterName(b)))
               .map((c) => (
@@ -213,10 +240,6 @@ export function RelevantView({
                 </option>
               ))}
           </select>
-          <p className="example-note">
-            Pick a chapter in Writing above, or a point of view here, to see what matters for the
-            session.
-          </p>
           {pov && (
             <PovExtras
               pov={pov}
