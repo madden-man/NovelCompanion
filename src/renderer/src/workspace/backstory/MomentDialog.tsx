@@ -66,6 +66,8 @@ export function MomentDialog(props: {
   freshKey: number;
   /** A49: the marker's double-click ended in the dialog; open What happens as it would. */
   onOpenTitle: () => void;
+  /** A58 U6: drawn as the phone's page for the moment, not as a modal over the grid. */
+  page?: boolean;
 }) {
   const { moment: m, person, onClose } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -75,7 +77,9 @@ export function MomentDialog(props: {
   /** Whether the dialog has had a press yet, and whether the click that ends one is dropped. */
   const pressed = useRef(false);
   const swallow = useRef(false);
-  useFocusTrap(dialogRef);
+  const noTrap = useRef<HTMLDivElement>(null);
+  const asPage = useRef(props.page);
+  useFocusTrap(props.page ? noTrap : dialogRef);
   // Read while rendering the first time, before a field that opens at once takes the focus.
   const [opener] = useState(() => document.activeElement);
   // The host may pass a new function each render; the listener and the focus hand-back stay put.
@@ -89,7 +93,8 @@ export function MomentDialog(props: {
   useEffect(() => {
     const root = dialogRef.current;
     // A fresh moment's What happens has the focus already; otherwise start on it, closed.
-    if (root && !root.contains(document.activeElement)) {
+    // A58 U6: the phone's page opens at its top, with nothing focused under a finger.
+    if (root && !asPage.current && !root.contains(document.activeElement)) {
       root.querySelector<HTMLElement>('.editable[data-field="title"] > .editable-text')?.focus();
     }
     // An open field takes its own Escape and stops it (IP-1), so only one no field took gets here.
@@ -134,7 +139,7 @@ export function MomentDialog(props: {
   const who = person ? `${personLabel(person)}, ${years}, ${ageWords(person, m.year)}` : years;
   return (
     <div
-      className="overlay"
+      className={props.page ? 'bs-moment-page' : 'overlay'}
       onMouseDownCapture={(e) => {
         // A49: a double-click on a marker opens What happens. Its first press opened the dialog,
         // so its second (the press count says so) lands on whatever of the dialog lies over the
@@ -156,7 +161,7 @@ export function MomentDialog(props: {
         e.stopPropagation();
       }}
       onMouseDown={(e) => {
-        if (e.target !== e.currentTarget) return;
+        if (props.page || e.target !== e.currentTarget) return;
         // The press closes the dialog and moves no focus; the hand-back below places it.
         e.preventDefault();
         onClose();
@@ -165,8 +170,8 @@ export function MomentDialog(props: {
       <div
         ref={dialogRef}
         className="dialog stack bs-dialog"
-        role="dialog"
-        aria-modal="true"
+        role={props.page ? 'region' : 'dialog'}
+        aria-modal={props.page ? undefined : true}
         aria-labelledby={titleId}
         data-testid="moment-dialog"
         data-id={m.id}
@@ -215,9 +220,11 @@ export function MomentDialog(props: {
             >
               Next
             </button>
-            <button type="button" className="btn small" onClick={onClose}>
-              Close
-            </button>
+            {!props.page && (
+              <button type="button" className="btn small" onClick={onClose}>
+                Close
+              </button>
+            )}
           </span>
         </header>
         {/* Keyed by the moment, so Previous and Next start every field closed on the new one,
@@ -233,9 +240,11 @@ export function MomentDialog(props: {
             beforeDelete={async () => undefined}
             onChanged={props.onTrashed}
           />
-          <button type="button" className="btn" onClick={onClose}>
-            Close
-          </button>
+          {!props.page && (
+            <button type="button" className="btn" onClick={onClose}>
+              Close
+            </button>
+          )}
         </footer>
       </div>
     </div>

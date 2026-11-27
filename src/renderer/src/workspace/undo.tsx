@@ -17,6 +17,7 @@ import { questionCommand } from '../../../shared/domain/phoneQuestions';
 import { savedFieldText } from '../../../shared/domain/undoText';
 import { call, callIn, setWorkspaceBible, writesSettled } from '../api';
 import { entryChainsSettled } from './editable/chains';
+import { useCapabilities } from '../capabilities';
 
 export type { Op, UndoCommand };
 
@@ -181,6 +182,8 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
   /** Undo writes go through the same IPC channels as every other write, from this bible. */
   const io = useMemo<UndoIO>(() => undoIO((c, r) => callIn(bible, c, r)), [bible]);
   const flushes = useRef(new Set<Flush>());
+  // A58 U6: the phone never asks for the desk's claimed steps (a desk channel).
+  const mayClaim = useCapabilities()('notebook.claimSteps');
   /** A57: this workspace's writes are the window's while it is mounted. */
   const alive = useRef(false);
   useLayoutEffect(() => {
@@ -320,7 +323,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
   // on open, or the one after a reload, can run before this listens) and whenever a pull
   // says it made some. A claimed step is always recorded, even if this unmounted meanwhile.
   useEffect(() => {
-    if (!bible) return;
+    if (!bible || !mayClaim) return;
     const claim = () =>
       void call('notebook.claimSteps', { bible }).then(
         ({ steps }) => {
@@ -332,7 +335,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
     return window.api.on('notebook.questions', (e) => {
       if (e.bible === bible) claim();
     });
-  }, [bible, record]);
+  }, [bible, record, mayClaim]);
 
   const registerFlush = useCallback((fn: Flush) => {
     flushes.current.add(fn);

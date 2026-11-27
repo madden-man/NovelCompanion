@@ -19,7 +19,10 @@ import { useCapabilities } from '../capabilities';
 import { PhoneKeySettings } from './phoneKey';
 import { RomanizationSystems } from './romanizationSystems';
 import { BibleVocabularySettings, ClaudeInstructionsSettings } from './settingsGroups';
+import { usePhone } from '../phone';
+import { useUndo } from './undo';
 import './settings.css';
+import './phoneMore.css';
 
 /** Where the Anthropic Console lists API keys (an allowlisted host, `src/main/links.ts`). */
 const KEYS_URL = 'https://console.anthropic.com/settings/keys';
@@ -63,7 +66,70 @@ export function SettingsView() {
       )}
       {can('phoneKey.status') && <PhoneKeySettings />}
       <AppearanceSettings />
+      <PhoneSignOut />
     </section>
+  );
+}
+
+/** What the phone's transport offers beyond the desk's `window.api` (src/web/transport.ts). */
+type SignsOut = { signOut?: () => void };
+
+/**
+ * A58 U6: sign this phone out. The phone key and the bible it was on are
+ * forgotten, and the paste screen comes back in place of the app. Asks once,
+ * as the desk's removes do. Only on the phone.
+ */
+function PhoneSignOut() {
+  const phone = usePhone();
+  const undo = useUndo();
+  const [asking, setAsking] = useState(false);
+  const signOut = (window.api as unknown as SignsOut).signOut;
+  if (!phone || !signOut) return null;
+  return (
+    <div className="stack" data-testid="phone-sign-out">
+      <h3>This phone</h3>
+      <div className="panel stack tight">
+        <div className="row">
+          <button
+            type="button"
+            className="btn danger"
+            disabled={asking}
+            data-testid="sign-out"
+            onClick={() => setAsking(true)}
+          >
+            Sign out
+          </button>
+        </div>
+        {asking && (
+          <div
+            className="panel stack confirm"
+            role="dialog"
+            aria-label="Sign out of this phone"
+            data-testid="sign-out-confirm"
+          >
+            <strong>Sign out of this phone? The phone key is forgotten here.</strong>
+            <div className="row tight">
+              <button type="button" className="btn" onClick={() => setAsking(false)}>
+                Stay signed in
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                data-testid="sign-out-confirm-button"
+                onClick={() => {
+                  void undo
+                    .flush()
+                    .catch(() => undefined)
+                    .finally(() => signOut.call(window.api));
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

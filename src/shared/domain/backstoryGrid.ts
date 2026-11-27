@@ -418,6 +418,12 @@ export function ageIn(p: { birth: StoryDate | null; death: StoryDate | null }, y
  * lifespan bar: a one-lane row is 36px, a two-lane row 58px (A50, back from the A49 sizes).
  */
 export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
+/** A58 U6: on the phone a one-lane row and a family heading are 44px, a thumb's target. */
+export const PHONE_BACKSTORY_METRICS: GridMetrics = {
+  ...BACKSTORY_METRICS,
+  rowPad: 11,
+  groupHeading: 44,
+};
 
 /**
  * A50: the person view's rows, the A49 sizes: 28px lanes and 10px above and below, so one lane
@@ -515,13 +521,14 @@ export function layoutBackstory(
   s: YearScale,
   closed: ReadonlySet<string> = new Set(),
   opts: MarkerOptions = BACKSTORY_MARKERS,
+  metrics: GridMetrics = BACKSTORY_METRICS,
 ): GridLayout {
   const layout = layoutGrid(
     gridGroups(g.families, closed),
     momentItems(g.moments, g.kinds),
     s,
     opts,
-    BACKSTORY_METRICS,
+    metrics,
   );
   // A54: a row whose birth is unknown says so in a band at its foot, under the lanes.
   let shift = 0;

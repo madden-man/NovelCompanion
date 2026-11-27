@@ -1,0 +1,142 @@
+/* A58 U6: Backstory on the phone (PH-34, PH-35). Every rule is under :root[data-phone], which
+   only the web build sets, so the desk never sees them. Theme tokens only. */
+
+/* The head: the title, then one thumb row of zoom and New moment. The top bar holds the year. */
+:root[data-phone] .ph-frame .bs-area {
+  padding: 10px var(--ph-gutter-right) 16px var(--ph-gutter-left);
+  gap: 10px;
+}
+:root[data-phone] .ph-frame .bs-area > .list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .bs-area > .list-head > h2 {
+  flex: 1 0 100%;
+  margin: 0;
+}
+:root[data-phone] .ph-frame .bs-head-tools {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .bs-zoom {
+  margin-left: 0;
+  gap: 0;
+  flex-wrap: nowrap;
+}
+:root[data-phone] .ph-frame .bs-zoom .btn.small {
+  min-height: var(--ph-target);
+  padding: 6px 8px;
+  font-size: 0.92rem;
+  border-radius: 0;
+  margin-left: -1px;
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .bs-zoom .btn.small:first-of-type {
+  border-radius: var(--radius) 0 0 var(--radius);
+  margin-left: 0;
+}
+:root[data-phone] .ph-frame .bs-zoom .btn.small:last-of-type {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+:root[data-phone] .ph-frame .bs-create {
+  flex-wrap: wrap;
+}
+:root[data-phone] .ph-frame .bs-create .btn.small {
+  min-height: var(--ph-target);
+  padding: 6px 10px;
+  font-size: 0.92rem;
+}
+:root[data-phone] .ph-frame .bs-zoom .btn.small[aria-pressed='false'] {
+  border-style: solid;
+}
+
+/* PH-34: the grid scrolls sideways inside its frame with the names held at the left; the page
+   scrolls it up and down, so the frame keeps no height of its own. */
+:root[data-phone] .ph-frame .bs-area > .wg-scroll.bs-scroll:not(.bs-person) {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+:root[data-phone] .ph-frame .bs-scroll {
+  --wg-label: 150px !important;
+}
+:root[data-phone] .ph-frame .bs-row-cell {
+  padding-left: 10px;
+  padding-right: 0;
+}
+:root[data-phone] .ph-frame .bs-name-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ph-target);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-phone] .ph-frame .bs-row-text {
+  min-width: 0;
+  overflow: hidden;
+}
+/* The row's "+": a thumb's square at the end of the name cell. */
+:root[data-phone] .ph-frame .bs-row-add {
+  flex: none;
+  width: var(--ph-target);
+  height: var(--ph-target);
+  margin-left: auto;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 1.3rem;
+  background: transparent;
+}
+:root[data-phone] .ph-frame .bs-row-add:active {
+  background: var(--surface-2);
+}
+:root[data-phone] .ph-frame .bs-row-label:hover,
+:root[data-phone] .ph-frame .bs-row-cell:hover {
+  background: transparent;
+}
+/* A marker is small to see but a thumb's size to tap. */
+:root[data-phone] .ph-frame .bs-marker {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+:root[data-phone] .ph-frame .bs-marker::after {
+  content: '';
+  position: absolute;
+  inset: -14px -10px;
+}
+:root[data-phone] .ph-frame .bs-area > .legend {
+  gap: 4px 12px;
+  font-size: 0.85rem;
+}
+
+/* A moment is a page with back: the dialog's fields, laid flat on the page. */
+:root[data-phone] .ph-frame .bs-moment-page {
+  display: block;
+}
+:root[data-phone] .ph-frame .bs-moment-page > .bs-dialog {
+  width: auto;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+:root[data-phone] .ph-frame .bs-moment-page .bs-dialog-head {
+  flex-direction: column;
+  align-items: stretch;
+}
+:root[data-phone] .ph-frame .bs-moment-page .bs-dialog-head .btn.small {
+  flex: 1 1 0;
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .bs-moment-page .bs-dialog-head > .row {
+  flex-wrap: nowrap;
+}
+:root[data-phone] .ph-frame .bs-moment-page .bs-dialog-foot .btn {
+  min-height: var(--ph-target);
+}

@@ -15,6 +15,7 @@ import {
   PERSON_LABEL_MAX,
   PERSON_MARKERS,
   PERSON_METRICS,
+  PHONE_BACKSTORY_METRICS,
   UNKNOWN_BAND,
   ageText,
   kindOf,
@@ -52,6 +53,7 @@ import {
 import type { EdgeDrag, EraEdits, GridBand, GridEra, MovePart } from '../timeline/gridShared';
 import { KindSwatch, kindStyle } from './KindSwatch';
 import { measureLabel } from './labelWidth';
+import { usePhone } from '../../phone';
 import './backstory.css';
 
 /**
@@ -106,6 +108,9 @@ export function BackstoryGrid(props: {
   eraEdits?: EraEdits;
 }) {
   const { grid, storyYear } = props;
+  // A58 U6 (PH-34, PH-35): on the phone nothing on the grid drags; a tap opens, the row's
+  // "+" adds, and the years change on the moment's page. Rows and headings are 44px.
+  const phone = usePhone();
   const vp = useGridViewport(props.span, props.zoom, storyYear);
   const scale = vp.scale;
   const [closed, toggleFamily] = useClosedGroups();
@@ -126,15 +131,23 @@ export function BackstoryGrid(props: {
     [grid, personId, scale, fill],
   );
   const layout = useMemo(
-    () => personLayout ?? layoutBackstory(grid, scale, closed, GRID_MARKERS),
-    [personLayout, grid, scale, closed],
+    () =>
+      personLayout ??
+      layoutBackstory(
+        grid,
+        scale,
+        closed,
+        GRID_MARKERS,
+        phone ? PHONE_BACKSTORY_METRICS : undefined,
+      ),
+    [personLayout, grid, scale, closed, phone],
   );
   const byId = useMemo(() => new Map(grid.moments.map((m) => [m.id, m])), [grid.moments]);
   const families = useMemo(() => new Map(grid.families.map((f) => [f.id, f])), [grid.families]);
   const ctl = useGridMarkers({
     layout,
     scale,
-    readOnly: props.readOnly,
+    readOnly: props.readOnly || phone,
     yearsOf: (id) => {
       const m = byId.get(id);
       return m && { startYear: m.year, endYear: m.endYear ?? m.year };
@@ -174,7 +187,7 @@ export function BackstoryGrid(props: {
   const tipKind = tipMoment ? kindOf(tipMoment, grid.kinds) : undefined;
 
   // IP-4: the lifespan bars drag at their ends and are one Tab stop, Up and Down between them.
-  const canEdit = !props.readOnly && props.onLifeEnd !== undefined;
+  const canEdit = !props.readOnly && !phone && props.onLifeEnd !== undefined;
   const lifeDrag = useEdgeDrag(scale.ppy, !canEdit, (id, side, delta) => {
     void props.onLifeEnd?.(id, side, delta);
   });
@@ -350,7 +363,7 @@ export function BackstoryGrid(props: {
                 <button
                   type="button"
                   className="wg-plus bs-row-add"
-                  tabIndex={-1}
+                  tabIndex={phone ? undefined : -1}
                   aria-label={`Add a ${storyYear} moment for ${p.name}`}
                   data-testid="row-add"
                   onClick={() => void props.onCreate(p.id, storyYear)}
@@ -361,7 +374,9 @@ export function BackstoryGrid(props: {
             </div>
             <GridTrack
               layout={layout}
-              onEmptyClick={props.readOnly ? undefined : (year) => void props.onCreate(p.id, year)}
+              onEmptyClick={
+                props.readOnly || phone ? undefined : (year) => void props.onCreate(p.id, year)
+              }
             >
               <Lifespan
                 person={p}

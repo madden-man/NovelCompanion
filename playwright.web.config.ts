@@ -17,5 +17,20 @@ export default defineConfig({
   reporter: 'list',
   forbidOnly: true,
   use: { serviceWorkers: 'block' },
-  projects: [{ name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } }],
+  projects: [
+    { name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } },
+    // A58 U6: hold-to-lift drags with real CDP touches, on Chromium at an iPhone's size.
+    {
+      name: 'touch',
+      testMatch: '**/phone-more.spec.ts',
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 393, height: 852 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: 'block',
+      },
+    },
+  ],
 });

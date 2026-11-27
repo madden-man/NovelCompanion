@@ -32,7 +32,9 @@ import { useStoryTime } from './storyTime';
 import { useUndo } from './undo';
 import { RowEditor } from './rowEditor';
 import type { Picked } from './rowEditor';
-import { Zh } from './Zh';
+import { Zh, useWorkspaceOpen } from './Zh';
+import { usePhone } from '../phone';
+import './phoneMore.css';
 import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
@@ -48,6 +50,20 @@ import {
   useListAddNew,
 } from './editable';
 import type { SaveInfo } from './editable';
+
+/**
+ * A58 U6 (PH-31): on the phone a row's Edit opens the entry as a page with back,
+ * in place of the editor under the row. True when it did.
+ */
+function useOpenAsPage(): (collection: 'places' | 'glossaryTerms', id: string) => boolean {
+  const phone = usePhone();
+  const open = useWorkspaceOpen();
+  return (collection, id) => {
+    if (!phone || !open) return false;
+    open(collection, id);
+    return true;
+  };
+}
 
 function YearField(props: {
   id: string;
@@ -1247,6 +1263,7 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
   const undo = useUndo();
   const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
+  const asPage = useOpenAsPage();
   const places = useEntries('places');
   const [year, setYear] = useState(story.year);
   const yearId = useId();
@@ -1310,9 +1327,10 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
                   type="button"
                   className="btn small"
                   aria-expanded={open?.id === n.id}
-                  onClick={() =>
-                    setOpen(open?.id === n.id ? null : { collection: 'places', id: n.id })
-                  }
+                  onClick={() => {
+                    if (asPage('places', n.id)) return;
+                    setOpen(open?.id === n.id ? null : { collection: 'places', id: n.id });
+                  }}
                 >
                   Edit {name}
                 </button>
@@ -1340,6 +1358,7 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
 /** GL-1: one romanization system per language, and the terms that do not follow it, each opening in place (A43). */
 export function RomanizationView() {
   const [open, setOpen] = useState<Picked | null>(null);
+  const asPage = useOpenAsPage();
   const { version } = useStore();
   const [terms, setTerms] = useState<Response<'entry.list'>['entries']>([]);
 
@@ -1376,11 +1395,12 @@ export function RomanizationView() {
                 type="button"
                 className="link-btn"
                 aria-expanded={open?.id === entry._id}
-                onClick={() =>
+                onClick={() => {
+                  if (asPage('glossaryTerms', entry._id)) return;
                   setOpen(
                     open?.id === entry._id ? null : { collection: 'glossaryTerms', id: entry._id },
-                  )
-                }
+                  );
+                }}
               >
                 <Zh text={entryTitle(entry)} actions={false} />
               </button>{' '}
@@ -1409,6 +1429,7 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
   const undo = useUndo();
   const ro = useWriteGuard();
   const [open, setOpen] = useState<Picked | null>(null);
+  const asPage = useOpenAsPage();
   const languages = useList('languages');
   const addLanguage = useListAddNew('languages');
   const titleId = useId();
@@ -1535,13 +1556,14 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
                           type="button"
                           className="btn small"
                           aria-expanded={open?.id === t._id}
-                          onClick={() =>
+                          onClick={() => {
+                            if (asPage('glossaryTerms', t._id)) return;
                             setOpen(
                               open?.id === t._id
                                 ? null
                                 : { collection: 'glossaryTerms', id: t._id },
-                            )
-                          }
+                            );
+                          }}
                         >
                           Edit {chars}
                         </button>
