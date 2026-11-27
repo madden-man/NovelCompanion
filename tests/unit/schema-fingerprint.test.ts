@@ -12,6 +12,19 @@ import {
 import { ClaudeRun } from '../../src/shared/claude';
 import { RevDoc } from '../../src/shared/freshness';
 import { StoryTimeValue } from '../../src/shared/storyTime';
+import {
+  BridgeDoc,
+  BriefSettingsDoc,
+  ClaudeInstructionsDoc,
+  CommunityNotesDoc,
+  NotebookTrayDoc,
+  RomanizationDoc,
+  SceneOutlineDoc,
+  SceneVersionDoc,
+  SnapshotSettingsDoc,
+  TreeLayoutDoc,
+} from '../../src/shared/metaDocs';
+import { SCENE_VERSIONS_COLLECTION } from '../../src/shared/domain/sceneOutline';
 
 /**
  * A58 (PH-20): every stored document shape, by where it is stored. A change
@@ -27,6 +40,17 @@ const STORED: Record<string, z.ZodType> = {
   'meta.bibleSettings': BibleSettings,
   'meta.storyTime': StoryTimeValue,
   'meta.rev': RevDoc,
+  // A58 fix 1: the meta documents written without a schema of their own, and the outline versions.
+  'meta.treeLayout': TreeLayoutDoc,
+  'meta.sceneOutline': SceneOutlineDoc,
+  'meta.briefSettings': BriefSettingsDoc,
+  'meta.communityNotes': CommunityNotesDoc,
+  'meta.notebookTray': NotebookTrayDoc,
+  'meta.snapshotSettings': SnapshotSettingsDoc,
+  'meta.claudeInstructions': ClaudeInstructionsDoc,
+  'meta.bridge': BridgeDoc,
+  'meta.romanization': RomanizationDoc,
+  [SCENE_VERSIONS_COLLECTION]: SceneVersionDoc,
 };
 
 /**
@@ -47,8 +71,18 @@ const FINGERPRINTS: Record<number, Record<string, string>> = {
     glossaryTerms: '03e45c6b3316c691',
     lists: '437468a4ea75172f',
     'meta.bibleSettings': 'd638ed4b72dcdf85',
+    // Recorded by A58 fix 1 for shapes unchanged at 16 (no shape moved, so no new version).
+    'meta.bridge': '587d861703e6d96d',
+    'meta.briefSettings': 'e9ddf962207f7306',
+    'meta.claudeInstructions': 'e2326c7a3764a3f5',
+    'meta.communityNotes': 'd461e54ed8959651',
+    'meta.notebookTray': '41bafb3376f8b9e0',
     'meta.rev': '9038fea824b8de8a',
+    'meta.romanization': '41a76616c41a09b2',
+    'meta.sceneOutline': '4319996701b5375f',
+    'meta.snapshotSettings': '67a5f18369d0d054',
     'meta.storyTime': 'a34d0baa30af658b',
+    'meta.treeLayout': '93c6ad212445ac1d',
     moments: 'c4f7a13f9501d1c8',
     notebookPages: '00fd55d9ba0f9466',
     openQuestions: '72c01837d43fe3d7',
@@ -56,6 +90,7 @@ const FINGERPRINTS: Record<number, Record<string, string>> = {
     parts: 'f187fc3e1fbb864a',
     places: '8e51e25630fccc59',
     proposals: '68fa78d42a525b46',
+    sceneOutlineVersions: '2ecb56b6e7e179cc',
     unions: '3547bef526b1aade',
     worldEvents: 'a70a2ea87ac6e11c',
   },
