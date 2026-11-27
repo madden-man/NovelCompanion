@@ -767,25 +767,42 @@ export function SceneOutline(props: { onOpen: Open }) {
     const { entry: after } = await call('entry.update', { collection, id, patch });
     return editCommand('', collection, id, before, after);
   };
-  /** Several writes as one undo step; what was written before a failure is still one step. */
+  /** The divider change still writing, if any. */
+  const writing = useRef(false);
+  /**
+   * Several writes as one undo step; what was written before a failure is still one step.
+   * The writes go one after another, so while they run a second divider change is
+   * ignored (it would plan from the half-written sections), and an undo waits for
+   * the step to be recorded (else it would take back the step before this one).
+   */
   const together = async (
     label: string,
     run: (steps: UndoCommand[]) => Promise<void>,
   ): Promise<void> => {
-    if (ro.off) return;
+    if (ro.off || writing.current) return;
+    writing.current = true;
     setNotice(null);
     const steps: UndoCommand[] = [];
+    let recorded = (): void => {};
+    const landed = new Promise<void>((resolve) => (recorded = resolve));
+    const off = undo.registerFlush(() => landed);
     try {
-      await run(steps);
-    } catch (e) {
-      setNotice(plainError(e));
+      try {
+        await run(steps);
+      } catch (e) {
+        setNotice(plainError(e));
+      }
+      if (steps.length === 0) return;
+      undo.record({
+        label,
+        undo: [...steps].reverse().flatMap((s) => s.undo),
+        redo: steps.flatMap((s) => s.redo),
+      });
+    } finally {
+      writing.current = false;
+      off();
+      recorded();
     }
-    if (steps.length === 0) return;
-    undo.record({
-      label,
-      undo: [...steps].reverse().flatMap((s) => s.undo),
-      redo: steps.flatMap((s) => s.redo),
-    });
   };
 
   /** A divider before `lowerId`: it and the chapters after it in its section start a new section. */

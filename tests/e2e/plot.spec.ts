@@ -523,7 +523,8 @@ test('A46 a divider is added between two chapters, named in place, and removed; 
   await expect(view().getByTestId('divider')).toHaveCount(2);
   await expect.poll(async () => (await chapterOf('CH3')).partId).not.toBe('PT1');
   const made = String((await chapterOf('CH3')).partId);
-  expect((await chapterOf('CH4')).partId).toBe(made);
+  // The chapters move one write at a time, chapter 3 first.
+  await expect.poll(async () => (await chapterOf('CH4')).partId).toBe(made);
   expect(await partNumber(made)).toBe(2);
   expect(await partNumber('PT2')).toBe(3);
   await expect(line.getByTestId('divider-name')).toHaveText('New section');
@@ -547,9 +548,12 @@ test('A46 a divider is added between two chapters, named in place, and removed; 
   await boundary('CH4', 'CH5').getByTestId('remove-divider').click();
   await expect(view().getByTestId('divider')).toHaveCount(0);
   await expect.poll(async () => (await chapterOf('CH8')).partId).toBe('PT1');
-  expect(
-    (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.deletedAt,
-  ).toBeTruthy();
+  // The part goes to the trash after its last chapter has moved.
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.deletedAt,
+    )
+    .toBeTruthy();
   expect(await chapterIds()).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
   await undo();
   await expect(view().getByTestId('divider')).toHaveCount(1);
