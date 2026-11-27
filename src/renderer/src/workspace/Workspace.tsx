@@ -14,7 +14,7 @@ import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
 import { NotebookTray } from './tray';
-import { UndoProvider, useUndo } from './undo';
+import { UndoNotice, UndoProvider, useUndo } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
@@ -44,6 +44,8 @@ type View =
       collection: EntryCollection;
       selected: string | null;
       creating: boolean;
+      /** A57: the name typed in the find-or-add box, for the new entry's form. */
+      preset?: Record<string, unknown>;
     }
   | { kind: 'search' }
   | { kind: 'tree'; focus?: string }
@@ -255,16 +257,33 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             <EntryList
               collection={view.collection}
               selected={view.selected}
-              onSelect={(id) => setView({ ...view, selected: id, creating: false })}
-              onNew={() => setView({ ...view, selected: null, creating: true })}
+              autoOpen={!view.creating}
+              onAutoOpen={(id) =>
+                // A click that landed first (New, a row) wins over the list opening an entry.
+                setView((v) =>
+                  v.kind === 'section' &&
+                  v.collection === view.collection &&
+                  !v.selected &&
+                  !v.creating
+                    ? { ...v, selected: id }
+                    : v,
+                )
+              }
+              onSelect={(id) =>
+                setView({ ...view, selected: id, creating: false, preset: undefined })
+              }
+              onNew={(preset) => setView({ ...view, selected: null, creating: true, preset })}
             />
             {view.creating ? (
               <>
                 <NewEntryForm
-                  key={view.collection}
+                  key={`${view.collection}:${JSON.stringify(view.preset ?? null)}`}
                   collection={view.collection}
-                  onCreated={(id) => setView({ ...view, selected: id, creating: false })}
-                  onCancel={() => setView({ ...view, creating: false })}
+                  preset={view.preset}
+                  onCreated={(id) =>
+                    setView({ ...view, selected: id, creating: false, preset: undefined })
+                  }
+                  onCancel={() => setView({ ...view, creating: false, preset: undefined })}
                 />
               </>
             ) : view.selected ? (
@@ -280,14 +299,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 onOpenTree={(focus) => setView({ kind: 'tree', focus })}
               />
             ) : (
-              <>
-                <div className="ws-editor empty-editor stack">
-                  <p className="lede">
-                    Pick an entry to edit it, or make a new{' '}
-                    {collectionInfo[view.collection].singular.toLowerCase()}.
-                  </p>
-                </div>
-              </>
+              // A57: the list opens the last entry, or the first; an empty section says so in the list.
+              <div className="ws-editor empty-editor stack" data-testid="empty-editor" />
             )}
           </>
         ) : view.kind === 'search' ? (
@@ -404,7 +417,6 @@ function StoryTimeGate({ onOpen }: { onOpen: (collection: EntryCollection, id: s
  */
 function StatusBar() {
   const story = useStoryTime();
-  const undo = useUndo();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const strands = useStrandOptions();
@@ -420,7 +432,7 @@ function StatusBar() {
       </span>
       {strand && <span data-testid="status-strand">Writing: {strand.label}</span>}
       <span className="status-undo" role="status" aria-live="polite">
-        {undo.notice && <span data-testid="undo-notice">{undo.notice}</span>}
+        <UndoNotice />
       </span>
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>

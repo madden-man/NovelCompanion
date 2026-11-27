@@ -63,9 +63,9 @@ export function PickerList(props: {
   return (
     <div className="picker" id={id} role="listbox" aria-label="Matching entries">
       {hits.length === 0 ? (
-        <p className="example-note">
-          {query.trim() ? 'No entries match.' : 'Type a few letters to search.'}
-        </p>
+        query.trim() ? (
+          <p className="example-note">No entries match.</p>
+        ) : null
       ) : (
         hits.map((h, i) => (
           <button

@@ -11,11 +11,6 @@
 .words-form .words-word input {
   width: 100%;
 }
-.words-hint {
-  margin: 0;
-  color: var(--fg-2);
-  max-width: 62ch;
-}
 .words-title {
   margin: 0;
 }

@@ -5,6 +5,7 @@ import type { Request, Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { useEntries, useStore } from './data';
 import { Zh } from './Zh';
+import { typedNumber } from './editable/model';
 
 type Hit = Response<'search.query'>['hits'][number];
 
@@ -87,9 +88,6 @@ export function SearchView(props: {
   // A search is in flight until the hits on screen answer the current query and filters.
   const busy = query.trim() !== '' && settled.key !== queryKey;
   const shown = query.trim() ? hits : [];
-  const yearBad =
-    (from.trim() !== '' && intOrNull(from) === null) ||
-    (to.trim() !== '' && intOrNull(to) === null);
 
   return (
     <section className="ws-wide stack" aria-labelledby="search-title" data-testid="search-view">
@@ -155,8 +153,11 @@ export function SearchView(props: {
             className="num"
             inputMode="numeric"
             value={from}
-            aria-invalid={from.trim() !== '' && intOrNull(from) === null}
-            onChange={(e) => setFrom(e.target.value)}
+            maxLength={6}
+            onChange={(e) => {
+              const v = typedNumber('year', e.target.value);
+              if (v !== null) setFrom(v);
+            }}
           />
         </div>
         <div className="field year-field">
@@ -166,12 +167,14 @@ export function SearchView(props: {
             className="num"
             inputMode="numeric"
             value={to}
-            aria-invalid={to.trim() !== '' && intOrNull(to) === null}
-            onChange={(e) => setTo(e.target.value)}
+            maxLength={6}
+            onChange={(e) => {
+              const v = typedNumber('year', e.target.value);
+              if (v !== null) setTo(v);
+            }}
           />
         </div>
       </div>
-      {yearBad && <p className="callout warn">A year is a whole number, such as 2045.</p>}
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -182,11 +185,7 @@ export function SearchView(props: {
         aria-busy={busy ? 'true' : 'false'}
         data-query-key={queryKey}
       >
-        {!query.trim() ? (
-          <p className="example-note">
-            Type to search every entry, chapter text and notebook page.
-          </p>
-        ) : shown.length === 0 ? (
+        {!query.trim() ? null : shown.length === 0 ? (
           <p className="example-note" data-testid="search-empty" role="status">
             Nothing matches.
           </p>

@@ -12,6 +12,7 @@ import {
   parseYear,
   patchForPath,
   shownText,
+  typedNumber,
 } from '../../src/renderer/src/workspace/editable/model';
 import type { AddNewState } from '../../src/renderer/src/workspace/editable/model';
 import type { UndoCommand } from '../../src/shared/domain/undoRunner';
@@ -33,17 +34,15 @@ describe('IP-1 the value each kind reads from what was typed', () => {
     expect(parseYear(' -40 ')).toEqual({ ok: true, value: -40 });
     expect(parseYear('20x5')).toEqual({
       ok: false,
-      message: '20x5 is not a year. Write it as digits, for example 2045.',
+      message: '20x5 is not a year.',
     });
     expect(parseYear('2045.5').ok).toBe(false);
-    expect(parseYear('')).toEqual({
-      ok: false,
-      message: 'Needs a year. Write it as digits, for example 2045.',
-    });
+    expect(parseYear('')).toEqual({ ok: false, message: 'Cannot be empty.' });
+    expect(parseYear('', false, 'Born')).toEqual({ ok: false, message: 'Born cannot be empty.' });
     expect(parseYear('', true)).toEqual({ ok: true, value: null });
     expect(parseYear('12000')).toEqual({
       ok: false,
-      message: '12000 is outside the years the app keeps (-10000 to 10000).',
+      message: '12000 is outside the years the app keeps, -10000 to 10000.',
     });
   });
 
@@ -51,7 +50,7 @@ describe('IP-1 the value each kind reads from what was typed', () => {
     expect(parseNumber('3.5')).toEqual({ ok: true, value: 3.5 });
     expect(parseNumber('3.5', { integer: true })).toEqual({
       ok: false,
-      message: '3.5 is not a whole number. Write it as digits.',
+      message: '3.5 is not a whole number.',
     });
     expect(parseNumber('abc').ok).toBe(false);
     expect(parseNumber('').ok).toBe(false);
@@ -61,6 +60,22 @@ describe('IP-1 the value each kind reads from what was typed', () => {
       message: '-1 is too small. The smallest is 0.',
     });
     expect(parseNumber('900', { max: 500 }).ok).toBe(false);
+  });
+
+  test('A57 a year or number box refuses what its kind cannot read as it is typed', () => {
+    expect(typedNumber('year', '2045')).toBe('2045');
+    expect(typedNumber('year', '-40')).toBe('-40');
+    expect(typedNumber('year', '20 45')).toBe('2045');
+    expect(typedNumber('year', '20x5')).toBeNull();
+    expect(typedNumber('year', '2045.5')).toBeNull();
+    expect(typedNumber('year', '4-')).toBeNull();
+    expect(typedNumber('number', '3.5')).toBe('3.5');
+    expect(typedNumber('number', '3.5.1')).toBeNull();
+    expect(typedNumber('number', '3.5', { integer: true })).toBeNull();
+    expect(typedNumber('number', '-1', { min: 0 })).toBeNull();
+    expect(typedNumber('number', '-1', { min: -5 })).toBe('-1');
+    expect(typedNumber('number', 'abc')).toBeNull();
+    expect(typedNumber('year', '')).toBe('');
   });
 
   test('IP-1 SM-1 a date reads one box with the dates.ts parser and explains what it could not read', () => {
@@ -126,7 +141,7 @@ describe('IP-1 chip pickers and Add new', () => {
   test('IP-1 Add new refuses an empty name and keeps the label after a failure', () => {
     let s: AddNewState = addNewReducer({ step: 'closed' }, { type: 'pickAddNew', label: '' });
     s = addNewReducer(s, { type: 'submit' });
-    expect(s).toEqual({ step: 'naming', label: '', error: 'Write a name for the new item first.' });
+    expect(s).toEqual({ step: 'naming', label: '', error: 'The new item has no name.' });
     s = addNewReducer(s, { type: 'label', label: 'Harbour' });
     s = addNewReducer(s, { type: 'submit' });
     s = addNewReducer(s, {
