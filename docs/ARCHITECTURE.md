@@ -220,7 +220,9 @@ Version 13 (`013-cuts.ts`, A52 and A53) takes a "Before migration 13" snapshot (
 
 Version 14 (`014-part-order.ts`, A54) numbers every part from 1 in reading order. Migration 13 left each part the number it had within its book, so a bible with two books had two parts numbered 1. The order is the reading order of the first chapter in each part (live or trashed); a part with no chapter keeps its place after the part created just before it. Live parts come first, trashed parts after. It records `partsRenumbered` and the whole `order` in `meta.migration14`. No snapshot: only part numbers change. `LATEST_SCHEMA_VERSION` was the migration count, 14.
 
-Version 15 (`015-notebook-pages.ts`, A55) makes the `notebookPages` collection with indexes on `characterIds`, `placeIds`, `chapterIds` and `{ world: 1, modifiedAt: -1 }`. It writes no document, so there is no snapshot and no summary. `LATEST_SCHEMA_VERSION` is the migration count, 15.
+Version 15 (`015-notebook-pages.ts`, A55) makes the `notebookPages` collection with indexes on `characterIds`, `placeIds`, `chapterIds` and `{ world: 1, modifiedAt: -1 }`. It writes no document, so there is no snapshot and no summary. `LATEST_SCHEMA_VERSION` was the migration count, 15.
+
+Version 16 (`016-rev.ts`, A58 P2) adds the `meta` document `rev` (`{ _id: 'rev', rev: 0 }`, `$setOnInsert`, so a second run keeps the number). Every write raises it by one (`raiseRev` in `src/main/db/rev.ts`): inside the transaction for the repository's `commit`, `purgeAll`, `applyNotebook` and `replaceBible` (which also never lets it fall back to a number already seen), and right after the write for `writeMeta`, the proposal writes and `RunStore`. `Repository.freshen()` reads it and reloads when the number is not one this process loaded or wrote (`RevTracker`). From version 16 on, `tests/unit/schema-fingerprint.test.ts` keeps a fingerprint of every stored shape per version (PH-20). `LATEST_SCHEMA_VERSION` is the migration count, 16.
 
 ## Everything on screen is a field, A47 (2026-10-22)
 

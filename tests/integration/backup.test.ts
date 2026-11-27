@@ -16,6 +16,16 @@ import { ENTRY_COLLECTIONS } from '../../src/shared/schema';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture, readFixture } from '../helpers/loadFixture';
+import { REV_META_ID } from '../../src/shared/freshness';
+
+/**
+ * A58 (PH-6): every collection without the `rev` counter, which a restore or
+ * an import moves forward on purpose, so another process sees the change.
+ */
+const withoutRev = (collections: Record<string, { _id?: unknown }[]>) => ({
+  ...collections,
+  ...(collections.meta ? { meta: collections.meta.filter((d) => d._id !== REV_META_ID) } : {}),
+});
 
 let store: Store;
 let root: string;
@@ -134,7 +144,7 @@ describe('BK-2 any snapshot can be restored, after a snapshot of the present, in
     expect(out.safety.reason).toBe('restore');
     expect(out.safety.counts.moments).toBe(before.collections.moments!.length + 1);
     const after = await dumpBible(open.handle);
-    expect(after.collections).toEqual(before.collections);
+    expect(withoutRev(after.collections)).toEqual(withoutRev(before.collections));
     expect(Object.keys(after.collections)).not.toContain('revisions');
     expect(open.repo.get('characters', 'H2')).toBeDefined();
     expect(open.repo.get('characters', 'H1')!.backstory).toBe(
@@ -273,7 +283,9 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     const copy = await dumpBible(handle);
     expect(Object.keys(copy.collections).sort()).toEqual(Object.keys(original.collections).sort());
     for (const [name, docs] of Object.entries(original.collections)) {
-      expect(copy.collections[name], name).toEqual(docs);
+      expect(withoutRev(copy.collections)[name], name).toEqual(
+        withoutRev(original.collections)[name],
+      );
     }
     // Entries equal the fixture as loaded; settings equal what was set.
     const fixture = readFixture();
@@ -332,7 +344,9 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     await expect(importBibleJson(handle, JSON.stringify(older))).rejects.toThrow(
       /is not valid, so nothing was imported/,
     );
-    expect((await dumpBible(handle)).collections).toEqual(untouched.collections);
+    expect(withoutRev((await dumpBible(handle)).collections)).toEqual(
+      withoutRev(untouched.collections),
+    );
     expect(await isEmptyBible(handle)).toBe(true);
     // The same older file without the damage loads and is migrated.
     older.collections.worldEvents[0]!.regions = regions;
