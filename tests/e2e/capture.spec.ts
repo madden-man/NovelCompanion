@@ -90,6 +90,8 @@ async function send(text: string) {
   await page.keyboard.press('Meta+k');
   await expect(input()).toBeFocused();
   await input().fill(text);
+  // CR-6: Enter does what the button says, so it waits for the box to place the text.
+  await expect(box().getByTestId('capture-file')).toHaveAttribute('data-current', 'true');
   await input().press('Enter');
 }
 
@@ -107,6 +109,7 @@ async function sendAll(text: string) {
   await page.keyboard.press('Meta+k');
   await expect(input()).toBeFocused();
   await input().fill(text);
+  await expect(box().getByTestId('capture-file')).toHaveAttribute('data-current', 'true');
   await input().press('Alt+Enter');
 }
 
@@ -455,6 +458,50 @@ test('A57 CR-6 a clear cultural line shows its chips and diff while typing, befo
   await expect(field(editor, 'title').locator('input')).toHaveValue(
     'Teenagers in Guangzhou start to eat mooncakes with coffee',
   );
+});
+
+test('A57 CR-6 Enter before the preview shows files nothing; the next Enter does what the button says', async () => {
+  const line = 'Teenagers in Guangzhou start to eat mooncakes with coffee by 2050.';
+  const title = 'Teenagers in Guangzhou start to eat mooncakes with coffee';
+  const made = async () =>
+    (
+      await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })
+    ).entries.filter((e) => e.entry.title === title).length;
+  const before = [await runCount('capture'), await runCount('captureFast')];
+  const lines = await made();
+  await page.keyboard.press('Meta+k');
+  await expect(input()).toBeFocused();
+  // Enter inside the pause: the box only places the text.
+  await input().fill(line);
+  await input().press('Enter');
+  await expect(facts()).toHaveCount(1);
+  await expect(box().getByTestId('capture-file')).toHaveText('File 1 Enter');
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
+  expect(await made()).toBe(lines);
+  // The next Enter files what the box shows.
+  await input().press('Enter');
+  await expect(box().getByTestId('capture-filed')).toContainText(title);
+  expect(await made()).toBe(lines + 1);
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+
+  // A sentence for Claude: Enter and Alt+Enter inside the pause send nothing.
+  await page.keyboard.press('Meta+k');
+  await input().fill(KESSLER);
+  await input().press('Enter');
+  await expect(box().getByTestId('capture-file')).toHaveText('Send 1 to Claude Enter');
+  await input().fill('The Kessler crowd stops tipping by 2071.');
+  await input().press('Alt+Enter');
+  // The press only placed the new text; the box is still the typing view.
+  await expect(box().getByTestId('capture-file')).toHaveAttribute('data-current', 'true');
+  await expect(facts().first()).toContainText('by 2071');
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
+  await input().fill('');
+  await expect(facts()).toHaveCount(0);
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
+  expect([await runCount('capture'), await runCount('captureFast')]).toEqual(before);
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
 });
 
 test('CR-6 changing the Section chip re-routes', async () => {

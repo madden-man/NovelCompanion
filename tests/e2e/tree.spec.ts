@@ -907,7 +907,7 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   const name = inspector().getByTestId('add-form').getByLabel('Name');
   await name.pressSequentially('Typed name');
   await waitSaved(page);
-  const next = 'Undo Changed In the story on Ruth Hale (Cmd Z)';
+  const next = 'Undo Changed In the story on Ruth Hale';
   await expect(undoButton).toHaveAttribute('title', next);
   await expect(name).toBeFocused();
   await page.keyboard.press('Meta+z');

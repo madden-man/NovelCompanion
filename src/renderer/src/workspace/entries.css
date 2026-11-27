@@ -30,6 +30,11 @@
   outline-offset: 2px;
   color: var(--fg);
 }
+.vocab-row .drag-handle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  cursor: grabbing;
+}
 .vocab-row .drag-handle[aria-disabled='true'] {
   cursor: default;
 }

@@ -8,6 +8,7 @@ import { Workspace } from './workspace/Workspace';
 import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
 import { useAppearance } from './appearance';
 import { MongoSettings } from './workspace/settings';
+import { flushOpenBible } from './workspace/undo';
 
 type BibleList = Response<'bible.list'>;
 type Bible = Response<'bible.open'>['bible'];
@@ -65,6 +66,8 @@ function Shell() {
     setError(null);
     setOpening(true);
     try {
+      // Pending edits land in the bible they were typed in, as on closing the window.
+      await flushOpenBible();
       const { bible } = await window.api.invoke('bible.open', { slug: id });
       setCurrent(bible);
     } catch (e) {

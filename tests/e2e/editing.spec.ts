@@ -246,10 +246,7 @@ test('ED-3 fifty-one changes undo with Cmd+Z and redo with Shift+Cmd+Z', async (
   for (let n = 1; n <= 51; n++) {
     await input.fill(`Place ${n}`);
     await waitSaved(page);
-    await expect(undoButton).toHaveAttribute(
-      'title',
-      'Undo Changed In the story on Undo Hale (Cmd Z)',
-    );
+    await expect(undoButton).toHaveAttribute('title', 'Undo Changed In the story on Undo Hale');
     await expect
       .poll(async () => (await currentEntry('characters', 'Undo Hale')).role)
       .toBe(`Place ${n}`);
@@ -1178,7 +1175,7 @@ test('A57 a section opens on the entry last open there, else the first, and an e
   await expect(page.getByTestId('rail')).toBeVisible();
 });
 
-test('A57 the filter box finds or adds: a new name offers New with its Enter key, Enter makes the entry, and a section that needs more opens the form with the name', async () => {
+test('A57 IP-13 IP-19 the filter box finds or adds: a new name offers New with its Enter key, Enter makes the entry, and a section that needs more opens the form with the name, which stores the typed name', async () => {
   await openSection('characters');
   const box = page.getByTestId('find-or-add');
   await expect(box).toHaveAttribute('placeholder', 'Find or add a character');
@@ -1220,8 +1217,15 @@ test('A57 the filter box finds or adds: a new name offers New with its Enter key
   await expect(field(form, 'title')).toHaveCount(0);
   await expect(field(form, 'categoryId')).toHaveCount(1);
   await expect(form).not.toContainText('Fill in what this entry needs');
-  await form.getByRole('button', { name: 'Cancel' }).click();
+  // A57 IP-19: the empty choice names its state, not a gesture.
+  const category = field(form, 'categoryId').locator('select');
+  await expect(category.locator('option').first()).toHaveText('Not set');
+  await expect(form).not.toContainText('Choose one');
+  await category.selectOption({ index: 1 });
+  await form.getByRole('button', { name: 'Create world event' }).click();
   await expect(form).toHaveCount(0);
+  await expect(editor.getByRole('heading', { name: 'Harbor strike' })).toBeVisible();
+  expect((await currentEntry('worldEvents', 'Harbor strike')).title).toBe('Harbor strike');
 });
 
 test('A57 an entry heading renames in place: click or F2 opens it, Enter or blur saves as one undo step, Escape cancels', async () => {
@@ -1365,4 +1369,226 @@ test('A57 Review queue, Trash, Lists, Search and Writing tools open with no intr
   await noLede(tools);
   await expect(tools).not.toContainText('Datamuse, a free service');
   await expect(tools.getByRole('button', { name: 'Look up' })).toBeDisabled();
+});
+
+test('A57 IP-19 the top bar has no tooltip that names a key or explains; Cmd T, Cmd Z and Shift Cmd Z sit in aria-keyshortcuts and still work', async () => {
+  const year = page.getByTestId('top-open-year');
+  await expect(year).not.toHaveAttribute('title');
+  await expect(year).toHaveAttribute('aria-keyshortcuts', 'Meta+T');
+  await expect(page.getByTestId('top-relevant')).not.toHaveAttribute('title');
+  const undoButton = page.getByTestId('top-undo');
+  const redoButton = page.getByTestId('top-redo');
+  await expect(undoButton).toHaveAttribute('aria-keyshortcuts', 'Meta+Z');
+  await expect(redoButton).toHaveAttribute('aria-keyshortcuts', 'Shift+Meta+Z');
+  await expect(page.getByTestId('top-bar').locator('[title*="Cmd"]')).toHaveCount(0);
+  await page.keyboard.press('Meta+t');
+  await expect(page.getByTestId('story-time-dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('story-time-dialog')).toBeHidden();
+  // The keys still undo and redo a change, and Undo names the step in its title.
+  await newCharacter('Key Hale', 1970);
+  const role = field(page.getByTestId('editor'), 'role').getByRole('textbox');
+  await role.fill('Ferry pilot');
+  await waitSaved(page);
+  await expect(undoButton).toHaveAttribute('title', 'Undo Changed In the story on Key Hale');
+  await role.blur();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await currentEntry('characters', 'Key Hale')).role ?? '').toBe('');
+  await page.keyboard.press('Shift+Meta+z');
+  await expect
+    .poll(async () => (await currentEntry('characters', 'Key Hale')).role)
+    .toBe('Ferry pilot');
+});
+
+test('A57 IP-8 Enter or Space on a list grip picks the row up, the arrows move it, and Enter or Escape puts it down', async () => {
+  await rail(page, 'Lists').click();
+  const ids = async () => (await listItems('parentLinkTypes')).map((i) => i.id);
+  const start = await ids();
+  const [a, b] = start as [string, string];
+  const second = (await listItems('parentLinkTypes'))[1]!;
+  const grip = itemRow('parentLinkTypes', b).getByRole('button', {
+    name: `Move ${second.label}`,
+    exact: true,
+  });
+  await grip.focus();
+  await expect(grip).toHaveAttribute('aria-pressed', 'false');
+  // Arrows alone do nothing until the grip is picked up.
+  await page.keyboard.press('ArrowUp');
+  expect(await ids()).toEqual(start);
+  await page.keyboard.press('Enter');
+  await expect(grip).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(ids).toEqual([b, a, ...start.slice(2)]);
+  await expect(grip).toBeFocused();
+  await expect(grip).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(ids).toEqual(start);
+  await page.keyboard.press('Enter');
+  await expect(grip).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('ArrowUp');
+  expect(await ids()).toEqual(start);
+  // Space picks it up too, and Escape puts it down.
+  await page.keyboard.press(' ');
+  await expect(grip).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(grip).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('lists-view')).toBeVisible();
+  // Each keyboard move was one step.
+  expect((await undoLabels()).slice(0, 2)).toEqual([
+    `Moved ${second.label} down`,
+    `Moved ${second.label} up`,
+  ]);
+});
+
+test('A57 ED-2 IP-13 a heading rename followed at once by typing in a form field stores both, and the two writes are never in flight together', async () => {
+  await openSection('places');
+  const box = page.getByTestId('find-or-add');
+  await box.fill('Salt Row');
+  await box.press('Enter');
+  const editor = page.getByTestId('editor');
+  const heading = editor.getByRole('heading', { level: 2 });
+  await expect(heading).toContainText('Salt Row');
+  const made = await currentEntry('places', 'Salt Row');
+  // Main holds each title write for a while and counts the writes to this entry in flight.
+  await app.evaluate(({ ipcMain }, id) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const channel = 'nc:entry.update';
+    const original = handlers.get(channel)!;
+    const seen = globalThis as { updatesNow?: number; updatesMax?: number };
+    seen.updatesNow = 0;
+    seen.updatesMax = 0;
+    handlers.set(channel, async (...args: unknown[]) => {
+      const req = args[1] as { id?: string; patch?: Record<string, unknown> } | undefined;
+      if (req?.id !== id) return original(...args);
+      seen.updatesNow! += 1;
+      seen.updatesMax = Math.max(seen.updatesMax!, seen.updatesNow!);
+      try {
+        if (req.patch && 'title' in req.patch) await new Promise((r) => setTimeout(r, 1500));
+        return await original(...args);
+      } finally {
+        seen.updatesNow! -= 1;
+      }
+    });
+    (globalThis as { restoreUpdate?: () => void }).restoreUpdate = () =>
+      handlers.set(channel, original);
+  }, made._id);
+  try {
+    await heading.getByRole('button', { name: 'Title: Salt Row' }).click();
+    const input = heading.getByRole('textbox', { name: 'Title' });
+    await input.fill('Salt Lane');
+    await input.press('Enter');
+    // Straight into the Body field while the rename is still being written.
+    const body = field(editor, 'body').getByRole('textbox');
+    await body.click();
+    await body.pressSequentially('Brine on the steps');
+    const stored = async () =>
+      (await invoke('entry.get', { collection: 'places', id: made._id })).entry;
+    await expect
+      .poll(async () => {
+        const e = await stored();
+        return [e.title, String(e.body).replace(/<[^>]+>/g, '')];
+      })
+      .toEqual(['Salt Lane', 'Brine on the steps']);
+    await waitSaved(page);
+    await expect(page.getByTestId('autosave')).toHaveText('Saved');
+    expect(await app.evaluate(() => (globalThis as { updatesMax?: number }).updatesMax ?? -1)).toBe(
+      1,
+    );
+  } finally {
+    await app.evaluate(() => (globalThis as { restoreUpdate?: () => void }).restoreUpdate?.());
+  }
+});
+
+test('A57 IP-13 a family heading edits the title it shows; the Name field below edits the name', async () => {
+  const { entry } = await invoke('entry.create', {
+    collection: 'families',
+    data: { title: 'Hale family', name: 'Hale', body: '', notes: '', color: '#2a78d6' },
+  });
+  await openSection('families');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /^Hale family/ })
+    .click();
+  const editor = page.getByTestId('editor');
+  const heading = editor.getByRole('heading', { level: 2 });
+  await heading.getByRole('button', { name: 'Title: Hale family' }).click();
+  const input = heading.getByRole('textbox', { name: 'Title' });
+  await expect(input).toHaveValue('Hale family');
+  await input.fill('The Hales of Astoria');
+  await input.press('Enter');
+  await expect(heading).toHaveText('The Hales of Astoria');
+  const stored = async () =>
+    (await invoke('entry.get', { collection: 'families', id: entry._id })).entry;
+  await expect.poll(async () => (await stored()).title).toBe('The Hales of Astoria');
+  expect((await stored()).name).toBe('Hale');
+  // The Name field below still edits the name.
+  await field(editor, 'name').locator('input').fill('Hales');
+  await waitSaved(page);
+  await expect.poll(async () => (await stored()).name).toBe('Hales');
+  await expect(heading).toHaveText('The Hales of Astoria');
+});
+
+test('A57 a bible switch saves the typing still pending in the bible it was typed in', async () => {
+  await invoke('bible.create', { slug: 'editing-other', name: 'Editing other' });
+  await openSection('places');
+  await page
+    .getByTestId('entry-list')
+    .getByRole('button', { name: /^Salt Lane/ })
+    .click();
+  const body = field(page.getByTestId('editor'), 'body').getByRole('textbox');
+  await body.click();
+  await page.keyboard.press('End');
+  await body.pressSequentially(' at dusk');
+  // Switch before the autosave delay runs out.
+  await page.getByTestId('bible-menu-button').click();
+  await page.getByTestId('bible-menu').getByRole('button', { name: 'Editing other' }).click();
+  await expect(page.getByTestId('current-bible')).toHaveText('Editing other');
+  await expect(page.getByTestId('autosave')).toHaveCount(0);
+  await page.getByTestId('bible-menu-button').click();
+  await page.getByTestId('bible-menu').getByRole('button', { name: 'Editing tests' }).click();
+  await expect(page.getByTestId('current-bible')).toHaveText('Editing tests');
+  const salt = await currentEntry('places', 'Salt Lane');
+  expect(String(salt.body).replace(/<[^>]+>/g, '')).toBe('Brine on the steps at dusk');
+});
+
+test('A57 ED-2 an autosave that fails is sent again, and the typing is stored', async () => {
+  await openSection('places');
+  const box = page.getByTestId('find-or-add');
+  await box.fill('Net Loft');
+  await box.press('Enter');
+  const editor = page.getByTestId('editor');
+  await expect(editor.getByRole('heading', { level: 2 })).toContainText('Net Loft');
+  const made = await currentEntry('places', 'Net Loft');
+  // Main refuses the first write to this entry, as a lost connection would.
+  await app.evaluate(({ ipcMain }, id) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const channel = 'nc:entry.update';
+    const original = handlers.get(channel)!;
+    let refused = false;
+    handlers.set(channel, async (...args: unknown[]) => {
+      const req = args[1] as { id?: string } | undefined;
+      if (req?.id === id && !refused) {
+        refused = true;
+        throw new Error('The bible could not be written. Try again.');
+      }
+      return original(...args);
+    });
+    (globalThis as { restoreUpdate?: () => void }).restoreUpdate = () =>
+      handlers.set(channel, original);
+  }, made._id);
+  try {
+    const body = field(editor, 'body').getByRole('textbox');
+    await body.click();
+    await body.pressSequentially('Nets drying');
+    await expect(page.getByTestId('autosave')).toContainText('Not saved');
+    await expect(page.getByTestId('autosave')).toHaveText('Saved');
+    const e = (await invoke('entry.get', { collection: 'places', id: made._id })).entry;
+    expect(String(e.body).replace(/<[^>]+>/g, '')).toBe('Nets drying');
+  } finally {
+    await app.evaluate(() => (globalThis as { restoreUpdate?: () => void }).restoreUpdate?.());
+  }
 });

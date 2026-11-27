@@ -284,6 +284,13 @@ const NO_PREVIEW: TypedRouting = { facts: [], choices: [], ticks: [] };
  * The plain routing names the sentences; a sentence that has a mark is routed
  * again with its chips, so a chip stays with its sentence when another changes.
  */
+/** A57: what a routing would file or send, to tell whether the box shows what Enter would do. */
+function routingKey(r: TypedRouting): string {
+  return JSON.stringify(
+    r.facts.map((f, i) => [f.text, f.route, f.asks, f.drafts, r.ticks[i] ?? true]),
+  );
+}
+
 function routeTyped(
   body: string,
   bible: CaptureBible,
@@ -328,6 +335,10 @@ export function CaptureBox() {
   const [quietText, setQuietText] = useState('');
   const [editMarks, setEditMarks] = useState<EditMarks>({});
   const [previewBible, setPreviewBible] = useState<CaptureBible | null>(null);
+  const textNow = useRef(text);
+  useEffect(() => {
+    textNow.current = text;
+  }, [text]);
   /** One send at a time: Enter in the field and on the dialog must not both route. */
   const sendingNow = useRef(false);
   const fetched = useRef(new Set<string>());
@@ -655,7 +666,7 @@ export function CaptureBox() {
   const send = async (
     all = false,
     from?: CaptureSendRequest,
-    one?: { fact: number; force?: 'full' },
+    one?: { text: string; force?: 'full' },
   ): Promise<boolean> => {
     if (sendingNow.current) return false;
     sendingNow.current = true;
@@ -669,7 +680,7 @@ export function CaptureBox() {
   const sendNow = async (
     all: boolean,
     from: CaptureSendRequest | undefined,
-    one: { fact: number; force?: 'full' } | undefined,
+    one: { text: string; force?: 'full' } | undefined,
   ): Promise<boolean> => {
     const body = from ? from.text.trim() : text.trim();
     if (!body || phase !== 'edit' || busy || ro.off) return false;
@@ -694,7 +705,23 @@ export function CaptureBox() {
       setMessage(CAPTURE_TOO_MANY_FACTS);
       return false;
     }
-    if (!facts.length || (one && !facts[one.fact])) {
+    // CR-6: the box must show what this press does. When the preview on screen is for older
+    // text, or for an older read of the bible, the press brings it up to date and does nothing
+    // else; the next press does what the button then says.
+    const shown =
+      !from && previewBible && quietText.trim() === body
+        ? routeTyped(body, previewBible, time.value.year, editMarks)
+        : null;
+    if (!from && (!typed || !shown || routingKey(shown) !== routingKey(typed))) {
+      setBusy(false);
+      // The text as it is now: typing may have gone on while the bible was read.
+      setQuietText(textNow.current);
+      setPreviewBible(bible);
+      return false;
+    }
+    // A card's Send addresses the sentence it shows, not a position in a new routing.
+    const oneAt = one ? facts.findIndex((f) => f.text === one.text) : -1;
+    if (!facts.length || (one && oneAt < 0)) {
       setBusy(false);
       return false;
     }
@@ -710,7 +737,7 @@ export function CaptureBox() {
     const choices = typed ? typed.choices : facts.map((_, i) => firstChoices[i] ?? NO_CHOICE);
     const ticks = typed ? typed.ticks : facts.map(() => true);
     const toClaude = one
-      ? new Set([one.fact])
+      ? new Set([oneAt])
       : new Set(facts.filter((f) => all || f.route !== 'local').map((f) => f.index));
     // A57: every fact files here, so Enter is File it for the drafts shown while typing.
     if (!toClaude.size && !from) {
@@ -1038,7 +1065,10 @@ export function CaptureBox() {
           }}
           onChooseEdit={chooseEdit}
           onTickEdit={(i, t) => markEdit(i, (m) => ({ ...m, ticked: t }))}
-          onSendOne={(i, force) => void send(false, undefined, { fact: i, force })}
+          onSendOne={(i, force) => {
+            const shownText = preview.facts[i]?.text;
+            if (shownText !== undefined) void send(false, undefined, { text: shownText, force });
+          }}
           waiting={waiting.length}
           ackOpen={ackFor !== null}
           onDeclineAck={() => setAckFor(null)}
@@ -1352,6 +1382,7 @@ function CaptureDialog(props: {
                 disabled={enterOff}
                 onClick={() => props.onSend(false)}
                 data-testid="capture-file"
+                data-current={preview.current && preview.bible !== null}
               >
                 {enterLabel} <kbd>Enter</kbd>
               </button>

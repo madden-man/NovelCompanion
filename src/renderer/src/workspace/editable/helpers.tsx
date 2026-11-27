@@ -46,6 +46,31 @@ export interface SaveEntryFieldOptions {
   added?: AddedItem;
 }
 
+const entryChains = new Map<string, Promise<unknown>>();
+
+/**
+ * One write to an entry at a time (ED-2, IP-1). Main reads an entry before it
+ * writes it, so two writes to the same entry in flight together can refuse one
+ * of them; the autosave and every in-place save of an entry queue here.
+ */
+export function onEntryChain<T>(
+  collection: EntryCollection,
+  id: string,
+  write: () => Promise<T>,
+): Promise<T> {
+  const key = `${collection}/${id}`;
+  const next = (entryChains.get(key) ?? Promise.resolve()).then(write);
+  const tail = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  entryChains.set(key, tail);
+  void tail.then(() => {
+    if (entryChains.get(key) === tail) entryChains.delete(key);
+  });
+  return next;
+}
+
 /**
  * Write one field of an entry and record it as one undo step (ED-3): pending
  * autosaves land first, the schema is checked so a value it refuses is
@@ -57,6 +82,13 @@ export async function saveEntryField(
   o: SaveEntryFieldOptions,
 ): Promise<{ entry: Entry; warnings: FieldWarning[] }> {
   await undo.flush();
+  return onEntryChain(o.collection, o.id, () => writeEntryField(undo, o));
+}
+
+async function writeEntryField(
+  undo: Undo,
+  o: SaveEntryFieldOptions,
+): Promise<{ entry: Entry; warnings: FieldWarning[] }> {
   const before = (await call('entry.get', { collection: o.collection, id: o.id })).entry as Entry;
   const patch = { ...patchForPath(before, o.path, o.value), ...o.extraPatch?.(o.value, before) };
   const check = entrySchemas[o.collection].safeParse(
