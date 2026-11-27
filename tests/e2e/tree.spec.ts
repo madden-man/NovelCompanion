@@ -1270,10 +1270,12 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, f
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
   await expect(p.getByTestId('char-age')).toHaveText('Age 9');
-  // SM-1 "on one line": at the default window the four sit side by side, the age last.
+  // SM-1 "on one line": at the default window width the four sit side by side, the age last.
+  // Only the width: after the full screen test macOS keeps the height inside the display's
+  // work area (770 on a 1280 by 800 display), and the line does not depend on it.
   expect(
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()),
-  ).toEqual([1200, 800]);
+    (await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()))[0],
+  ).toBe(1200);
   const lineBoxes = await Promise.all(
     [
       field(line, 'birth'),

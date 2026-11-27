@@ -1,6 +1,15 @@
 import { useBibleSettings } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
 import type {
   FormEvent,
@@ -375,6 +384,17 @@ export function TreeView(props: {
   );
 
   const saveSeq = useRef(0);
+  /**
+   * Position writes go one after another: two in flight at once (the save that
+   * places someone just added, then Tidy layout) can land in either order, and
+   * the older layout would win.
+   */
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  const savePositions = useCallback((positions: NonNullable<TreeData['positions']>) => {
+    const next = writes.current.then(() => call('tree.savePositions', { positions }));
+    writes.current = next.catch(() => undefined);
+    return next;
+  }, []);
   const ro = useWriteGuard();
   const undo = useUndo();
   // Stored positions are kept; only new people are placed (FT-10).
@@ -388,10 +408,10 @@ export function TreeView(props: {
     if (!placed?.changed || ro.off) return;
     const positions = placed.positions;
     const seq = ++saveSeq.current;
-    void call('tree.savePositions', { positions }).then(() => {
+    void savePositions(positions).then(() => {
       if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
     });
-  }, [placed, ro.off]);
+  }, [placed, ro.off, savePositions]);
 
   const layout = useMemo(() => {
     if (!graph || !placed) return null;
@@ -418,7 +438,7 @@ export function TreeView(props: {
     if (!graph) return;
     const { positions } = placeLayout(graph, null);
     saveSeq.current += 1;
-    await call('tree.savePositions', { positions });
+    await savePositions(positions);
     const moves = treeMoves(data?.positions ?? null, positions);
     if (moves.length) {
       undo.record(treeMoveCommand('Tidied the tree layout', call, moves, nameOf));
@@ -501,13 +521,13 @@ export function TreeView(props: {
       const positions = { ...(data.positions ?? {}), [id]: at };
       saveSeq.current += 1;
       setData((d) => (d ? { ...d, positions } : d));
-      await call('tree.savePositions', { positions });
+      await savePositions(positions);
       // One step per move (ED-3): undo puts the person back where they were.
       undo.record(
         treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
       );
     },
-    [data, graph, ro.off, undo, nameOf],
+    [data, graph, ro.off, undo, nameOf, savePositions],
   );
   const nudge = useCallback(
     (id: string, dx: number, dy: number) => {
@@ -573,21 +593,28 @@ export function TreeView(props: {
     return () => cancelAnimationFrame(frame);
   }, [full, fit]);
 
-  // A57: the inspector comes and goes with the selection; the people stay where they are on screen.
+  /**
+   * A57: the tree box changed size (the inspector came or went, or the window
+   * resized): widen or narrow the view with it, so the people stay where they
+   * are on screen.
+   */
+  const followBox = useCallback(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const was = boxSize.current;
+    boxSize.current = { w, h };
+    if (!was || !was.w || !was.h || !w || !h || (was.w === w && was.h === h)) return;
+    setView((v) => (v ? { ...v, w: (v.w * w) / was.w, h: (v.h * h) / was.h } : v));
+  }, []);
   useEffect(() => {
     const el = wrap.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth;
-      const h = el.clientHeight;
-      const was = boxSize.current;
-      boxSize.current = { w, h };
-      if (!was || !was.w || !was.h || !w || !h || (was.w === w && was.h === h)) return;
-      setView((v) => (v ? { ...v, w: (v.w * w) / was.w, h: (v.h * h) / was.h } : v));
-    });
+    const ro = new ResizeObserver(followBox);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [data]);
+  }, [data, followBox]);
 
   useEffect(() => {
     if (layout && !fitted.current) {
@@ -853,6 +880,14 @@ export function TreeView(props: {
     }
   };
 
+  // A57: the inspector shows with a selection, the Add person form, or warnings to show.
+  const inspecting = Boolean(selected) || adding === 'person' || Boolean(data?.warnings.length);
+  // The column changes in this commit: follow it before the paint, not a frame later,
+  // or the tree is drawn centred in the new box for a moment and people jump sideways.
+  useLayoutEffect(() => {
+    followBox();
+  }, [inspecting, followBox]);
+
   if (!data || !graph || !layout || !liveLayout || !edges) {
     return (
       <div className="ws-tree-area tree-screen">
@@ -862,8 +897,6 @@ export function TreeView(props: {
   }
   const linkClass = (t: string) => (LINK_STYLES.has(t) ? t : 'other');
   const unionClass = (t: string) => (UNION_STYLES.has(t) ? t : 'other');
-  // A57: the inspector shows with a selection, the Add person form, or warnings to show.
-  const inspecting = Boolean(selected) || adding === 'person' || data.warnings.length > 0;
 
   return (
     <div
