@@ -30,7 +30,7 @@ process.env.NC_TEST_RAM_DISK ??= '0';
 const mongo = await deps.startTestMongo();
 const DB = 'novel_companion_web_local';
 const store = await deps.connect(mongo.uri, {}, DB);
-await deps.loadFixture(store, 'fixture-novel');
+await deps.seedFixture(store, 'fixture-novel', ROOT);
 await store.close();
 
 const server = spawn(
