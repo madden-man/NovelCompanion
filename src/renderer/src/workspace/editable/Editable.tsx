@@ -31,6 +31,7 @@ import {
   parseText,
   parseYear,
   shownText,
+  typedDate,
   typedNumber,
 } from './model';
 import type { AddedItem, EditableOption, Parsed, SaveInfo } from './model';
@@ -677,11 +678,13 @@ export function Editable(props: EditableProps) {
     body = sizedInput({
       value: draft,
       onChange: (typed) => {
-        // A57: a year or number box takes only what its kind can read.
+        // A57: a year, number or date box takes only what its kind can read.
         const v =
           props.kind === 'year' || props.kind === 'number'
             ? typedNumber(props.kind, typed, props.kind === 'number' ? props : {})
-            : typed;
+            : props.kind === 'date'
+              ? typedDate(typed)
+              : typed;
         if (v === null) return;
         setDraft(v);
         if (error) setError(null);

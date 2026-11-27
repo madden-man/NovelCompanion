@@ -313,3 +313,31 @@ export function useEntryAddNew(
     [collection, data, readOnly],
   );
 }
+
+/**
+ * IP-13: which field a rename writes, from a list row or an entry's heading.
+ * A character's full name (the title follows it), a family's or an era's name
+ * (a title that holds the old name follows it), and every other entry's title.
+ */
+export function renameSpec(collection: EntryCollection): {
+  path: string;
+  label: string;
+  extraPatch?: (next: unknown, entry: Record<string, unknown>) => Record<string, unknown>;
+} {
+  if (collection === 'characters') {
+    return { path: 'names.full', label: 'Full name', extraPatch: (next) => ({ title: next }) };
+  }
+  if (collection === 'families' || collection === 'eraStates') {
+    return {
+      path: 'name',
+      label: collection === 'families' ? 'Family name' : 'Era name',
+      extraPatch: (next, entry) => {
+        const old = typeof entry.name === 'string' ? entry.name : '';
+        const title = typeof entry.title === 'string' ? entry.title : '';
+        if (!title.trim() || title === old) return { title: next };
+        return old && title.includes(old) ? { title: title.split(old).join(String(next)) } : {};
+      },
+    };
+  }
+  return { path: 'title', label: 'Title' };
+}

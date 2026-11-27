@@ -12,11 +12,11 @@ import {
   parseYear,
   patchForPath,
   shownText,
+  typedDate,
   typedNumber,
 } from '../../src/renderer/src/workspace/editable/model';
 import type { AddNewState } from '../../src/renderer/src/workspace/editable/model';
 import type { UndoCommand } from '../../src/shared/domain/undoRunner';
-import { DATE_TEXT_HELP } from '../../src/shared/domain/dates';
 
 describe('IP-1 the value each kind reads from what was typed', () => {
   test('IP-1 text keeps what was typed, drops trailing spaces, and refuses empty when asked', () => {
@@ -78,14 +78,46 @@ describe('IP-1 the value each kind reads from what was typed', () => {
     expect(typedNumber('year', '')).toBe('');
   });
 
-  test('IP-1 SM-1 a date reads one box with the dates.ts parser and explains what it could not read', () => {
+  test('IP-1 SM-1 a date reads one box with the dates.ts parser, and a half-typed date says so in a few words', () => {
     expect(parseDate('1990-3', 'birth')).toEqual({ ok: true, value: { year: 1990, month: 3 } });
     expect(parseDate('', 'birth')).toEqual({ ok: true, value: { unknown: true } });
     expect(parseDate('', 'death')).toEqual({ ok: true, value: null });
+    expect(parseDate('1990-', 'birth')).toEqual({ ok: true, value: { year: 1990 } });
+    expect(parseDate('1990-03-', 'birth')).toEqual({ ok: true, value: { year: 1990, month: 3 } });
+    expect(parseDate('-', 'birth')).toEqual({ ok: false, message: '- is not a date.' });
+    expect(parseDate('1990-0', 'birth')).toEqual({ ok: false, message: '1990-0 is not a date.' });
+    // No sentence on how to write a date, whatever the box was handed.
     expect(parseDate('March 1990', 'birth')).toEqual({
       ok: false,
-      message: `March 1990 is not a date. ${DATE_TEXT_HELP}`,
+      message: 'March 1990 is not a date.',
     });
+  });
+
+  test('A57 a one-box date refuses what it cannot read as it is typed, and takes every format it reads', () => {
+    // Every format the parser reads goes in, and so does each step of typing one.
+    for (const ok of ['1990', '1990-03', '1990-3', '1990-03-14', '1990-3-4', '-40', '-40-02-29']) {
+      expect(typedDate(ok)).toBe(ok);
+      for (let i = 0; i <= ok.length; i += 1)
+        expect(typedDate(ok.slice(0, i))).toBe(ok.slice(0, i));
+    }
+    expect(typedDate('10000-12-31')).toBe('10000-12-31');
+    expect(typedDate('1990 - 03')).toBe('1990-03');
+    // A full date with its year cleared, on the way to another year.
+    expect(typedDate('-03-14')).toBe('-03-14');
+    // Words, other marks, a sixth year digit, a year past 10000, a month past 12, a day past 31.
+    for (const bad of ['soon', 'March 1990', '1990/03', '1990.5', '199003', '10001', '1990-13']) {
+      expect(typedDate(bad)).toBeNull();
+    }
+    for (const bad of [
+      '1990-00',
+      '1990-03-32',
+      '1990-03-00',
+      '1990-03-14-',
+      '1990--',
+      '1990-123',
+    ]) {
+      expect(typedDate(bad)).toBeNull();
+    }
   });
 
   test('IP-1 the closed text of each kind, and the text an opened field starts with', () => {
