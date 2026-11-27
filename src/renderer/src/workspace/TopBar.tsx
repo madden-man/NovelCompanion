@@ -89,7 +89,7 @@ export function TopBar(props: {
           className="btn small topbar-era"
           onClick={story.openDialog}
           aria-label={view?.era ? `Open the year, ${view.era.name}` : 'Open the year'}
-          title="Everyone and the world in this year (Cmd T)"
+          aria-keyshortcuts="Meta+T"
           data-testid="top-open-year"
         >
           {view?.era?.name ?? 'Open the year'}
@@ -119,7 +119,6 @@ export function TopBar(props: {
           onClick={props.onRelevant}
           aria-current={props.relevantActive ? 'page' : undefined}
           data-testid="top-relevant"
-          title="The entries that matter for the chapter being written"
         >
           Relevant to Session
         </button>
@@ -179,7 +178,8 @@ function UndoControls() {
         className="btn small"
         disabled={!undo.canUndo}
         onClick={() => void undo.undo()}
-        title={nextUndo ? `Undo ${nextUndo} (Cmd Z)` : 'Cmd Z'}
+        title={nextUndo ? `Undo ${nextUndo}` : undefined}
+        aria-keyshortcuts="Meta+Z"
         data-testid="top-undo"
       >
         Undo
@@ -189,7 +189,8 @@ function UndoControls() {
         className="btn small"
         disabled={!undo.canRedo}
         onClick={() => void undo.redo()}
-        title={nextRedo ? `Redo ${nextRedo} (Shift Cmd Z)` : 'Shift Cmd Z'}
+        title={nextRedo ? `Redo ${nextRedo}` : undefined}
+        aria-keyshortcuts="Shift+Meta+Z"
         data-testid="top-redo"
       >
         Redo
