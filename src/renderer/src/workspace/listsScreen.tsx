@@ -142,6 +142,8 @@ function ListPanel({ list }: { list: WireList }) {
   const [message, setMessage] = useState<Note>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  /** A57: the row whose grip Enter or Space picked up; the arrows move it until it is put down. */
+  const [picked, setPicked] = useState<string | null>(null);
   const hierarchical = HIERARCHICAL.has(list._id);
   const coloured = COLOURED.has(list._id);
   const isAges = list._id === 'ageGroups';
@@ -261,7 +263,7 @@ function ListPanel({ list }: { list: WireList }) {
             {list.items.map((item, index) => (
               <li
                 key={item.id}
-                className={`vocab-row${over === item.id ? ' drop-target' : ''}${dragging === item.id ? ' dragging' : ''}`}
+                className={`vocab-row${over === item.id ? ' drop-target' : ''}${dragging === item.id || picked === item.id ? ' dragging' : ''}`}
                 data-item={item.id}
                 onKeyDown={(e) => {
                   // A57: Alt+Up and Alt+Down move the row from anywhere in it but an open field.
@@ -296,7 +298,32 @@ function ListPanel({ list }: { list: WireList }) {
                   aria-label={`Move ${item.label}`}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   aria-disabled={ro.off || undefined}
+                  aria-pressed={picked === item.id}
                   data-testid="drag-handle"
+                  onKeyDown={(e) => {
+                    if (ro.off || e.altKey || e.metaKey || e.ctrlKey) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPicked((p) => (p === item.id ? null : item.id));
+                    } else if (picked === item.id && e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPicked(null);
+                    } else if (
+                      picked === item.id &&
+                      (e.key === 'ArrowUp' || e.key === 'ArrowDown')
+                    ) {
+                      e.preventDefault();
+                      const dir = e.key === 'ArrowUp' ? 'up' : 'down';
+                      const to = dir === 'up' ? index - 1 : index + 1;
+                      if (to >= 0 && to <= last) void move(item, to, dir);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // A move re-orders the rows and may blur the grip with nowhere to go;
+                    // only a focus that goes elsewhere puts the row down.
+                    if (e.relatedTarget) setPicked((p) => (p === item.id ? null : p));
+                  }}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = 'move';
                     e.dataTransfer.setData('text/plain', item.id);
