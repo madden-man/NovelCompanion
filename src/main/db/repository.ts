@@ -813,8 +813,7 @@ export class Repository {
       createdAt: this.now().toISOString(),
       ...this.proposalGuard(input, target),
     });
-    await this.proposals().insertOne(proposal);
-    await this.noteWrite();
+    await this.withRev((session) => this.proposals().insertOne(proposal, { session }));
     this.model.put('proposals', proposal as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return proposal;
@@ -856,9 +855,12 @@ export class Repository {
   }
 
   private async saveProposal(p: Proposal): Promise<Proposal> {
-    const res = await this.proposals().replaceOne({ _id: p._id, state: 'pending' }, p);
-    if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
-    await this.noteWrite();
+    await this.withRev(async (session) => {
+      const res = await this.proposals().replaceOne({ _id: p._id, state: 'pending' }, p, {
+        session,
+      });
+      if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    });
     this.model.put('proposals', p as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return p;
@@ -964,9 +966,12 @@ export class Repository {
       state: 'rejected',
       decidedAt: this.now().toISOString(),
     };
-    const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
-    if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
-    await this.noteWrite();
+    await this.withRev(async (session) => {
+      const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided, {
+        session,
+      });
+      if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    });
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
@@ -1012,11 +1017,20 @@ export class Repository {
   }
 
   /**
-   * PH-6: a write outside a transaction (a setting, a proposal, a saved
-   * Claude run) raises `rev` once it has landed.
+   * PH-6: a write outside the entries (a setting, a proposal, a saved Claude
+   * run, the scene outline) and the raise of `rev` it makes, in one
+   * transaction: both land or neither does, so a write is never reported as
+   * unsaved when it was saved, and the other client always sees it.
    */
-  async noteWrite(): Promise<void> {
-    this.revs.wrote(await raiseRev(this.bible));
+  async withRev<T>(write: (session: ClientSession) => Promise<T>): Promise<T> {
+    let rev = 0;
+    const out = await this.transact(async (session) => {
+      const result = await write(session);
+      rev = await raiseRev(this.bible, session);
+      return result;
+    });
+    this.revs.wrote(rev);
+    return out;
   }
 
   private freshening: Promise<boolean> | null = null;
@@ -1283,48 +1297,52 @@ export class Repository {
       prev.text !== text || !sameYears(prev.years, clean) || !sameBreaks(prev.breaks, cleanBreaks);
     const now = this.now();
     const iso = now.toISOString();
-    if (changed) {
-      const versions = this.sceneVersions();
-      let last = await versions.find().sort({ at: -1 }).limit(1).next();
-      if (
-        !last &&
-        prev.modifiedAt !== null &&
-        (prev.text !== '' || Object.keys(prev.breaks).length)
-      ) {
-        last = {
-          _id: newId(),
-          at: prev.modifiedAt,
-          until: prev.modifiedAt,
-          text: prev.text,
-          breaks: prev.breaks,
-          years: prev.years,
-        };
-        await versions.insertOne(last);
-      }
-      const days = this.bibleSettings().numbers.outlineVersionDays;
-      if (last && !startsNewVersion(last.at, now, opts.newVersion ?? false, days)) {
-        await versions.updateOne(
-          { _id: last._id },
-          { $set: { text, breaks: cleanBreaks, years: clean, until: iso } },
-        );
-      } else {
-        await versions.insertOne({
-          _id: newId(),
-          at: iso,
-          until: iso,
-          text,
-          breaks: cleanBreaks,
-          years: clean,
-        });
-      }
-    }
-    await this.writeMeta({
+    const doc: StoredDoc = {
       _id: SCENE_OUTLINE_ID,
       text,
       breaks: cleanBreaks,
       years: clean,
       modifiedAt: iso,
+    };
+    const days = this.bibleSettings().numbers.outlineVersionDays;
+    // PH-6: the version, the outline and `rev` land together.
+    await this.withRev(async (session) => {
+      if (changed) {
+        const versions = this.sceneVersions();
+        let last = await versions.find({}, { session }).sort({ at: -1 }).limit(1).next();
+        if (
+          !last &&
+          prev.modifiedAt !== null &&
+          (prev.text !== '' || Object.keys(prev.breaks).length)
+        ) {
+          last = {
+            _id: newId(),
+            at: prev.modifiedAt,
+            until: prev.modifiedAt,
+            text: prev.text,
+            breaks: prev.breaks,
+            years: prev.years,
+          };
+          await versions.insertOne(last, { session });
+        }
+        if (last && !startsNewVersion(last.at, now, opts.newVersion ?? false, days)) {
+          await versions.updateOne(
+            { _id: last._id },
+            { $set: { text, breaks: cleanBreaks, years: clean, until: iso } },
+            { session },
+          );
+        } else {
+          await versions.insertOne(
+            { _id: newId(), at: iso, until: iso, text, breaks: cleanBreaks, years: clean },
+            { session },
+          );
+        }
+      }
+      await this.bible
+        .collection<StoredDoc>('meta')
+        .replaceOne({ _id: SCENE_OUTLINE_ID }, doc, { session, upsert: true });
     });
+    this.model.put('meta', doc);
     return this.sceneOutline();
   }
 
@@ -1382,14 +1400,14 @@ export class Repository {
     const meta = this.bible.collection<StoredDoc>('meta');
     if (doc === null) {
       const id = removeId as string;
-      await meta.deleteOne({ _id: id });
+      await this.withRev((session) => meta.deleteOne({ _id: id }, { session }));
       this.model.remove('meta', id);
-      await this.noteWrite();
       return;
     }
-    await meta.replaceOne({ _id: doc._id }, doc, { upsert: true });
+    await this.withRev((session) =>
+      meta.replaceOne({ _id: doc._id }, doc, { session, upsert: true }),
+    );
     this.model.put('meta', doc);
-    await this.noteWrite();
   }
 
   // ---------- brief settings (SB-2 window, SB-6 budget), stored in meta ----------
@@ -1905,8 +1923,7 @@ export class Repository {
         ref: add.ref,
       },
     });
-    await this.proposals().insertOne(proposal);
-    await this.noteWrite();
+    await this.withRev((session) => this.proposals().insertOne(proposal, { session }));
     this.model.put('proposals', proposal as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return proposal;

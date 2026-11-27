@@ -12,6 +12,7 @@ import { EntryMoved } from '../../src/main/db/repository';
 import { BridgeService } from '../../src/main/bridge/service';
 import { BridgeStore } from '../../src/main/db/bridge';
 import { claudeHandlers } from '../../src/main/claude/handlers';
+import { RunStore } from '../../src/main/claude/store';
 import { runtimeSessionClaude } from '../../src/main/claude/session';
 import { ClaudeRuntime } from '../../src/main/claude/runtime';
 import { FakeClaudeClient, FakeModelCatalog, loadRecordings } from '../../src/main/claude/fake';
@@ -326,6 +327,77 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
     expect((await stored('H2'))?.role).toBe('Filed H2');
     expect(await manager.step('redo', io)).toMatchObject({ status: 'applied' });
     expect((await stored('H2'))?.role).toBe('Two');
+  });
+});
+
+describe('PH-6 a write and its rev raise land together', () => {
+  /** The raise of `rev` fails, as a dropped connection would, after the write itself went out. */
+  function failRaise(session: OpenBible): () => void {
+    const collection = session.handle.collection.bind(session.handle);
+    const restore = () => Object.assign(session.handle, { collection });
+    Object.assign(session.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'meta') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop === 'findOneAndUpdate') {
+              return () => Promise.reject(new Error('The raise of rev failed.'));
+            }
+            return Reflect.get(target, prop, receiver) as unknown;
+          },
+        });
+      },
+    });
+    return restore;
+  }
+
+  test('PH-6 when rev cannot be raised, a setting, a proposal and a saved Claude run are not written either, so nothing reads as unsaved that was saved', async () => {
+    const slug = freshSlug('ph6-atomic');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const runs = new RunStore(a);
+    const revBefore = await readRev(a.handle);
+    const restore = failRaise(a);
+    try {
+      await expect(a.repo.setStoryTime({ year: 2077 })).rejects.toThrow();
+      await expect(
+        a.repo.propose({
+          source: 'claude',
+          op: 'update',
+          collection: 'characters',
+          targetId: 'H1',
+          data: { role: 'Proposed' },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        runs.create({
+          _id: 'run-atomic-0000001',
+          feature: 'panel',
+          title: 'A question',
+          createdAt: '2026-11-27T10:00:00.000Z',
+          modifiedAt: '2026-11-27T10:00:00.000Z',
+          turns: [],
+        }),
+      ).rejects.toThrow();
+      await expect(a.repo.setSceneOutline('A scene written.')).rejects.toThrow();
+    } finally {
+      restore();
+    }
+    const db = (c: string) => store.db.collection(`${slug}.${c}`);
+    expect(await db('meta').findOne({ _id: 'storyTime' as never })).toBeNull();
+    expect(await db('meta').findOne({ _id: 'sceneOutline' as never })).toBeNull();
+    expect(await db('sceneOutlineVersions').countDocuments()).toBe(0);
+    expect(await db('proposals').countDocuments({ 'data.role': 'Proposed' })).toBe(0);
+    expect(await db('conversations').countDocuments({ _id: 'run-atomic-0000001' as never })).toBe(
+      0,
+    );
+    expect(a.repo.storyTime()).toBeNull();
+    expect(await readRev(a.handle)).toBe(revBefore);
+    // With the raise working again, the same writes land and move rev.
+    await a.repo.setStoryTime({ year: 2077 });
+    expect(await readRev(a.handle)).toBe(revBefore + 1);
+    expect(await a.repo.freshen()).toBe(false);
   });
 });
 
