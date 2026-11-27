@@ -48,6 +48,8 @@ function Shell() {
     load();
     const off = window.api.on('bibles.changed', load);
     const offReload = window.api.on('bible.reloaded', (e) => {
+      // A58 (PH-8, PH-10): a change made elsewhere redraws views in place, so typing stays.
+      if (e.elsewhere) return;
       setReloads((n) => n + 1);
       setNotice(e.message);
     });

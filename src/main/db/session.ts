@@ -13,6 +13,7 @@ import {
 import type { BibleHandle } from './bibles';
 import type { Store } from './connection';
 import { Repository } from './repository';
+import { readRev } from './rev';
 import type { RepositoryOptions } from './repository';
 import { SnapshotService } from '../backup/snapshots';
 
@@ -159,11 +160,14 @@ async function openBibleSessionOnce(
     }
     await migrate(handle);
   }
+  // A58 (PH-8): the number read before loading, so a write landing during the load shows as a move.
+  const rev = await readRev(handle);
   const model = new ReadModel();
   await model.load(handle);
   const search = new SearchIndex();
   search.rebuild(model);
   const repo = new Repository(handle, model, search, options.now, options.repository);
+  repo.loadedAt(rev);
   const open: OpenBible = { handle, model, search, repo };
   if (options.snapshotRoot) {
     const snapshots = new SnapshotService(

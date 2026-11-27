@@ -1,19 +1,21 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
-import { testDatabaseHonoured } from './host/uri';
+import { testDatabaseHonoured, testSeamsHonoured } from './host/uri';
 import { electronHost } from './host/electron';
 import { mountHandlers } from './ipc/handle';
 import {
   applyStoredAppearance,
   bridgeFocus,
   closeStore,
+  freshenOpenBible,
   hasOpenBible,
   onFlushed,
   openExternal,
   registerHandlers,
 } from './ipc/handlers';
 import { wireEvent } from '../shared/ipc';
+import { FRESHEN_EVERY_MS } from '../shared/freshness';
 
 const APP_NAME = 'Novel Companion';
 
@@ -70,6 +72,22 @@ if (hidden && process.platform === 'darwin') {
 let closeApproved = false;
 let quitPending = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** A58 (PH-8): a test run may check more often than every 20 seconds; nothing else can. */
+const FRESHEN_ENV = 'NOVEL_COMPANION_TEST_FRESHEN_MS';
+function freshenEveryMs(): number {
+  const asked = Number(process.env[FRESHEN_ENV]);
+  const seams = testSeamsHonoured(process.env, { isPackaged: app.isPackaged });
+  return seams && Number.isInteger(asked) && asked > 0 ? asked : FRESHEN_EVERY_MS;
+}
+
+/** A58 (PH-8): the open bible is checked for changes made elsewhere; a failure waits for the next check. */
+const freshen = () => void freshenOpenBible().catch(() => undefined);
+let freshenTimer: ReturnType<typeof setInterval> | null = null;
+function stopFreshening(): void {
+  if (freshenTimer) clearInterval(freshenTimer);
+  freshenTimer = null;
+}
 /** How long main waits for the page to flush its pending edits before it closes anyway. */
 const FLUSH_TIMEOUT_MS = 2000;
 
@@ -127,8 +145,15 @@ function createWindow(): BrowserWindow {
     flushTimer = setTimeout(finishClose, FLUSH_TIMEOUT_MS);
   });
   onFlushed(finishClose);
-  // A55 (NB-3): coming to the front pulls what the phone sent.
-  win.on('focus', () => bridgeFocus());
+  // A55 (NB-3): coming to the front pulls what the phone sent. A58 (PH-8): it also checks the
+  // bible for changes made elsewhere, and keeps checking while the window stays in front.
+  win.on('focus', () => {
+    bridgeFocus();
+    freshen();
+    freshenTimer ??= setInterval(freshen, freshenEveryMs());
+  });
+  win.on('blur', stopFreshening);
+  win.on('closed', stopFreshening);
   // ED-3: undo and redo are the app's own command stacks, replayed through
   // the write path. Catch the keys here, before the page or the Edit menu,
   // so one key press is one app-level undo everywhere, text fields included.
