@@ -372,9 +372,10 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await expect(culture().getByLabel('Community', { exact: true })).toHaveValue('san-francisco');
   await expect(culture().getByTestId('culture-heading')).toContainText('San Francisco in the');
   await expect(culture().getByLabel('About San Francisco')).toBeVisible();
-  // Rename in place; the select follows.
-  await culture().getByTestId('community-rename').click();
-  await culture().getByLabel('Name of San Francisco').fill('SF Bay');
+  // A57: the name in the heading renames in place; the select follows.
+  await expect(culture().getByTestId('community-rename')).toHaveCount(0);
+  await culture().getByTestId('community-name-text').click();
+  await culture().getByLabel('Name of San Francisco', { exact: true }).fill('SF Bay');
   await page.keyboard.press('Enter');
   await expect(culture().getByLabel('Community', { exact: true })).toContainText('SF Bay');
   await expect(culture().getByTestId('culture-heading')).toContainText('SF Bay in the');
@@ -407,6 +408,42 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await culture().getByLabel('Community', { exact: true }).selectOption({ label: 'SF Bay' });
   await expect(group('all').locator('.cu-line')).toHaveCount(2);
   await invoke('storyTime.set', { time: { year: 2030 } });
+});
+
+test('A57 the community name in the heading opens with F2, Escape keeps it, Enter or blur renames as one undo step each', async () => {
+  await rail(page, 'Cultural data').click();
+  const select = culture().getByLabel('Community', { exact: true });
+  await select.selectOption({ label: 'Guangzhou' });
+  const name = culture().getByTestId('community-name-text');
+  await expect(name).toHaveText('Guangzhou');
+  const field = (label: string) => culture().getByLabel(`Name of ${label}`, { exact: true });
+  // F2 opens it; Escape puts the name back and stores nothing.
+  await name.focus();
+  await page.keyboard.press('F2');
+  await expect(field('Guangzhou')).toBeFocused();
+  await field('Guangzhou').fill('Canton');
+  await page.keyboard.press('Escape');
+  await expect(name).toHaveText('Guangzhou');
+  await expect.poll(() => listLabels('communities')).toContain('Guangzhou');
+  // Enter saves; the select and the heading follow.
+  await name.focus();
+  await page.keyboard.press('F2');
+  await field('Guangzhou').fill('Canton');
+  await page.keyboard.press('Enter');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton');
+  await expect(select.locator('option:checked')).toHaveText('Canton');
+  await expect.poll(() => listLabels('communities')).toContain('Canton');
+  // A click opens it and leaving the field saves.
+  await culture().getByTestId('community-name-text').click();
+  await field('Canton').fill('Canton City');
+  await culture().getByTestId('culture-unit').click();
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton City');
+  // Each rename is one undo step.
+  await page.keyboard.press('Meta+z');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton');
+  await page.keyboard.press('Meta+z');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Guangzhou');
+  await expect.poll(() => listLabels('communities')).toContain('Guangzhou');
 });
 
 const listLabels = async (listId: string) =>

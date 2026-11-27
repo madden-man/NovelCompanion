@@ -10,6 +10,8 @@ import {
 } from '../../src/shared/errors';
 import { ValidationError, RepositoryError } from '../../src/main/db/repository';
 import { userStrings } from '../helpers/userStrings';
+import { UNREACHABLE } from '../../src/main/connection';
+import { CONNECTION_LOST_MESSAGE, READ_ONLY_REASON } from '../../src/shared/ipcApp';
 
 type Registered = (event: unknown, payload: unknown) => Promise<unknown>;
 const registered = new Map<string, Registered>();
@@ -242,3 +244,22 @@ describe('NF-3 no raw codes in user-facing strings', () => {
 function readSource(file: string): string {
   return readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
 }
+
+describe('A57 failure messages say what went wrong and never name the button beside them', () => {
+  test('A57 no failure message says to click or press Try again, or names Cmd+R', () => {
+    const NAMES_A_CONTROL = /\b(click|press|tap)\b[^.]*\btry again\b|\bCmd\+R\b/i;
+    const hits = userStrings(ROOT, ['src/main', 'src/renderer/src', 'src/shared'])
+      .filter((s) => NAMES_A_CONTROL.test(s.text))
+      .map((s) => `${s.file}:${s.line} ${s.text}`);
+    expect(hits).toEqual([]);
+  });
+
+  test('A57 the connection messages beside Try again say only what went wrong', () => {
+    for (const m of [UNREACHABLE, READ_ONLY_REASON, CONNECTION_LOST_MESSAGE]) {
+      expect(m, m).not.toMatch(/try again|check your|click|network is back/i);
+      expect(looksRaw(m), m).toBe(false);
+      expect(m, m).toMatch(/\.$/);
+    }
+    expect(UNREACHABLE).toBe('The app could not reach the MongoDB deployment.');
+  });
+});

@@ -70,9 +70,12 @@ test('ARCH-6 at launch with MongoDB unreachable and no snapshot yet, the window 
   const banner = page.getByTestId('connection-banner');
   await expect(banner).toBeVisible({ timeout: 30_000 });
   await expect(banner).toHaveAttribute('data-state', 'unavailable');
+  // A57: the message says what went wrong; the Try again button beside it is the next step.
   await expect(banner.getByTestId('connection-message')).toContainText(
-    'could not reach the MongoDB deployment. Check your network connection, then click Try again.',
+    'The app could not reach the MongoDB deployment.',
   );
+  await expect(banner.getByTestId('connection-message')).not.toContainText(/click|try again/i);
+  await expect(banner.getByTestId('connection-retry')).toHaveText('Try again');
   await expect(banner.getByTestId('connection-message')).toContainText('no local snapshot');
   await expect(banner.getByTestId('open-snapshot')).toHaveCount(0);
   await expect(banner).not.toContainText(/ECONNREFUSED|Mongo\w*Error/);

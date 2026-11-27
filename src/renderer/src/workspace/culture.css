@@ -48,9 +48,6 @@
   align-items: center;
   padding-bottom: 2px;
 }
-.cu-manage .ol-rename {
-  min-width: 12em;
-}
 .cu-about textarea {
   width: 100%;
   resize: vertical;

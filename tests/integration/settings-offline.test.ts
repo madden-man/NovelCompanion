@@ -161,7 +161,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const st = await conn.status();
     expect(st.state).toBe('unavailable');
     expect(st.snapshot).toBeNull();
-    expect(st.message).toMatch(/Check your network connection/);
+    expect(st.message).toMatch(/could not reach the MongoDB deployment\./);
     expect(st.message).toMatch(/no local snapshot on this Mac yet/);
     expect(st.message).not.toMatch(/ECONNREFUSED|Mongo[A-Z]\w*Error|—/);
   });

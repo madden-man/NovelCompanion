@@ -11,8 +11,7 @@ import type { SnapshotInfo } from '../shared/domain/snapshots';
 import { BibleSlug } from '../shared/bible';
 
 /** NF-3, ARCH-6: what the window says when MongoDB cannot be reached. */
-export const UNREACHABLE =
-  'The app could not reach the MongoDB deployment. Check your network connection, then click Try again.';
+export const UNREACHABLE = 'The app could not reach the MongoDB deployment.';
 const WITH_SNAPSHOT = ' Until then you can open the most recent local snapshot read-only.';
 const NO_SNAPSHOT =
   ' There is no local snapshot on this Mac yet, so there is nothing to open read-only.';
@@ -161,7 +160,7 @@ export class ConnectionManager {
     this.readOnlySnapshot = snapshot;
     this.setState(
       'readOnly',
-      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.name ?? snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed. Click Try again when your network is back.`,
+      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.name ?? snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed.`,
     );
   }
 

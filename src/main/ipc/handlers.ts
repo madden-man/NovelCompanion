@@ -306,7 +306,7 @@ async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>
   const latest = await c.latest();
   if (!latest) {
     throw new Error(
-      'There is no local snapshot on this Mac yet, so there is nothing to open read-only. Check your network connection, then click Try again.',
+      'There is no local snapshot on this Mac yet, so there is nothing to open read-only.',
     );
   }
   const opened = await openSnapshotReadOnly(join(app.getPath('userData'), 'snapshots'), latest);

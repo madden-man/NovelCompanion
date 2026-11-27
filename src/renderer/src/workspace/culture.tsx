@@ -32,7 +32,6 @@ import { useStoryTime } from './storyTime';
 import { useUndo } from './undo';
 import { RowEditor } from './rowEditor';
 import type { Picked } from './rowEditor';
-import { InlineName } from './outline/InlineName';
 import { Zh } from './Zh';
 import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
@@ -227,18 +226,17 @@ export function CommunityView() {
     }
   };
 
-  const renameCommunity = (next: string) =>
-    run(async () => {
-      if (!chosen) return;
-      const r = await call('lists.rename', {
-        listId: 'communities',
-        itemId: chosen.id,
-        label: next,
-      });
-      undo.record(
-        renameCommand(listLabel, 'communities', chosen.id, r.from, next.trim(), chosen.id),
-      );
+  /** A57: the name in the heading edits in place; a failure keeps the field open with the reason. */
+  const renameCommunity = async (next: string) => {
+    if (!chosen) return;
+    await undo.flush();
+    const r = await call('lists.rename', {
+      listId: 'communities',
+      itemId: chosen.id,
+      label: next,
     });
+    undo.record(renameCommand(listLabel, 'communities', chosen.id, r.from, next.trim(), chosen.id));
+  };
 
   /** A42: the community and every line of it go, as one undo step. */
   const removeCommunity = () =>
@@ -341,17 +339,6 @@ export function CommunityView() {
         </div>
         {chosen && (
           <div className="row tight cu-manage" role="group" aria-label={`Manage ${chosen.label}`}>
-            <InlineName
-              key={chosen.id}
-              value={chosen.label}
-              label={`Name of ${chosen.label}`}
-              disabled={ro.off}
-              className="btn small"
-              testId="community-rename"
-              onSave={(next) => void renameCommunity(next)}
-            >
-              Rename
-            </InlineName>
             <button
               type="button"
               className="btn small danger"
@@ -473,7 +460,17 @@ export function CommunityView() {
             onSave={(text) => void saveNote(text)}
           />
           <h3 data-testid="culture-heading">
-            {chosen.label} in {unitHeading(start, unit)}
+            <Editable
+              key={chosen.id}
+              kind="text"
+              label={`Name of ${chosen.label}`}
+              value={chosen.label}
+              allowEmpty={false}
+              disabled={ro.off}
+              testId="community-name"
+              onSave={renameCommunity}
+            />{' '}
+            in {unitHeading(start, unit)}
           </h3>
           <div className="stack cu-groups" data-testid="culture-groups">
             {groups.map((g) => (
