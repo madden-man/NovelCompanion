@@ -336,8 +336,14 @@ export function TreeView(props: {
   const [zones, setZones] = useState<Zones | null>(null);
   const zonesRef = useRef<Zones | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
-  /** A57: Tidy layout's notice, with an Undo button. */
-  const [toast, setToast] = useState<string | null>(null);
+  /**
+   * A57: Tidy layout's notice, with an Undo button for its own step only. It
+   * shows while that step is the latest one; another step or an undo hides it.
+   */
+  const [toast, setToast] = useState<{ text: string; cmd: UndoCommand } | null>(null);
+  /** Tidy layout runs once at a time, so a double click records one step. */
+  const tidying = useRef(false);
+  const [tidyBusy, setTidyBusy] = useState(false);
   const [adding, setAdding] = useState<RelativeKind | null>(null);
   /** A45: the legend overlay in the tree's bottom left corner, closed until asked for. */
   const [legendOpen, setLegendOpen] = useState(false);
@@ -362,12 +368,16 @@ export function TreeView(props: {
     });
   }, []);
   const fitted = useRef(false);
+  /** The positions as last read or written, the base each queued position write builds on. */
+  const stored = useRef<TreeData['positions']>(null);
 
   useEffect(() => {
     let live = true;
     const load = () =>
       void call('tree.get', {}).then((r) => {
-        if (live) setData(r);
+        if (!live) return;
+        stored.current = r.positions ?? null;
+        setData(r);
       });
     load();
     // A move written by an undo step (or another window) reaches the screen through this event.
@@ -390,11 +400,25 @@ export function TreeView(props: {
    * the older layout would win.
    */
   const writes = useRef<Promise<unknown>>(Promise.resolve());
-  const savePositions = useCallback((positions: NonNullable<TreeData['positions']>) => {
-    const next = writes.current.then(() => call('tree.savePositions', { positions }));
-    writes.current = next.catch(() => undefined);
-    return next;
-  }, []);
+  /**
+   * Each write builds its positions when its turn comes, from the positions the
+   * write before it left, so a queued write never carries a stale base. A failed
+   * write leaves that base as it was and the queue goes on.
+   */
+  const savePositions = useCallback(
+    (build: (base: TreeData['positions']) => NonNullable<TreeData['positions']>) => {
+      const next = writes.current.then(async () => {
+        const base = stored.current;
+        const positions = build(base);
+        await call('tree.savePositions', { positions });
+        stored.current = positions;
+        return { base, positions };
+      });
+      writes.current = next.catch(() => undefined);
+      return next;
+    },
+    [],
+  );
   const ro = useWriteGuard();
   const undo = useUndo();
   // Stored positions are kept; only new people are placed (FT-10).
@@ -405,13 +429,15 @@ export function TreeView(props: {
 
   useEffect(() => {
     // ARCH-6: a read-only snapshot places new people on screen without saving them.
-    if (!placed?.changed || ro.off) return;
-    const positions = placed.positions;
+    if (!placed?.changed || ro.off || !graph) return;
     const seq = ++saveSeq.current;
-    void savePositions(positions).then(() => {
-      if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
-    });
-  }, [placed, ro.off, savePositions]);
+    savePositions((base) => placeLayout(graph, base).positions).then(
+      ({ positions }) => {
+        if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
+      },
+      (err: unknown) => setLinkError(`Could not save the layout: ${plainError(err)}`),
+    );
+  }, [placed, graph, ro.off, savePositions]);
 
   const layout = useMemo(() => {
     if (!graph || !placed) return null;
@@ -435,18 +461,30 @@ export function TreeView(props: {
 
   const nameOf = useCallback((id: string) => graph?.byId.get(id)?.name ?? id, [graph]);
   const tidy = async () => {
-    if (!graph) return;
-    const { positions } = placeLayout(graph, null);
-    saveSeq.current += 1;
-    await savePositions(positions);
-    const moves = treeMoves(data?.positions ?? null, positions);
-    if (moves.length) {
-      undo.record(treeMoveCommand('Tidied the tree layout', call, moves, nameOf));
-      setToast('Layout tidied');
+    if (!graph || tidying.current) return;
+    tidying.current = true;
+    setTidyBusy(true);
+    setLinkError(null);
+    try {
+      const { positions } = placeLayout(graph, null);
+      saveSeq.current += 1;
+      const { base } = await savePositions(() => positions);
+      const moves = treeMoves(base, positions);
+      if (moves.length) {
+        const cmd = treeMoveCommand('Tidied the tree layout', call, moves, nameOf);
+        undo.record(cmd);
+        setToast({ text: 'Layout tidied', cmd });
+      }
+      setData((d) => (d ? { ...d, positions } : d));
+      fitted.current = false;
+    } catch (err) {
+      setLinkError(`Could not tidy the layout: ${plainError(err)}`);
+    } finally {
+      tidying.current = false;
+      setTidyBusy(false);
     }
-    setData((d) => (d ? { ...d, positions } : d));
-    fitted.current = false;
   };
+  const toastLive = toast !== null && undo.history.undo[0] === toast.cmd;
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), TOAST_MS);
@@ -517,15 +555,20 @@ export function TreeView(props: {
         row === -ROW_H && ties === 0
           ? { x: Math.round(x), y: row, loose: true }
           : { x: Math.round(x), y: row };
-      const before = data.positions?.[id] ?? null;
-      const positions = { ...(data.positions ?? {}), [id]: at };
       saveSeq.current += 1;
-      setData((d) => (d ? { ...d, positions } : d));
-      await savePositions(positions);
-      // One step per move (ED-3): undo puts the person back where they were.
-      undo.record(
-        treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
-      );
+      setData((d) => (d ? { ...d, positions: { ...(d.positions ?? {}), [id]: at } } : d));
+      try {
+        const { base } = await savePositions((b) => ({ ...(b ?? {}), [id]: at }));
+        // One step per move (ED-3): undo puts the person back where they were.
+        const before = base?.[id] ?? null;
+        undo.record(
+          treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
+        );
+      } catch (err) {
+        setLinkError(`Could not move ${nameOf(id)}: ${plainError(err)}`);
+        // The screen goes back to what is stored.
+        setData((d) => (d ? { ...d, positions: stored.current } : d));
+      }
     },
     [data, graph, ro.off, undo, nameOf, savePositions],
   );
@@ -923,7 +966,7 @@ export function TreeView(props: {
             type="button"
             className="btn small"
             onClick={() => void tidy()}
-            disabled={ro.off}
+            disabled={ro.off || tidyBusy}
             {...ro.tip}
           >
             Tidy layout
@@ -1040,15 +1083,16 @@ export function TreeView(props: {
             </g>
           </svg>
           {zones && <DropZones graph={graph} zones={zones} />}
-          {toast && (
+          {toast && toastLive && (
             <div className="tree-toast" role="status" data-testid="tree-toast">
-              <span>{toast}</span>
+              <span>{toast.text}</span>
               <button
                 type="button"
                 className="btn small"
                 onClick={() => {
                   setToast(null);
-                  void undo.undo();
+                  // Only its own step: anything recorded since has hidden the notice.
+                  if (undo.history.undo[0] === toast.cmd) void undo.undo();
                 }}
               >
                 Undo
@@ -1474,6 +1518,9 @@ function TreePersonForm({ id }: { id: string }) {
   );
 }
 
+/** A57: a year box keeps only the digits typed into it. */
+const digits = (t: string): string => t.replace(/\D/g, '').slice(0, 5);
+
 /** The character fields the tree inspector edits (A45), from the one manifest. */
 const PERSON_FIELDS = manifests.characters;
 const NAME_PARTS = fieldByName(PERSON_FIELDS, 'names')?.fields ?? [];
@@ -1510,11 +1557,8 @@ function AddRelativeForm(props: {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const year = born.trim() === '' ? null : Number(born);
-    if (year !== null && !Number.isInteger(year)) {
-      setError('The birth year must be a whole number, or blank for unknown.');
-      return;
-    }
+    // A57: the box takes digits only; empty means the year is unknown.
+    const year = born === '' ? null : Number(born);
     try {
       const plan = planAddRelative(
         graph,
@@ -1555,12 +1599,7 @@ function AddRelativeForm(props: {
         data-testid="add-form"
       >
         <strong>{title}</strong>
-        {noParents && (
-          <p className="callout warn">
-            {anchor?.name} has no known parents, so a sibling has no one to link to. Add a parent
-            first.
-          </p>
-        )}
+        {noParents && <p className="callout warn">{anchor?.name} has no known parents.</p>}
         <div className="field">
           <label htmlFor={ids.name}>Name</label>
           <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -1569,11 +1608,10 @@ function AddRelativeForm(props: {
           <label htmlFor={ids.born}>Birth year</label>
           <input
             id={ids.born}
-            type="number"
             className="num"
+            inputMode="numeric"
             value={born}
-            placeholder="Blank for unknown"
-            onChange={(e) => setBorn(e.target.value)}
+            onChange={(e) => setBorn(digits(e.target.value))}
           />
         </div>
         {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
