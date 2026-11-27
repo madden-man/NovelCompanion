@@ -942,6 +942,8 @@ test('A57 AI-6 the first Claude action opens the sheet; Not now and Escape keep 
   await page.keyboard.press('Meta+k');
   await expect(input()).toBeFocused();
   await input().fill(MOVE);
+  // CR-6: a press before the preview is current only brings it up to date.
+  await expect(box().getByTestId('capture-file')).toHaveAttribute('data-current', 'true');
   await input().press('Alt+Enter');
   await expect(sheet()).toBeVisible();
   await sheet().getByRole('button', { name: 'Not now' }).click();

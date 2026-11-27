@@ -314,7 +314,7 @@ test('A57 ARCH-8 a snapshot opened read-only is never reopened at launch; the bi
     await start(own.getUri(), data);
     const banner = page.getByTestId('connection-banner');
     await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
-    await expect(banner).toContainText(`The most recent snapshot is of ${NAME}`);
+    await expect(banner.getByTestId('open-snapshot')).toContainText(`Open ${NAME} from`);
     await banner.getByTestId('open-snapshot').click();
     await expect(banner).toHaveAttribute('data-state', 'readOnly');
     await expect(page.getByTestId('current-bible')).toHaveText(NAME);
