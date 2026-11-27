@@ -6,11 +6,14 @@
  * required field the router could not fill is a highlighted chip, and the
  * card cannot be ticked until it is filled. A fact sent to Claude shows its
  * chips read-only, as the hints that went with the text. Nothing here writes
- * to the bible.
+ * to the bible. A57: no sentence says what a control does; with no key the
+ * Claude buttons become Add a Claude key, which opens `ClaudeKeyField`.
  */
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { ClaudeStatusWire } from '../../../shared/claude';
 import type { WireList } from '../../../shared/ipc';
+import { call, plainError } from '../api';
 import { collectionInfo, isEntryCollection, manifests } from '../../../shared/schema';
 import type { EntryCollection } from '../../../shared/schema';
 import type { FieldSpec } from '../../../shared/schema/manifest';
@@ -180,17 +183,16 @@ function Chips(props: {
   drafts: readonly CaptureDraft[];
   lists: readonly WireList[];
   index: RouterIndex;
-  /** Read-only, with this reason, once the fact is sent. */
-  locked: string | null;
+  /** Read-only once the fact is sent or saved; the route line says which. */
+  locked: boolean;
   onChoose(patch: { hint?: Omit<CaptureHint, 'fact'>; typed?: Record<string, string> }): void;
 }) {
   const { fact, choice, drafts, lists, index } = props;
   const open = openAsks(fact, choice);
-  const off = props.locked !== null;
+  const off = props.locked;
   // A chip changes no stored value, so it shows no saved tick (quiet).
   const common = {
     disabled: off,
-    reason: props.locked ?? undefined,
     layout: 'inline' as const,
     quiet: true,
   };
@@ -233,7 +235,7 @@ function Chips(props: {
         label="Community"
         value={draftValue(drafts, 'communityId')}
         options={communityOpts}
-        placeholder="Pick a community"
+        placeholder="Not set"
         testId="chip-community-field"
         onSave={async (v) => {
           if (v) props.onChoose({ hint: { communityId: v } });
@@ -250,7 +252,7 @@ function Chips(props: {
         kind="year"
         label={label}
         value={yearNeeded ? null : fact.years.start}
-        placeholder={yearNeeded ? 'Pick a year' : undefined}
+        placeholder={yearNeeded ? 'Not set' : undefined}
         testId="chip-year-field"
         onSave={async (v) => {
           if (v !== null) props.onChoose({ hint: { startYear: v } });
@@ -304,7 +306,7 @@ function Chips(props: {
           options={index.characters
             .map((c) => ({ value: c.id, label: c.name }))
             .sort((a, b) => a.label.localeCompare(b.label))}
-          placeholder="Pick a character"
+          placeholder="Not set"
           testId="chip-character-field"
           onSave={async (v) => {
             if (v) props.onChoose({ hint: { characterId: v } });
@@ -322,7 +324,7 @@ function Chips(props: {
           label="Category"
           value={draftValue(drafts, 'categoryId')}
           options={listOpts('eventCategories')}
-          placeholder="Pick a category"
+          placeholder="Not set"
           testId="chip-category-field"
           onSave={async (v) => {
             if (v) props.onChoose({ hint: { categoryId: v } });
@@ -345,7 +347,7 @@ function Chips(props: {
           kind="text"
           label={typed.label}
           value={choice.typed[path] ?? ''}
-          placeholder={`Type the ${typed.label.toLowerCase()}`}
+          placeholder={typed.label}
           testId="chip-name-field"
           onSave={async (v) => props.onChoose({ typed: { [path]: v } })}
         />
@@ -374,8 +376,11 @@ export function FactCard(props: {
   lists: readonly WireList[];
   index: RouterIndex;
   busy: boolean;
-  /** Why the fact cannot go to Claude now (no key, not confirmed), or null. */
-  claudeOff: string | null;
+  /** The fact cannot go to Claude now (read-only, not confirmed, a year to pick). */
+  claudeOff: boolean;
+  /** A57: no key is set; the Claude buttons give way to Add a Claude key. */
+  keyMissing?: boolean;
+  onAddKey?: () => void;
   onTick(ticked: boolean): void;
   onChoose(patch: { hint?: Omit<CaptureHint, 'fact'>; typed?: Record<string, string> }): void;
   onAskClaude(): void;
@@ -390,12 +395,8 @@ export function FactCard(props: {
   const open = openAsks(fact, choice);
   const waiting = stand === 'local' && open.length > 0;
   const cues = fact.cues[fact.section] ?? [];
-  const locked =
-    stand === 'sent'
-      ? 'Sent to Claude with the text; these are the hints that went with it.'
-      : stand === 'question'
-        ? 'Saved as an open question.'
-        : null;
+  // A sent or saved fact's chips are read-only; the route line says which.
+  const locked = stand === 'sent' || stand === 'question';
   const where =
     stand === 'local'
       ? 'Files here, without Claude.'
@@ -442,36 +443,46 @@ export function FactCard(props: {
         {where}
         {cues.length ? ` Placed by: ${cues.join(', ')}.` : ''}
       </p>
-      {waiting && (
-        <p className="capture-needed" data-testid="capture-needed">
-          Pick the {open.join(' and ').toLowerCase()} to file this.
-        </p>
-      )}
       {stand === 'local' && <DraftDiff drafts={drafts} lists={props.lists} index={props.index} />}
       {(stand === 'local' || stand === 'unsent') && (
         <div className="row capture-fact-actions">
-          {stand === 'unsent' && (
-            <button
-              type="button"
-              className="btn small"
-              disabled={props.busy || props.claudeOff !== null}
-              title={props.claudeOff ?? undefined}
-              onClick={props.onSend}
-              data-testid="capture-send-fact"
-            >
-              Send to Claude
-            </button>
+          {props.keyMissing ? (
+            // With no key the card offers the key, or nothing where the box already does.
+            props.onAddKey && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={props.busy}
+                onClick={props.onAddKey}
+                data-testid="capture-add-key"
+              >
+                Add a Claude key
+              </button>
+            )
+          ) : (
+            <>
+              {stand === 'unsent' && (
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={props.busy || props.claudeOff || props.keyMissing}
+                  onClick={props.onSend}
+                  data-testid="capture-send-fact"
+                >
+                  Send to Claude
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn small"
+                disabled={props.busy || props.claudeOff || props.keyMissing}
+                onClick={props.onAskClaude}
+                data-testid="capture-ask-claude"
+              >
+                Ask Claude instead
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            className="btn small"
-            disabled={props.busy || props.claudeOff !== null}
-            title={props.claudeOff ?? undefined}
-            onClick={props.onAskClaude}
-            data-testid="capture-ask-claude"
-          >
-            Ask Claude instead
-          </button>
           {props.onDismiss && (
             <button
               type="button"
@@ -487,5 +498,85 @@ export function FactCard(props: {
       )}
       {props.children}
     </article>
+  );
+}
+
+/**
+ * A57: the Anthropic key field in place, opened by Add a Claude key in the
+ * capture box or the tray, so a missing key is fixed where it is missed. It
+ * saves through `claude.setKey` as Settings does; a refused key says why.
+ */
+export function ClaudeKeyField(props: {
+  onSaved(status: ClaudeStatusWire): void;
+  onCancel(): void;
+}) {
+  const id = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => input.current?.focus(), []);
+  const save = async () => {
+    if (!draft.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await call('claude.setKey', { key: draft.trim() });
+      if (res.ok) props.onSaved(res.status);
+      else setError(res.message);
+    } catch (e) {
+      setError(plainError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="capture-key stack tight"
+      data-testid="capture-key-field"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+      onKeyDown={(e) => {
+        // Escape closes the field, not the box around it.
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          props.onCancel();
+        }
+      }}
+    >
+      <label htmlFor={id}>Anthropic key</label>
+      <div className="row tight">
+        <input
+          ref={input}
+          id={id}
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="sk-ant-…"
+          data-testid="capture-key-input"
+        />
+        <button
+          type="submit"
+          className="btn primary"
+          disabled={busy || !draft.trim()}
+          data-testid="capture-key-save"
+        >
+          Save
+        </button>
+        <button type="button" className="btn" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
