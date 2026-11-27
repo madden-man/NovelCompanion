@@ -37,6 +37,9 @@ import { call } from '../api';
 import { useCapabilities } from '../capabilities';
 import { AppMenu } from './AppMenu';
 import { EditableGallery } from './editable/Gallery';
+import { usePhone } from '../phone';
+import { PhoneFrame } from './phone/PhoneFrame';
+import type { PhoneChooser } from './phone/PhoneFrame';
 import './shell.css';
 
 type View =
@@ -121,13 +124,18 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
 ];
 
 /** The app frame for an open bible: the top bar, the nine screens in the rail, the screen (A43: no inspector column). */
-export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
+export function Workspace(props: { bibleId: string; bibles: ReactNode; chooser?: PhoneChooser }) {
+  const phone = usePhone();
   return (
     <DataProvider key={props.bibleId}>
       <UndoProvider key={props.bibleId} bible={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
           <OverridesBible id={props.bibleId} />
-          <Frame bibles={props.bibles} />
+          {phone ? (
+            <PhoneFrame bible={props.bibleId} chooser={props.chooser} />
+          ) : (
+            <Frame bibles={props.bibles} />
+          )}
         </StoryTimeProvider>
       </UndoProvider>
     </DataProvider>

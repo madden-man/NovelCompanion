@@ -8,6 +8,7 @@ import { Workspace } from './workspace/Workspace';
 import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
 import { useAppearance } from './appearance';
 import { useCapabilities } from './capabilities';
+import { usePhone } from './phone';
 import { MongoSettings } from './workspace/settings';
 import { saveBeforeSwitch } from './workspace/undo';
 
@@ -33,6 +34,7 @@ function Shell() {
   // ARCH-6: when the connection comes back (or goes), the list of bibles loads again.
   const connectionState = useConnection().status?.state;
   const can = useCapabilities();
+  const phone = usePhone();
 
   useEffect(() => {
     let live = true;
@@ -120,19 +122,22 @@ function Shell() {
 
   return (
     <main className={current ? 'shell wide' : 'shell'}>
-      <header className={current ? 'app-head' : 'stack'}>
-        <h1>Novel Companion</h1>
-        {current && (
-          <BibleMenu
-            current={current}
-            bibles={list?.bibles.length ? list.bibles : [current]}
-            canCreate={list?.connection === 'connected' && can('bible.create')}
-            busy={opening}
-            onOpen={open}
-            onCreate={create}
-          />
-        )}
-      </header>
+      {/* A58 U1: on the phone the bible's name is in the phone's own top bar. */}
+      {!(phone && current) && (
+        <header className={current ? 'app-head' : 'stack'}>
+          <h1>Novel Companion</h1>
+          {current && (
+            <BibleMenu
+              current={current}
+              bibles={list?.bibles.length ? list.bibles : [current]}
+              canCreate={list?.connection === 'connected' && can('bible.create')}
+              busy={opening}
+              onOpen={open}
+              onCreate={create}
+            />
+          )}
+        </header>
+      )}
       <ConnectionBanner onOpened={(bible) => setCurrent(bible)} beforeOpen={saveBeforeSwitch} />
       {error && (
         <p className="callout crit" role="alert">
@@ -147,7 +152,21 @@ function Shell() {
           </button>
         </p>
       )}
-      {current ? <Workspace key={reloads} bibleId={current.id} bibles={bibles} /> : bibles}
+      {current ? (
+        <Workspace
+          key={reloads}
+          bibleId={current.id}
+          bibles={bibles}
+          chooser={{
+            current,
+            bibles: list?.bibles.length ? list.bibles : [current],
+            busy: opening,
+            onOpen: open,
+          }}
+        />
+      ) : (
+        bibles
+      )}
     </main>
   );
 }
