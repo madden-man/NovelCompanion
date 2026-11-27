@@ -192,8 +192,11 @@ describe('AI-7 failures say what to do next', () => {
       expect(text, kind).not.toMatch(/\b[45]\d\d\b|Error:|undefined|—/);
       expect(text.length, kind).toBeGreaterThan(15);
     }
-    expect(ERROR_MESSAGES.noKey).toMatch(/Settings/);
-    expect(ERROR_MESSAGES.badKey).toMatch(/Settings/);
+    // A57: the Open settings button beside these is the next step, so the message names none.
+    for (const kind of ['noKey', 'badKey', 'modelUnavailable'] as const) {
+      expect(needsSettings(kind)).toBe(true);
+      expect(ERROR_MESSAGES[kind], kind).not.toMatch(/Settings|Add one|Replace it|Pick another/);
+    }
     expect(
       needsSettings('noKey') && needsSettings('badKey') && needsSettings('modelUnavailable'),
     ).toBe(true);

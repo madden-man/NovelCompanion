@@ -160,7 +160,8 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     const turn = run.turns[0]!;
     expect(turn.status).toBe('failed');
     expect(turn.error).toEqual({ kind: 'noKey', message: ERROR_MESSAGES.noKey });
-    expect(turn.error!.message).toMatch(/Settings/);
+    // A57: the Open settings button beside the message is the next step; the message names none.
+    expect(turn.error!.message).not.toMatch(/Settings/);
     expect(needsSettings(turn.error!.kind)).toBe(true);
     expect(turn.question).toBe('How old is Margaret in 2040?');
     expect(r.fake.requests).toHaveLength(0);

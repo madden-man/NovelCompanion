@@ -10,7 +10,7 @@ import {
 } from '../../src/shared/errors';
 import { ValidationError, RepositoryError } from '../../src/main/db/repository';
 import { userStrings } from '../helpers/userStrings';
-import { UNREACHABLE } from '../../src/main/connection';
+import { UNREACHABLE, unavailableMessage } from '../../src/main/connection';
 import { CONNECTION_LOST_MESSAGE, READ_ONLY_REASON } from '../../src/shared/ipcApp';
 
 type Registered = (event: unknown, payload: unknown) => Promise<unknown>;
@@ -261,5 +261,17 @@ describe('A57 failure messages say what went wrong and never name the button bes
       expect(m, m).toMatch(/\.$/);
     }
     expect(UNREACHABLE).toBe('The app could not reach the MongoDB deployment.');
+  });
+
+  test('A57 NF-3 with a snapshot to open, the banner message says only what went wrong; the snapshot button is the next step', () => {
+    expect(unavailableMessage(null, true)).toBe(UNREACHABLE);
+    expect(unavailableMessage(CONNECTION_LOST_MESSAGE, true)).toBe(CONNECTION_LOST_MESSAGE);
+    for (const m of [unavailableMessage(null, true), unavailableMessage(null, false)]) {
+      expect(m, m).not.toMatch(/Until then|you can open|try again|click/i);
+    }
+    // With none, it says there is nothing to open, so no button is missed.
+    expect(unavailableMessage(null, false)).toBe(
+      `${UNREACHABLE} There is no local snapshot on this Mac yet, so there is nothing to open read-only.`,
+    );
   });
 });

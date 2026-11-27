@@ -108,7 +108,7 @@ test('A57 ARCH-6 on the launch screen the connection string field tests a paste 
   await stop();
 });
 
-test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-only: views and search work, every write is off with the reason', async () => {
+test('A57 NF-3 ARCH-6 at launch with MongoDB unreachable, the message says only what went wrong, the button names the snapshot it opens, and it opens read-only: views and search work, every write is off with the reason', async () => {
   // Online first: opening the bible takes the day's snapshot.
   await start(server.getUri());
   await invoke('bible.open', { slug: SLUG });
@@ -119,7 +119,20 @@ test('ARCH-6 at launch with MongoDB unreachable, the latest snapshot opens read-
   await start(await closedUri());
   const banner = page.getByTestId('connection-banner');
   await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
-  await expect(banner).toContainText(`The most recent snapshot is of ${NAME}`);
+  // A57 NF-3: the message says what went wrong; Try again and the snapshot button are the next steps.
+  await expect(banner.getByTestId('connection-message')).toHaveText(
+    'The app could not reach the MongoDB deployment.',
+  );
+  await expect(banner).not.toContainText(/Until then|you can open/i);
+  await expect(banner.getByTestId('connection-retry')).toHaveText('Try again');
+  const snapshot = (await invoke('connection.status', {})).snapshot!;
+  const takenAt = await page.evaluate(
+    (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    snapshot.takenAt,
+  );
+  await expect(banner.getByTestId('open-snapshot')).toHaveText(
+    `Open ${NAME} from ${takenAt} read-only`,
+  );
   await banner.getByTestId('open-snapshot').click();
   await expect(banner).toHaveAttribute('data-state', 'readOnly');
   await expect(page.getByTestId('read-only-reason')).toContainText(READ_ONLY_REASON);

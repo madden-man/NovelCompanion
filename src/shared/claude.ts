@@ -86,19 +86,20 @@ export const ClaudeErrorKind = z.enum([
 ]);
 export type ClaudeErrorKind = z.infer<typeof ClaudeErrorKind>;
 
-/** NF-3: plain language with what to do next. Kinds that need the key link to settings. */
+/**
+ * NF-3: plain language. Kinds that need the key show an Open settings button
+ * beside the message (A57), so their message says only what went wrong.
+ */
 export const ERROR_MESSAGES: Record<ClaudeErrorKind, string> = {
-  noKey:
-    'Claude needs an Anthropic API key, and none is stored. Add one in Settings, then ask again. Your question is kept.',
-  badKey:
-    'Anthropic rejected the stored API key. Replace it in Settings, then ask again. Your question is kept.',
+  noKey: 'Claude needs an Anthropic API key, and none is stored. Your question is kept.',
+  badKey: 'Anthropic rejected the stored API key. Your question is kept.',
   rateLimit:
     'Anthropic is limiting how fast this key can send requests. Wait a minute, then try again. Your question is kept.',
   network:
     'The app could not reach Anthropic. Check your network connection, then try again. Your question is kept.',
   overloaded: 'Anthropic is busy right now. Try again in a few minutes. Your question is kept.',
   modelUnavailable:
-    'The model chosen for this feature is not available to this key. Pick another in Settings, then try again. Your question is kept.',
+    'The model chosen for this feature is not available to this key. Your question is kept.',
   invalidOutput:
     'Claude answered in a shape the app could not read, so nothing was saved from it. Try again.',
   notAcknowledged: 'Read how Claude uses your content and confirm it before the first run.',
