@@ -232,8 +232,8 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   // A57: the snapshot does not open over typing that is not stored: the live bible stays
   // open, the typing stays in the field, and the message says what was not saved.
   await banner.getByTestId('open-snapshot').click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Not saved' })).toContainText(
-    'Not saved',
+  await expect(banner.getByTestId('connection-error')).toContainText(
+    'Not saved: In the story on Margaret Hale.',
     { timeout: 30_000 },
   );
   await expect(banner).toHaveAttribute('data-state', 'unavailable');
