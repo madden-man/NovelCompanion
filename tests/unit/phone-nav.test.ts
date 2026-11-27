@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fromHash, rootState, toHash } from '../../src/renderer/src/workspace/phone/nav';
-import { scrollToShow } from '../../src/renderer/src/workspace/phone/keyboard';
+import { fromHash, rootState, toHash } from '../../src/renderer/src/workspace/phone/places';
+import { scrollToShow } from '../../src/renderer/src/workspace/phone/geometry';
 
 /** A58 U1 (PH-31, PH-32): the phone's places in the hash, and the keyboard hold's arithmetic. */
 describe('phone places in the hash (PH-31)', () => {
