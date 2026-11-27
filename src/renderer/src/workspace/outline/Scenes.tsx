@@ -641,6 +641,16 @@ export function SceneOutline(props: { onOpen: Open }) {
     el.setSelectionRange(pos, pos);
   };
   const neighbour = (key: string, by: -1 | 1) => keys[keys.indexOf(key) + by] ?? null;
+  /** The last line of the text above section `i`, which caps how far its first line indents. */
+  const lineAbove = (i: number): string | null => {
+    for (let k = i - 1; k >= 0; k--) {
+      const last = linesOf(keys[k] as string).at(-1);
+      if (last !== undefined) return last;
+    }
+    return null;
+  };
+  /** Up or Down carried the caret on into the next section while the writer was editing there. */
+  const carried = useRef(false);
 
   /** The part a new chapter goes in when there is no chapter to follow: the last, made when there is none. */
   const ensurePart = async (): Promise<string | undefined> => {
@@ -1091,10 +1101,14 @@ export function SceneOutline(props: { onOpen: Open }) {
         (f) => withSection(f, key, setSceneYear(sectionOf(f, key), line, year)),
       ),
     onBlur: () => void scene.save(),
-    onLeave: (key, by) => {
+    onLeave: (key, by, editing) => {
       const next = neighbour(key, by);
-      if (next) focusSection(next, by < 0 ? 'end' : 'start');
+      if (!next) return;
+      carried.current = editing;
+      focusSection(next, by < 0 ? 'end' : 'start');
+      carried.current = false;
     },
+    arrivedEditing: () => carried.current,
     onNewChapter: (key, line) => void newChapterAt(key, line),
     onCaret: (key, line) => caretLines.current.set(key, line),
     undoTyping: scene.undoTyping,
@@ -1250,6 +1264,7 @@ export function SceneOutline(props: { onOpen: Open }) {
                       lines={sec.lines}
                       years={years}
                       firstScene={firstScene.get(key) ?? 1}
+                      above={lineAbove(i)}
                       disabled={ro.off}
                       tip={ro.tip}
                       handlers={handlers}
@@ -1730,7 +1745,10 @@ interface SectionHandlers {
   onLines: (key: string, lines: string[]) => void;
   onYear: (key: string, line: number, year: number | null) => void;
   onBlur: () => void;
-  onLeave: (key: string, by: -1 | 1) => void;
+  /** Up or Down left the section; `editing` carries the writer's editing on into the next one. */
+  onLeave: (key: string, by: -1 | 1, editing: boolean) => void;
+  /** Whether the focus now arriving was carried in by Up or Down while editing. */
+  arrivedEditing: () => boolean;
   onNewChapter: (key: string, line: number) => void;
   /** The caret moved to `line` of the section. */
   onCaret: (key: string, line: number) => void;
@@ -1744,6 +1762,8 @@ interface SectionProps {
   lines: string[];
   years: (ShownYear | null)[];
   firstScene: number;
+  /** The line just above this section in the whole outline, or null for none. */
+  above: string | null;
   chapter?: number;
   tall?: boolean;
   disabled: boolean;
@@ -1799,24 +1819,32 @@ function SectionText(p: SectionProps) {
     h.onLines(key, asLines(value));
   };
 
-  /** Escape lets the next Tab or Shift+Tab leave the field instead of indenting (NF-2). */
-  const released = useRef(false);
+  /**
+   * NF-2, PL-5: Tab and Shift+Tab indent and outdent only while the writer is
+   * editing here, and move the focus otherwise, so the field is never a trap.
+   * Editing starts, once the focus is in, with a typed character, Enter,
+   * Backspace, Delete, a paste or the pointer putting the caret in; Escape and
+   * leaving the field end it. Cmd+] and Cmd+[ indent and outdent always.
+   */
+  const editing = useRef(false);
   const lineOfCaret = (el: HTMLTextAreaElement) =>
     el.value.slice(0, el.selectionStart).split('\n').length - 1;
-
-  /** True when the caret's line holds more than its bullet; Tab leaves a line with no words (NF-2). */
-  const lineHasWords = (el: HTMLTextAreaElement) =>
-    (el.value.split('\n')[lineOfCaret(el)] ?? '').replace(/^\s*(?:[-*]\s*)?/, '') !== '';
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     if (e.key === 'Escape') {
-      released.current = true;
+      editing.current = false;
       return;
     }
-    if (e.key === 'Shift') return;
-    const leave = released.current;
-    released.current = false;
+    const command = e.metaKey || e.ctrlKey || e.altKey;
+    if (
+      e.key === 'Enter' ||
+      e.key === 'Backspace' ||
+      e.key === 'Delete' ||
+      (e.key.length === 1 && !command)
+    ) {
+      editing.current = true;
+    }
     const edit = {
       text: el.value,
       selectionStart: el.selectionStart,
@@ -1834,12 +1862,12 @@ function SectionText(p: SectionProps) {
       }
     } else if (
       ((e.key === ']' || e.key === '[') && (e.metaKey || e.ctrlKey) && !e.altKey) ||
-      (e.key === 'Tab' && !leave && lineHasWords(el) && !e.metaKey && !e.ctrlKey && !e.altKey)
+      (e.key === 'Tab' && editing.current && !command)
     ) {
-      // Cmd+] and Tab indent, Cmd+[ and Shift+Tab outdent. Tab leaves an empty field, and any field after Escape (NF-2).
+      // Cmd+] and Tab indent, Cmd+[ and Shift+Tab outdent; Tab moves the focus when not editing (NF-2).
       if (p.disabled) return;
       e.preventDefault();
-      const next = indentLines(edit, e.key === '[' || (e.key === 'Tab' && e.shiftKey));
+      const next = indentLines(edit, e.key === '[' || (e.key === 'Tab' && e.shiftKey), p.above);
       apply(next.text, next.selectionStart, next.selectionEnd);
     } else if (
       plain &&
@@ -1847,10 +1875,10 @@ function SectionText(p: SectionProps) {
       !el.value.slice(0, el.selectionStart).includes('\n')
     ) {
       e.preventDefault();
-      h.onLeave(key, -1);
+      h.onLeave(key, -1, editing.current);
     } else if (plain && e.key === 'ArrowDown' && !el.value.slice(el.selectionEnd).includes('\n')) {
       e.preventDefault();
-      h.onLeave(key, 1);
+      h.onLeave(key, 1, editing.current);
     }
   };
 
@@ -1906,18 +1934,29 @@ function SectionText(p: SectionProps) {
         spellCheck
         rows={1}
         placeholder="First scene"
+        aria-description="While you write, Tab and Shift+Tab indent and outdent a line. Escape lets Tab leave."
         data-testid="scene-text"
         data-section={p.sectionKey}
         data-field={`scene:${p.sectionKey}`}
         onFocus={() => {
+          if (h.arrivedEditing()) editing.current = true;
           // An empty section starts with a bullet, so the first keystroke writes a scene.
           if (p.lines.length === 0 && !p.disabled) apply(EMPTY_OUTLINE, 2, 2);
         }}
-        onChange={(e) => h.onLines(key, asLines(e.target.value))}
+        onPointerDown={() => {
+          editing.current = true;
+        }}
+        onPaste={() => {
+          editing.current = true;
+        }}
+        onChange={(e) => {
+          editing.current = true;
+          h.onLines(key, asLines(e.target.value));
+        }}
         onKeyDown={onKeyDown}
         onSelect={(e) => h.onCaret(key, lineOfCaret(e.currentTarget))}
         onBlur={() => {
-          released.current = false;
+          editing.current = false;
           h.onBlur();
         }}
       />

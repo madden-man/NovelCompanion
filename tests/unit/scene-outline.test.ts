@@ -5,6 +5,7 @@ import {
   continueBullet,
   giveFirstScene,
   indentLines,
+  maxIndent,
   refitFlow,
   LEAD,
   chapterBars,
@@ -91,6 +92,33 @@ describe('PL-5 the scene outline text behaves as a bulleted list', () => {
     expect([back.selectionStart, back.selectionEnd]).toEqual([6, 13]);
     // A selection that only touches the start of the next line leaves that line alone.
     expect(indentLines(at(t, 6, 12), false).text).toBe('- One\n  - Two\n- Three');
+  });
+
+  test('A57 PL-5 indenting is capped one level deeper than the line above, so repeated Tab stops there', () => {
+    const t = '- One\n- Two';
+    const once = indentLines(at(t, 8), false);
+    expect(once.text).toBe('- One\n  - Two');
+    // A second and third indent change nothing: the line above sits at the top level.
+    expect(indentLines(once, false)).toEqual(once);
+    expect(indentLines(indentLines(once, false), false)).toEqual(once);
+    // Under an indented line the cap is one level deeper again.
+    const deeper = indentLines(at('- One\n  - Two\n- Three', 16), false);
+    expect(deeper.text).toBe('- One\n  - Two\n  - Three');
+    expect(indentLines(deeper, false).text).toBe('- One\n  - Two\n    - Three');
+    expect(indentLines(indentLines(deeper, false), false).text).toBe('- One\n  - Two\n    - Three');
+    // An odd indent is brought up to the cap, not past it.
+    expect(indentLines(at('- One\n - Two', 9), false).text).toBe('- One\n  - Two');
+    // The first line has nothing above it, unless the section above is named.
+    expect(indentLines(at('- One', 3), false)).toEqual(at('- One', 3));
+    expect(indentLines(at('- One', 3), false, null)).toEqual(at('- One', 3));
+    expect(indentLines(at('- One', 3), false, '- Before').text).toBe('  - One');
+    expect(indentLines(at('  - One', 5), false, '- Before')).toEqual(at('  - One', 5));
+    // A selection moves as a block, capped by its first line.
+    const block = indentLines(at('- One\n- Two\n  - sub', 6, 19), false);
+    expect(block.text).toBe('- One\n  - Two\n    - sub');
+    expect(indentLines(block, false)).toEqual(block);
+    expect(maxIndent(null)).toBe(0);
+    expect(maxIndent('    - x')).toBe(6);
   });
 
   test('PL-5 Cmd+[ on an unindented line changes nothing', () => {
