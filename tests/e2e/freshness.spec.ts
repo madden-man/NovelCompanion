@@ -165,6 +165,7 @@ test('PH-11 an undo whose entry changed elsewhere writes nothing, says so in the
   await page.waitForTimeout(500);
   await phone.repo.update('characters', 'H1', { role: 'Moved on the phone' });
   const atPhone = await stored('H1');
+  const before = await reloads();
 
   await page.getByTestId('top-undo').click();
   await expect(page.getByTestId('undo-notice')).toHaveText(
@@ -172,10 +173,11 @@ test('PH-11 an undo whose entry changed elsewhere writes nothing, says so in the
   );
   expect(await stored('H1')).toEqual(atPhone);
 
-  // Back in front, the window reads the entry again, and the step before still undoes and redoes.
-  const before = await reloads();
-  await focusWindow();
+  // The refusal itself reads the bible again, so the window shows the entry as it is now.
   await expect.poll(reloads).toBeGreaterThan(before);
+
+  // Back in front, the step before still undoes and redoes.
+  await focusWindow();
   await page.getByTestId('top-undo').click();
   await expect(page.getByTestId('undo-notice')).toContainText('Undid:');
   await expect.poll(async () => (await stored('H1')).birth).toEqual({ year: 1958 });
