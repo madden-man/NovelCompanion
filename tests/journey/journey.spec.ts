@@ -304,7 +304,7 @@ async function addPerson(
   await expect(treeInspector().getByTestId('inspector-name')).toHaveText(name);
 }
 
-/** FT-11: drag one person's node and drop it on another's; the drop menu opens. */
+/** FT-11: drag one person's node over another's and drop it on their parent zone. */
 async function dropOn(from: string, onto: string) {
   await page.getByRole('button', { name: 'Fit to window' }).click();
   const a = (await treeNode(from).boundingBox())!;
@@ -313,10 +313,10 @@ async function dropOn(from: string, onto: string) {
   await page.mouse.down();
   await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 3 });
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+  // A57: the drop zones over the person; let go on the parent zone.
+  const z = (await page.locator('[data-testid="tree-zones"] [data-zone="parent"]').boundingBox())!;
+  await page.mouse.move(z.x + z.width / 2, z.y + z.height / 2, { steps: 4 });
   await page.mouse.up();
-  const menu = page.getByTestId('tree-drop');
-  await expect(menu).toHaveAttribute('aria-label', `${from} dropped on ${onto}`);
-  return menu;
 }
 
 async function setLifeYear(path: 'birth' | 'death', year: number): Promise<void> {
@@ -396,7 +396,7 @@ test('ARCH-8 FT-2 the Scratch bible is opened from the Bibles screen, its two fa
   }
   await rail(page, 'Family tree').click();
   await expect(page.getByTestId('tree-view')).toBeVisible();
-  await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
+  await expect(page.getByTestId('tree-warn-count')).toHaveText('No warnings');
 
   await addPerson('person', 'Margaret Hale', 1958);
   await setLifeYear('death', 2041);
@@ -427,9 +427,7 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   await setFamilies(['Zhou family']);
   // FT-11: link the existing Zhou Wei as Zhou Lan's other parent by dropping Wei on Lan.
   const linksBefore = (await invoke('tree.get', {})).links.length;
-  const menu = await dropOn('Zhou Wei', 'Zhou Lan');
-  await menu.getByRole('button', { name: 'Make Zhou Wei a parent of Zhou Lan' }).click();
-  await expect(menu).toHaveCount(0);
+  await dropOn('Zhou Wei', 'Zhou Lan');
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await selectPerson('Zhou Lan');
   await addPerson('sibling', 'Zhou Jun', 1993, { type: 'biological' });
@@ -469,11 +467,6 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   expect(t.warnings).toEqual([]);
   // Tidy layout draws exactly that layout.
   await page.getByRole('button', { name: 'Tidy layout' }).click();
-  await page
-    .getByRole('dialog', { name: 'Tidy layout' })
-    .getByRole('button', { name: 'Tidy layout' })
-    .click();
-  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
   const want = layoutByName(built);
   await expect
     .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])

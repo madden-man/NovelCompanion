@@ -1,0 +1,141 @@
+/* A57: the family tree shows its gestures instead of describing them. Theme tokens only. */
+
+/* With nobody selected and no warnings, the tree takes the inspector's column too. */
+.ws-tree-area.tree-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The + parent, + partner and + child stubs on a hovered, focused or selected person. */
+.tnode-stub {
+  visibility: hidden;
+  cursor: pointer;
+}
+.tnode:hover .tnode-stub,
+.tnode:focus-within .tnode-stub,
+.tnode.selected .tnode-stub {
+  visibility: visible;
+}
+.tree-svg.moving .tnode-stub {
+  visibility: hidden;
+}
+.tnode-stub:focus {
+  outline: none;
+}
+.tnode-stub rect {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.tnode-stub text {
+  fill: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tnode-stub:hover rect,
+.tnode-stub:focus-visible rect {
+  fill: var(--accent-soft);
+  stroke-width: 3;
+}
+
+/* The drop zones over the person a dragged person is held above. */
+.tree-zones {
+  position: absolute;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  pointer-events: none;
+  font-size: 0.85rem;
+}
+.tree-zones-head {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.tree-zone {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px dashed var(--border);
+  color: var(--fg);
+}
+.tree-zone.hot {
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.tree-zone.refused {
+  color: var(--fg-2);
+  text-decoration: line-through;
+  background: var(--surface-2);
+  box-shadow: none;
+  font-weight: 400;
+}
+
+/* The life states key beside the Legend button, drawn as the nodes draw each state. */
+.tree-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.tree-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 2px 8px;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.tree-key li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tkey-box {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.tkey-box.unborn {
+  opacity: 0.45;
+  stroke-dasharray: 4 3;
+}
+.tkey-box.dead {
+  stroke: var(--fg);
+  stroke-width: 2.5;
+}
+.tkey-box.unknown {
+  stroke-dasharray: 2 2;
+}
+
+/* Tidy layout's notice, with its Undo button, over the top of the tree. */
+.tree-toast {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
