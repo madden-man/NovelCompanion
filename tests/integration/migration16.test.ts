@@ -45,7 +45,7 @@ describe('PH-6 PH-20 migration 16 adds the rev counter', () => {
     await store.db
       .collection(REGISTRY)
       .updateOne({ _id: slug as never }, { $set: { schemaVersion: 15 } });
-    const metaBefore = await bible.collection('meta').find({}).toArray();
+    const metaBefore = await bible.collection('meta').find({}).sort({ _id: 1 }).toArray();
 
     const open = await openBibleSession(store, slug);
     expect(await schemaVersion(open.handle)).toBe(16);
@@ -53,6 +53,7 @@ describe('PH-6 PH-20 migration 16 adds the rev counter', () => {
     const metaAfter = await bible
       .collection('meta')
       .find({ _id: { $ne: REV_META_ID as never } })
+      .sort({ _id: 1 })
       .toArray();
     expect(metaAfter).toEqual(metaBefore);
 

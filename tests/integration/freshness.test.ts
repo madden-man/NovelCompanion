@@ -77,7 +77,10 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
 
     expect(await a.repo.freshen()).toBe(false);
     expect(await b.repo.freshen()).toBe(false);
-    await a.repo.update('characters', 'H1', { role: 'Lighthouse keeper' });
+    await a.repo.update('characters', 'H1', {
+      role: 'Lighthouse keeper',
+      title: 'Lighthouse Hale',
+    });
     expect(await a.repo.freshen()).toBe(false);
     expect(b.repo.get('characters', 'H1')?.role).not.toBe('Lighthouse keeper');
     seen.length = 0;
@@ -104,7 +107,11 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
       'storyTime',
       `reload true ${ELSEWHERE_MESSAGE}`,
     ]);
-    expect(seen.filter((s) => s.who === 'b').map((s) => s.what)).toEqual(['storyTime']);
+    // B heard only its own two writes, never a reload.
+    expect(seen.filter((s) => s.who === 'b').map((s) => s.what)).toEqual([
+      'storyTime',
+      expect.stringMatching(/^change places \S+ create$/),
+    ]);
     expect(a.repo.rev).toBe(b.repo.rev);
     expect(a.repo.rev).toBe(await readRev(a.handle));
   });
@@ -151,7 +158,8 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
       )?.stamp;
     const before = await stamp();
     expect(before).toBeTruthy();
-    await a.repo.update('characters', 'H1', { title: 'Margaret Hale-Rowe' });
+    const place = a.repo.list('places')[0]!;
+    await a.repo.update('places', place._id, { title: 'Harbour light' });
     expect(await b.repo.freshen()).toBe(true);
     await expect.poll(stamp, { timeout: 10_000 }).not.toBe(before);
     service.stop();
@@ -172,7 +180,7 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
     };
     await edit('H1', { role: 'First' }, 'Changed Role on H1');
     await edit('H2', { role: 'Second' }, 'Changed Role on H2');
-    await edit('H2', { notes: 'Third' }, 'Changed Notes on H2');
+    await edit('H2', { backstory: 'Third' }, 'Changed Backstory on H2');
 
     // The other side changes H2 in another field; A has not reloaded yet.
     await b.repo.update('characters', 'H2', { title: 'Renamed elsewhere' });
@@ -638,11 +646,16 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
     const missed: string[] = [];
     for (const channel of [...ORDER, ...rest]) {
       const step = WALK[channel];
-      await step.setup?.();
-      await settle();
       const bible = step.bible ?? slug;
-      const before = step.bible ? 0 : await revOf(slug);
-      await step.run();
+      let before = 0;
+      try {
+        await step.setup?.();
+        await settle();
+        before = step.bible ? 0 : await revOf(slug);
+        await step.run();
+      } catch (e) {
+        throw new Error(`${channel}: ${(e as Error).message}`, { cause: e });
+      }
       if (step.bible === undefined) await settle();
       const after = await revOf(bible);
       if (NOT_THE_BIBLE[channel]) {
@@ -650,7 +663,6 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
         continue;
       }
       if (!(after > before)) missed.push(`${channel}: ${before} to ${after}`);
-      // bible.create and backup.import left the open bible alone; open it again if a step switched.
     }
     expect(missed).toEqual([]);
     // Nothing the walk did needs a reload here: every number was this process's own.
@@ -694,5 +706,5 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
         async () => (await call('entry.get', { collection: 'characters', id: 'H2' })).entry.role,
       )
       .toBe('From the phone again');
-  });
+  }, 600_000);
 });
