@@ -1,0 +1,175 @@
+/* A58 U3: the story year dial (the year sheet) and the year view page. Theme tokens only. */
+
+.ph-dial {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+.ph-dial-row,
+.ph-yp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ph-step {
+  flex: none;
+  min-width: 52px;
+  height: 56px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ph-step:active {
+  background: var(--time-soft);
+  border-color: var(--time);
+}
+.ph-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+:root[data-phone] .ph-dial .ph-dial-year {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 56px;
+  box-sizing: border-box;
+  font-size: 1.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  border: 2px solid var(--time);
+  border-radius: 12px;
+  background: var(--time-soft);
+  color: var(--fg);
+}
+.ph-dial-era {
+  margin: -6px 0 0;
+  text-align: center;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ph-dial input[type='range'] {
+  width: 100%;
+  min-height: var(--ph-target);
+}
+.ph-dial .field {
+  font-size: 0.95rem;
+  min-width: 0;
+}
+.ph-dial select {
+  width: 100%;
+}
+.ph-dial-date,
+.ph-dial-age {
+  display: grid;
+  gap: 8px;
+  align-items: end;
+}
+.ph-dial-age {
+  align-items: start;
+}
+.ph-dial-date {
+  grid-template-columns: 1fr 1fr auto;
+}
+.ph-dial-age {
+  grid-template-columns: minmax(0, 1fr) 5.5em;
+}
+.ph-dial-date input,
+.ph-dial-age input {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}
+.ph-dial-more {
+  align-self: flex-start;
+}
+
+/* The year view page. */
+.ph-yearpage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px var(--ph-gutter-right) 12px var(--ph-gutter-left);
+}
+.ph-yp-head {
+  justify-content: space-between;
+}
+:root[data-phone] .ph-frame .ph-yp-year {
+  margin: 0;
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 2rem;
+}
+.ph-yp-row {
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font: inherit;
+  font-size: 1.05rem;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ph-yp-row:active {
+  background: var(--surface-2);
+}
+.ph-yp-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ph-yp-row.formative .ph-yp-name {
+  font-weight: 700;
+}
+.ph-yp-era {
+  padding: 10px 12px;
+  border: 1px solid var(--time);
+  border-radius: 12px;
+  background: var(--time-soft);
+  font-weight: 600;
+}
+.ph-yp-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ph-yp-side {
+  flex: none;
+  max-width: 50%;
+  text-align: right;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.ph-yp-sub {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+.ph-yp-none {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+.ph-yp-empty {
+  margin: 0;
+  padding: 6px 4px;
+  color: var(--fg-2);
+}

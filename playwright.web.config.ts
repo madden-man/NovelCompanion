@@ -17,5 +17,20 @@ export default defineConfig({
   reporter: 'list',
   forbidOnly: true,
   use: { serviceWorkers: 'block' },
-  projects: [{ name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } }],
+  projects: [
+    { name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } },
+    // A58 U3: touch drags need real touch events (CDP), so Chromium at iPhone size, for the specs named.
+    {
+      name: 'touch',
+      testMatch: ['**/phone-world.spec.ts'],
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 393, height: 852 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: 'block',
+      },
+    },
+  ],
 });

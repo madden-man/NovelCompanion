@@ -10,10 +10,8 @@ import { RelevantView } from '../sessions/relevant';
 import { QuestionsView } from '../sessions/SessionsView';
 import { SearchView } from '../search';
 import { UndoNotice, useUndo } from '../undo';
-import { formatMoment, useStoryTime } from '../storyTime';
-import { StoryTimeDialog, useStrandOptions } from '../timeline/StoryTimeDialog';
+import { useStoryTime } from '../storyTime';
 import { TimelineView } from '../timeline/TimelineView';
-import { useYearView } from '../timeline/common';
 import { BackstoryView } from '../backstory/BackstoryView';
 import { useOpenBackstory } from '../backstory/nav';
 import { TreeView } from '../tree/TreeView';
@@ -25,8 +23,6 @@ import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from '.
 import type { CultureTab } from '../culture';
 import { WritingToolsScreen } from '../words';
 import { SettingsView } from '../settings';
-import { useYearBounds } from '../TopBar';
-import { typedNumber } from '../editable/model';
 import { Icon } from './icons';
 import type { IconName } from './icons';
 import { useKeyboardHold } from './keyboard';
@@ -34,6 +30,8 @@ import { PhoneNavProvider, TABS, usePhoneNav } from './nav';
 import type { Page, Screen, Tab } from './nav';
 import { PhoneSheet } from './Sheet';
 import { PhoneCaptureBridge, PhoneCaptureScreen, openPhoneCapture } from './PhoneCapture';
+import { YearDial } from './YearDial';
+import { YearPage } from './YearPage';
 import './phone.css';
 
 interface BibleRef {
@@ -125,7 +123,7 @@ function Frame({ chooser, bible }: { chooser?: PhoneChooser; bible: string }) {
         <YearSheet />
         <BibleSheet chooser={chooser} />
         <ChangesSheet />
-        <StoryTimeGate onOpen={open} />
+        <StoryTimeGate />
       </div>
     </ZhNavProvider>
   );
@@ -146,9 +144,19 @@ function CloseFlush() {
   return null;
 }
 
-function StoryTimeGate({ onOpen }: { onOpen: Open }) {
+/** A58 U3: whatever opens the Story Time dialog (TM-1) opens the year view page on the phone. */
+function StoryTimeGate() {
   const story = useStoryTime();
-  return story.dialogOpen ? <StoryTimeDialog onOpen={onOpen} /> : null;
+  const nav = usePhoneNav();
+  const { dialogOpen, closeDialog } = story;
+  const { push, top } = nav;
+  const onYear = top?.kind === 'screen' && top.screen === 'year';
+  useEffect(() => {
+    if (!dialogOpen) return;
+    closeDialog();
+    if (!onYear) push({ kind: 'screen', screen: 'year' });
+  }, [dialogOpen, closeDialog, push, onYear]);
+  return null;
 }
 
 /** PH-29: the bible's name (the chooser), the story year (its sheet), Undo and Redo. */
@@ -436,6 +444,8 @@ function ScreenView(props: {
       return wide(<TrashView onOpen={open} />);
     case 'settings':
       return wide(<SettingsView />);
+    case 'year':
+      return <YearPage onOpen={open} />;
     case 'notebook':
       return wide(
         <div className="ws-wide">
@@ -474,101 +484,13 @@ function PhoneToast() {
   );
 }
 
-/** PH-29: the story year as a sheet; U3 puts the dial here. */
+/** PH-29: the story year as a sheet: the dial (U3). */
 function YearSheet() {
+  const nav = usePhoneNav();
   return (
     <PhoneSheet name="year" label="Story year" testId="year-sheet">
-      <YearControls />
+      <YearDial onOpenYear={() => nav.push({ kind: 'screen', screen: 'year' })} />
     </PhoneSheet>
-  );
-}
-
-function YearControls() {
-  const nav = usePhoneNav();
-  const story = useStoryTime();
-  const strands = useStrandOptions();
-  const bounds = useYearBounds();
-  const time = story.time ?? { year: story.year };
-  const view = useYearView(time);
-  const [draft, setDraft] = useState<string | null>(null);
-  const writing = strands.find(
-    (s) => s.chapterId === time.chapterId && s.strandId === time.strandId,
-  );
-  // The typed year commits on Enter or blur, never per keystroke.
-  const commit = () => {
-    const t = draft;
-    setDraft(null);
-    if (t !== null && /^-?\d{1,5}$/.test(t.trim())) story.setYear(Number(t));
-  };
-  const pickChapter = (key: string) => {
-    const s = strands.find((o) => o.key === key);
-    if (!s) story.set({ year: time.year });
-    else story.set({ year: s.year ?? time.year, chapterId: s.chapterId, strandId: s.strandId });
-  };
-  return (
-    <div className="ph-year-sheet">
-      <label className="field">
-        Story year
-        <input
-          className="num ph-year-input"
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={6}
-          value={draft ?? String(time.year)}
-          onChange={(e) => {
-            const v = typedNumber('year', e.target.value);
-            if (v !== null) setDraft(v);
-          }}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') commit();
-            else if (e.key === 'Escape') setDraft(null);
-          }}
-          data-testid="sheet-year"
-        />
-      </label>
-      <input
-        type="range"
-        aria-label="Story year"
-        min={bounds.min}
-        max={bounds.max}
-        value={time.year}
-        onChange={(e) => {
-          setDraft(null);
-          story.setYear(Number(e.target.value));
-        }}
-        data-testid="sheet-year-slider"
-      />
-      {story.time && story.time.month !== undefined && (
-        <p className="ph-sheet-note">{formatMoment(story.time)}</p>
-      )}
-      <label className="field">
-        Writing
-        <select
-          value={writing?.key ?? ''}
-          onChange={(e) => pickChapter(e.target.value)}
-          data-testid="sheet-writing"
-        >
-          <option value="">No chapter picked</option>
-          {strands.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        type="button"
-        className="btn"
-        onClick={() => {
-          nav.closeSheet();
-          story.openDialog();
-        }}
-        data-testid="sheet-open-year"
-      >
-        {view?.era?.name ?? 'Open the year'}
-      </button>
-    </div>
   );
 }
 

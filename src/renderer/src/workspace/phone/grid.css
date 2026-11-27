@@ -1,0 +1,30 @@
+/* A58 U3 (PH-34): a grid on the phone scrolls sideways inside the page with its
+   first column held at the left edge; the page itself never scrolls sideways.
+   One class for any grid: put .ph-grid on the scroll box, and mark the cells
+   of the first column with data-held (the year grids' .wg-label and
+   .wg-corner are held already). Backstory (U6) reuses it through GridFrame's
+   className. The box is as tall as the space between the bars, so its year
+   header stays in view while its rows scroll. */
+:root[data-phone] .ph-frame .ph-grid {
+  max-width: 100%;
+  max-height: calc(
+    100dvh - var(--ph-top) - var(--ph-bottom) - var(--ph-safe-top) - var(--ph-safe-bottom) - 24px
+  );
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+:root[data-phone] .ph-frame .ph-grid [data-held] {
+  background: var(--surface);
+}
+:root[data-phone] .ph-frame .ph-grid [data-held],
+:root[data-phone] .ph-frame .ph-grid .wg-label,
+:root[data-phone] .ph-frame .ph-grid .wg-corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-corner {
+  z-index: 5;
+}

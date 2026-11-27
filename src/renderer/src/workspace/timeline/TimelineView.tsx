@@ -34,6 +34,9 @@ import { useEraEdits, useTitleRename } from './gridShared';
 import type { GridEvent, NewEvent } from './WorldEventsGrid';
 import './world.css';
 import { useBibleSettings } from '../bibleSettings';
+import { usePhone } from '../../phone';
+import { useOptionalPhoneNav } from '../phone/nav';
+import { PhoneWorldBar } from '../phone/WorldBar';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -63,7 +66,10 @@ export function TimelineView() {
   const [selected, setSelected] = useState<{ collection: EntryCollection; id: string } | null>(
     null,
   );
-  const [zoom, setZoom] = useState<Zoom>('fit');
+  // A58 U3: the phone opens at Medium, so an era is wide enough to hold by its ends.
+  const phone = usePhone();
+  const phoneNav = useOptionalPhoneNav();
+  const [zoom, setZoom] = useState<Zoom>(phone ? 'default' : 'fit');
   const [regions, setRegions] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -152,7 +158,15 @@ export function TimelineView() {
   const eraEdits = useEraEdits({ eras, span, readOnly: ro.off, onError: setError });
   const renameEvent = useTitleRename('worldEvents');
 
-  const openEvent = (id: string) => setSelected({ collection: 'worldEvents', id });
+  // A58 U3: on the phone an event or an era opens as its page, with back.
+  const openEvent = (id: string) =>
+    phoneNav
+      ? phoneNav.push({ kind: 'entry', collection: 'worldEvents', id })
+      : setSelected({ collection: 'worldEvents', id });
+  const openEra = (id: string) =>
+    phoneNav
+      ? phoneNav.push({ kind: 'entry', collection: 'eraStates', id })
+      : setSelected({ collection: 'eraStates', id });
 
   const toggleRegion = (r: string | null) =>
     setRegions((prev) => {
@@ -226,19 +240,87 @@ export function TimelineView() {
     }
   };
 
+  const filters = (
+    <>
+      <div className="row tight wg-categories" role="group" aria-label="Categories">
+        <div className="field">
+          <label htmlFor={ids.group}>Category</label>
+          <select
+            id={ids.group}
+            value={groupId ?? ''}
+            onChange={(e) => {
+              setGroupId(e.target.value || null);
+              setSubId(null);
+            }}
+          >
+            <option value="">All categories</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {subs.length > 0 && (
+          <div className="field">
+            <label htmlFor={ids.sub}>Subcategory</label>
+            <select
+              id={ids.sub}
+              value={subId ?? ''}
+              onChange={(e) => setSubId(e.target.value || null)}
+            >
+              <option value="">All subcategories</option>
+              {subs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      <div className="row tight wg-regions" role="group" aria-label="Regions">
+        <span className="wg-toolbar-label">Regions</span>
+        <button
+          type="button"
+          className="btn small wg-chip"
+          aria-pressed={regions.size === 0}
+          onClick={() => toggleRegion(null)}
+        >
+          All regions
+        </button>
+        {allRegions.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className="btn small wg-chip"
+            aria-pressed={regions.has(r)}
+            data-region={r}
+            onClick={() => toggleRegion(r)}
+          >
+            {regionLabel.get(r) ?? r}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   return (
     <div className="ws-tree-area wg-area" data-testid="timeline-view">
       <section className="tree-main stack wg-main" aria-labelledby="timeline-title">
         <div className="list-head">
           <h2 id="timeline-title">World events</h2>
-          <span className="row tight">
-            <span className="chip time" data-testid="timeline-time">
-              Story time {year}
+          {/* A58 U3: the phone's top bar holds the story year already. */}
+          {!phone && (
+            <span className="row tight">
+              <span className="chip time" data-testid="timeline-time">
+                Story time {year}
+              </span>
+              <button type="button" className="btn small" onClick={story.openDialog}>
+                Change
+              </button>
             </span>
-            <button type="button" className="btn small" onClick={story.openDialog}>
-              Change
-            </button>
-          </span>
+          )}
         </div>
         <section
           className="panel stack tight wg-around"
@@ -257,82 +339,34 @@ export function TimelineView() {
             testid="world-around-strip"
           />
         </section>
-        <div className="tree-toolbar wg-toolbar">
-          <div className="row tight" role="group" aria-label="Zoom">
-            <span className="wg-toolbar-label">Zoom</span>
-            {ZOOMS.map((z) => (
-              <button
-                key={z.zoom}
-                type="button"
-                className="btn small"
-                aria-pressed={zoom === z.zoom}
-                onClick={() => setZoom(z.zoom)}
-              >
-                {z.label}
-              </button>
-            ))}
-          </div>
-          <div className="row tight wg-categories" role="group" aria-label="Categories">
-            <div className="field">
-              <label htmlFor={ids.group}>Category</label>
-              <select
-                id={ids.group}
-                value={groupId ?? ''}
-                onChange={(e) => {
-                  setGroupId(e.target.value || null);
-                  setSubId(null);
-                }}
-              >
-                <option value="">All categories</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {subs.length > 0 && (
-              <div className="field">
-                <label htmlFor={ids.sub}>Subcategory</label>
-                <select
-                  id={ids.sub}
-                  value={subId ?? ''}
-                  onChange={(e) => setSubId(e.target.value || null)}
+        {phone ? (
+          <PhoneWorldBar
+            zoom={zoom}
+            zooms={ZOOMS}
+            onZoom={setZoom}
+            filtered={(groupId !== null ? 1 : 0) + regions.size}
+          >
+            {filters}
+          </PhoneWorldBar>
+        ) : (
+          <div className="tree-toolbar wg-toolbar">
+            <div className="row tight" role="group" aria-label="Zoom">
+              <span className="wg-toolbar-label">Zoom</span>
+              {ZOOMS.map((z) => (
+                <button
+                  key={z.zoom}
+                  type="button"
+                  className="btn small"
+                  aria-pressed={zoom === z.zoom}
+                  onClick={() => setZoom(z.zoom)}
                 >
-                  <option value="">All subcategories</option>
-                  {subs.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                  {z.label}
+                </button>
+              ))}
+            </div>
+            {filters}
           </div>
-          <div className="row tight wg-regions" role="group" aria-label="Regions">
-            <span className="wg-toolbar-label">Regions</span>
-            <button
-              type="button"
-              className="btn small wg-chip"
-              aria-pressed={regions.size === 0}
-              onClick={() => toggleRegion(null)}
-            >
-              All regions
-            </button>
-            {allRegions.map((r) => (
-              <button
-                key={r}
-                type="button"
-                className="btn small wg-chip"
-                aria-pressed={regions.has(r)}
-                data-region={r}
-                onClick={() => toggleRegion(r)}
-              >
-                {regionLabel.get(r) ?? r}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
         {error && (
           <p className="callout crit" role="alert">
             {error}
@@ -368,7 +402,7 @@ export function TimelineView() {
             selectedId={selected?.collection === 'worldEvents' ? selected.id : null}
             readOnly={ro.off}
             onOpen={openEvent}
-            onOpenEra={(id) => setSelected({ collection: 'eraStates', id })}
+            onOpenEra={openEra}
             onMove={move}
             onCreate={create}
             eraEdits={eraEdits}
@@ -400,7 +434,7 @@ export function TimelineView() {
             Chapter being written
           </span>
         </div>
-        {selected && (
+        {selected && !phoneNav && (
           <RowEditor
             key={`${selected.collection}:${selected.id}`}
             open={selected}

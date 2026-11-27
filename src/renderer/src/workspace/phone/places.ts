@@ -24,7 +24,8 @@ export type Screen =
   | 'settings'
   | 'notebook'
   // A58 U5: capture, opened by the + (PH-27).
-  | 'capture';
+  | 'capture'
+  | 'year';
 const SCREENS: readonly Screen[] = [
   'tree',
   'backstory',
@@ -40,6 +41,7 @@ const SCREENS: readonly Screen[] = [
   'settings',
   'notebook',
   'capture',
+  'year',
 ];
 
 export type Page =
@@ -52,7 +54,7 @@ export type Page =
   /** A screen with up to two arguments (a person, a moment, a tab, a page ID). */
   | { kind: 'screen'; screen: Screen; arg?: string; arg2?: string; at?: number };
 
-export type Sheet = 'year' | 'bibles' | 'changes' | 'capturePick';
+export type Sheet = 'year' | 'bibles' | 'changes' | 'capturePick' | 'world-filters';
 
 export interface NavState {
   tab: Tab;
