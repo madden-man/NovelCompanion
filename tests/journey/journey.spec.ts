@@ -382,9 +382,10 @@ test('ARCH-8 FT-2 the Scratch bible is opened from the Bibles screen, its two fa
     await field(form, 'title').locator(':scope > input').fill(String(f.title));
     await field(form, 'name').locator(':scope > input').fill(String(f.name));
     await form.getByRole('button', { name: 'Create family' }).click();
-    await expect(
-      page.getByTestId('editor').getByRole('heading', { name: String(f.title) }),
-    ).toBeVisible();
+    // A57: the heading is the name in place, so it is read by its text, not its field label.
+    await expect(page.getByTestId('editor').getByTestId('editor-heading')).toContainText(
+      String(f.title),
+    );
     await waitSaved(page);
   }
   await rail(page, 'Family tree').click();
