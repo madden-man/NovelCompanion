@@ -308,19 +308,55 @@ test('FN-4 FN-5 Dismiss is one undo step; a dismissed card stays dismissed after
   await expect(item(edited)).toHaveCount(0, { timeout: 10_000 });
 });
 
-test('FN-6 Send to Claude hands the sentence to the capture box, which sends it on its route; a run that fails offers the card again', async () => {
+test('A57 AI-6 with a key and no consent the tray opens with no sheet, a fact files here without consent, and Not now on the first Send closes only the sheet', async () => {
   await invoke('claude.setKey', { key: KEY });
+  const SALT = 'Teenagers in Portland start to drink coffee with salt.';
+  const NOV23 = Date.parse('2026-11-23T21:00:00.000Z');
+  await send('messages', 'K6', 1, kept('K6', SALT, 2050, NOV23));
   await rail(page, 'Characters').click();
   await openTray();
-  // AI-6: the tray's own confirmation comes first; Send waits for it.
+  await focusWindow();
+  await expect(item(SALT)).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+  // Filing here needs no consent.
+  const group = tray()
+    .getByTestId('tray-group')
+    .filter({ has: page.getByText(SALT) });
+  await group.getByTestId('tray-file').click();
+  await expect(tray().getByTestId('tray-filed')).toBeVisible();
+  await expect(item(SALT)).toHaveCount(0);
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  // The Claude buttons are live; the first press asks, and Not now leaves the tray as it was.
   const sendButton = item(MOVE).getByTestId('capture-send-fact');
-  await expect(sendButton).toBeDisabled();
-  await tray().getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
-  await expect(tray().getByTestId('claude-disclosure')).toHaveCount(0);
-  expect((await invoke('claude.status', {})).acknowledgedAt).toBeTruthy();
   await expect(sendButton).toBeEnabled();
+  await sendButton.click();
+  const sheet = page.getByTestId('claude-disclosure');
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: 'Not now' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(sendButton).toBeFocused();
+  await expect(tray()).toBeVisible();
+  await expect(item(MOVE)).toHaveCount(1);
+  await expect(page.getByTestId('capture-box')).toHaveCount(0);
+  // Escape is Not now too.
+  await sendButton.press('Enter');
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(tray()).toBeVisible();
+  expect(await captures()).toBe(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+});
+
+test('A57 AI-6 FN-6 Continue on the sheet sends: Send to Claude hands the sentence to the capture box, which sends it on its route; a run that fails offers the card again', async () => {
+  const sendButton = item(MOVE).getByTestId('capture-send-fact');
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
   expect(await captures()).toBe(0);
   await sendButton.click();
+  await page.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeTruthy();
   const box = page.getByTestId('capture-box');
   await expect(box).toBeVisible();
   await expect(box.getByTestId('capture-sent')).toHaveText(MOVE);

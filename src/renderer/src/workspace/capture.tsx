@@ -334,8 +334,11 @@ export function CaptureBox() {
   const handled = useRef(new Set<string>());
   /** Request IDs whose `claude.capture` call has not answered yet; Stop stops them too. */
   const pending = useRef(new Set<string>());
-  /** The writer asked for Claude on a fact the box files: show the AI-6 confirmation. */
-  const [askAck, setAskAck] = useState(false);
+  /**
+   * AI-6: the Claude action pressed before consent. The sheet shows while it
+   * waits; Continue runs it, Not now drops it and leaves the box as it is.
+   */
+  const [ackFor, setAckFor] = useState<(() => void) | null>(null);
   /** The routed capture already ended in KB-7 (saved, or the text put back). */
   const settled = useRef(false);
   /** A56 (FN-6): the tray's hand-over still waiting to be filed; called back if it is not. */
@@ -432,7 +435,7 @@ export function CaptureBox() {
     setMessage(null);
     setKeyOpen(false);
     setEditMarks({});
-    setAskAck(false);
+    setAckFor(null);
     setNotFiled(0);
     setLeft(0);
     fetched.current = new Set();
@@ -745,7 +748,11 @@ export function CaptureBox() {
       await saveAsQuestion(body);
       return false;
     }
-    if (toClaude.size && keySet && !fresh?.acknowledgedAt) return false;
+    if (toClaude.size && keySet && !fresh?.acknowledgedAt) {
+      // AI-6: the first press that would send asks for consent; the tray's own sheet comes first.
+      if (!from) setAckFor(() => () => void sendRef.current(all, undefined, one));
+      return false;
+    }
     // No key and a mixed capture: the box files its own facts and keeps the rest as the question.
     let asked: { id: string; title: string } | null = null;
     if (toClaude.size && !keySet) {
@@ -830,14 +837,18 @@ export function CaptureBox() {
     const fresh = await call('claude.status', {}).catch(() => status);
     if (fresh) setStatus(fresh);
     if (!fresh?.key.set) return;
-    // AI-6: confirm what Claude sends first; the box shows the confirmation.
+    // AI-6: confirm what Claude sends first; Continue sends this fact.
     if (!fresh.acknowledgedAt) {
-      setAskAck(true);
+      setAckFor(() => () => void sendFactRef.current(i, force));
       return;
     }
     setMessage(null);
     await startRuns(routed, new Set([i]), force);
   };
+  const sendFactRef = useRef(sendFact);
+  useEffect(() => {
+    sendFactRef.current = sendFact;
+  });
 
   const stop = async () => {
     // A request still being answered is stopped by its ID too; main stops what it starts.
@@ -950,9 +961,6 @@ export function CaptureBox() {
     } else if (phase === 'filed' || phase === 'saved') reset();
   };
 
-  /** Hide the box and keep the routed capture as it is (Decline in the routed view). */
-  const hide = () => setBoxOpen(false);
-
   /**
    * Review later: the proposals wait in the review queue, and the facts the
    * box still holds (its own, and those Claude did not take) are kept as the
@@ -973,13 +981,7 @@ export function CaptureBox() {
     await saveAsQuestion(body);
   };
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
   const keyMissing = status !== null && !status.key.set;
-  const unsentCount = routed
-    ? routed.facts.filter((f) => standOf(routed, runs, f.index) === 'unsent').length
-    : 0;
-  // AI-6 in the routed view: only when a card needs Claude, or the writer asked for it.
-  const showAck = needsAck && (askAck || unsentCount > 0);
 
   // A57: the facts of the text as typed, placed on a pause, with the writer's chips and ticks.
   const preview = useMemo(() => {
@@ -1038,12 +1040,22 @@ export function CaptureBox() {
           onTickEdit={(i, t) => markEdit(i, (m) => ({ ...m, ticked: t }))}
           onSendOne={(i, force) => void send(false, undefined, { fact: i, force })}
           waiting={waiting.length}
-          showAck={showAck}
+          ackOpen={ackFor !== null}
+          onDeclineAck={() => setAckFor(null)}
           left={left}
-          onHide={hide}
           timeWords={time.words}
-          status={status}
-          onAcknowledge={async () => setStatus(await call('claude.acknowledge', {}))}
+          onAcknowledge={async () => {
+            const go = ackFor;
+            try {
+              setStatus(await call('claude.acknowledge', {}));
+            } catch (e) {
+              setMessage(plainError(e));
+              return;
+            } finally {
+              setAckFor(null);
+            }
+            go?.();
+          }}
           setTicked={(id, ticked) =>
             setRuns((rs) =>
               rs.map((r) => ({
@@ -1118,13 +1130,13 @@ function CaptureDialog(props: {
   onSendOne(fact: number, force?: 'full'): void;
   /** Route A facts waiting for a chip. */
   waiting: number;
-  /** AI-6 in the routed view: a card needs Claude and the writer has not confirmed. */
-  showAck: boolean;
+  /** AI-6: a Claude action waits for consent; the sheet shows over the box. */
+  ackOpen: boolean;
+  /** Not now: only the sheet closes, and the box keeps its text. */
+  onDeclineAck(): void;
   /** Sentences the last File it put back in the box. */
   left: number;
-  onHide(): void;
   timeWords: string;
-  status: ClaudeStatusWire | null;
   onAcknowledge(): Promise<void>;
   setTicked(id: string, ticked: boolean): void;
   setFactTicked(fact: number, ticked: boolean): void;
@@ -1150,7 +1162,7 @@ function CaptureDialog(props: {
   onAnother(): void;
   onSaveQuestion(): void;
 }) {
-  const { phase, status, routed, runs, saved } = props;
+  const { phase, routed, runs, saved } = props;
   const ids = { title: useId(), time: useId() };
   const dialogRef = useRef<HTMLDivElement>(null);
   const area = useRef<RichTextHandle>(null);
@@ -1183,7 +1195,6 @@ function CaptureDialog(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settledPhase, phase === 'running']);
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
   const inBox = phase === 'routed' || phase === 'running';
   const cards = runs.flatMap(orderedCards);
   const localFacts = routed
@@ -1278,12 +1289,8 @@ function CaptureDialog(props: {
           </button>
         </header>
 
-        {needsAck && phase === 'edit' && (
-          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onClose} />
-        )}
-        {props.showAck && inBox && (
-          // Decline here hides the box and keeps the routed capture for later.
-          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onHide} />
+        {props.ackOpen && (
+          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onDeclineAck} />
         )}
 
         {props.keyOpen && (

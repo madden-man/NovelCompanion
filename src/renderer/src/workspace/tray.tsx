@@ -73,6 +73,8 @@ export function NotebookTray() {
   const [message, setMessage] = useState<string | null>(null);
   const [filed, setFiled] = useState<FiledEntry[]>([]);
   const [keyOpen, setKeyOpen] = useState(false);
+  /** AI-6: the Send to Claude pressed before consent; Continue sends it, Not now drops it. */
+  const [ackFor, setAckFor] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -186,6 +188,13 @@ export function NotebookTray() {
   /** FN-6: hand the sentence to the capture box, which sends it on its route; then it leaves the tray. */
   const send = async (i: TrayItem, all: boolean) => {
     if (busy) return;
+    // AI-6: the first press that would send asks for consent, read fresh from main.
+    const fresh = await call('claude.status', {}).catch(() => status);
+    if (fresh) setStatus(fresh);
+    if (fresh?.key.set && !fresh.acknowledgedAt) {
+      setAckFor(() => () => void send(i, all));
+      return;
+    }
     const c = choiceOf(i);
     const year = c.hint.startYear ?? (typeof i.year === 'number' ? i.year : i.fact.years.start);
     setMessage(null);
@@ -215,11 +224,10 @@ export function NotebookTray() {
     }
   };
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
   const keyMissing = status !== null && !status.key.set;
-  /** Claude waits: read-only, the AI-6 confirmation above, or the highlighted year chip. */
+  /** Claude waits: read-only, or the highlighted year chip. */
   const claudeOff = (i: TrayItem): boolean =>
-    ro.off || needsAck || openAsks(i.fact, choiceOf(i)).includes('Year');
+    ro.off || openAsks(i.fact, choiceOf(i)).includes('Year');
 
   const choose = (
     key: string,
@@ -245,8 +253,21 @@ export function NotebookTray() {
           onCancel={() => setKeyOpen(false)}
         />
       )}
-      {needsAck && (
-        <Disclosure onConfirm={() => void call('claude.acknowledge', {}).then(setStatus)} />
+      {ackFor && (
+        <Disclosure
+          onConfirm={() => {
+            const go = ackFor;
+            setAckFor(null);
+            void call('claude.acknowledge', {}).then(
+              (s) => {
+                setStatus(s);
+                go();
+              },
+              (e: unknown) => setMessage(plainError(e)),
+            );
+          }}
+          onDecline={() => setAckFor(null)}
+        />
       )}
       {filed.length > 0 && (
         <div className="callout stack tight" role="status" data-testid="tray-filed">
