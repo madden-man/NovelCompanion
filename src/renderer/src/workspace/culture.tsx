@@ -38,7 +38,7 @@ import { RichText } from './richText/RichText';
 import { MarkdownView } from './richText/MarkdownView';
 import './culture.css';
 import { ListSelect } from './listSelect';
-import { RomanizationSystems } from './romanizationSystems';
+import { AddLanguage, RomanizationSystems } from './romanizationSystems';
 import { useBibleSettings } from './bibleSettings';
 import {
   Editable,
@@ -89,6 +89,7 @@ const TABS: { tab: CultureTab; label: string }[] = [
  * table, the same components the App menu opens.
  */
 export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureTab) => void }) {
+  const eraFlag = eraIssuesLabel(useEraIssues());
   const refs = useRef<Partial<Record<CultureTab, HTMLButtonElement | null>>>({});
   const baseId = useId();
   const onKey = (e: ReactKeyboardEvent, i: number) => {
@@ -125,6 +126,12 @@ export function CulturalDataView(props: { tab: CultureTab; onTab: (tab: CultureT
               onKeyDown={(e) => onKey(e, i)}
             >
               {t.label}
+              {t.tab === 'eras' && eraFlag && (
+                // The Eras panel names the same flag as a button; here it only shows.
+                <span className="chip warn-chip cu-tab-chip" aria-hidden="true">
+                  {eraFlag}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -255,8 +262,8 @@ export function CommunityView() {
       setPicked('');
       setNotice(
         lines.length === 0
-          ? `Removed ${chosen.label}. Cmd+Z brings it back.`
-          : `Removed ${chosen.label} and its ${lines.length === 1 ? 'line' : `${lines.length} lines`}. Cmd+Z brings them back.`,
+          ? `Removed ${chosen.label}.`
+          : `Removed ${chosen.label} and its ${lines.length === 1 ? 'line' : `${lines.length} lines`}.`,
       );
     });
 
@@ -291,7 +298,7 @@ export function CommunityView() {
       const title = entryTitle(e);
       await call('entry.delete', { collection: 'culturalEntries', id: e._id });
       undo.record(deleteCommand('culturalEntries', e._id, title));
-      setNotice(`Removed ${title}. Cmd+Z brings it back.`);
+      setNotice(`Removed ${title}.`);
     });
 
   const saveUnit = useEditableSave<string | null>({
@@ -309,10 +316,6 @@ export function CommunityView() {
 
   return (
     <section className="stack" aria-label="Communities" data-testid="culture-view">
-      <p className="lede">
-        What a community is like, and what its people do in each span of years, by age group. Step
-        through the years with Previous and Next; the story year does not move.
-      </p>
       <div className="tree-toolbar cu-toolbar">
         <div className="field">
           <label htmlFor={ids.community}>Community</label>
@@ -371,9 +374,15 @@ export function CommunityView() {
           data-testid="culture-prev"
           onClick={() => step(-1)}
         >
-          Previous
+          <span aria-hidden="true">‹ </span>
+          {prev}
         </button>
-        <strong className="cu-unit" aria-live="polite" data-testid="culture-unit">
+        <strong
+          className={`cu-unit${start === storyUnit ? ' chip time' : ''}`}
+          aria-live="polite"
+          aria-current={start === storyUnit ? 'date' : undefined}
+          data-testid="culture-unit"
+        >
           {unitLabel(start, unit)}
         </strong>
         <button
@@ -383,7 +392,8 @@ export function CommunityView() {
           data-testid="culture-next"
           onClick={() => step(1)}
         >
-          Next
+          {next}
+          <span aria-hidden="true"> ›</span>
         </button>
         {start !== storyUnit && (
           <button
@@ -425,7 +435,7 @@ export function CommunityView() {
               ? `Remove ${chosen.label}?`
               : `Remove ${chosen.label} and its ${mine.length === 1 ? 'line' : `${mine.length} lines`}? They go to the trash.`}
           </strong>
-          <p>Its description goes too. Undo brings everything back.</p>
+          <p>Its description goes too.</p>
           <div className="row tight">
             <button
               ref={keepButton}
@@ -457,7 +467,7 @@ export function CommunityView() {
       )}
       {!chosen ? (
         <p className="example-note" data-testid="culture-no-community">
-          Add a community to start: San Francisco, Jinan, a church, a family.
+          No communities yet.
         </p>
       ) : (
         <>
@@ -498,6 +508,7 @@ export function CommunityView() {
                 )}
                 <AddLine
                   group={g}
+                  community={chosen.label}
                   span={unitHeading(start, unit)}
                   disabled={ro.off}
                   tip={ro.tip}
@@ -551,9 +562,20 @@ function CommunityNote(props: {
   );
 }
 
-/** A41: the add row under an age group: type a line and press Enter. */
+/**
+ * "Something everyone in Portland does in the 2040s", "Something people ages
+ * 18 to 30 do", "Something students do": what an add row under a group takes.
+ */
+function addLinePlaceholder(group: DecadeGroup<Entry>, community: string, span: string): string {
+  if (group.demographic === 'all') return `Something everyone in ${community} does in ${span}`;
+  const who = group.label.toLowerCase();
+  return /^ages?\b/.test(who) ? `Something people ${who} do` : `Something ${who} do`;
+}
+
+/** A41: the add row under an age group; Enter or Add makes the line. */
 function AddLine(props: {
   group: DecadeGroup<Entry>;
+  community: string;
   /** "the 2040s", "2045 to 2049", "2045". */
   span: string;
   disabled: boolean;
@@ -579,7 +601,7 @@ function AddLine(props: {
     <form className="row tight cu-add" onSubmit={(e) => void submit(e)}>
       <input
         aria-label={label}
-        placeholder="Add a line and press Enter"
+        placeholder={addLinePlaceholder(props.group, props.community, props.span)}
         value={text}
         maxLength={500}
         disabled={props.disabled || busy}
@@ -592,7 +614,7 @@ function AddLine(props: {
         disabled={props.disabled || busy || !text.trim()}
         {...props.tip}
       >
-        Add
+        Add <kbd>Enter</kbd>
       </button>
     </form>
   );
@@ -749,6 +771,128 @@ function LineRow(props: {
   );
 }
 
+/** WE-2: a span of years no era covers, or one two eras both cover. */
+export interface EraIssue {
+  kind: 'gap' | 'overlap';
+  start: number;
+  end: number;
+  text: string;
+}
+
+function spanText(start: number, end: number): string {
+  return start === end ? String(start) : `${start} to ${end}`;
+}
+
+/**
+ * WE-2: the gaps between eras and the years two eras share, in year order,
+ * plus the years from the last era (or before the first) to the story year
+ * when no era covers it. It only flags: no era is refused.
+ */
+export function eraIssues(eras: readonly Entry[], year: number): EraIssue[] {
+  const spans = eras
+    .map((e) => ({
+      name: String(e.name ?? e.title ?? '') || 'Untitled era',
+      start: Number(e.startYear),
+      end: Number(e.endYear),
+    }))
+    .filter((e) => Number.isFinite(e.start) && Number.isFinite(e.end))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: EraIssue[] = [];
+  const gap = (start: number, end: number) =>
+    out.push({ kind: 'gap', start, end, text: `No era covers ${spanText(start, end)}` });
+  const first = spans[0];
+  if (!first) {
+    gap(year, year);
+    return out;
+  }
+  if (year < first.start) gap(year, first.start - 1);
+  let last = first;
+  for (const e of spans.slice(1)) {
+    if (e.start > last.end + 1) gap(last.end + 1, e.start - 1);
+    else if (e.start <= last.end) {
+      const end = Math.min(e.end, last.end);
+      out.push({
+        kind: 'overlap',
+        start: e.start,
+        end,
+        text: `${last.name} and ${e.name} overlap in ${spanText(e.start, end)}`,
+      });
+    }
+    if (e.end > last.end) last = e;
+  }
+  if (year > last.end) gap(last.end + 1, year);
+  return out;
+}
+
+/** "1 gap", "2 overlaps", "1 gap, 2 overlaps". */
+export function eraIssuesLabel(issues: readonly EraIssue[]): string {
+  const n = (kind: EraIssue['kind']) => issues.filter((i) => i.kind === kind).length;
+  const parts: string[] = [];
+  const gaps = n('gap');
+  const overlaps = n('overlap');
+  if (gaps) parts.push(`${gaps} ${gaps === 1 ? 'gap' : 'gaps'}`);
+  if (overlaps) parts.push(`${overlaps} ${overlaps === 1 ? 'overlap' : 'overlaps'}`);
+  return parts.join(', ');
+}
+
+/** The eras' gaps and overlaps for the story year, for the Eras tab and its chip. */
+function useEraIssues(): EraIssue[] {
+  const eras = useEntries('eraStates');
+  const { year } = useStoryTime();
+  return useMemo(() => eraIssues(eras, year), [eras, year]);
+}
+
+/**
+ * WE-2: the eras' gaps and overlaps as one warning chip; it opens the list,
+ * and each item goes to its first year.
+ */
+function EraIssues(props: { issues: readonly EraIssue[]; year: number }) {
+  const story = useStoryTime();
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  if (props.issues.length === 0) return null;
+  return (
+    <div className="stack tight era-issues">
+      <button
+        type="button"
+        className="chip warn-chip era-issues-chip"
+        aria-expanded={open}
+        aria-controls={listId}
+        data-testid="era-issues"
+        onClick={() => setOpen(!open)}
+      >
+        {eraIssuesLabel(props.issues)}
+        <span aria-hidden="true">{open ? ' ▴' : ' ▾'}</span>
+      </button>
+      {open && (
+        <ul className="warn-list" id={listId} data-testid="era-issue-list">
+          {props.issues.map((i) => {
+            const here = i.start <= props.year && props.year <= i.end;
+            return (
+              <li
+                key={`${i.kind}-${i.start}-${i.end}-${i.text}`}
+                data-kind={i.kind}
+                data-testid={here ? `era-${i.kind}` : undefined}
+              >
+                <span>{i.text}</span>
+                {!here && (
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => story.setYear(i.start)}
+                  >
+                    Go to {i.start}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * WE-2, SM-4: the era of the story year, edited in place: name, start and end year, and body.
  * The year control at the top moves it. An era stays on screen while its years are edited,
@@ -784,6 +928,7 @@ function ErasView() {
     (e) => covers(e) || (kept.year === year && kept.ids.has(e._id)) || e._id === fresh,
   );
   const covering = sorted.filter(covers);
+  const issues = useEraIssues();
 
   const save = async (id: string, patch: Record<string, unknown>, label: string) => {
     setError(null);
@@ -827,21 +972,6 @@ function ErasView() {
 
   return (
     <section className="stack" aria-label="Eras" data-testid="eras-view">
-      <p className="lede">
-        The state of the world in the story year&apos;s era. Move the year at the top to see another
-        era. Edit a field and leave it to save; each change is one undo step.
-      </p>
-      {covering.length === 0 && (
-        <p className="callout warn" role="status" data-testid="era-gap">
-          No era covers {year}. This is a flag only; every era still saves.
-        </p>
-      )}
-      {covering.length > 1 && (
-        <p className="callout warn" role="status" data-testid="era-overlap">
-          {covering.length} eras cover {year}. Their years overlap. This is a flag only; every era
-          still saves.
-        </p>
-      )}
       <div className="row">
         <button
           type="button"
@@ -856,6 +986,7 @@ function ErasView() {
           {sorted.length} {sorted.length === 1 ? 'era' : 'eras'} in all
         </span>
       </div>
+      <EraIssues issues={issues} year={year} />
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -987,10 +1118,7 @@ function EraRow(props: {
   );
 }
 
-/**
- * A form that makes a new entry from one typed name (IP-13): type it and
- * press Enter or the button. The entry is one undo step.
- */
+/** A form that makes a new entry from one typed name (IP-13), on Enter or the button; one undo step. */
 function NewByName(props: {
   label: string;
   button: string;
@@ -1038,7 +1166,7 @@ function NewByName(props: {
           disabled={ro.off || busy || !text.trim()}
           {...ro.tip}
         >
-          {props.button}
+          {props.button} <kbd>Enter</kbd>
         </button>
       </div>
       {error && (
@@ -1048,6 +1176,71 @@ function NewByName(props: {
       )}
     </form>
   );
+}
+
+/**
+ * PC-1, IP-1: a place's description for the year shown, edited in place. A
+ * change rewrites that description; a first one starts at the year shown and
+ * runs to the next description (or on); an emptied one is taken out. One
+ * undo step each.
+ */
+function PlaceDescriptionField(props: {
+  place: Entry | null;
+  name: string;
+  year: number;
+  shown: { startYear: number | null; endYear: number | null; text: string } | null;
+  disabled: boolean;
+}) {
+  const undo = useUndo();
+  const { place, year, shown } = props;
+  const save = async (next: string) => {
+    if (!place) return;
+    const list = (Array.isArray(place.descriptions) ? place.descriptions : []) as NonNullable<
+      typeof shown
+    >[];
+    const text = next.trim();
+    let descriptions: NonNullable<typeof shown>[];
+    const at = shown ? list.findIndex((d) => d === shown || sameDescription(d, shown)) : -1;
+    if (at >= 0) {
+      descriptions = text
+        ? list.map((d, i) => (i === at ? { ...d, text } : d))
+        : list.filter((_, i) => i !== at);
+    } else {
+      if (!text) return;
+      const later = list
+        .map((d) => d.startYear)
+        .filter((y): y is number => typeof y === 'number' && y > year);
+      const endYear = later.length ? Math.min(...later) - 1 : null;
+      descriptions = [...list, { startYear: year, endYear, text }];
+    }
+    await saveEntryField(undo, {
+      collection: 'places',
+      id: place._id,
+      path: 'descriptions',
+      value: descriptions,
+      label: 'Description',
+    });
+  };
+  return (
+    <Editable
+      kind="text"
+      label={`Description of ${props.name} in ${year}`}
+      value={shown?.text ?? ''}
+      placeholder={`What ${props.name} is like in ${year}`}
+      disabled={props.disabled || !place}
+      className="place-desc-field"
+      testId="place-desc"
+      display={(t) => <Zh text={t} actions={false} />}
+      onSave={(next) => save(next ?? '')}
+    />
+  );
+}
+
+function sameDescription(
+  a: { startYear: number | null; endYear: number | null; text: string },
+  b: { startYear: number | null; endYear: number | null; text: string },
+): boolean {
+  return a.startYear === b.startYear && a.endYear === b.endYear && a.text === b.text;
 }
 
 /**
@@ -1085,10 +1278,6 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
       data-testid="places-view"
     >
       <Heading id={titleId}>{props.embedded ? 'Places' : 'Place tree'}</Heading>
-      <p className="lede">
-        Places sit inside larger places. Each shows its description for the year you pick. Click a
-        name to rename it; Edit opens its parent and its descriptions by year under it.
-      </p>
       <YearField id={yearId} label="Year" value={year} onChange={setYear} />
       <NewByName
         label="Name of a new place"
@@ -1099,7 +1288,7 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
       {nodes.length === 0 ? (
         <p className="example-note">No places yet.</p>
       ) : (
-        <ul className="place-tree">
+        <ul className="place-tree cu-place-tree">
           {nodes.map((n) => {
             const place = byId.get(n.id);
             const d = place ? descriptionFor(place as never, year) : null;
@@ -1107,7 +1296,8 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
             return (
               <li
                 key={n.id}
-                style={{ paddingLeft: n.depth * 20 }}
+                className={n.depth > 0 ? 'cu-place nested' : 'cu-place'}
+                style={{ marginLeft: n.depth * 20 }}
                 data-place={n.id}
                 data-depth={n.depth}
               >
@@ -1125,11 +1315,13 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
                   display={(t) => <Zh text={t || 'Untitled'} actions={false} />}
                 />{' '}
                 <span className="place-desc" data-testid="place-description">
-                  {d ? (
-                    <Zh text={d.text} />
-                  ) : (
-                    <span className="example-note">No description for {year}.</span>
-                  )}
+                  <PlaceDescriptionField
+                    place={place ?? null}
+                    name={name}
+                    year={year}
+                    shown={d}
+                    disabled={ro.off}
+                  />
                 </span>{' '}
                 <button
                   type="button"
@@ -1178,10 +1370,6 @@ export function RomanizationView() {
       data-testid="romanization-view"
     >
       <h2 id="roman-title">Romanization</h2>
-      <p className="lede">
-        Each language uses one romanization system. Glossary terms that do not follow it are
-        flagged, and they still save. Add new... on a language&apos;s select adds a system.
-      </p>
       <RomanizationSystems testId="romanization-systems" />
       <h3>Terms that do not follow their system</h3>
       {flagged.length === 0 ? (
@@ -1243,7 +1431,7 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
 
   const create = async (characters: string) => {
     const language = languages?.items[0]?.id;
-    if (!language) throw new Error('Add a language on the Lists screen first.');
+    if (!language) throw new Error('There is no language yet.');
     const { entry } = await call('entry.create', {
       collection: 'glossaryTerms',
       data: {
@@ -1263,16 +1451,16 @@ export function GlossaryTable(props: { embedded?: boolean } = {}) {
       data-testid="glossary-table"
     >
       <Heading id={titleId}>{props.embedded ? 'Glossary' : 'Glossary table'}</Heading>
-      <p className="lede">
-        Every term with its characters, romanization, language, and meaning. Click a value to change
-        it. Hover over the characters or focus them with the keyboard for the meaning.
-      </p>
-      <NewByName
-        label="Characters of a new term"
-        button="New term"
-        testId="new-term"
-        onCreate={create}
-      />
+      {languages && languages.items.length === 0 ? (
+        <AddLanguage testId="glossary-add-language" />
+      ) : (
+        <NewByName
+          label="Characters of a new term"
+          button="New term"
+          testId="new-term"
+          onCreate={create}
+        />
+      )}
       {rows.length === 0 ? (
         <p className="example-note">No glossary terms yet.</p>
       ) : (
