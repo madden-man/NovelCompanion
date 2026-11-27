@@ -14,6 +14,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "build:web": "vite build -c vite.web.config.ts",
+    "web:local": "node scripts/web-local.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
