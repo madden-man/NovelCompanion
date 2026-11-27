@@ -5,10 +5,17 @@ import type { Request, Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { useEntries, useStore } from './data';
 import { Zh } from './Zh';
+import { typedNumber } from './editable/model';
+import { usePhone } from '../phone';
 
 type Hit = Response<'search.query'>['hits'][number];
 
 const LIMIT = 50;
+
+/** How many filters are set, for the phone's folded Filters. */
+function filterCount(f: object): number {
+  return Object.keys(f).length;
+}
 
 const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? Number(t) : null);
 
@@ -27,6 +34,7 @@ export function SearchView(props: {
   onOpenNotebook?: (id: string) => void;
 }) {
   const { query } = props;
+  const phone = usePhone();
   const { version } = useStore();
   const families = useEntries('families');
   const places = useEntries('places');
@@ -87,15 +95,92 @@ export function SearchView(props: {
   // A search is in flight until the hits on screen answer the current query and filters.
   const busy = query.trim() !== '' && settled.key !== queryKey;
   const shown = query.trim() ? hits : [];
-  const yearBad =
-    (from.trim() !== '' && intOrNull(from) === null) ||
-    (to.trim() !== '' && intOrNull(to) === null);
+
+  const filterBar = (
+    <div className="tree-toolbar" role="group" aria-label="Search filters">
+      <div className="field">
+        <label htmlFor={ids.section}>Section</label>
+        <select id={ids.section} value={section} onChange={(e) => setSection(e.target.value)}>
+          <option value="">Every section</option>
+          {ENTRY_COLLECTIONS.map((c) => (
+            <option key={c} value={c}>
+              {collectionInfo[c].plural}
+            </option>
+          ))}
+        </select>
+        {section && props.onOpenSection && (
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => props.onOpenSection?.(section as EntryCollection)}
+            data-testid="search-open-section"
+          >
+            List every {collectionInfo[section as EntryCollection].singular.toLowerCase()}
+          </button>
+        )}
+      </div>
+      <div className="field">
+        <label htmlFor={ids.family}>Family</label>
+        <select id={ids.family} value={familyId} onChange={(e) => setFamilyId(e.target.value)}>
+          <option value="">Any family</option>
+          {families.map((f) => (
+            <option key={f._id} value={f._id}>
+              {String(f.name ?? entryTitle(f))}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor={ids.place}>Place</label>
+        <select id={ids.place} value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
+          <option value="">Any place</option>
+          {places.map((p) => (
+            <option key={p._id} value={p._id}>
+              {entryTitle(p)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field year-field">
+        <label htmlFor={ids.from}>From year</label>
+        <input
+          id={ids.from}
+          className="num"
+          inputMode="numeric"
+          value={from}
+          maxLength={6}
+          onChange={(e) => {
+            const v = typedNumber('year', e.target.value);
+            if (v !== null) setFrom(v);
+          }}
+        />
+      </div>
+      <div className="field year-field">
+        <label htmlFor={ids.to}>To year</label>
+        <input
+          id={ids.to}
+          className="num"
+          inputMode="numeric"
+          value={to}
+          maxLength={6}
+          onChange={(e) => {
+            const v = typedNumber('year', e.target.value);
+            if (v !== null) setTo(v);
+          }}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <section className="ws-wide stack" aria-labelledby="search-title" data-testid="search-view">
-      <h2 id="search-title">Search</h2>
+      <h2 id="search-title" className={phone ? 'sr-only' : undefined}>
+        Search
+      </h2>
       <div className="field">
-        <label htmlFor={ids.q}>Search terms</label>
+        <label htmlFor={ids.q} className={phone ? 'sr-only' : undefined}>
+          Search terms
+        </label>
         <input
           id={ids.q}
           type="search"
@@ -104,74 +189,17 @@ export function SearchView(props: {
           onChange={(e) => props.onQuery(e.target.value)}
         />
       </div>
-      <div className="tree-toolbar" role="group" aria-label="Search filters">
-        <div className="field">
-          <label htmlFor={ids.section}>Section</label>
-          <select id={ids.section} value={section} onChange={(e) => setSection(e.target.value)}>
-            <option value="">Every section</option>
-            {ENTRY_COLLECTIONS.map((c) => (
-              <option key={c} value={c}>
-                {collectionInfo[c].plural}
-              </option>
-            ))}
-          </select>
-          {section && props.onOpenSection && (
-            <button
-              type="button"
-              className="btn small"
-              onClick={() => props.onOpenSection?.(section as EntryCollection)}
-              data-testid="search-open-section"
-            >
-              List every {collectionInfo[section as EntryCollection].singular.toLowerCase()}
-            </button>
-          )}
-        </div>
-        <div className="field">
-          <label htmlFor={ids.family}>Family</label>
-          <select id={ids.family} value={familyId} onChange={(e) => setFamilyId(e.target.value)}>
-            <option value="">Any family</option>
-            {families.map((f) => (
-              <option key={f._id} value={f._id}>
-                {String(f.name ?? entryTitle(f))}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={ids.place}>Place</label>
-          <select id={ids.place} value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
-            <option value="">Any place</option>
-            {places.map((p) => (
-              <option key={p._id} value={p._id}>
-                {entryTitle(p)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field year-field">
-          <label htmlFor={ids.from}>From year</label>
-          <input
-            id={ids.from}
-            className="num"
-            inputMode="numeric"
-            value={from}
-            aria-invalid={from.trim() !== '' && intOrNull(from) === null}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </div>
-        <div className="field year-field">
-          <label htmlFor={ids.to}>To year</label>
-          <input
-            id={ids.to}
-            className="num"
-            inputMode="numeric"
-            value={to}
-            aria-invalid={to.trim() !== '' && intOrNull(to) === null}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </div>
-      </div>
-      {yearBad && <p className="callout warn">A year is a whole number, such as 2045.</p>}
+      {/* A58 U1: on the phone the filters fold under the field, so results come first. */}
+      {phone ? (
+        <details className="search-filters" data-testid="search-filters">
+          <summary>
+            {filterCount(filters) ? `Filters (${filterCount(filters)})` : 'Filters'}
+          </summary>
+          {filterBar}
+        </details>
+      ) : (
+        filterBar
+      )}
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -182,11 +210,7 @@ export function SearchView(props: {
         aria-busy={busy ? 'true' : 'false'}
         data-query-key={queryKey}
       >
-        {!query.trim() ? (
-          <p className="example-note">
-            Type to search every entry, chapter text and notebook page.
-          </p>
-        ) : shown.length === 0 ? (
+        {!query.trim() ? null : shown.length === 0 ? (
           <p className="example-note" data-testid="search-empty" role="status">
             Nothing matches.
           </p>

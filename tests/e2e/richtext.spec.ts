@@ -67,17 +67,35 @@ function body(): Locator {
     .getByRole('textbox', { name: 'What the world is like' });
 }
 
-/** Put the caret at the very end of a box, as a click after its last word would. */
+/**
+ * Put the caret at the very end of a box, as a click after its last word would,
+ * and wait until the editor has it there: the editor reads a selection a moment
+ * after it changes, and on a busy machine the click's own caret can land after
+ * the one set here, so it is set again until the editor agrees.
+ */
 async function caretAtEnd(box: Locator): Promise<void> {
   await box.click();
-  await box.evaluate((el) => {
-    const range = document.createRange();
-    range.selectNodeContents(el.lastElementChild ?? el);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-  });
+  await expect
+    .poll(() =>
+      box.evaluate((el) => {
+        const editor = (
+          el as unknown as {
+            editor?: { state: { doc: { content: { size: number } }; selection: { from: number } } };
+          }
+        ).editor;
+        if (editor && editor.state.selection.from === editor.state.doc.content.size - 1) {
+          return true;
+        }
+        const range = document.createRange();
+        range.selectNodeContents(el.lastElementChild ?? el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return false;
+      }),
+    )
+    .toBe(true);
 }
 
 /** The text of the block holding the editor's caret, as the editor sees it. */

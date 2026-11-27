@@ -2,6 +2,8 @@ import type { Document } from 'mongodb';
 import { BRIDGE_META_ID } from '../../shared/bridge';
 import { REGISTRY, migrate } from '../db/bibles';
 import type { BibleHandle, BibleRecord } from '../db/bibles';
+import { raiseRev, readRev } from '../db/rev';
+import { REV_META_ID } from '../../shared/freshness';
 
 export type CollectionDocs = Record<string, Document[]>;
 
@@ -76,6 +78,8 @@ export async function replaceBible(
   const session = handle.client.startSession();
   try {
     await session.withTransaction(async () => {
+      // A58 (PH-6): rev never goes back to a number another process already saw.
+      const liveRev = existing.includes('meta') ? await readRev(handle, session) : 0;
       for (const name of names) {
         const target = handle.collection(name);
         await target.deleteMany({}, { session });
@@ -100,6 +104,14 @@ export async function replaceBible(
           { session, upsert: true },
         );
       }
+      const next = Math.max(liveRev, await readRev(handle, session)) + 1;
+      await handle
+        .collection('meta')
+        .updateOne(
+          { _id: REV_META_ID } as Document,
+          { $set: { rev: next } },
+          { session, upsert: true },
+        );
       await handle.db
         .collection<BibleRecord>(REGISTRY)
         .updateOne({ _id: handle.id }, { $set: { schemaVersion } }, { session });
@@ -107,5 +119,7 @@ export async function replaceBible(
   } finally {
     await session.endSession();
   }
-  await migrate(handle);
+  const migrated = await migrate(handle);
+  // An older snapshot or file was brought up to date after the swap: that moves rev again.
+  if (migrated.from < migrated.to) await raiseRev(handle);
 }

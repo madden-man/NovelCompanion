@@ -93,26 +93,37 @@ test('AI-1 NF-2 the panel opens from every screen with Cmd+J or the status bar b
   await expect(button).toBeFocused();
 });
 
-test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the question is kept and the message links to settings', async () => {
+test('AI-6 ARCH-4 AI-7 A57 the first question opens the consent sheet; with no key the question is kept and the message links to settings', async () => {
   await page.getByTestId('ask-claude').click();
   const disclosure = panel().getByTestId('claude-disclosure');
+  // A57: the panel opens on the question box, with no line about how Claude works.
+  await expect(disclosure).toHaveCount(0);
+  await expect(panel()).not.toContainText('never writes prose');
+  await expect(panel()).not.toContainText('Nothing changes until you approve');
+  // The key that asks is on the button, not in a sentence.
+  await expect(panel().getByTestId('claude-send').locator('kbd')).toHaveText('Cmd Enter');
+  await input().fill('How old is Margaret in 2040?');
+  // AI-6: the first use asks in a sheet, and nothing is sent before Continue.
+  await input().press('Meta+Enter');
+  await expect(page.getByRole('dialog', { name: 'What Claude sends to Anthropic' })).toBeVisible();
   await expect(disclosure).toContainText('sends the content listed below to Anthropic');
+  await expect(disclosure).toContainText('Nothing is sent until you start a Claude feature.');
   for (const label of ['Question panel', 'Alignment checks', 'Chapter summaries', 'Capture']) {
     await expect(disclosure).toContainText(label);
   }
-  await input().fill('How old is Margaret in 2040?');
-  await expect(panel().getByTestId('claude-send')).toBeDisabled();
-  // The disclosure is a labelled group, and Cmd+Enter cannot ask before it is confirmed.
-  await expect(
-    panel().getByRole('group', { name: 'What Claude sends to Anthropic' }),
-  ).toBeVisible();
   await expect(disclosure).not.toContainText('Google Drive');
-  await input().press('Meta+Enter');
+  await expect(disclosure.getByTestId('claude-acknowledge')).toBeFocused();
+  // Escape is Not now: the sheet goes, the panel and the question stay, nothing was asked.
+  await page.keyboard.press('Escape');
+  await expect(disclosure).toHaveCount(0);
+  await expect(panel()).toBeVisible();
   await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
   await expect(input()).toHaveText('How old is Margaret in 2040?');
-  await disclosure.getByRole('button', { name: 'Continue' }).click();
-  await expect(disclosure).toBeHidden();
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
   await panel().getByTestId('claude-send').click();
+  await disclosure.getByRole('button', { name: 'Continue' }).click();
+  await expect(disclosure).toHaveCount(0);
+  // Continue sends the question that was waiting.
   const error = lastTurn().getByTestId('claude-error');
   await expect(error).toContainText('Claude needs an Anthropic API key');
   // AI-7: the question is back in the box.
@@ -122,17 +133,41 @@ test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the questi
   await expect(panel()).toBeHidden();
 });
 
+test('A57 AI-6 after consent the notice stays readable from a plain link in the panel and in Settings', async () => {
+  // Settings: a link, not the notice spread across the screen.
+  const settings = page.getByTestId('settings-view');
+  await expect(settings.getByTestId('claude-disclosure')).toHaveCount(0);
+  await settings.getByTestId('claude-disclosure-link').click();
+  const sheet = page.getByRole('dialog', { name: 'What Claude sends to Anthropic' });
+  await expect(sheet).toContainText('sends the content listed below to Anthropic');
+  await expect(sheet).toContainText('You confirmed this on');
+  await expect(sheet.getByRole('button', { name: 'Continue' })).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  await expect(sheet).toHaveCount(0);
+  // The panel: the same link beside Ask; Escape closes the sheet and leaves the panel open.
+  await page.keyboard.press('Meta+j');
+  await expect(panel()).toBeVisible();
+  await panel().getByTestId('claude-disclosure-link').click();
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'Close' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(panel()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(panel()).toBeHidden();
+});
+
 test('ARCH-4 the key is set in settings, checked, shown masked, and the models come from the live list', async () => {
   const settings = page.getByTestId('claude-settings');
-  await expect(settings.getByTestId('claude-key-status')).toContainText('No key is stored');
+  await expect(settings.getByTestId('claude-key-status')).toHaveText('No key');
   await settings.getByTestId('claude-key-input').fill('sk-ant-rejected-key-000000');
-  await settings.getByTestId('claude-key-save').click();
+  await settings.getByTestId('claude-key-input').press('Enter');
   await expect(settings.getByTestId('claude-key-note')).toContainText(
     'Anthropic rejected this key',
   );
-  await expect(settings.getByTestId('claude-key-status')).toContainText('No key is stored');
+  await expect(settings.getByTestId('claude-key-status')).toHaveText('No key');
   await settings.getByTestId('claude-key-input').fill(KEY);
-  await settings.getByTestId('claude-key-save').click();
+  await settings.getByTestId('claude-key-input').press('Enter');
   await expect(settings.getByTestId('claude-key-note')).toContainText('Anthropic accepted the key');
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
   await expect(settings.getByTestId('claude-key-input')).toHaveValue('');
@@ -349,17 +384,22 @@ test('AI-6 a second bible asks for the disclosure again before its first use the
   // A second bible: the disclosure comes back before anything is sent.
   await invoke('bible.create', { slug: 'claude-second', name: 'Second' });
   await invoke('bible.open', { slug: 'claude-second' });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Second');
+  await expect(page.getByTestId('current-bible')).toContainText('Second');
   await expect(page.getByTestId('ask-claude')).toBeVisible();
   await page.keyboard.press('Meta+j');
+  await expect(panel().getByTestId('claude-disclosure-link')).toHaveCount(0);
+  await ask('How old is Margaret in 2040?');
   await expect(panel().getByTestId('claude-disclosure')).toBeVisible();
   await panel().getByTestId('claude-disclosure').getByRole('button', { name: 'Not now' }).click();
+  await expect(panel().getByTestId('claude-disclosure')).toHaveCount(0);
+  await expect(panel().getByTestId('claude-turn')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(panel()).toBeHidden();
 });
 
 test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in its own bible', async () => {
   await invoke('bible.open', { slug: SLUG });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Claude fixture');
+  await expect(page.getByTestId('current-bible')).toContainText('Claude fixture');
   // The reopened workspace must hold the panel's shortcut before Cmd+J is pressed.
   await expect(page.getByTestId('ask-claude')).toBeVisible();
   await page.keyboard.press('Meta+j');
@@ -367,7 +407,7 @@ test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in 
   await ask('Tell me everything about the Hale family');
   await expect(lastTurn().getByTestId('claude-answer')).toContainText('who married in 1982.');
   await invoke('bible.open', { slug: 'claude-second' });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Second');
+  await expect(page.getByTestId('current-bible')).toContainText('Second');
   await invoke('bible.open', { slug: SLUG });
   const { runs } = await invoke('claude.runs', { feature: 'panel' });
   expect(runs[0]).toMatchObject({

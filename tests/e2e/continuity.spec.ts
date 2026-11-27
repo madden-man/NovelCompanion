@@ -123,14 +123,68 @@ test('CC-1 CC-2 CC-3 CC-5 SM-11 the Continuity checker opens on the alignment ch
   await expect(view().getByTestId('claude-entries')).toContainText('Margaret Hale');
 });
 
-test('CC-4 ED-3 Manuscript wins shows the change set as a diff, applies it, and undoes', async () => {
+test('A57 CC-1 CC-4 the check reads as one action and each finding button names its result, with no instruction text', async () => {
+  const v = view();
+  // "Check" + "all 8 chapters" + "against the bible": the scope is part of the action.
+  await expect(v.getByTestId('alignment-run')).toHaveText('Check');
+  const scope = v.getByTestId('alignment-scope');
+  await expect(scope).toHaveAccessibleName('Chapters to check');
+  await expect(scope.locator('option:checked')).toHaveText(
+    `all ${fixture.chapters!.length} chapters`,
+  );
+  await expect(v.getByTestId('alignment-runner')).toContainText('against the bible');
+  for (const gone of [
+    'Compares the manuscript with the bible',
+    'Chapters without imported text are checked in code only',
+    'Scope:',
+    'Manuscript wins',
+    'Rewrite recommended',
+    'every change or none',
+    'It comes back if',
+  ]) {
+    await expect(v).not.toContainText(gone);
+  }
+  // The buttons say what each does; "Chapter is right" counts the bible changes it makes.
+  const actions = finding('age').getByTestId('finding-actions');
+  await expect(actions.getByRole('button')).toHaveText([
+    'Chapter is right: 1 bible change',
+    'Bible is right: add a rewrite task',
+    'Dismiss',
+  ]);
+  await expect(finding('place').getByTestId('finding-apply')).toHaveText(
+    /^Chapter is right: \d+ bible changes?$/,
+  );
+  // A finding with no change set says so on its button, which cannot be pressed.
+  const placeId = await findingId('place');
+  const prepared = (await entryOf('findings', placeId)).changeSet;
+  await invoke('entry.update', {
+    collection: 'findings',
+    id: placeId,
+    patch: { changeSet: [] },
+  });
+  const none = finding('place').getByTestId('finding-apply');
+  await expect(none).toHaveText('Chapter is right: no bible change prepared');
+  await expect(none).toBeDisabled();
+  await invoke('entry.update', {
+    collection: 'findings',
+    id: placeId,
+    patch: { changeSet: prepared },
+  });
+  await expect(finding('place').getByTestId('finding-apply')).toBeEnabled();
+  // No tooltip explains a button.
+  await expect(v.locator('[data-testid="finding-actions"] [title]')).toHaveCount(0);
+});
+
+test('CC-4 ED-3 Chapter is right applies the change set the card shows as a diff, and undoes', async () => {
   const p1 = finding('age');
-  await p1.getByRole('button', { name: 'Manuscript wins' }).click();
   const diff = p1.getByTestId('finding-diff');
   await expect(diff.locator('tbody tr')).toHaveText([/Margaret Hale\s*Birth\s*1958\s*1970/]);
-  await diff.getByTestId('finding-apply').click();
+  await p1.getByTestId('finding-apply').click();
   await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
   await expect(p1).toContainText('bible updated');
+  // A57: a plain result and an Undo button, not a sentence naming the key.
+  await expect(p1).toContainText('Bible updated.');
+  await expect(p1).not.toContainText('Cmd+Z');
   await expect
     .poll(
       async () => (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.birth,
@@ -145,8 +199,43 @@ test('CC-4 ED-3 Manuscript wins shows the change set as a diff, applies it, and 
   await expect(finding('age')).toHaveAttribute('data-state', 'open');
 });
 
-test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and what must change, on the Continuity checker and on the chapter', async () => {
-  await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
+test('A57 CC-4 a double press of Chapter is right sends one resolution', async () => {
+  // Main answers slowly, so the second press lands while the first is out.
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const channel = 'nc:continuity.resolve';
+    const original = handlers.get(channel)!;
+    const seen = globalThis as { resolves?: number };
+    seen.resolves = 0;
+    handlers.set(channel, async (...args: unknown[]) => {
+      seen.resolves! += 1;
+      await new Promise((r) => setTimeout(r, 400));
+      return original(...args);
+    });
+    (globalThis as { restoreResolve?: () => void }).restoreResolve = () =>
+      handlers.set(channel, original);
+  });
+  const p1 = finding('age');
+  await p1.getByTestId('finding-apply').dblclick();
+  await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
+  await page.waitForTimeout(600);
+  expect(await app.evaluate(() => (globalThis as { resolves?: number }).resolves)).toBe(1);
+  await p1.getByRole('button', { name: 'Undo' }).click();
+  await expect(finding('age')).toHaveAttribute('data-state', 'open');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.birth,
+    )
+    .toEqual({ year: 1958 });
+  await app.evaluate(() => (globalThis as { restoreResolve?: () => void }).restoreResolve?.());
+});
+
+test('CC-4 SM-11 Bible is right makes a rewrite task with the lines and what must change, on the Continuity checker and on the chapter', async () => {
+  await finding('place')
+    .getByRole('button', { name: 'Bible is right: add a rewrite task' })
+    .click();
   await expect(finding('place')).toHaveCount(0);
   const task = view().getByTestId('rewrite-task');
   await expect(task).toHaveCount(1);
@@ -164,7 +253,7 @@ test('CC-4 SM-11 Rewrite recommended makes a rewrite task with the lines and wha
   const chapter = page.getByTestId('chapter-alignment');
   await expect(chapter.getByTestId('rewrite-task')).toContainText('What must change');
   // CC-1: the chapter page checks just this chapter.
-  await expect(chapter.getByTestId('alignment-runner')).toContainText('Scope: this chapter.');
+  await expect(chapter.getByTestId('alignment-scope-words')).toHaveText('this chapter');
   await chapter.getByTestId('alignment-run').click();
   await expect(chapter.getByTestId('alignment-status')).toContainText(
     'Done. Structural checks: 0 found. Claude read 1 chapter and found 1.',
@@ -248,6 +337,27 @@ test('SM-11 MS-1 CC-1 the Continuity checker holds the manuscript it reads as it
   await page.keyboard.press('Home');
   await expect(alignment).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('alignment-view').getByTestId('alignment-run')).toBeVisible();
+});
+
+test('A57 MS-1 the Manuscript tab carries a lock and opens on a chapter, with no instruction text', async () => {
+  await rail(page, 'Continuity checker').click();
+  const tab = page.getByRole('tab', { name: 'Manuscript' });
+  // The lock says read only; it is not part of the tab's name.
+  await expect(tab.getByTestId('ms-lock')).toBeVisible();
+  await expect(tab).toHaveAccessibleName('Manuscript');
+  await tab.click();
+  const ms = page.getByTestId('manuscript-view');
+  // Opens on a chapter: one is current and its page shows, never "Pick a chapter."
+  await expect(ms.getByTestId('ms-chapters').locator('[aria-current="true"]')).toHaveCount(1);
+  await expect(ms.getByTestId('ms-chapter')).toBeVisible();
+  for (const gone of ['Pick a chapter', 'The app never changes a manuscript', 'Use Re-import']) {
+    await expect(ms).not.toContainText(gone);
+  }
+  // A chapter whose text has no linked file still shows the lock over its text.
+  await ms.locator('[data-chapter="CH5"]').click();
+  const row = ms.getByTestId('ms-text-row');
+  await expect(row.getByTestId('ms-text')).toBeVisible();
+  await expect(row.getByTestId('ms-lock')).toBeVisible();
 });
 
 // IP-7 (a47-continuity): the cards edit the finding.
@@ -508,10 +618,11 @@ test('IP-7 IP-18 the manuscript text shows read-only with Re-import beside it, a
   await expect(
     text.locator('input, textarea, [contenteditable="true"], [data-editable]'),
   ).toHaveCount(0);
-  await expect(text).toHaveAttribute(
-    'title',
-    'The manuscript text is imported, not edited here. Use Re-import.',
-  );
+  // A57: a lock and Re-import say it, not a tooltip or a sentence.
+  await expect(text).not.toHaveAttribute('title');
+  await expect(text).toHaveAccessibleName('Manuscript text, read only');
+  await expect(row.getByTestId('reimport').getByTestId('ms-lock')).toBeVisible();
+  await expect(ch).not.toContainText('imported, not edited here');
   // The write path refuses it too (IP-18).
   await expect(
     invoke('entry.update', { collection: 'chapters', id: 'CH9', patch: { manuscriptText: 'x' } }),

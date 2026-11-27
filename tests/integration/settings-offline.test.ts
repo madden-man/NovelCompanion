@@ -133,7 +133,9 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const status = await conn.status();
     expect(status.state).toBe('unavailable');
     expect(status.message).toMatch(/lost its connection to MongoDB/);
-    expect(status.message).toMatch(/open the most recent local snapshot read-only/);
+    // A57 NF-3: the message says only what went wrong; the snapshot button beside it is the next step.
+    expect(status.message).toBe('The app lost its connection to MongoDB.');
+    expect(status.message).not.toMatch(/Until then|snapshot/);
     expect(status.snapshot?.bible).toBe(handle.id);
 
     const r = await conn.retry();
@@ -161,7 +163,7 @@ describe('ARCH-6 the connection drops mid-session', () => {
     const st = await conn.status();
     expect(st.state).toBe('unavailable');
     expect(st.snapshot).toBeNull();
-    expect(st.message).toMatch(/Check your network connection/);
+    expect(st.message).toMatch(/could not reach the MongoDB deployment\./);
     expect(st.message).toMatch(/no local snapshot on this Mac yet/);
     expect(st.message).not.toMatch(/ECONNREFUSED|Mongo[A-Z]\w*Error|—/);
   });

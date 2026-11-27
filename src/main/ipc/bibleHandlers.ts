@@ -71,6 +71,7 @@ export type BibleChannel =
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
+  | 'entry.batch'
   | 'entry.lookup'
   | 'trash.list'
   | 'lists.get'
@@ -294,8 +295,8 @@ export function bibleHandlers(
       return { time: saved, position: position() };
     },
     'sceneOutline.get': () => session().repo.sceneOutline(),
-    'sceneOutline.set': ({ text, breaks, years }) =>
-      session().repo.setSceneOutline(text, { breaks, years }),
+    'sceneOutline.set': ({ text, breaks, years, expectModifiedAt }) =>
+      session().repo.setSceneOutline(text, { breaks, years, expectModifiedAt }),
     'sceneOutline.versions': async () => ({
       versions: await session().repo.sceneOutlineVersions(),
     }),
@@ -556,17 +557,31 @@ export function bibleHandlers(
         ? { ok: false, message: problem }
         : { ok: true, message: 'Follows the system.' };
     },
-    'entry.update': async ({ collection, id, patch }) => {
-      const entry = (await session().repo.update(collection, id, patch as never)) as StoredDoc;
+    'entry.update': async ({ collection, id, patch, expectModifiedAt }) => {
+      const entry = (await session().repo.update(collection, id, patch as never, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.delete': async ({ collection, id }) => {
-      const entry = (await session().repo.softDelete(collection, id)) as StoredDoc;
+    'entry.delete': async ({ collection, id, expectModifiedAt }) => {
+      const entry = (await session().repo.softDelete(collection, id, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.restore': async ({ collection, id }) => {
-      const entry = (await session().repo.restore(collection, id)) as StoredDoc;
+    'entry.restore': async ({ collection, id, expectModifiedAt }) => {
+      const entry = (await session().repo.restore(collection, id, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
+    },
+    'entry.batch': async ({ ops }) => {
+      const written = await session().repo.writeBatch(
+        ops.map((o) => (o.op === 'delete' ? { ...o, op: 'softDelete' as const } : o)),
+      );
+      return {
+        entries: ops.map((o, i) => withWarnings(o.collection, written[i] as StoredDoc)),
+      };
     },
     'entry.lookup': ({ ids }) => {
       const { model } = session();

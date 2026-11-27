@@ -83,6 +83,8 @@ describe('MS-5 the app never writes to a manuscript', () => {
       'src/main/backup/snapshots.ts',
       // The Claude settings file in the app's data folder (models, AI-6 confirmations).
       'src/main/claude/settings.ts',
+      // A57: the bible opened last, in last-bible.json in the app's data folder.
+      'src/main/connection.ts',
       'src/main/ipc/backupHandlers.ts',
       'src/main/ipc/exportTree.ts',
     ]);

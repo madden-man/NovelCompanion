@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Response } from '../../shared/ipc';
-import { BIBLE_SLUG_RULE, BibleSlug, slugify } from '../../shared/bible';
 import { plainError } from './api';
+import { BibleMenu } from './bibleMenu';
+import { uniqueSlug } from './bibleSlug';
 import { Workspace } from './workspace/Workspace';
 import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
 import { useAppearance } from './appearance';
+import { useCapabilities } from './capabilities';
+import { usePhone } from './phone';
 import { MongoSettings } from './workspace/settings';
+import { saveBeforeSwitch } from './workspace/undo';
 
 type BibleList = Response<'bible.list'>;
 type Bible = Response<'bible.open'>['bible'];
@@ -29,6 +33,8 @@ function Shell() {
   const [notice, setNotice] = useState<string | null>(null);
   // ARCH-6: when the connection comes back (or goes), the list of bibles loads again.
   const connectionState = useConnection().status?.state;
+  const can = useCapabilities();
+  const phone = usePhone();
 
   useEffect(() => {
     let live = true;
@@ -46,6 +52,8 @@ function Shell() {
     load();
     const off = window.api.on('bibles.changed', load);
     const offReload = window.api.on('bible.reloaded', (e) => {
+      // A58 (PH-8, PH-10): a change made elsewhere redraws views in place, so typing stays.
+      if (e.elsewhere) return;
       setReloads((n) => n + 1);
       setNotice(e.message);
     });
@@ -64,6 +72,9 @@ function Shell() {
     setError(null);
     setOpening(true);
     try {
+      // Pending edits land in the bible they were typed in, as on closing the window;
+      // when one cannot be stored, this bible stays open and the error says what.
+      await saveBeforeSwitch();
       const { bible } = await window.api.invoke('bible.open', { slug: id });
       setCurrent(bible);
     } catch (e) {
@@ -73,14 +84,34 @@ function Shell() {
     }
   };
 
+  // A57: a new bible made from the header switcher opens at once; its ID comes from its name.
+  const create = async (name: string): Promise<boolean> => {
+    setError(null);
+    try {
+      await saveBeforeSwitch();
+      const slug = uniqueSlug(
+        name,
+        (list?.bibles ?? []).map((b) => b.id),
+      );
+      const { bible } = await window.api.invoke('bible.create', { slug, name });
+      await open(bible.id);
+      return true;
+    } catch (e) {
+      setError(plainError(e));
+      return false;
+    }
+  };
+
   const bibles = (
     <>
       <section className="panel stack" aria-labelledby="bibles-heading">
         <h2 id="bibles-heading">Bibles</h2>
         <BibleSwitcher list={list} current={current} opening={opening} onOpen={open} />
       </section>
-      {list?.connection === 'connected' && <NewBible onError={setError} />}
-      {list?.connection === 'unavailable' && !current && (
+      {list?.connection === 'connected' && can('bible.create') && (
+        <NewBible taken={list.bibles.map((b) => b.id)} onError={setError} />
+      )}
+      {list?.connection === 'unavailable' && !current && can('mongo.status') && (
         <section className="panel stack" aria-labelledby="mongo-launch-heading">
           <h2 id="mongo-launch-heading">MongoDB connection</h2>
           <MongoSettings />
@@ -91,17 +122,23 @@ function Shell() {
 
   return (
     <main className={current ? 'shell wide' : 'shell'}>
-      <header className={current ? 'app-head' : 'stack'}>
-        <h1>Novel Companion</h1>
-        {current ? (
-          <p className="lede">
-            Open bible: <strong data-testid="current-bible">{current.name}</strong>
-          </p>
-        ) : (
-          <p className="lede">Choose a bible to open, or make a new one.</p>
-        )}
-      </header>
-      <ConnectionBanner onOpened={(bible) => setCurrent(bible)} />
+      {/* A58 U1: on the phone the bible's name is in the phone's own top bar. */}
+      {!(phone && current) && (
+        <header className={current ? 'app-head' : 'stack'}>
+          <h1>Novel Companion</h1>
+          {current && (
+            <BibleMenu
+              current={current}
+              bibles={list?.bibles.length ? list.bibles : [current]}
+              canCreate={list?.connection === 'connected' && can('bible.create')}
+              busy={opening}
+              onOpen={open}
+              onCreate={create}
+            />
+          )}
+        </header>
+      )}
+      <ConnectionBanner onOpened={(bible) => setCurrent(bible)} beforeOpen={saveBeforeSwitch} />
       {error && (
         <p className="callout crit" role="alert">
           {error}
@@ -115,7 +152,21 @@ function Shell() {
           </button>
         </p>
       )}
-      {current ? <Workspace key={reloads} bibleId={current.id} bibles={bibles} /> : bibles}
+      {current ? (
+        <Workspace
+          key={reloads}
+          bibleId={current.id}
+          bibles={bibles}
+          chooser={{
+            current,
+            bibles: list?.bibles.length ? list.bibles : [current],
+            busy: opening,
+            onOpen: open,
+          }}
+        />
+      ) : (
+        bibles
+      )}
     </main>
   );
 }
@@ -167,23 +218,19 @@ function BibleSwitcher(props: {
   );
 }
 
-function NewBible({ onError }: { onError: (message: string | null) => void }) {
+/** The New bible form of the bible screen. A57: the ID is made from the name, so there is no ID to type. */
+function NewBible(props: { taken: readonly string[]; onError: (message: string | null) => void }) {
+  const { taken, onError } = props;
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
-  const shownSlug = slugEdited ? slug : slugify(name);
-  const slugValid = BibleSlug.safeParse(shownSlug).success;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     onError(null);
     setBusy(true);
     try {
-      await window.api.invoke('bible.create', { slug: shownSlug, name });
+      await window.api.invoke('bible.create', { slug: uniqueSlug(name, taken), name });
       setName('');
-      setSlug('');
-      setSlugEdited(false);
     } catch (err) {
       onError(plainError(err));
     } finally {
@@ -204,27 +251,8 @@ function NewBible({ onError }: { onError: (message: string | null) => void }) {
             required
           />
         </label>
-        <label className="field">
-          ID
-          <input
-            value={shownSlug}
-            onChange={(e) => {
-              setSlugEdited(true);
-              setSlug(e.target.value);
-            }}
-            aria-describedby="slug-rule"
-            aria-invalid={shownSlug !== '' && !slugValid}
-          />
-        </label>
-        <p id="slug-rule" className="example-note">
-          The ID names the bible in the database. {BIBLE_SLUG_RULE}
-        </p>
         <div className="row">
-          <button
-            type="submit"
-            className="btn primary"
-            disabled={busy || !name.trim() || !slugValid}
-          >
+          <button type="submit" className="btn primary" disabled={busy || !name.trim()}>
             Create bible
           </button>
         </div>

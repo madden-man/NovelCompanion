@@ -6,6 +6,7 @@
   },
   "include": [
     "tests/e2e/**/*",
+    "tests/web/**/*",
     "tests/journey/**/*",
     "tests/package/**/*",
     "playwright*.config.ts",

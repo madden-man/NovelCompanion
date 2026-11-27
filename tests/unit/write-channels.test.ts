@@ -22,6 +22,7 @@ const WRITES_OUTSIDE_THE_WALK: Record<string, string> = {
  * mode, so they never write to a snapshot.
  */
 const READS_THAT_WRITE: Record<string, string> = {
+  'bible.current': 'A57: at launch, opens the bible used last from MongoDB, never a snapshot.',
   'bible.open': 'Opens a bible from MongoDB (migrations run there), never a snapshot.',
   'connection.retry': 'Reopens the bible from MongoDB once it answers, which ends read-only mode.',
   'mongo.replace': 'Reopens the bible on the new connection, never a snapshot.',

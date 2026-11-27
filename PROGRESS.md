@@ -606,3 +606,94 @@ Suite counts after the review fixes (`npm test`, local replica set, hidden): lin
 | FN-9 | pending | `tests/integration/tray.test.ts` "FN-9 notebook.relevant finds pages by the cast, by a place or one inside it, and by the story year"; `tests/e2e/tray.spec.ts` "FN-9 Relevant to Session lists the pages that touch the scene; one opens across the desk and Close comes back". Review fix: the FN-9 integration test finds a page naming a place inside the strand's place. |
 | FN-10 | pending | `tests/integration/bridge-shared.test.ts` "FN-10 a song lands as a stub: ...", "FN-10 it follows the phone: renamed, linked again when its characters change, trashed when deleted", "FN-10 a song moved out of this world and back (deleted here, then live again) brings the stub back"; `tests/unit/notebook.test.ts` "NB-4 FN-10 another world, an entry page and takes are not notebook pages, a song is a stub with no lyric, ...". |
 | ARCH-8 (A56) | pending | `tests/unit/single-database.test.ts` "ARCH-8 the bridge database is flowstate_bridge, or the test seam name with _bridge", "ARCH-8 the handle opens only the three bridge collections and exposes no database, client or admin", "ARCH-8 the bridge code takes the handle, never a Db, a client or a database name", "ARCH-8 src/main/db never calls listDatabases, admin(), or db() with any other name" (two calls now); `tests/integration/bridge-shared.test.ts` "ARCH-8 Songbook's registry row survives a publish, and a bible on a world another app holds is not published", "ARCH-8 the pull reads only its world and never takes ..."; `tests/integration/bridge.test.ts` "NB-1 ARCH-8 opening writes the registry row in flowstate_bridge, exactly { _id, name, kind }, and nothing of the bridge in novel_companion" (renamed from the NB-1 test in A55's row). |
+
+## A57: no instructions anywhere (IP-19), 2026-11-26
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| IP-19 | pending | `tests/e2e/app.spec.ts` "A57 when the bible used last is gone, the app starts on the bibles with no instructions"; `tests/e2e/editing.spec.ts` "A57 Review queue, Trash, Lists, Search and Writing tools open with no intro, and empty says empty", "A57 a toast says what was done, with an Undo button that takes it back"; `tests/e2e/plot.spec.ts` "A57 the Outline carries no instruction text: no hint paragraph, no gesture tooltips, no sentences in Parts or Versions"; `tests/e2e/timeline.spec.ts` "A57 the World events screen carries no instructions: no paragraph, no keys in a tooltip"; `tests/e2e/tree.spec.ts` "A57 the legend is drawn swatches with short labels on the tree, and the tree carries no instruction text"; `tests/e2e/year.spec.ts` "A57 the dialog carries no instructions; month and day appear after ..."; `tests/e2e/knowledge.spec.ts` "A57 Communities has no intro: the stepper buttons name the spans they go to, the story year span is marked, and an add row names its content with Enter on Add"; `tests/e2e/backups.spec.ts` "A57 Backups carries no explanation: the actions sit in the header and the count lives in Settings"; `tests/e2e/continuity.spec.ts` "A57 CC-1 CC-4 the check reads as one action and each finding button names its result, with no instruction text"; `tests/e2e/capture.spec.ts` "KB-6 NF-2 Cmd+K opens the box from Characters and from the tree with the story time; Escape closes it" (no hint line, the keys on the buttons). The culture removal notices go through the shared Undo toast (integration 0258991): `tests/e2e/knowledge.spec.ts` "CU-1 A42 ED-3 a line is added under an age group with Enter, edited directly, moved by its age group and decade selects, given a note, and removed, each one undo step", "A42 a community is added, renamed, and removed with its lines, and Undo brings them back" (both read `undo-notice`). |
+| ARCH-8 (A57) | pending | `tests/e2e/app.spec.ts` "A57 the bible name in the header switches bibles and makes a new one from a name, by keyboard", "A57 a relaunch with the same data folder opens the bible used last", "A57 when the bible used last is gone, the app starts on the bibles with no instructions", "ARCH-8 a second bible made with the New bible form can be switched to" (now: no ID field, no rule text); `tests/unit/last-bible.test.ts` "A57 a new bible gets its ID from its name, never one already taken", "A57 the bible opened last is kept in the data folder for the next launch". |
+| FT-2 | pending | `tests/e2e/tree.spec.ts` "A57 a person shows + parent, + partner and + child stubs on hover, focus and selection, and each opens the add form for that kind, by keyboard and by pointer", "FT-2 FT-4 building the fixture tree by hand through tree actions gives the fixture graph and layout" (now drops on the parent zone, with no tidy confirm). |
+| FT-8 | pending | `tests/e2e/tree.spec.ts` "A57 the legend is drawn swatches with short labels on the tree, and the tree carries no instruction text", "A57 Tidy layout runs at once as one undo step, and the Undo on its notice puts everyone back", "A57 the inspector shows only with a selection, the Add person form, or warnings, and the people stay put as it comes and goes", "FT-6 A45 warnings show in the inspector behind the toolbar count and never block; a person cannot become their own ancestor". |
+| FT-11 | pending | `tests/e2e/tree.spec.ts` "A57 a person dragged over another shows three drop zones named for that person, and the drop links the way of the zone under the pointer", "FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, Cmd+Z takes each move back, and a drag over someone carried on into empty space is a move", "FT-6 A45 ..." (self-ancestry is a disabled zone; nothing written, nobody moved). |
+| PL-5 | pending | `tests/e2e/plot.spec.ts` "A57 Tab and Shift+Tab indent and outdent a scene line beside Cmd+] and Cmd+[, and after Escape Tab leaves the text", "SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year, Open and the line between chapters" (Escape before Tab). |
+| SM-7 | pending | `tests/e2e/plot.spec.ts` "A57 each bar has a grip, each line between chapters a pill handle, and + Section sits in the gap, faint until hovered", "A57 the chapter menu lists Move up, Move down, New chapter at this line and Delete chapter with their keys, and each works", "A46 A57 a chapter dragged onto the trash, which shows only during the drag, goes, its lines join the chapter above, and Undo brings both back; Delete on a focused bar does the same", "SM-7 A46 the Outline opens on two panels: ... no trash until a drag, ...". |
+| KB-3 | pending | `tests/e2e/plot.spec.ts` "SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year, Open and the line between chapters". |
+| IP-4 | pending | `tests/e2e/timeline.spec.ts` "IP-4 IP-14 A57 one click on the ... ghost in a gap makes an era over it, named from the template, its name open as a field", "A57 an empty spot shows a ... ghost under the pointer, the row names carry a ..., and the click adds there", "A57 era ends show resize handles on hover and focus, and markers a grab cursor", "A57 the selected marker shows a bar: a year back and forward, rename and delete, each with its key"; `tests/e2e/backstory.spec.ts` "A57 lifespan ends show resize handles on hover and focus, and markers a grab cursor", "A57 an empty spot shows a ... ghost, and the row ... adds a moment for that person at the story year". |
+| SM-8 | pending | `tests/e2e/timeline.spec.ts` "A57 an empty spot shows a ... ghost under the pointer, the row names carry a ..., and the click adds there". |
+| TM-1 | pending | `tests/e2e/year.spec.ts` "A57 the dialog carries no instructions; month and day appear after ..., and Year only puts them away". |
+| TM-4 | pending | `tests/e2e/year.spec.ts` "A57 the age box takes digits only and the year moves as it is typed; a strand moves it as it is picked"; `tests/e2e/timeline.spec.ts` "TM-4 A57 anchors: ... gives 2040 as it is typed, +10 steps to 2050, and picking a strand sets its year". |
+| TM-5 | pending | `tests/e2e/timeline.spec.ts` "TM-5 A57 setting the time writes no entry; ... shows only while the years differ, shows the change and writes only after approval". |
+| WE-2 | pending | `tests/e2e/knowledge.spec.ts` "A57 eras gaps and overlaps are a chip on the Eras tab that opens their list, and an item goes to its year", "SM-11 WE-2 the Eras tab shows the story year's era, edits it in place as one undo step, flags a gap, and New era adds one", "WE-2 with no era for the story year, New era fills the gap around it". |
+| PC-1 | pending | `tests/e2e/knowledge.spec.ts` "A57 places indent under their parent, and a description edits in place on one click as one undo step". |
+| CC-4 | pending | `tests/e2e/continuity.spec.ts` "A57 CC-1 CC-4 the check reads as one action and each finding button names its result, with no instruction text", "CC-4 ED-3 Chapter is right applies the change set the card shows as a diff, and undoes", "CC-4 SM-11 Bible is right makes a rewrite task with the lines and what must change, on the Continuity checker and on the chapter"; `tests/e2e/keyboard.spec.ts` "NF-2 CC-1 CC-4 the alignment screen: ..." (its title still names Manuscript wins and Rewrite recommended; the body presses the new buttons). |
+| AI-6 | pending | `tests/e2e/claude.spec.ts` "AI-6 ARCH-4 AI-7 A57 the first question opens the consent sheet; with no key the question is kept and the message links to settings", "A57 AI-6 after consent the notice stays readable from a plain link in the panel and in Settings"; `tests/e2e/keyboard.spec.ts` "NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and Escape". |
+| SB-10 | pending | `tests/e2e/session.spec.ts` "A57 SB-1 with no chapter picked, Relevant to Session offers the chapter picker in place instead of a sentence pointing at Writing". |
+| IP-18 | pending | `tests/e2e/continuity.spec.ts` "A57 MS-1 the Manuscript tab carries a lock and opens on a chapter, with no instruction text", "IP-7 IP-18 the manuscript text shows read-only with Re-import beside it, and Re-import replaces it" (now checks the lock and no tooltip). |
+| IP-1 | pending | `tests/unit/editable.test.ts` "A57 a year or number box refuses what its kind cannot read as it is typed"; `tests/e2e/editable.spec.ts` "A57 a value shows a pencil on hover and keyboard focus, and one click opens it", "IP-1 a year field saves on blur as one undo step and Cmd+Z puts the old year back" (now proves the box refuses letters), "IP-1 a character list row renames in place with F2 or a double-click, and Enter saves" (no tooltip); `tests/e2e/backstory.spec.ts` "SM-9 ED-3 IP-1 a field edit in the dialog saves over IPC on Enter or blur, one undo step each, and Undo restores it" (letters never reach the year box; integration 0258991). |
+| IP-8 | pending | `tests/e2e/editing.spec.ts` "IP-8 A57 a list item moves by its grip, with Alt+Up and Alt+Down or a drag, each move one undo step, and selects show the stored order". |
+| IP-13 | pending | `tests/e2e/editing.spec.ts` "A57 a section opens on the entry last open there, else the first, and an empty section says it is empty", "A57 the filter box finds or adds: a new name offers New with its Enter key, Enter makes the entry, and a section that needs more opens the form with the name". |
+| IP-11 | pending | `tests/e2e/settings.spec.ts` "A57 IP-11 numbers read as sentences with no help text, and the tuning numbers are off the screen but still read", "IP-11 a number saves on Enter as one undo step, the World events grid span follows, and Reset goes back to the default". |
+| IP-14 | pending | `tests/e2e/settings.spec.ts` "A57 IP-14 IP-15 a template shows what it makes and resets to the default it names; the shared rules are locked text". |
+| IP-15 | pending | `tests/e2e/settings.spec.ts` "A57 IP-14 IP-15 a template shows what it makes and resets to the default it names; the shared rules are locked text", "IP-15 an instruction saves from its box, Reset to default puts the default back, and the fixed footer stays under it" (Reset shows only for the writer's own text). |
+| ST-1 | pending | `tests/e2e/settings.spec.ts` "A57 ST-1 a pasted key is tested at once, a rejected one is not stored, and Get a key opens the Console", "A57 ST-1 a pasted connection string tests itself: a bad one changes nothing and says why, a good one switches", "A57 BK-1 snapshots to keep saves when left, takes digits only, and its reset shows 30", "ST-1 the API key and the MongoDB connection string are shown masked, never in full"; `tests/e2e/offline.spec.ts` "A57 ARCH-6 on the launch screen the connection string field tests a paste and opens the bibles when it connects"; `tests/e2e/keyboard.spec.ts` "NF-2 ST-1 settings: the key, by keyboard". |
+| BK-2 | pending | `tests/e2e/backups.spec.ts` "A57 Restore says what it replaces once, at the press, and Cancel or Escape keeps the bible", "BK-1 BK-2 a snapshot taken on request can be restored, which takes a safety snapshot first" (through the confirm's Replace). |
+| BK-3 | pending | `tests/e2e/backups.spec.ts` "A57 BK-3 Import as a new bible opens the file dialog directly and opens the bible it makes". |
+| KB-6 | pending | `tests/e2e/capture.spec.ts` "KB-6 NF-2 Cmd+K opens the box from Characters and from the tree with the story time; Escape closes it" (no hint; the buttons carry `Enter` and `Alt Enter`), "A57 with no key, Alt+Enter and Add a Claude key open the key field in place; a saved key turns the button back into Ask Claude instead"; `tests/unit/capture.test.ts` "KB-6 the capture box source asks Claude for no prose and writes only through File it" (the 300 ms pause, no hint, `<kbd>Enter</kbd>`). |
+| KB-7 | pending | `tests/e2e/capture.spec.ts` "A57 CR-6 KB-7 with no key, the Route A facts still file without Claude and only the rest is saved as the open question; the Claude buttons read Add a Claude key". |
+| CR-6 | pending | `tests/e2e/capture.spec.ts` "A57 CR-6 a clear cultural line shows its chips and diff while typing, before any key; Enter (File 1) files it and the Filed list links it", "A57 a chip set while typing stays with its sentence when another sentence is typed", "A57 CR-6 a missing community is a highlighted chip and the File button waits for it, with no sentence saying so; Enter and Cmd+Enter file nothing", "A57 CR-6 KB-7 with no key, ...". |
+| FN-6 | pending | `tests/e2e/tray.spec.ts` "A57 FN-6 with no key the Claude buttons read Add a Claude key and open the key field in place; nothing is sent". |
+
+Suite counts: TO FILL BY ARCHITECT.
+| CU-3 | pending | `tests/e2e/knowledge.spec.ts` "A57 the community name in the heading opens with F2, Escape keeps it, Enter or blur renames as one undo step each", "A42 a community is added, renamed, and removed with its lines, and Undo brings them back" (no Rename button; the name is clicked). |
+| NF-3 | pending | `tests/unit/errors.test.ts` "A57 no failure message says to click or press Try again, or names Cmd+R", "A57 the connection messages beside Try again say only what went wrong"; `tests/e2e/offline.spec.ts` (the banner says what went wrong and the `connection-retry` button reads Try again). |
+| IP-1 (dates, headings) | pending | `tests/unit/editable.test.ts` "A57 a one-box date refuses what it cannot read as it is typed, and takes every format it reads"; `tests/e2e/editable.spec.ts` "A57 a date box refuses words as they are typed, says a half-typed date is not a date, and keeps the old value"; `tests/e2e/editing.spec.ts` "A57 an entry heading renames in place: click or F2 opens it, Enter or blur saves as one undo step, Escape cancels" (IP-13). |
+| Hidden runs | pending | `tests/e2e/tree.spec.ts` "FT-8 A26 A45 ..." asserts no window of a hidden run is visible while the page is full screen; `tests/journey/journey.spec.ts` 36 of 36 on the packaged app (956a9db). |
+
+## A58: Novel Companion on the phone (PH-1 to PH-39), 2026-11-27
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| PH-1 | pending | |
+| PH-2 | pending | |
+| PH-3 | pending | |
+| PH-4 | pending | |
+| PH-5 | pending | |
+| PH-6 | pending | |
+| PH-7 | pending | |
+| PH-8 | pending | |
+| PH-9 | pending | |
+| PH-10 | pending | |
+| PH-11 | pending | |
+| PH-12 | pending | |
+| PH-13 | pending | |
+| PH-14 | pending | |
+| PH-15 | pending | |
+| PH-16 | pending | |
+| PH-17 | pending | |
+| PH-18 | pending | |
+| PH-19 | pending | |
+| PH-20 | pending | |
+| PH-21 | pending | |
+| PH-22 | pending | |
+| PH-23 | pending | |
+| PH-24 | pending | |
+| PH-25 | pending | |
+| PH-26 | pending | |
+| PH-27 | pending | |
+| PH-28 | pending | |
+| PH-29 | pending | |
+| PH-30 | pending | |
+| PH-31 | pending | |
+| PH-32 | pending | |
+| PH-33 | pending | |
+| PH-34 | pending | |
+| PH-35 | pending | |
+| PH-36 | pending | |
+| PH-37 | pending | |
+| PH-38 | pending | |
+| PH-39 | pending | |
+| ARCH-1 (A58) | pending | |
+| ARCH-5 (A58) | pending | |
+| ARCH-6 (A58) | pending | |
+| NF-4 (A58) | pending | |

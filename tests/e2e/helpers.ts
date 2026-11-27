@@ -194,7 +194,8 @@ export async function sectionList(page: Page, plural: string): Promise<void> {
   const view = page.getByTestId('search-view');
   await view.getByLabel('Section').selectOption({ label: plural });
   await view.getByTestId('search-open-section').click();
-  await expect(page.getByRole('heading', { name: plural, level: 2 })).toBeVisible();
+  // The list's own heading: an entry open beside it can carry the same word in its heading.
+  await expect(page.locator('#list-title')).toContainText(plural);
 }
 
 /** A screen of the rail opened on one of its tabs: Continuity checker's Manuscript, Cultural data's Eras. */

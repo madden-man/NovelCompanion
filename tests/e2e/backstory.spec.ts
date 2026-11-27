@@ -179,10 +179,23 @@ async function pointAt(personId: string, year: number) {
   const box = (await track.boundingBox())!;
   // Below the lane's middle, clear of the lifespan bar and any marker label.
   const at = { x: box.x + (year - from + 0.5) * ppy, y: box.y + box.height - 4 };
-  expect(await track.evaluate((el, p) => document.elementFromPoint(p.x, p.y) === el, at)).toBe(
-    true,
-  );
+  // A row that fills the frame (A50) ends under the overlay scrollbar a scroll shows; it fades.
+  await expect
+    .poll(() => track.evaluate((el, p) => document.elementFromPoint(p.x, p.y) === el, at))
+    .toBe(true);
   return at;
+}
+
+/** Wait until nothing covers the middle of an element (the overlay scrollbar fades after a scroll). */
+async function untilUncovered(target: Locator) {
+  await expect
+    .poll(() =>
+      target.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      }),
+    )
+    .toBe(true);
 }
 
 async function blurAndUndo() {
@@ -522,13 +535,11 @@ test('SM-9 ED-3 IP-1 a field edit in the dialog saves over IPC on Enter or blur,
   await expect.poll(async () => (await getMoment('Z3-lives-1')).year).toBe(2029);
   await expect(dialog().getByTestId('moment-age')).toHaveText('41');
   await expect(marker('Z3-lives-1')).toHaveAttribute('data-year', '2029');
-  // A year that is not a number is refused in plain words at the field and writes nothing.
+  // A57: the year box takes digits only, so letters never reach it and nothing is written.
   await openEditable(year);
   await year.locator('input').fill('soon');
-  await year.locator('input').press('Enter');
-  await expect(momentDialog('Z3-lives-1').getByRole('alert')).toHaveText(
-    'Not saved: soon is not a year. Write it as digits, for example 2045.',
-  );
+  await expect(year.locator('input')).toHaveValue('2029');
+  await expect(momentDialog('Z3-lives-1').getByRole('alert')).toHaveCount(0);
   await year.locator('input').press('Escape');
   await expect(year.locator('input')).toHaveCount(0);
   await expect(dialog()).toBeVisible();
@@ -1363,12 +1374,9 @@ test('IP-4 a lifespan end drags to set the birth as one step, shown live, and Un
 
 test('IP-4 NF-2 Shift with the arrows on the focused lifespan moves the birth, Shift and Alt the death, one step each', async () => {
   const life = row('H1').getByTestId('lifespan');
-  // The lifespans are one Tab stop; the tooltip says which keys move which end.
+  // The lifespans are one Tab stop; A57: the tooltip holds the facts only, no keys.
   await expect(grid().locator('.bs-life[tabindex="0"]')).toHaveCount(1);
-  await expect(life).toHaveAttribute(
-    'title',
-    /Shift with Left or Right moves the birth a year; Shift and Alt with Left or Right move the death/,
-  );
+  await expect(life).toHaveAttribute('title', 'Lifespan of Margaret Hale, 1958 to 2041');
   await life.focus();
   await page.keyboard.press('Shift+ArrowLeft');
   await expect(row('H1')).toHaveAttribute('data-birth', '1957');
@@ -1393,6 +1401,46 @@ test('IP-4 NF-2 Shift with the arrows on the focused lifespan moves the birth, S
   expect((await getCharacter('H5')).birth).toEqual({ year: 2032, month: 3, day: 14 });
   await blurAndUndo();
   await expect(row('H5')).toHaveAttribute('data-birth', '2031');
+});
+
+test('A57 lifespan ends show resize handles on hover and focus, and markers a grab cursor', async () => {
+  await zoomTo('Close');
+  await showRow('H1');
+  await showYear(1958);
+  const handle = row('H1').getByTestId('life-handle-start');
+  await expect(handle).toHaveCSS('cursor', 'col-resize');
+  await expect(handle).toHaveCSS('opacity', '0');
+  await row('H1').getByTestId('lifespan').focus();
+  await expect(handle).toHaveCSS('opacity', '1');
+  await expect(grid().locator('.bs-marker').first()).toHaveCSS('cursor', 'grab');
+  await expect(view()).not.toContainText('Shift with Left');
+});
+
+test('A57 an empty spot shows a "+ year" ghost, and the row "+" adds a moment for that person at the story year', async () => {
+  await zoomTo('Close');
+  const at = await pointAt('H4', 2050);
+  await page.mouse.move(at.x, at.y);
+  const ghost = row('H4').getByTestId('track-ghost');
+  await expect(ghost).toHaveText('+ 2050');
+  await expect(ghost).toHaveAttribute('data-year', '2050');
+  const plus = row('H4').getByTestId('row-add');
+  await expect(plus).toBeVisible();
+  await expect(plus).toHaveText('+');
+  const name = (await plus.getAttribute('aria-label')) ?? '';
+  const year = Number(/^Add a (\d+) moment for Ruth Hale$/.exec(name)?.[1]);
+  expect(year).toBeGreaterThan(0);
+  const before = await liveMoments();
+  await plus.click();
+  await expect.poll(async () => (await liveMoments()).length).toBe(before.length + 1);
+  const made = (await liveMoments()).find((m) => !before.some((b) => b._id === m._id))!;
+  expect([made.characterId, made.year]).toEqual(['H4', year]);
+  const id = String(made._id);
+  await expect(dialog()).toHaveAttribute('data-id', id);
+  await expect(cell(id, 'title').locator('input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await closeMoment();
+  await blurAndUndo();
+  await expect.poll(async () => (await getMoment(id)).deletedAt).toBeTruthy();
 });
 
 test('IP-4 ED-10 a death dragged before the birth is refused with the reason and the bar snaps back', async () => {
@@ -1432,6 +1480,7 @@ test('IP-4 A50 in the person view Escape during a marker or lifespan drag calls 
   await showYear(1958);
   const handle = row('H1').getByTestId('life-handle-start');
   await handle.hover({ force: true });
+  await untilUncovered(handle);
   await dragBy(handle, -2 * ppy);
   await expect(grid().getByTestId('drag-year')).toHaveText('Birth 1956');
   await page.keyboard.press('Escape');
@@ -1793,10 +1842,11 @@ test('IP-4 the era band on Backstory drags an edge and makes an era in the gap i
         (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2025' })).entry.startYear,
     )
     .toBe(2027);
-  // The drag left 2025 to 2026 bare: a double-click there makes an era, its name open.
+  // The drag left 2025 to 2026 bare: A57, its "+ era" ghost makes an era on one click, its name open.
   const gap = grid().locator('.wg-gap[data-from="2025"]');
   await expect(gap).toHaveAttribute('data-to', '2026');
-  await gap.dblclick();
+  await expect(gap).toHaveText('+ era');
+  await gap.click();
   const name = grid().getByTestId('era-rename').locator('input');
   await expect(name).toBeFocused();
   await name.fill('The first years');

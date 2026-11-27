@@ -346,9 +346,7 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
   // Remove moves it to the trash; Cmd+Z brings it back.
   await line().getByRole('button', { name: 'Remove Shipyard apprenticeships' }).click();
   await expect(line()).toHaveCount(0);
-  await expect(culture().getByTestId('culture-notice')).toContainText(
-    'Removed Shipyard apprenticeships',
-  );
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed Shipyard apprenticeships.');
   await page.keyboard.press('Meta+z');
   await expect(line()).toBeVisible();
   // Then the note edit, the decade, the age group, the rename, and the add itself, one step each.
@@ -374,9 +372,10 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await expect(culture().getByLabel('Community', { exact: true })).toHaveValue('san-francisco');
   await expect(culture().getByTestId('culture-heading')).toContainText('San Francisco in the');
   await expect(culture().getByLabel('About San Francisco')).toBeVisible();
-  // Rename in place; the select follows.
-  await culture().getByTestId('community-rename').click();
-  await culture().getByLabel('Name of San Francisco').fill('SF Bay');
+  // A57: the name in the heading renames in place; the select follows.
+  await expect(culture().getByTestId('community-rename')).toHaveCount(0);
+  await culture().getByTestId('community-name-text').click();
+  await culture().getByLabel('Name of San Francisco', { exact: true }).fill('SF Bay');
   await page.keyboard.press('Enter');
   await expect(culture().getByLabel('Community', { exact: true })).toContainText('SF Bay');
   await expect(culture().getByTestId('culture-heading')).toContainText('SF Bay in the');
@@ -396,11 +395,10 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await culture().getByTestId('community-remove').click();
   const confirm = culture().getByTestId('community-confirm');
   await expect(confirm).toContainText('Remove SF Bay and its 2 lines? They go to the trash.');
+  await expect(confirm).not.toContainText('Undo');
   await confirm.getByRole('button', { name: 'Remove SF Bay' }).click();
   await expect(confirm).toHaveCount(0);
-  await expect(culture().getByTestId('culture-notice')).toContainText(
-    'Removed SF Bay and its 2 lines',
-  );
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed SF Bay and its 2 lines.');
   await expect(culture().getByLabel('Community', { exact: true })).not.toContainText('SF Bay');
   await expect.poll(titles).toEqual([]);
   // One Undo: the community is back in the list with both lines.
@@ -410,6 +408,42 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await culture().getByLabel('Community', { exact: true }).selectOption({ label: 'SF Bay' });
   await expect(group('all').locator('.cu-line')).toHaveCount(2);
   await invoke('storyTime.set', { time: { year: 2030 } });
+});
+
+test('A57 the community name in the heading opens with F2, Escape keeps it, Enter or blur renames as one undo step each', async () => {
+  await rail(page, 'Cultural data').click();
+  const select = culture().getByLabel('Community', { exact: true });
+  await select.selectOption({ label: 'Guangzhou' });
+  const name = culture().getByTestId('community-name-text');
+  await expect(name).toHaveText('Guangzhou');
+  const field = (label: string) => culture().getByLabel(`Name of ${label}`, { exact: true });
+  // F2 opens it; Escape puts the name back and stores nothing.
+  await name.focus();
+  await page.keyboard.press('F2');
+  await expect(field('Guangzhou')).toBeFocused();
+  await field('Guangzhou').fill('Canton');
+  await page.keyboard.press('Escape');
+  await expect(name).toHaveText('Guangzhou');
+  await expect.poll(() => listLabels('communities')).toContain('Guangzhou');
+  // Enter saves; the select and the heading follow.
+  await name.focus();
+  await page.keyboard.press('F2');
+  await field('Guangzhou').fill('Canton');
+  await page.keyboard.press('Enter');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton');
+  await expect(select.locator('option:checked')).toHaveText('Canton');
+  await expect.poll(() => listLabels('communities')).toContain('Canton');
+  // A click opens it and leaving the field saves.
+  await culture().getByTestId('community-name-text').click();
+  await field('Canton').fill('Canton City');
+  await culture().getByTestId('culture-unit').click();
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton City');
+  // Each rename is one undo step.
+  await page.keyboard.press('Meta+z');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Canton');
+  await page.keyboard.press('Meta+z');
+  await expect(culture().getByTestId('community-name-text')).toHaveText('Guangzhou');
+  await expect.poll(() => listLabels('communities')).toContain('Guangzhou');
 });
 
 const listLabels = async (listId: string) =>
@@ -585,6 +619,48 @@ test("IP-10 the stepper starts at the story year's unit and moves by a decade, f
   await expect(unitShown()).toHaveText('2040s');
 });
 
+test('A57 Communities has no intro: the stepper buttons name the spans they go to, the story year span is marked, and an add row names its content with Enter on Add', async () => {
+  await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2040s');
+  await expect(culture().locator('.lede')).toHaveCount(0);
+  await expect(culture()).not.toContainText('Previous and Next');
+  // The buttons carry the spans they go to.
+  await expect(culture().getByTestId('culture-prev')).toHaveText('‹ 2030s');
+  await expect(culture().getByTestId('culture-next')).toHaveText('2050s ›');
+  // The span shown is in the story-time colour only while it holds the story year.
+  await expect(unitShown()).toHaveClass(/\bchip\b.*\btime\b/);
+  await expect(unitShown()).toHaveAttribute('aria-current', 'date');
+  await culture().getByTestId('culture-next').click();
+  await expect(unitShown()).toHaveText('2050s');
+  await expect(unitShown()).not.toHaveClass(/\btime\b/);
+  await expect(unitShown()).not.toHaveAttribute('aria-current', 'date');
+  await expect(culture().getByTestId('culture-prev')).toHaveText('‹ 2040s');
+  await expect(culture().getByTestId('culture-to-story')).toHaveText(
+    'Back to the story year, 2040s',
+  );
+  await culture().getByTestId('culture-to-story').click();
+  await expect(unitShown()).toHaveClass(/\btime\b/);
+  // Add rows name what they take, and the Add button shows its key.
+  const everyone = group('all').getByLabel('New line for everyone in the 2040s');
+  await expect(everyone).toHaveAttribute(
+    'placeholder',
+    'Something everyone in Portland does in the 2040s',
+  );
+  await expect(
+    group('18-30').getByLabel('New line for ages 18 to 30 in the 2040s'),
+  ).toHaveAttribute('placeholder', 'Something people ages 18 to 30 do');
+  await expect(group('all').getByRole('button', { name: /^Add/ }).locator('kbd')).toHaveText(
+    'Enter',
+  );
+  // The key still adds, and a removal says what happened in plain words.
+  await everyone.fill('Lantern walks');
+  await everyone.press('Enter');
+  const line = group('all').locator('.cu-line').filter({ hasText: 'Lantern walks' });
+  await expect(line).toHaveCount(1);
+  await line.getByRole('button', { name: 'Remove Lantern walks' }).click();
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed Lantern walks.');
+  await expect(culture()).not.toContainText('Cmd+Z');
+});
+
 test('IP-10 IP-1 the age groups come from the list: a new item is a new group, a rename shows, and Add new on a line makes one in one step', async () => {
   await expect(culture().getByTestId('culture-heading')).toHaveText('Portland in the 2040s');
   const headings = () => culture().locator('section[data-demographic] h4');
@@ -707,6 +783,90 @@ test('IP-13 the Places tab is the place tree: New place adds one, a name renames
   await leaveFields();
   await page.keyboard.press('Meta+z');
   await expect(row).toHaveCount(0);
+});
+
+test('A57 places indent under their parent, and a description edits in place on one click as one undo step', async () => {
+  await screenTab(page, 'Cultural data', 'Places');
+  const view = page.getByTestId('cultural-data').getByTestId('places-view');
+  await expect(view.locator('.lede')).toHaveCount(0);
+  await expect(view).not.toContainText('Click a name');
+  // Nesting shows as indentation with a guide line.
+  const top = view.locator('li[data-place="PLC1"]');
+  const child = view.locator('li[data-place="PLC2"]');
+  const x = async (l: Locator) => (await l.boundingBox())!.x;
+  expect(await x(child)).toBeGreaterThan(await x(top));
+  await expect(child).toHaveClass(/\bnested\b/);
+  // The new place row names its content and shows its key.
+  await expect(view.getByRole('button', { name: /^New place/ }).locator('kbd')).toHaveText('Enter');
+  // One click opens the description for the year shown; Cmd+Enter saves it.
+  const desc = child.getByTestId('place-desc');
+  await expect(desc.getByTestId('place-desc-text')).toHaveText(
+    'A narrow two-story house with a kitchen at the back.',
+  );
+  await fillRich(desc, 'A narrow house, kitchen at the back.');
+  const descriptions = async () =>
+    (await invoke('entry.get', { collection: 'places', id: 'PLC2' })).entry.descriptions;
+  await expect
+    .poll(descriptions)
+    .toEqual([{ startYear: null, endYear: null, text: 'A narrow house, kitchen at the back.' }]);
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(descriptions).toEqual([
+    {
+      startYear: null,
+      endYear: null,
+      text: 'A narrow two-story house with a kitchen at the back.',
+    },
+  ]);
+  // A place with no description for the year takes a first one, from that year on.
+  const { entry } = await invoke('entry.create', {
+    collection: 'places',
+    data: { title: 'Pier Nine', parentId: 'PLC1', descriptions: [] },
+  });
+  const pier = view.locator(`li[data-place="${entry._id}"]`);
+  await view.getByLabel('Year').fill('2040');
+  await expect(pier.getByTestId('place-desc-text')).toHaveText('What Pier Nine is like in 2040');
+  await fillRich(pier.getByTestId('place-desc'), 'Ferries to the coast.');
+  await expect
+    .poll(async () => (await invoke('entry.get', { collection: 'places', id: entry._id })).entry)
+    .toMatchObject({
+      descriptions: [{ startYear: 2040, endYear: null, text: 'Ferries to the coast.' }],
+    });
+  await invoke('entry.delete', { collection: 'places', id: entry._id });
+});
+
+test('A57 a place description edited in place keeps its paragraphs, and its Chinese terms link to the glossary', async () => {
+  const two = 'Stilt houses over the 团圆 river.\n\nThe ferry runs at dawn.';
+  const { entry } = await invoke('entry.create', {
+    collection: 'places',
+    data: {
+      title: 'Ferry Landing',
+      parentId: 'PLC1',
+      descriptions: [{ startYear: null, endYear: null, text: two }],
+    },
+  });
+  const descriptions = async () =>
+    (await invoke('entry.get', { collection: 'places', id: entry._id })).entry.descriptions;
+  await screenTab(page, 'Cultural data', 'Places');
+  const view = page.getByTestId('cultural-data').getByTestId('places-view');
+  const desc = view.locator(`li[data-place="${entry._id}"]`).getByTestId('place-desc');
+  // Shown as two paragraphs; one click, one character, and leaving the box saves both.
+  await expect(desc.getByTestId('place-desc-text').locator('p')).toHaveCount(2);
+  await desc.getByTestId('place-desc-text').getByText('The ferry runs at dawn.').click();
+  const box = desc.getByRole('textbox');
+  await expect(box).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.type('!');
+  await box.blur();
+  await expect(box).toHaveCount(0);
+  await expect.poll(descriptions).toEqual([{ startYear: null, endYear: null, text: `${two}!` }]);
+  await expect(desc.getByTestId('place-desc-text').locator('p')).toHaveCount(2);
+  // The term in the description links to its glossary entry.
+  const run = desc.getByRole('link', { name: /团圆/ });
+  await expect(run).toHaveAttribute('data-term', 'GL3');
+  await run.click();
+  await expect(page.getByTestId('editor').getByRole('heading', { name: '团圆' })).toBeVisible();
+  await invoke('entry.delete', { collection: 'places', id: entry._id });
 });
 
 test('IP-13 the Glossary tab is the glossary table: New term adds one, and term, romanization, language and meaning edit in place', async () => {
@@ -839,11 +999,13 @@ test("SM-11 WE-2 the Eras tab shows the story year's era, edits it in place as o
     )
     .toBe('The forties');
   await expect(forties.getByLabel('Era name')).toHaveValue('The forties');
-  // WE-2: an end year that leaves the story year uncovered is flagged and still saved, and
-  // the row stays on screen.
+  // WE-2: an end year that leaves the story year uncovered is flagged on the chip and saved,
+  // and the row stays on screen.
   await forties.getByLabel('End year').fill('2044');
   await forties.getByLabel('End year').press('Enter');
-  await expect(eras.getByTestId('era-gap')).toContainText('No era covers 2045.');
+  await expect(eras.getByTestId('era-issues')).toHaveText(/^1 gap/);
+  await eras.getByTestId('era-issues').click();
+  await expect(eras.getByTestId('era-gap')).toHaveText('No era covers 2045 to 2049');
   await expect(forties).toBeVisible();
   expect(
     (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2040' })).entry.endYear,
@@ -854,6 +1016,7 @@ test("SM-11 WE-2 the Eras tab shows the story year's era, edits it in place as o
     patch: { endYear: 2049 },
   });
   await expect(eras.getByTestId('era-gap')).toHaveCount(0);
+  await expect(eras.getByTestId('era-issues')).toHaveCount(0);
   // New era starts after the last one, with its name ready to type.
   await eras.getByRole('button', { name: 'New era', exact: true }).click();
   await expect(rows).toHaveCount(2);
@@ -896,7 +1059,8 @@ test('WE-2 with no era for the story year, New era fills the gap around it', asy
   await invoke('storyTime.set', { time: { year: 2150 } });
   await screenTab(page, 'Cultural data', 'Eras');
   const eras = page.getByTestId('eras-view');
-  await expect(eras.getByTestId('era-gap')).toContainText('No era covers 2150.');
+  await eras.getByTestId('era-issues').click();
+  await expect(eras.getByTestId('era-gap')).toHaveText(/^No era covers \d+ to 2150$/);
   await expect(eras.locator('li[data-era]')).toHaveCount(0);
   await eras.getByRole('button', { name: 'New era for 2150' }).click();
   const fresh = eras.locator('li[data-era]');
@@ -926,6 +1090,81 @@ test('SM-11 WE-2 a new bible shows its seeded default eras on the Eras tab', asy
     eras.locator(`li[data-era="${first.entry._id}"]`).getByLabel('Era name'),
   ).toHaveValue(String(first.entry.name));
   await expect(eras).toContainText(`${seeded.length} eras in all`);
+  await openBible();
+});
+
+test('A57 eras gaps and overlaps are a chip on the Eras tab that opens their list, and an item goes to its year', async () => {
+  await invoke('storyTime.set', { time: { year: 2030 } });
+  await screenTab(page, 'Cultural data', 'Eras');
+  const eras = page.getByTestId('eras-view');
+  await expect(eras.locator('.lede')).toHaveCount(0);
+  await expect(eras).not.toContainText('still saves');
+  const tab = page.getByRole('tab', { name: 'Eras', exact: true });
+  const before = await eras.getByTestId('era-issues').count();
+  // An overlap: the fifties start inside the forties.
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2050',
+    patch: { startYear: 2048 },
+  });
+  await expect(tab.locator('.chip')).toContainText('1 overlap');
+  const chip = eras.getByTestId('era-issues');
+  await expect(chip).toContainText('1 overlap');
+  await expect(chip).toHaveAttribute('aria-expanded', 'false');
+  await chip.click();
+  await expect(chip).toHaveAttribute('aria-expanded', 'true');
+  const item = eras.getByTestId('era-issue-list').locator('li[data-kind="overlap"]');
+  await expect(item).toContainText('The forties and The fifties overlap in 2048 to 2049');
+  // Go to moves the story year there, where both eras show.
+  await item.getByRole('button', { name: 'Go to 2048' }).click();
+  await expect(page.getByTestId('status-time')).toContainText('Story time 2048');
+  await expect(eras.locator('li[data-era]')).toHaveCount(2);
+  await expect(eras.getByTestId('era-overlap')).toBeVisible();
+  await invoke('entry.update', {
+    collection: 'eraStates',
+    id: 'ERA-2050',
+    patch: { startYear: 2050 },
+  });
+  await expect(eras.getByTestId('era-issues')).toHaveCount(before);
+  await invoke('storyTime.set', { time: { year: 2030 } });
+});
+
+test('A57 with no language yet, the Glossary and Romanization screens add one in place', async () => {
+  await invoke('bible.create', { slug: 'knowledge-nolang', name: 'Knowledge no languages' });
+  await invoke('bible.open', { slug: 'knowledge-nolang' });
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  const languages = async () =>
+    (await invoke('lists.get', {})).lists.find((l) => l._id === 'languages')?.items ?? [];
+  for (const item of await languages()) {
+    await invoke('lists.removeItem', { listId: 'languages', itemId: item.id });
+  }
+  await expect.poll(async () => (await languages()).length).toBe(0);
+  // Glossary: the New term row gives way to a New language row.
+  await screenTab(page, 'Cultural data', 'Glossary');
+  const table = page.getByTestId('cultural-data').getByTestId('glossary-table');
+  await expect(table.locator('.lede')).toHaveCount(0);
+  await expect(table).not.toContainText('Lists screen');
+  const add = table.getByTestId('glossary-add-language');
+  await expect(table.getByTestId('new-term')).toHaveCount(0);
+  await add.getByLabel('Name of a new language').fill('Hokkien');
+  await add.getByLabel('Name of a new language').press('Enter');
+  await expect.poll(async () => (await languages()).map((i) => i.label)).toEqual(['Hokkien']);
+  await expect(table.getByTestId('new-term')).toBeVisible();
+  // One step: Undo takes it out again, and Romanization offers the same row.
+  await leaveFields();
+  await page.keyboard.press('Meta+z');
+  await expect.poll(async () => (await languages()).length).toBe(0);
+  await rail(page, 'Romanization').click();
+  const view = page.getByTestId('romanization-view');
+  await expect(view.locator('.lede')).toHaveCount(0);
+  await expect(view).not.toContainText('under Lists');
+  const roman = view.getByTestId('romanization-systems-add-language');
+  await expect(roman.getByRole('button', { name: /^New language/ }).locator('kbd')).toHaveText(
+    'Enter',
+  );
+  await roman.getByLabel('Name of a new language').fill('Hokkien');
+  await roman.getByRole('button', { name: /^New language/ }).click();
+  await expect(view.getByText('Hokkien', { exact: true })).toBeVisible();
   await openBible();
 });
 

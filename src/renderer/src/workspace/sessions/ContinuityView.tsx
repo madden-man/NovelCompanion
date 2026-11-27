@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { AlignmentView } from './alignment';
 import type { OpenEntry } from './common';
 import { ManuscriptView } from './manuscript';
+import { LockIcon } from './Reimport';
 
 export type ContinuityTab = 'alignment' | 'manuscript';
 
@@ -57,6 +58,12 @@ export function ContinuityView(props: {
             onKeyDown={(e) => onKey(e, i)}
           >
             {t.label}
+            {t.tab === 'manuscript' && (
+              <>
+                {' '}
+                <LockIcon />
+              </>
+            )}
           </button>
         ))}
       </div>

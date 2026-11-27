@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { entryTitle, isEntryCollection } from '../../../shared/schema';
 import type { EntryCollection, FieldSpec } from '../../../shared/schema';
 import { blankItem } from '../../../shared/domain/blank';
@@ -58,7 +58,6 @@ function FieldShell(props: {
   const mine = messagesFor(spec, path, messages);
   const notes = (
     <>
-      {spec.hint && <p className="ed-hint">{spec.hint}</p>}
       {mine.warnings.map((w, i) => (
         <p key={`w${i}`} className="ed-warning" role="note" data-code={w.code}>
           {w.message}
@@ -109,6 +108,20 @@ function FieldShell(props: {
 const asString = (v: unknown) => (typeof v === 'string' ? v : '');
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const numText = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
+
+/**
+ * A57: a number box refuses the keys a number of its kind cannot hold: the
+ * exponent and plus signs always, the decimal point in a whole number or a
+ * year, and the minus sign where the smallest value is 0 or more.
+ */
+function numberKeys(opts: { integer: boolean; min?: number }) {
+  return (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const refused = ['e', 'E', '+', ...(opts.integer ? ['.', ','] : [])];
+    if (opts.min !== undefined && opts.min >= 0) refused.push('-');
+    if (refused.includes(e.key)) e.preventDefault();
+  };
+}
 
 function parseNumber(text: string, integer: boolean): number | null {
   if (text.trim() === '') return null;
@@ -218,6 +231,7 @@ function NumberField({ spec, value, onChange, path, messages }: FieldProps) {
         step={spec.kind === 'number' ? 'any' : 1}
         className="num"
         value={numText(value)}
+        onKeyDown={numberKeys({ integer: spec.kind !== 'number' })}
         onChange={(e) => onChange(parseNumber(e.target.value, spec.kind !== 'number'))}
       />
     </FieldShell>
@@ -267,6 +281,7 @@ function StoryDateField({ spec, value, onChange, path, messages }: FieldProps) {
               type="number"
               className="num year-input"
               value={numText(d?.year)}
+              onKeyDown={numberKeys({ integer: true })}
               onChange={(e) => part('year', e.target.value)}
             />
           </label>
@@ -281,6 +296,7 @@ function StoryDateField({ spec, value, onChange, path, messages }: FieldProps) {
                 max={12}
                 className="num small-input"
                 value={numText(d?.month)}
+                onKeyDown={numberKeys({ integer: true, min: 1 })}
                 onChange={(e) => part('month', e.target.value)}
               />
             </label>
@@ -292,6 +308,7 @@ function StoryDateField({ spec, value, onChange, path, messages }: FieldProps) {
                 max={31}
                 className="num small-input"
                 value={numText(d?.day)}
+                onKeyDown={numberKeys({ integer: true, min: 1 })}
                 onChange={(e) => part('day', e.target.value)}
               />
             </label>
@@ -334,7 +351,6 @@ function BooleanField({ spec, value, onChange, path, messages }: FieldProps) {
         />
         {spec.label}
       </label>
-      {spec.hint && <p className="ed-hint">{spec.hint}</p>}
       {mine.warnings.map((w, i) => (
         <p key={i} className="ed-warning" role="note" data-code={w.code}>
           {w.message}
@@ -354,7 +370,7 @@ function EnumField({ spec, value, onChange, path, messages }: FieldProps) {
         onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
       >
         {(spec.nullable || value === null || value === undefined) && (
-          <option value="">{spec.nullable ? 'None' : 'Choose one'}</option>
+          <option value="">{spec.nullable ? 'None' : 'Not set'}</option>
         )}
         {(spec.options ?? []).map((o) => (
           <option key={o.value} value={o.value}>
@@ -425,7 +441,7 @@ function ListItemsField({ spec, value, onChange, path, messages }: FieldProps) {
         id={id}
         listId={spec.listId ?? ''}
         value=""
-        emptyLabel="Add one"
+        emptyLabel={values.length ? '+' : 'None'}
         exclude={values}
         onChange={(v) => v && onChange([...values, v])}
       />
@@ -465,7 +481,7 @@ function StringsField({ spec, value, onChange, path, messages }: FieldProps) {
         <input
           id={id}
           value={draft}
-          placeholder="Add one"
+          placeholder={values.length ? undefined : 'None'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -515,7 +531,7 @@ function RefSelect(props: {
       value={props.value}
       onChange={(e) => props.onChange(e.target.value === '' ? null : e.target.value)}
     >
-      <option value="">{props.allowNone ? 'None' : 'Choose one'}</option>
+      <option value="">{props.allowNone ? 'None' : 'Not set'}</option>
       {props.value && !known && (
         <option value={props.value}>
           {found.get(props.value)?.title ?? props.value}

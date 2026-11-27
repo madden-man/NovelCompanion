@@ -52,10 +52,6 @@ export function ReviewQueue() {
   return (
     <section className="ws-wide stack" aria-labelledby="review-title" data-testid="review-queue">
       <h2 id="review-title">Review queue</h2>
-      <p className="lede">
-        Changes proposed by an import, by Claude, or by a bulk action wait here. Each shows exactly
-        what it would change. Nothing is saved until you approve it.
-      </p>
       {views === null ? (
         <p>Loading.</p>
       ) : pending.length === 0 ? (
@@ -118,10 +114,7 @@ function ProposalCard({ view, onDone }: { view: ProposalView; onDone: () => void
       {proposal.reason && <p>{proposal.reason}</p>}
       {conflict && (
         <div className="callout warn" role="status">
-          <p>
-            This entry changed after the proposal was made, so it cannot be approved as it stands.
-            Compare again to see it against the entry as it is now.
-          </p>
+          <p>This entry changed after the proposal was made.</p>
           <button
             type="button"
             className="btn small"

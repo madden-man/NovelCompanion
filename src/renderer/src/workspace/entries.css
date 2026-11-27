@@ -1,0 +1,40 @@
+/* A57: the find-or-add row under a section's filter box, and the Lists screen's grip. */
+.entry-row.find-add {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
+  color: var(--accent);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+.entry-row.find-add .entry-title {
+  font-weight: 400;
+}
+.entry-row.find-add kbd {
+  flex-shrink: 0;
+}
+
+.vocab-row .drag-handle {
+  border-radius: 3px;
+}
+.vocab-row .drag-handle:hover {
+  color: var(--fg);
+}
+.vocab-row .drag-handle:active {
+  cursor: grabbing;
+}
+.vocab-row .drag-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  color: var(--fg);
+}
+.vocab-row .drag-handle[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  cursor: grabbing;
+}
+.vocab-row .drag-handle[aria-disabled='true'] {
+  cursor: default;
+}

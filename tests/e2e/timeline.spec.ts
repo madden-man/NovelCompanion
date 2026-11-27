@@ -153,12 +153,12 @@ test('NF-2 Tab inside the open Story Time dialog never leaves it', async () => {
   await closeDialog();
 });
 
-test('TM-4 anchors: "Iris Hale-Zhou is 9" gives 2040, +10 steps to 2050, and a strand sets its year', async () => {
+test('TM-4 A57 anchors: "Iris Hale-Zhou is 9" gives 2040 as it is typed, +10 steps to 2050, and picking a strand sets its year', async () => {
   await openDialog();
   await dialog().getByTestId('time-year').fill('2000');
   await dialog().getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
+  // No button: the character and the age move the year as soon as both are there.
   await dialog().getByLabel('Age', { exact: true }).fill('9');
-  await dialog().getByRole('button', { name: 'Set year from age' }).click();
   await expect(dialog().getByTestId('time-now')).toHaveText('2040');
   await expect(dialog().getByTestId('time-note')).toContainText('Iris Hale-Zhou is 9 in 2040');
   await dialog().getByRole('button', { name: 'Forward 10 years' }).click();
@@ -169,7 +169,6 @@ test('TM-4 anchors: "Iris Hale-Zhou is 9" gives 2040, +10 steps to 2050, and a s
   await dialog()
     .getByLabel('Strand')
     .selectOption({ label: 'Chapter 2: Two Kitchens, backstory (2032)' });
-  await dialog().getByRole('button', { name: 'Use this strand’s year' }).click();
   await expect(dialog().getByTestId('time-now')).toHaveText('2032');
   await expect(dialog().getByTestId('time-chapter')).toContainText(
     'Chapter 2: Two Kitchens, backstory (2032)',
@@ -180,8 +179,10 @@ test('TM-4 anchors: "Iris Hale-Zhou is 9" gives 2040, +10 steps to 2050, and a s
     .toEqual({ year: 2032, chapterId: 'CH2', strandId: 'CH2-backstory' });
 });
 
-test('TM-5 setting the time writes no entry; "Use as strand year" shows the change and writes only after approval', async () => {
+test('TM-5 A57 setting the time writes no entry; "Also move that strand" shows only while the years differ, shows the change and writes only after approval', async () => {
   const before = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
+  // The strand and the story year agree (2032): there is nothing to move.
+  await expect(dialog().getByRole('button', { name: /^Also move that strand/ })).toHaveCount(0);
   await dialog().getByRole('button', { name: 'Forward 1 year' }).click();
   await expect(dialog().getByTestId('time-now')).toHaveText('2033');
   // The time moved; the chapter did not.
@@ -189,7 +190,7 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
   expect((await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.modifiedAt).toBe(
     before.modifiedAt,
   );
-  await dialog().getByRole('button', { name: 'Use 2033 as strand year' }).click();
+  await dialog().getByRole('button', { name: 'Also move that strand to 2033' }).click();
   const preview = dialog().getByTestId('promote-preview');
   await expect(preview).toContainText('Two Kitchens, backstory strand year');
   await expect(preview.locator('del')).toHaveText('2032');
@@ -199,9 +200,11 @@ test('TM-5 setting the time writes no entry; "Use as strand year" shows the chan
   expect((await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry.modifiedAt).toBe(
     before.modifiedAt,
   );
-  await dialog().getByRole('button', { name: 'Use 2033 as strand year' }).click();
+  await dialog().getByRole('button', { name: 'Also move that strand to 2033' }).click();
   await dialog().getByRole('button', { name: 'Approve and write' }).click();
   await expect(dialog().getByTestId('time-note')).toContainText('now has the year 2033');
+  // The years agree again, so the button goes.
+  await expect(dialog().getByRole('button', { name: /^Also move that strand/ })).toHaveCount(0);
   const after = (await invoke('entry.get', { collection: 'chapters', id: 'CH2' })).entry;
   expect((after.strands as { id: string; startYear: number }[]).map((s) => s.startYear)).toEqual([
     2045, 2033,
@@ -222,8 +225,8 @@ test('WE-2 the eras screen flags a gap at the story year after an edit and never
     patch: { endYear: 2065 },
   });
   const flag = eras.getByTestId('era-gap');
-  await expect(flag).toContainText('No era covers 2067.');
-  await expect(flag).toContainText('every era still saves.');
+  await eras.getByTestId('era-issues').click();
+  await expect(flag).toContainText('No era covers 2066 to 2069');
   expect(
     (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2060' })).entry.endYear,
   ).toBe(2065);
@@ -254,10 +257,8 @@ test('NF-2 FT-8 Enter on a tree node with children collapses it, Enter on a leaf
   await expect(page.getByTestId('tree-inspector').getByTestId('inspector-name')).toHaveText(
     'Noor Zhou',
   );
-  // A45: the key hints sit in the legend overlay, which opens on request.
-  await page.getByRole('button', { name: 'Legend', exact: true }).click();
-  await expect(page.getByTestId('tree-keys')).toContainText('I opens the inspector for anyone');
-  await page.getByRole('button', { name: 'Hide legend' }).click();
+  // A57: the keys work without a sentence naming them.
+  await expect(page.getByTestId('tree-keys')).toHaveCount(0);
 });
 
 // ---------- SM-8: the World events grid ----------
@@ -345,7 +346,7 @@ test('SM-8 the fixture categories are rows under their group headings in list or
     'economy',
     'culture',
   ]);
-  await expect(grid().locator('.wg-row[data-row="robotics"] .wg-row-label')).toHaveText('Robotics');
+  await expect(grid().locator('.wg-row[data-row="robotics"] .wg-row-name')).toHaveText('Robotics');
   await expect(grid().locator('.wg-row[data-row="robotics"]')).toHaveAttribute(
     'data-group',
     'technology',
@@ -959,10 +960,8 @@ test('IP-4 a shared era edge moves both eras together as one step, by drag and b
   await expect(era('ERA-2030')).toHaveAttribute('data-to', '2039');
   await expect(era('ERA-2040')).toHaveAttribute('data-from', '2040');
   // From the keyboard: Shift with Left moves the focused era's start, and the era before follows.
-  await expect(era('ERA-2040')).toHaveAttribute(
-    'title',
-    /Shift with Left or Right moves its start/,
-  );
+  // A57: the tooltip holds the facts only, no keys.
+  await expect(era('ERA-2040')).toHaveAttribute('title', 'The forties, 2040 to 2049');
   await era('ERA-2040').focus();
   await page.keyboard.press('Shift+ArrowLeft');
   await expect(era('ERA-2040')).toHaveAttribute('data-from', '2039');
@@ -980,7 +979,7 @@ test('IP-4 a shared era edge moves both eras together as one step, by drag and b
   expect((await getEra('ERA-2040')).endYear).toBe(2049);
 });
 
-test('IP-4 IP-14 a double-click on a gap in the era band makes an era over it, named from the template, its name open as a field', async () => {
+test('IP-4 IP-14 A57 one click on the "+ era" ghost in a gap makes an era over it, named from the template, its name open as a field', async () => {
   await invoke('entry.update', {
     collection: 'eraStates',
     id: 'ERA-2025',
@@ -998,10 +997,9 @@ test('IP-4 IP-14 a double-click on a gap in the era band makes an era over it, n
   await expect(grid().getByTestId('era-band').locator('.wg-gap')).toHaveCount(1);
   const gap = grid().getByTestId('era-band').locator('.wg-gap[data-to="2027"]');
   await expect(gap).toHaveAttribute('data-from', String(from));
-  await expect(gap).toHaveAccessibleName(
-    `No era from ${from} to 2027. Press Enter to add an era here`,
-  );
-  await gap.dblclick();
+  await expect(gap).toHaveAccessibleName(`Add an era from ${from} to 2027`);
+  await expect(gap).toHaveText('+ era');
+  await gap.click();
   const field = grid().getByTestId('era-rename').locator('input');
   await expect(field).toBeFocused();
   await expect(field).toHaveValue('Unnamed years');
@@ -1036,6 +1034,17 @@ test('IP-4 IP-14 a double-click on a gap in the era band makes an era over it, n
   expect(again.name).toBe('Unnamed years');
   await blurAndUndo();
   await expect(era(String(again._id))).toHaveCount(0);
+  // A double-click, as before, still makes one era and opens its name, never two.
+  await gap.dblclick();
+  await expect(field).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(field).toHaveCount(0);
+  const made2 = (await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' })).entries
+    .map((e) => e.entry as Record<string, unknown>)
+    .filter((e) => e.endYear === 2027);
+  expect(made2).toHaveLength(1);
+  await blurAndUndo();
+  await expect(era(String(made2[0]!._id))).toHaveCount(0);
   await invoke('entry.update', {
     collection: 'eraStates',
     id: 'ERA-2025',
@@ -1101,6 +1110,140 @@ test('IP-4 F2 renames a marker or an era in place as one step; a single click st
   await page.keyboard.press('Escape');
   await blurAndUndo();
   await expect(era('ERA-2040')).toHaveText('The forties');
+});
+
+test('A57 the World events screen carries no instructions: no paragraph, no keys in a tooltip', async () => {
+  await expect(view()).not.toContainText('Click an empty spot');
+  await expect(view()).not.toContainText('From the keyboard');
+  for (const t of await grid()
+    .locator('[title]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''))) {
+    expect(t).not.toMatch(/Shift|Double-click|press Enter|F2/);
+  }
+});
+
+test('A57 an empty spot shows a "+ year" ghost under the pointer, the row names carry a "+", and the click adds there', async () => {
+  await zoomTo('Close');
+  const at = await pointAt('robotics', 2045);
+  const ghost = grid().locator('.wg-row[data-row="robotics"]').getByTestId('track-ghost');
+  await page.mouse.move(at.x, at.y);
+  await expect(ghost).toHaveText('+ 2045');
+  await expect(ghost).toHaveAttribute('data-year', '2045');
+  // The ghost never takes the click: the spot under it is still the track.
+  const track = grid().locator('.wg-row[data-row="robotics"] .wg-track');
+  expect(await track.evaluate((el, p) => document.elementFromPoint(p.x, p.y) === el, at)).toBe(
+    true,
+  );
+  await page.mouse.move(at.x + (await axis()).ppy, at.y);
+  await expect(ghost).toHaveText('+ 2046');
+  // Over a marker there is nothing to add, so no ghost.
+  await showYear(2072);
+  await marker('E9').hover();
+  await expect(ghost).toHaveCount(0);
+  // Every addable row name shows its "+" and is still the keyboard way in.
+  await expect(grid().locator('.wg-row .wg-row-label .wg-plus')).toHaveCount(
+    await grid().locator('.wg-row').count(),
+  );
+  await expect(grid().locator('.wg-row[data-row="robotics"] .wg-plus')).toBeVisible();
+  const again = await pointAt('robotics', 2045);
+  await page.mouse.click(again.x, again.y);
+  const form = grid().getByTestId('grid-add');
+  await expect(form.getByLabel('Year', { exact: true })).toHaveValue('2045');
+  await expect(ghost).toHaveCount(0);
+  // The year boxes take digits only, and Save waits for a title.
+  await form.getByLabel('End year').pressSequentially('20x4-7');
+  await expect(form.getByLabel('End year')).toHaveValue('2047');
+  await expect(form.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await form.getByRole('button', { name: 'Cancel' }).click();
+  await expect(form).toHaveCount(0);
+});
+
+test('A57 era ends show resize handles on hover and focus, and markers a grab cursor', async () => {
+  await zoomTo('Close');
+  await showYear(2040);
+  const handle = era('ERA-2040').getByTestId('era-handle-end');
+  await expect(handle).toHaveCSS('opacity', '0');
+  await expect(handle).toHaveCSS('cursor', 'col-resize');
+  await era('ERA-2040').focus();
+  await expect(handle).toHaveCSS('opacity', '1');
+  await expect(marker('E5')).toHaveCSS('cursor', 'grab');
+});
+
+test('A57 the selected marker shows a bar: a year back and forward, rename and delete, each with its key', async () => {
+  await zoomTo('Close');
+  await showYear(2090);
+  await marker('E10').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E10');
+  const bar = grid().getByTestId('marker-bar');
+  await expect(bar).toHaveCount(1);
+  await expect(bar.locator('kbd')).toHaveText(['←', '→', 'F2', 'Del']);
+  // Only the selected marker has one, beside it.
+  await expect(
+    grid().locator('.wg-marker[data-id="E10"] + [data-testid="marker-bar"]'),
+  ).toHaveCount(1);
+  await bar.getByRole('button', { name: 'A year later' }).click();
+  await expect(marker('E10')).toHaveAttribute('data-year', '2091');
+  await expect
+    .poll(async () => ((await getEvent('E10')).start as { year: number }).year)
+    .toBe(2091);
+  await bar.getByRole('button', { name: 'A year earlier' }).click();
+  await expect(marker('E10')).toHaveAttribute('data-year', '2090');
+  await expect
+    .poll(async () => ((await getEvent('E10')).start as { year: number }).year)
+    .toBe(2090);
+  // Rename opens the label as a field, as F2 does.
+  await bar.getByRole('button', { name: 'Rename' }).click();
+  const field = grid().getByTestId('marker-rename').locator('input');
+  await expect(field).toBeFocused();
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
+  // Delete asks first, in the bar; Keep it puts the bar back and the focus on the marker.
+  await bar.getByRole('button', { name: 'Delete' }).click();
+  await expect(bar).toContainText('Move Arctic summer sea ice is gone for good to the trash?');
+  await expect(bar.getByRole('button', { name: 'Keep it' })).toBeFocused();
+  await bar.getByRole('button', { name: 'Keep it' }).click();
+  await expect(marker('E10')).toBeFocused();
+  expect((await getEvent('E10')).deletedAt).toBeFalsy();
+  // The Delete key on the selected marker asks the same; the confirm trashes it as one step.
+  await page.keyboard.press('Delete');
+  await bar.getByRole('button', { name: 'Trash it' }).click();
+  await expect(marker('E10')).toHaveCount(0);
+  await expect(grid().getByTestId('marker-bar')).toHaveCount(0);
+  expect((await getEvent('E10')).deletedAt).toBeTruthy();
+  await blurAndUndo();
+  await expect(marker('E10')).toHaveCount(1);
+  expect((await getEvent('E10')).deletedAt).toBeFalsy();
+});
+
+test('A57 the marker bar delete confirm ends when the marker is deselected, and Trash it leaves the focus on the nearest marker', async () => {
+  await zoomTo('Close');
+  await showYear(2085);
+  const bar = grid().getByTestId('marker-bar');
+  await marker('E11').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E11');
+  await page.keyboard.press('Delete');
+  await expect(bar).toContainText('to the trash?');
+  // Selecting another marker ends the question.
+  await marker('E10').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E10');
+  await expect(bar).not.toContainText('to the trash?');
+  // Back on the first, the bar opens fresh, with the focus left on the marker.
+  await marker('E11').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E11');
+  await expect(bar.locator('kbd')).toHaveText(['←', '→', 'F2', 'Del']);
+  await expect(bar.getByRole('button', { name: 'Keep it' })).toHaveCount(0);
+  await expect(marker('E11')).toBeFocused();
+  // Trash it moves the focus to the nearest marker on the grid, not the page.
+  await page.keyboard.press('Delete');
+  await bar.getByRole('button', { name: 'Trash it' }).click();
+  await expect(marker('E11')).toHaveCount(0);
+  await expect(grid().locator('.wg-marker:focus')).toHaveCount(1);
+  expect(
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id ?? null),
+  ).not.toBe('E11');
+  await blurAndUndo();
+  await expect(marker('E11')).toHaveCount(1);
+  expect((await getEvent('E11')).deletedAt).toBeFalsy();
 });
 
 test('IP-11 IP-4 the axis and the world around follow the bible’s numbers', async () => {

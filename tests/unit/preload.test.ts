@@ -50,6 +50,18 @@ describe('ARCH-1 preload', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  test('A57 preload invoke sends the bible a write was made in beside the request, and refuses a bad one unsent', async () => {
+    invoke.mockResolvedValue({ entry: { _id: 'H1' }, warnings: [] });
+    const request = { collection: 'characters', id: 'H1', patch: { role: 'x' } } as const;
+    await api.invoke('entry.update', request, { bible: 'east-winds' }).catch(() => undefined);
+    expect(invoke).toHaveBeenCalledWith('nc:entry.update', request, { bible: 'east-winds' });
+    invoke.mockReset();
+    await expect(
+      api.invoke('entry.update', request, { bible: 'Not An ID!' } as never),
+    ).rejects.toThrow(/not valid/);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   test('ARCH-1 preload invoke rejects a bad response from main', async () => {
     invoke.mockResolvedValue({ connection: 'connected', bibles: [{ wrong: 1 }] });
     await expect(api.invoke('bible.list', {})).rejects.toThrow(/not valid/);

@@ -1,5 +1,13 @@
 import { useBibleSettings } from './bibleSettings';
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { ClaudeStatusWire, RunError } from '../../../shared/claude';
 import type { ProposalView } from '../../../shared/ipc';
 import { collectionInfo, entryTitle, isEntryCollection } from '../../../shared/schema';
@@ -36,24 +44,25 @@ import {
   sendHints,
 } from './captureLocal';
 import type { CaptureBible, FactChoice } from './captureLocal';
-import { FactCard } from './captureChips';
+import { ClaudeKeyField, FactCard } from './captureChips';
 import type { FactStand } from './captureChips';
 import './capture.css';
 
 /**
  * Capture (KB-6, KB-7, A34, A48): Cmd+K, or Add in the status bar, opens a box
- * on every screen. Enter runs the capture router (CR-6) before anything is
- * sent: each sentence becomes a fact with its section, chips and drafts. A
- * fact the router can place (Route A) files from the box without Claude; the
- * rest go to Claude at once with the writer's hints (CR-9), and their
- * proposals stream in as ED-7 diffs. File it writes the ticked drafts and
- * approves the ticked proposals as one undo step. Nothing is written before
- * File it (AI-3). Without a key, offline, or when every run fails, the text
- * is saved as an open question (KB-7).
+ * on every screen. The capture router (CR-6) runs on a short pause in the
+ * typing (A57), so each sentence shows as a fact with its section, chips and
+ * drafts before anything is pressed. A fact the router can place (Route A)
+ * files from the box without Claude: when every fact does, Enter is File it.
+ * Otherwise Enter sends the rest to Claude with the writer's hints (CR-9),
+ * their proposals stream in as ED-7 diffs, and File it (Cmd+Enter) writes the
+ * ticked drafts and approves the ticked proposals as one undo step. Nothing is
+ * written before File it (AI-3). Without a key, offline, or when every run
+ * fails, the text is saved as an open question (KB-7). No line in the box
+ * says how to use it: the buttons carry their keys.
  */
-/** What the field's hint says Enter does (CR-6), Alt+Enter (CR-5) and Shift+Enter. */
-const CAPTURE_HINT =
-  'Enter shows where each sentence goes; nothing is filed before File it. Alt+Enter sends it all to Claude. Shift+Enter for a new line.';
+/** A57: how long the typing rests before the router places the sentences. */
+const ROUTE_PAUSE_MS = 300;
 
 let boxOpen = false;
 const openListeners = new Set<() => void>();
@@ -82,6 +91,11 @@ export interface CaptureSendRequest {
    * offers it again. Never called once it is filed or kept for review.
    */
   onUnfiled?: () => void;
+  /**
+   * Called when the box files the sentence after it was handed back: the box
+   * was closed while its run was still going, then opened again and filed.
+   */
+  onFiled?: () => void;
 }
 /** What came of a hand-over: sent to Claude, the box busy with another capture, or not sent. */
 export type CaptureSendResult = 'sent' | 'busy' | 'not sent';
@@ -256,6 +270,46 @@ function standOf(routed: Routed, runs: readonly RunState[], i: number): FactStan
   return routed.facts[i]?.route === 'local' ? 'local' : 'unsent';
 }
 
+/** A57: what the writer set on a sentence while typing, kept by the sentence's text. */
+interface EditMark {
+  choice?: FactChoice;
+  ticked?: boolean;
+}
+type EditMarks = Record<string, EditMark>;
+
+interface TypedRouting {
+  facts: CaptureFact[];
+  choices: FactChoice[];
+  ticks: boolean[];
+}
+const NO_PREVIEW: TypedRouting = { facts: [], choices: [], ticks: [] };
+
+/**
+ * A57: route the text as typed with the chips and ticks set on its sentences.
+ * The plain routing names the sentences; a sentence that has a mark is routed
+ * again with its chips, so a chip stays with its sentence when another changes.
+ */
+/** A57: what a routing would file or send, to tell whether the box shows what Enter would do. */
+function routingKey(r: TypedRouting): string {
+  return JSON.stringify(
+    r.facts.map((f, i) => [f.text, f.route, f.asks, f.drafts, r.ticks[i] ?? true]),
+  );
+}
+
+function routeTyped(
+  body: string,
+  bible: CaptureBible,
+  storyYear: number,
+  marks: EditMarks,
+): TypedRouting {
+  const plain = routeWith(body, bible, storyYear, []);
+  const choices = plain.map((f) => marks[f.text]?.choice ?? NO_CHOICE);
+  const facts = choices.some((c) => c !== NO_CHOICE)
+    ? routeWith(body, bible, storyYear, choices)
+    : plain;
+  return { facts, choices, ticks: plain.map((f) => marks[f.text]?.ticked ?? true) };
+}
+
 /**
  * Mounted once in the frame. The box's state lives here, so closing the box
  * mid-run does not lose the run: its proposals still land, and a failure is
@@ -263,7 +317,7 @@ function standOf(routed: Routed, runs: readonly RunState[], i: number): FactStan
  */
 export function CaptureBox() {
   const settings = useBibleSettings();
-  const { lists } = useStore();
+  const { lists, version } = useStore();
   const open = useBoxOpen();
   const undo = useUndo();
   const ro = useWriteGuard();
@@ -280,18 +334,36 @@ export function CaptureBox() {
   const [saved, setSaved] = useState<{ id: string; title: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Routed with no key: only Route A facts, filed without Claude (KB-7, CR-6). */
-  const [noKey, setNoKey] = useState(false);
+  /** A57: the key field in place, opened by Add a Claude key. */
+  const [keyOpen, setKeyOpen] = useState(false);
+  /** A57: the text the router last placed while typing, and the writer's chips and ticks on it. */
+  const [quietText, setQuietText] = useState('');
+  const [editMarks, setEditMarks] = useState<EditMarks>({});
+  const [previewBible, setPreviewBible] = useState<CaptureBible | null>(null);
+  const textNow = useRef(text);
+  useEffect(() => {
+    textNow.current = text;
+  }, [text]);
+  /** One send at a time: Enter in the field and on the dialog must not both route. */
+  const sendingNow = useRef(false);
   const fetched = useRef(new Set<string>());
   const handled = useRef(new Set<string>());
   /** Request IDs whose `claude.capture` call has not answered yet; Stop stops them too. */
   const pending = useRef(new Set<string>());
-  /** The writer asked for Claude on a fact the box files: show the AI-6 confirmation. */
-  const [askAck, setAskAck] = useState(false);
+  /**
+   * AI-6: the Claude action pressed before consent. The sheet shows while it
+   * waits; Continue runs it, Not now drops it and leaves the box as it is.
+   */
+  const [ackFor, setAckFor] = useState<(() => void) | null>(null);
   /** The routed capture already ended in KB-7 (saved, or the text put back). */
   const settled = useRef(false);
   /** A56 (FN-6): the tray's hand-over still waiting to be filed; called back if it is not. */
   const handOver = useRef<(() => void) | null>(null);
+  /**
+   * The tray's hand-over the box still holds after handing it back: closed
+   * while its run was going, the capture stays in the box and may yet be filed.
+   */
+  const handedFrom = useRef<CaptureSendRequest | null>(null);
   const releaseHandOver = useCallback(() => {
     const back = handOver.current;
     handOver.current = null;
@@ -339,6 +411,41 @@ export function CaptureBox() {
     };
   }, [open]);
 
+  // A57: the router runs on a pause in the typing; an emptied box forgets its chips.
+  useEffect(() => {
+    const empty = !text.trim();
+    const t = setTimeout(
+      () => {
+        setQuietText(empty ? '' : text);
+        if (empty) {
+          setEditMarks({});
+        }
+      },
+      empty ? 0 : ROUTE_PAUSE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [text]);
+
+  // A57: the bible the typing is placed against, read when the box opens and after each write.
+  const timeKey = JSON.stringify(time.value);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    loadCaptureBible(
+      call,
+      settings.numbers.timelineEnd,
+      JSON.parse(timeKey) as StoryTimeValue,
+    ).then(
+      (b) => {
+        if (live) setPreviewBible(b);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, version, timeKey, settings.numbers.timelineEnd]);
+
   const reset = useCallback(() => {
     setPhase('edit');
     setRouted(null);
@@ -347,13 +454,15 @@ export function CaptureBox() {
     setFiled([]);
     setSaved(null);
     setMessage(null);
-    setNoKey(false);
-    setAskAck(false);
+    setKeyOpen(false);
+    setEditMarks({});
+    setAckFor(null);
     setNotFiled(0);
     setLeft(0);
     fetched.current = new Set();
     handled.current = new Set();
     settled.current = false;
+    handedFrom.current = null;
   }, []);
 
   /** KB-7: write the open question; null (with the reason shown) when it could not be saved. */
@@ -556,13 +665,38 @@ export function CaptureBox() {
   };
 
   /**
-   * Enter (CR-6): route first. Alt+Enter: send every fact to Claude on Route C (CR-5).
-   * `from` is a sentence handed over by the tray (FN-6), sent in its own year with its
-   * chips. True when a run to Claude started.
+   * Enter (CR-6). When every fact files here (Route A), Enter is File it: the
+   * drafts the box showed while typing are written at once (A57). Otherwise
+   * the facts that need Claude are sent, and the box shows them with the rest
+   * for one File it. Alt+Enter (`all`) sends every fact on Route C (CR-5).
+   * `one` sends a single fact from the typing view (its Send to Claude, or Ask
+   * Claude instead with `force`). `from` is a sentence handed over by the tray
+   * (FN-6), sent in its own year with its chips. True when a run to Claude
+   * started.
    */
-  const send = async (all = false, from?: CaptureSendRequest): Promise<boolean> => {
+  const send = async (
+    all = false,
+    from?: CaptureSendRequest,
+    one?: { text: string; force?: 'full' },
+  ): Promise<boolean> => {
+    if (sendingNow.current) return false;
+    sendingNow.current = true;
+    try {
+      return await sendNow(all, from, one);
+    } finally {
+      sendingNow.current = false;
+    }
+  };
+
+  const sendNow = async (
+    all: boolean,
+    from: CaptureSendRequest | undefined,
+    one: { text: string; force?: 'full' } | undefined,
+  ): Promise<boolean> => {
     const body = from ? from.text.trim() : text.trim();
     if (!body || phase !== 'edit' || busy || ro.off) return false;
+    // A new capture: nothing the box held before is still in it.
+    handedFrom.current = null;
     const storyTime: StoryTimeValue = from ? { year: from.year } : time.value;
     const firstChoices: FactChoice[] = from?.hint ? [{ hint: from.hint, typed: {} }] : [];
     setMessage(null);
@@ -576,13 +710,31 @@ export function CaptureBox() {
       setMessage(`The bible could not be read to place the text: ${plainError(e)}`);
       return false;
     }
-    const facts = routeWith(body, bible, storyTime.year, firstChoices);
+    // The chips and ticks set while typing go with their sentences (A57).
+    const typed = from ? null : routeTyped(body, bible, storyTime.year, editMarks);
+    const facts = typed ? typed.facts : routeWith(body, bible, storyTime.year, firstChoices);
     if (facts.length > CAPTURE_MAX_FACTS) {
       setBusy(false);
       setMessage(CAPTURE_TOO_MANY_FACTS);
       return false;
     }
-    if (!facts.length) {
+    // CR-6: the box must show what this press does. When the preview on screen is for older
+    // text, or for an older read of the bible, the press brings it up to date and does nothing
+    // else; the next press does what the button then says.
+    const shown =
+      !from && previewBible && quietText.trim() === body
+        ? routeTyped(body, previewBible, time.value.year, editMarks)
+        : null;
+    if (!from && (!typed || !shown || routingKey(shown) !== routingKey(typed))) {
+      setBusy(false);
+      // The text as it is now: typing may have gone on while the bible was read.
+      setQuietText(textNow.current);
+      setPreviewBible(bible);
+      return false;
+    }
+    // A card's Send addresses the sentence it shows, not a position in a new routing.
+    const oneAt = one ? facts.findIndex((f) => f.text === one.text) : -1;
+    if (!facts.length || (one && oneAt < 0)) {
       setBusy(false);
       return false;
     }
@@ -590,17 +742,57 @@ export function CaptureBox() {
     if (fresh) setStatus(fresh);
     setBusy(false);
     const keySet = !!fresh?.key.set;
-    if (all && !keySet) {
-      setMessage('No Anthropic key is set. Add one in Settings to ask Claude.');
+    // A57: a Claude button pressed with no key opens the key field instead.
+    if ((all || one) && !keySet) {
+      setKeyOpen(true);
       return false;
     }
-    const toClaude = new Set(facts.filter((f) => all || f.route !== 'local').map((f) => f.index));
+    const choices = typed ? typed.choices : facts.map((_, i) => firstChoices[i] ?? NO_CHOICE);
+    const ticks = typed ? typed.ticks : facts.map(() => true);
+    const toClaude = one
+      ? new Set([oneAt])
+      : new Set(facts.filter((f) => all || f.route !== 'local').map((f) => f.index));
+    // A57: every fact files here, so Enter is File it for the drafts shown while typing.
+    if (!toClaude.size && !from) {
+      const waits = facts.some((f, i) => openAsks(f, choices[i] ?? NO_CHOICE).length);
+      const ready = facts.some((f, i) => ticks[i] && !openAsks(f, choices[i] ?? NO_CHOICE).length);
+      if (waits || !ready) {
+        // The needed chips show under the field; nothing is filed.
+        setQuietText(body);
+        return false;
+      }
+      const r: Routed = {
+        text: body,
+        bible,
+        storyYear: storyTime.year,
+        storyTime,
+        facts,
+        choices,
+        ticks,
+        sentTo: facts.map(() => null),
+        asked: facts.map(() => false),
+      };
+      fetched.current = new Set();
+      handled.current = new Set();
+      settled.current = false;
+      setRuns([]);
+      setRouted(r);
+      setSaved(null);
+      setText('');
+      setPhase('routed');
+      await fileWith(r, []);
+      return false;
+    }
     // KB-7: with no key nothing can be sent, so a capture that needs Claude is kept as an open question.
     if (toClaude.size === facts.length && !keySet) {
       await saveAsQuestion(body);
       return false;
     }
-    if (toClaude.size && keySet && !fresh?.acknowledgedAt) return false;
+    if (toClaude.size && keySet && !fresh?.acknowledgedAt) {
+      // AI-6: the first press that would send asks for consent; the tray's own sheet comes first.
+      if (!from) setAckFor(() => () => void sendRef.current(all, undefined, one));
+      return false;
+    }
     // No key and a mixed capture: the box files its own facts and keeps the rest as the question.
     let asked: { id: string; title: string } | null = null;
     if (toClaude.size && !keySet) {
@@ -618,8 +810,8 @@ export function CaptureBox() {
       storyYear: storyTime.year,
       storyTime,
       facts,
-      choices: facts.map((_, i) => firstChoices[i] ?? NO_CHOICE),
-      ticks: facts.map(() => true),
+      choices,
+      ticks,
       sentTo: facts.map(() => null),
       asked: facts.map((f) => asked !== null && toClaude.has(f.index)),
     };
@@ -629,17 +821,17 @@ export function CaptureBox() {
     setRuns([]);
     setRouted(r);
     setSaved(asked);
-    setNoKey(!keySet);
     if (!from) setText('');
     setPhase('routed');
     if (!toClaude.size || !keySet) return false;
-    const ok = await startRuns(r, toClaude, all ? 'full' : undefined);
+    const ok = await startRuns(r, toClaude, all ? 'full' : one?.force);
     // The run never started (the bible could not save it, for example): keep it as a question.
     if (!ok && toClaude.size === facts.length) {
       settled.current = true;
       await saveAsQuestion(body);
     }
     if (ok && from?.onUnfiled) handOver.current = from.onUnfiled;
+    if (ok && from) handedFrom.current = from;
     return ok;
   };
 
@@ -654,6 +846,20 @@ export function CaptureBox() {
     sendHandler = async (r) => {
       if (stateRef.current.phase !== 'edit' || stateRef.current.busy) {
         setBoxOpen(true);
+        // FN-6: the box still holds this sentence, handed back when it closed while running.
+        // Sending it again takes it back: filed it stays gone, closed it comes back again.
+        const held = handedFrom.current;
+        if (
+          stateRef.current.phase === 'routed' &&
+          !stateRef.current.busy &&
+          held &&
+          !handOver.current &&
+          held.text.trim() === r.text.trim()
+        ) {
+          handOver.current = r.onUnfiled ?? null;
+          handedFrom.current = r;
+          return 'sent';
+        }
         return 'busy';
       }
       setBoxOpen(true);
@@ -686,14 +892,18 @@ export function CaptureBox() {
     const fresh = await call('claude.status', {}).catch(() => status);
     if (fresh) setStatus(fresh);
     if (!fresh?.key.set) return;
-    // AI-6: confirm what Claude sends first; the box shows the confirmation.
+    // AI-6: confirm what Claude sends first; Continue sends this fact.
     if (!fresh.acknowledgedAt) {
-      setAskAck(true);
+      setAckFor(() => () => void sendFactRef.current(i, force));
       return;
     }
     setMessage(null);
     await startRuns(routed, new Set([i]), force);
   };
+  const sendFactRef = useRef(sendFact);
+  useEffect(() => {
+    sendFactRef.current = sendFact;
+  });
 
   const stop = async () => {
     // A request still being answered is stopped by its ID too; main stops what it starts.
@@ -712,23 +922,25 @@ export function CaptureBox() {
           openAsks(f, routed.choices[f.index] ?? NO_CHOICE).length,
       )
     : [];
-  const localFacts = routed
-    ? routed.facts.filter((f) => standOf(routed, runs, f.index) === 'local')
-    : [];
-  /** Facts that need Claude and were not sent (or were handed back); File it leaves them. */
-  const unsentFacts = routed
-    ? routed.facts.filter((f) => standOf(routed, runs, f.index) === 'unsent')
-    : [];
-  const allCards = runs.flatMap(orderedCards);
   /** The text of facts the box still holds unfiled, to put back in the box. */
   const textOf = (fs: readonly CaptureFact[]) => fs.map((f) => f.text).join(' ');
 
-  const file = async () => {
-    if (!routed || phase !== 'routed' || running || busy || ro.off || waiting.length) return;
-    const ticked = localFacts.filter((f) => routed.ticks[f.index]);
+  /**
+   * File it for a routed capture and its runs: the ticked drafts, then the
+   * proposals, as one undo step (CR-9). Enter calls it straight after routing
+   * when every fact files here (A57).
+   */
+  const fileWith = async (r: Routed, rs: readonly RunState[]) => {
+    const stand = (i: number) => standOf(r, rs, i);
+    const localFacts = r.facts.filter((f) => stand(f.index) === 'local');
+    if (localFacts.some((f) => openAsks(f, r.choices[f.index] ?? NO_CHOICE).length)) return;
+    /** Facts that need Claude and were not sent (or were handed back); File it leaves them. */
+    const unsentFacts = r.facts.filter((f) => stand(f.index) === 'unsent');
+    const allCards = rs.flatMap(orderedCards);
+    const ticked = localFacts.filter((f) => r.ticks[f.index]);
     const draftFacts: number[] = [];
     const drafts = ticked.flatMap((f) => {
-      const ds = draftsWith(f, routed.choices[f.index] ?? NO_CHOICE);
+      const ds = draftsWith(f, r.choices[f.index] ?? NO_CHOICE);
       for (const _ of ds) draftFacts.push(f.index);
       return ds;
     });
@@ -744,23 +956,27 @@ export function CaptureBox() {
       const approved = allCards.length
         ? await fileCapture(call, tickedCards, untickedCards)
         : NO_FILING;
-      const r = mergeFilings(local, approved);
-      if (r.command) undo.record(r.command);
+      const merged = mergeFilings(local, approved);
+      if (merged.command) undo.record(merged.command);
       // A draft that could not be written keeps its sentence: it goes back in the box with the unsent facts.
       const failedFacts = new Set(
         local.failed.map((f) => draftFacts[Number(f.id.replace('draft ', ''))] ?? -1),
       );
-      const back = routed.facts.filter(
+      const back = r.facts.filter(
         (f) => failedFacts.has(f.index) || unsentFacts.some((u) => u.index === f.index),
       );
       if (back.length) setText((t) => [t.trim(), textOf(back)].filter(Boolean).join(' '));
       setLeft(back.length);
-      setFiled(r.filed);
+      setFiled(merged.filed);
       setNotFiled(approved.failed.length);
       setPhase('filed');
       // A56 (FN-6): filed, the tray's sentence stays gone; nothing filed, it goes back.
-      if (r.filed.length) handOver.current = null;
-      else releaseHandOver();
+      if (merged.filed.length) {
+        // Handed back at a close while running, then filed: the tray takes it out again.
+        if (!handOver.current) handedFrom.current?.onFiled?.();
+        handOver.current = null;
+      } else releaseHandOver();
+      handedFrom.current = null;
       const notes: string[] = [];
       if (local.failed.length) {
         notes.push(
@@ -778,6 +994,11 @@ export function CaptureBox() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const file = async () => {
+    if (!routed || phase !== 'routed' || running || busy || ro.off || waiting.length) return;
+    await fileWith(routed, runs);
   };
 
   /**
@@ -799,36 +1020,53 @@ export function CaptureBox() {
     } else if (phase === 'filed' || phase === 'saved') reset();
   };
 
-  /** Hide the box and keep the routed capture as it is (Decline in the routed view). */
-  const hide = () => setBoxOpen(false);
-
   /**
    * Review later: the proposals wait in the review queue, and the facts the
    * box still holds (its own, and those Claude did not take) are kept as the
    * KB-7 open question (CR-6).
    */
   const later = async () => {
-    if (!routed) return close();
+    // A57: Review later while typing keeps the text as it stands.
+    if (!routed) return text.trim() ? saveAsQuestion(text.trim()) : close();
     const kept = routed.facts.filter((f) => {
       const st = standOf(routed, runs, f.index);
       return st === 'local' || st === 'unsent';
     });
     // Review later keeps the tray's sentence (its proposals wait in the review queue).
     handOver.current = null;
+    handedFrom.current = null;
     if (!kept.length) return close();
     const body = kept.length === routed.facts.length ? routed.text : textOf(kept);
     settled.current = true;
     await saveAsQuestion(body);
   };
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
-  const claudeOff = noKey
-    ? 'No Anthropic key is set. Add one in Settings to ask Claude.'
-    : ro.off
-      ? (ro.tip.title ?? 'The bible is read-only.')
-      : null;
-  // AI-6 in the routed view: only when a card needs Claude, or the writer asked for it.
-  const showAck = needsAck && (askAck || unsentFacts.length > 0);
+  const keyMissing = status !== null && !status.key.set;
+
+  // A57: the facts of the text as typed, placed on a pause, with the writer's chips and ticks.
+  const preview = useMemo(() => {
+    const body = quietText.trim();
+    if (phase !== 'edit' || !body || !previewBible) return NO_PREVIEW;
+    const p = routeTyped(body, previewBible, time.value.year, editMarks);
+    return p.facts.length > CAPTURE_MAX_FACTS ? NO_PREVIEW : p;
+  }, [phase, quietText, previewBible, time.value.year, editMarks]);
+  /** A chip or tick changed while typing: kept by the sentence's text, so editing elsewhere keeps it. */
+  const markEdit = (i: number, change: (m: EditMark) => EditMark) => {
+    const key = preview.facts[i]?.text;
+    if (key === undefined) return;
+    setEditMarks((cur) => ({ ...cur, [key]: change(cur[key] ?? {}) }));
+  };
+  const chooseEdit = (
+    i: number,
+    patch: { hint?: Omit<CaptureHint, 'fact'>; typed?: Record<string, string> },
+  ) =>
+    markEdit(i, (m) => {
+      const c = m.choice ?? NO_CHOICE;
+      return {
+        ...m,
+        choice: { hint: { ...c.hint, ...patch.hint }, typed: { ...c.typed, ...patch.typed } },
+      };
+    });
 
   return (
     <>
@@ -845,15 +1083,42 @@ export function CaptureBox() {
           routed={routed}
           runs={runs}
           lists={lists}
-          noKey={noKey}
-          claudeOff={claudeOff}
+          keyMissing={keyMissing}
+          keyOpen={keyOpen}
+          onAddKey={() => setKeyOpen(true)}
+          onKeyClosed={() => setKeyOpen(false)}
+          onKeySaved={(s) => {
+            setStatus(s);
+            setKeyOpen(false);
+          }}
+          preview={{
+            ...preview,
+            bible: previewBible,
+            current: quietText.trim() === text.trim(),
+          }}
+          onChooseEdit={chooseEdit}
+          onTickEdit={(i, t) => markEdit(i, (m) => ({ ...m, ticked: t }))}
+          onSendOne={(i, force) => {
+            const shownText = preview.facts[i]?.text;
+            if (shownText !== undefined) void send(false, undefined, { text: shownText, force });
+          }}
           waiting={waiting.length}
-          showAck={showAck}
+          ackOpen={ackFor !== null}
+          onDeclineAck={() => setAckFor(null)}
           left={left}
-          onHide={hide}
           timeWords={time.words}
-          status={status}
-          onAcknowledge={async () => setStatus(await call('claude.acknowledge', {}))}
+          onAcknowledge={async () => {
+            const go = ackFor;
+            try {
+              setStatus(await call('claude.acknowledge', {}));
+            } catch (e) {
+              setMessage(plainError(e));
+              return;
+            } finally {
+              setAckFor(null);
+            }
+            go?.();
+          }}
           setTicked={(id, ticked) =>
             setRuns((rs) =>
               rs.map((r) => ({
@@ -905,17 +1170,36 @@ function CaptureDialog(props: {
   routed: Routed | null;
   runs: RunState[];
   lists: ReturnType<typeof useStore>['lists'];
-  noKey: boolean;
-  claudeOff: string | null;
+  /** No Anthropic key is set: the Claude buttons become Add a Claude key (A57). */
+  keyMissing: boolean;
+  /** The key field shows in place. */
+  keyOpen: boolean;
+  onAddKey(): void;
+  onKeyClosed(): void;
+  onKeySaved(status: ClaudeStatusWire): void;
+  /** A57: the facts of the text as typed, before Enter. `current` is false while the typing has not paused. */
+  preview: {
+    facts: CaptureFact[];
+    choices: FactChoice[];
+    ticks: boolean[];
+    bible: CaptureBible | null;
+    current: boolean;
+  };
+  onChooseEdit(
+    fact: number,
+    patch: { hint?: Omit<CaptureHint, 'fact'>; typed?: Record<string, string> },
+  ): void;
+  onTickEdit(fact: number, ticked: boolean): void;
+  onSendOne(fact: number, force?: 'full'): void;
   /** Route A facts waiting for a chip. */
   waiting: number;
-  /** AI-6 in the routed view: a card needs Claude and the writer has not confirmed. */
-  showAck: boolean;
+  /** AI-6: a Claude action waits for consent; the sheet shows over the box. */
+  ackOpen: boolean;
+  /** Not now: only the sheet closes, and the box keeps its text. */
+  onDeclineAck(): void;
   /** Sentences the last File it put back in the box. */
   left: number;
-  onHide(): void;
   timeWords: string;
-  status: ClaudeStatusWire | null;
   onAcknowledge(): Promise<void>;
   setTicked(id: string, ticked: boolean): void;
   setFactTicked(fact: number, ticked: boolean): void;
@@ -941,8 +1225,8 @@ function CaptureDialog(props: {
   onAnother(): void;
   onSaveQuestion(): void;
 }) {
-  const { phase, status, routed, runs, saved } = props;
-  const ids = { title: useId(), input: useId(), hint: useId(), time: useId() };
+  const { phase, routed, runs, saved } = props;
+  const ids = { title: useId(), time: useId() };
   const dialogRef = useRef<HTMLDivElement>(null);
   const area = useRef<RichTextHandle>(null);
   const opener = useRef<Element | null>(null);
@@ -974,7 +1258,6 @@ function CaptureDialog(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settledPhase, phase === 'running']);
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
   const inBox = phase === 'routed' || phase === 'running';
   const cards = runs.flatMap(orderedCards);
   const localFacts = routed
@@ -991,9 +1274,30 @@ function CaptureDialog(props: {
   // CR-9: facts that need Claude and were not sent count too, so the button says what stays behind.
   const total = localFacts.length + cards.length + unsent;
   const ticked = localTicked + cards.filter((c) => c.ticked).length;
-  const fileLabel = ticked === total ? 'File it' : `File ${ticked} of ${total}`;
+  // A57: the button says how many it files; "of" counts what stays behind.
+  const fileLabel = ticked === total ? `File ${ticked}` : `File ${ticked} of ${total}`;
   const onlyClaude = routed !== null && localFacts.length === 0 && unsent === 0;
-  const keyMissing = status !== null && !status.key.set;
+  const { keyMissing, preview } = props;
+  const previewIndex = preview.bible?.index ?? null;
+
+  // A57: what Enter does with the text as typed, said by the button it presses.
+  const askOf = (f: CaptureFact) => openAsks(f, preview.choices[f.index] ?? NO_CHOICE);
+  const pLocal = preview.facts.filter((f) => f.route === 'local');
+  const pClaude = preview.facts.length - pLocal.length;
+  const pReady = pLocal.filter((f) => (preview.ticks[f.index] ?? true) && !askOf(f).length).length;
+  const pWaits = pLocal.some((f) => askOf(f).length > 0);
+  const enterLabel = !preview.facts.length
+    ? 'File'
+    : pClaude === 0
+      ? `File ${pReady}`
+      : keyMissing
+        ? `Save ${pClaude} as a question`
+        : `Send ${pClaude} to Claude`;
+  const enterOff =
+    props.busy ||
+    props.readOnly.off ||
+    !props.text.trim() ||
+    (preview.current && preview.facts.length > 0 && pClaude === 0 && (pWaits || pReady === 0));
   const anyUnread = runs.some((r) => r.unread.length > 0);
 
   /** The runs drawn under a fact: those whose first fact it is. */
@@ -1023,6 +1327,16 @@ function CaptureDialog(props: {
           } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && phase === 'routed') {
             e.preventDefault();
             props.onFile();
+          } else if (
+            e.key === 'Enter' &&
+            (e.metaKey || e.ctrlKey) &&
+            phase === 'edit' &&
+            !(e.target instanceof Element && e.target.closest('.capture-input'))
+          ) {
+            // Cmd+Enter from a chip or a button while typing: the same as Enter in the field,
+            // which handles its own keys.
+            e.preventDefault();
+            props.onSend(false);
           }
         }}
       >
@@ -1038,56 +1352,105 @@ function CaptureDialog(props: {
           </button>
         </header>
 
-        {needsAck && phase === 'edit' && (
-          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onClose} />
+        {props.ackOpen && (
+          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onDeclineAck} />
         )}
-        {props.showAck && inBox && (
-          // Decline here hides the box and keeps the routed capture for later.
-          <Disclosure onConfirm={() => void props.onAcknowledge()} onDecline={props.onHide} />
+
+        {props.keyOpen && (
+          <ClaudeKeyField onSaved={props.onKeySaved} onCancel={props.onKeyClosed} />
         )}
 
         {phase === 'edit' && (
-          <div className="field">
-            <label id={ids.input}>What do you want to add?</label>
+          <div className="capture-edit">
             <RichText
               handle={area}
               mode="inline"
               size="quick"
               className="capture-input"
-              labelledBy={ids.input}
-              describedBy={ids.hint}
+              labelledBy={ids.title}
               value={props.text}
               onChange={props.setText}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-                  // With no key, Alt+Enter has nothing to send to.
-                  if (!(e.altKey && keyMissing)) props.onSend(e.altKey);
-                  return true;
-                }
-                return false;
+                if (e.key !== 'Enter' || e.shiftKey) return false;
+                // Alt+Enter: Ask Claude instead (CR-5), or the key field when there is no key.
+                if (e.altKey && !e.metaKey && !e.ctrlKey) {
+                  if (keyMissing) props.onAddKey();
+                  else props.onSend(true);
+                } else props.onSend(false);
+                return true;
               }}
               testId="capture-input"
             />
-            <p className="capture-hint" id={ids.hint}>
-              {CAPTURE_HINT}
-              {needsAck ? ' Confirm what Claude sends first.' : ''}
-              {props.readOnly.off ? ` ${props.readOnly.tip.title ?? ''}` : ''}
-            </p>
-            <div className="row">
+            {preview.facts.length > 0 && previewIndex && (
+              <ol className="capture-facts" aria-label="Where it goes" data-testid="capture-facts">
+                {preview.facts.map((f, i) => (
+                  <li key={i}>
+                    <FactCard
+                      fact={f}
+                      choice={preview.choices[i] ?? NO_CHOICE}
+                      stand={f.route === 'local' ? 'local' : 'unsent'}
+                      ticked={preview.ticks[i] ?? true}
+                      first={false}
+                      lists={props.lists}
+                      index={previewIndex}
+                      busy={props.busy}
+                      claudeOff={props.readOnly.off}
+                      keyMissing={keyMissing}
+                      onTick={(t) => props.onTickEdit(i, t)}
+                      onChoose={(patch) => props.onChooseEdit(i, patch)}
+                      onAskClaude={() => props.onSendOne(i, 'full')}
+                      onSend={() => props.onSendOne(i)}
+                    />
+                  </li>
+                ))}
+              </ol>
+            )}
+            {props.readOnly.off && props.readOnly.tip.title && (
+              <p className="capture-note">{props.readOnly.tip.title}</p>
+            )}
+            <div className="row capture-actions">
               <button
                 type="button"
-                className="btn"
-                disabled={props.busy || props.readOnly.off || !props.text.trim() || keyMissing}
-                title={
-                  keyMissing
-                    ? 'No Anthropic key is set. Add one in Settings to ask Claude.'
-                    : undefined
-                }
-                onClick={() => props.onSend(true)}
-                data-testid="capture-send-all"
+                className="btn primary"
+                disabled={enterOff}
+                onClick={() => props.onSend(false)}
+                data-testid="capture-file"
+                data-current={preview.current && preview.bible !== null}
               >
-                Send it all to Claude <kbd>Alt Enter</kbd>
+                {enterLabel} <kbd>Enter</kbd>
               </button>
+              {keyMissing ? (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={props.readOnly.off}
+                  onClick={props.onAddKey}
+                  data-testid="capture-add-key"
+                >
+                  Add a Claude key
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={props.busy || props.readOnly.off || !props.text.trim()}
+                  onClick={() => props.onSend(true)}
+                  data-testid="capture-send-all"
+                >
+                  Ask Claude instead <kbd>Alt Enter</kbd>
+                </button>
+              )}
+              {preview.facts.length > 0 && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={props.busy || props.readOnly.off}
+                  onClick={props.onLater}
+                  data-testid="capture-later"
+                >
+                  Review later
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1098,11 +1461,6 @@ function CaptureDialog(props: {
           </blockquote>
         )}
 
-        {inBox && props.noKey && (
-          <p className="capture-note" data-testid="capture-no-key">
-            No Anthropic key is set, so these file here without Claude.
-          </p>
-        )}
         {inBox && props.saved && (
           <p className="capture-note" data-testid="capture-asked">
             The sentences that need Claude were saved as an open question:{' '}
@@ -1137,7 +1495,9 @@ function CaptureDialog(props: {
                     lists={props.lists}
                     index={routed.bible.index}
                     busy={props.busy || phase === 'running'}
-                    claudeOff={props.claudeOff}
+                    claudeOff={props.readOnly.off}
+                    keyMissing={keyMissing}
+                    onAddKey={props.onAddKey}
                     onTick={(t) => props.setFactTicked(i, t)}
                     onChoose={(patch) => props.onChoose(i, patch)}
                     onAskClaude={() => props.onAskClaude(i)}
@@ -1236,18 +1596,6 @@ function CaptureDialog(props: {
                 Review later
               </button>
             </div>
-            {props.waiting > 0 && (
-              <p className="capture-needed" data-testid="capture-file-waits">
-                File it waits for the highlighted chips.
-              </p>
-            )}
-            {unsent > 0 && (
-              <p className="capture-note" data-testid="capture-stays">
-                {unsent === 1
-                  ? 'One sentence needs Claude and was not sent. File it leaves it in the box.'
-                  : `${unsent} sentences need Claude and were not sent. File it leaves them in the box.`}
-              </p>
-            )}
           </div>
         )}
 
@@ -1259,8 +1607,8 @@ function CaptureDialog(props: {
             {props.left > 0 && (
               <p data-testid="capture-left">
                 {props.left === 1
-                  ? 'One sentence was not filed and is back in the box. Add another to send or file it.'
-                  : `${props.left} sentences were not filed and are back in the box. Add another to send or file them.`}
+                  ? 'One sentence was not filed and is back in the box.'
+                  : `${props.left} sentences were not filed and are back in the box.`}
               </p>
             )}
             {props.filed.length === 0 ? (

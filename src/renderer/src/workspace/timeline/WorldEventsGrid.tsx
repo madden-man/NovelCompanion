@@ -80,6 +80,8 @@ export function WorldEventsGrid(props: {
   eraEdits?: EraEdits;
   /** IP-4: a marker's label renamed in place (F2 or a double-click). */
   onRename?: (id: string, title: string) => Promise<void>;
+  /** A57: the selected marker's bar moves its event to the trash. */
+  onDelete?: (id: string) => Promise<void>;
 }) {
   const { events, storyYear } = props;
   const vp = useGridViewport(props.span, props.zoom, storyYear);
@@ -157,6 +159,7 @@ export function WorldEventsGrid(props: {
       .join(', ');
 
   const rename = props.onRename;
+  const del = props.onDelete;
   const markers = (line: Parameters<typeof lineMarkers>[0]) =>
     lineMarkers(line).map((m) => {
       const e = byId.get(m.id);
@@ -172,6 +175,7 @@ export function WorldEventsGrid(props: {
           onActivate={() => props.onOpen(m.id)}
           title={e.title}
           onRename={rename ? (t) => rename(m.id, t) : undefined}
+          bar={del ? { onDelete: () => del(m.id) } : undefined}
         />
       );
     });
@@ -214,7 +218,12 @@ export function WorldEventsGrid(props: {
               disabled={props.readOnly}
               onClick={() => openDraft(line.row.key, storyYear, line.y + line.height)}
             >
-              {line.row.label}
+              <span className="wg-row-name">{line.row.label}</span>
+              {!props.readOnly && (
+                <span className="wg-plus" aria-hidden="true">
+                  +
+                </span>
+              )}
             </button>
             <GridTrack
               layout={layout}
@@ -279,14 +288,11 @@ function AddForm(props: {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const y = Number(year);
+    // A57: the year boxes take digits only and Save waits for a title and a year.
     const t = title.trim();
-    if (!t) return setError('Give the event a title.');
-    if (!Number.isInteger(y)) return setError('The year is a whole number, such as 2042.');
-    const endYear = end.trim() === '' ? null : Number(end);
-    if (endYear !== null && !Number.isInteger(endYear)) {
-      return setError('The end year is a whole number, or leave it blank.');
-    }
+    if (!t || year === '') return;
+    const y = Number(year);
+    const endYear = end === '' ? null : Number(end);
     setBusy(true);
     setError(null);
     try {
@@ -321,21 +327,19 @@ function AddForm(props: {
           <label htmlFor={ids.year}>Year</label>
           <input
             id={ids.year}
-            type="number"
             inputMode="numeric"
             value={year}
-            onChange={(e) => setYear(e.target.value)}
+            onChange={(e) => setYear(digits(e.target.value))}
           />
         </div>
         <div className="field">
           <label htmlFor={ids.end}>End year</label>
           <input
             id={ids.end}
-            type="number"
             inputMode="numeric"
             value={end}
             placeholder="None"
-            onChange={(e) => setEnd(e.target.value)}
+            onChange={(e) => setEnd(digits(e.target.value))}
           />
         </div>
       </div>
@@ -354,7 +358,11 @@ function AddForm(props: {
         </p>
       )}
       <span className="row tight">
-        <button type="submit" className="btn small primary" disabled={busy}>
+        <button
+          type="submit"
+          className="btn small primary"
+          disabled={busy || title.trim() === '' || year === ''}
+        >
           Save
         </button>
         <button type="button" className="btn small" onClick={props.onCancel}>
@@ -364,3 +372,6 @@ function AddForm(props: {
     </form>
   );
 }
+
+/** A57: a year box keeps only the digits typed into it. */
+const digits = (t: string): string => t.replace(/\D/g, '').slice(0, 5);

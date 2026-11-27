@@ -66,20 +66,36 @@ export function parseText(text: string, allowEmpty = true, label?: string): Pars
   return { ok: true, value: v };
 }
 
+/**
+ * A57: what a year or number box lets through as it is typed. A year takes
+ * digits and a leading minus; a number also takes one decimal point unless
+ * `integer`; a number whose smallest value is 0 or more takes no minus. Spaces
+ * are dropped. Anything else is refused, so the box never holds a value its
+ * kind cannot read, and no "write it as digits" message can occur.
+ */
+export function typedNumber(
+  kind: 'year' | 'number',
+  text: string,
+  opts: { integer?: boolean; min?: number } = {},
+): string | null {
+  const t = text.replace(/\s+/gu, '');
+  const minus = opts.min === undefined || opts.min < 0 ? '-?' : '';
+  const body = kind === 'year' || opts.integer ? '\\d*' : '\\d*(\\.\\d*)?';
+  return new RegExp(`^${minus}${body}$`, 'u').test(t) ? t : null;
+}
+
 /** A year: digits only, with an optional minus sign, from -10000 to 10000. */
-export function parseYear(text: string, allowEmpty = false): Parsed<number | null> {
+export function parseYear(text: string, allowEmpty = false, label?: string): Parsed<number | null> {
   const t = text.trim();
   if (t === '') {
-    return allowEmpty
-      ? { ok: true, value: null }
-      : { ok: false, message: 'Needs a year. Write it as digits, for example 2045.' };
+    return allowEmpty ? { ok: true, value: null } : { ok: false, message: emptyMessage(label) };
   }
   if (!/^-?\d+$/.test(t)) {
-    return { ok: false, message: `${t} is not a year. Write it as digits, for example 2045.` };
+    return { ok: false, message: `${t} is not a year.` };
   }
   const year = Number(t);
   if (year < -10000 || year > 10000) {
-    return { ok: false, message: `${year} is outside the years the app keeps (-10000 to 10000).` };
+    return { ok: false, message: `${year} is outside the years the app keeps, -10000 to 10000.` };
   }
   return { ok: true, value: year };
 }
@@ -88,20 +104,19 @@ export function parseYear(text: string, allowEmpty = false): Parsed<number | nul
 export function parseNumber(
   text: string,
   opts: { allowEmpty?: boolean; integer?: boolean; min?: number; max?: number } = {},
+  label?: string,
 ): Parsed<number | null> {
   const t = text.trim();
   if (t === '') {
     return opts.allowEmpty
       ? { ok: true, value: null }
-      : { ok: false, message: 'Needs a number. Write it as digits.' };
+      : { ok: false, message: emptyMessage(label) };
   }
   const re = opts.integer ? /^-?\d+$/ : /^-?(\d+(\.\d*)?|\.\d+)$/;
   if (!re.test(t)) {
     return {
       ok: false,
-      message: opts.integer
-        ? `${t} is not a whole number. Write it as digits.`
-        : `${t} is not a number. Write it as digits.`,
+      message: opts.integer ? `${t} is not a whole number.` : `${t} is not a number.`,
     };
   }
   const n = Number(t);
@@ -114,9 +129,47 @@ export function parseNumber(
   return { ok: true, value: n };
 }
 
-/** A one-box date (SM-1): the parser and its "could not read" words from `dates.ts`. */
+/** A month or day typed so far: one digit on the way, or two digits from 1 to `max`. */
+function partOk(digits: string | undefined, max: number): boolean {
+  if (digits === undefined || digits.length < 2) return true;
+  const n = Number(digits);
+  return n >= 1 && n <= max;
+}
+
+/**
+ * A57: what a one-box date lets through as it is typed: digits and dashes in
+ * the shape of a year, a year and month, or a full date (a leading minus for
+ * a year before 0), with a year from -10000 to 10000, a month from 1 to 12 and
+ * a day from 1 to 31. Spaces are dropped. A blank year before a dash is let
+ * through too, so clearing the year of a full date to type another works.
+ * Anything else is refused, so the box never holds what it cannot read and no
+ * sentence about how to write a date is needed.
+ */
+export function typedDate(text: string): string | null {
+  const t = text.replace(/\s+/gu, '');
+  const m = /^(-?)(\d{0,5})(?:-(\d{0,2})(?:-(\d{0,2}))?)?$/u.exec(t);
+  if (!m) return null;
+  const [, minus = '', year = '', month, day] = m;
+  if (year && Math.abs(Number(year)) > 10000) return null;
+  if (day !== undefined && !month) return null;
+  const fits = (mo: string | undefined, d: string | undefined) => partOk(mo, 12) && partOk(d, 31);
+  if (fits(month, day)) return t;
+  // "-03-14": a full date whose year was cleared, read as month and day.
+  if (minus && year.length <= 2 && month !== undefined && day === undefined && fits(year, month)) {
+    return t;
+  }
+  return null;
+}
+
+/**
+ * A one-box date (SM-1). The box takes only digits and dashes (`typedDate`),
+ * so what is left to refuse is a date half typed, said in a few words. A
+ * trailing dash is dropped, so "1990-" reads as 1990.
+ */
 export function parseDate(text: string, box: DateBox): Parsed<StoryDate | null> {
-  return parseDateText(text, box);
+  const t = text.trim().replace(/(\d)-$/u, '$1');
+  const r = parseDateText(t, box);
+  return r.ok ? r : { ok: false, message: `${t} is not a date.` };
 }
 
 /** The text a closed field shows, or '' when it holds nothing (the placeholder shows then). */
@@ -205,7 +258,7 @@ export function addNewReducer(state: AddNewState, action: AddNewAction): AddNewS
     case 'submit':
       if (state.step !== 'naming') return state;
       if (!state.label.trim()) {
-        return { ...state, error: 'Write a name for the new item first.' };
+        return { ...state, error: 'The new item has no name.' };
       }
       return { step: 'adding', label: state.label.trim() };
     case 'added':

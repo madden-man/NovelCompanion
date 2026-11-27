@@ -13,13 +13,13 @@ export const PLAIN = {
     'The app could not reach the MongoDB deployment. Check your network connection and try again.',
   slow: 'The database took too long to answer. Check your network connection and try again.',
   duplicate:
-    'Something with the same ID is already saved, so nothing changed. Reload the screen with Cmd+R and try again.',
+    'Something with the same ID is already saved, so nothing changed. Reload the screen and try again.',
   database:
     'The database refused the change, so nothing was saved. Try again, and restart the app if it keeps happening.',
   invalidRequest:
-    'The app could not use what this screen sent, so nothing changed. Reload the screen with Cmd+R and try again.',
+    'The app could not use what this screen sent, so nothing changed. Reload the screen and try again.',
   invalidResponse:
-    'The app could not read what it got back, so nothing is shown. Reload the screen with Cmd+R and try again.',
+    'The app could not read what it got back, so nothing is shown. Reload the screen and try again.',
   invalidEntry:
     'This was not saved because a field has a value the app cannot store. Fix the marked field and try again.',
   network: 'The app could not reach the network. Check your connection and try again.',

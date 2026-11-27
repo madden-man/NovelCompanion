@@ -20,6 +20,7 @@ import { useBibleSettings } from '../bibleSettings';
 import { captureNav } from '../capture';
 import { relativesLine } from '../character';
 import { useChapterNumbers, useEntries, useList, useStore } from '../data';
+import { useCapabilities } from '../../capabilities';
 import type { Entry } from '../data';
 import {
   Editable,
@@ -101,15 +102,13 @@ function useStrandWriter(chapterId: string | null) {
       label: (before: Entry) => string,
       info: SaveInfo = {},
     ): Promise<Entry> => {
-      if (!chapterId) throw new EditableError('Pick a chapter in Writing to change its strand.');
+      if (!chapterId) throw new EditableError('This strand has no chapter.');
       await undo.flush();
       const before = (await call('entry.get', { collection: 'chapters', id: chapterId }))
         .entry as Entry;
       const next = edit(strandsOf(before));
       if (!next) {
-        throw new EditableError(
-          'This strand is no longer in the chapter. Pick it again in Writing.',
-        );
+        throw new EditableError('This strand is no longer in the chapter.');
       }
       const after = (
         await call('entry.update', {
@@ -688,9 +687,7 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
       </div>
       {picking && (
         <div className="field rel-pick">
-          <label htmlFor={pickId}>
-            Places of this strand (empty: where the point of view lived)
-          </label>
+          <label htmlFor={pickId}>Places of this strand</label>
           <select
             id={pickId}
             multiple
@@ -792,8 +789,7 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
           </div>
         ) : (
           <p className="example-note" data-testid="culture-gap">
-            No setting for {strand.year}: pick places for this strand, or add a place lived
-            {strand.povName ? ` for ${strand.povName}` : ''}.
+            No setting for {strand.year}.
           </p>
         ))}
     </section>
@@ -823,7 +819,7 @@ function DeskEvents(props: {
     setError(null);
     const categoryId = categories?.items[0]?.id;
     if (!categoryId) {
-      setError('Add an event category on the Lists screen first.');
+      setError('No event category yet.');
       return;
     }
     try {
@@ -1003,6 +999,7 @@ export function RelevantBody(props: {
   onOpenPage?: (pageId: string) => void;
 }) {
   const { selection: sel, onOpen } = props;
+  const can = useCapabilities();
   const chapters = useEntries('chapters');
   const strand =
     sel.strands.find((s) => !!props.writing?.strandId && s.strandId === props.writing.strandId) ??
@@ -1090,7 +1087,7 @@ export function RelevantBody(props: {
           <p className="example-note">{sel.ids.length} entries.</p>
         </div>
       </details>
-      {chapter && <Reimport chapter={chapter} />}
+      {chapter && can('manuscript.read') && <Reimport chapter={chapter} />}
     </section>
   );
 }

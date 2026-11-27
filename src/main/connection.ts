@@ -1,18 +1,28 @@
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { TopologyDescriptionChangedEvent } from 'mongodb';
 import { connect } from './db/connection';
 import type { Store } from './db/connection';
 import { latestSnapshot } from './db/readOnly';
-import { cleanMongoUri, maskMongoUri } from './secrets';
-import type { MongoUriStore } from './secrets';
+import { cleanMongoUri, maskMongoUri } from './host/uri';
+import type { MongoUriStore } from './host/uri';
 import type { ConnectionStatus, MongoSettingsWire } from '../shared/ipcApp';
 import type { SnapshotInfo } from '../shared/domain/snapshots';
+import { BibleSlug } from '../shared/bible';
 
-/** NF-3, ARCH-6: what the window says when MongoDB cannot be reached. */
-export const UNREACHABLE =
-  'The app could not reach the MongoDB deployment. Check your network connection, then click Try again.';
-const WITH_SNAPSHOT = ' Until then you can open the most recent local snapshot read-only.';
+/**
+ * NF-3, ARCH-6: what the window says when MongoDB cannot be reached. It says
+ * only what went wrong; Try again and the button naming the snapshot are the
+ * next steps beside it.
+ */
+export const UNREACHABLE = 'The app could not reach the MongoDB deployment.';
 const NO_SNAPSHOT =
   ' There is no local snapshot on this Mac yet, so there is nothing to open read-only.';
+
+/** NF-3, ARCH-6: the banner's message: what went wrong, and only that when a snapshot can open. */
+export function unavailableMessage(reason: string | null, hasSnapshot: boolean): string {
+  return `${reason ?? UNREACHABLE}${hasSnapshot ? '' : NO_SNAPSHOT}`;
+}
 
 /** Server types a write can go to. With none of these in the topology, writes cannot land. */
 const WRITABLE = new Set(['RSPrimary', 'Standalone', 'Mongos', 'LoadBalancer']);
@@ -24,8 +34,10 @@ export interface ConnectionDeps {
   localOnly: boolean;
   /** Said when no connection string is stored at all. */
   missingMessage: string;
-  /** `<userData>/snapshots`, where BK-1 snapshots are kept. */
-  snapshotRoot: string;
+  /** `<userData>/snapshots`, where BK-1 snapshots are kept; none on a host with no disk (A58). */
+  snapshotRoot?: string;
+  /** A57: `<userData>/last-bible.json`, the bible opened last, so the next launch opens it again. */
+  lastBibleFile?: string;
   connect?: (uri: string) => Promise<Store>;
   /** Under test, the spec file's own database in place of `novel_companion` (`testDatabaseName()`). */
   database?: string | null;
@@ -44,12 +56,31 @@ export class ConnectionManager {
   private state: ConnectionStatus['state'] = 'connected';
   private message: string | null = null;
   private readOnlySnapshot: SnapshotInfo | null = null;
-  /** The bible that was open when the connection went, so its snapshot is offered first. */
+  /**
+   * The bible opened last: its snapshot is offered first when the connection
+   * goes, and (A57) it opens again at the next launch.
+   */
   lastBible: string | null = null;
   private readonly connectTo: (uri: string) => Promise<Store>;
 
   constructor(private readonly deps: ConnectionDeps) {
     this.connectTo = deps.connect ?? ((uri) => connect(uri, {}, deps.database ?? null));
+    this.lastBible = readLastBible(deps.lastBibleFile);
+  }
+
+  /** A57: keep the bible just opened (or forget it, with null) across launches. */
+  remember(slug: string | null): void {
+    this.lastBible = slug;
+    const file = this.deps.lastBibleFile;
+    if (!file) return;
+    try {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.tmp`;
+      writeFileSync(tmp, JSON.stringify({ bible: slug }));
+      renameSync(tmp, file);
+    } catch {
+      // Not kept: the next launch shows the bibles, which is where it would start anyway.
+    }
   }
 
   get current(): Store | null {
@@ -114,7 +145,7 @@ export class ConnectionManager {
     const latest = await this.latest();
     return {
       state: 'unavailable',
-      message: `${this.message ?? UNREACHABLE}${latest ? WITH_SNAPSHOT : NO_SNAPSHOT}`,
+      message: unavailableMessage(this.message, latest !== null),
       snapshot: latest
         ? { bible: latest.bible, name: latest.name ?? latest.bible, takenAt: latest.takenAt }
         : null,
@@ -123,7 +154,8 @@ export class ConnectionManager {
 
   /** The most recent local snapshot, of the bible last open when it has one. */
   latest(): Promise<SnapshotInfo | null> {
-    return latestSnapshot(this.deps.snapshotRoot, this.lastBible);
+    const root = this.deps.snapshotRoot;
+    return root ? latestSnapshot(root, this.lastBible) : Promise.resolve(null);
   }
 
   /** ARCH-6: a request failed because MongoDB went away. */
@@ -137,7 +169,7 @@ export class ConnectionManager {
     this.readOnlySnapshot = snapshot;
     this.setState(
       'readOnly',
-      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.name ?? snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed. Click Try again when your network is back.`,
+      `MongoDB cannot be reached, so this is the snapshot of ${snapshot.name ?? snapshot.bible} taken ${snapshot.takenAt}, open read-only. Nothing can be changed.`,
     );
   }
 
@@ -285,6 +317,17 @@ export class ConnectionManager {
     if (changed && this.deps.onStatus) {
       void this.status().then((s) => this.deps.onStatus?.(s));
     }
+  }
+}
+
+/** A57: the bible kept by `remember`, or null when there is none or the file is unreadable. */
+function readLastBible(file: string | undefined): string | null {
+  if (!file) return null;
+  try {
+    const raw = (JSON.parse(readFileSync(file, 'utf8')) as { bible?: unknown }).bible;
+    return BibleSlug.safeParse(raw).success ? (raw as string) : null;
+  } catch {
+    return null;
   }
 }
 

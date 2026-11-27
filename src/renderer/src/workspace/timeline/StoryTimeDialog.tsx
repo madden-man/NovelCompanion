@@ -71,9 +71,10 @@ const intOrNull = (t: string): number | null => (/^-?\d{1,5}$/.test(t.trim()) ? 
  * controls: everyone's state and age (TL-2, TL-4), then the world for the
  * year (the era, WE-3; the five-year events strip, A33; the chapter strands),
  * then Compare (TL-7) and Lived through (TL-5) as disclosures. Setting the
- * time writes only the bible's meta document; "Use as strand year" is the one
- * action here that changes an entry, and it shows the change and waits for
- * approval first (ED-7).
+ * time writes only the bible's meta document. A57: picking a character and an
+ * age, or a strand, moves the year at once; "Also move that strand to <year>"
+ * is the one action here that changes an entry, and it shows the change and
+ * waits for approval first (ED-7).
  */
 export function StoryTimeDialog(props: {
   /** Open an entry in the frame; the dialog closes first (KB-2). */
@@ -95,6 +96,11 @@ export function StoryTimeDialog(props: {
   const [anchorStrand, setAnchorStrand] = useState('');
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  // A57: month and day show once asked for, or while the time holds a month.
+  const [wantDate, setWantDate] = useState(false);
+  const showDate = wantDate || time.month !== undefined;
+  const monthInput = useRef<HTMLInputElement>(null);
+  const ageAsk = useRef(0);
   const yearInput = useRef<HTMLInputElement>(null);
   const opener = useRef<Element | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -196,26 +202,25 @@ export function StoryTimeDialog(props: {
     setYearDraft(null);
     setTo(keep({ year: time.year + by }), `${by > 0 ? '+' : ''}${by}`);
   };
-  const anchorByAge = async () => {
-    const age = intOrNull(anchorAge);
-    if (!anchorChar) return setNote({ text: 'Pick a character first.', bad: true });
-    if (age === null || age < 0)
-      return setNote({ text: 'Enter an age in whole years.', bad: true });
+  /** TM-4, A57: a character and an age move the year as soon as both are there. */
+  const anchorByAge = async (characterId: string, ageText: string) => {
+    if (!characterId || ageText === '') return;
+    const ask = ++ageAsk.current;
     try {
-      const r = await call('storyTime.anchorAge', { characterId: anchorChar, age });
+      const r = await call('storyTime.anchorAge', { characterId, age: Number(ageText) });
+      if (ask !== ageAsk.current) return;
       if (r.year === null) return setNote({ text: r.message, bad: true });
       setYearDraft(null);
       setTo(keep({ year: r.year }), r.message.replace(/\.$/, ''));
     } catch (e) {
-      setNote({ text: plainError(e), bad: true });
+      if (ask === ageAsk.current) setNote({ text: plainError(e), bad: true });
     }
   };
-  const anchorByStrand = () => {
-    const s = strands.find((o) => o.key === anchorStrand);
-    if (!s) return setNote({ text: 'Pick a strand first.', bad: true });
-    if (s.year === null) {
-      return setNote({ text: 'That strand has no start year yet. Give it one first.', bad: true });
-    }
+  /** TM-4, A57: a strand moves the year as it is picked; a strand with no year is not offered. */
+  const anchorByStrand = (key: string) => {
+    setAnchorStrand(key);
+    const s = strands.find((o) => o.key === key);
+    if (!s || s.year === null) return;
     setYearDraft(null);
     setTo({ year: s.year, chapterId: s.chapterId, strandId: s.strandId }, s.label);
   };
@@ -321,32 +326,61 @@ export function StoryTimeDialog(props: {
                   data-testid="time-year"
                 />
               </div>
-              <div className="field">
-                <label htmlFor={ids.month}>Month</label>
-                <input
-                  id={ids.month}
-                  type="number"
-                  min={1}
-                  max={12}
-                  className="num date-input"
-                  value={monthDraft ?? (time.month ? String(time.month) : '')}
-                  onChange={(e) => onDate('month', e.target.value)}
-                  onBlur={() => setMonthDraft(null)}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor={ids.day}>Day</label>
-                <input
-                  id={ids.day}
-                  type="number"
-                  min={1}
-                  max={31}
-                  className="num date-input"
-                  value={dayDraft ?? (time.day ? String(time.day) : '')}
-                  onChange={(e) => onDate('day', e.target.value)}
-                  onBlur={() => setDayDraft(null)}
-                />
-              </div>
+              {showDate ? (
+                <>
+                  <div className="field">
+                    <label htmlFor={ids.month}>Month</label>
+                    <input
+                      ref={monthInput}
+                      id={ids.month}
+                      type="number"
+                      min={1}
+                      max={12}
+                      className="num date-input"
+                      value={monthDraft ?? (time.month ? String(time.month) : '')}
+                      onChange={(e) => onDate('month', e.target.value)}
+                      onBlur={() => setMonthDraft(null)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={ids.day}>Day</label>
+                    <input
+                      id={ids.day}
+                      type="number"
+                      min={1}
+                      max={31}
+                      className="num date-input"
+                      value={dayDraft ?? (time.day ? String(time.day) : '')}
+                      onChange={(e) => onDate('day', e.target.value)}
+                      onBlur={() => setDayDraft(null)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn small year-date-toggle"
+                    onClick={() => {
+                      setWantDate(false);
+                      setMonthDraft(null);
+                      setDayDraft(null);
+                      setTo(keep({ year: time.year }), null);
+                      yearInput.current?.focus();
+                    }}
+                  >
+                    Year only
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn small year-date-toggle"
+                  onClick={() => {
+                    setWantDate(true);
+                    requestAnimationFrame(() => monthInput.current?.focus());
+                  }}
+                >
+                  + month
+                </button>
+              )}
             </div>
             <div className="row tight" role="group" aria-label="Step the year">
               <button
@@ -382,19 +416,21 @@ export function StoryTimeDialog(props: {
                 +10
               </button>
             </div>
-            <p className="example-note">Leave month and day blank to work by year.</p>
           </div>
           <div className="stack tight">
-            <span className="eyebrow">Anchor by a character&rsquo;s age</span>
+            <span className="eyebrow">Jump to an age</span>
             <div className="row tight">
               <div className="field">
                 <label htmlFor={ids.char}>Character</label>
                 <select
                   id={ids.char}
                   value={anchorChar}
-                  onChange={(e) => setAnchorChar(e.target.value)}
+                  onChange={(e) => {
+                    setAnchorChar(e.target.value);
+                    void anchorByAge(e.target.value, anchorAge);
+                  }}
                 >
-                  <option value="">Pick a character</option>
+                  <option value="">None</option>
                   {characters.map((c) => (
                     <option key={c._id} value={c._id}>
                       {String((c.names as { full?: string } | undefined)?.full ?? c.title)}
@@ -404,40 +440,39 @@ export function StoryTimeDialog(props: {
               </div>
               <div className="field">
                 <label htmlFor={ids.age}>Age</label>
+                {/* A57: digits only, so the age is always a whole number of years. */}
                 <input
                   id={ids.age}
-                  type="number"
-                  min={0}
+                  inputMode="numeric"
+                  maxLength={3}
                   className="num date-input"
                   value={anchorAge}
-                  onChange={(e) => setAnchorAge(e.target.value)}
+                  onChange={(e) => {
+                    const age = e.target.value.replace(/\D/g, '').slice(0, 3);
+                    setAnchorAge(age);
+                    void anchorByAge(anchorChar, age);
+                  }}
                 />
               </div>
             </div>
-            <button type="button" className="btn small" onClick={() => void anchorByAge()}>
-              Set year from age
-            </button>
           </div>
           <div className="stack tight">
-            <span className="eyebrow">Anchor by a chapter strand</span>
+            <span className="eyebrow">Jump to a strand</span>
             <div className="field">
               <label htmlFor={ids.strand}>Strand</label>
               <select
                 id={ids.strand}
                 value={anchorStrand}
-                onChange={(e) => setAnchorStrand(e.target.value)}
+                onChange={(e) => anchorByStrand(e.target.value)}
               >
-                <option value="">Pick a strand</option>
+                <option value="">None</option>
                 {strands.map((s) => (
-                  <option key={s.key} value={s.key}>
+                  <option key={s.key} value={s.key} disabled={s.year === null}>
                     {s.label}
                   </option>
                 ))}
               </select>
             </div>
-            <button type="button" className="btn small" onClick={anchorByStrand}>
-              Use this strand&rsquo;s year
-            </button>
           </div>
         </div>
         {note && (
@@ -455,21 +490,24 @@ export function StoryTimeDialog(props: {
             {current ? (
               <>
                 <span>{current.label}</span>
-                <button
-                  type="button"
-                  className="btn small"
-                  onClick={() => void askPromote()}
-                  disabled={ro.off}
-                  {...ro.tip}
-                >
-                  Use {time.year} as strand year
-                </button>
+                {/* A57: shown only while the story year and the strand's year differ. */}
+                {current.year !== time.year && (
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => void askPromote()}
+                    disabled={ro.off}
+                    {...ro.tip}
+                  >
+                    Also move that strand to {time.year}
+                  </button>
+                )}
                 <button type="button" className="btn small" onClick={clearChapter}>
                   Clear the chapter
                 </button>
               </>
             ) : (
-              <span>None set. Anchor by a strand to record it.</span>
+              <span>None</span>
             )}
           </div>
           {preview && (
@@ -480,10 +518,6 @@ export function StoryTimeDialog(props: {
               data-testid="promote-preview"
             >
               <strong>Change this strand?</strong>
-              <p className="example-note">
-                Setting the time never changes an entry. This writes the strand&rsquo;s year only
-                after you approve it.
-              </p>
               {preview.unchanged ? (
                 <p>
                   {preview.chapterTitle}, {preview.strandLabel} strand, already has the year{' '}

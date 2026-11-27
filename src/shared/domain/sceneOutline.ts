@@ -192,8 +192,31 @@ export function continueBullet(edit: TextEdit): TextEdit | null {
   return { text: next, selectionStart: caret, selectionEnd: caret };
 }
 
-/** Indent every line the selection touches by two spaces, or outdent them. */
-export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
+/** One level of the outline: two spaces. */
+export const INDENT = '  ';
+
+/** The width of a line's leading whitespace. */
+const indentOf = (line: string): number => (/^\s*/.exec(line)?.[0] ?? '').length;
+
+/**
+ * The deepest indent a line may take: one level deeper than the line above
+ * it, as outliners do, and none at all for a line with no line above (an
+ * indented bullet belongs to the scene above it, so the first line cannot
+ * belong to one).
+ */
+export function maxIndent(above: string | null | undefined): number {
+  return above === null || above === undefined ? 0 : indentOf(above) + INDENT.length;
+}
+
+/**
+ * Indent every line the selection touches by one level, or outdent them.
+ * Indenting is capped (`maxIndent`): the first line goes no deeper than one
+ * level past the line above it, and the rest move with it, so repeated
+ * indenting stops there. `above` is the line just before the text, for a
+ * text that is one section of a longer outline; without it the text's first
+ * line has nothing above it.
+ */
+export function indentLines(edit: TextEdit, outdent: boolean, above?: string | null): TextEdit {
   const { text, selectionStart, selectionEnd } = edit;
   const start = lineStartAt(text, selectionStart);
   const end = lineEndAt(
@@ -201,6 +224,13 @@ export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
     Math.max(selectionStart, selectionEnd - (selectionEnd > selectionStart ? 1 : 0)),
   );
   const block = text.slice(start, end);
+  let step = INDENT.length;
+  if (!outdent) {
+    const first = block.split('\n')[0] ?? '';
+    const lineAbove = start === 0 ? above : text.slice(lineStartAt(text, start - 1), start - 1);
+    step = Math.min(step, maxIndent(lineAbove) - indentOf(first));
+    if (step <= 0) return { ...edit };
+  }
   let firstDelta = 0;
   let total = 0;
   const lines = block.split('\n').map((line, i) => {
@@ -211,8 +241,8 @@ export function indentLines(edit: TextEdit, outdent: boolean): TextEdit {
       out = line.slice(removed);
       delta = -removed;
     } else {
-      out = `  ${line}`;
-      delta = 2;
+      out = `${' '.repeat(step)}${line}`;
+      delta = step;
     }
     if (i === 0) firstDelta = delta;
     total += delta;

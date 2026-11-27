@@ -123,7 +123,7 @@ describe('A47 migration 11 on a copy of the fixture at version 10', () => {
     at11.collection('lists').findOne({ _id: id as never }) as Promise<Document>;
 
   test('A47 IP-8 opening takes a snapshot of the version 10 bible first, then runs migrations 11 to the latest', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(15);
+    expect(LATEST_SCHEMA_VERSION).toBe(16);
     expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);

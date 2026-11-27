@@ -21,6 +21,7 @@ import { notebookContract } from './ipcNotebook';
 import type { EntryCollection } from './schema';
 // a47-guard
 import { guardContract } from './ipcGuard';
+import { pwaContract } from './ipcPwa';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
 
@@ -116,6 +117,8 @@ function checkPatch(
 }
 
 const EntryRef = z.strictObject({ collection: CollectionName, id: EntryId });
+/** A58 (PH-11): an undo or redo step writes only while the entry still has the `modifiedAt` it read. */
+const Expect = { expectModifiedAt: z.string().min(1).optional() };
 
 const ItemExtra = z.record(z.string(), z.union([z.string(), z.number()]));
 
@@ -585,13 +588,42 @@ export const contract = {
         collection: CollectionName,
         id: EntryId,
         patch: z.record(z.string(), z.unknown()),
+        ...Expect,
       })
       .superRefine(checkPatch),
     response: WithWarnings,
   },
   /** Move an entry to the trash (ED-5). */
-  'entry.delete': { request: EntryRef, response: WithWarnings },
-  'entry.restore': { request: EntryRef, response: WithWarnings },
+  'entry.delete': { request: EntryRef.extend(Expect), response: WithWarnings },
+  'entry.restore': { request: EntryRef.extend(Expect), response: WithWarnings },
+  /**
+   * A58 (PH-11): an undo or redo step that changes several entries, in one
+   * transaction. Every entry must still have the `modifiedAt` the step read,
+   * or nothing is written.
+   */
+  'entry.batch': {
+    request: z.strictObject({
+      ops: z
+        .array(
+          z.union([
+            z
+              .strictObject({
+                op: z.literal('update'),
+                collection: CollectionName,
+                id: EntryId,
+                patch: z.record(z.string(), z.unknown()),
+                ...Expect,
+              })
+              .superRefine(checkPatch),
+            EntryRef.extend({ op: z.literal('delete'), ...Expect }),
+            EntryRef.extend({ op: z.literal('restore'), ...Expect }),
+          ]),
+        )
+        .min(1)
+        .max(2000),
+    }),
+    response: z.strictObject({ entries: z.array(WithWarnings) }),
+  },
   /** Titles and sections for entry IDs, for link chips that may point anywhere. */
   'entry.lookup': {
     request: z.strictObject({ ids: z.array(EntryId).max(500) }),
@@ -915,6 +947,12 @@ export const contract = {
       text: z.string().max(2_000_000),
       breaks: SceneBreaksWire.default({}),
       years: SceneYearsWire.default({}),
+      /**
+       * A58 (PH-10): the `modifiedAt` of the outline this text was typed on
+       * (null when none was stored); an outline changed since is refused, never
+       * overwritten.
+       */
+      expectModifiedAt: z.string().min(1).nullable().optional(),
     }),
     response: SceneOutlineWire,
   },
@@ -1084,7 +1122,8 @@ export const contract = {
   },
   /** BK-3: make a new bible from an exported file the person chooses. Null bible when cancelled. */
   'backup.import': {
-    request: z.strictObject({ slug: BibleSlug, name: BibleName }),
+    // A57: without a slug and name, the new bible takes the file's name and a free ID.
+    request: z.strictObject({ slug: BibleSlug.optional(), name: BibleName.optional() }),
     response: z.strictObject({
       bible: BibleSummary.nullable(),
       counts: z.record(z.string(), z.int().min(0)),
@@ -1110,6 +1149,8 @@ export const contract = {
   ...continuityContract,
   // a47-guard: housekeeping (IP-16) and the manuscript lock (IP-18), src/shared/ipcGuard.ts.
   ...guardContract,
+  // A58 P4: capabilities, freshness and the phone key (src/shared/ipcPwa.ts).
+  ...pwaContract,
   // a47-model
   /** IP-8: move a list item to `index` in the stored order (the order every list and select shows). */
   'lists.move': {
@@ -1193,7 +1234,12 @@ export const events = {
   /** The tree's stored positions changed: a move, a tidy, or an undo of one (FT-11, ED-3). */
   'tree.changed': z.strictObject({ bible: z.string() }),
   /** The whole bible was replaced by a restore or a file import; views reload everything. */
-  'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
+  'bible.reloaded': z.strictObject({
+    bible: z.string(),
+    message: z.string(),
+    /** A58 (PH-8): it changed somewhere else; views redraw in place, typing kept. */
+    elsewhere: z.literal(true).optional(),
+  }),
   ...claudeEvents,
   ...appEvents,
   // a47-model
@@ -1241,8 +1287,32 @@ export function parseResponse<C extends Channel>(channel: C, payload: unknown): 
   return result.data as Response<C>;
 }
 
+/**
+ * A57: what travels beside a request. `bible` is the bible the renderer's
+ * workspace was opened on; main refuses a write carrying one that is not the
+ * open bible (`src/main/ipc/offline.ts`), so no write lands in another bible.
+ */
+export const CallContext = z.strictObject({ bible: BibleSlug.optional() });
+export type CallContext = z.infer<typeof CallContext>;
+
+/** The context sent with a request, or an invalid request error. */
+export function parseCallContext(raw: unknown): CallContext {
+  if (raw === undefined || raw === null) return {};
+  const result = CallContext.safeParse(raw);
+  if (!result.success) {
+    throw new IpcValidationError(
+      `The request context is not valid: ${z.prettifyError(result.error)}`,
+    );
+  }
+  return result.data;
+}
+
 /** The shape of `window.api`, the only thing the preload exposes. */
 export interface Api {
-  invoke<C extends Channel>(channel: C, request: Request<C>): Promise<Response<C>>;
+  invoke<C extends Channel>(
+    channel: C,
+    request: Request<C>,
+    context?: CallContext,
+  ): Promise<Response<C>>;
   on<E extends EventName>(event: E, listener: (payload: EventPayload<E>) => void): () => void;
 }

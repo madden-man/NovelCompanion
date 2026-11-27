@@ -1,6 +1,15 @@
 import { useBibleSettings } from '../bibleSettings';
 import { familyToken } from '../../../../shared/domain/lists';
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { WriteFieldset, useWriteGuard } from '../../connection';
 import type {
   FormEvent,
@@ -57,9 +66,12 @@ import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
+import { useCapabilities } from '../../capabilities';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
+import { positionQueue } from './positionQueue';
+import './tree.css';
 
 type TreeData = Response<'tree.get'>;
 type View = { x: number; y: number; w: number; h: number };
@@ -67,6 +79,22 @@ type View = { x: number; y: number; w: number; h: number };
 const PAD = 40;
 /** A pointer that moves less than this many screen pixels is a click, not a drag (FT-11). */
 const DRAG_START = 4;
+/** A57: the drop zones a dragged person sees over another, in screen pixels. */
+const ZONE_W = 210;
+const ZONE_HEAD = 24;
+const ZONE_ROW = 30;
+const ZONE_H = ZONE_HEAD + 3 * ZONE_ROW;
+const ZONE_KINDS = ['parent', 'partner', 'child'] as const;
+type Zones = {
+  id: string;
+  onto: string;
+  left: number;
+  top: number;
+  hot: StubKind | null;
+  refused: StubKind[];
+};
+/** A57: how long the Tidy layout notice with its Undo button stays. */
+const TOAST_MS = 8000;
 const LINK_STYLES = new Set(['biological', 'adoptive', 'step', 'guardian']);
 const UNION_STYLES = new Set(['married', 'partnered']);
 
@@ -130,7 +158,19 @@ interface NodeProps {
   onMove: (id: string, dx: number, dy: number) => void;
   /** GL-3: show or hide the visible meaning card for this node's Chinese name. */
   onCard: (card: { text: string; el: Element } | null) => void;
+  /** A57: the + parent, + partner and + child stubs; absent while read-only. */
+  onAdd?: (id: string, kind: StubKind) => void;
 }
+
+type StubKind = 'parent' | 'partner' | 'child';
+const STUB_W = 62;
+const STUB_H = 18;
+/** A57: where each stub sits on a person: parent on top, partner at the side, child below. */
+const STUBS: { kind: StubKind; x: number; y: number }[] = [
+  { kind: 'parent', x: (NODE_W - STUB_W) / 2, y: -STUB_H / 2 },
+  { kind: 'partner', x: NODE_W - STUB_W + 16, y: 4 },
+  { kind: 'child', x: (NODE_W - STUB_W) / 2, y: NODE_H - STUB_H / 2 },
+];
 
 /** One person in the tree (FT-7): name, years, and their state in the year (FT-5). */
 const TreeNode = memo(function TreeNode(p: NodeProps) {
@@ -236,6 +276,39 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
           </text>
         </g>
       )}
+      {p.onAdd &&
+        STUBS.map((st) => {
+          const add = () => p.onAdd?.(p.person.id, st.kind);
+          return (
+            <g
+              key={st.kind}
+              className={`tnode-stub stub-${st.kind}`}
+              data-export="skip"
+              data-stub={st.kind}
+              tabIndex={0}
+              role="button"
+              aria-label={`Add a ${st.kind} of ${p.person.name}`}
+              transform={`translate(${st.x},${st.y})`}
+              onClick={(e) => {
+                e.stopPropagation();
+                add();
+              }}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  add();
+                }
+              }}
+            >
+              <rect width={STUB_W} height={STUB_H} rx={STUB_H / 2} />
+              <text x={STUB_W / 2} y={13} textAnchor="middle">
+                + {st.kind}
+              </text>
+            </g>
+          );
+        })}
     </g>
   );
 });
@@ -258,19 +331,22 @@ export function TreeView(props: {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(props.focus ?? null);
   const [view, setView] = useState<View | null>(null);
+  const can = useCapabilities();
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
   /** FT-11: the person being dragged and where they are right now, drawn live. */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
-  /** FT-11: a person dropped on another: the choice of link, or just the move, placed under the pointer. */
-  const [drop, setDrop] = useState<{
-    id: string;
-    onto: string;
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-    error: string | null;
-  } | null>(null);
+  /** A57: while a person is dragged over another, that person's three drop zones. */
+  const [zones, setZones] = useState<Zones | null>(null);
+  const zonesRef = useRef<Zones | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  /**
+   * A57: Tidy layout's notice, with an Undo button for its own step only. It
+   * shows while that step is the latest one; another step or an undo hides it.
+   */
+  const [toast, setToast] = useState<{ text: string; cmd: UndoCommand } | null>(null);
+  /** Tidy layout runs once at a time, so a double click records one step. */
+  const tidying = useRef(false);
+  const [tidyBusy, setTidyBusy] = useState(false);
   const [adding, setAdding] = useState<RelativeKind | null>(null);
   /** A45: the legend overlay in the tree's bottom left corner, closed until asked for. */
   const [legendOpen, setLegendOpen] = useState(false);
@@ -295,13 +371,29 @@ export function TreeView(props: {
     });
   }, []);
   const fitted = useRef(false);
+  /** The positions as last read or written, the base each queued position write builds on. */
+  const stored = useRef<TreeData['positions']>(null);
+  /** A57: position writes queued or running, and how many were ever queued. */
+  const queue = useRef(positionQueue());
+  /** A57: a read set aside while writes were queued, read again once they are done. */
+  const reloadTree = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let live = true;
-    const load = () =>
+    const load = () => {
+      const ticket = queue.current.ticket();
       void call('tree.get', {}).then((r) => {
-        if (live) setData(r);
+        if (!live) return;
+        // A read from before a queued write landed would set the queue's base back and
+        // drop that write's move from the next one: it is read again when the queue is idle.
+        const take = queue.current.fresh(ticket);
+        if (take === 'again') return load();
+        if (take === 'skip') return;
+        stored.current = r.positions ?? null;
+        setData(r);
       });
+    };
+    reloadTree.current = load;
     load();
     // A move written by an undo step (or another window) reaches the screen through this event.
     const off = window.api.on('tree.changed', load);
@@ -317,6 +409,36 @@ export function TreeView(props: {
   );
 
   const saveSeq = useRef(0);
+  /**
+   * Position writes go one after another: two in flight at once (the save that
+   * places someone just added, then Tidy layout) can land in either order, and
+   * the older layout would win.
+   */
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  /**
+   * Each write builds its positions when its turn comes, from the positions the
+   * write before it left, so a queued write never carries a stale base. A failed
+   * write leaves that base as it was and the queue goes on.
+   */
+  const savePositions = useCallback(
+    (build: (base: TreeData['positions']) => NonNullable<TreeData['positions']>) => {
+      queue.current.enter();
+      const next = writes.current.then(async () => {
+        const base = stored.current;
+        const positions = build(base);
+        await call('tree.savePositions', { positions });
+        stored.current = positions;
+        return { base, positions };
+      });
+      writes.current = next
+        .catch(() => undefined)
+        .finally(() => {
+          if (queue.current.leave()) reloadTree.current();
+        });
+      return next;
+    },
+    [],
+  );
   const ro = useWriteGuard();
   const undo = useUndo();
   // Stored positions are kept; only new people are placed (FT-10).
@@ -327,13 +449,15 @@ export function TreeView(props: {
 
   useEffect(() => {
     // ARCH-6: a read-only snapshot places new people on screen without saving them.
-    if (!placed?.changed || ro.off) return;
-    const positions = placed.positions;
+    if (!placed?.changed || ro.off || !graph) return;
     const seq = ++saveSeq.current;
-    void call('tree.savePositions', { positions }).then(() => {
-      if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
-    });
-  }, [placed, ro.off]);
+    savePositions((base) => placeLayout(graph, base).positions).then(
+      ({ positions }) => {
+        if (seq === saveSeq.current) setData((d) => (d ? { ...d, positions } : d));
+      },
+      (err: unknown) => setLinkError(`Could not save the layout: ${plainError(err)}`),
+    );
+  }, [placed, graph, ro.off, savePositions]);
 
   const layout = useMemo(() => {
     if (!graph || !placed) return null;
@@ -355,19 +479,81 @@ export function TreeView(props: {
     return layoutFromPositions(m);
   }, [layout, moving]);
 
-  const [confirmTidy, setConfirmTidy] = useState(false);
   const nameOf = useCallback((id: string) => graph?.byId.get(id)?.name ?? id, [graph]);
   const tidy = async () => {
-    if (!graph) return;
-    const { positions } = placeLayout(graph, null);
-    saveSeq.current += 1;
-    await call('tree.savePositions', { positions });
-    const moves = treeMoves(data?.positions ?? null, positions);
-    if (moves.length) undo.record(treeMoveCommand('Tidied the tree layout', call, moves, nameOf));
-    setData((d) => (d ? { ...d, positions } : d));
-    setConfirmTidy(false);
-    fitted.current = false;
+    if (!graph || tidying.current) return;
+    tidying.current = true;
+    setTidyBusy(true);
+    setLinkError(null);
+    try {
+      const { positions } = placeLayout(graph, null);
+      saveSeq.current += 1;
+      const { base } = await savePositions(() => positions);
+      const moves = treeMoves(base, positions);
+      if (moves.length) {
+        const cmd = treeMoveCommand('Tidied the tree layout', call, moves, nameOf);
+        undo.record(cmd);
+        setToast({ text: 'Layout tidied', cmd });
+      }
+      setData((d) => (d ? { ...d, positions } : d));
+      fitted.current = false;
+    } catch (err) {
+      setLinkError(`Could not tidy the layout: ${plainError(err)}`);
+    } finally {
+      tidying.current = false;
+      setTidyBusy(false);
+    }
   };
+  const toastLive = toast !== null && undo.history.undo[0] === toast.cmd;
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const linkTypes = useListItems('parentLinkTypes');
+  const unionTypes = useListItems('unionTypes');
+  /** The drop zones a link would be refused on: self-ancestry, or a parent link that exists. */
+  const refusedKinds = useCallback(
+    (id: string, onto: string): StubKind[] =>
+      graph
+        ? ZONE_KINDS.filter((kind) => {
+            try {
+              planLinkExisting(graph, { kind, anchorId: onto, otherId: id, type: 'x' }, () => 'x');
+              return false;
+            } catch {
+              return true;
+            }
+          })
+        : [],
+    [graph],
+  );
+  /** FT-11: the dropped person becomes the parent, partner or child of the one under them. */
+  const linkDrop = async (id: string, onto: string, kind: StubKind) => {
+    if (!graph) return;
+    setLinkError(null);
+    try {
+      const type =
+        kind === 'partner'
+          ? (unionTypes.find((t) => t.id === 'married')?.id ?? unionTypes[0]?.id ?? 'married')
+          : (linkTypes.find((t) => t.id === 'biological')?.id ?? linkTypes[0]?.id ?? 'biological');
+      const plan = planLinkExisting(graph, { kind, anchorId: onto, otherId: id, type }, () =>
+        ulid(),
+      );
+      const { entry } = await call('entry.create', {
+        collection: plan.collection,
+        data: plan.data,
+      });
+      undo.record(createCommand(plan.collection, entry._id, String(plan.data.title)));
+    } catch (err) {
+      setLinkError(err instanceof TreeActionError ? err.message : plainError(err));
+    }
+  };
+  /** A57: a stub on a person selects them and opens the add form for that kind. */
+  const addFrom = useCallback((id: string, kind: StubKind) => {
+    setSelected(id);
+    setAdding(kind);
+  }, []);
 
   const edges = useMemo(
     () => (graph && liveLayout ? treeEdges(graph, liveLayout, year) : null),
@@ -389,17 +575,22 @@ export function TreeView(props: {
         row === -ROW_H && ties === 0
           ? { x: Math.round(x), y: row, loose: true }
           : { x: Math.round(x), y: row };
-      const before = data.positions?.[id] ?? null;
-      const positions = { ...(data.positions ?? {}), [id]: at };
       saveSeq.current += 1;
-      setData((d) => (d ? { ...d, positions } : d));
-      await call('tree.savePositions', { positions });
-      // One step per move (ED-3): undo puts the person back where they were.
-      undo.record(
-        treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
-      );
+      setData((d) => (d ? { ...d, positions: { ...(d.positions ?? {}), [id]: at } } : d));
+      try {
+        const { base } = await savePositions((b) => ({ ...(b ?? {}), [id]: at }));
+        // One step per move (ED-3): undo puts the person back where they were.
+        const before = base?.[id] ?? null;
+        undo.record(
+          treeMoveCommand(`Moved ${nameOf(id)}`, call, [{ id, before, after: at }], nameOf),
+        );
+      } catch (err) {
+        setLinkError(`Could not move ${nameOf(id)}: ${plainError(err)}`);
+        // The screen goes back to what is stored.
+        setData((d) => (d ? { ...d, positions: stored.current } : d));
+      }
     },
-    [data, graph, ro.off, undo, nameOf],
+    [data, graph, ro.off, undo, nameOf, savePositions],
   );
   const nudge = useCallback(
     (id: string, dx: number, dy: number) => {
@@ -428,8 +619,11 @@ export function TreeView(props: {
     [layout],
   );
 
+  /** The tree box's size when the view last matched it, so a resize keeps everyone in place. */
+  const boxSize = useRef<{ w: number; h: number } | null>(null);
   const fit = useCallback(() => {
     const el = wrap.current;
+    if (el && el.clientWidth > 0) boxSize.current = { w: el.clientWidth, h: el.clientHeight };
     const ar = el && el.clientHeight > 0 ? el.clientWidth / el.clientHeight : 2;
     let w = bbox.width;
     let h = bbox.height;
@@ -461,6 +655,29 @@ export function TreeView(props: {
     const frame = requestAnimationFrame(() => fit());
     return () => cancelAnimationFrame(frame);
   }, [full, fit]);
+
+  /**
+   * A57: the tree box changed size (the inspector came or went, or the window
+   * resized): widen or narrow the view with it, so the people stay where they
+   * are on screen.
+   */
+  const followBox = useCallback(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const was = boxSize.current;
+    boxSize.current = { w, h };
+    if (!was || !was.w || !was.h || !w || !h || (was.w === w && was.h === h)) return;
+    setView((v) => (v ? { ...v, w: (v.w * w) / was.w, h: (v.h * h) / was.h } : v));
+  }, []);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const ro = new ResizeObserver(followBox);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [data, followBox]);
 
   useEffect(() => {
     if (layout && !fitted.current) {
@@ -526,7 +743,7 @@ export function TreeView(props: {
     }
   };
 
-  const drag = useRef<{ x: number; y: number; v: View; id: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; v: View; id: number; moved: boolean } | null>(null);
   /** FT-11: a press on a person; it becomes a drag once the pointer has moved DRAG_START. */
   const nodeDrag = useRef<{
     id: string;
@@ -548,7 +765,8 @@ export function TreeView(props: {
     if (!view) return;
     const nodeEl = (e.target as Element).closest('.tnode');
     if (nodeEl) {
-      if (ro.off || e.button !== 0 || (e.target as Element).closest('.tnode-toggle')) return;
+      const el = e.target as Element;
+      if (ro.off || e.button !== 0 || el.closest('.tnode-toggle, .tnode-stub')) return;
       const id = nodeEl.getAttribute('data-person') ?? '';
       const at = layout?.nodes.get(id);
       if (!at) return;
@@ -563,7 +781,7 @@ export function TreeView(props: {
       };
       return;
     }
-    drag.current = { x: e.clientX, y: e.clientY, v: view, id: e.pointerId };
+    drag.current = { x: e.clientX, y: e.clientY, v: view, id: e.pointerId, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
     e.currentTarget.classList.add('dragging');
   };
@@ -583,46 +801,95 @@ export function TreeView(props: {
         x: Math.round(n.ox + (e.clientX - n.x) * k),
         y: Math.round(n.oy + (e.clientY - n.y) * k),
       });
+      trackZones(e.currentTarget, n, e.clientX, e.clientY);
       return;
     }
     const d = drag.current;
     if (!d) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) >= DRAG_START) d.moved = true;
     const k = d.v.w / e.currentTarget.clientWidth;
     setView({ ...d.v, x: d.v.x - (e.clientX - d.x) * k, y: d.v.y - (e.clientY - d.y) * k });
   };
+  /**
+   * A57: over another person, a dragged person sees that person's three drop
+   * zones (parent above, partner in the middle, child below); the one under the
+   * pointer is hot. A zone the link would be refused on is drawn disabled.
+   */
+  const trackZones = (
+    el: SVGSVGElement,
+    n: { id: string; v: View },
+    clientX: number,
+    clientY: number,
+  ) => {
+    const box = wrap.current?.getBoundingClientRect();
+    if (!box || !layout) return;
+    const px = clientX - box.left;
+    const py = clientY - box.top;
+    let z = zonesRef.current;
+    const inside = (q: Zones) =>
+      px >= q.left && px <= q.left + ZONE_W && py >= q.top && py <= q.top + ZONE_H;
+    if (z && !inside(z)) z = null;
+    if (!z) {
+      const at = toSvg(el, n.v, clientX, clientY);
+      let onto: string | null = null;
+      for (const [id, p] of layout.nodes) {
+        if (id === n.id) continue;
+        if (at.x >= p.x && at.x <= p.x + NODE_W && at.y >= p.y && at.y <= p.y + NODE_H) onto = id;
+      }
+      const p = onto ? layout.nodes.get(onto) : undefined;
+      if (onto && p) {
+        const r = el.getBoundingClientRect();
+        const cx = ((p.x + NODE_W / 2 - n.v.x) / n.v.w) * r.width + r.left - box.left;
+        const cy = ((p.y + NODE_H / 2 - n.v.y) / n.v.h) * r.height + r.top - box.top;
+        z = {
+          id: n.id,
+          onto,
+          left: Math.max(4, Math.min(cx - ZONE_W / 2, box.width - ZONE_W - 4)),
+          top: Math.max(4, Math.min(cy - ZONE_HEAD - ZONE_ROW * 1.5, box.height - ZONE_H - 4)),
+          hot: null,
+          refused: refusedKinds(n.id, onto),
+        };
+      }
+    }
+    if (z) {
+      const row = Math.floor((py - z.top - ZONE_HEAD) / ZONE_ROW);
+      z = { ...z, hot: ZONE_KINDS[row] ?? null };
+    }
+    const was = zonesRef.current;
+    zonesRef.current = z;
+    if (was?.onto !== z?.onto || was?.hot !== z?.hot || was?.left !== z?.left) setZones(z);
+  };
+
   const endDrag = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const d = drag.current;
     drag.current = null;
     e.currentTarget.classList.remove('dragging');
+    // A click on the empty tree, without a pan, puts the selection down.
+    if (d && !d.moved && e.type === 'pointerup') {
+      setSelected(null);
+      setAdding(null);
+    }
+    const z = zonesRef.current;
+    zonesRef.current = null;
+    setZones(null);
     const n = nodeDrag.current;
     if (!n) return;
     nodeDrag.current = null;
     e.currentTarget.classList.remove('moving');
     setMoving(null);
     if (!n.moved || e.type !== 'pointerup' || !layout) return;
-    const k = n.v.w / e.currentTarget.clientWidth;
-    const x = Math.round(n.ox + (e.clientX - n.x) * k);
-    const y = Math.round(n.oy + (e.clientY - n.y) * k);
-    // Dropped on someone: ask what the drop means before anything is written.
-    const at = toSvg(e.currentTarget, n.v, e.clientX, e.clientY);
-    let onto: string | null = null;
-    for (const [id, p] of layout.nodes) {
-      if (id === n.id) continue;
-      if (at.x >= p.x && at.x <= p.x + NODE_W && at.y >= p.y && at.y <= p.y + NODE_H) onto = id;
-    }
-    if (onto) {
-      const box = wrap.current?.getBoundingClientRect();
-      setDrop({
-        id: n.id,
-        onto,
-        x,
-        y,
-        left: Math.max(4, Math.min(e.clientX - (box?.left ?? 0), (box?.width ?? 400) - 300)),
-        top: Math.max(4, Math.min(e.clientY - (box?.top ?? 0) + 4, (box?.height ?? 300) - 220)),
-        error: null,
-      });
+    // Dropped on someone: the zone under the pointer says how they are linked.
+    // Released on a refused zone, or between zones, nothing is written and nobody moves.
+    if (z) {
+      if (z.hot && !z.refused.includes(z.hot)) void linkDrop(n.id, z.onto, z.hot);
       return;
     }
-    void moveTo(n.id, x, y);
+    const k = n.v.w / e.currentTarget.clientWidth;
+    void moveTo(
+      n.id,
+      Math.round(n.ox + (e.clientX - n.x) * k),
+      Math.round(n.oy + (e.clientY - n.y) * k),
+    );
   };
 
   const toggle = useCallback(
@@ -676,6 +943,14 @@ export function TreeView(props: {
     }
   };
 
+  // A57: the inspector shows with a selection, the Add person form, or warnings to show.
+  const inspecting = Boolean(selected) || adding === 'person' || Boolean(data?.warnings.length);
+  // The column changes in this commit: follow it before the paint, not a frame later,
+  // or the tree is drawn centred in the new box for a moment and people jump sideways.
+  useLayoutEffect(() => {
+    followBox();
+  }, [inspecting, followBox]);
+
   if (!data || !graph || !layout || !liveLayout || !edges) {
     return (
       <div className="ws-tree-area tree-screen">
@@ -687,7 +962,11 @@ export function TreeView(props: {
   const unionClass = (t: string) => (UNION_STYLES.has(t) ? t : 'other');
 
   return (
-    <div className="ws-tree-area tree-screen" data-testid="tree-view" ref={area}>
+    <div
+      className={`ws-tree-area tree-screen${inspecting ? '' : ' tree-solo'}`}
+      data-testid="tree-view"
+      ref={area}
+    >
       {/* A45: no heading or count; the toolbar and the tree fill the middle column. */}
       <section className="tree-main fill" aria-label="Family tree">
         <div className="tree-bar" role="toolbar" aria-label="Family tree tools">
@@ -706,15 +985,17 @@ export function TreeView(props: {
           <button
             type="button"
             className="btn small"
-            onClick={() => setConfirmTidy(true)}
-            disabled={ro.off}
+            onClick={() => void tidy()}
+            disabled={ro.off || tidyBusy}
             {...ro.tip}
           >
             Tidy layout
           </button>
-          <button type="button" className="btn small" onClick={() => void exportPng()}>
-            Export
-          </button>
+          {can('tree.export') && (
+            <button type="button" className="btn small" onClick={() => void exportPng()}>
+              Export
+            </button>
+          )}
           <button type="button" className="btn small" aria-pressed={full} onClick={toggleFull}>
             {full ? 'Exit full screen' : 'Full screen'}
           </button>
@@ -723,7 +1004,6 @@ export function TreeView(props: {
             type="button"
             className={`btn small tree-warn-count${data.warnings.length ? ' warn-chip' : ''}`}
             onClick={showWarnings}
-            title="Show the warnings in the inspector"
             data-testid="tree-warn-count"
           >
             {data.warnings.length === 0
@@ -731,23 +1011,6 @@ export function TreeView(props: {
               : `${data.warnings.length} ${data.warnings.length === 1 ? 'warning' : 'warnings'}`}
           </button>
         </div>
-        {confirmTidy && (
-          <div className="panel stack confirm" role="dialog" aria-label="Tidy layout">
-            <strong>Tidy the whole layout?</strong>
-            <p>
-              This lays out the tree again from scratch, so every person may move. People you add
-              later are placed without moving anyone.
-            </p>
-            <div className="row">
-              <button type="button" className="btn primary" onClick={() => void tidy()}>
-                Tidy layout
-              </button>
-              <button type="button" className="btn" onClick={() => setConfirmTidy(false)}>
-                Keep the layout
-              </button>
-            </div>
-          </div>
-        )}
         {exportNote && (
           <p
             className={exportNote.bad ? 'callout crit' : 'callout'}
@@ -755,6 +1018,11 @@ export function TreeView(props: {
             data-testid="export-note"
           >
             {exportNote.text}
+          </p>
+        )}
+        {linkError && (
+          <p className="callout crit" role="alert" data-testid="tree-link-error">
+            {linkError}
           </p>
         )}
         <div className="tree-wrap" ref={wrap}>
@@ -830,23 +1098,28 @@ export function TreeView(props: {
                       onToggle={toggle}
                       onMove={nudge}
                       onCard={showCard}
+                      onAdd={ro.off ? undefined : addFrom}
                     />
                   );
                 })}
             </g>
           </svg>
-          {drop && (
-            <DropMenu
-              graph={graph}
-              drop={drop}
-              onMove={() => {
-                const d = drop;
-                setDrop(null);
-                void moveTo(d.id, d.x, d.y);
-              }}
-              onError={(error) => setDrop((d) => (d ? { ...d, error } : d))}
-              onDone={() => setDrop(null)}
-            />
+          {zones && <DropZones graph={graph} zones={zones} />}
+          {toast && toastLive && (
+            <div className="tree-toast" role="status" data-testid="tree-toast">
+              <span>{toast.text}</span>
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => {
+                  setToast(null);
+                  // Only its own step: anything recorded since has hidden the notice.
+                  if (undo.history.undo[0] === toast.cmd) void undo.undo();
+                }}
+              >
+                Undo
+              </button>
+            </div>
           )}
           {card && (
             <div
@@ -877,6 +1150,7 @@ export function TreeView(props: {
             </button>
           </div>
           <Legend
+            year={year}
             open={legendOpen}
             onToggle={() => setLegendOpen((o) => !o)}
             families={families.map((f) => ({
@@ -887,19 +1161,21 @@ export function TreeView(props: {
           />
         </div>
       </section>
-      <TreeInspector
-        key={selected ?? 'none'}
-        graph={graph}
-        selected={selected}
-        year={year}
-        collapsed={selected ? collapsed.has(selected) : false}
-        adding={adding}
-        setAdding={setAdding}
-        onSelect={setSelected}
-        onToggle={toggle}
-        onOpen={props.onOpen}
-        warnings={data.warnings}
-      />
+      {inspecting && (
+        <TreeInspector
+          key={selected ?? 'none'}
+          graph={graph}
+          selected={selected}
+          year={year}
+          collapsed={selected ? collapsed.has(selected) : false}
+          adding={adding}
+          setAdding={setAdding}
+          onSelect={setSelected}
+          onToggle={toggle}
+          onOpen={props.onOpen}
+          warnings={data.warnings}
+        />
+      )}
     </div>
   );
 }
@@ -922,6 +1198,7 @@ function familyShade(color: unknown): string {
  * box; the tree redraws with the new colour.
  */
 function Legend(props: {
+  year: number;
   open: boolean;
   onToggle: () => void;
   families: { id: string; name: string; color: string | null }[];
@@ -994,26 +1271,43 @@ function Legend(props: {
               {labels[t]}
             </span>
           ))}
-          <span className="legend-note">
-            Faint dashed box: not yet born. Heavy border: dead by this year. Dotted: birth unknown.
-          </span>
-          <span className="legend-note" data-testid="tree-keys">
-            Drag a person to move them. Drop them on someone to make them that person&apos;s parent,
-            child or partner. Keys on a person: Enter or Space collapses or expands their branch
-            when they have one, and opens the inspector when they do not. I opens the inspector for
-            anyone. Alt with an arrow moves them one slot.
-          </span>
         </div>
       )}
-      <button
-        type="button"
-        className="btn small"
-        aria-expanded={props.open}
-        aria-controls={props.open ? id : undefined}
-        onClick={props.onToggle}
-      >
-        {props.open ? 'Hide legend' : 'Legend'}
-      </button>
+      <div className="tree-key-row">
+        <button
+          type="button"
+          className="btn small"
+          aria-expanded={props.open}
+          aria-controls={props.open ? id : undefined}
+          onClick={props.onToggle}
+        >
+          {props.open ? 'Hide legend' : 'Legend'}
+        </button>
+        {/* A57: the life states as drawn swatches, a key and not a sentence. */}
+        <ul className="tree-key" aria-label="Key" data-testid="tree-key">
+          {(
+            [
+              ['unborn', 'not born yet'],
+              ['dead', `dead by ${props.year}`],
+              ['unknown', 'birth unknown'],
+            ] as const
+          ).map(([state, label]) => (
+            <li key={state} data-key={state}>
+              <svg width="22" height="14" aria-hidden="true">
+                <rect
+                  className={`tkey-box ${state}`}
+                  x={1.5}
+                  y={1.5}
+                  width={19}
+                  height={11}
+                  rx={3}
+                />
+              </svg>
+              {label}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -1049,14 +1343,6 @@ function TreeInspector(props: {
       aria-label="Tree inspector"
       data-testid="tree-inspector"
     >
-      <span className="eyebrow">Inspector</span>
-      {!selected && adding !== 'person' && (
-        <p className="example-note">
-          Add person above the tree starts someone new. Pick a person in the tree to edit them here.
-          Drag a person to move them, and drop them on someone to make them that person&apos;s
-          parent, child or partner.
-        </p>
-      )}
       {adding === 'person' && (
         <AddRelativeForm
           graph={graph}
@@ -1068,31 +1354,23 @@ function TreeInspector(props: {
           }}
         />
       )}
-      {!selected && (
+      {!selected && props.warnings.length > 0 && (
         <section className="stack tight" aria-labelledby="warn-title">
           <h3 id="warn-title">Warnings</h3>
-          <p className="example-note">
-            Warnings never block saving. The one thing the tree refuses is a person becoming their
-            own ancestor.
-          </p>
-          {props.warnings.length === 0 ? (
-            <p data-testid="no-tree-warnings">No warnings in the tree.</p>
-          ) : (
-            <ul className="warn-list" data-testid="tree-warnings">
-              {props.warnings.map((w, i) => (
-                <li key={i} className="status warning">
-                  <span>{w.message}</span>{' '}
-                  <button
-                    type="button"
-                    className="btn small"
-                    onClick={() => props.onSelect(w.personIds[0] ?? null)}
-                  >
-                    Show {name(w.personIds[0] ?? '')}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="warn-list" data-testid="tree-warnings">
+            {props.warnings.map((w, i) => (
+              <li key={i} className="status warning">
+                <span>{w.message}</span>{' '}
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => props.onSelect(w.personIds[0] ?? null)}
+                >
+                  Show {name(w.personIds[0] ?? '')}
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       {selected && person && (
@@ -1131,7 +1409,7 @@ function TreeInspector(props: {
           <div className="row tight">
             {hasBranch(graph, person.id) && (
               <button type="button" className="btn small" onClick={() => props.onToggle(person.id)}>
-                {props.collapsed ? 'Expand branch' : 'Collapse branch'}
+                {props.collapsed ? 'Expand branch' : 'Collapse branch'} <kbd>Enter</kbd>
               </button>
             )}
             <button
@@ -1222,7 +1500,7 @@ function TreePersonForm({ id }: { id: string }) {
       {inTrash && (
         <>
           <p className="callout warn" role="status">
-            This person is in the trash. Restore them to bring them back with their links.
+            This person is in the trash.
           </p>
           <TrashControls
             collection="characters"
@@ -1237,8 +1515,8 @@ function TreePersonForm({ id }: { id: string }) {
       {ed.warnings.length > 0 && (
         <p className="callout warn" data-testid="warning-count">
           {ed.warnings.length === 1
-            ? '1 field has a warning. It still saved.'
-            : `${ed.warnings.length} fields have warnings. They still saved.`}
+            ? '1 field has a warning.'
+            : `${ed.warnings.length} fields have warnings.`}
         </p>
       )}
       <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
@@ -1261,6 +1539,9 @@ function TreePersonForm({ id }: { id: string }) {
     </section>
   );
 }
+
+/** A57: a year box keeps only the digits typed into it. */
+const digits = (t: string): string => t.replace(/\D/g, '').slice(0, 5);
 
 /** The character fields the tree inspector edits (A45), from the one manifest. */
 const PERSON_FIELDS = manifests.characters;
@@ -1298,11 +1579,8 @@ function AddRelativeForm(props: {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const year = born.trim() === '' ? null : Number(born);
-    if (year !== null && !Number.isInteger(year)) {
-      setError('The birth year must be a whole number, or blank for unknown.');
-      return;
-    }
+    // A57: the box takes digits only; empty means the year is unknown.
+    const year = born === '' ? null : Number(born);
     try {
       const plan = planAddRelative(
         graph,
@@ -1343,12 +1621,7 @@ function AddRelativeForm(props: {
         data-testid="add-form"
       >
         <strong>{title}</strong>
-        {noParents && (
-          <p className="callout warn">
-            {anchor?.name} has no known parents, so a sibling has no one to link to. Add a parent
-            first.
-          </p>
-        )}
+        {noParents && <p className="callout warn">{anchor?.name} has no known parents.</p>}
         <div className="field">
           <label htmlFor={ids.name}>Name</label>
           <input id={ids.name} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
@@ -1357,11 +1630,10 @@ function AddRelativeForm(props: {
           <label htmlFor={ids.born}>Birth year</label>
           <input
             id={ids.born}
-            type="number"
             className="num"
+            inputMode="numeric"
             value={born}
-            placeholder="Blank for unknown"
-            onChange={(e) => setBorn(e.target.value)}
+            onChange={(e) => setBorn(digits(e.target.value))}
           />
         </div>
         {(kind === 'parent' || kind === 'child' || kind === 'sibling') && (
@@ -1691,89 +1963,40 @@ function FamilyRowControls(props: {
 }
 
 /**
- * FT-11: one person was dropped on another. The link is made with the first
- * link or union type, which the Links list can change; self-ancestry is refused
- * in plain words and nothing is written. Just move puts them where they were dropped.
+ * A57 (FT-11): the three drop zones over the person a dragged person is held
+ * above. The zone under the pointer is hot; a zone the link would be refused
+ * on (self-ancestry, a parent link that exists) is drawn disabled.
  */
-function DropMenu(props: {
-  graph: TreeGraph;
-  drop: { id: string; onto: string; left: number; top: number; error: string | null };
-  onMove: () => void;
-  onError: (message: string) => void;
-  onDone: () => void;
-}) {
-  const { graph, drop } = props;
-  const undo = useUndo();
-  const linkTypes = useListItems('parentLinkTypes');
-  const unionTypes = useListItems('unionTypes');
-  const first = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    first.current?.focus();
-  }, []);
-  const A = graph.byId.get(drop.id)?.name ?? drop.id;
-  const B = graph.byId.get(drop.onto)?.name ?? drop.onto;
-
-  const link = async (kind: 'parent' | 'child' | 'partner') => {
-    try {
-      const type =
-        kind === 'partner'
-          ? (unionTypes.find((t) => t.id === 'married')?.id ?? unionTypes[0]?.id ?? 'married')
-          : (linkTypes.find((t) => t.id === 'biological')?.id ?? linkTypes[0]?.id ?? 'biological');
-      // The dropped person is the parent, child or partner of the one they landed on.
-      const plan = planLinkExisting(
-        graph,
-        { kind, anchorId: drop.onto, otherId: drop.id, type },
-        () => ulid(),
-      );
-      const { entry } = await call('entry.create', {
-        collection: plan.collection,
-        data: plan.data,
-      });
-      undo.record(createCommand(plan.collection, entry._id, String(plan.data.title)));
-      props.onDone();
-    } catch (err) {
-      props.onError(err instanceof TreeActionError ? err.message : plainError(err));
-    }
-  };
-
+function DropZones(props: { graph: TreeGraph; zones: Zones }) {
+  const { graph, zones } = props;
+  const A = graph.byId.get(zones.id)?.name ?? zones.id;
+  const B = graph.byId.get(zones.onto)?.name ?? zones.onto;
   return (
     <div
-      className="tree-drop panel stack tight"
-      role="dialog"
-      aria-label={`${A} dropped on ${B}`}
-      data-testid="tree-drop"
-      style={{ left: drop.left, top: drop.top }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          props.onDone();
-        }
-      }}
+      className="tree-zones"
+      role="group"
+      aria-label={`Drop ${A} on ${B}`}
+      data-testid="tree-zones"
+      data-onto={zones.onto}
+      style={{ left: zones.left, top: zones.top, width: ZONE_W }}
     >
-      <strong>
-        {A} on {B}
-      </strong>
-      <button ref={first} type="button" className="btn small" onClick={() => void link('parent')}>
-        Make {A} a parent of {B}
-      </button>
-      <button type="button" className="btn small" onClick={() => void link('child')}>
-        Make {A} a child of {B}
-      </button>
-      <button type="button" className="btn small" onClick={() => void link('partner')}>
-        Make {A} and {B} partners
-      </button>
-      <button type="button" className="btn small" onClick={props.onMove}>
-        Just move {A} here
-      </button>
-      <button type="button" className="btn small" onClick={props.onDone}>
-        Cancel
-      </button>
-      {drop.error && (
-        <p className="callout crit" role="alert">
-          {drop.error}
-        </p>
-      )}
+      <div className="tree-zones-head" style={{ height: ZONE_HEAD }}>
+        {B}
+      </div>
+      {ZONE_KINDS.map((kind) => {
+        const refused = zones.refused.includes(kind);
+        return (
+          <div
+            key={kind}
+            className={`tree-zone${zones.hot === kind ? ' hot' : ''}${refused ? ' refused' : ''}`}
+            data-zone={kind}
+            aria-disabled={refused || undefined}
+            style={{ height: ZONE_ROW }}
+          >
+            as {B}&apos;s {kind}
+          </div>
+        );
+      })}
     </div>
   );
 }

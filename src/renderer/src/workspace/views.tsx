@@ -23,37 +23,130 @@ import { Field } from './fields';
 import { Zh } from './Zh';
 import { formatTime } from './format';
 import { useUndo } from './undo';
-import { EntryEditable } from './editable';
+import { EntryEditable, patchForPath, renameSpec } from './editable';
 import { TypedConfirm } from './housekeeping';
+import './entries.css';
 
 type Listed = Response<'entry.list'>['entries'][number];
 
-/** The entries of one section, with a filter and a button to make a new one. */
+/** A57: the entries last open in each section, newest first, kept for the next visit. */
+const LAST_OPEN_KEY = 'nc.lastOpen';
+const LAST_OPEN_KEEP = 8;
+const lastOpen = new Map<string, string[]>();
+
+function readLastOpen(collection: EntryCollection): string[] {
+  const held = lastOpen.get(collection);
+  if (held) return held;
+  try {
+    const all = JSON.parse(localStorage.getItem(LAST_OPEN_KEY) ?? '{}') as Record<string, unknown>;
+    const ids = Array.isArray(all[collection]) ? (all[collection] as unknown[]).map(String) : [];
+    lastOpen.set(collection, ids);
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+/** Entry IDs are unique across bibles, so one list per section serves every bible. */
+function rememberOpen(collection: EntryCollection, id: string) {
+  const ids = [id, ...readLastOpen(collection).filter((x) => x !== id)].slice(0, LAST_OPEN_KEEP);
+  lastOpen.set(collection, ids);
+  try {
+    const all = JSON.parse(localStorage.getItem(LAST_OPEN_KEY) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(LAST_OPEN_KEY, JSON.stringify({ ...all, [collection]: ids }));
+  } catch {
+    // Remembering is a convenience; the session map still holds it.
+  }
+}
+
+/**
+ * A57: the fields a name typed in the find-or-add box sets: where a rename
+ * would put it, and the title that follows it.
+ */
+function nameFields(collection: EntryCollection, name: string): Record<string, unknown> {
+  const spec = renameSpec(collection);
+  const blank = blankEntry(manifests[collection]) as Record<string, unknown>;
+  return {
+    ...patchForPath(blank, spec.path, name),
+    ...(spec.extraPatch ? spec.extraPatch(name, blank) : {}),
+  };
+}
+
+function storable(collection: EntryCollection, draft: Record<string, unknown>): boolean {
+  const at = new Date().toISOString();
+  return entrySchemas[collection].safeParse({
+    ...withoutDerived(collection, draft),
+    _id: 'NEW',
+    createdAt: at,
+    modifiedAt: at,
+  }).success;
+}
+
+/**
+ * The entries of one section. The filter box finds or adds: a name that is
+ * not a title yet offers "New <singular> <name>" with Enter on it (A57). The
+ * list opens the entry last open in the section, else the first one.
+ */
 export function EntryList(props: {
   collection: EntryCollection;
   selected: string | null;
   onSelect: (id: string) => void;
-  onNew: () => void;
+  /** A new entry needs a form: `preset` holds the name typed, when there is one. */
+  onNew: (preset?: Record<string, unknown>) => void;
+  /** A57: nothing is open and no form is up, so the list may open an entry. */
+  autoOpen?: boolean;
+  /** A57: open this entry unless something else was opened meanwhile. */
+  onAutoOpen?: (id: string) => void;
 }) {
-  const { collection } = props;
+  const { collection, selected, autoOpen, onSelect, onAutoOpen } = props;
   const { version } = useStore();
-  const [entries, setEntries] = useState<Listed[] | null>(null);
+  const undo = useUndo();
+  // The rows and the section they were read for, so a switch never shows another section's rows.
+  const [loaded, setLoaded] = useState<{ collection: EntryCollection; rows: Listed[] } | null>(
+    null,
+  );
+  const entries = loaded?.collection === collection ? loaded.rows : null;
   const [filter, setFilter] = useState('');
   const [state, setState] = useState<QuestionFilter>('all');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [filterFor, setFilterFor] = useState(collection);
+  if (filterFor !== collection) {
+    // Adjusted during render: a name typed for one section is not carried to the next.
+    setFilterFor(collection);
+    setFilter('');
+    setAddError(null);
+  }
   const info = collectionInfo[collection];
+  const singular = info.singular.toLowerCase();
   const filterId = useId();
   const stateId = useId();
+  const addErrorId = useId();
   const heading = info.plural;
 
   useEffect(() => {
     let live = true;
     void call('entry.list', { collection, trash: 'exclude' }).then((r) => {
-      if (live) setEntries(r.entries);
+      if (live) setLoaded({ collection, rows: r.entries });
     });
     return () => {
       live = false;
     };
   }, [collection, version]);
+
+  // A57: remember what is open, and open the last one (or the first) when nothing is.
+  useEffect(() => {
+    if (selected) rememberOpen(collection, selected);
+  }, [collection, selected]);
+  useEffect(() => {
+    if (!autoOpen || !onAutoOpen || selected || !entries || entries.length === 0) return;
+    const live = new Set(entries.map((e) => e.entry._id));
+    const first = [...entries].sort((a, b) =>
+      entryTitle(a.entry).localeCompare(entryTitle(b.entry)),
+    )[0];
+    const id = readLastOpen(collection).find((x) => live.has(x)) ?? first?.entry._id;
+    if (id) onAutoOpen(id);
+  }, [autoOpen, selected, entries, collection, onAutoOpen]);
 
   const counts = useMemo(() => questionCounts((entries ?? []).map((e) => e.entry)), [entries]);
   const shown = useMemo(() => {
@@ -78,6 +171,38 @@ export function EntryList(props: {
   const rename = renameSpec(collection);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
+
+  // A57: the typed name, when no entry has it as its title, can start a new entry.
+  const typed = filter.trim();
+  const exact = typed
+    ? (entries ?? []).find((e) => entryTitle(e.entry).toLowerCase() === typed.toLowerCase())
+    : undefined;
+  const offerNew = typed !== '' && !exact && !ro.off && entries !== null;
+
+  const addTyped = async () => {
+    if (!offerNew || adding) return;
+    setAddError(null);
+    const named = nameFields(collection, typed);
+    const draft = { ...blankEntry(manifests[collection]), ...named };
+    if (!storable(collection, draft)) {
+      // The section needs more than a name: the form asks for the rest.
+      props.onNew(named);
+      setFilter('');
+      return;
+    }
+    setAdding(true);
+    try {
+      const { entry } = await call('entry.create', { collection, data: draft });
+      undo.record(createCommand(collection, entry._id, entryTitle(entry)));
+      setFilter('');
+      onSelect(entry._id);
+    } catch (err) {
+      setAddError(plainError(err));
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <section className="ws-list" aria-labelledby="list-title">
       <div className="list-head">
@@ -85,18 +210,18 @@ export function EntryList(props: {
         <button
           type="button"
           className="btn primary small"
-          onClick={inPlace ? () => setNaming(true) : props.onNew}
+          onClick={inPlace ? () => setNaming(true) : () => props.onNew()}
           disabled={ro.off}
           {...ro.tip}
         >
-          New {info.singular.toLowerCase()}
+          New {singular}
         </button>
       </div>
       {inPlace && naming && (
         <NewCharacterRow
           onCreated={(id) => {
             setNaming(false);
-            props.onSelect(id);
+            onSelect(id);
           }}
           onCancel={() => setNaming(false)}
         />
@@ -117,21 +242,56 @@ export function EntryList(props: {
       )}
       {collection === 'eraStates' && <EraCoverage />}
       <label htmlFor={filterId} className="sr-only">
-        Filter {info.plural.toLowerCase()}
+        Find or add {singular}
       </label>
       <input
         id={filterId}
         type="search"
-        placeholder={`Filter ${info.plural.toLowerCase()}`}
+        data-testid="find-or-add"
+        placeholder={`Find or add ${/^[aeiou]/u.test(singular) ? 'an' : 'a'} ${singular}`}
         value={filter}
-        onChange={(e) => setFilter(e.target.value)}
+        aria-invalid={addError ? true : undefined}
+        aria-describedby={addError ? addErrorId : undefined}
+        onChange={(e) => {
+          setFilter(e.target.value);
+          setAddError(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+          e.preventDefault();
+          if (offerNew) void addTyped();
+          else if (exact) onSelect(exact.entry._id);
+        }}
       />
+      {addError && (
+        <p id={addErrorId} className="ed-error" role="alert">
+          {addError}
+        </p>
+      )}
+      {offerNew && (
+        <button
+          type="button"
+          className="entry-row find-add"
+          data-testid="find-add-new"
+          disabled={adding}
+          onClick={() => void addTyped()}
+        >
+          <span className="entry-title">
+            + New {singular} <strong>{typed}</strong>
+          </span>
+          <kbd aria-hidden="true">Enter</kbd>
+        </button>
+      )}
       {entries === null ? (
         <p aria-live="polite">Loading.</p>
       ) : shown.length === 0 ? (
-        <p className="example-note">
-          {entries.length === 0 ? `No ${info.plural.toLowerCase()} yet.` : 'Nothing matches.'}
-        </p>
+        entries.length === 0 && !offerNew ? (
+          <p className="example-note" data-testid="list-empty">
+            No {info.plural.toLowerCase()} yet.
+          </p>
+        ) : !offerNew ? (
+          <p className="example-note">Nothing matches.</p>
+        ) : null
       ) : (
         <ul className="entry-list" data-testid="entry-list">
           {shown.map(({ entry, warnings }) => (
@@ -168,10 +328,9 @@ export function EntryList(props: {
                   type="button"
                   className="entry-row"
                   data-entry-id={entry._id}
-                  aria-current={props.selected === entry._id ? 'true' : undefined}
-                  aria-keyshortcuts="F2"
-                  title={!ro.off ? 'Double-click or press F2 to rename' : undefined}
-                  onClick={() => props.onSelect(entry._id)}
+                  aria-current={selected === entry._id ? 'true' : undefined}
+                  aria-keyshortcuts={!ro.off ? 'F2' : undefined}
+                  onClick={() => onSelect(entry._id)}
                   onDoubleClick={!ro.off ? () => setRenaming(entry._id) : undefined}
                   onKeyDown={
                     !ro.off
@@ -194,7 +353,7 @@ export function EntryList(props: {
                       </span>
                     )}
                     {warnings.length > 0 && (
-                      <span className="chip warn-chip" title="Fields with warnings">
+                      <span className="chip warn-chip">
                         {warnings.length} {warnings.length === 1 ? 'warning' : 'warnings'}
                       </span>
                     )}
@@ -207,34 +366,6 @@ export function EntryList(props: {
       )}
     </section>
   );
-}
-
-/**
- * IP-13: which field a row's rename writes. A character's full name (the title
- * follows it), a family's or an era's name (a title that holds the old name
- * follows it), and every other entry's title.
- */
-function renameSpec(collection: EntryCollection): {
-  path: string;
-  label: string;
-  extraPatch?: (next: unknown, entry: Record<string, unknown>) => Record<string, unknown>;
-} {
-  if (collection === 'characters') {
-    return { path: 'names.full', label: 'Full name', extraPatch: (next) => ({ title: next }) };
-  }
-  if (collection === 'families' || collection === 'eraStates') {
-    return {
-      path: 'name',
-      label: collection === 'families' ? 'Family name' : 'Era name',
-      extraPatch: (next, entry) => {
-        const old = typeof entry.name === 'string' ? entry.name : '';
-        const title = typeof entry.title === 'string' ? entry.title : '';
-        if (!title.trim() || title === old) return { title: next };
-        return old && title.includes(old) ? { title: title.split(old).join(String(next)) } : {};
-      },
-    };
-  }
-  return { path: 'title', label: 'Title' };
 }
 
 /**
@@ -345,7 +476,6 @@ export function EraCoverage() {
       {messages.map((m) => (
         <span key={m}>{m}</span>
       ))}
-      <span>These are flags only. Every era still saves.</span>
     </div>
   );
 }
@@ -415,9 +545,6 @@ export function NewEntryForm(props: {
           <h2 id="new-title">New {info.singular.toLowerCase()}</h2>
         </div>
       </header>
-      <p className="example-note">
-        Fill in what this entry needs to exist. Every other field is editable once it is made.
-      </p>
       <form className="editor-fields" onSubmit={(e) => void submit(e)} data-testid="new-entry">
         <WriteFieldset>
           {isCharacter && (
@@ -502,7 +629,9 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
     try {
       await call('entry.restore', { collection, id });
       undo.record(restoreCommand(collection, id, title));
-      setDone(`${title} is back.`);
+      setDone(null);
+      // A57: the status bar says it, with Undo.
+      undo.toast(`${title} is back.`);
     } catch (e) {
       setError(plainError(e));
     }
@@ -511,14 +640,14 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   const purge = async (collection: EntryCollection, id: string, title: string) => {
     await call('entry.purge', { collection, id });
     setAsking(null);
-    setDone(`Deleted ${title} forever. This is not an undo step.`);
+    setDone(`Deleted ${title} forever.`);
     setReloads((n) => n + 1);
   };
   const empty = async () => {
     const r = await call('trash.empty', {});
     setAsking(null);
     setDone(
-      `Emptied the trash: ${r.entries === 1 ? '1 entry' : `${r.entries} entries`} deleted forever. This is not an undo step.`,
+      `Emptied the trash: ${r.entries === 1 ? '1 entry' : `${r.entries} entries`} deleted forever.`,
     );
     setReloads((n) => n + 1);
   };
@@ -527,10 +656,6 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
   return (
     <section className="ws-wide stack" aria-labelledby="trash-title" data-testid="trash-view">
       <h2 id="trash-title">Trash</h2>
-      <p className="lede">
-        Deleted entries wait here. Restore one to bring it back as it was. Delete forever removes it
-        for good; undo cannot bring it back.
-      </p>
       {count > 0 && (
         <div className="stack tight">
           <div className="row">
@@ -604,15 +729,17 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
                   <button
                     type="button"
                     className="btn small primary"
+                    aria-label={`Restore ${title}`}
                     onClick={() => void restore(collection, entry._id, title)}
                     disabled={ro.off}
                     {...ro.tip}
                   >
-                    Restore {title}
+                    Restore
                   </button>
                   <button
                     type="button"
                     className="btn small danger"
+                    aria-label={`Delete ${title} forever`}
                     onClick={() => {
                       setDone(null);
                       setAsking(key);
@@ -620,7 +747,7 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
                     disabled={ro.off || asking === key}
                     {...ro.tip}
                   >
-                    Delete {title} forever
+                    Delete forever
                   </button>
                 </span>
                 {asking === key && (
@@ -646,10 +773,6 @@ export function TrashView(props: { onOpen: (collection: EntryCollection, id: str
           data-testid="trash-notebook"
         >
           <h3 id="trash-notebook">Notebook pages</h3>
-          <p className="example-note">
-            The phone deleted these, or stopped keeping the line. They follow the phone, so a page
-            comes back when the phone sends it again. Empty trash deletes them forever.
-          </p>
           <ul className="trash-list">
             {pages.map((p) => (
               <li key={p.id} data-id={p.id}>

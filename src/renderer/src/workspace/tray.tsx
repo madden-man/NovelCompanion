@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClaudeStatusWire } from '../../../shared/claude';
 import { collectionInfo } from '../../../shared/schema';
 import type { FiledEntry } from '../../../shared/domain/capture';
@@ -10,7 +10,7 @@ import { useWriteGuard } from '../connection';
 import { call, plainError } from '../api';
 import { useBibleSettings } from './bibleSettings';
 import { captureNav } from './capture';
-import { FactCard } from './captureChips';
+import { ClaudeKeyField, FactCard } from './captureChips';
 import { NO_CHOICE, draftsWith, loadCaptureBible, openAsks } from './captureLocal';
 import type { CaptureBible, FactChoice } from './captureLocal';
 import { Disclosure, claudeNav } from './claude';
@@ -23,8 +23,6 @@ import './capture.css';
 import './notebook.css';
 
 type Mark = keyof TrayMarks | null;
-
-const NO_KEY = 'No Anthropic key is set. Add one in Settings to ask Claude.';
 
 /** "story year 2071", "the whole book", or "no story year". */
 function yearWords(year: number | null | undefined): string {
@@ -46,6 +44,8 @@ function groupHeading(g: TrayGroup): string {
  * it as one undo step; a Route B or C card waiting behind Send to Claude,
  * which hands the sentence to the capture box. Dismiss stays dismissed until
  * the line changes. Nothing is written or sent until he presses a button.
+ * A57: no line says how; with no key the Claude buttons become Add a Claude
+ * key, which opens the key field at the top of the tray.
  */
 export function NotebookTray() {
   const settings = useBibleSettings();
@@ -54,7 +54,17 @@ export function NotebookTray() {
   const undo = useUndo();
   const ro = useWriteGuard();
   const [pages, setPages] = useState<OfferedPage[] | null>(null);
-  const [marks, setMarks] = useState<TrayMarks>(NO_MARKS);
+  const [marks, setShownMarks] = useState<TrayMarks>(NO_MARKS);
+  /**
+   * Counts the marks a write answered with. A reload that read the marks
+   * before a write answered (an undo deletes an entry, which reloads, then
+   * clears its mark) must not draw over that newer answer.
+   */
+  const marksWritten = useRef(0);
+  const setMarks = useCallback((m: TrayMarks) => {
+    marksWritten.current += 1;
+    setShownMarks(m);
+  }, []);
   const [bible, setBible] = useState<CaptureBible | null>(null);
   const [status, setStatus] = useState<ClaudeStatusWire | null>(null);
   const [choices, setChoices] = useState<Record<string, FactChoice>>({});
@@ -62,9 +72,15 @@ export function NotebookTray() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [filed, setFiled] = useState<FiledEntry[]>([]);
+  const [keyOpen, setKeyOpen] = useState(false);
+  /** AI-6: the Send to Claude pressed before consent; Continue sends it, Not now drops it. */
+  const [ackFor, setAckFor] = useState<(() => void) | null>(null);
+  /** Bumped when a reload's marks were dropped, so a fresh read follows it. */
+  const [reread, setReread] = useState(0);
 
   useEffect(() => {
     let live = true;
+    const written = marksWritten.current;
     Promise.all([
       call('notebook.offered', {}),
       call('tray.state', {}),
@@ -74,7 +90,9 @@ export function NotebookTray() {
       ([offered, m, b, s]) => {
         if (!live) return;
         setPages(offered.pages);
-        setMarks(m);
+        // A mark written while this read was out is newer than what it read; read again after it.
+        if (marksWritten.current === written) setShownMarks(m);
+        else setReread((n) => n + 1);
         setBible(b);
         setStatus(s);
       },
@@ -85,7 +103,7 @@ export function NotebookTray() {
     return () => {
       live = false;
     };
-  }, [version, settings.numbers.timelineEnd, story.year]);
+  }, [version, settings.numbers.timelineEnd, story.year, reread]);
 
   const hints = useMemo(() => {
     const out: Record<string, Omit<CaptureHint, 'fact'>> = {};
@@ -104,7 +122,7 @@ export function NotebookTray() {
   /** A `run` step that sets or clears marks, for undo and redo (FN-3, FN-4). */
   const markStep = useCallback(
     (keys: string[], mark: Mark): Op => markOp(call, keys, mark, setMarks),
-    [],
+    [setMarks],
   );
 
   /** FN-4: dismiss facts as one undo step. */
@@ -173,6 +191,13 @@ export function NotebookTray() {
   /** FN-6: hand the sentence to the capture box, which sends it on its route; then it leaves the tray. */
   const send = async (i: TrayItem, all: boolean) => {
     if (busy) return;
+    // AI-6: the first press that would send asks for consent, read fresh from main.
+    const fresh = await call('claude.status', {}).catch(() => status);
+    if (fresh) setStatus(fresh);
+    if (fresh?.key.set && !fresh.acknowledgedAt) {
+      setAckFor(() => () => void send(i, all));
+      return;
+    }
     const c = choiceOf(i);
     const year = c.hint.startYear ?? (typeof i.year === 'number' ? i.year : i.fact.years.start);
     setMessage(null);
@@ -189,6 +214,12 @@ export function NotebookTray() {
           .then(() => call('tray.mark', { keys: [i.key], mark: null }))
           .then(setMarks, () => undefined);
       },
+      // FN-6: handed back at a close while its run went on, then filed in the box: it leaves again.
+      onFiled: () => {
+        void call('tray.mark', { keys: [i.key], mark: 'sent' }).then(setMarks, (e: unknown) =>
+          setMessage(plainError(e)),
+        );
+      },
     });
     if (result === 'sent') {
       sentMark = call('tray.mark', { keys: [i.key], mark: 'sent' }).then(setMarks, (e: unknown) =>
@@ -196,20 +227,16 @@ export function NotebookTray() {
       );
       await sentMark;
     } else if (result === 'busy') {
-      setMessage('The Add box is busy with another capture. Finish or close it, then send again.');
+      setMessage('The Add box is busy with another capture.');
     } else {
-      setMessage('Nothing was sent. The Add box says why.');
+      setMessage('Nothing was sent.');
     }
   };
 
-  const needsAck = status !== null && status.key.set && !status.acknowledgedAt;
-  const claudeOff = (i: TrayItem): string | null => {
-    if (ro.off) return ro.tip.title ?? 'The bible is read-only.';
-    if (status !== null && !status.key.set) return NO_KEY;
-    if (needsAck) return 'Confirm what Claude sends first, at the top of this screen.';
-    if (openAsks(i.fact, choiceOf(i)).includes('Year')) return 'Pick the year first.';
-    return null;
-  };
+  const keyMissing = status !== null && !status.key.set;
+  /** Claude waits: read-only, or the highlighted year chip. */
+  const claudeOff = (i: TrayItem): boolean =>
+    ro.off || openAsks(i.fact, choiceOf(i)).includes('Year');
 
   const choose = (
     key: string,
@@ -226,8 +253,30 @@ export function NotebookTray() {
   return (
     <section className="ws-wide stack" aria-labelledby="tray-title" data-testid="notebook-tray">
       <h2 id="tray-title">From the notebook</h2>
-      {needsAck && (
-        <Disclosure onConfirm={() => void call('claude.acknowledge', {}).then(setStatus)} />
+      {keyOpen && (
+        <ClaudeKeyField
+          onSaved={(s) => {
+            setStatus(s);
+            setKeyOpen(false);
+          }}
+          onCancel={() => setKeyOpen(false)}
+        />
+      )}
+      {ackFor && (
+        <Disclosure
+          onConfirm={() => {
+            const go = ackFor;
+            setAckFor(null);
+            void call('claude.acknowledge', {}).then(
+              (s) => {
+                setStatus(s);
+                go();
+              },
+              (e: unknown) => setMessage(plainError(e)),
+            );
+          }}
+          onDecline={() => setAckFor(null)}
+        />
       )}
       {filed.length > 0 && (
         <div className="callout stack tight" role="status" data-testid="tray-filed">
@@ -295,6 +344,8 @@ export function NotebookTray() {
                         index={bible.index}
                         busy={busy || ro.off}
                         claudeOff={claudeOff(i)}
+                        keyMissing={keyMissing}
+                        onAddKey={() => setKeyOpen(true)}
                         onTick={(t) =>
                           setUnticked((cur) => {
                             const next = new Set(cur);
@@ -322,7 +373,7 @@ export function NotebookTray() {
                     onClick={() => void file(g)}
                     data-testid="tray-file"
                   >
-                    {fileable === local ? 'File it' : `File ${fileable} of ${local}`}
+                    {fileable === local ? `File ${fileable}` : `File ${fileable} of ${local}`}
                   </button>
                 )}
                 <button

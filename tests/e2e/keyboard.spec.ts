@@ -56,7 +56,17 @@ test.beforeAll(async () => {
       fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     );
   }
+  // PL-5: the Outline's scene fields hold text, so a Tab that indented instead of leaving would trap the walk.
+  await invoke('sceneOutline.set', { text: OUTLINE, breaks: { CH1: 0, CH2: 2, CH3: 4 } });
 });
+
+const OUTLINE = [
+  '- Mara reads the archive door',
+  '  - She finds the key',
+  '- Two kitchens at dawn',
+  '- The kettle',
+  '- Wedding in the rain',
+].join('\n');
 
 test.afterAll(async () => {
   await app?.close();
@@ -202,6 +212,8 @@ test('NF-2 SM-6 KB-8 every screen in the rail and every App menu item opens from
     const left = await unreachable();
     if (left.length) missed[screen] = left;
   }
+  // Tabbing through the Outline's scene text left every line as it was (PL-5).
+  expect((await invoke('sceneOutline.get', {})).text).toBe(OUTLINE);
   // The second tabs of Continuity checker and Cultural data, by the arrow keys.
   for (const [screen, tab] of [
     ['Continuity checker', 'Manuscript'],
@@ -511,7 +523,7 @@ test('NF-2 ST-1 settings: the key, by keyboard', async () => {
   const settings = page.getByTestId('settings-view');
   await tabTo(settings.getByTestId('claude-key-input'));
   await page.keyboard.type(KEY);
-  await press(settings.getByTestId('claude-key-save'));
+  await page.keyboard.press('Enter');
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
   expect(await unreachable()).toEqual([]);
 });
@@ -523,13 +535,15 @@ test('NF-2 AI-1 the Claude panel: Cmd+J, the disclosure, Cmd+Enter to ask, and E
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('claude-input')).toBeFocused();
   await page.keyboard.type('How old is Margaret in 2040?');
+  await tabTo(panel.getByTestId('claude-input'), 50, 'Shift+Tab');
+  await page.keyboard.press('Meta+Enter');
+  // AI-6, A57: the first question asks for consent in a sheet; Continue sends it.
   const disclosure = panel.getByTestId('claude-disclosure');
+  await expect(disclosure.or(panel.getByTestId('claude-turn').last())).toBeVisible();
   if (await disclosure.isVisible()) {
     await press(disclosure.getByRole('button', { name: 'Continue' }));
     await expect(disclosure).toBeHidden();
   }
-  await tabTo(panel.getByTestId('claude-input'), 50, 'Shift+Tab');
-  await page.keyboard.press('Meta+Enter');
   const turn = panel.getByTestId('claude-turn').last();
   await expect(turn).toHaveAttribute('data-status', 'done');
   await expect(turn.getByTestId('claude-answer')).toContainText('In 2040 Margaret Hale is 82.');
@@ -657,14 +671,12 @@ test('NF-2 CC-1 CC-4 the alignment screen: run, Stop, Manuscript wins and its di
   await expect(finding('age')).toBeVisible();
   expect(await unreachable('[data-testid="alignment-view"]')).toEqual([]);
 
-  // Manuscript wins opens the change set as a diff, and its controls take focus too.
-  await press(finding('age').getByRole('button', { name: 'Manuscript wins' }));
+  // The change set shows as a diff; "Chapter is right" applies it from the keyboard.
   await expect(finding('age').getByTestId('finding-diff')).toBeVisible();
-  expect(await unreachable('[data-testid="alignment-view"]')).toEqual([]);
   await press(finding('age').getByTestId('finding-apply'));
   await expect(finding('age')).toHaveAttribute('data-state', 'manuscriptWins');
 
-  await press(finding('place').getByRole('button', { name: 'Rewrite recommended' }));
+  await press(finding('place').getByRole('button', { name: 'Bible is right: add a rewrite task' }));
   await expect(view.getByTestId('rewrite-task')).toHaveCount(1);
 
   const structural = view.getByTestId('structural-findings').getByTestId('finding');

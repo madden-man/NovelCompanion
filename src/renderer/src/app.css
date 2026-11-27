@@ -45,9 +45,6 @@ body {
   font-size: 1.4rem;
   margin: 0;
 }
-.app-head .lede {
-  margin: 0;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -632,7 +629,6 @@ legend.ed-label {
 .tree-bar .tree-warn-count {
   margin-left: auto;
 }
-.tree-screen .tree-main.fill > .confirm,
 .tree-screen .tree-main.fill > .callout {
   flex-shrink: 0;
   margin: 0;
@@ -712,20 +708,10 @@ legend.ed-label {
 .tree-svg.dragging {
   cursor: grabbing;
 }
-/* FT-11: a person on the move follows the pointer; the drop menu sits under it. */
+/* FT-11: a person on the move follows the pointer. */
 .tree-svg.moving,
 .tree-svg.moving .tnode {
   cursor: grabbing;
-}
-.tree-drop {
-  position: absolute;
-  z-index: 31;
-  width: 280px;
-  align-items: stretch;
-  box-shadow: var(--shadow);
-}
-.tree-drop .btn {
-  text-align: left;
 }
 .tree-ctl {
   position: absolute;
@@ -755,11 +741,6 @@ legend.ed-label {
   overflow-y: auto;
   padding: 10px 12px;
   box-shadow: var(--shadow);
-}
-.legend .legend-note {
-  flex-basis: 100%;
-  font-size: 0.8rem;
-  color: var(--fg-2);
 }
 .tnode {
   cursor: pointer;

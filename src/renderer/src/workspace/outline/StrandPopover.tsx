@@ -251,7 +251,7 @@ export function StrandPopover(props: {
           </dd>
         </dl>
       ) : (
-        <p>This chapter has no strand yet. Open the chapter to add one.</p>
+        <p>No strand yet.</p>
       )}
     </div>
   );

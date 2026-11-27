@@ -1093,7 +1093,7 @@ export function planAddRelative(
       const ps = parentsOf(g, anchor.id);
       if (!ps.length) {
         throw new TreeActionError(
-          `${anchor.name} has no known parents, so a sibling has no one to link to. Add a parent first.`,
+          `${anchor.name} has no known parents, so a sibling has no one to link to.`,
         );
       }
       for (const p of ps) {

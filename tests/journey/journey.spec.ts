@@ -141,7 +141,6 @@ test('ARCH-8 a fresh install opens with no bibles, and a new empty bible is made
   await expect(page).toHaveTitle('Novel Companion');
   await expect(page.getByTestId('no-bibles')).toHaveText('No bibles yet');
   await page.getByLabel('Name').fill('Scratch');
-  await expect(page.getByLabel('ID')).toHaveValue('scratch');
   await page.getByRole('button', { name: 'Create bible' }).click();
   await page.getByRole('button', { name: 'Open Scratch' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Scratch');
@@ -152,14 +151,8 @@ test('ARCH-8 a fresh install opens with no bibles, and a new empty bible is made
 
 test('BK-3 the fixture novel is loaded through Backups into a new bible, Tide Lines, which opens', async () => {
   await rail(page, 'Backups').click();
-  const form = page.locator('form', {
-    has: page.getByRole('heading', { name: /Load an exported bible/ }),
-  });
-  // Wait for the view to settle (its snapshot list loads), so the form keeps what is typed.
-  await expect(page.getByTestId('snapshot-row').first()).toBeVisible();
-  await form.getByLabel('Name of the new bible').fill('Tide Lines');
-  await expect(form.getByLabel('ID')).toHaveValue('tide-lines');
-  await form.getByTestId('backup-import').click();
+  // A57: Import opens the file dialog directly; the new bible takes the file's name.
+  await page.getByTestId('backup-import').click();
   // Loading writes every collection in one transaction; give it time on a busy machine.
   await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines', { timeout: 60_000 });
   expect(
@@ -200,8 +193,8 @@ test('TM-1 TM-2 TM-4 the Story Time dialog: an age anchor gives the year, and th
   const dialog = page.getByTestId('story-time-dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Character').selectOption({ label: 'Iris Hale-Zhou' });
+  // A57: the year follows the age as it is typed; there is no button to press.
   await dialog.getByLabel('Age', { exact: true }).fill('9');
-  await dialog.getByRole('button', { name: 'Set year from age' }).click();
   await expect(dialog.getByTestId('time-now')).toHaveText('2040');
   await expect(dialog.getByTestId('time-note')).toContainText('Iris Hale-Zhou is 9 in 2040');
   await expect(
@@ -304,7 +297,7 @@ async function addPerson(
   await expect(treeInspector().getByTestId('inspector-name')).toHaveText(name);
 }
 
-/** FT-11: drag one person's node and drop it on another's; the drop menu opens. */
+/** FT-11: drag one person's node over another's and drop it on their parent zone. */
 async function dropOn(from: string, onto: string) {
   await page.getByRole('button', { name: 'Fit to window' }).click();
   const a = (await treeNode(from).boundingBox())!;
@@ -313,10 +306,10 @@ async function dropOn(from: string, onto: string) {
   await page.mouse.down();
   await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 3 });
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+  // A57: the drop zones over the person; let go on the parent zone.
+  const z = (await page.locator('[data-testid="tree-zones"] [data-zone="parent"]').boundingBox())!;
+  await page.mouse.move(z.x + z.width / 2, z.y + z.height / 2, { steps: 4 });
   await page.mouse.up();
-  const menu = page.getByTestId('tree-drop');
-  await expect(menu).toHaveAttribute('aria-label', `${from} dropped on ${onto}`);
-  return menu;
 }
 
 async function setLifeYear(path: 'birth' | 'death', year: number): Promise<void> {
@@ -389,14 +382,15 @@ test('ARCH-8 FT-2 the Scratch bible is opened from the Bibles screen, its two fa
     await field(form, 'title').locator(':scope > input').fill(String(f.title));
     await field(form, 'name').locator(':scope > input').fill(String(f.name));
     await form.getByRole('button', { name: 'Create family' }).click();
-    await expect(
-      page.getByTestId('editor').getByRole('heading', { name: String(f.title) }),
-    ).toBeVisible();
+    // A57: the heading is the name in place, so it is read by its text, not its field label.
+    await expect(page.getByTestId('editor').getByTestId('editor-heading')).toContainText(
+      String(f.title),
+    );
     await waitSaved(page);
   }
   await rail(page, 'Family tree').click();
   await expect(page.getByTestId('tree-view')).toBeVisible();
-  await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
+  await expect(page.getByTestId('tree-warn-count')).toHaveText('No warnings');
 
   await addPerson('person', 'Margaret Hale', 1958);
   await setLifeYear('death', 2041);
@@ -427,9 +421,7 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   await setFamilies(['Zhou family']);
   // FT-11: link the existing Zhou Wei as Zhou Lan's other parent by dropping Wei on Lan.
   const linksBefore = (await invoke('tree.get', {})).links.length;
-  const menu = await dropOn('Zhou Wei', 'Zhou Lan');
-  await menu.getByRole('button', { name: 'Make Zhou Wei a parent of Zhou Lan' }).click();
-  await expect(menu).toHaveCount(0);
+  await dropOn('Zhou Wei', 'Zhou Lan');
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await selectPerson('Zhou Lan');
   await addPerson('sibling', 'Zhou Jun', 1993, { type: 'biological' });
@@ -469,24 +461,33 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   expect(t.warnings).toEqual([]);
   // Tidy layout draws exactly that layout.
   await page.getByRole('button', { name: 'Tidy layout' }).click();
-  await page
-    .getByRole('dialog', { name: 'Tidy layout' })
-    .getByRole('button', { name: 'Tidy layout' })
-    .click();
-  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
   const want = layoutByName(built);
+  // Wait for every person's stored place, then for the screen to draw them: the save lands
+  // in main before the tree re-renders from it, and under load a read can fall between.
   await expect
-    .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])
-    .toEqual({ x: want[t.people[0]!.name]![0], y: want[t.people[0]!.name]![1] });
-  const shown = await page
-    .locator('g.tnode')
-    .evaluateAll((els) =>
-      els.map((e) => [e.getAttribute('aria-label')!.split(',')[0], e.getAttribute('transform')]),
+    .poll(async () => {
+      const now = await invoke('tree.get', {});
+      return Object.fromEntries(
+        now.people.map((p) => [p.name, [now.positions?.[p.id]?.x, now.positions?.[p.id]?.y]]),
+      );
+    })
+    .toEqual(want);
+  const drawn = () =>
+    page
+      .locator('g.tnode')
+      .evaluateAll((els) =>
+        Object.fromEntries(
+          els.map((e) => [
+            e.getAttribute('aria-label')!.split(',')[0],
+            e.getAttribute('transform'),
+          ]),
+        ),
+      );
+  await expect
+    .poll(drawn)
+    .toEqual(
+      Object.fromEntries(Object.entries(want).map(([n, [x, y]]) => [n, `translate(${x},${y})`])),
     );
-  for (const [name, transform] of shown) {
-    const [x, y] = want[name!]!;
-    expect(transform, name!).toBe(`translate(${x},${y})`);
-  }
   // FT-4: the adoptive link and both ended unions are drawn as such.
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
   await expect(page.locator('text.tunion-end')).toHaveText(['ended 2030', 'ended 2064']);
@@ -965,10 +966,12 @@ async function ask(question: string): Promise<void> {
 test('AI-1 AI-2 AI-6 the question panel answers who is alive in 2075 and lists the entries it read', async () => {
   await page.keyboard.press('Meta+j');
   await expect(claudePanel()).toBeVisible();
+  await claudePanel().getByTestId('claude-input').fill('Who is alive in 2075?');
+  await claudePanel().getByTestId('claude-send').click();
   const disclosure = claudePanel().getByTestId('claude-disclosure');
   await expect(disclosure).toContainText('sends the content listed below to Anthropic');
   await disclosure.getByRole('button', { name: 'Continue' }).click();
-  await ask('Who is alive in 2075?');
+  await expect(lastTurn()).toHaveAttribute('data-status', 'done');
   await expect(lastTurn().getByTestId('claude-answer')).toHaveText(
     'In 2075 Daniel Hale is 90 and Noor Zhou is 17. Margaret and Peter Hale have died by then.',
   );
@@ -1073,10 +1076,9 @@ test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists stru
 
 test('CC-4 one finding is resolved with Manuscript wins, which changes the bible, and the change is undone', async () => {
   const p1 = finding('age');
-  await p1.getByRole('button', { name: 'Manuscript wins' }).click();
   const diff = p1.getByTestId('finding-diff');
   await expect(diff.locator('tbody tr')).toHaveText([/Margaret Hale\s*Birth\s*1958\s*1970/]);
-  await diff.getByTestId('finding-apply').click();
+  await p1.getByTestId('finding-apply').click();
   await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
   await expect(p1).toContainText('bible updated');
   await expect
@@ -1094,7 +1096,9 @@ test('CC-4 one finding is resolved with Manuscript wins, which changes the bible
 });
 
 test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on the Continuity checker', async () => {
-  await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
+  await finding('place')
+    .getByRole('button', { name: 'Bible is right: add a rewrite task' })
+    .click();
   await expect(finding('place')).toHaveCount(0);
   const task = alignment().getByTestId('rewrite-task');
   await expect(task).toHaveCount(1);
@@ -1128,7 +1132,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   await rail(page, 'Backups').click();
   const target = page.locator(`[data-testid="snapshot-row"][data-id="${id}"]`);
   await target.getByTestId('snapshot-restore').click();
-  await target.getByTestId('snapshot-confirm').click();
+  await page.getByTestId('snapshot-confirm').getByRole('button', { name: 'Replace' }).click();
   await expect(page.getByTestId('reload-notice')).toContainText('Restored the snapshot from');
   await expect
     .poll(

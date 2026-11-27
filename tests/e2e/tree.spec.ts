@@ -142,8 +142,15 @@ async function add(
 
 const editor = () => inspector().getByTestId('editor');
 
-/** FT-11: drag one person's node and drop it on another's; the drop menu opens. */
-async function dropOn(from: string, onto: string) {
+type Zones = ReturnType<Page['getByTestId']>;
+
+/** FT-11 A57: drag one person over another; their drop zones show; let go on the zone of that kind. */
+async function dropOn(
+  from: string,
+  onto: string,
+  kind: 'parent' | 'partner' | 'child',
+  check?: (zones: Zones) => Promise<void>,
+) {
   await page.getByRole('button', { name: 'Fit to window' }).click();
   const a = (await node(from).boundingBox())!;
   const b = (await node(onto).boundingBox())!;
@@ -151,10 +158,22 @@ async function dropOn(from: string, onto: string) {
   await page.mouse.down();
   await page.mouse.move(a.x + a.width / 2 + 12, a.y + a.height / 2 + 12, { steps: 3 });
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
+  const zones = page.getByTestId('tree-zones');
+  await expect(zones).toHaveAttribute('aria-label', `Drop ${from} on ${onto}`);
+  const zone = zones.locator(`[data-zone="${kind}"]`);
+  await expect(zone).toHaveText(`as ${onto}'s ${kind}`);
+  const z = (await zone.boundingBox())!;
+  await page.mouse.move(z.x + z.width / 2, z.y + z.height / 2, { steps: 4 });
+  await expect(zone).toHaveClass(/\bhot\b/);
+  await check?.(zones);
   await page.mouse.up();
-  const menu = page.getByTestId('tree-drop');
-  await expect(menu).toHaveAttribute('aria-label', `${from} dropped on ${onto}`);
-  return menu;
+  await expect(zones).toHaveCount(0);
+}
+
+/** A57: Tidy layout runs at once; its notice carries an Undo button. */
+async function tidyLayout() {
+  await page.getByRole('button', { name: 'Tidy layout' }).click();
+  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
 }
 
 async function setYearDate(path: 'birth' | 'death', year: number) {
@@ -218,7 +237,9 @@ function layoutByName(g: TreeGraph) {
 test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the fixture graph and layout', async () => {
   test.setTimeout(300_000);
   await openTree();
-  await expect(page.getByTestId('no-tree-warnings')).toBeVisible();
+  // A57: with nobody selected and no warnings, there is no inspector at all.
+  await expect(page.getByTestId('tree-warn-count')).toHaveText('No warnings');
+  await expect(inspector()).toHaveCount(0);
 
   await add('person', 'Margaret Hale', 1958);
   await setYearDate('death', 2041);
@@ -245,9 +266,7 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   await setFamilies(['FAM-ZHOU']);
   // Link the existing Zhou Wei as Zhou Lan's other parent: drop Wei on Lan (FT-11).
   const linksBefore = (await invoke('tree.get', {})).links.length;
-  const menu = await dropOn('Zhou Wei', 'Zhou Lan');
-  await menu.getByRole('button', { name: 'Make Zhou Wei a parent of Zhou Lan' }).click();
-  await expect(menu).toHaveCount(0);
+  await dropOn('Zhou Wei', 'Zhou Lan', 'parent');
   await expect.poll(async () => (await invoke('tree.get', {})).links.length).toBe(linksBefore + 1);
   await select('Zhou Lan');
   await add('sibling', 'Zhou Jun', 1993, { type: 'biological' });
@@ -278,29 +297,35 @@ test('FT-2 FT-4 building the fixture tree by hand through tree actions gives the
   // The same graph lays out the same way, whatever order it was entered in.
   expect(layoutByName(built)).toEqual(layoutByName(expected));
   // Entered one at a time, people were placed without moving anyone, so Tidy layout
-  // runs the full layout once; after a confirm, the screen draws exactly that layout.
-  await page.getByRole('button', { name: 'Tidy layout' }).click();
-  await page
-    .getByRole('dialog', { name: 'Tidy layout' })
-    .getByRole('button', { name: 'Tidy layout' })
-    .click();
-  await expect(page.getByRole('dialog', { name: 'Tidy layout' })).toHaveCount(0);
-  await expect
-    .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])
-    .toEqual({
-      x: layoutByName(built)[t.people[0]!.name]![0],
-      y: layoutByName(built)[t.people[0]!.name]![1],
-    });
-  const shown = await page
-    .locator('g.tnode')
-    .evaluateAll((els) =>
-      els.map((e) => [e.getAttribute('aria-label')!.split(',')[0], e.getAttribute('transform')]),
-    );
+  // runs the full layout once, at once; the screen draws exactly that layout.
+  await tidyLayout();
+  // Wait for every person's stored place, then for the screen to draw them: the save lands
+  // in main before the tree re-renders from it, and under load a read can fall between.
   const want = layoutByName(built);
-  for (const [name, transform] of shown) {
-    const [x, y] = want[name!]!;
-    expect(transform, name!).toBe(`translate(${x},${y})`);
-  }
+  await expect
+    .poll(async () => {
+      const now = await invoke('tree.get', {});
+      return Object.fromEntries(
+        now.people.map((p) => [p.name, [now.positions?.[p.id]?.x, now.positions?.[p.id]?.y]]),
+      );
+    })
+    .toEqual(want);
+  const drawn = () =>
+    page
+      .locator('g.tnode')
+      .evaluateAll((els) =>
+        Object.fromEntries(
+          els.map((e) => [
+            e.getAttribute('aria-label')!.split(',')[0],
+            e.getAttribute('transform'),
+          ]),
+        ),
+      );
+  await expect
+    .poll(drawn)
+    .toEqual(
+      Object.fromEntries(Object.entries(want).map(([n, [x, y]]) => [n, `translate(${x},${y})`])),
+    );
   expect(t.warnings).toEqual([]);
 });
 
@@ -512,17 +537,21 @@ test('FT-6 A45 warnings show in the inspector behind the toolbar count and never
   await setYearDate('birth', 2058);
   await expect(count).toHaveText('No warnings');
   await count.click();
-  await expect(inspector().getByTestId('no-tree-warnings')).toBeVisible();
+  // A57: no warnings and nobody selected: the inspector goes.
+  await expect(inspector()).toHaveCount(0);
 
-  // Self-ancestry is refused in plain words, and nothing is written.
+  // A57: self-ancestry is refused on the drop zone itself, drawn disabled; a drop there
+  // writes nothing and moves nobody.
   const before = (await invoke('tree.get', {})).links.length;
-  const menu = await dropOn('Margaret Hale', 'Iris Hale-Zhou');
-  await menu.getByRole('button', { name: 'Make Margaret Hale a child of Iris Hale-Zhou' }).click();
-  await expect(menu.getByRole('alert')).toHaveText(
-    'This link was not made: Margaret Hale is already an ancestor of Iris Hale-Zhou, so it would make someone their own ancestor.',
-  );
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
+  const margaret = await node('Margaret Hale').getAttribute('transform');
+  await dropOn('Margaret Hale', 'Iris Hale-Zhou', 'child', async (zones) => {
+    await expect(zones.locator('[data-zone="child"]')).toHaveAttribute('aria-disabled', 'true');
+    await expect(zones.locator('[data-zone="child"]')).toHaveClass(/refused/);
+    for (const ok of ['parent', 'partner'])
+      await expect(zones.locator(`[data-zone="${ok}"]`)).not.toHaveAttribute('aria-disabled');
+  });
+  await expect(page.getByTestId('tree-link-error')).toHaveCount(0);
+  await expect(node('Margaret Hale')).toHaveAttribute('transform', margaret!);
   // The write path refuses it too, whoever asks.
   const ids = Object.fromEntries(t.people.map((p) => [p.name, p.id]));
   await expect(
@@ -737,14 +766,28 @@ test('FT-8 A26 A45 the tree fills the middle column with no page scroll, Full sc
     )
     .toBe('tree-view');
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
-  // Escape only works once the window has finished entering full screen.
-  await expect
-    .poll(() =>
-      app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isFullScreen()),
-    )
-    .toBe(true);
-  // macOS ignores a leave request while its enter animation is still running.
-  await page.waitForTimeout(3000);
+  // A hidden run keeps the window off the screen, so only the page goes full screen. A shown
+  // run (NOVEL_COMPANION_E2E_SHOW=1) takes the window too, and there Escape only works once
+  // the window has finished entering full screen.
+  const windowToo = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]!.isFullScreenable(),
+  );
+  if (windowToo) {
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isFullScreen()),
+      )
+      .toBe(true);
+    // macOS ignores a leave request while its enter animation is still running.
+    await page.waitForTimeout(3000);
+  }
+  // Hidden or shown, no window of a hidden run is ever visible.
+  if (!windowToo)
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().some((w) => w.isVisible() && w.getOpacity() > 0),
+      ),
+    ).toBe(false);
   await page.keyboard.press('Escape');
   await expect
     .poll(() => page.evaluate(() => document.fullscreenElement === null), { timeout: 15000 })
@@ -864,7 +907,7 @@ test('ED-3 after a save lands in one field, Cmd+Z in another field with unsaved 
   const name = inspector().getByTestId('add-form').getByLabel('Name');
   await name.pressSequentially('Typed name');
   await waitSaved(page);
-  const next = 'Undo Changed In the story on Ruth Hale (Cmd Z)';
+  const next = 'Undo Changed In the story on Ruth Hale';
   await expect(undoButton).toHaveAttribute('title', next);
   await expect(name).toBeFocused();
   await page.keyboard.press('Meta+z');
@@ -929,7 +972,7 @@ test('FT-10 adding a child to Ruth leaves every other node where it was, and sta
   expect(await domPositions()).toEqual(after);
 });
 
-test('FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, Cmd+Z takes each move back, and a drop on someone can be just a move', async () => {
+test('FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an arrow moves them a slot, Cmd+Z takes each move back, and a drag over someone carried on into empty space is a move', async () => {
   const at = async (name: string) => {
     const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(
       (await node(name).getAttribute('transform'))!,
@@ -978,14 +1021,26 @@ test('FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an
   await page.keyboard.press('Shift+Meta+z');
   await expect.poll(() => stored('Grace Hale')).toEqual({ x: moved.x + 194, y: moved.y });
   await expect.poll(async () => (await at('Grace Hale')).x).toBe(moved.x + 194);
-  // Dropped on someone, "Just move" puts her there without a link.
+  // A57: held over someone she shows their drop zones; carried on into empty space, the
+  // zones go and the drop is a plain move, with no link.
   const links = (await invoke('tree.get', {})).links.length;
-  const menu = await dropOn('Grace Hale', 'Sam Hale');
-  await menu.getByRole('button', { name: 'Just move Grace Hale here' }).click();
-  await expect(menu).toHaveCount(0);
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  const g = (await node('Grace Hale').boundingBox())!;
+  const s = (await node('Sam Hale').boundingBox())!;
+  const area = (await svgEl().boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 10, g.y + g.height / 2 + 10, { steps: 3 });
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2, { steps: 8 });
+  await expect(page.getByTestId('tree-zones')).toHaveAttribute(
+    'aria-label',
+    'Drop Grace Hale on Sam Hale',
+  );
+  await page.mouse.move(g.x + g.width / 2 + 40, area.y + area.height - 8, { steps: 8 });
+  await expect(page.getByTestId('tree-zones')).toHaveCount(0);
+  await page.mouse.up();
   expect((await invoke('tree.get', {})).links.length).toBe(links);
-  const sam = await at('Sam Hale');
-  await expect.poll(async () => (await at('Grace Hale')).y).toBe(sam.y);
+  await expect.poll(async () => (await at('Grace Hale')).y).toBeGreaterThan(before.y);
   // Back where the layout had her, so the tests after this one see the same tree.
   await invoke('tree.savePositions', {
     positions: {
@@ -996,6 +1051,271 @@ test('FT-11 ED-3 a person is dragged to a new place and stays there, Alt with an
   await rail(page, 'Characters').click();
   await openTree();
   expect(await at('Grace Hale')).toEqual(before);
+});
+
+/** Put the selection down: with no warnings the inspector goes. */
+async function clearSelection() {
+  await page.getByTestId('tree-warn-count').click();
+  await expect(page.getByTestId('tree-warn-count')).toHaveText('No warnings');
+  await expect(inspector()).toHaveCount(0);
+}
+
+/** Cmd+Z with the focus out of every text field, so it steps the app's history. */
+async function undoStep() {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('Meta+z');
+}
+
+test('A57 a person shows + parent, + partner and + child stubs on hover, focus and selection, and each opens the add form for that kind, by keyboard and by pointer', async () => {
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  await clearSelection();
+  const stranger = node('A Stranger');
+  const stub = (kind: string) => stranger.locator(`[data-stub="${kind}"]`);
+  // Hidden at rest.
+  for (const kind of ['parent', 'partner', 'child']) await expect(stub(kind)).toBeHidden();
+  // Keyboard: focus shows them, Tab reaches them in order, Enter opens the form for that kind.
+  await stranger.focus();
+  await expect(stub('parent')).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(stub('parent')).toBeFocused();
+  await expect(stub('parent')).toHaveAccessibleName('Add a parent of A Stranger');
+  await page.keyboard.press('Tab');
+  await expect(stub('partner')).toBeFocused();
+  await page.keyboard.press('Enter');
+  const partnerForm = inspector().locator('[data-group="partner"]').getByTestId('add-form');
+  await expect(partnerForm).toHaveAttribute('aria-label', 'Add a partner of A Stranger');
+  await expect(partnerForm.getByLabel('Name')).toBeFocused();
+  await partnerForm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(partnerForm).toHaveCount(0);
+  // Selected, the stubs stay; the pointer on + child adds a child of this person.
+  await expect(stub('child')).toBeVisible();
+  await expect(stub('child')).toHaveText('+ child');
+  await stub('child').click();
+  const childForm = inspector().locator('[data-group="child"]').getByTestId('add-form');
+  await expect(childForm).toHaveAttribute('aria-label', 'Add a child of A Stranger');
+  await childForm.getByLabel('Name').fill('Little Stranger');
+  await childForm.getByLabel('Birth year').fill('2026');
+  await childForm.getByRole('button', { name: 'Add the child' }).click();
+  await expect(node('Little Stranger')).toHaveCount(1);
+  await expect(inspector().getByTestId('inspector-name')).toHaveText('Little Stranger');
+  const t = await invoke('tree.get', {});
+  const id = (n: string) => t.people.find((p) => p.name === n)!.id;
+  expect(
+    t.links.some((l) => l.parentId === id('A Stranger') && l.childId === id('Little Stranger')),
+  ).toBe(true);
+  // The stubs are not part of an export.
+  await expect(stub('child')).toHaveAttribute('data-export', 'skip');
+  // One step: undo takes the child away again, so the tests after see the same tree.
+  await undoStep();
+  await expect(node('Little Stranger')).toHaveCount(0);
+});
+
+test('A57 a person dragged over another shows three drop zones named for that person, and the drop links the way of the zone under the pointer', async () => {
+  const before = (await invoke('tree.get', {})).unions.length;
+  await dropOn('A Stranger', 'Hope Hale', 'partner', async (zones) => {
+    await expect(zones.locator('[data-zone]')).toHaveText([
+      "as Hope Hale's parent",
+      "as Hope Hale's partner",
+      "as Hope Hale's child",
+    ]);
+    await expect(zones.locator('[aria-disabled]')).toHaveCount(0);
+    await expect(zones.locator('.hot')).toHaveCount(1);
+  });
+  await expect.poll(async () => (await invoke('tree.get', {})).unions.length).toBe(before + 1);
+  await select('Hope Hale');
+  await expect(inspector().locator('[data-group="partner"]')).toContainText('A Stranger');
+  await expect(inspector().locator('[data-group="parent"]')).not.toContainText('A Stranger');
+  // One undo step.
+  await undoStep();
+  await expect.poll(async () => (await invoke('tree.get', {})).unions.length).toBe(before);
+});
+
+test('A57 the legend is drawn swatches with short labels on the tree, and the tree carries no instruction text', async () => {
+  const key = page.getByTestId('tree-key');
+  await expect(key).toBeVisible();
+  await expect(key.locator('li')).toHaveText(['not born yet', /^dead by \d+$/, 'birth unknown']);
+  // Each swatch is drawn as the nodes draw that state.
+  const dash = (state: string) =>
+    key
+      .locator(`[data-key="${state}"] rect`)
+      .evaluate((el) => getComputedStyle(el).strokeDasharray);
+  expect(await dash('unborn')).not.toBe('none');
+  expect(await dash('unknown')).not.toBe('none');
+  expect(await dash('dead')).toBe('none');
+  // The key sits on the tree, in its bottom left corner.
+  const kb = (await key.boundingBox())!;
+  const tb = (await page.locator('.tree-wrap').boundingBox())!;
+  expect(kb.y + kb.height).toBeLessThanOrEqual(tb.y + tb.height);
+  expect(kb.x - tb.x).toBeLessThan(160);
+
+  const gone = [
+    'Drag a person',
+    'Drop them on someone',
+    'Alt with an arrow',
+    'I opens the inspector',
+    'Add person above the tree',
+    'Pick a person in the tree',
+    'Warnings never block',
+    'their own ancestor',
+    'Faint dashed box',
+    'Heavy border',
+    'Tidy the whole layout',
+    'every person may move',
+  ];
+  const view = page.getByTestId('tree-view');
+  await page.getByRole('button', { name: 'Legend', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Tree legend' })).toBeVisible();
+  await select('Daniel Hale');
+  for (const text of gone) await expect(view).not.toContainText(text);
+  await expect(page.getByTestId('tree-keys')).toHaveCount(0);
+  await expect(page.getByTestId('tree-warn-count')).not.toHaveAttribute('title');
+  await page.getByRole('button', { name: 'Hide legend' }).click();
+  // The keys still work, and the branch control shows its key.
+  await expect(
+    inspector().getByRole('button', { name: 'Collapse branch' }).locator('kbd'),
+  ).toHaveText('Enter');
+});
+
+test('A57 Tidy layout runs at once as one undo step, and the Undo on its notice puts everyone back', async () => {
+  const stored = async () => (await invoke('tree.get', {})).positions;
+  // Nudge someone off the layout, so tidying has something to move.
+  const t = await invoke('tree.get', {});
+  const strangerId = t.people.find((p) => p.name === 'A Stranger')!.id;
+  await node('A Stranger').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect
+    .poll(async () => (await stored())?.[strangerId])
+    .not.toEqual(t.positions?.[strangerId]);
+  const kept = await stored();
+  const shown = await domPositions();
+  await tidyLayout();
+  const toast = page.getByTestId('tree-toast');
+  await expect(toast).toContainText('Layout tidied');
+  await expect.poll(stored).not.toEqual(kept);
+  await expect.poll(domPositions).not.toEqual(shown);
+  await toast.getByRole('button', { name: 'Undo' }).click();
+  await expect(toast).toHaveCount(0);
+  await expect.poll(stored).toEqual(kept);
+  await expect.poll(domPositions).toEqual(shown);
+  // The nudge is its own step underneath.
+  await undoStep();
+  await expect.poll(async () => (await stored())?.[strangerId]).toEqual(t.positions?.[strangerId]);
+});
+
+/** A57: nudge A Stranger off the layout so Tidy layout has something to move; the stored positions before and after. */
+async function nudgeStranger() {
+  const stored = async () => (await invoke('tree.get', {})).positions;
+  const t = await invoke('tree.get', {});
+  const id = t.people.find((p) => p.name === 'A Stranger')!.id;
+  await node('A Stranger').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect.poll(async () => (await stored())?.[id]).not.toEqual(t.positions?.[id]);
+  return { stored, id, first: t.positions, nudged: await stored() };
+}
+
+test('A57 a step taken after Tidy layout hides its notice, so its Undo never undoes that later step', async () => {
+  const { stored, id, first, nudged } = await nudgeStranger();
+  await tidyLayout();
+  const toast = page.getByTestId('tree-toast');
+  await expect(toast).toContainText('Layout tidied');
+  await expect.poll(stored).not.toEqual(nudged);
+  const tidied = await stored();
+  // A nudge inside the notice's time is its own step on top; the notice goes with its Undo.
+  await node('A Stranger').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(toast).toHaveCount(0);
+  await expect.poll(async () => (await stored())?.[id]).not.toEqual(tidied?.[id]);
+  // Undo takes the nudge back and the tidy stays; two more undo the tidy and the first nudge.
+  await undoStep();
+  await expect.poll(stored).toEqual(tidied);
+  await undoStep();
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+  await expect(toast).toHaveCount(0);
+});
+
+test('A57 an undo after Tidy layout hides its notice, so its Undo never undoes an older step', async () => {
+  const { stored, first, nudged } = await nudgeStranger();
+  await tidyLayout();
+  const toast = page.getByTestId('tree-toast');
+  await expect(toast).toContainText('Layout tidied');
+  await expect.poll(stored).not.toEqual(nudged);
+  // Cmd+Z undoes the tidy; the notice naming it goes, so it cannot undo the nudge underneath.
+  await undoStep();
+  await expect.poll(stored).toEqual(nudged);
+  await expect(toast).toHaveCount(0);
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+});
+
+test('A57 a double click on Tidy layout records one step', async () => {
+  const { stored, first, nudged } = await nudgeStranger();
+  await page.getByRole('button', { name: 'Tidy layout' }).dblclick();
+  await expect(page.getByTestId('tree-toast')).toContainText('Layout tidied');
+  await expect(page.getByRole('button', { name: 'Tidy layout' })).toBeEnabled();
+  await expect.poll(stored).not.toEqual(nudged);
+  const history = (await changes(page)).locator('li');
+  // Newest first: one tidy on top of the nudge, not two.
+  await expect(history.first()).toHaveText('Tidied the tree layout');
+  await expect(history.nth(1)).toHaveText('Moved A Stranger');
+  await page.keyboard.press('Escape');
+  await undoStep();
+  await expect.poll(stored).toEqual(nudged);
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+});
+
+test('A57 the Add person birth year box takes digits only, empty means unknown, and no rule text shows', async () => {
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  const form = inspector().getByTestId('add-form');
+  const born = form.getByLabel('Birth year');
+  await expect(born).not.toHaveAttribute('placeholder');
+  await expect(born).toHaveAttribute('inputmode', 'numeric');
+  await born.fill('1.5');
+  await expect(born).toHaveValue('15');
+  await born.fill('1e3');
+  await expect(born).toHaveValue('13');
+  await born.fill('');
+  await born.pressSequentially('19x9-5');
+  await expect(born).toHaveValue('1995');
+  await born.fill('');
+  // Empty is an unknown year: the person is added with no birth.
+  await form.getByLabel('Name').fill('Year Unknown');
+  await form.getByRole('button', { name: 'Add the person' }).click();
+  await expect(node('Year Unknown')).toHaveCount(1);
+  const person = (await invoke('tree.get', {})).people.find((p) => p.name === 'Year Unknown')!;
+  expect(person.birth).toEqual({ unknown: true });
+  await expect(page.getByTestId('tree-view')).not.toContainText('whole number');
+  await undoStep();
+  await expect(node('Year Unknown')).toHaveCount(0);
+  // A sibling of someone with no parents: the form says what is so and names no button.
+  await select('Tomas Reyes');
+  await inspector().getByRole('button', { name: 'Add sibling', exact: true }).click();
+  const note = inspector().getByTestId('add-form').locator('.callout.warn');
+  await expect(note).toHaveText('Tomas Reyes has no known parents.');
+  await inspector().getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('A57 the inspector shows only with a selection, the Add person form, or warnings, and the people stay put as it comes and goes', async () => {
+  await page.getByRole('button', { name: 'Fit to window' }).click();
+  await clearSelection();
+  const at = async () => (await node('Margaret Hale').boundingBox())!;
+  const b0 = await at();
+  await select('Margaret Hale');
+  await expect(inspector()).toBeVisible();
+  await expect(page.getByTestId('tree-view')).not.toHaveClass(/tree-solo/);
+  await expect.poll(async () => Math.abs((await at()).x - b0.x)).toBeLessThanOrEqual(2);
+  const b1 = await at();
+  expect(Math.abs(b1.y - b0.y)).toBeLessThanOrEqual(2);
+  expect(Math.abs(b1.width - b0.width)).toBeLessThanOrEqual(2);
+  // A click on the empty tree puts the selection down.
+  await svgEl().click({ position: { x: 4, y: 4 } });
+  await expect(inspector()).toHaveCount(0);
+  // Add person brings it back with the form, and Cancel takes it away.
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  await expect(inspector().getByTestId('add-form')).toBeVisible();
+  await inspector().getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
+  await expect(inspector()).toHaveCount(0);
 });
 
 test('FT-4 a person with two unions: both draw, the ended one with its year, each child under its own union, and half-siblings', async () => {
@@ -1009,11 +1329,7 @@ test('FT-4 a person with two unions: both draw, the ended one with its year, eac
   await expect(lanUnions).toHaveCount(5);
   await expect(page.locator('text.tunion-end', { hasText: 'ended 2020' })).toHaveCount(1);
   // Lay out again so Lan sits between her two partners, then check where each child hangs.
-  await page.getByRole('button', { name: 'Tidy layout' }).click();
-  await page
-    .getByRole('dialog', { name: 'Tidy layout' })
-    .getByRole('button', { name: 'Tidy layout' })
-    .click();
+  await tidyLayout();
   const xOf = async (name: string) =>
     Number(/translate\(([-\d.]+),/.exec((await node(name).getAttribute('transform'))!)![1]);
   await expect.poll(async () => (await xOf('Chen Bo')) - (await xOf('Zhou Lan'))).toBe(194);
@@ -1073,10 +1389,12 @@ test('SM-1 the character page is the name and Chinese name, one line of dates, f
   await expect(field(line, 'familyIds')).toContainText('Hale');
   await expect(field(line, 'familyIds')).toContainText('Zhou');
   await expect(p.getByTestId('char-age')).toHaveText('Age 9');
-  // SM-1 "on one line": at the default window the four sit side by side, the age last.
+  // SM-1 "on one line": at the default window width the four sit side by side, the age last.
+  // Only the width: after the full screen test macOS keeps the height inside the display's
+  // work area (770 on a 1280 by 800 display), and the line does not depend on it.
   expect(
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()),
-  ).toEqual([1200, 800]);
+    (await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getSize()))[0],
+  ).toBe(1200);
   const lineBoxes = await Promise.all(
     [
       field(line, 'birth'),
@@ -1185,13 +1503,11 @@ test('SM-1 TL-3 Birth is one box: a month and a full date save on Enter as one u
   const history = (await changes(page)).locator('li');
   await expect(history.first()).toHaveText('Changed Birth on Ruth Hale');
   await page.keyboard.press('Escape');
-  // A value it cannot read is refused at the box, and nothing is written.
+  // A value it cannot read never goes into the box (A57), and nothing is written.
   await shown.click();
   await birth.fill('March 1990');
-  await birth.press('Enter');
-  await expect(f.getByRole('alert')).toHaveText(
-    'Not saved: March 1990 is not a date. Write a year (1990), a year and month (1990-03), or a full date (1990-03-14).',
-  );
+  await expect(birth).toHaveValue('1990-03');
+  await expect(f.getByRole('alert')).toHaveCount(0);
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
   await birth.fill('1990-03-14');
   await birth.blur();

@@ -19,23 +19,12 @@ export function TopBar(props: {
   relevantActive?: boolean;
 }) {
   const story = useStoryTime();
-  const characters = useEntries('characters');
   const strands = useStrandOptions();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const [yearDraft, setYearDraft] = useState<string | null>(null);
   const ids = { year: useId(), slider: useId(), writing: useId() };
-
-  const bounds = useMemo(() => {
-    const ys = [story.year, ...strands.map((s) => s.year).filter((y): y is number => y !== null)];
-    for (const c of characters) {
-      for (const d of [c.birth, c.death] as unknown[]) {
-        if (d && typeof d === 'object' && 'year' in d)
-          ys.push(Number((d as { year: number }).year));
-      }
-    }
-    return { min: Math.min(...ys), max: Math.max(...ys) };
-  }, [characters, strands, story.year]);
+  const bounds = useYearBounds();
 
   const writing = strands.find(
     (s) => s.chapterId === time.chapterId && s.strandId === time.strandId,
@@ -89,7 +78,7 @@ export function TopBar(props: {
           className="btn small topbar-era"
           onClick={story.openDialog}
           aria-label={view?.era ? `Open the year, ${view.era.name}` : 'Open the year'}
-          title="Everyone and the world in this year (Cmd T)"
+          aria-keyshortcuts="Meta+T"
           data-testid="top-open-year"
         >
           {view?.era?.name ?? 'Open the year'}
@@ -119,13 +108,29 @@ export function TopBar(props: {
           onClick={props.onRelevant}
           aria-current={props.relevantActive ? 'page' : undefined}
           data-testid="top-relevant"
-          title="The entries that matter for the chapter being written"
         >
           Relevant to Session
         </button>
       </div>
     </section>
   );
+}
+
+/** The story year slider's range: every birth, death and strand year, and the year shown. */
+export function useYearBounds(): { min: number; max: number } {
+  const story = useStoryTime();
+  const characters = useEntries('characters');
+  const strands = useStrandOptions();
+  return useMemo(() => {
+    const ys = [story.year, ...strands.map((s) => s.year).filter((y): y is number => y !== null)];
+    for (const c of characters) {
+      for (const d of [c.birth, c.death] as unknown[]) {
+        if (d && typeof d === 'object' && 'year' in d)
+          ys.push(Number((d as { year: number }).year));
+      }
+    }
+    return { min: Math.min(...ys), max: Math.max(...ys) };
+  }, [characters, strands, story.year]);
 }
 
 /**
@@ -179,7 +184,8 @@ function UndoControls() {
         className="btn small"
         disabled={!undo.canUndo}
         onClick={() => void undo.undo()}
-        title={nextUndo ? `Undo ${nextUndo} (Cmd Z)` : 'Cmd Z'}
+        title={nextUndo ? `Undo ${nextUndo}` : undefined}
+        aria-keyshortcuts="Meta+Z"
         data-testid="top-undo"
       >
         Undo
@@ -189,7 +195,8 @@ function UndoControls() {
         className="btn small"
         disabled={!undo.canRedo}
         onClick={() => void undo.redo()}
-        title={nextRedo ? `Redo ${nextRedo} (Shift Cmd Z)` : 'Shift Cmd Z'}
+        title={nextRedo ? `Redo ${nextRedo}` : undefined}
+        aria-keyshortcuts="Shift+Meta+Z"
         data-testid="top-redo"
       >
         Redo

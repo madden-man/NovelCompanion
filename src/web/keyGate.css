@@ -1,0 +1,41 @@
+/* A58 (PH-16): the paste screen, one field and Paste, centred, clear of the notch and home bar. */
+.key-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--fg);
+}
+.key-gate-form {
+  display: flex;
+  gap: 8px;
+  width: min(100%, 420px);
+}
+.key-gate-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* PH-32: 16px or more, so iOS does not zoom into the field. */
+  font-size: 16px;
+  min-height: 44px;
+}
+.key-gate-form input::placeholder {
+  color: var(--fg-2);
+  opacity: 1;
+}
+.key-gate-form input[aria-invalid='true'] {
+  border-color: var(--critical-ink);
+}
+.key-gate-form .btn {
+  min-height: 44px;
+  font-size: 16px;
+}
+.key-gate-refused {
+  margin: 0;
+  color: var(--critical-ink);
+}

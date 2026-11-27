@@ -222,19 +222,94 @@ export function ClaudeErrorNote({ error }: { error: RunError }) {
   );
 }
 
-/** AI-6: stated plainly before the first run, and kept in settings afterwards. */
+/**
+ * AI-6: what is sent to Anthropic. Consent, not instruction: with `onConfirm`
+ * it is a sheet at the first use of a Claude feature, and nothing is sent
+ * until Continue. Without it (Settings, the Claude panel) it is a plain link
+ * that opens the same text to read again.
+ */
 export function Disclosure(props: {
   onConfirm?: () => void;
   onDecline?: () => void;
   confirmedAt?: string | null;
 }) {
-  const headingId = useId();
+  const [hidden, setHidden] = useState(false);
+  if (!props.onConfirm) return <DisclosureLink confirmedAt={props.confirmedAt ?? null} />;
+  if (hidden) return null;
   return (
-    <div
-      className="panel stack tight"
-      role="group"
+    <DisclosureSheet
+      onConfirm={props.onConfirm}
+      onDecline={props.onDecline ?? (() => setHidden(true))}
+    />
+  );
+}
+
+/** AI-6: the notice as a plain link, opening the sheet to read with Close. */
+export function DisclosureLink(props: { confirmedAt: string | null }) {
+  const [open, setOpen] = useState(false);
+  // Asked fresh on open, so a screen that loaded its status before the consent still shows it.
+  const [confirmedAt, setConfirmedAt] = useState(props.confirmedAt);
+  const show = () => {
+    setConfirmedAt(props.confirmedAt);
+    setOpen(true);
+    call('claude.status', {}).then(
+      (s) => setConfirmedAt(s.acknowledgedAt ?? props.confirmedAt),
+      () => undefined,
+    );
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="link-btn claude-disclosure-link"
+        aria-haspopup="dialog"
+        onClick={show}
+        data-testid="claude-disclosure-link"
+      >
+        What Claude sends to Anthropic
+      </button>
+      {open && <DisclosureSheet confirmedAt={confirmedAt} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/**
+ * The notice itself, a modal sheet. It stays where it is in the page, so a
+ * view that shows it holds it; Escape is Not now (or Close) and goes no
+ * further, so it never closes the panel or dialog behind it.
+ */
+function DisclosureSheet(props: {
+  onConfirm?: () => void;
+  onDecline?: () => void;
+  onClose?: () => void;
+  confirmedAt?: string | null;
+}) {
+  const headingId = useId();
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    // Focus goes back to what was pressed (the field, a Send button) when the sheet closes.
+    const opener = document.activeElement;
+    if (d && !d.open) d.showModal();
+    return () => {
+      d?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
+  const leave = props.onConfirm ? props.onDecline : props.onClose;
+  return (
+    <dialog
+      ref={ref}
+      className="claude-sheet stack tight"
       aria-labelledby={headingId}
       data-testid="claude-disclosure"
+      onCancel={(e) => {
+        e.preventDefault();
+        leave?.();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') e.stopPropagation();
+      }}
     >
       <h3 id={headingId}>What Claude sends to Anthropic</h3>
       <p>
@@ -259,18 +334,23 @@ export function Disclosure(props: {
           >
             Continue
           </button>
-          {props.onDecline && (
-            <button type="button" className="btn" onClick={props.onDecline}>
-              Not now
-            </button>
-          )}
+          <button type="button" className="btn" onClick={props.onDecline}>
+            Not now
+          </button>
         </div>
       ) : (
-        props.confirmedAt && (
-          <p className="example-note">You confirmed this on {formatTime(props.confirmedAt)}.</p>
-        )
+        <div className="row">
+          <button type="button" className="btn" onClick={props.onClose}>
+            Close
+          </button>
+          {props.confirmedAt && (
+            <span className="example-note">
+              You confirmed this on {formatTime(props.confirmedAt)}.
+            </span>
+          )}
+        </div>
       )}
-    </div>
+    </dialog>
   );
 }
 
@@ -320,7 +400,7 @@ export function ProposalsNote({
       {ids.length > 0 && (
         <p>
           {ids.length === 1 ? '1 proposal is' : `${ids.length} proposals are`} waiting in the review
-          queue. Nothing changes until you approve.{' '}
+          queue.{' '}
           <button type="button" className="btn small" onClick={claudeNav.openReview}>
             Open the review queue
           </button>
@@ -504,9 +584,15 @@ function ClaudePanel() {
   });
 
   const ro = useWriteGuard();
-  const ask = async () => {
+  // AI-6: the first question in a bible asks for consent in a sheet; Continue sends it.
+  const [consent, setConsent] = useState(false);
+  const ask = async (acknowledged = !!status?.acknowledgedAt) => {
     const question = draft.trim();
-    if (!question || runId || !status?.acknowledgedAt || ro.off) return;
+    if (!question || runId || !status || ro.off) return;
+    if (!acknowledged) {
+      setConsent(true);
+      return;
+    }
     setError(null);
     const id = newRunId();
     watchRun(id);
@@ -535,7 +621,9 @@ function ClaudePanel() {
 
   const acknowledge = async () => {
     setStatus(await call('claude.acknowledge', {}));
+    setConsent(false);
     inputRef.current?.focus();
+    await ask(true);
   };
 
   // The running turn shows from the stream below, not from its saved copy.
@@ -572,10 +660,6 @@ function ClaudePanel() {
           </button>
         </div>
       </header>
-      <p className="example-note">
-        Claude reads the bible to answer and can suggest changes for the review queue. It never
-        writes prose for the novel.
-      </p>
       {history.length > 0 && (
         <div className="field">
           <label htmlFor={ids.history}>Saved conversations</label>
@@ -614,8 +698,14 @@ function ClaudePanel() {
           }}
         />
       )}
-      {status && !status.acknowledgedAt && (
-        <Disclosure onConfirm={() => void acknowledge()} onDecline={nav.closePanel} />
+      {consent && (
+        <Disclosure
+          onConfirm={() => void acknowledge()}
+          onDecline={() => {
+            setConsent(false);
+            inputRef.current?.focus();
+          }}
+        />
       )}
       <ol className="claude-thread" aria-label="Conversation" data-testid="claude-thread">
         {turns.map((t) => (
@@ -665,15 +755,15 @@ function ClaudePanel() {
           }}
           testId="claude-input"
         />
-        <div className="row tight">
+        <div className="row tight claude-ask-row">
           <button
             type="submit"
             className="btn primary"
-            disabled={running || !draft.trim() || !status?.acknowledgedAt || ro.off}
+            disabled={running || !draft.trim() || !status || ro.off}
             {...ro.tip}
             data-testid="claude-send"
           >
-            Ask
+            Ask <kbd>Cmd Enter</kbd>
           </button>
           {running && (
             <button
@@ -685,6 +775,7 @@ function ClaudePanel() {
               Stop
             </button>
           )}
+          {status?.acknowledgedAt && <DisclosureLink confirmedAt={status.acknowledgedAt} />}
         </div>
       </form>
     </aside>
@@ -732,9 +823,7 @@ function ConversationTools(props: {
   );
   const save = useEditableSave({ value: run.title, write, command });
   const off = ro.off || props.running;
-  const why = props.running
-    ? 'Claude is still answering in this conversation. Stop it first.'
-    : ro.tip.title;
+  const why = props.running ? 'Claude is still answering in this conversation.' : ro.tip.title;
   return (
     <div className="stack tight claude-conversation" data-testid="claude-conversation">
       <div className="row tight claude-conversation-head">
@@ -789,7 +878,7 @@ function ConversationTools(props: {
           onConfirm={async () => {
             await call('claude.conversation.clear', { id: run._id });
             setAsking(null);
-            setNotice(`Cleared ${run.title}. This is not an undo step.`);
+            setNotice(`Cleared ${run.title}.`);
             await props.onCleared();
           }}
         >

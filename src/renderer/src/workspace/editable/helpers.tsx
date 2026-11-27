@@ -17,11 +17,12 @@ import { createCommand, editCommand } from '../../../../shared/domain/undoRunner
 import type { Op, UndoCommand } from '../../../../shared/domain/undoRunner';
 import type { FieldWarning } from '../../../../shared/domain/warnings';
 import { listAddCommand } from '../../../../shared/undoCommands';
-import { call } from '../../api';
+import { call, callIn } from '../../api';
 import { useReadOnly } from '../../connection';
 import { useList, useStore } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
+import { onEntryChain } from './chains';
 import { Editable } from './Editable';
 import type { EditableCommonProps, EditableKindProps } from './Editable';
 import { emptyMessage, fieldLabel, mergeCommands, patchForPath } from './model';
@@ -57,6 +58,13 @@ export async function saveEntryField(
   o: SaveEntryFieldOptions,
 ): Promise<{ entry: Entry; warnings: FieldWarning[] }> {
   await undo.flush();
+  return onEntryChain(o.collection, o.id, () => writeEntryField(undo, o));
+}
+
+async function writeEntryField(
+  undo: Undo,
+  o: SaveEntryFieldOptions,
+): Promise<{ entry: Entry; warnings: FieldWarning[] }> {
   const before = (await call('entry.get', { collection: o.collection, id: o.id })).entry as Entry;
   const patch = { ...patchForPath(before, o.path, o.value), ...o.extraPatch?.(o.value, before) };
   const check = entrySchemas[o.collection].safeParse(
@@ -77,7 +85,11 @@ export async function saveEntryField(
         : said,
     );
   }
-  const r = await call('entry.update', { collection: o.collection, id: o.id, patch });
+  const r = await callIn(undo.bible, 'entry.update', {
+    collection: o.collection,
+    id: o.id,
+    patch,
+  });
   const after = r.entry as Entry;
   const label = o.label ?? fieldLabel(o.collection, o.path);
   const step = editCommand(
@@ -312,4 +324,32 @@ export function useEntryAddNew(
     },
     [collection, data, readOnly],
   );
+}
+
+/**
+ * IP-13: which field a rename writes, from a list row or an entry's heading.
+ * A character's full name (the title follows it), a family's or an era's name
+ * (a title that holds the old name follows it), and every other entry's title.
+ */
+export function renameSpec(collection: EntryCollection): {
+  path: string;
+  label: string;
+  extraPatch?: (next: unknown, entry: Record<string, unknown>) => Record<string, unknown>;
+} {
+  if (collection === 'characters') {
+    return { path: 'names.full', label: 'Full name', extraPatch: (next) => ({ title: next }) };
+  }
+  if (collection === 'families' || collection === 'eraStates') {
+    return {
+      path: 'name',
+      label: collection === 'families' ? 'Family name' : 'Era name',
+      extraPatch: (next, entry) => {
+        const old = typeof entry.name === 'string' ? entry.name : '';
+        const title = typeof entry.title === 'string' ? entry.title : '';
+        if (!title.trim() || title === old) return { title: next };
+        return old && title.includes(old) ? { title: title.split(old).join(String(next)) } : {};
+      },
+    };
+  }
+  return { path: 'title', label: 'Title' };
 }

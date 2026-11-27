@@ -1,0 +1,17 @@
+/* A58 (PH-15): the phone key row in Settings: its name, the masked key, then Copy or Make a key. */
+.phone-key-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.phone-key-row h4 {
+  margin: 0;
+}
+.phone-key-masked {
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-variant-numeric: tabular-nums;
+}

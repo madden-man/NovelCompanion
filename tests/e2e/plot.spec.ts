@@ -105,7 +105,7 @@ const boundary = (upper: string, lower: string) =>
 const lineOf = (key: string, line: number) =>
   view().locator(`[data-row="${key}"] .sl[data-line="${line}"]`);
 
-test('SM-7 A46 the Outline opens on two panels: one bar per chapter in reading order beside its own scenes, a divider between sections, the trash pinned at the top, no menus, no headings in the text or year grid', async () => {
+test('SM-7 A46 the Outline opens on two panels: one bar per chapter in reading order beside its own scenes, a divider between sections, no trash until a drag, no Actions menus, no headings in the text or year grid', async () => {
   await rail(page, 'Outline').click();
   await expect(view().getByTestId('chapter-bar')).toHaveCount(fixture.chapters!.length);
   expect(await chapterIds()).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
@@ -117,7 +117,7 @@ test('SM-7 A46 the Outline opens on two panels: one bar per chapter in reading o
   await expect(boundary('CH4', 'CH5').getByTestId('divider')).toContainText('Part Two: The Letter');
   await expect(view().getByTestId('boundary')).toHaveCount(7);
   await expect(view().getByText('Actions', { exact: true })).toHaveCount(0);
-  await expect(view().getByTestId('scene-trash')).toBeVisible();
+  await expect(view().getByTestId('scene-trash')).toHaveCount(0);
   await expect(bar('CH2').getByTestId('chapter-scenes')).toHaveText('2 scenes');
   await expect(bar('CH4').getByTestId('chapter-scenes')).toHaveText('1 scene');
   // Each section holds only its own scene lines; the chapter names are on the bars.
@@ -239,9 +239,9 @@ async function dragLine(upper: string, lower: string, key: string, line: number)
   await page.mouse.up();
 }
 
-/** Drag a bar by its number to a point on the screen. */
+/** Drag a bar by its grip to a point on the screen. */
 async function dragBar(id: string, to: { x?: number; y: number }) {
-  const grip = await box(bar(id).locator('.cbar-no'));
+  const grip = await box(bar(id).getByTestId('chapter-grip'));
   await page.mouse.move(grip.x + 4, grip.y + 4);
   await page.mouse.down();
   await page.mouse.move(to.x ?? grip.x + 4, to.y, { steps: 8 });
@@ -327,8 +327,9 @@ test('SM-7 dragging a bar below the next bar moves the chapter: its scenes and y
 });
 
 test('SM-7 NF-2 from a focused bar: Up and Down move it past its neighbour, each one Undo step', async () => {
-  // Tab goes from a chapter's text to its bar.
+  // Escape then Tab goes from a chapter's text to its bar.
   await section('CH3').focus();
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Tab');
   await expect(bar('CH3')).toBeFocused();
   await page.keyboard.press('ArrowUp');
@@ -420,15 +421,23 @@ const chapterOf = async (id: string) =>
 const partNumber = async (id: string) =>
   (await invoke('entry.get', { collection: 'parts', id })).entry.number;
 
-test('A46 a chapter dragged onto the trash pinned at the top goes, its lines join the chapter above, and Undo brings both back; Delete on a focused bar does the same', async () => {
+test('A46 A57 a chapter dragged onto the trash, which shows only during the drag, goes, its lines join the chapter above, and Undo brings both back; Delete on a focused bar does the same', async () => {
   // The chapter made and undone above has left the stored outline.
   await expect.poll(async () => Object.keys((await stored()).breaks)).toHaveLength(8);
   const before = await stored();
   const trash = view().getByTestId('scene-trash');
-  await expect(trash).toBeVisible();
+  await expect(trash).toHaveCount(0);
   await bar('CH4').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  // The trash appears once the grip is pulled, and goes when the drag ends.
+  const grip = await box(bar('CH4').getByTestId('chapter-grip'));
+  await page.mouse.move(grip.x + 4, grip.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 4, grip.y + 30, { steps: 3 });
+  await expect(trash).toBeVisible();
   const t = await box(trash);
-  await dragBar('CH4', { x: t.x + t.width / 2, y: t.y + t.height / 2 });
+  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(trash).toHaveCount(0);
   await expect(bar('CH4')).toHaveCount(0);
   await expect(view().getByTestId('scene-done')).toContainText('After the Funeral is in the trash');
   await expect(section('CH3')).toHaveValue('- Wedding in the rain\n- The funeral');
@@ -506,14 +515,16 @@ test('A46 a bar dragged across a divider joins the section on the other side; Un
 });
 
 test('A46 a divider is added between two chapters, named in place, and removed; each is one undo step', async () => {
-  // + Divider before chapter 3: chapters 3 and 4 start a new section, numbered after part one.
+  // + Section before chapter 3: chapters 3 and 4 start a new section, numbered after part one.
   const line = boundary('CH2', 'CH3');
   await line.hover();
+  await expect(line.getByTestId('add-divider')).toHaveText('+ Section');
   await line.getByTestId('add-divider').click();
   await expect(view().getByTestId('divider')).toHaveCount(2);
   await expect.poll(async () => (await chapterOf('CH3')).partId).not.toBe('PT1');
   const made = String((await chapterOf('CH3')).partId);
-  expect((await chapterOf('CH4')).partId).toBe(made);
+  // The chapters move one write at a time, chapter 3 first.
+  await expect.poll(async () => (await chapterOf('CH4')).partId).toBe(made);
   expect(await partNumber(made)).toBe(2);
   expect(await partNumber('PT2')).toBe(3);
   await expect(line.getByTestId('divider-name')).toHaveText('New section');
@@ -529,7 +540,7 @@ test('A46 a divider is added between two chapters, named in place, and removed; 
   await undo();
   await expect(view().getByTestId('divider')).toHaveCount(1);
   await expect.poll(async () => (await chapterOf('CH3')).partId).toBe('PT1');
-  expect(await partNumber('PT2')).toBe(2);
+  await expect.poll(() => partNumber('PT2')).toBe(2);
   expect(
     (await invoke('entry.get', { collection: 'parts', id: made })).entry.deletedAt,
   ).toBeTruthy();
@@ -537,9 +548,12 @@ test('A46 a divider is added between two chapters, named in place, and removed; 
   await boundary('CH4', 'CH5').getByTestId('remove-divider').click();
   await expect(view().getByTestId('divider')).toHaveCount(0);
   await expect.poll(async () => (await chapterOf('CH8')).partId).toBe('PT1');
-  expect(
-    (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.deletedAt,
-  ).toBeTruthy();
+  // The part goes to the trash after its last chapter has moved.
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'parts', id: 'PT2' })).entry.deletedAt,
+    )
+    .toBeTruthy();
   expect(await chapterIds()).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
   await undo();
   await expect(view().getByTestId('divider')).toHaveCount(1);
@@ -681,17 +695,19 @@ test('KB-3 A40 the chapter page under More edits a strand point of view and char
 });
 
 test('SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on its bar, its story year, Open and the line between chapters', async () => {
-  // Shift+Tab from a chapter's text reaches the year field of its last scene, filled in from above.
+  // Escape then Shift+Tab from a chapter's text reaches the year field of its last scene, filled in from above.
   await section('CH1').focus();
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Shift+Tab');
   await expect(yearOf(2)).toBeFocused();
   await expect(yearOf(2)).toHaveValue('2075');
   await page.keyboard.type('2076');
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await stored()).years).toEqual({ '1': 2076, '4': 2046 });
-  // Tab: the text, then the bar, then the chapter name, renamed in place with Enter (IP-1).
+  // Tab: the text, then (after Escape) the bar, then the chapter name, renamed in place with Enter (IP-1).
   await page.keyboard.press('Tab');
   await expect(section('CH1')).toBeFocused();
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Tab');
   await expect(bar('CH1')).toBeFocused();
   await page.keyboard.press('Tab');
@@ -702,6 +718,8 @@ test('SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on i
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await chapterOf('CH1')).title).toBe('The Archive Door');
   await expect(bar('CH1').getByTestId('chapter-title-text')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH1').getByTestId('chapter-more')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(bar('CH1').getByTestId('chapter-year')).toBeFocused();
   await undo();
@@ -720,6 +738,230 @@ test('SM-7 A46 NF-2 the Outline by keyboard: a scene year, the chapter name on i
   await expect.poll(async () => (await stored()).breaks.CH2).toBe(3);
   await undo();
   await expect.poll(async () => (await stored()).breaks.CH2).toBe(2);
+});
+
+// ---------- A57: no instructions; handles, a menu and keys on the controls instead ----------
+
+test('A57 the Outline carries no instruction text: no hint paragraph, no gesture tooltips, no sentences in Parts or Versions', async () => {
+  await rail(page, 'Outline').click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(8);
+  for (const gone of [
+    'Drag the line between two chapters',
+    'Cmd+Enter starts a new chapter',
+    'A part is a section of chapters',
+    'Every change is kept',
+    'Undo brings it back',
+    'The first change makes one',
+  ]) {
+    await expect(view().getByText(gone)).toHaveCount(0);
+  }
+  await view().getByTestId('outline-parts').locator('summary').click();
+  await view().getByTestId('scene-versions').locator('summary').click();
+  await expect(view().getByText('A part is a section of chapters')).toHaveCount(0);
+  await expect(view().getByText('Every change is kept')).toHaveCount(0);
+  // No tooltip on the bar, the line between chapters, + Section or a divider's remove button.
+  const titled = await view().evaluate(
+    (el) =>
+      [
+        ...el.querySelectorAll(
+          '[data-testid="chapter-bar"][title], [data-testid="boundary-grip"][title], [data-testid="add-divider"][title], [data-testid="remove-divider"][title], .ol-name[title]',
+        ),
+      ].length,
+  );
+  expect(titled).toBe(0);
+  // An empty scene list names its content, not a gesture.
+  await expect(section('CH1')).toHaveAttribute('placeholder', 'First scene');
+  await view().getByTestId('outline-parts').locator('summary').click();
+  await view().getByTestId('scene-versions').locator('summary').click();
+});
+
+test('A57 each bar has a grip, each line between chapters a pill handle, and + Section sits in the gap, faint until hovered', async () => {
+  const grip = bar('CH2').getByTestId('chapter-grip');
+  await expect(grip).toBeVisible();
+  expect(await grip.evaluate((el) => getComputedStyle(el).cursor)).toBe('grab');
+  const seam = boundary('CH2', 'CH3');
+  expect(await seam.evaluate((el) => getComputedStyle(el).cursor)).toBe('row-resize');
+  // The pill shows at rest.
+  expect(
+    await seam
+      .getByTestId('boundary-grip')
+      .evaluate((el) => getComputedStyle(el, '::after').opacity),
+  ).toBe('1');
+  const add = seam.getByTestId('add-divider');
+  await view().getByRole('heading', { name: 'Outline', level: 2 }).hover();
+  const rest = Number(await add.evaluate((el) => getComputedStyle(el).opacity));
+  expect(rest).toBeGreaterThan(0);
+  expect(rest).toBeLessThan(1);
+  await seam.hover();
+  await expect.poll(async () => add.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  await expect(add).toHaveText('+ Section');
+});
+
+test('A57 the chapter menu lists Move up, Move down, New chapter at this line and Delete chapter with their keys, and each works', async () => {
+  const more = bar('CH3').getByTestId('chapter-more');
+  const menu = bar('CH3').getByTestId('chapter-menu');
+  await bar('CH3').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Move up↑',
+    'Move down↓',
+    'New chapter at this line⌘⏎',
+    'Delete chapter⌫',
+  ]);
+  await expect(menu.locator('kbd')).toHaveCount(4);
+  await expect(menu.getByRole('menuitem', { name: /Move up/ })).toBeFocused();
+  // Move down from a click.
+  await menu.getByTestId('chapter-move-down').click();
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH4', 'CH3', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await expect(bar('CH3')).toBeFocused();
+  // Move up from the keyboard: Enter opens the menu on its first item.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu.getByTestId('chapter-move-up')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(chapterIds).toEqual(['CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7', 'CH8']);
+  await undo();
+  await undo();
+  await expect.poll(() => readingOrder('CH3')).toBe(3);
+  // The first chapter cannot move up; Escape closes the menu with the focus on its button.
+  await bar('CH1').getByTestId('chapter-more').click();
+  await expect(bar('CH1').getByTestId('chapter-move-up')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(bar('CH1').getByTestId('chapter-menu')).toBeHidden();
+  await expect(bar('CH1').getByTestId('chapter-more')).toBeFocused();
+
+  // New chapter at this line: the caret's line in chapter 2 starts a new chapter after it.
+  const ids = await chapterIds();
+  const two = await section('CH2').inputValue();
+  await section('CH2').click();
+  await section('CH2').press('Meta+ArrowDown');
+  await bar('CH2').getByTestId('chapter-more').click();
+  await bar('CH2').getByTestId('chapter-new-here').click();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length + 1);
+  const made = (await chapterIds())[2]!;
+  expect(ids).not.toContain(made);
+  await expect(section(made)).toHaveValue(two.split('\n').at(-1)!);
+  await expect(section('CH2')).toHaveValue(two.split('\n').slice(0, -1).join('\n'));
+  await undo();
+  await expect(view().getByTestId('chapter-bar')).toHaveCount(ids.length);
+  await expect(section('CH2')).toHaveValue(two);
+
+  // Delete chapter: the toast says it went and carries Undo, which brings it back.
+  await bar('CH4').getByTestId('chapter-more').click();
+  await bar('CH4').getByTestId('chapter-delete').click();
+  await expect(bar('CH4')).toHaveCount(0);
+  const done = view().getByTestId('scene-done');
+  await expect(done).toContainText('After the Funeral is in the trash.');
+  await expect(done.getByTestId('scene-done-undo')).toBeFocused();
+  await done.getByTestId('scene-done-undo').click();
+  await expect(bar('CH4')).toHaveCount(1);
+  await expect(done).toHaveCount(0);
+  await expect.poll(chapterIds).toEqual(ids);
+});
+
+test('A57 PL-5 while editing, Tab and Shift+Tab indent and outdent a scene line beside Cmd+] and Cmd+[, and after Escape Tab leaves the text', async () => {
+  const eight = section('CH8');
+  const was = await eight.inputValue();
+  // The pointer puts the caret in, so the writer is editing.
+  await eight.click();
+  await eight.press('Meta+ArrowDown');
+  await eight.press('Enter');
+  await eight.pressSequentially('Noor on the stairs');
+  await page.keyboard.press('Tab');
+  await expect(eight).toBeFocused();
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Shift+Tab');
+  await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
+  await page.keyboard.press('Meta+]');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Meta+[');
+  await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
+  // Escape ends editing: Cmd+] and Cmd+[ still work, and Tab moves on to the bar beside it.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Meta+]');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Meta+[');
+  await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
+  await page.keyboard.press('Tab');
+  await expect(bar('CH8')).toBeFocused();
+  await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
+  await expect.poll(async () => (await stored()).text).toContain('- Noor on the stairs');
+  // Put the text back.
+  await eight.fill(was);
+  await bar('CH8').focus();
+  await expect.poll(async () => (await stored()).text).not.toContain('Noor on the stairs');
+});
+
+/** The last scene year field in a chapter's row, just before its text in the Tab order. */
+const lastYearIn = (id: string) =>
+  view().locator(`[data-row="${id}"] [data-testid="scene-year"]`).last();
+
+test('A57 PL-5 focus that arrives by Tab in a scene field with words leaves on the next Tab and changes nothing', async () => {
+  const three = section('CH3');
+  const was = await three.inputValue();
+  expect(was).toMatch(/\w/);
+  const before = (await stored()).text;
+  await lastYearIn('CH3').focus();
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH3')).toBeFocused();
+  await expect(three).toHaveValue(was);
+  // Shift+Tab back into the text, and Shift+Tab again leaves it the other way, still unchanged.
+  await page.keyboard.press('Shift+Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(lastYearIn('CH3')).toBeFocused();
+  await expect(three).toHaveValue(was);
+  expect((await stored()).text).toBe(before);
+});
+
+test('A57 PL-5 a fresh bullet made with Enter indents on Tab', async () => {
+  const three = section('CH3');
+  const was = await three.inputValue();
+  // Focus arrives by Tab; Enter makes a fresh, empty bullet and starts editing.
+  await lastYearIn('CH3').focus();
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(three).toHaveValue(`${was}\n- `);
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await expect(three).toHaveValue(`${was}\n  - `);
+  await page.keyboard.press('Shift+Tab');
+  await expect(three).toHaveValue(`${was}\n- `);
+  await expect(bar('CH3')).toHaveCount(1);
+  // Put the text back.
+  await three.fill(was);
+  await bar('CH3').focus();
+  await expect.poll(async () => (await stored()).text).not.toMatch(/Wedding in the rain\n\s*- \n/);
+});
+
+test('A57 PL-5 Tab cannot indent a line past the cap', async () => {
+  const eight = section('CH8');
+  const was = await eight.inputValue();
+  await eight.click();
+  await eight.press('Meta+ArrowDown');
+  await eight.press('Enter');
+  await eight.pressSequentially('Noor on the stairs');
+  // One level under the scene above, and no deeper however often Tab is pressed.
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab');
+  await expect(eight).toBeFocused();
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Meta+]');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  // Under that line, the next one goes one level deeper still, and stops there.
+  await eight.press('Enter');
+  await eight.pressSequentially('the banister');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs\n    - the banister`);
+  // Put the text back.
+  await eight.fill(was);
+  await bar('CH8').focus();
+  await expect.poll(async () => (await stored()).text).not.toContain('Noor on the stairs');
 });
 
 // ---------- A47: strands on the bars, the first part, scene typing, Parts ----------
@@ -833,9 +1075,13 @@ test('IP-3 each field in the popover writes the writing strand as one undo step:
   );
   await undo();
   await expect.poll(async () => (await strandsOf('CH2'))[0]!.characterIds).toEqual(['H3', 'Z3']);
-  expect(
-    (await invoke('entry.get', { collection: 'characters', id: wen })).entry.deletedAt,
-  ).toBeTruthy();
+  // The undo puts the strand back first, then sends the new character to the trash.
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'characters', id: wen })).entry.deletedAt,
+    )
+    .toBeTruthy();
   await undo();
   await expect
     .poll(async () => (await strandsOf('CH2'))[0]!.characterIds)
@@ -910,7 +1156,7 @@ test("IP-3 the first part's title is a divider above the first chapter that rena
   // Removed: chapters 1 to 4 join Part Two, which is now the first and only section.
   await first.getByTestId('remove-divider').click();
   await expect.poll(async () => (await chapterOf('CH1')).partId).toBe('PT2');
-  expect((await chapterOf('CH4')).partId).toBe('PT2');
+  await expect.poll(async () => (await chapterOf('CH4')).partId).toBe('PT2');
   await expect(first.getByTestId('divider-name')).toHaveText('Part Two: The Letter');
   await expect(first.getByTestId('remove-divider')).toHaveCount(0);
   await expect(view().getByTestId('divider')).toHaveCount(0);
@@ -1213,8 +1459,13 @@ test('GL-3 a name with a term links to it; a run with no term offers Add to glos
   await expect(tip).toContainText('Not in the glossary yet.');
   await tip.getByRole('button', { name: 'Add to glossary' }).click();
   await expect(page.getByTestId('editor').getByRole('heading', { name: '文测' })).toBeVisible();
-  const terms = await invoke('entry.list', { collection: 'glossaryTerms', trash: 'exclude' });
-  expect(terms.entries.some((t) => t.entry.characters === '文测')).toBe(true);
+  await expect
+    .poll(async () =>
+      (await invoke('entry.list', { collection: 'glossaryTerms', trash: 'exclude' })).entries.some(
+        (t) => t.entry.characters === '文测',
+      ),
+    )
+    .toBe(true);
 });
 
 test('GL-3 hovering a glossary name in the place tree shows its romanization and meaning', async () => {

@@ -12,3 +12,5 @@ coverage/
 snapshots/
 test-results/
 playwright-report/
+# A58 (PH-21): the build id the web build writes (scripts/build-id.ts).
+src/generated/

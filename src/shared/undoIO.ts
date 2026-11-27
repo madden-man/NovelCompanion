@@ -1,15 +1,32 @@
 import type { Channel, Request, Response } from './ipc';
-import type { Op, UndoIO } from './domain/undoRunner';
+import type { EntryOp, Op, UndoIO } from './domain/undoRunner';
 
 type Invoke = <C extends Channel>(channel: C, request: Request<C>) => Promise<Response<C>>;
 
-/** Undo and redo steps written through the IPC channels, like every other write. */
+/**
+ * Undo and redo steps written through the IPC channels, like every other write.
+ * A58 (PH-11): each entry write carries the `modifiedAt` the step's check read,
+ * so an entry that changed somewhere else since is refused, never overwritten.
+ */
 export function undoIO(invoke: Invoke): UndoIO {
+  const seen = new Map<string, string>();
+  const key = (collection: string, id: string) => `${collection}/${id}`;
+  const expect = (collection: string, id: string) => {
+    const at = seen.get(key(collection, id));
+    return at ? { expectModifiedAt: at } : {};
+  };
+  const saw = (collection: string, id: string, entry: { modifiedAt?: unknown } | undefined) => {
+    if (typeof entry?.modifiedAt === 'string') seen.set(key(collection, id), entry.modifiedAt);
+    else seen.delete(key(collection, id));
+  };
   return {
     async get(collection, id) {
       try {
-        return (await invoke('entry.get', { collection, id })).entry;
+        const { entry } = await invoke('entry.get', { collection, id });
+        saw(collection, id, entry);
+        return entry;
       } catch {
+        seen.delete(key(collection, id));
         return undefined;
       }
     },
@@ -19,21 +36,52 @@ export function undoIO(invoke: Invoke): UndoIO {
     },
     async apply(op: Op) {
       switch (op.kind) {
-        case 'update':
-          await invoke('entry.update', { collection: op.collection, id: op.id, patch: op.patch });
+        case 'update': {
+          const { collection, id, patch } = op;
+          const r = await invoke('entry.update', {
+            collection,
+            id,
+            patch,
+            ...expect(collection, id),
+          });
+          saw(collection, id, r.entry);
           return;
-        case 'delete':
-          await invoke('entry.delete', { collection: op.collection, id: op.id });
+        }
+        case 'delete': {
+          const { collection, id } = op;
+          saw(
+            collection,
+            id,
+            (await invoke('entry.delete', { collection, id, ...expect(collection, id) })).entry,
+          );
           return;
-        case 'restore':
-          await invoke('entry.restore', { collection: op.collection, id: op.id });
+        }
+        case 'restore': {
+          const { collection, id } = op;
+          saw(
+            collection,
+            id,
+            (await invoke('entry.restore', { collection, id, ...expect(collection, id) })).entry,
+          );
           return;
+        }
         case 'run':
           await op.apply();
           return;
         case 'rename':
           await invoke('lists.rename', { listId: op.listId, itemId: op.itemId, label: op.label });
       }
+    },
+    async applyEntries(ops: EntryOp[]) {
+      const { entries } = await invoke('entry.batch', {
+        ops: ops.map((op) => ({
+          ...(op.kind === 'update' ? { op: 'update' as const, patch: op.patch } : { op: op.kind }),
+          collection: op.collection,
+          id: op.id,
+          ...expect(op.collection, op.id),
+        })),
+      });
+      ops.forEach((op, i) => saw(op.collection, op.id, entries[i]?.entry));
     },
   };
 }

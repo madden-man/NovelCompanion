@@ -32,6 +32,18 @@ async function openSettings(): Promise<Locator> {
   return view;
 }
 
+/** A57: a real paste into a field, as Cmd+V does, with the text on the clipboard event. */
+async function paste(field: Locator, text: string): Promise<void> {
+  await field.focus();
+  await field.evaluate((el, t) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', t);
+    el.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  }, text);
+}
+
 async function closedUri(): Promise<string> {
   const port = await new Promise<number>((resolve) => {
     const srv = createServer();
@@ -72,9 +84,7 @@ test('ST-1 every setting changed in Settings, by keyboard, is kept after the app
   const keep = view.getByTestId('settings-snapshot-keep');
   await keep.fill('12');
   await keep.press('Enter');
-  await expect(view.getByTestId('settings-snapshots')).toContainText(
-    'Saved. The newest 12 snapshots are kept.',
-  );
+  await expect(view.getByTestId('settings-snapshots')).toContainText('Keeping the newest 12.');
   // Appearance, chosen with the keyboard: focus the group, arrow to Dark.
   await view.getByTestId('appearance-system').focus();
   await page.keyboard.press('ArrowDown');
@@ -183,12 +193,11 @@ test('ST-1 appearance applies live, light, dark, or the system, without a reload
 
 test('ST-1 the API key and the MongoDB connection string are shown masked, never in full', async () => {
   const view = await openSettings();
-  await view.getByTestId('claude-key-input').fill(KEY);
-  await view.getByTestId('claude-key-save').click();
-  await expect(view.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
+  await paste(view.getByTestId('claude-key-input'), KEY);
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  await expect(view.getByTestId('claude-key-input')).toHaveValue('');
   const status = view.getByTestId('mongo-status');
-  await expect(status).toContainText('A connection string is stored in memory');
-  await expect(status).toContainText('mongodb://…');
+  await expect(status).toContainText('Connected · mongodb://…');
   const uri = db.uri;
   const host = new URL(uri).host;
   await expect(page.locator('body')).not.toContainText(uri);
@@ -198,6 +207,153 @@ test('ST-1 the API key and the MongoDB connection string are shown masked, never
   expect(JSON.stringify(wire)).not.toContain(host);
   expect(wire.masked).toBe(`mongodb://…${host.slice(-10)}`);
   await expect(view.getByTestId('mongo-input')).toHaveAttribute('type', 'password');
+  await expect(view.getByTestId('claude-key-input')).toHaveAttribute('type', 'password');
+});
+
+test('A57 ST-1 a pasted key is tested at once, a rejected one is not stored, and Get a key opens the Console', async () => {
+  const view = await openSettings();
+  await expect(view).not.toContainText('Create a key in the Anthropic Console');
+  await expect(view.getByTestId('claude-key-save')).toHaveCount(0);
+  await invoke('claude.clearKey', {});
+  const unset = await invoke('claude.status', {});
+  // Main answers as Anthropic does for a bad key.
+  await app!.evaluate(({ ipcMain }, status) => {
+    ipcMain.removeHandler('nc:claude.setKey');
+    ipcMain.handle('nc:claude.setKey', async () => ({
+      ok: false,
+      message: 'Anthropic rejected this key, so it was not saved.',
+      status,
+    }));
+    ipcMain.removeHandler('nc:app.openExternal');
+    ipcMain.handle('nc:app.openExternal', (_e, req: { url: string }) => {
+      (globalThis as { opened?: string }).opened = req.url;
+      return { ok: true };
+    });
+  }, unset);
+  try {
+    await rail(page, 'Characters').click();
+    const fresh = await openSettings();
+    await expect(fresh.getByTestId('claude-key-status')).toHaveText('No key');
+    await paste(fresh.getByTestId('claude-key-input'), 'sk-ant-api03-bad');
+    await expect(fresh.getByTestId('claude-key-note')).toHaveText(
+      'Anthropic rejected this key, so it was not saved.',
+    );
+    await expect(fresh.getByTestId('claude-key-status')).toHaveText('No key');
+    await fresh.getByTestId('claude-get-key').click();
+    await expect
+      .poll(() => app!.evaluate(() => (globalThis as { opened?: string }).opened))
+      .toBe('https://console.anthropic.com/settings/keys');
+  } finally {
+    await app?.close();
+    await start();
+  }
+});
+
+/** ST-1: count the key tests main receives, each answered after `delayMs`. */
+async function slowKeyTests(delayMs: number): Promise<void> {
+  await app!.evaluate(({ ipcMain }, delay) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const seen = globalThis as { keyTests?: number; realSetKey?: (...a: unknown[]) => unknown };
+    seen.realSetKey ??= handlers.get('nc:claude.setKey')!;
+    const original = seen.realSetKey;
+    seen.keyTests = 0;
+    handlers.set('nc:claude.setKey', async (...args: unknown[]) => {
+      seen.keyTests! += 1;
+      await new Promise((r) => setTimeout(r, delay));
+      return original(...args);
+    });
+  }, delayMs);
+}
+const keyTests = () => app!.evaluate(() => (globalThis as { keyTests?: number }).keyTests ?? -1);
+
+test('A57 ST-1 a key Anthropic could not check is saved and reads Saved, not checked, until a check passes', async () => {
+  const view = await openSettings();
+  const status = view.getByTestId('claude-key-status');
+  await paste(view.getByTestId('claude-key-input'), 'sk-ant-offline-e2e-key-0123456789-wxyz');
+  await expect(status).toHaveText('Saved, not checked · sk-ant-…wxyz');
+  await expect(status).toHaveAttribute('data-state', 'unchecked');
+  await expect(status).not.toContainText('Connected');
+  await expect(view.getByTestId('claude-key-note')).toHaveText(
+    'Saved in the keychain. The app could not reach Anthropic to check it.',
+  );
+  expect((await invoke('claude.status', {})).key).toEqual({
+    set: true,
+    masked: 'sk-ant-…wxyz',
+    checked: false,
+  });
+  // It stays unchecked when Settings opens again.
+  await rail(page, 'Characters').click();
+  const again = await openSettings();
+  await expect(again.getByTestId('claude-key-status')).toHaveText(
+    'Saved, not checked · sk-ant-…wxyz',
+  );
+  // A key that passes the check reads Connected.
+  await paste(again.getByTestId('claude-key-input'), KEY);
+  await expect(again.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  await expect(again.getByTestId('claude-key-status')).toHaveAttribute('data-state', 'ok');
+});
+
+test('A57 ST-1 a second paste while a test runs is tested when the first returns, and the last one is stored', async () => {
+  const view = await openSettings();
+  await slowKeyTests(600);
+  const input = view.getByTestId('claude-key-input');
+  await paste(input, 'sk-ant-offline-e2e-key-0123456789-wxyz');
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Testing');
+  await paste(input, KEY);
+  await expect.poll(keyTests).toBe(2);
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  await expect(input).toHaveValue('');
+  expect((await invoke('claude.status', {})).key.masked).toBe('sk-ant-…cdef');
+});
+
+test('A57 ST-1 leaving the key field tests only a new key-shaped value', async () => {
+  const view = await openSettings();
+  await slowKeyTests(0);
+  const input = view.getByTestId('claude-key-input');
+  // Not the shape of a key: leaving the field sends nothing.
+  await input.fill('hello');
+  await input.blur();
+  await page.waitForTimeout(300);
+  expect(await keyTests()).toBe(0);
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  // A key that was pasted and refused is not tested again on leaving.
+  await input.fill('');
+  await paste(input, 'sk-ant-rejected-e2e-0123456789');
+  await expect(view.getByTestId('claude-key-note')).toContainText('rejected this key');
+  expect(await keyTests()).toBe(1);
+  await input.focus();
+  await input.blur();
+  await page.waitForTimeout(300);
+  expect(await keyTests()).toBe(1);
+  // A new key-shaped value is tested on leaving; Enter tests whatever is there.
+  await input.fill(KEY);
+  await input.blur();
+  await expect.poll(keyTests).toBe(2);
+  await expect(input).toHaveValue('');
+  await input.fill('hello');
+  await input.press('Enter');
+  await expect.poll(keyTests).toBe(3);
+  await expect(view.getByTestId('claude-key-note')).toContainText('sk-ant-');
+  await input.fill('');
+});
+
+test('A57 BK-1 snapshots to keep saves when left, takes digits only, and its reset shows 30', async () => {
+  const view = await openSettings();
+  const keep = view.getByTestId('settings-snapshot-keep');
+  await keep.fill('');
+  await keep.pressSequentially('2x5');
+  await expect(keep).toHaveValue('25');
+  await keep.blur();
+  await expect.poll(async () => (await invoke('snapshot.list', {})).keep).toBe(25);
+  const reset = view.getByRole('button', { name: 'Reset snapshots to keep to 30' });
+  await expect(reset).toHaveText('↺ 30');
+  await reset.click();
+  await expect.poll(async () => (await invoke('snapshot.list', {})).keep).toBe(30);
+  await expect(reset).toHaveCount(0);
+  await expect(view.getByRole('button', { name: 'Save the number' })).toHaveCount(0);
+  await expect(view).not.toContainText('Older ones beyond this number are deleted.');
 });
 
 test('ST-1 NF-3 a setting that cannot be read, or a key that cannot be removed, says so on screen', async () => {
@@ -228,7 +384,7 @@ test('ST-1 NF-3 a setting that cannot be read, or a key that cannot be removed, 
     await expect(view.getByTestId('claude-key-note')).toHaveText(
       'The key was not removed. The keychain did not answer. Restart the app, then try again.',
     );
-    await expect(view.getByTestId('claude-key-status')).toContainText('A key is stored');
+    await expect(view.getByTestId('claude-key-status')).toContainText('Connected · sk-ant-…');
   } finally {
     // A fresh launch registers the real handlers again.
     await app?.close();
@@ -257,37 +413,57 @@ test('IP-11 a number saves on Enter as one undo step, the World events grid span
 
   // A value the bible cannot keep is refused at the field in plain words.
   const again = await openSettings();
-  const reach = again.getByTestId('number-autosaveMs');
+  const reach = again.getByTestId('number-pickerReach');
   await openEditable(reach);
   await reach.locator('input').fill('5000');
   await reach.locator('input').press('Enter');
   await expect(reach.getByRole('alert')).toBeVisible();
   await reach.locator('input').press('Escape');
-  expect((await invoke('settings.get', {})).numbers.autosaveMs).toBe(500);
+  expect((await invoke('settings.get', {})).numbers.pickerReach).toBe(1);
 
-  // Reset puts the default back; the default shows beside the field.
+  // A57: the reset shows the default it puts back, and only while a value differs from it.
+  const reset = again.getByRole('button', { name: 'Reset world window to 3 and 1' });
+  await expect(reset).toHaveCount(0);
   await fillEditable(again.getByTestId('number-windowBefore'), '6');
   await expect.poll(async () => (await invoke('settings.get', {})).numbers.windowBefore).toBe(6);
-  await expect(again.getByTestId('settings-numbers')).toContainText('Default 3.');
-  await again.getByRole('button', { name: 'Reset world window, years before to 3' }).click();
+  await expect(reset).toHaveText('↺ 3, 1');
+  await reset.click();
   await expect.poll(async () => (await invoke('settings.get', {})).numbers.windowBefore).toBe(3);
-  await expect(
-    again.getByRole('button', { name: 'Reset world window, years before to 3' }),
-  ).toBeDisabled();
-
-  // A53: the days between outline versions is one of the numbers, one step like the rest.
-  const days = again.getByTestId('number-outlineVersionDays');
-  await expect(again.getByTestId('settings-numbers')).toContainText(
-    'Days between outline versions',
-  );
-  await fillEditable(days, '14');
-  await expect
-    .poll(async () => (await invoke('settings.get', {})).numbers.outlineVersionDays)
-    .toBe(14);
+  await expect(reset).toHaveCount(0);
+  // The reset is one step: Cmd+Z brings the 6 back.
   await undoStep();
-  await expect
-    .poll(async () => (await invoke('settings.get', {})).numbers.outlineVersionDays)
-    .toBe(7);
+  await expect.poll(async () => (await invoke('settings.get', {})).numbers.windowBefore).toBe(6);
+  await invoke('settings.set', { numbers: { windowBefore: 3 } });
+});
+
+test('A57 IP-11 numbers read as sentences with no help text, and the tuning numbers are off the screen but still read', async () => {
+  const view = await openSettings();
+  const numbers = view.getByTestId('settings-numbers');
+  const window = numbers.locator('[data-group="window"]');
+  await expect(window).toContainText('years back,');
+  await expect(window).toContainText('ahead');
+  await expect(window.getByTestId('number-windowBefore-text')).toHaveText('3');
+  await expect(window.getByTestId('number-windowAfter-text')).toHaveText('1');
+  for (const gone of [
+    'Leave a box empty, or press Reset',
+    'How long a box waits',
+    'Both grids start here.',
+    'Default 3.',
+  ]) {
+    await expect(view).not.toContainText(gone);
+  }
+  await expect(numbers.getByTestId('number-autosaveMs')).toHaveCount(0);
+  await expect(numbers.getByTestId('number-outlineVersionDays')).toHaveCount(0);
+  // A value stored before the change is still read, and the screen still opens.
+  await invoke('settings.set', { numbers: { outlineVersionDays: 14, autosaveMs: 600 } });
+  expect((await invoke('settings.get', {})).numbers).toMatchObject({
+    outlineVersionDays: 14,
+    autosaveMs: 600,
+  });
+  await rail(page, 'Characters').click();
+  const back = await openSettings();
+  await expect(back.getByTestId('settings-numbers')).toBeVisible();
+  await invoke('settings.set', { numbers: { outlineVersionDays: 7, autosaveMs: 500 } });
 });
 
 test('IP-10 the cultural time unit is a select in Settings, one step per pick', async () => {
@@ -408,9 +584,9 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
     )
     .toBeNull();
   await expect(card).toContainText('Default');
-  await expect(
-    card.getByRole('button', { name: `Reset ${first.label} to default` }),
-  ).toBeDisabled();
+  await expect(card.getByRole('button', { name: `Reset ${first.label} to default` })).toHaveCount(
+    0,
+  );
   await expect(footer).toHaveText(first.footer);
   // The reset is a step too: Cmd+Z brings the writer's text back.
   await undoStep();
@@ -423,6 +599,38 @@ test('IP-15 an instruction saves from its box, Reset to default puts the default
     )
     .toBe('Keep each answer to short plain lines.');
   await invoke('claude.instructions.set', { feature: first.feature, text: null });
+});
+
+test('A57 IP-14 IP-15 a template shows what it makes and resets to the default it names; the shared rules are locked text', async () => {
+  const view = await openSettings();
+  for (const gone of [
+    'The names new things start with.',
+    'What Claude is told before your material.',
+    'Glossary terms that do not follow',
+    'The span of years a cultural line covers',
+    'A bible made from here starts with these eras.',
+  ]) {
+    await expect(view).not.toContainText(gone);
+  }
+  const templates = view.getByTestId('settings-templates');
+  await fillEditable(templates.getByTestId('template-partTitle'), 'Book {n}');
+  await expect(templates).toContainText('Book 2');
+  const reset = templates.getByRole('button', { name: 'Reset new part title to Part {n}' });
+  await expect(reset).toHaveText('↺ Part {n}');
+  await reset.click();
+  await expect
+    .poll(async () => (await invoke('settings.get', {})).templates.partTitle)
+    .toBe('Part {n}');
+  await expect(reset).toHaveCount(0);
+  // Claude's prompts keep their labels; the shared rules under each are read-only text.
+  const [first] = (await invoke('claude.instructions.get', {})).instructions;
+  if (!first) throw new Error('No Claude features');
+  const card = view.locator(`[data-feature="${first.feature}"]`);
+  await expect(card).toHaveAccessibleName(`Instructions for ${first.label}`);
+  await expect(card).toContainText('Shared rules, always sent');
+  await expect(card.getByRole('button', { name: `Reset ${first.label} to default` })).toHaveCount(
+    0,
+  );
 });
 
 /** WCAG contrast of two `rgb()` colours. */
@@ -461,7 +669,8 @@ test('NF-2 IP-11 IP-15 the new Settings fields work from the keyboard and read c
     for (const el of [
       view.locator('.settings-label').first(),
       view.locator('.instruction-footer').first(),
-      view.locator('.settings-default').first(),
+      view.locator('.number-sentence .lab').first(),
+      view.getByTestId('claude-key-status'),
     ]) {
       const [color, bg] = await el.evaluate((e) => {
         // The first box behind the text with a background of its own.
@@ -482,23 +691,19 @@ test('NF-2 IP-11 IP-15 the new Settings fields work from the keyboard and read c
   await invoke('appearance.set', { appearance: 'system' });
 });
 
-test('ST-1 Test connection reports success and failure plainly; Replace switches only after the test passes', async () => {
+test('A57 ST-1 a pasted connection string tests itself: a bad one changes nothing and says why, a good one switches', async () => {
   const view = await openSettings();
   const note = view.getByTestId('mongo-note');
-  // The stored string, with the box empty.
-  await view.getByTestId('mongo-test').click();
-  await expect(note).toContainText('Connected. MongoDB answered');
+  const input = view.getByTestId('mongo-input');
+  await expect(view.getByTestId('mongo-test')).toHaveCount(0);
+  await expect(view.getByTestId('mongo-replace')).toHaveCount(0);
+  await expect(view).not.toContainText('Test connection checks the string you pasted');
   // A string that cannot connect: plain words, nothing saved.
   const before = await view.getByTestId('mongo-status').textContent();
-  const bad = await closedUri();
-  await view.getByTestId('mongo-input').fill(bad);
-  await view.getByTestId('mongo-test').click();
-  await expect(note).toContainText(/Nothing answered at that address|did not answer in time/, {
-    timeout: 30_000,
-  });
-  await expect(note).not.toContainText(/ECONNREFUSED|Error/);
-  await view.getByTestId('mongo-replace').click();
+  await paste(input, await closedUri());
   await expect(note).toContainText('The connection string was not changed.', { timeout: 30_000 });
+  await expect(note).toContainText(/Nothing answered at that address|did not answer in time/);
+  await expect(note).not.toContainText(/ECONNREFUSED|Error/);
   await expect(view.getByTestId('mongo-status')).toHaveText(before ?? '');
   // The bible is still open on the old connection.
   expect((await invoke('bible.current', {})).bible?.id).toBe(SLUG);
@@ -508,8 +713,9 @@ test('ST-1 Test connection reports success and failure plainly; Replace switches
     replSet: { count: 1, storageEngine: 'wiredTiger' },
   });
   try {
-    await view.getByTestId('mongo-input').fill(other.getUri());
-    await view.getByTestId('mongo-replace').click();
+    // Typed and sent with Enter, the keyboard path, tests the same way.
+    await input.fill(other.getUri());
+    await input.press('Enter');
     await expect(page.getByTestId('no-bibles')).toBeVisible({ timeout: 30_000 });
     // That deployment has no bible "settings", so the app went back to the list, now from it.
     expect((await invoke('bible.list', {})).bibles).toEqual([]);

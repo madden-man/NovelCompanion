@@ -15,8 +15,9 @@ export function typedMatches(typed: string, word: string): boolean {
 }
 
 /**
- * Type the word, then the action runs. Escape or Keep closes it; an error
- * stays here in plain words and the box stays open.
+ * The word typed, the action runs. The word stays in view beside the field as
+ * its label while typing (A57), and is the placeholder too. Escape or Keep
+ * closes it; an error stays here in plain words and the box stays open.
  */
 export function TypedConfirm(props: {
   /** What must be typed. */
@@ -67,13 +68,15 @@ export function TypedConfirm(props: {
       }}
     >
       <div className="hk-confirm-text">{props.children}</div>
-      <label htmlFor={id}>
-        Type <strong className="hk-word">{props.word}</strong> to confirm
-      </label>
       <div className="row tight hk-confirm-row">
+        <label htmlFor={id} className="hk-word" data-testid="hk-word">
+          {props.word}
+        </label>
         <input
           ref={input}
           id={id}
+          aria-label={`Type ${props.word} to confirm`}
+          placeholder={props.word}
           value={typed}
           autoComplete="off"
           spellCheck={false}
@@ -96,7 +99,11 @@ export function TypedConfirm(props: {
   );
 }
 
-/** One line: what will happen, the action, and Keep. Escape keeps. The Keep button takes the focus. */
+/**
+ * One line: what will happen, the action, and Keep. Escape keeps. The Keep
+ * button takes the focus, and the line scrolls just into view (a long table
+ * can put the row it sits under at the bottom of the window).
+ */
 export function ConfirmLine(props: {
   children: ReactNode;
   action: string;
@@ -106,10 +113,12 @@ export function ConfirmLine(props: {
   testId?: string;
 }) {
   const keep = useRef<HTMLButtonElement | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     keep.current?.focus({ preventScroll: true });
+    box.current?.scrollIntoView?.({ block: 'nearest' });
   }, []);
   const go = async () => {
     if (busy) return;
@@ -124,6 +133,7 @@ export function ConfirmLine(props: {
   };
   return (
     <div
+      ref={box}
       className="hk-confirm hk-line"
       role="group"
       aria-label={props.action}

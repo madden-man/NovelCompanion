@@ -14,7 +14,7 @@ import { TopBar } from './TopBar';
 import { SearchView } from './search';
 import { ReviewQueue } from './review';
 import { NotebookTray } from './tray';
-import { UndoProvider, useUndo } from './undo';
+import { UndoNotice, UndoProvider, useUndo } from './undo';
 import { StoryTimeProvider, formatMoment, useStoryTime } from './storyTime';
 import { StoryTimeDialog, useStrandOptions } from './timeline/StoryTimeDialog';
 import { TimelineView } from './timeline/TimelineView';
@@ -34,8 +34,12 @@ import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude'
 import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
 import { call } from '../api';
+import { useCapabilities } from '../capabilities';
 import { AppMenu } from './AppMenu';
 import { EditableGallery } from './editable/Gallery';
+import { usePhone } from '../phone';
+import { PhoneFrame } from './phone/PhoneFrame';
+import type { PhoneChooser } from './phone/PhoneFrame';
 import './shell.css';
 
 type View =
@@ -44,6 +48,8 @@ type View =
       collection: EntryCollection;
       selected: string | null;
       creating: boolean;
+      /** A57: the name typed in the find-or-add box, for the new entry's form. */
+      preset?: Record<string, unknown>;
     }
   | { kind: 'search' }
   | { kind: 'tree'; focus?: string }
@@ -118,13 +124,18 @@ const APP_MENU: { label: string; items: { label: string; kind: Simple }[] }[] = 
 ];
 
 /** The app frame for an open bible: the top bar, the nine screens in the rail, the screen (A43: no inspector column). */
-export function Workspace(props: { bibleId: string; bibles: ReactNode }) {
+export function Workspace(props: { bibleId: string; bibles: ReactNode; chooser?: PhoneChooser }) {
+  const phone = usePhone();
   return (
     <DataProvider key={props.bibleId}>
       <UndoProvider key={props.bibleId} bible={props.bibleId}>
         <StoryTimeProvider key={props.bibleId}>
           <OverridesBible id={props.bibleId} />
-          <Frame bibles={props.bibles} />
+          {phone ? (
+            <PhoneFrame bible={props.bibleId} chooser={props.chooser} />
+          ) : (
+            <Frame bibles={props.bibles} />
+          )}
         </StoryTimeProvider>
       </UndoProvider>
     </DataProvider>
@@ -136,7 +147,15 @@ function everyoneOnBackstory(): View {
   return { kind: 'backstory', at: Date.now() };
 }
 
+/** A58 (PH-5): the App menu screens whose channel works on the desk only. */
+const DESK_SCREENS = {
+  review: 'proposal.list',
+  tray: 'tray.state',
+  backups: 'snapshot.list',
+} as const;
+
 function Frame({ bibles }: { bibles: ReactNode }) {
+  const can = useCapabilities();
   const [view, setView] = useState<View>({
     kind: 'section',
     collection: 'characters',
@@ -216,9 +235,10 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Backstory', view.kind === 'backstory', () =>
               setView(everyoneOnBackstory()),
             )}
-            {railButton('Continuity checker', view.kind === 'continuity', () =>
-              setView({ kind: 'continuity', tab: 'alignment' }),
-            )}
+            {can('continuity.findings') &&
+              railButton('Continuity checker', view.kind === 'continuity', () =>
+                setView({ kind: 'continuity', tab: 'alignment' }),
+              )}
             {railButton('Questions', view.kind === 'questions', () =>
               setView({ kind: 'questions' }),
             )}
@@ -231,11 +251,17 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             groups={[
               ...APP_MENU.map((g) => ({
                 label: g.label,
-                items: g.items.map((it) => ({
-                  label: it.label,
-                  active: view.kind === it.kind,
-                  onSelect: () => setView({ kind: it.kind }),
-                })),
+                items: g.items
+                  .filter(
+                    (it) =>
+                      !(it.kind in DESK_SCREENS) ||
+                      can(DESK_SCREENS[it.kind as keyof typeof DESK_SCREENS]),
+                  )
+                  .map((it) => ({
+                    label: it.label,
+                    active: view.kind === it.kind,
+                    onSelect: () => setView({ kind: it.kind }),
+                  })),
               })),
               // IP-13: every collection has a door, its section list with New and rename in place.
               // A50: but moments, whose door is Backstory.
@@ -255,16 +281,33 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             <EntryList
               collection={view.collection}
               selected={view.selected}
-              onSelect={(id) => setView({ ...view, selected: id, creating: false })}
-              onNew={() => setView({ ...view, selected: null, creating: true })}
+              autoOpen={!view.creating}
+              onAutoOpen={(id) =>
+                // A click that landed first (New, a row) wins over the list opening an entry.
+                setView((v) =>
+                  v.kind === 'section' &&
+                  v.collection === view.collection &&
+                  !v.selected &&
+                  !v.creating
+                    ? { ...v, selected: id }
+                    : v,
+                )
+              }
+              onSelect={(id) =>
+                setView({ ...view, selected: id, creating: false, preset: undefined })
+              }
+              onNew={(preset) => setView({ ...view, selected: null, creating: true, preset })}
             />
             {view.creating ? (
               <>
                 <NewEntryForm
-                  key={view.collection}
+                  key={`${view.collection}:${JSON.stringify(view.preset ?? null)}`}
                   collection={view.collection}
-                  onCreated={(id) => setView({ ...view, selected: id, creating: false })}
-                  onCancel={() => setView({ ...view, creating: false })}
+                  preset={view.preset}
+                  onCreated={(id) =>
+                    setView({ ...view, selected: id, creating: false, preset: undefined })
+                  }
+                  onCancel={() => setView({ ...view, creating: false, preset: undefined })}
                 />
               </>
             ) : view.selected ? (
@@ -280,14 +323,8 @@ function Frame({ bibles }: { bibles: ReactNode }) {
                 onOpenTree={(focus) => setView({ kind: 'tree', focus })}
               />
             ) : (
-              <>
-                <div className="ws-editor empty-editor stack">
-                  <p className="lede">
-                    Pick an entry to edit it, or make a new{' '}
-                    {collectionInfo[view.collection].singular.toLowerCase()}.
-                  </p>
-                </div>
-              </>
+              // A57: the list opens the last entry, or the first; an empty section says so in the list.
+              <div className="ws-editor empty-editor stack" data-testid="empty-editor" />
             )}
           </>
         ) : view.kind === 'search' ? (
@@ -357,7 +394,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         )}
         <StatusBar />
         <StoryTimeGate onOpen={open} />
-        <ClaudePanelGate />
+        {can('claude.status') && <ClaudePanelGate />}
         <EditableGallery />
       </div>
     </ZhNavProvider>
@@ -403,8 +440,8 @@ function StoryTimeGate({ onOpen }: { onOpen: (collection: EntryCollection, id: s
  * every screen. A43: what the last undo or redo did, or why it could not (ED-3).
  */
 function StatusBar() {
+  const can = useCapabilities();
   const story = useStoryTime();
-  const undo = useUndo();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const strands = useStrandOptions();
@@ -420,12 +457,12 @@ function StatusBar() {
       </span>
       {strand && <span data-testid="status-strand">Writing: {strand.label}</span>}
       <span className="status-undo" role="status" aria-live="polite">
-        {undo.notice && <span data-testid="undo-notice">{undo.notice}</span>}
+        <UndoNotice />
       </span>
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
-      <AskClaudeButton />
+      {can('claude.status') && <AskClaudeButton />}
       <CaptureButton />
     </footer>
   );

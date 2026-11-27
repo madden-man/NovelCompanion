@@ -13,6 +13,7 @@ import {
 import type { BibleHandle } from './bibles';
 import type { Store } from './connection';
 import { Repository } from './repository';
+import { readRev } from './rev';
 import type { RepositoryOptions } from './repository';
 import { SnapshotService } from '../backup/snapshots';
 
@@ -60,6 +61,33 @@ export interface SessionOptions {
    * migrations pending, stop with a plain message instead of running them.
    */
   readOnly?: boolean;
+  /**
+   * A58 (PH-19): the hosted function never migrates. The bible's name, said
+   * when its schema version is not this build's (`assertSameVersion`).
+   */
+  neverMigrate?: string;
+}
+
+/** A58 (PH-19): a bible at another schema version than this build, refused unmigrated. */
+export class VersionMismatchError extends Error {
+  override name = 'VersionMismatchError';
+  constructor(
+    readonly kind: 'older' | 'newer',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** A58 (PH-19): refuse a bible older or newer than this build; nothing is written. */
+export async function assertSameVersion(handle: BibleHandle, name: string): Promise<void> {
+  const have = await schemaVersion(handle);
+  if (have < LATEST_SCHEMA_VERSION) {
+    throw new VersionMismatchError('older', `Open ${name} on the Mac once.`);
+  }
+  if (have > LATEST_SCHEMA_VERSION) {
+    throw new VersionMismatchError('newer', 'The phone app is updating.');
+  }
 }
 
 /**
@@ -97,7 +125,9 @@ async function openBibleSessionOnce(
   options: SessionOptions,
 ): Promise<OpenBible> {
   const handle = await openBible(store, id);
-  if (options.readOnly) {
+  if (options.neverMigrate !== undefined) {
+    await assertSameVersion(handle, options.neverMigrate);
+  } else if (options.readOnly) {
     const have = await schemaVersion(handle);
     if (have < LATEST_SCHEMA_VERSION) {
       const pending = LATEST_SCHEMA_VERSION - have;
@@ -130,11 +160,14 @@ async function openBibleSessionOnce(
     }
     await migrate(handle);
   }
+  // A58 (PH-8): the number read before loading, so a write landing during the load shows as a move.
+  const rev = await readRev(handle);
   const model = new ReadModel();
   await model.load(handle);
   const search = new SearchIndex();
   search.rebuild(model);
   const repo = new Repository(handle, model, search, options.now, options.repository);
+  repo.loadedAt(rev);
   const open: OpenBible = { handle, model, search, repo };
   if (options.snapshotRoot) {
     const snapshots = new SnapshotService(

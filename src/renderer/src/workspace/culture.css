@@ -48,9 +48,6 @@
   align-items: center;
   padding-bottom: 2px;
 }
-.cu-manage .ol-rename {
-  min-width: 12em;
-}
 .cu-about textarea {
   width: 100%;
   resize: vertical;
@@ -131,4 +128,41 @@
   .cu-unit-setting {
     margin-left: 0;
   }
+}
+
+/* A57: the add rows show their key on the button. */
+.cu-add .btn kbd {
+  margin-left: 4px;
+}
+
+/* A57: the current span reads in the story-time colour only when it holds the story year. */
+.cu-stepper .cu-unit.chip {
+  justify-content: center;
+  font-size: inherit;
+}
+
+/* A57, WE-2: the eras' gaps and overlaps as a chip, on the tab and over the eras. */
+.cu-tab-chip {
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+}
+.era-issues {
+  align-items: flex-start;
+}
+.era-issues-chip {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.era-issues-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A57, PC-1: a place sits under the place it is inside, with a guide line. */
+.cu-place-tree .cu-place.nested {
+  border-left: 1px solid var(--border-strong);
+  padding-left: 10px;
 }

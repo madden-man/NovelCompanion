@@ -1,5 +1,5 @@
 import { deleteCommand, editCommand, restoreCommand } from '../../../shared/domain/undoRunner';
-import { WriteFieldset, useWriteGuard } from '../connection';
+import { WriteFieldset, useConnection, useWriteGuard } from '../connection';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -15,10 +15,11 @@ import { patchBetween } from '../../../shared/domain/diff';
 import { fieldIssues, labelPath } from '../../../shared/domain/issues';
 import type { FieldIssue } from '../../../shared/domain/issues';
 import type { FieldWarning } from '../../../shared/domain/warnings';
-import { call, plainError } from '../api';
+import { call, callIn, plainError } from '../api';
 import { notSavedText } from '../../../shared/errors';
 import type { Entry } from './data';
 import { Field } from './fields';
+import { EntryEditable, onEntryChain, renameSpec } from './editable';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
@@ -38,6 +39,14 @@ export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 
  */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 export const AUTOSAVE_MAX_WAIT_MS = 700;
+/**
+ * A save that failed is tried again after this, then twice this, then three
+ * times (ED-2), never while a snapshot is open read-only (ARCH-6), and never
+ * once the editor or its workspace has gone. When MongoDB is back (or
+ * read-only ends) the typing still not stored is sent again at once.
+ */
+const AUTOSAVE_RETRY_MS = 1000;
+const AUTOSAVE_RETRIES = 3;
 
 /**
  * Autosave for one entry (ED-2): every change updates the draft at once and
@@ -57,6 +66,16 @@ export function useAutosave(collection: EntryCollection, id: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstPending = useRef<number | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
+  const retries = useRef(0);
+  /** The plain reason the last save failed, for what a bible switch says was not saved. */
+  const lastError = useRef<string | null>(null);
+  /** False once the editor has closed: no timer or retry of it runs after that. */
+  const mounted = useRef(true);
+  const connection = useConnection().status?.state;
+  const readOnly = useRef(false);
+  readOnly.current = connection === 'readOnly';
+  /** Typing that is not stored yet, a failed save included. */
+  const unsaved = () => current.current !== null && current.current !== saved.current;
 
   const [reloads, setReloads] = useState(0);
   const reload = useCallback(() => setReloads((n) => n + 1), []);
@@ -107,6 +126,9 @@ export function useAutosave(collection: EntryCollection, id: string) {
     if (inflight.current) await inflight.current;
     // Loop so changes typed while a save was in flight go out next.
     for (;;) {
+      // A57: once the workspace has gone (another bible opened), nothing more is sent, and
+      // nothing while a snapshot is open read-only (ARCH-6); MongoDB coming back sends it.
+      if (!undo.live() || readOnly.current) return;
       const base = saved.current;
       const target = current.current;
       if (!base || !target) return;
@@ -121,16 +143,23 @@ export function useAutosave(collection: EntryCollection, id: string) {
         setIssues(fieldIssues(check.error.issues));
         setStatus('error');
         setError(null);
+        lastError.current = null;
         return;
       }
       setIssues([]);
       setStatus('saving');
-      const run = call('entry.update', { collection, id, patch: forward }).then(
+      // Queued behind any in-place save of this entry (a heading rename), never beside it.
+      // Sent as a write of this workspace's bible, so main refuses it once another is open.
+      const run = onEntryChain(collection, id, () =>
+        callIn(undo.bible, 'entry.update', { collection, id, patch: forward }),
+      ).then(
         (r) => {
           const entry = r.entry as Entry;
+          retries.current = 0;
           saved.current = entry;
           setWarnings(r.warnings);
           setError(null);
+          lastError.current = null;
           const labels = Object.keys(forward).map((k) => labelPath(manifests[collection], k));
           // Built from the stored documents, so each step expects what is really stored.
           undo.record(
@@ -154,8 +183,21 @@ export function useAutosave(collection: EntryCollection, id: string) {
           return true;
         },
         (e: unknown) => {
-          setError(plainError(e));
+          lastError.current = plainError(e);
+          setError(lastError.current);
           setStatus('error');
+          // The typing is kept and sent again; a flush, closing the editor, or MongoDB
+          // coming back sends it too. A read-only snapshot refuses it, so no retry then.
+          if (
+            retries.current < AUTOSAVE_RETRIES &&
+            !timer.current &&
+            mounted.current &&
+            undo.live() &&
+            !readOnly.current
+          ) {
+            retries.current += 1;
+            timer.current = setTimeout(() => void save(), AUTOSAVE_RETRY_MS * retries.current);
+          }
           return false;
         },
       );
@@ -184,19 +226,48 @@ export function useAutosave(collection: EntryCollection, id: string) {
     [save, numbers],
   );
 
+  /** Saves what is pending; resolves to what is still not stored, for a bible switch to show. */
+  const flushAndSay = useCallback(async (): Promise<string | undefined> => {
+    if (timer.current || inflight.current || unsaved()) await save();
+    const base = saved.current;
+    const left = current.current;
+    if (!base || !left || !unsaved()) return undefined;
+    const fields = Object.keys(patchBetween(base, left).forward);
+    if (fields.length === 0) return undefined;
+    const labels = fields.map((k) => labelPath(manifests[collection], k)).join(', ');
+    return `Not saved: ${labels} on ${entryTitle(left)}. ${lastError.current ?? 'Fix the marked fields.'}`;
+  }, [save, collection]);
+
   const flush = useCallback(async () => {
-    if (timer.current || inflight.current) await save();
+    await flushAndSay();
+  }, [flushAndSay]);
+
+  useEffect(() => undo.registerFlush(flushAndSay), [undo, flushAndSay]);
+
+  // Save what is pending when the editor closes, once, while its workspace is still the open
+  // bible's (A57: never after another bible opened); no timer or retry runs after this.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const pending = timer.current !== null;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      if ((pending || unsaved()) && undo.live()) void save();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save]);
 
-  useEffect(() => undo.registerFlush(flush), [undo, flush]);
-
-  // Save what is pending when the editor closes.
-  useEffect(
-    () => () => {
-      if (timer.current) void save();
-    },
-    [save],
-  );
+  // ED-2, ARCH-6: MongoDB answered again or read-only ended: typing still not stored goes now,
+  // with its retries back, without waiting for another keystroke.
+  const lastState = useRef(connection);
+  useEffect(() => {
+    const was = lastState.current;
+    lastState.current = connection;
+    if (connection !== 'connected' || was === undefined || was === 'connected') return;
+    retries.current = 0;
+    if (!timer.current && unsaved() && mounted.current) void save();
+  }, [connection, save]);
 
   // Another writer (undo, a restore, a rename) changed something: reload when nothing is pending.
   useEffect(
@@ -278,6 +349,8 @@ export function TrashControls(props: {
     try {
       await call('entry.delete', { collection, id });
       undo.record(deleteCommand(collection, id, title));
+      // A57: the status bar says it, with Undo.
+      undo.toast(`Moved ${title} to the trash.`);
       setConfirmDelete(false);
       props.onChanged();
     } catch (e) {
@@ -400,12 +473,18 @@ export function EntryPane(props: {
     );
   }
   const inTrash = Boolean(draft.deletedAt);
+  // A family's or an era's heading shows its title, so it edits the title; its Name field
+  // below edits the name. Every other heading edits what a list row's rename does.
+  const heading =
+    collection === 'families' || collection === 'eraStates'
+      ? { path: 'title', label: 'Title', extraPatch: undefined }
+      : renameSpec(collection);
   const messages = { warnings: ed.warnings, issues: ed.issues };
   const warningCount = ed.warnings.length > 0 && (
     <span className="chip warn-chip" data-testid="warning-count">
       {ed.warnings.length === 1
-        ? '1 field has a warning. It still saved.'
-        : `${ed.warnings.length} fields have warnings. They still saved.`}
+        ? '1 field has a warning.'
+        : `${ed.warnings.length} fields have warnings.`}
     </span>
   );
 
@@ -430,10 +509,9 @@ export function EntryPane(props: {
     <>
       <section
         className="ws-editor"
-        // SM-1: a character page's own heading is the only name on it.
-        {...(collection === 'characters'
-          ? { 'aria-label': entryTitle(draft) }
-          : { 'aria-labelledby': 'editor-title' })}
+        // SM-1: a character page's own heading is the only name on it. The region keeps the
+        // plain title as its name, since the heading below holds an editable name.
+        aria-label={entryTitle(draft)}
         data-testid="editor"
         data-entry-id={id}
       >
@@ -442,7 +520,24 @@ export function EntryPane(props: {
             <div className="stack tight">
               <span className="eyebrow">{info.singular}</span>
               <h2 id="editor-title">
-                <Zh text={entryTitle(draft)} />
+                {/* A57, IP-13: the name is edited where it is shown, through the same rename
+                    as a list row: click or F2 opens it, Enter or blur saves, Escape cancels. */}
+                <EntryEditable
+                  collection={collection}
+                  id={id}
+                  entry={draft}
+                  kind="text"
+                  allowEmpty={false}
+                  path={heading.path}
+                  label={heading.label}
+                  extraPatch={heading.extraPatch}
+                  placeholder={entryTitle(draft)}
+                  display={() => <Zh text={entryTitle(draft)} />}
+                  onSaved={ed.adopt}
+                  testId="editor-heading"
+                  // Not the form field's path: the Title field below already answers to it.
+                  data-field="heading"
+                />
               </h2>
             </div>
           )}
@@ -453,7 +548,7 @@ export function EntryPane(props: {
         </header>
         {inTrash && (
           <p className="callout warn" role="status">
-            This entry is in the trash. Restore it to bring it back.
+            This entry is in the trash.
           </p>
         )}
         {offerWritten && props.onWritten && (
@@ -623,14 +718,14 @@ export function EmbeddedEditor(props: {
       </header>
       {inTrash && (
         <p className="callout warn" role="status">
-          This entry is in the trash. Restore it to bring it back.
+          This entry is in the trash.
         </p>
       )}
       {ed.warnings.length > 0 && (
         <p className="callout warn" data-testid="warning-count">
           {ed.warnings.length === 1
-            ? '1 field has a warning. It still saved.'
-            : `${ed.warnings.length} fields have warnings. They still saved.`}
+            ? '1 field has a warning.'
+            : `${ed.warnings.length} fields have warnings.`}
         </p>
       )}
       {props.trash !== false && (

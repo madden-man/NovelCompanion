@@ -54,3 +54,7 @@
 .year-strip {
   min-width: 0;
 }
+/* a57-grids: "+ month" and "Year only" sit on the line of the boxes, not their labels. */
+.year-date-toggle {
+  align-self: flex-end;
+}

@@ -5,7 +5,8 @@
  * add and the pick are one undo step. The Romanization screen and Settings
  * both draw this; under ARCH-6 read-only each field stays text with the reason.
  */
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useId, useState } from 'react';
+import type { FormEvent } from 'react';
 import type { Response } from '../../../shared/ipc';
 import { romanizationCommand } from '../../../shared/undoCommands';
 import { call, plainError } from '../api';
@@ -81,9 +82,7 @@ export function RomanizationSystems(props: {
   if (!data) return <p>Loading the romanization systems.</p>;
   return (
     <div className="stack tight roman-systems" data-testid={props.testId}>
-      {data.languages.length === 0 && (
-        <p>The Languages list is empty. Add a language under Lists.</p>
-      )}
+      {data.languages.length === 0 && <AddLanguage testId={`${props.testId}-add-language`} />}
       {data.languages.length > 0 && (
         <div className="settings-grid">
           {data.languages.map((l) => (
@@ -126,5 +125,68 @@ export function RomanizationSystems(props: {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * GL-1, IP-8: the Languages list is empty, so a language is added right here,
+ * on Enter or the button, as one undo step. The Romanization screen and the
+ * Glossary table draw it in place of what needs a language.
+ */
+export function AddLanguage(props: { testId: string }) {
+  const undo = useUndo();
+  const readOnly = useReadOnly();
+  const addNew = useListAddNew('languages');
+  const id = useId();
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const label = text.trim();
+    if (!label || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const added = await addNew(label);
+      if (added.command) undo.record(added.command);
+      setText('');
+    } catch (err) {
+      setError(plainError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const off = readOnly !== null;
+  return (
+    <form className="stack tight" onSubmit={(e) => void submit(e)} data-testid={props.testId}>
+      <div className="row tight cu-add">
+        <label htmlFor={id} className="sr-only">
+          Name of a new language
+        </label>
+        <input
+          id={id}
+          placeholder="A language, such as Mandarin"
+          value={text}
+          maxLength={200}
+          disabled={off || busy}
+          title={readOnly ?? undefined}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="btn small"
+          disabled={off || busy || !text.trim()}
+          title={readOnly ?? undefined}
+        >
+          New language <kbd>Enter</kbd>
+        </button>
+      </div>
+      {error && (
+        <p className="callout crit" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }

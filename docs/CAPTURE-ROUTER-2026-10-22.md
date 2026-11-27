@@ -31,4 +31,7 @@ Year grammar: "starting around 2065", "from", "after", "in" set the start; "by 2
 2. A demonym plus a place prefers the place's community ("Chinese people in San Francisco" lands under San Francisco).
 3. Haiku for Route B; the Models setting can switch it. The live model list on 2026-10-22 has `claude-haiku-5-5` (Haiku 5.5, the newest) and `claude-haiku-4-5-20251001`; the default is Haiku 5.5.
 4. Chips after sending: Enter runs the router; Route A then shows chips and the diff for approval; routes B and C send at once and show the chips as the hints that went with the text.
+
+   Note, 2026-11-26 (A57): this is out of date. The router now runs on a pause in the typing (about 300 ms), so the chips and the diff show before any key. Enter files when every sentence files locally (the button reads File N); when some need Claude, Enter sends those (Send N to Claude) and File N (Cmd+Enter) in the review files everything ticked. With no key, Enter saves the sentences that need Claude as an open question, and the local ones wait for File N. See `CR-6` and `KB-6` in `SPEC.md`.
+
 5. Multi-fact lines are split into sentences and each sentence is routed on its own; a sentence without a year inherits the year of the sentence before it. One File it approves everything ticked, as one undo step.

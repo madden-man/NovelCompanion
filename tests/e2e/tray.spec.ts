@@ -95,22 +95,28 @@ test.beforeAll(async () => {
     });
   }
   await invoke('storyTime.set', { time: { year: 2034 } });
-  // FN-6: count every claude.capture call main receives, of any kind, sent or not.
+  // FN-6: count every claude.capture call main receives, of any kind, sent or not,
+  // and keep the routes its runs started on (the box stops drawing a run once it fails).
   await app.evaluate(({ ipcMain }) => {
     const handlers = (
       ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
     )._invokeHandlers;
     const channel = 'nc:claude.capture';
     const original = handlers.get(channel)!;
-    (globalThis as { captures?: number }).captures = 0;
-    handlers.set(channel, (...args: unknown[]) => {
-      (globalThis as { captures?: number }).captures! += 1;
-      return original(...args);
+    const seen = globalThis as { captures?: number; routes?: string[] };
+    seen.captures = 0;
+    seen.routes = [];
+    handlers.set(channel, async (...args: unknown[]) => {
+      seen.captures! += 1;
+      const res = (await original(...args)) as { runs?: { route: string }[] } | undefined;
+      seen.routes!.push(...(res?.runs ?? []).map((r) => r.route));
+      return res;
     });
   });
 });
 
 const captures = () => app.evaluate(() => (globalThis as { captures?: number }).captures ?? -1);
+const routes = () => app.evaluate(() => (globalThis as { routes?: string[] }).routes ?? []);
 
 /** Every entry of every section, with its last change, and the proposals: what "nothing written" watches. */
 async function everything(): Promise<string> {
@@ -203,21 +209,28 @@ test('FN-1 the tray offers kept lines and councils about the story, grouped by d
   await expect(yee.getByTestId('capture-fact')).toHaveAttribute('data-stand', 'local');
   await expect(yee.getByTestId('chip-section')).toBeVisible();
   await expect(yee.getByTestId('draft-diff')).toBeVisible();
-  // The Route B or C card waits behind Send to Claude.
+  // The Route B or C card waits for Claude; with no key yet, behind Add a Claude key (A57).
   const move = item(MOVE);
   await expect(move.getByTestId('capture-fact')).toHaveAttribute('data-stand', 'unsent');
-  await expect(move.getByTestId('capture-send-fact')).toBeVisible();
+  await expect(move.getByTestId('capture-add-key')).toBeVisible();
   // Showing the tray wrote nothing anywhere, and sent nothing to Claude.
   expect(await everything()).toBe(before);
   expect(await invoke('tray.state', {})).toEqual({ dismissed: [], filed: [], sent: [] });
   expect(await captures()).toBe(0);
 });
 
-test('FN-6 with no key Send to Claude is off and says why; nothing is sent until it is pressed', async () => {
-  const sendButton = item(MOVE).getByTestId('capture-send-fact');
-  await expect(sendButton).toBeDisabled();
-  await expect(sendButton).toHaveAttribute('title', /No Anthropic key/);
-  await expect(item(MOVE).getByTestId('capture-ask-claude')).toBeDisabled();
+test('A57 FN-6 with no key the Claude buttons read Add a Claude key and open the key field in place; nothing is sent', async () => {
+  await expect(item(MOVE).getByTestId('capture-send-fact')).toHaveCount(0);
+  await expect(item(MOVE).getByTestId('capture-ask-claude')).toHaveCount(0);
+  await expect(tray()).not.toContainText('No Anthropic key is set');
+  const addKey = item(MOVE).getByTestId('capture-add-key');
+  await expect(addKey).toHaveText('Add a Claude key');
+  await addKey.click();
+  const keyField = tray().getByTestId('capture-key-field');
+  await expect(keyField).toBeVisible();
+  await expect(keyField.getByTestId('capture-key-input')).toBeFocused();
+  await keyField.getByRole('button', { name: 'Cancel' }).click();
+  await expect(keyField).toBeHidden();
   expect(await captures()).toBe(0);
 });
 
@@ -295,28 +308,69 @@ test('FN-4 FN-5 Dismiss is one undo step; a dismissed card stays dismissed after
   await expect(item(edited)).toHaveCount(0, { timeout: 10_000 });
 });
 
-test('FN-6 Send to Claude hands the sentence to the capture box, which sends it on its route; a run that fails offers the card again', async () => {
+test('A57 AI-6 with a key and no consent the tray opens with no sheet, a fact files here without consent, and Not now on the first Send closes only the sheet', async () => {
   await invoke('claude.setKey', { key: KEY });
+  const SALT = 'Teenagers in Portland start to drink coffee with salt.';
+  const NOV23 = Date.parse('2026-11-23T21:00:00.000Z');
+  await send('messages', 'K6', 1, kept('K6', SALT, 2050, NOV23));
   await rail(page, 'Characters').click();
   await openTray();
-  // AI-6: the tray's own confirmation comes first; Send waits for it.
+  await focusWindow();
+  await expect(item(SALT)).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+  // Filing here needs no consent.
+  const group = tray()
+    .getByTestId('tray-group')
+    .filter({ has: page.getByText(SALT) });
+  await group.getByTestId('tray-file').click();
+  await expect(tray().getByTestId('tray-filed')).toBeVisible();
+  await expect(item(SALT)).toHaveCount(0);
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  // The Claude buttons are live; the first press asks, and Not now leaves the tray as it was.
   const sendButton = item(MOVE).getByTestId('capture-send-fact');
-  await expect(sendButton).toBeDisabled();
-  await tray().getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
-  await expect(tray().getByTestId('claude-disclosure')).toHaveCount(0);
-  expect((await invoke('claude.status', {})).acknowledgedAt).toBeTruthy();
   await expect(sendButton).toBeEnabled();
+  await sendButton.click();
+  const sheet = page.getByTestId('claude-disclosure');
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole('button', { name: 'Not now' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(sendButton).toBeFocused();
+  await expect(tray()).toBeVisible();
+  await expect(item(MOVE)).toHaveCount(1);
+  await expect(page.getByTestId('capture-box')).toHaveCount(0);
+  // Escape is Not now too.
+  await sendButton.press('Enter');
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(tray()).toBeVisible();
+  expect(await captures()).toBe(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+});
+
+test('A57 AI-6 FN-6 Continue on the sheet sends: Send to Claude hands the sentence to the capture box, which sends it on its route; a run that fails offers the card again', async () => {
+  const sendButton = item(MOVE).getByTestId('capture-send-fact');
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
   expect(await captures()).toBe(0);
   await sendButton.click();
+  await page.getByTestId('claude-disclosure').getByTestId('claude-acknowledge').click();
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeTruthy();
   const box = page.getByTestId('capture-box');
   await expect(box).toBeVisible();
   await expect(box.getByTestId('capture-sent')).toHaveText(MOVE);
-  await expect(box.getByTestId('capture-run').first()).toHaveAttribute('data-route', 'fast');
+  await expect.poll(routes).toEqual(['fast']);
   expect(await captures()).toBe(1);
-  // The fast file has no recording for this line, so the run fails: the card comes back.
-  await expect(item(MOVE)).toHaveCount(1, { timeout: 10_000 });
-  expect((await invoke('tray.state', {})).sent).toEqual([]);
-  if (await box.isVisible()) await page.keyboard.press('Escape');
+  // The fast file has no recording for this line, so the run fails. The card is
+  // still in the tray while the run is out, so wait for the failure itself: the
+  // box keeps the sentence as a question (KB-7) after it hands the card back.
+  await expect(box).toHaveAttribute('data-phase', 'saved', { timeout: 10_000 });
+  await expect(item(MOVE)).toHaveCount(1);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toEqual([]);
+  // Escape reaches the box once the settled box has the focus.
+  await expect(box.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
   await expect(box).toBeHidden();
 });
 
@@ -337,7 +391,92 @@ test('FN-6 Ask Claude instead sends it on Route C; closed without filing it come
   await box.getByRole('button', { name: 'Done' }).click();
   await expect(box).toBeHidden();
   await expect(item(MOVE)).toHaveCount(0);
-  expect((await invoke('tray.state', {})).sent).toHaveLength(1);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toHaveLength(1);
+});
+
+/**
+ * Holds every proposal diff after the first until `releaseDiffs`, so the box
+ * shows one card while its run is still going (a card each run must still draw).
+ */
+async function holdDiffsAfterFirst() {
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const channel = 'nc:proposal.diff';
+    const seen = globalThis as {
+      diffOriginal?: (...args: unknown[]) => unknown;
+      release?: () => void;
+    };
+    seen.diffOriginal ??= handlers.get(channel)!;
+    const original = seen.diffOriginal;
+    const gate = new Promise<void>((resolve) => {
+      seen.release = resolve;
+    });
+    let calls = 0;
+    handlers.set(channel, async (...args: unknown[]) => {
+      calls += 1;
+      if (calls > 1) await gate;
+      return original(...args);
+    });
+  });
+}
+const releaseDiffs = () =>
+  app.evaluate(() => {
+    (globalThis as { release?: () => void }).release?.();
+  });
+
+test('FN-6 closed while Claude is still working, it comes back; Ask Claude instead again takes the same capture back, and filed it stays gone', async () => {
+  const RECIPE = 'Meiling and Ruth kept the same recipe box, passed between the families.';
+  await send('messages', 'K7', 1, kept('K7', RECIPE, 2034));
+  await focusWindow();
+  await expect(item(RECIPE)).toHaveCount(1, { timeout: 10_000 });
+  await holdDiffsAfterFirst();
+  const box = page.getByTestId('capture-box');
+  await item(RECIPE).getByTestId('capture-ask-claude').click();
+  await expect(box.getByTestId('capture-card')).toHaveCount(1, { timeout: 10_000 });
+  await expect(item(RECIPE)).toHaveCount(0);
+  // The second card is still on its way, so the run is going when the box closes.
+  await box.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await expect(box).toBeHidden();
+  await expect(item(RECIPE)).toHaveCount(1);
+  // The box still holds this sentence: pressing again opens it on that capture, not a busy box.
+  await item(RECIPE).getByTestId('capture-ask-claude').click();
+  await expect(box).toBeVisible();
+  await expect(item(RECIPE)).toHaveCount(0);
+  await expect(tray().getByRole('alert')).toHaveCount(0);
+  await releaseDiffs();
+  await expect(box.getByTestId('capture-card')).toHaveCount(2, { timeout: 10_000 });
+  await box.getByTestId('capture-file').click();
+  await expect(box.getByTestId('capture-filed')).toBeVisible();
+  await box.getByRole('button', { name: 'Done' }).click();
+  await expect(box).toBeHidden();
+  await expect(item(RECIPE)).toHaveCount(0);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toHaveLength(2);
+});
+
+test('FN-6 closed while Claude is still working, then opened from the status bar and filed, it leaves the tray', async () => {
+  const RECIPE = 'Meiling and Ruth kept the same recipe box in the hall closet.';
+  await send('messages', 'K8', 1, kept('K8', RECIPE, 2034));
+  await focusWindow();
+  await expect(item(RECIPE)).toHaveCount(1, { timeout: 10_000 });
+  await holdDiffsAfterFirst();
+  const box = page.getByTestId('capture-box');
+  await item(RECIPE).getByTestId('capture-ask-claude').click();
+  await expect(box.getByTestId('capture-card')).toHaveCount(1, { timeout: 10_000 });
+  await box.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await expect(box).toBeHidden();
+  await expect(item(RECIPE)).toHaveCount(1);
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(box).toBeVisible();
+  await releaseDiffs();
+  await expect(box.getByTestId('capture-card')).toHaveCount(2, { timeout: 10_000 });
+  await box.getByTestId('capture-file').click();
+  await expect(box.getByTestId('capture-filed')).toBeVisible();
+  await box.getByRole('button', { name: 'Done' }).click();
+  await expect(box).toBeHidden();
+  await expect(item(RECIPE)).toHaveCount(0);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toHaveLength(3);
 });
 
 test('FN-8 a character speaking in a council in the story has Voice on their page, by year, opening the council', async () => {
