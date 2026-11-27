@@ -241,3 +241,82 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await stop();
   await own.stop();
 });
+
+/** A server of its own with the fixture bible, whose one member stops and starts with its data and port. */
+async function ownServer(): Promise<MongoMemoryReplSet> {
+  const own = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: 'wiredTiger' },
+  });
+  const store = await connect(own.getUri());
+  await loadFixture(store, SLUG);
+  await store.close();
+  return own;
+}
+
+test('A57 ARCH-8 with MongoDB out of reach at launch, Try again opens the bible used last once it answers', async () => {
+  const own = await ownServer();
+  const member = own.servers[0]!;
+  const data = mkdtempSync(join(tmpdir(), 'nc-e2e-last-'));
+  try {
+    await start(own.getUri(), data);
+    await invoke('bible.open', { slug: SLUG });
+    await expect(page.getByTestId('workspace')).toBeVisible();
+    await stop();
+
+    await member.stop({ doCleanup: false, force: true });
+    await start(own.getUri(), data);
+    const banner = page.getByTestId('connection-banner');
+    await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
+    await expect(page.getByTestId('workspace')).toHaveCount(0);
+
+    await member.start(true);
+    await banner.getByTestId('connection-retry').click();
+    await expect(page.getByTestId('connection-banner')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.getByTestId('workspace')).toBeVisible();
+    await expect(page.getByTestId('current-bible')).toHaveText(NAME);
+    expect((await invoke('connection.status', {})).state).toBe('connected');
+  } finally {
+    await stop();
+    await own.stop();
+  }
+});
+
+test('A57 ARCH-8 a snapshot opened read-only is never reopened at launch; the bible opened last from MongoDB is', async () => {
+  const fs = await import('node:fs');
+  const own = await ownServer();
+  const member = own.servers[0]!;
+  const data = mkdtempSync(join(tmpdir(), 'nc-e2e-snap-'));
+  try {
+    // Online: the fixture bible opens (its snapshot is taken), then another bible opens last.
+    await start(own.getUri(), data);
+    await invoke('bible.open', { slug: SLUG });
+    await invoke('bible.create', { slug: 'other', name: 'Other novel' });
+    await invoke('bible.open', { slug: 'other' });
+    await expect(page.getByTestId('current-bible')).toHaveText('Other novel');
+    await stop();
+    // Only the fixture bible keeps a snapshot, so the read-only one below is of it.
+    fs.rmSync(join(data, 'snapshots', 'other'), { recursive: true, force: true });
+
+    await member.stop({ doCleanup: false, force: true });
+    await start(own.getUri(), data);
+    const banner = page.getByTestId('connection-banner');
+    await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
+    await expect(banner).toContainText(`The most recent snapshot is of ${NAME}`);
+    await banner.getByTestId('open-snapshot').click();
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+    await expect(page.getByTestId('current-bible')).toHaveText(NAME);
+    await stop();
+
+    // MongoDB is back: the next launch opens the bible opened last from MongoDB, writable.
+    await member.start(true);
+    await start(own.getUri(), data);
+    await expect(page.getByTestId('current-bible')).toHaveText('Other novel', { timeout: 60_000 });
+    await expect(page.getByTestId('connection-banner')).toHaveCount(0);
+    expect(JSON.parse(fs.readFileSync(join(data, 'last-bible.json'), 'utf8'))).toEqual({
+      bible: 'other',
+    });
+  } finally {
+    await stop();
+    await own.stop();
+  }
+});
