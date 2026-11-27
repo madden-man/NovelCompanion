@@ -122,8 +122,14 @@
 }
 .ph-world-filters .wg-regions {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+.ph-world-filters .wg-regions > .btn {
+  flex: none;
+  width: auto;
 }
 .ph-world-filters .wg-toolbar-label {
   flex-basis: 100%;
@@ -301,4 +307,18 @@
 :root[data-phone] .ph-frame .wg-main > .legend {
   gap: 6px 14px;
   font-size: 0.85rem;
+}
+/* The eras' gaps and overlaps (WE-2) on the Eras tab: a chip a thumb can hit, and its list. */
+:root[data-phone] .ph-frame .era-issues-chip {
+  min-height: var(--ph-target);
+  padding: 0 14px;
+  font-size: 0.95rem;
+  touch-action: manipulation;
+}
+:root[data-phone] .ph-frame .era-issues .warn-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
 }

@@ -688,8 +688,10 @@ export function GridFrame(props: {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el || viewWidth === 0) return;
-    // A58 U3: the phone follows the story year too, which loads after the grid opens.
-    const key = isPhone() ? `${zoom}:${storyYear}` : `${zoom}`;
+    // A58 U3: the phone follows the story year and the span too, which load after the grid opens.
+    const key = isPhone()
+      ? [zoom, storyYear, scale.from, scale.to, scale.ppy, viewWidth].join(':')
+      : `${zoom}`;
     if (scrolledFor.current === key) return;
     scrolledFor.current = key;
     el.scrollLeft = scrollToYear(scale, storyYear, trackView);

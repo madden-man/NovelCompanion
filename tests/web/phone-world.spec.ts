@@ -48,7 +48,13 @@ async function setYear(page: Page, year: number): Promise<void> {
   await input.fill(String(year));
   await input.press('Enter');
   await expect(page.getByTestId('phone-year')).toHaveText(String(year));
-  await expect.poll(() => storedYear(page)).toBe(year);
+  // A fresh bible stores no time while the year shown is its current position.
+  await expect
+    .poll(
+      async () =>
+        (await storedYear(page)) ?? Number(await page.getByTestId('phone-year').innerText()),
+    )
+    .toBe(year);
   await page.goBack();
   await expect(page.getByTestId('year-sheet')).toHaveCount(0);
 }
@@ -193,7 +199,8 @@ test('PH-29 the year view lists the fixture people with their ages for the year,
   // A step on the page moves the year and the ages with it.
   await view.getByTestId('year-page-next').tap();
   await expect(page.getByTestId('phone-year')).toHaveText('2041');
-  await expect(row('Margaret Hale').getByTestId('year-age')).toHaveText('83');
+  // Margaret Hale dies in 2041, and the row says so beside her age.
+  await expect(row('Margaret Hale').getByTestId('year-age')).toHaveText('83 dies this year');
   await view.getByTestId('year-page-prev').tap();
   await expect(row('Margaret Hale').getByTestId('year-age')).toHaveText('82');
 
@@ -308,7 +315,9 @@ test('PH-35 no hover-only control on the World screen: the adds, the era ends an
   const grid = await openWorld(page);
   // Each row's add shows in its cell and on its label, without a hover.
   const adds = grid.getByTestId('cell-add');
-  expect(await adds.count()).toBe(await grid.locator('.wg-row').count());
+  await expect
+    .poll(async () => [await adds.count(), await grid.locator('.wg-row').count()])
+    .toEqual([7, 7]);
   for (const a of (await adds.all()).slice(0, 3)) {
     const target = await a.evaluate((el) => {
       const r = el.getBoundingClientRect();
@@ -351,6 +360,27 @@ test('PH-35 no hover-only control on the World screen: the adds, the era ends an
   await page.goBack();
   await expect(page.getByTestId('world-filter-count')).toHaveCount(0);
   await noSideways(page);
+});
+
+test('PH-35 the Eras tab chip for gaps and overlaps is a thumb target and opens its list', async ({
+  page,
+}, info) => {
+  onlyOn(info, 'iphone');
+  await openFixture(page, server.url);
+  // The fixture's eras start in 2025, so 2015 sits in a gap.
+  await setYear(page, 2015);
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-more').getByRole('button', { name: 'Cultural data' }).tap();
+  await page.getByRole('tab', { name: /^Eras/ }).tap();
+  const chip = page.getByTestId('era-issues');
+  await expect(chip).toBeVisible();
+  const b = await box(chip);
+  expect(b.height).toBeGreaterThanOrEqual(44);
+  await chip.tap();
+  await expect(page.getByTestId('era-issue-list')).toBeVisible();
+  await expect(page.getByTestId('era-gap')).toBeVisible();
+  await noSideways(page);
+  await setYear(page, 2040);
 });
 
 test('PH-36 the year sheet, the year view, the World screen and its filters carry no instruction text', async ({
