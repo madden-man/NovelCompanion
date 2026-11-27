@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type * as ServerModule from '../src/server/index';
 import { importSource } from './import-source.ts';
+import { readBuildId } from './build-id.ts';
 
 /**
  * A58: the hosted function on a local port, for development and tests. `/rpc`
@@ -35,6 +36,8 @@ const rpc = server.createRpc({
   env: process.env,
   // PH-7: the open bible is made fresh before each request.
   freshen: server.freshenOpenBible,
+  // PH-21: the id the last web build baked in, so the local server answers as the function would.
+  buildId: readBuildId(ROOT) ?? undefined,
 });
 const port = Number(values.port);
 server.webServer({ rpc, staticDir }).listen(port, values.host, () => {

@@ -34,6 +34,7 @@ import { AskClaudeButton, ClaudePanelGate, useClaudeNavigation } from './claude'
 import { CaptureBox, CaptureButton } from './capture';
 import { SettingsView } from './settings';
 import { call } from '../api';
+import { useCapabilities } from '../capabilities';
 import { AppMenu } from './AppMenu';
 import { EditableGallery } from './editable/Gallery';
 import './shell.css';
@@ -138,7 +139,15 @@ function everyoneOnBackstory(): View {
   return { kind: 'backstory', at: Date.now() };
 }
 
+/** A58 (PH-5): the App menu screens whose channel works on the desk only. */
+const DESK_SCREENS = {
+  review: 'proposal.list',
+  tray: 'tray.state',
+  backups: 'snapshot.list',
+} as const;
+
 function Frame({ bibles }: { bibles: ReactNode }) {
+  const can = useCapabilities();
   const [view, setView] = useState<View>({
     kind: 'section',
     collection: 'characters',
@@ -218,9 +227,10 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Backstory', view.kind === 'backstory', () =>
               setView(everyoneOnBackstory()),
             )}
-            {railButton('Continuity checker', view.kind === 'continuity', () =>
-              setView({ kind: 'continuity', tab: 'alignment' }),
-            )}
+            {can('continuity.check') &&
+              railButton('Continuity checker', view.kind === 'continuity', () =>
+                setView({ kind: 'continuity', tab: 'alignment' }),
+              )}
             {railButton('Questions', view.kind === 'questions', () =>
               setView({ kind: 'questions' }),
             )}
@@ -233,11 +243,17 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             groups={[
               ...APP_MENU.map((g) => ({
                 label: g.label,
-                items: g.items.map((it) => ({
-                  label: it.label,
-                  active: view.kind === it.kind,
-                  onSelect: () => setView({ kind: it.kind }),
-                })),
+                items: g.items
+                  .filter(
+                    (it) =>
+                      !(it.kind in DESK_SCREENS) ||
+                      can(DESK_SCREENS[it.kind as keyof typeof DESK_SCREENS]),
+                  )
+                  .map((it) => ({
+                    label: it.label,
+                    active: view.kind === it.kind,
+                    onSelect: () => setView({ kind: it.kind }),
+                  })),
               })),
               // IP-13: every collection has a door, its section list with New and rename in place.
               // A50: but moments, whose door is Backstory.
@@ -370,7 +386,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         )}
         <StatusBar />
         <StoryTimeGate onOpen={open} />
-        <ClaudePanelGate />
+        {can('claude.ask') && <ClaudePanelGate />}
         <EditableGallery />
       </div>
     </ZhNavProvider>
@@ -416,6 +432,7 @@ function StoryTimeGate({ onOpen }: { onOpen: (collection: EntryCollection, id: s
  * every screen. A43: what the last undo or redo did, or why it could not (ED-3).
  */
 function StatusBar() {
+  const can = useCapabilities();
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
@@ -437,7 +454,7 @@ function StatusBar() {
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
-      <AskClaudeButton />
+      {can('claude.ask') && <AskClaudeButton />}
       <CaptureButton />
     </footer>
   );

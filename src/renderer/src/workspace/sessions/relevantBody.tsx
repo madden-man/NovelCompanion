@@ -20,6 +20,7 @@ import { useBibleSettings } from '../bibleSettings';
 import { captureNav } from '../capture';
 import { relativesLine } from '../character';
 import { useChapterNumbers, useEntries, useList, useStore } from '../data';
+import { useCapabilities } from '../../capabilities';
 import type { Entry } from '../data';
 import {
   Editable,
@@ -998,6 +999,7 @@ export function RelevantBody(props: {
   onOpenPage?: (pageId: string) => void;
 }) {
   const { selection: sel, onOpen } = props;
+  const can = useCapabilities();
   const chapters = useEntries('chapters');
   const strand =
     sel.strands.find((s) => !!props.writing?.strandId && s.strandId === props.writing.strandId) ??
@@ -1085,7 +1087,7 @@ export function RelevantBody(props: {
           <p className="example-note">{sel.ids.length} entries.</p>
         </div>
       </details>
-      {chapter && <Reimport chapter={chapter} />}
+      {chapter && can('manuscript.read') && <Reimport chapter={chapter} />}
     </section>
   );
 }
