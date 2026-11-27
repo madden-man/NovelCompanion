@@ -171,7 +171,7 @@ export function ListSelect(props: {
       }}
     >
       {(props.emptyLabel !== undefined || !props.value) && (
-        <option value="">{props.emptyLabel ?? 'Choose one'}</option>
+        <option value="">{props.emptyLabel ?? 'Not set'}</option>
       )}
       {props.value && !known && (
         <option value={props.value} title={`Item ID ${props.value}`}>

@@ -370,7 +370,7 @@ function EnumField({ spec, value, onChange, path, messages }: FieldProps) {
         onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
       >
         {(spec.nullable || value === null || value === undefined) && (
-          <option value="">{spec.nullable ? 'None' : 'Choose one'}</option>
+          <option value="">{spec.nullable ? 'None' : 'Not set'}</option>
         )}
         {(spec.options ?? []).map((o) => (
           <option key={o.value} value={o.value}>
@@ -441,7 +441,7 @@ function ListItemsField({ spec, value, onChange, path, messages }: FieldProps) {
         id={id}
         listId={spec.listId ?? ''}
         value=""
-        emptyLabel="Add one"
+        emptyLabel={values.length ? '+' : 'None'}
         exclude={values}
         onChange={(v) => v && onChange([...values, v])}
       />
@@ -481,7 +481,7 @@ function StringsField({ spec, value, onChange, path, messages }: FieldProps) {
         <input
           id={id}
           value={draft}
-          placeholder="Add one"
+          placeholder={values.length ? undefined : 'None'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -531,7 +531,7 @@ function RefSelect(props: {
       value={props.value}
       onChange={(e) => props.onChange(e.target.value === '' ? null : e.target.value)}
     >
-      <option value="">{props.allowNone ? 'None' : 'Choose one'}</option>
+      <option value="">{props.allowNone ? 'None' : 'Not set'}</option>
       {props.value && !known && (
         <option value={props.value}>
           {found.get(props.value)?.title ?? props.value}

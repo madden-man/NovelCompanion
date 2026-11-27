@@ -603,7 +603,7 @@ export function Editable(props: EditableProps) {
             <option value="">{sel.emptyLabel ?? 'None'}</option>
           ) : current === '' ? (
             <option value="" disabled>
-              {props.placeholder ?? 'Choose one'}
+              {props.placeholder ?? 'Not set'}
             </option>
           ) : null}
           {sel.options.map((o) => (
