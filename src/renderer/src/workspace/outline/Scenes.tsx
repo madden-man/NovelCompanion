@@ -1787,6 +1787,10 @@ function SectionText(p: SectionProps) {
   const lineOfCaret = (el: HTMLTextAreaElement) =>
     el.value.slice(0, el.selectionStart).split('\n').length - 1;
 
+  /** True when the caret's line holds more than its bullet; Tab leaves a line with no words (NF-2). */
+  const lineHasWords = (el: HTMLTextAreaElement) =>
+    (el.value.split('\n')[lineOfCaret(el)] ?? '').replace(/^\s*(?:[-*]\s*)?/, '') !== '';
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     if (e.key === 'Escape') {
@@ -1813,9 +1817,9 @@ function SectionText(p: SectionProps) {
       }
     } else if (
       ((e.key === ']' || e.key === '[') && (e.metaKey || e.ctrlKey) && !e.altKey) ||
-      (e.key === 'Tab' && !leave && !e.metaKey && !e.ctrlKey && !e.altKey)
+      (e.key === 'Tab' && !leave && lineHasWords(el) && !e.metaKey && !e.ctrlKey && !e.altKey)
     ) {
-      // Cmd+] and Tab indent, Cmd+[ and Shift+Tab outdent; after Escape, Tab leaves the field (NF-2).
+      // Cmd+] and Tab indent, Cmd+[ and Shift+Tab outdent. Tab leaves an empty field, and any field after Escape (NF-2).
       if (p.disabled) return;
       e.preventDefault();
       const next = indentLines(edit, e.key === '[' || (e.key === 'Tab' && e.shiftKey));

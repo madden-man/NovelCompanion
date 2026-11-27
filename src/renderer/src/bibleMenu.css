@@ -7,6 +7,9 @@
   align-items: center;
   gap: 8px;
   max-width: 40ch;
+  /* No taller than the title beside it, so the header keeps the height --ws-chrome counts on. */
+  min-height: 0;
+  padding-block: 1px;
 }
 .bible-menu-button > span {
   overflow: hidden;
