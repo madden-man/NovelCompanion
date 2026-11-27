@@ -645,3 +645,7 @@ Suite counts after the review fixes (`npm test`, local replica set, hidden): lin
 | FN-6 | pending | `tests/e2e/tray.spec.ts` "A57 FN-6 with no key the Claude buttons read Add a Claude key and open the key field in place; nothing is sent". |
 
 Suite counts: TO FILL BY ARCHITECT.
+| CU-3 | pending | `tests/e2e/knowledge.spec.ts` "A57 the community name in the heading opens with F2, Escape keeps it, Enter or blur renames as one undo step each", "A42 a community is added, renamed, and removed with its lines, and Undo brings them back" (no Rename button; the name is clicked). |
+| NF-3 | pending | `tests/unit/errors.test.ts` "A57 no failure message says to click or press Try again, or names Cmd+R", "A57 the connection messages beside Try again say only what went wrong"; `tests/e2e/offline.spec.ts` (the banner says what went wrong and the `connection-retry` button reads Try again). |
+| IP-1 (dates, headings) | pending | `tests/unit/editable.test.ts` "A57 a one-box date refuses what it cannot read as it is typed, and takes every format it reads"; `tests/e2e/editable.spec.ts` "A57 a date box refuses words as they are typed, says a half-typed date is not a date, and keeps the old value"; `tests/e2e/editing.spec.ts` "A57 an entry heading renames in place: click or F2 opens it, Enter or blur saves as one undo step, Escape cancels" (IP-13). |
+| Hidden runs | pending | `tests/e2e/tree.spec.ts` "FT-8 A26 A45 ..." asserts no window of a hidden run is visible while the page is full screen; `tests/journey/journey.spec.ts` 36 of 36 on the packaged app (956a9db). |
