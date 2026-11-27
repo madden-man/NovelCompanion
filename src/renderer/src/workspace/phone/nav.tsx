@@ -92,10 +92,7 @@ function pagePart(p: Page): string {
     case 'section':
       return `l:${enc(p.collection)}`;
     case 'screen':
-      return ['s', p.screen, p.arg ?? '', p.arg2 ?? '']
-        .map(enc)
-        .join(':')
-        .replace(/:+$/, '');
+      return ['s', p.screen, p.arg ?? '', p.arg2 ?? ''].map(enc).join(':').replace(/:+$/, '');
   }
 }
 
@@ -131,7 +128,8 @@ export function toHash(s: NavState): string {
 /** A state from a hash; anything it cannot read falls back to People. */
 export function fromHash(hash: string): NavState {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const tab = (TABS as readonly string[]).includes(parts[0] ?? '') ? (parts[0] as Tab) : 'people';
+  if (!(TABS as readonly string[]).includes(parts[0] ?? '')) return rootState('people');
+  const tab = parts[0] as Tab;
   const s = rootState(tab);
   s.stacks[tab] = parts
     .slice(1)

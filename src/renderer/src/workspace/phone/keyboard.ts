@@ -5,7 +5,10 @@ const MARGIN = 12;
 /** A visual viewport this much shorter than the window means the keyboard is up. */
 const KEYBOARD_PX = 80;
 
-type Viewport = Pick<VisualViewport, 'height' | 'offsetTop' | 'addEventListener' | 'removeEventListener'>;
+type Viewport = Pick<
+  VisualViewport,
+  'height' | 'offsetTop' | 'addEventListener' | 'removeEventListener'
+>;
 
 /** A field that takes typing: an input, a select, a text area or a rich text box. */
 export function isTypingField(el: Element | null): el is HTMLElement {
