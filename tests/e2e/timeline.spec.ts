@@ -225,8 +225,8 @@ test('WE-2 the eras screen flags a gap at the story year after an edit and never
     patch: { endYear: 2065 },
   });
   const flag = eras.getByTestId('era-gap');
-  await expect(flag).toContainText('No era covers 2067.');
-  await expect(flag).toContainText('every era still saves.');
+  await eras.getByTestId('era-issues').click();
+  await expect(flag).toContainText('No era covers 2066 to 2069');
   expect(
     (await invoke('entry.get', { collection: 'eraStates', id: 'ERA-2060' })).entry.endYear,
   ).toBe(2065);
