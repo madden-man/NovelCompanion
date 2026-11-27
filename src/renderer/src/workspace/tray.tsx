@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClaudeStatusWire } from '../../../shared/claude';
 import { collectionInfo } from '../../../shared/schema';
 import type { FiledEntry } from '../../../shared/domain/capture';
@@ -54,7 +54,17 @@ export function NotebookTray() {
   const undo = useUndo();
   const ro = useWriteGuard();
   const [pages, setPages] = useState<OfferedPage[] | null>(null);
-  const [marks, setMarks] = useState<TrayMarks>(NO_MARKS);
+  const [marks, setShownMarks] = useState<TrayMarks>(NO_MARKS);
+  /**
+   * Counts the marks a write answered with. A reload that read the marks
+   * before a write answered (an undo deletes an entry, which reloads, then
+   * clears its mark) must not draw over that newer answer.
+   */
+  const marksWritten = useRef(0);
+  const setMarks = useCallback((m: TrayMarks) => {
+    marksWritten.current += 1;
+    setShownMarks(m);
+  }, []);
   const [bible, setBible] = useState<CaptureBible | null>(null);
   const [status, setStatus] = useState<ClaudeStatusWire | null>(null);
   const [choices, setChoices] = useState<Record<string, FactChoice>>({});
@@ -66,6 +76,7 @@ export function NotebookTray() {
 
   useEffect(() => {
     let live = true;
+    const written = marksWritten.current;
     Promise.all([
       call('notebook.offered', {}),
       call('tray.state', {}),
@@ -75,7 +86,8 @@ export function NotebookTray() {
       ([offered, m, b, s]) => {
         if (!live) return;
         setPages(offered.pages);
-        setMarks(m);
+        // A mark written while this read was out is newer than what it read.
+        if (marksWritten.current === written) setShownMarks(m);
         setBible(b);
         setStatus(s);
       },
@@ -105,7 +117,7 @@ export function NotebookTray() {
   /** A `run` step that sets or clears marks, for undo and redo (FN-3, FN-4). */
   const markStep = useCallback(
     (keys: string[], mark: Mark): Op => markOp(call, keys, mark, setMarks),
-    [],
+    [setMarks],
   );
 
   /** FN-4: dismiss facts as one undo step. */

@@ -1612,11 +1612,21 @@ export class Repository {
    * or clear their mark (null, for undo). Not an entry write: the tray's own
    * undo steps call it back.
    */
-  async setTrayMarks(keys: readonly string[], mark: keyof TrayMarks | null): Promise<TrayMarks> {
-    const next = withMarks(this.trayMarks(), keys, mark);
-    await this.writeMeta({ _id: TRAY_META_ID, ...next });
-    return next;
+  setTrayMarks(keys: readonly string[], mark: keyof TrayMarks | null): Promise<TrayMarks> {
+    // One at a time: each reads the marks the last one wrote, so two overlapping calls keep both.
+    const run = this.trayWrites.then(async () => {
+      const next = withMarks(this.trayMarks(), keys, mark);
+      await this.writeMeta({ _id: TRAY_META_ID, ...next });
+      return next;
+    });
+    this.trayWrites = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
+
+  private trayWrites: Promise<void> = Promise.resolve();
 
   /** Records the first time; a second call keeps the first. */
   async markBridgeSince(ms: number): Promise<number> {

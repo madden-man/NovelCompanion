@@ -149,6 +149,19 @@ describe('A56 the tray, Voice and Relevant channels over the pages the phone sen
     expect(cleared).toEqual({ dismissed: [], filed: [], sent: [] });
   });
 
+  test('FN-4 FN-6 two tray.mark calls at once keep both marks', async () => {
+    await Promise.all([
+      invoke('tray.mark', { keys: ['K1:abc#0'], mark: 'sent' }),
+      invoke('tray.mark', { keys: ['ca1:def#0'], mark: 'dismissed' }),
+    ]);
+    expect(await invoke('tray.state', {})).toEqual({
+      dismissed: ['ca1:def#0'],
+      filed: [],
+      sent: ['K1:abc#0'],
+    });
+    await invoke('tray.mark', { keys: ['K1:abc#0', 'ca1:def#0'], mark: null });
+  });
+
   test('FN-8 notebook.voice lists the lines a character speaks in councils in the story, a year first, then the whole book', async () => {
     const { rows } = await invoke('notebook.voice', { id: 'H3' });
     expect(rows.map((r) => [r.pageId, r.lineId, r.year, r.text])).toEqual([
