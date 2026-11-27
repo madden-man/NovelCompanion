@@ -95,22 +95,28 @@ test.beforeAll(async () => {
     });
   }
   await invoke('storyTime.set', { time: { year: 2034 } });
-  // FN-6: count every claude.capture call main receives, of any kind, sent or not.
+  // FN-6: count every claude.capture call main receives, of any kind, sent or not,
+  // and keep the routes its runs started on (the box stops drawing a run once it fails).
   await app.evaluate(({ ipcMain }) => {
     const handlers = (
       ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
     )._invokeHandlers;
     const channel = 'nc:claude.capture';
     const original = handlers.get(channel)!;
-    (globalThis as { captures?: number }).captures = 0;
-    handlers.set(channel, (...args: unknown[]) => {
-      (globalThis as { captures?: number }).captures! += 1;
-      return original(...args);
+    const seen = globalThis as { captures?: number; routes?: string[] };
+    seen.captures = 0;
+    seen.routes = [];
+    handlers.set(channel, async (...args: unknown[]) => {
+      seen.captures! += 1;
+      const res = (await original(...args)) as { runs?: { route: string }[] } | undefined;
+      seen.routes!.push(...(res?.runs ?? []).map((r) => r.route));
+      return res;
     });
   });
 });
 
 const captures = () => app.evaluate(() => (globalThis as { captures?: number }).captures ?? -1);
+const routes = () => app.evaluate(() => (globalThis as { routes?: string[] }).routes ?? []);
 
 /** Every entry of every section, with its last change, and the proposals: what "nothing written" watches. */
 async function everything(): Promise<string> {
@@ -318,12 +324,17 @@ test('FN-6 Send to Claude hands the sentence to the capture box, which sends it 
   const box = page.getByTestId('capture-box');
   await expect(box).toBeVisible();
   await expect(box.getByTestId('capture-sent')).toHaveText(MOVE);
-  await expect(box.getByTestId('capture-run').first()).toHaveAttribute('data-route', 'fast');
+  await expect.poll(routes).toEqual(['fast']);
   expect(await captures()).toBe(1);
-  // The fast file has no recording for this line, so the run fails: the card comes back.
-  await expect(item(MOVE)).toHaveCount(1, { timeout: 10_000 });
-  expect((await invoke('tray.state', {})).sent).toEqual([]);
-  if (await box.isVisible()) await page.keyboard.press('Escape');
+  // The fast file has no recording for this line, so the run fails. The card is
+  // still in the tray while the run is out, so wait for the failure itself: the
+  // box keeps the sentence as a question (KB-7) after it hands the card back.
+  await expect(box).toHaveAttribute('data-phase', 'saved', { timeout: 10_000 });
+  await expect(item(MOVE)).toHaveCount(1);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toEqual([]);
+  // Escape reaches the box once the settled box has the focus.
+  await expect(box.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
   await expect(box).toBeHidden();
 });
 
@@ -344,7 +355,7 @@ test('FN-6 Ask Claude instead sends it on Route C; closed without filing it come
   await box.getByRole('button', { name: 'Done' }).click();
   await expect(box).toBeHidden();
   await expect(item(MOVE)).toHaveCount(0);
-  expect((await invoke('tray.state', {})).sent).toHaveLength(1);
+  await expect.poll(async () => (await invoke('tray.state', {})).sent).toHaveLength(1);
 });
 
 test('FN-8 a character speaking in a council in the story has Voice on their page, by year, opening the council', async () => {
