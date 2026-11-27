@@ -647,15 +647,13 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
     for (const channel of [...ORDER, ...rest]) {
       const step = WALK[channel];
       const bible = step.bible ?? slug;
-      let before = 0;
-      try {
-        await step.setup?.();
-        await settle();
-        before = step.bible ? 0 : await revOf(slug);
-        await step.run();
-      } catch (e) {
+      const named = (e: unknown) => {
         throw new Error(`${channel}: ${(e as Error).message}`, { cause: e });
-      }
+      };
+      await (step.setup?.() ?? Promise.resolve()).catch(named);
+      await settle();
+      const before = step.bible ? 0 : await revOf(slug);
+      await step.run().catch(named);
       if (step.bible === undefined) await settle();
       const after = await revOf(bible);
       if (NOT_THE_BIBLE[channel]) {

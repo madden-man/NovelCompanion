@@ -22,7 +22,9 @@ import { REV_META_ID } from '../../src/shared/freshness';
  * A58 (PH-6): every collection without the `rev` counter, which a restore or
  * an import moves forward on purpose, so another process sees the change.
  */
-const withoutRev = (collections: Record<string, { _id?: unknown }[]>) => ({
+const withoutRev = (
+  collections: Record<string, { _id?: unknown }[]>,
+): Record<string, { _id?: unknown }[]> => ({
   ...collections,
   ...(collections.meta ? { meta: collections.meta.filter((d) => d._id !== REV_META_ID) } : {}),
 });
@@ -282,7 +284,7 @@ describe('BK-3 the JSON export loads into an empty bible with nothing lost', () 
     const original = await dumpBible(a.handle);
     const copy = await dumpBible(handle);
     expect(Object.keys(copy.collections).sort()).toEqual(Object.keys(original.collections).sort());
-    for (const [name, docs] of Object.entries(original.collections)) {
+    for (const name of Object.keys(original.collections)) {
       expect(withoutRev(copy.collections)[name], name).toEqual(
         withoutRev(original.collections)[name],
       );
