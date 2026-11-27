@@ -29,7 +29,10 @@ function memoryStorage(seed: Record<string, string> = {}) {
 }
 
 /** A transport over a fake `/rpc` that answers from `reply`, recording every request. */
-function rig(reply: (b: Record<string, unknown>) => Answer, seed = { [KEY_STORAGE]: 'k-1' }) {
+function rig(
+  reply: (b: Record<string, unknown>) => Answer,
+  seed: Record<string, string> = { [KEY_STORAGE]: 'k-1' },
+) {
   const sent: Sent[] = [];
   const storage = memoryStorage(seed);
   let clock = 1_000_000;

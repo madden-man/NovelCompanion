@@ -227,7 +227,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
             {railButton('Backstory', view.kind === 'backstory', () =>
               setView(everyoneOnBackstory()),
             )}
-            {can('continuity.check') &&
+            {can('continuity.findings') &&
               railButton('Continuity checker', view.kind === 'continuity', () =>
                 setView({ kind: 'continuity', tab: 'alignment' }),
               )}
@@ -386,7 +386,7 @@ function Frame({ bibles }: { bibles: ReactNode }) {
         )}
         <StatusBar />
         <StoryTimeGate onOpen={open} />
-        {can('claude.ask') && <ClaudePanelGate />}
+        {can('claude.status') && <ClaudePanelGate />}
         <EditableGallery />
       </div>
     </ZhNavProvider>
@@ -454,7 +454,7 @@ function StatusBar() {
       <button type="button" className="btn small" onClick={story.openDialog}>
         Story time <kbd>Cmd T</kbd>
       </button>
-      {can('claude.ask') && <AskClaudeButton />}
+      {can('claude.status') && <AskClaudeButton />}
       <CaptureButton />
     </footer>
   );

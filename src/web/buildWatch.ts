@@ -12,7 +12,7 @@ export interface BuildWatchDeps {
   save: () => Promise<void>;
   reload: () => void;
   updateWorker: () => Promise<void>;
-  session: Pick<Storage, 'getItem' | 'setItem'>;
+  session: { getItem(key: string): string | null; setItem(key: string, value: string): void };
   every?: number;
   setTimer?: (fn: () => void, ms: number) => unknown;
 }
@@ -54,10 +54,12 @@ export function watchBuild(deps: BuildWatchDeps): (id: string) => void {
 }
 
 /** A focused field that takes typing. */
-export function typingIn(doc: Pick<Document, 'activeElement'>): boolean {
+export function typingIn(doc: {
+  activeElement: { matches(selector: string): boolean } | null;
+}): boolean {
   const el = doc.activeElement;
-  if (!el || typeof (el as Element).matches !== 'function') return false;
-  return (el as Element).matches(
+  if (!el || typeof el.matches !== 'function') return false;
+  return el.matches(
     'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="reset"]):not([type="range"])',
   );
 }

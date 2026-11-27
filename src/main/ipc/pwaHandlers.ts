@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { ENTRY_COLLECTIONS } from '../../shared/schema';
 import { NOTEBOOK_COLLECTION } from '../../shared/schema/notebook';
 import { CHANNELS } from '../../shared/ipc';
@@ -8,11 +7,8 @@ import type { OpenBible } from '../db/session';
 import type { Host } from '../host/types';
 import { MemoryPhoneKeyStore, makePhoneKey, phoneKeyStatus } from '../host/phoneKey';
 import type { PhoneKeyStore } from '../host/phoneKey';
-import { testDatabaseHonoured, testSeamsHonoured } from '../host/uri';
+import { testDatabaseHonoured } from '../host/uri';
 import type { Handler } from './validate';
-
-/** Under the test seams, Copy writes the key here instead of the system clipboard. */
-export const TEST_CLIPBOARD_ENV = 'NOVEL_COMPANION_TEST_CLIPBOARD_FILE';
 
 type PwaChannel =
   'app.capabilities' | 'bible.changes' | 'phoneKey.status' | 'phoneKey.make' | 'phoneKey.copy';
@@ -31,11 +27,12 @@ export function pwaHandlers(
   let memory: MemoryPhoneKeyStore | null = null;
   const store = (): PhoneKeyStore | null =>
     underTest ? (memory ??= new MemoryPhoneKeyStore()) : (host.secrets.phoneKey?.() ?? null);
+  /** The last key copied under test, held in memory instead of the system clipboard. */
+  let copied: string | null = null;
   const copy = (text: string): boolean => {
-    const file = process.env[TEST_CLIPBOARD_ENV];
     if (underTest) {
-      if (file && testSeamsHonoured(process.env, opts)) writeFileSync(file, text);
-      return true;
+      copied = text;
+      return copied !== null;
     }
     if (!host.copyText) return false;
     host.copyText(text);

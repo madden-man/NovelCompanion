@@ -5,7 +5,7 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "exclude": ["tests/e2e/**/*", "tests/journey/**/*", "tests/package/**/*"],
+  "exclude": ["tests/e2e/**/*", "tests/journey/**/*", "tests/package/**/*", "tests/web/**/*"],
   "include": [
     "electron.vite.config.ts",
     "vite.web.config.ts",

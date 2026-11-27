@@ -219,8 +219,13 @@ export class WebTransport implements Api {
    * and the page is asked to flush what it holds, as on the desk's close.
    */
   hidden(): void {
-    this.keepaliveUntil = this.now() + KEEPALIVE_WINDOW_MS;
+    this.keepalive();
     if (this.bible !== null) this.emit('app.closeRequested', { hasBible: true, quitting: false });
+  }
+
+  /** PH-13: from now, for a few seconds, writes go out as keepalive requests. */
+  keepalive(): void {
+    this.keepaliveUntil = this.now() + KEEPALIVE_WINDOW_MS;
   }
 
   /** The app is visible again: writes go out as normal requests. */

@@ -1,7 +1,7 @@
 import { PHONE_FRESHEN_MS } from './transport';
 import type { WebTransport } from './transport';
 
-type Doc = Pick<Document, 'visibilityState' | 'addEventListener'>;
+type Doc = Pick<Document, 'visibilityState' | 'addEventListener' | 'activeElement'>;
 type Win = Pick<Window, 'addEventListener' | 'setInterval' | 'clearInterval'>;
 
 /**
@@ -24,20 +24,22 @@ export function attachLifecycle(
     if (timer !== null) win.clearInterval(timer);
     timer = null;
   };
+  const hide = () => {
+    stop();
+    transport.keepalive();
+    // An open field stores its typing when it is left, as on the desk; that write goes keepalive.
+    const el = doc.activeElement as HTMLElement | null;
+    if (el && typeof el.blur === 'function' && el !== (doc as Document).body) el.blur();
+    transport.hidden();
+  };
   doc.addEventListener('visibilitychange', () => {
     if (doc.visibilityState === 'visible') {
       transport.shown();
       void transport.checkFreshness();
       start();
-    } else {
-      stop();
-      transport.hidden();
-    }
+    } else hide();
   });
-  win.addEventListener('pagehide', () => {
-    stop();
-    transport.hidden();
-  });
+  win.addEventListener('pagehide', hide);
   win.addEventListener('offline', () => transport.offline());
   win.addEventListener('online', () => void transport.invoke('connection.retry', {}));
   if (doc.visibilityState === 'visible') start();
