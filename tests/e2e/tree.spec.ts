@@ -766,14 +766,28 @@ test('FT-8 A26 A45 the tree fills the middle column with no page scroll, Full sc
     )
     .toBe('tree-view');
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
-  // Escape only works once the window has finished entering full screen.
-  await expect
-    .poll(() =>
-      app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isFullScreen()),
-    )
-    .toBe(true);
-  // macOS ignores a leave request while its enter animation is still running.
-  await page.waitForTimeout(3000);
+  // A hidden run keeps the window off the screen, so only the page goes full screen. A shown
+  // run (NOVEL_COMPANION_E2E_SHOW=1) takes the window too, and there Escape only works once
+  // the window has finished entering full screen.
+  const windowToo = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]!.isFullScreenable(),
+  );
+  if (windowToo) {
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isFullScreen()),
+      )
+      .toBe(true);
+    // macOS ignores a leave request while its enter animation is still running.
+    await page.waitForTimeout(3000);
+  }
+  // Hidden or shown, no window of a hidden run is ever visible.
+  if (!windowToo)
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().some((w) => w.isVisible() && w.getOpacity() > 0),
+      ),
+    ).toBe(false);
   await page.keyboard.press('Escape');
   await expect
     .poll(() => page.evaluate(() => document.fullscreenElement === null), { timeout: 15000 })

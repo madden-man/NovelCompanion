@@ -79,6 +79,10 @@ function createWindow(): BrowserWindow {
     height: 800,
     minWidth: 360,
     show: false,
+    // A hidden run must never reach the screen: macOS would show the window to take it
+    // full screen and leave it shown afterwards. The page's own full screen still works.
+    fullscreenable: !hidden,
+    focusable: !hidden,
     backgroundColor: '#f3f5f7',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
@@ -94,6 +98,13 @@ function createWindow(): BrowserWindow {
   win.once('ready-to-show', () => {
     if (!hidden) win.show();
   });
+  if (hidden) {
+    // Chromium shows the window when the page asks for full screen. In a hidden run it
+    // stays invisible, takes no clicks, and goes straight back off the screen.
+    win.setOpacity(0);
+    win.setIgnoreMouseEvents(true);
+    win.on('show', () => win.hide());
+  }
   // Closing the window or quitting first asks the page to save its pending edits. The page
   // answers through `app.flushed`; a page that does not answer within two seconds (it hung
   // or crashed) does not hold the window open.
