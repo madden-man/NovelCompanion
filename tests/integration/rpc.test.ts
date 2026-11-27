@@ -191,7 +191,7 @@ describe('PH-3 PH-4 desk channels are refused', () => {
     const before = await backstory(bible);
     const refusals = [
       await call('bible.create', { slug, name: 'Made on the phone' }, bible),
-      await call('snapshot.take', { label: 'from the phone' }, bible, { bible }),
+      await call('snapshot.take', {}, bible, { bible }),
       await call('backup.export', {}, bible),
       await call('connection.status', {}, bible),
       await call('mongo.replace', { uri: 'mongodb://127.0.0.1:1' }, bible),
