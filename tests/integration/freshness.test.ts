@@ -390,10 +390,8 @@ describe('PH-7 PH-8 freshen leaves no window', () => {
           // After the commit, before the write notes its number: a freshen comes in.
           endSession: async (...x: Parameters<typeof end>) => {
             if (!fresh) {
-              console.log('HOOK rev', await readRev(a.handle), a.repo.rev);
               fresh = a.repo.freshen();
               await new Promise((r) => setTimeout(r, 300));
-              console.log('HOOK after', a.repo.rev);
             }
             return end(...x);
           },

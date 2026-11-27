@@ -220,9 +220,9 @@ export class UndoManager {
     }
     try {
       const batch = batchOf(ops, io);
-      if (batch) {
+      if (batch && io.applyEntries) {
         // PH-11: every entry is written in one transaction or none is, before the other writes.
-        await io.applyEntries!(batch);
+        await io.applyEntries(batch);
         for (const op of ops) if (!isEntryOp(op)) await io.apply(op);
       } else {
         for (const op of ops) await io.apply(op);

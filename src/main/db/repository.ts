@@ -1087,14 +1087,14 @@ export class Repository {
   private followUp: Promise<boolean> | null = null;
 
   private async freshenOnce(): Promise<boolean> {
-    let stored = 0;
     // PH-8: never read rev while one of this process's writes may have committed but not yet
     // noted its number, or that write would read as one made somewhere else.
-    for (let tries = 0; ; tries++) {
+    const settledRev = async (tries: number): Promise<number> => {
       while (this.writing.size) await Promise.allSettled([...this.writing]);
-      stored = await readRev(this.bible);
-      if (!this.writing.size || tries >= 5) break;
-    }
+      const n = await readRev(this.bible);
+      return this.writing.size && tries < 5 ? settledRev(tries + 1) : n;
+    };
+    const stored = await settledRev(0);
     if (this.revs.settled(stored)) return false;
     const before = this.model.copy();
     await this.model.load(this.bible);

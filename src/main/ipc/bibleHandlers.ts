@@ -580,7 +580,7 @@ export function bibleHandlers(
         ops.map((o) => (o.op === 'delete' ? { ...o, op: 'softDelete' as const } : o)),
       );
       return {
-        entries: written.map((entry, i) => withWarnings(ops[i]!.collection, entry)),
+        entries: ops.map((o, i) => withWarnings(o.collection, written[i] as StoredDoc)),
       };
     },
     'entry.lookup': ({ ids }) => {

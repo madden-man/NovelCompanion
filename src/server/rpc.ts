@@ -173,7 +173,7 @@ export function createRpc(deps: RpcDeps): Rpc {
               await takePhoneSnapshot(handle, 'bulk', now());
             } catch (e) {
               console.error('Novel Companion phone snapshot:', e);
-              throw new Error(NO_BULK_SNAPSHOT);
+              throw new Error(NO_BULK_SNAPSHOT, { cause: e });
             }
           };
         }
