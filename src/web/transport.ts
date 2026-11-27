@@ -323,19 +323,28 @@ export class WebTransport implements Api {
     this.reached();
     const envelope = (payload ?? {}) as { result?: unknown; events?: unknown };
     this.followRev(res.headers, sentAt);
+    // The bible opened is the one later requests name, before its events reach the views:
+    // a view that reloads on `bibles.changed` must ask about the new bible (A58 U1).
+    let result: Response<C> | undefined;
+    let invalid: unknown = null;
+    try {
+      result = parseResponse(channel, envelope.result);
+    } catch (e) {
+      invalid = e;
+    }
+    if (result !== undefined && (channel === 'bible.open' || channel === 'bible.current')) {
+      const open = (result as { bible: { id: string } | null }).bible;
+      this.bible = open?.id ?? null;
+      if (open) this.write(BIBLE_STORAGE, open.id);
+      else this.remove(BIBLE_STORAGE);
+    }
     // The request ran: its events reach the views even if its answer cannot be read.
     if (Array.isArray(envelope.events)) {
       for (const e of envelope.events as { event?: unknown; payload?: unknown }[]) {
         if (isEventName(e?.event)) this.emit(e.event, e.payload);
       }
     }
-    const result = parseResponse(channel, envelope.result);
-    if (channel === 'bible.open' || channel === 'bible.current') {
-      const open = (result as { bible: { id: string } | null }).bible;
-      this.bible = open?.id ?? null;
-      if (open) this.write(BIBLE_STORAGE, open.id);
-      else this.remove(BIBLE_STORAGE);
-    }
+    if (result === undefined) throw invalid;
     return result;
   }
 

@@ -243,7 +243,8 @@ test('PH-31 a person opens as a page; back, browser back and a reload all keep t
   // A short window, so the list scrolls.
   await page.setViewportSize({ width: 393, height: 420 });
   const list = page.getByTestId('entry-list');
-  await page.evaluate(() => window.scrollTo(0, 260));
+  const row = list.getByRole('button', { name: /^Zhou Lan/ });
+  await row.scrollIntoViewIfNeeded();
   const y = await page.evaluate(() => window.scrollY);
   expect(y).toBeGreaterThan(100);
 
@@ -352,11 +353,15 @@ test('PH-32 every field on an entry page is 16 px or more, opened or not', async
   await page.getByTestId('bible-menu-button').tap();
   await page.getByTestId('phone-sections').getByRole('button', { name: 'Places' }).tap();
   await page
-    .getByTestId('entry-list')
+    .locator('[data-testid="entry-list"]:visible')
     .getByRole('button', { name: /^Portland/ })
     .tap();
-  sizes.push(...(await fieldSizes(page.getByTestId('editor'))));
-  expect(sizes.length).toBeGreaterThan(8);
+  const place = page.locator('[data-testid="editor"]:visible');
+  await expect(place).toHaveAttribute('data-entry-id', 'PLC1');
+  const placeSizes = await fieldSizes(place);
+  expect(placeSizes.length, JSON.stringify(placeSizes)).toBeGreaterThan(2);
+  sizes.push(...placeSizes);
+  expect(sizes.length).toBeGreaterThan(10);
   for (const s of sizes) expect(s.size, s.what).toBeGreaterThanOrEqual(16);
 });
 
