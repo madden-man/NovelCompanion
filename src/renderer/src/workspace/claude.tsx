@@ -247,18 +247,28 @@ export function Disclosure(props: {
 /** AI-6: the notice as a plain link, opening the sheet to read with Close. */
 export function DisclosureLink(props: { confirmedAt: string | null }) {
   const [open, setOpen] = useState(false);
+  // Asked fresh on open, so a screen that loaded its status before the consent still shows it.
+  const [confirmedAt, setConfirmedAt] = useState(props.confirmedAt);
+  const show = () => {
+    setConfirmedAt(props.confirmedAt);
+    setOpen(true);
+    call('claude.status', {}).then(
+      (s) => setConfirmedAt(s.acknowledgedAt ?? props.confirmedAt),
+      () => undefined,
+    );
+  };
   return (
     <>
       <button
         type="button"
         className="link-btn claude-disclosure-link"
         aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
+        onClick={show}
         data-testid="claude-disclosure-link"
       >
         What Claude sends to Anthropic
       </button>
-      {open && <DisclosureSheet confirmedAt={props.confirmedAt} onClose={() => setOpen(false)} />}
+      {open && <DisclosureSheet confirmedAt={confirmedAt} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -748,7 +758,7 @@ function ClaudePanel() {
             {...ro.tip}
             data-testid="claude-send"
           >
-            Ask
+            Ask <kbd>Cmd Enter</kbd>
           </button>
           {running && (
             <button

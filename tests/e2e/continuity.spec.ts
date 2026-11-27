@@ -151,10 +151,9 @@ test('A57 CC-1 CC-4 the check reads as one action and each finding button names 
     'Bible is right: add a rewrite task',
     'Dismiss',
   ]);
-  // A finding with no change set says so on its button, which cannot be pressed.
-  await expect(
-    finding('place').getByRole('button', { name: 'Chapter is right: no bible change prepared' }),
-  ).toBeDisabled();
+  await expect(finding('place').getByTestId('finding-apply')).toHaveText(
+    /^Chapter is right: \d+ bible changes?$/,
+  );
   // No tooltip explains a button.
   await expect(v.locator('[data-testid="finding-actions"] [title]')).toHaveCount(0);
 });

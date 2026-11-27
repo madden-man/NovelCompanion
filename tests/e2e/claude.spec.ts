@@ -100,6 +100,8 @@ test('AI-6 ARCH-4 AI-7 A57 the first question opens the consent sheet; with no k
   await expect(disclosure).toHaveCount(0);
   await expect(panel()).not.toContainText('never writes prose');
   await expect(panel()).not.toContainText('Nothing changes until you approve');
+  // The key that asks is on the button, not in a sentence.
+  await expect(panel().getByTestId('claude-send').locator('kbd')).toHaveText('Cmd Enter');
   await input().fill('How old is Margaret in 2040?');
   // AI-6: the first use asks in a sheet, and nothing is sent before Continue.
   await input().press('Meta+Enter');
