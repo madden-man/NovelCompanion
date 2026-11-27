@@ -22,7 +22,8 @@ export type Screen =
   | 'lists'
   | 'trash'
   | 'settings'
-  | 'notebook';
+  | 'notebook'
+  | 'year';
 const SCREENS: readonly Screen[] = [
   'tree',
   'backstory',
@@ -37,6 +38,7 @@ const SCREENS: readonly Screen[] = [
   'trash',
   'settings',
   'notebook',
+  'year',
 ];
 
 export type Page =
@@ -49,7 +51,7 @@ export type Page =
   /** A screen with up to two arguments (a person, a moment, a tab, a page ID). */
   | { kind: 'screen'; screen: Screen; arg?: string; arg2?: string; at?: number };
 
-export type Sheet = 'year' | 'bibles' | 'changes';
+export type Sheet = 'year' | 'bibles' | 'changes' | 'world-filters';
 
 export interface NavState {
   tab: Tab;

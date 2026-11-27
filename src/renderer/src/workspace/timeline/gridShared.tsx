@@ -41,6 +41,8 @@ import { useBibleSettings } from '../bibleSettings';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { useUndo } from '../undo';
 import { span } from './common';
+import { isPhone } from '../../phone';
+import { installHoldGuard, useHold } from '../phone/hold';
 import './grid.css';
 
 /**
@@ -53,6 +55,19 @@ import './grid.css';
 
 /** Width of the sticky row label column, on every grid. */
 export const LABEL_W = 200;
+/** A58 U3: the held first column on the phone, narrower so the years get the room. */
+export const PHONE_LABEL_W = 116;
+
+/** The row label column's width here: the desk's, or the phone's. */
+export function labelW(): number {
+  return isPhone() ? PHONE_LABEL_W : LABEL_W;
+}
+
+/** A58 U3: on the phone every row, heading and era is at least a thumb tall (44 px). */
+export const PHONE_GRID_METRICS = { header: 80, groupHeading: 44, lane: 36, rowPad: 4 };
+
+/** A click that ends a touch drag can come late; it is swallowed this long (ms). */
+const TOUCH_CLICK_MS = 600;
 
 export interface GridEra {
   id: string;
@@ -86,7 +101,7 @@ export interface GridViewport {
 export function useGridViewport(span: YearSpan, zoom: Zoom, storyYear: number): GridViewport {
   const [viewWidth, setViewWidth] = useState(0);
   const [viewHeight, setViewHeight] = useState(0);
-  const trackView = Math.max(120, viewWidth - LABEL_W - 2);
+  const trackView = Math.max(120, viewWidth - labelW() - 2);
   const scale = useMemo(
     () => makeScale(span, zoomPpy(zoom, trackView, span)),
     [span, zoom, trackView],
@@ -125,6 +140,8 @@ interface Drag {
   delta: number;
   /** Escape called it off; the press still runs to its release, which then does nothing. */
   canceled?: boolean;
+  /** A58 U3: lifted by a held touch; the click after its release opens nothing. */
+  lifted?: boolean;
 }
 
 /**
@@ -229,6 +246,7 @@ export function useGridMarkers(opts: {
   const [renaming, setRenaming] = useState<string | null>(null);
   const backTo = useRefocus(renaming, (id) => `.wg-marker[data-id="${CSS.escape(id)}"]`);
   const suppressClick = useRef(false);
+  const hold = useHold();
   const order = useMemo(
     () => layout.lines.flatMap((l) => lineMarkers(l).map((m) => m.id)),
     [layout],
@@ -265,10 +283,16 @@ export function useGridMarkers(opts: {
       // A new press starts fresh: a drag that ended with no click never swallows this one.
       suppressClick.current = false;
       if (ev.button !== 0 || readOnly) return;
+      const pointerId = ev.pointerId;
+      // A58 U3: a touch on the phone lifts the marker only after a hold; a swipe scrolls.
+      const lift = (at: { x: number }) =>
+        setDrag({ id, pointerId, startX: at.x, moved: false, delta: 0, lifted: true });
+      if (hold.begin(ev, lift)) return;
       ev.currentTarget.setPointerCapture(ev.pointerId);
       setDrag({ id, pointerId: ev.pointerId, startX: ev.clientX, moved: false, delta: 0 });
     },
     onPointerMove: (ev) => {
+      if (hold.waiting(ev)) return;
       if (!drag || drag.canceled || ev.pointerId !== drag.pointerId) return;
       const dx = ev.clientX - drag.startX;
       const y = yearsOf(drag.id);
@@ -278,18 +302,25 @@ export function useGridMarkers(opts: {
       if (moved !== drag.moved || delta !== drag.delta) setDrag({ ...drag, moved, delta });
     },
     onPointerUp: (ev) => {
+      hold.end(ev);
       if (!drag || ev.pointerId !== drag.pointerId) return;
       const d = drag;
       setDrag(null);
-      if (!d.moved && !d.canceled) return;
+      if (!d.moved && !d.canceled && !d.lifted) return;
       // The click that follows this release (if any) is part of the drag; nothing after it is.
       suppressClick.current = true;
-      setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
+      setTimeout(
+        () => {
+          suppressClick.current = false;
+        },
+        d.lifted ? TOUCH_CLICK_MS : 0,
+      );
       if (!d.canceled && d.delta !== 0) void onMove(d.id, d.delta, 'span');
     },
-    cancelDrag: () => setDrag(null),
+    cancelDrag: () => {
+      hold.end();
+      setDrag(null);
+    },
     renaming,
     readOnly,
     nudge: (id, delta) => {
@@ -631,6 +662,9 @@ export function GridFrame(props: {
   const { setViewWidth, setViewHeight, viewWidth, scale, storyYear, trackView, zoom } = props.vp;
   const scroller = useRef<HTMLDivElement>(null);
   const scrolledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (isPhone()) installHoldGuard();
+  }, []);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -654,7 +688,8 @@ export function GridFrame(props: {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el || viewWidth === 0) return;
-    const key = `${zoom}`;
+    // A58 U3: the phone follows the story year too, which loads after the grid opens.
+    const key = isPhone() ? `${zoom}:${storyYear}` : `${zoom}`;
     if (scrolledFor.current === key) return;
     scrolledFor.current = key;
     el.scrollLeft = scrollToYear(scale, storyYear, trackView);
@@ -668,11 +703,11 @@ export function GridFrame(props: {
       data-ppy={layout.scale.ppy}
       data-from={layout.scale.from}
       data-to={layout.scale.to}
-      style={{ ['--wg-label' as string]: `${LABEL_W}px` }}
+      style={{ ['--wg-label' as string]: `${labelW()}px` }}
       tabIndex={-1}
       onKeyDown={props.onKeyDown}
     >
-      <div className="wg-canvas" style={{ width: LABEL_W + layout.width, height: layout.height }}>
+      <div className="wg-canvas" style={{ width: labelW() + layout.width, height: layout.height }}>
         {props.children}
       </div>
     </div>
@@ -690,6 +725,8 @@ interface EdgeDragState {
   delta: number;
   /** Escape called it off (A50). */
   canceled?: boolean;
+  /** A58 U3: lifted by a held touch. */
+  lifted?: boolean;
 }
 
 export interface EdgeDrag {
@@ -724,6 +761,7 @@ export function useEdgeDrag(
 ): EdgeDrag {
   const [drag, setDrag] = useState<EdgeDragState | null>(null);
   const swallow = useRef(false);
+  const hold = useHold();
   const dragging = drag !== null && !drag.canceled;
   useEscapeCancels(dragging, () =>
     setDrag((d) => (d ? { ...d, canceled: true, moved: false, delta: 0 } : d)),
@@ -738,11 +776,17 @@ export function useEdgeDrag(
         swallow.current = false;
         if (ev.button !== 0 || readOnly) return;
         ev.stopPropagation();
+        const pointerId = ev.pointerId;
+        // A58 U3: on the phone an end lifts after a hold; a swipe from it scrolls the grid.
+        const lift = (at: { x: number }) =>
+          setDrag({ key, side, pointerId, startX: at.x, moved: false, delta: 0, lifted: true });
+        if (hold.begin(ev, lift)) return;
         ev.preventDefault();
         ev.currentTarget.setPointerCapture(ev.pointerId);
         setDrag({ key, side, pointerId: ev.pointerId, startX: ev.clientX, moved: false, delta: 0 });
       },
       onPointerMove: (ev) => {
+        if (hold.waiting(ev)) return;
         if (!drag || drag.canceled || ev.pointerId !== drag.pointerId) return;
         const dx = ev.clientX - drag.startX;
         const moved = drag.moved || Math.abs(dx) > 3;
@@ -750,18 +794,27 @@ export function useEdgeDrag(
         if (moved !== drag.moved || delta !== drag.delta) setDrag({ ...drag, moved, delta });
       },
       onPointerUp: (ev) => {
+        hold.end(ev);
         if (!drag || ev.pointerId !== drag.pointerId) return;
         const d = drag;
         setDrag(null);
-        if (!d.moved && !d.canceled) return;
+        if (!d.moved && !d.canceled && !d.lifted) return;
         swallow.current = true;
-        setTimeout(() => {
-          swallow.current = false;
-        }, 0);
+        setTimeout(
+          () => {
+            swallow.current = false;
+          },
+          d.lifted ? TOUCH_CLICK_MS : 0,
+        );
         if (!d.canceled && d.delta !== 0) onRelease(d.key, d.side, d.delta);
       },
-      onPointerCancel: () => setDrag(null),
+      onPointerCancel: () => {
+        hold.end();
+        setDrag(null);
+      },
       onClick: (ev) => {
+        // A58 U3: on the phone a tap on an end only shows it; it never opens what it ends.
+        if (isPhone()) ev.stopPropagation();
         if (!swallow.current) return;
         swallow.current = false;
         ev.stopPropagation();
@@ -985,6 +1038,9 @@ export function GridHeader(props: {
     void edits?.moveEdge(id, side, delta);
   });
   const [renaming, setRenaming] = useState<string | null>(null);
+  // A58 U3: on the phone a tap selects an era and shows its ends; a tap on the selected one opens it.
+  const phone = isPhone();
+  const [picked, setPicked] = useState<string | null>(null);
   const shown = previewEras(props.eras, drag, scale);
   // Gaps count only inside the bible's timeline span, as the coverage check does (WE-2,
   // IP-11): an axis widened by an early event or a birth is not a stretch to fill with an era.
@@ -1080,18 +1136,24 @@ export function GridHeader(props: {
           if (era.endYear < scale.from || era.startYear > scale.to) return null;
           const x = spanExtent(scale, era.startYear, era.endYear);
           const live = drag.active?.key === era.id;
+          const ends = canEdit && (!phone || picked === era.id);
           return (
             <button
               key={era.id}
               type="button"
-              className={`wg-era${canEdit ? ' editable-band' : ''}${live ? ' dragging' : ''}`}
+              className={`wg-era${canEdit ? ' editable-band' : ''}${live ? ' dragging' : ''}${phone && picked === era.id ? ' selected' : ''}`}
               style={{ left: x.x, width: Math.max(2, x.width - 1) }}
               data-id={era.id}
               data-from={era.startYear}
               data-to={era.endYear}
               aria-label={`Era ${era.name}, ${span(era.startYear, era.endYear)}`}
-              title={`${era.name}, ${span(era.startYear, era.endYear)}`}
+              title={phone ? undefined : `${era.name}, ${span(era.startYear, era.endYear)}`}
+              aria-pressed={phone && canEdit ? picked === era.id : undefined}
               onClick={(ev) => {
+                if (phone && canEdit && picked !== era.id) {
+                  setPicked(era.id);
+                  return;
+                }
                 // The second click of a double-click (a rename, or a gap just filled) opens nothing.
                 if (ev.detail > 1) return;
                 props.onOpenEra(era.id);
@@ -1109,7 +1171,7 @@ export function GridHeader(props: {
                 if (canEdit) void edits?.moveEdge(era.id, k.side, k.delta);
               }}
             >
-              {canEdit && (
+              {ends && (
                 <span
                   className="wg-handle start"
                   aria-hidden="true"
@@ -1118,7 +1180,7 @@ export function GridHeader(props: {
                 />
               )}
               <span className="wg-era-name">{era.name}</span>
-              {canEdit && (
+              {ends && (
                 <span
                   className="wg-handle end"
                   aria-hidden="true"
@@ -1274,7 +1336,7 @@ export function GridOverlay(props: {
     <div
       className="wg-overlay"
       style={{
-        left: LABEL_W,
+        left: labelW(),
         top: layout.metrics.header,
         height: layout.height - layout.metrics.header,
       }}
@@ -1311,7 +1373,7 @@ export function GridTip(props: { layout: GridLayout; tip: Tip; children: ReactNo
       className="tooltip wg-tip"
       role="tooltip"
       style={{
-        left: Math.max(0, Math.min(LABEL_W + tip.left, LABEL_W + layout.width - 300)),
+        left: Math.max(0, Math.min(labelW() + tip.left, labelW() + layout.width - 300)),
         top: lineY + tip.top + 24,
       }}
       data-testid="grid-tip"

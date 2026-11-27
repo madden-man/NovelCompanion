@@ -1,6 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { buildGroups, layoutGrid, yearMid } from '../../../../shared/domain/worldGrid';
+import {
+  MARKER_DEFAULTS,
+  buildGroups,
+  layoutGrid,
+  yearMid,
+} from '../../../../shared/domain/worldGrid';
 import type { CategoryItem, GridItem, YearSpan, Zoom } from '../../../../shared/domain/worldGrid';
 import { span } from './common';
 import {
@@ -11,13 +16,16 @@ import {
   GridTip,
   GridTrack,
   GroupLine,
-  LABEL_W,
+  PHONE_GRID_METRICS,
+  labelW,
   lineMarkers,
   useClosedGroups,
   useGridMarkers,
   useGridViewport,
 } from './gridShared';
 import type { EraEdits, GridBand, GridEra, MovePart } from './gridShared';
+import { usePhone } from '../../phone';
+import '../phone/grid.css';
 
 export type { GridEra } from './gridShared';
 
@@ -84,6 +92,7 @@ export function WorldEventsGrid(props: {
   onDelete?: (id: string) => Promise<void>;
 }) {
   const { events, storyYear } = props;
+  const phone = usePhone();
   const vp = useGridViewport(props.span, props.zoom, storyYear);
   const scale = vp.scale;
   const [closed, toggleGroup] = useClosedGroups();
@@ -118,7 +127,13 @@ export function WorldEventsGrid(props: {
       })),
     [events, rows],
   );
-  const layout = useMemo(() => layoutGrid(rows.groups, items, scale), [rows, items, scale]);
+  const layout = useMemo(
+    () =>
+      phone
+        ? layoutGrid(rows.groups, items, scale, MARKER_DEFAULTS, PHONE_GRID_METRICS)
+        : layoutGrid(rows.groups, items, scale),
+    [rows, items, scale, phone],
+  );
   const ctl = useGridMarkers({
     layout,
     scale,
@@ -139,8 +154,8 @@ export function WorldEventsGrid(props: {
   const openDraft = (rowKey: string, year: number, top: number) => {
     if (props.readOnly) return;
     const left = Math.min(
-      LABEL_W + yearMid(scale, year),
-      Math.max(LABEL_W, LABEL_W + layout.width - 280),
+      labelW() + yearMid(scale, year),
+      Math.max(labelW(), labelW() + layout.width - 280),
     );
     setDraft({ rowKey, rowLabel: rowLabel.get(rowKey) ?? rowKey, year, left, top });
   };
@@ -183,7 +198,12 @@ export function WorldEventsGrid(props: {
   const tipEvent = ctl.tip ? byId.get(ctl.tip.id) : undefined;
 
   return (
-    <GridFrame vp={vp} layout={layout} testid="world-grid">
+    <GridFrame
+      vp={vp}
+      layout={layout}
+      testid="world-grid"
+      className={phone ? 'ph-grid' : undefined}
+    >
       <GridHeader
         layout={layout}
         storyYear={storyYear}
@@ -233,6 +253,20 @@ export function WorldEventsGrid(props: {
                   : (year) => openDraft(line.row.key, year, line.y + line.height)
               }
             >
+              {phone && !props.readOnly && storyYear >= scale.from && storyYear <= scale.to && (
+                // A58 U3: the phone has no pointer to hover; each row shows its add at the story year.
+                <button
+                  type="button"
+                  className="wg-cell-add"
+                  style={{ left: yearMid(scale, storyYear) }}
+                  aria-label={`Add an event in ${line.row.label}, ${storyYear}`}
+                  data-testid="cell-add"
+                  data-row={line.row.key}
+                  onClick={() => openDraft(line.row.key, storyYear, line.y + line.height)}
+                >
+                  <span aria-hidden="true">+</span>
+                </button>
+              )}
               {markers(line)}
             </GridTrack>
           </div>

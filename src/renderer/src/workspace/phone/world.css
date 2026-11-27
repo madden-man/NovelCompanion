@@ -1,0 +1,304 @@
+/* A58 U3: the World screen on the phone. Theme tokens only, both themes. */
+
+/* One column, edge to edge between the gutters. */
+:root[data-phone] .ph-frame .wg-area {
+  display: block;
+  padding: 12px var(--ph-gutter-right) 12px var(--ph-gutter-left);
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .wg-main {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* The world around the story year: the years one under another, so none is cut. */
+:root[data-phone] .ph-frame .wg-around {
+  padding: 10px 12px;
+}
+:root[data-phone] .ph-frame .wg-around .we-strip-wrap {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+:root[data-phone] .ph-frame .wg-around .we-strip {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .wg-around .we-col {
+  flex-direction: row;
+  align-items: baseline;
+  min-width: 0;
+  max-width: none;
+  min-height: 32px;
+  padding: 4px 8px;
+  gap: 12px;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+}
+:root[data-phone] .ph-frame .wg-around .we-col:first-child {
+  border-top: 0;
+}
+:root[data-phone] .ph-frame .wg-around .we-year {
+  flex: none;
+  width: 3.5em;
+}
+:root[data-phone] .ph-frame .wg-around .we-event {
+  min-height: var(--ph-target);
+  font-size: 1rem;
+}
+
+/* The controls: one thumb row. */
+.ph-world-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ph-seg {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ph-seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--ph-target);
+  padding: 0 6px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.ph-seg-btn + .ph-seg-btn {
+  border-left: 1px solid var(--border-strong);
+}
+.ph-seg-btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.ph-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ph-filter-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ph-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.ph-world-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ph-world-filters .wg-categories {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ph-world-filters select {
+  width: 100%;
+}
+.ph-world-filters .wg-regions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ph-world-filters .wg-toolbar-label {
+  flex-basis: 100%;
+}
+.ph-world-filters .btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.ph-world-filters .btn[aria-pressed='false'] {
+  background: transparent;
+  border-style: dashed;
+}
+
+/* The grid: thumb-sized rows, eras and ends (PH-35). */
+:root[data-phone] .ph-frame .ph-grid .wg-label {
+  font-size: 0.9rem;
+  padding: 0 6px 0 8px;
+  touch-action: pan-x pan-y;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-row-label {
+  padding-left: 12px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-plus {
+  width: 28px;
+  height: 28px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-label:hover {
+  background: var(--surface);
+}
+:root[data-phone] .ph-frame .ph-grid .wg-group-label:hover {
+  background: var(--surface-2);
+}
+:root[data-phone] .ph-frame .ph-grid .wg-corner {
+  padding: 6px 8px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-eras {
+  top: 30px;
+  height: 48px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-era,
+:root[data-phone] .ph-frame .ph-grid .wg-gap {
+  top: 2px;
+  height: 44px;
+  line-height: 42px;
+  font-size: 0.85rem;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-x pan-y;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-gap-text {
+  line-height: 42px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-era {
+  overflow: visible;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-era:hover {
+  background: var(--surface-2);
+}
+:root[data-phone] .ph-frame .ph-grid .wg-era-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-era.selected {
+  z-index: 2;
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+}
+/* The selected era's ends: a visible grip each, held to lift, a thumb wide to hit. */
+:root[data-phone] .ph-frame .ph-grid .wg-era.selected .wg-handle {
+  opacity: 1;
+  width: 10px;
+  top: 4px;
+  bottom: 4px;
+  touch-action: pan-x pan-y;
+  -webkit-touch-callout: none;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-handle.start {
+  left: -6px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-handle.end {
+  right: -6px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-handle::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -17px;
+  right: -17px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-edge-year {
+  top: -26px;
+}
+:root[data-phone] .ph-frame .ph-grid .wg-marker {
+  touch-action: pan-x pan-y;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* A marker's dot is small; its target is a thumb wide. */
+:root[data-phone] .ph-frame .ph-grid .wg-marker::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+:root[data-phone] .ph-frame .ph-grid .wg-marker:hover {
+  border-color: var(--chart-surface);
+}
+:root[data-phone] .ph-frame .ph-grid .wg-marker.dragging,
+:root[data-lifted] .ph-frame .ph-grid .wg-era.dragging {
+  box-shadow: var(--shadow);
+}
+/* Each row's add at the story year: a visible tap target in its cell. */
+.wg-cell-add {
+  all: unset;
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--surface);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.wg-cell-add::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+.wg-cell-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.wg-cell-add:active {
+  background: var(--accent-soft);
+}
+/* The new event form: under the top bar, clear of the keyboard, the page's width. */
+:root[data-phone] .ph-frame .wg-add {
+  position: fixed;
+  z-index: 50;
+  top: calc(var(--ph-top) + var(--ph-safe-top) + 8px + var(--ph-vv-top, 0px)) !important;
+  left: var(--ph-gutter-left) !important;
+  right: var(--ph-gutter-right);
+  width: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+:root[data-phone] .ph-frame .wg-add input:not([type='checkbox']) {
+  width: 100%;
+  box-sizing: border-box;
+}
+:root[data-phone] .ph-frame .wg-add-check {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .wg-add-check input {
+  width: 24px;
+  height: 24px;
+}
+:root[data-phone] .ph-frame .wg-main > .legend {
+  gap: 6px 14px;
+  font-size: 0.85rem;
+}
