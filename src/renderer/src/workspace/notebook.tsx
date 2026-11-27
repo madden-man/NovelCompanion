@@ -274,8 +274,7 @@ export function NotebookPageView(props: {
       </header>
       {page.inTrash && (
         <p className="callout warn" role="status">
-          The phone deleted this page, so it is in the trash. It comes back if the phone sends it
-          again.
+          In the trash: the phone deleted this page.
         </p>
       )}
       {page.lines.length > 0 && (

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { RunError } from '../../../../shared/claude';
 import type { Response } from '../../../../shared/ipc';
 import type { FindingWire } from '../../../../shared/ipcContinuity';
@@ -24,12 +25,13 @@ import type { OpenEntry } from './common';
 import './alignment.css';
 
 /**
- * The alignment check (CC-1 to CC-5, A20). Check alignment runs the
- * structural checks in code, then Claude on each chapter in scope that has
- * text, one run at a time, streaming, with Stop. Each finding quotes its
- * lines, cites its entries, and offers Manuscript wins (the change set as a
- * diff, applied in one step and undoable), Rewrite recommended (a rewrite
- * task, never replacement text), or Dismiss.
+ * The alignment check (CC-1 to CC-5, A20). Check runs the structural checks
+ * in code, then Claude on each chapter in scope that has text, one run at a
+ * time, streaming, with Stop. Each finding quotes its lines, cites its
+ * entries, and offers "Chapter is right" (the change set, shown as a diff,
+ * applied in one step and undoable; the button counts the changes), "Bible is
+ * right" (a rewrite task, never replacement text), or Dismiss (A57: each
+ * button names its result, so no caveat sits beside it).
  *
  * IP-7 (a47-continuity): a card edits the finding in place. The text and
  * what must change are A44 boxes, each quoted line is a field that keeps the
@@ -102,7 +104,7 @@ function useFindingDocs(): { loaded: boolean; docOf: (f: FindingWire) => Entry }
 }
 
 /** One alignment check run over a scope: structural checks, then Claude chapter by chapter. */
-function useAlignmentRun() {
+function useAlignmentRun(scope: Scope) {
   const [busy, setBusy] = useState(false);
   const [structural, setStructural] = useState<Check | null>(null);
   const [current, setCurrent] = useState<{
@@ -121,6 +123,19 @@ function useAlignmentRun() {
   const [failure, setFailure] = useState<string | null>(null);
   const [asking, setAsking] = useState<((ok: boolean) => void) | null>(null);
   const stopped = useRef(false);
+  // A57: the scope select sits inside the runner's row, so a new scope clears the last
+  // run's results here instead of remounting the row (which would take the select's focus).
+  const [shownScope, setShownScope] = useState(scope);
+  if (shownScope !== scope) {
+    setShownScope(scope);
+    setDone(null);
+    setStructural(null);
+    setRejected([]);
+    setSkipped([]);
+    setGiven([]);
+    setError(null);
+    setFailure(null);
+  }
   // AI-2: every entry Claude was given, across the chapters of this run.
   const live = useRunStream(current?.runId ?? null, (finished) => {
     setGiven((prior) => {
@@ -220,9 +235,14 @@ function useAlignmentRun() {
   };
 }
 
-/** CC-1: Check alignment for one chapter or the whole manuscript, with the model, progress, and Stop. */
-function AlignmentRunner(props: { scope: Scope; label: string }) {
-  const r = useAlignmentRun();
+/**
+ * CC-1: Check one chapter or the whole manuscript, with the model, progress,
+ * and Stop. A57: the scope reads as part of the action, "Check all 8
+ * chapters against the bible", so `scope` is the select (or the words) that
+ * sits between the button and "against the bible".
+ */
+function AlignmentRunner(props: { scope: Scope; scopeControl: ReactNode }) {
+  const r = useAlignmentRun(props.scope);
   const guard = useWriteGuard();
   const [model, setModel] = useState<string | null>(null);
   useEffect(() => {
@@ -242,8 +262,12 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
           onClick={() => void r.run(props.scope)}
           data-testid="alignment-run"
         >
-          Check alignment
+          Check
         </button>
+        <span className="al-scope" data-testid="alignment-scope-words">
+          {props.scopeControl}
+        </span>
+        <span>against the bible</span>
         <button
           type="button"
           className="btn"
@@ -254,7 +278,6 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
         >
           Stop
         </button>
-        <span>Scope: {props.label}.</span>
         {model && <span className="chip">Model: {model}</span>}
       </div>
       {r.disclosure}
@@ -266,12 +289,8 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
             : r.done
               ? `${r.done.stopped ? 'Stopped' : 'Done'}. Structural checks: ${r.structural?.found ?? 0} found${
                   r.structural?.hidden ? `, ${r.structural.hidden} dismissed and unchanged` : ''
-                }. Claude read ${r.done.chapters} ${r.done.chapters === 1 ? 'chapter' : 'chapters'} and found ${r.done.found}.${
-                  r.structural && r.structural.chapters.some((c) => c.lines === 0)
-                    ? ' Chapters without imported text are checked in code only.'
-                    : ''
-                }`
-              : 'Not run yet.'}
+                }. Claude read ${r.done.chapters} ${r.done.chapters === 1 ? 'chapter' : 'chapters'} and found ${r.done.found}.`
+              : ''}
       </p>
       {r.error && <ClaudeErrorNote error={r.error} />}
       {r.skipped.map((x, i) => (
@@ -305,9 +324,11 @@ function AlignmentRunner(props: { scope: Scope; label: string }) {
   );
 }
 
-/** Why the change set goes in whole: shown as the Apply button's title (CC-4). */
-const ALL_OR_NOTHING =
-  'Applies every change in the set together, or none of them, so the bible never matches the chapter halfway.';
+/** A57: the "Chapter is right" button counts the bible changes it makes. */
+const chapterIsRight = (n: number) =>
+  n === 0
+    ? 'Chapter is right: no bible change prepared'
+    : `Chapter is right: ${n} bible ${n === 1 ? 'change' : 'changes'}`;
 
 /**
  * IP-7: the quoted lines, each a field in the quote's own styling. A line
@@ -396,7 +417,6 @@ function ProposedWording(props: {
         <strong>The check now says{props.field === 'text' ? '' : ` (${label})`}:</strong>{' '}
         <span className="al-proposed-text">{now}</span>
       </span>
-      <span>You edited this, so your words stay until you take the new text.</span>
       <WriteFieldset className="row tight">
         <button
           type="button"
@@ -420,11 +440,9 @@ function ProposedWording(props: {
 function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
   const { f, doc, onOpen } = props;
   const undo = useUndo();
-  const [showApply, setShowApply] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const applyId = useId();
   const diffCaptionId = useId();
 
   const resolve = async (
@@ -450,12 +468,11 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
       );
       setNote(
         action === 'manuscriptWins'
-          ? 'Saved. The bible now matches the chapter. Undo with Cmd+Z.'
+          ? 'Bible updated.'
           : action === 'rewrite'
             ? 'Added to the rewrite tasks.'
             : null,
       );
-      setShowApply(false);
     } catch (e) {
       setError(plainError(e));
     }
@@ -552,24 +569,18 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
                 <button
                   type="button"
                   className="btn small"
-                  aria-expanded={showApply}
-                  aria-controls={applyId}
                   disabled={f.changes.length === 0}
-                  title={
-                    f.changes.length === 0
-                      ? 'No change set was prepared for this finding.'
-                      : undefined
-                  }
-                  onClick={() => setShowApply((v) => !v)}
+                  onClick={() => void resolve('manuscriptWins', 'Chapter is right')}
+                  data-testid="finding-apply"
                 >
-                  Manuscript wins
+                  {chapterIsRight(f.changes.length)}
                 </button>
                 <button
                   type="button"
                   className="btn small"
-                  onClick={() => void resolve('rewrite', 'Rewrite recommended')}
+                  onClick={() => void resolve('rewrite', 'Bible is right')}
                 >
-                  Rewrite recommended
+                  Bible is right: add a rewrite task
                 </button>
               </>
             )}
@@ -583,15 +594,10 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
           </div>
         </WriteFieldset>
       )}
-      {f.state === 'open' && f.kind === 'alignment' && f.changes.length === 0 && (
-        <p className="example-note">
-          No change set was prepared, so the bible cannot be updated from here.
-        </p>
-      )}
       {hasDiff && (
         <div className="sunken stack tight al-diff" data-testid="finding-diff">
           <span className="eyebrow" id={diffCaptionId}>
-            If the manuscript wins, the bible changes like this
+            If the chapter is right, the bible changes like this
           </span>
           {/* Bounded, so a long change set does not push the next findings down the screen. */}
           <div className="al-diff-body" tabIndex={0} role="region" aria-labelledby={diffCaptionId}>
@@ -620,25 +626,6 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
               </tbody>
             </table>
           </div>
-          {showApply && (
-            <WriteFieldset className="row tight">
-              <div id={applyId} className="row tight" data-testid="finding-apply-row">
-                <button
-                  type="button"
-                  className="btn primary small"
-                  title={ALL_OR_NOTHING}
-                  onClick={() => void resolve('manuscriptWins', 'Manuscript wins')}
-                  data-testid="finding-apply"
-                >
-                  Apply all
-                </button>
-                <span>
-                  Changes the bible to match the chapter, every change or none. Nothing in the
-                  manuscript changes.
-                </span>
-              </div>
-            </WriteFieldset>
-          )}
         </div>
       )}
       {f.rejectedChanges.length > 0 && (
@@ -749,8 +736,8 @@ function FindingList(props: { scope: Scope; onOpen: OpenEntry }) {
       {data.dismissed > 0 && (
         <p data-testid="findings-dismissed">
           {data.dismissed === 1
-            ? '1 dismissed finding is hidden. It comes back if the text or a cited entry changes.'
-            : `${data.dismissed} dismissed findings are hidden. Each comes back if its text or a cited entry changes.`}
+            ? '1 dismissed finding is hidden.'
+            : `${data.dismissed} dismissed findings are hidden.`}
         </p>
       )}
     </div>
@@ -853,34 +840,28 @@ export function AlignmentView(props: { onOpen: OpenEntry; chapterId?: string | n
   const sorted = [...chapters].sort(
     (a, b) => Number(a.readingOrder ?? 0) - Number(b.readingOrder ?? 0),
   );
-  const chosen = sorted.find((c) => c._id === scope);
-  const label = chosen
-    ? `Chapter ${numbers.get(chosen._id) ?? '?'}: ${String(chosen.title)}`
-    : 'the whole manuscript';
+  const select = (
+    <select
+      id={scopeId}
+      aria-label="Chapters to check"
+      value={scope ?? ''}
+      onChange={(e) => setScope(e.target.value || null)}
+      data-testid="alignment-scope"
+    >
+      <option value="">
+        all {sorted.length} {sorted.length === 1 ? 'chapter' : 'chapters'}
+      </option>
+      {sorted.map((c) => (
+        <option key={c._id} value={c._id}>
+          Chapter {numbers.get(c._id) ?? '?'}: {String(c.title)}
+        </option>
+      ))}
+    </select>
+  );
   return (
     <div className="ws-wide stack" data-testid="alignment-view">
       <h2>Alignment check</h2>
-      <p className="lede">
-        Compares the manuscript with the bible: structural checks in code, then Claude reads each
-        chapter against its entries and the stored plot.
-      </p>
-      <div className="field">
-        <label htmlFor={scopeId}>Check</label>
-        <select
-          id={scopeId}
-          value={scope ?? ''}
-          onChange={(e) => setScope(e.target.value || null)}
-          data-testid="alignment-scope"
-        >
-          <option value="">The whole manuscript</option>
-          {sorted.map((c) => (
-            <option key={c._id} value={c._id}>
-              Chapter {numbers.get(c._id) ?? '?'}: {String(c.title)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <AlignmentRunner key={scope ?? 'all'} scope={scope} label={label} />
+      <AlignmentRunner scope={scope} scopeControl={select} />
       <section className="panel stack tight" aria-label="Rewrite tasks">
         <h3>Rewrite tasks</h3>
         <RewriteTasks chapterId={scope} onOpenChapter={(id) => props.onOpen('chapters', id)} />
@@ -899,7 +880,7 @@ export function ChapterAlignment(props: { chapterId: string; onOpen: OpenEntry }
       data-testid="chapter-alignment"
     >
       <h3>Alignment check</h3>
-      <AlignmentRunner scope={props.chapterId} label="this chapter" />
+      <AlignmentRunner scope={props.chapterId} scopeControl="this chapter" />
       <span className="eyebrow">Rewrite tasks</span>
       <RewriteTasks chapterId={props.chapterId} />
       <FindingList scope={props.chapterId} onOpen={props.onOpen} />

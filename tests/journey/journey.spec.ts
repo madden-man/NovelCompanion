@@ -951,10 +951,12 @@ async function ask(question: string): Promise<void> {
 test('AI-1 AI-2 AI-6 the question panel answers who is alive in 2075 and lists the entries it read', async () => {
   await page.keyboard.press('Meta+j');
   await expect(claudePanel()).toBeVisible();
+  await claudePanel().getByTestId('claude-input').fill('Who is alive in 2075?');
+  await claudePanel().getByTestId('claude-send').click();
   const disclosure = claudePanel().getByTestId('claude-disclosure');
   await expect(disclosure).toContainText('sends the content listed below to Anthropic');
   await disclosure.getByRole('button', { name: 'Continue' }).click();
-  await ask('Who is alive in 2075?');
+  await expect(lastTurn()).toHaveAttribute('data-status', 'done');
   await expect(lastTurn().getByTestId('claude-answer')).toHaveText(
     'In 2075 Daniel Hale is 90 and Noor Zhou is 17. Margaret and Peter Hale have died by then.',
   );
@@ -1059,10 +1061,9 @@ test('CC-1 CC-2 CC-3 Check alignment runs on the whole manuscript and lists stru
 
 test('CC-4 one finding is resolved with Manuscript wins, which changes the bible, and the change is undone', async () => {
   const p1 = finding('age');
-  await p1.getByRole('button', { name: 'Manuscript wins' }).click();
   const diff = p1.getByTestId('finding-diff');
   await expect(diff.locator('tbody tr')).toHaveText([/Margaret Hale\s*Birth\s*1958\s*1970/]);
-  await diff.getByTestId('finding-apply').click();
+  await p1.getByTestId('finding-apply').click();
   await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
   await expect(p1).toContainText('bible updated');
   await expect
@@ -1080,7 +1081,9 @@ test('CC-4 one finding is resolved with Manuscript wins, which changes the bible
 });
 
 test('CC-4 AI-4 another finding becomes a rewrite task with no prose, listed on the Continuity checker', async () => {
-  await finding('place').getByRole('button', { name: 'Rewrite recommended' }).click();
+  await finding('place')
+    .getByRole('button', { name: 'Bible is right: add a rewrite task' })
+    .click();
   await expect(finding('place')).toHaveCount(0);
   const task = alignment().getByTestId('rewrite-task');
   await expect(task).toHaveCount(1);

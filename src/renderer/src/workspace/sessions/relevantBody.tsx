@@ -101,15 +101,13 @@ function useStrandWriter(chapterId: string | null) {
       label: (before: Entry) => string,
       info: SaveInfo = {},
     ): Promise<Entry> => {
-      if (!chapterId) throw new EditableError('Pick a chapter in Writing to change its strand.');
+      if (!chapterId) throw new EditableError('This strand has no chapter.');
       await undo.flush();
       const before = (await call('entry.get', { collection: 'chapters', id: chapterId }))
         .entry as Entry;
       const next = edit(strandsOf(before));
       if (!next) {
-        throw new EditableError(
-          'This strand is no longer in the chapter. Pick it again in Writing.',
-        );
+        throw new EditableError('This strand is no longer in the chapter.');
       }
       const after = (
         await call('entry.update', {
@@ -688,9 +686,7 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
       </div>
       {picking && (
         <div className="field rel-pick">
-          <label htmlFor={pickId}>
-            Places of this strand (empty: where the point of view lived)
-          </label>
+          <label htmlFor={pickId}>Places of this strand</label>
           <select
             id={pickId}
             multiple
@@ -792,8 +788,7 @@ function Culture(props: { strand: Strand; group: Group; onOpen: OpenEntry }) {
           </div>
         ) : (
           <p className="example-note" data-testid="culture-gap">
-            No setting for {strand.year}: pick places for this strand, or add a place lived
-            {strand.povName ? ` for ${strand.povName}` : ''}.
+            No setting for {strand.year}.
           </p>
         ))}
     </section>

@@ -104,3 +104,14 @@
 .al-proposed-text {
   overflow-wrap: anywhere;
 }
+
+/* A57: the lock on read-only manuscript text and on the Manuscript tab; the scope inside the Check row. */
+.ms-lock {
+  flex: none;
+  vertical-align: -1px;
+  color: var(--fg-2);
+}
+.al-scope {
+  display: inline-flex;
+  align-items: center;
+}

@@ -884,6 +884,10 @@ test('DB-4 AI-1 AI-6 MS-2 with an API key, summaries run through the Claude runt
     'Iris finds an envelope under the attic boards. Daniel says nothing at dinner.',
   );
   await expect(flow).toContainText('Generated summary (claude-sonnet-5-5)');
+  // A57: Approve and Discard say it; no reassurance beside them, no instruction in the caption.
+  await expect(flow.getByRole('button', { name: 'Approve summary' })).toBeVisible();
+  await expect(flow).not.toContainText('Nothing is saved until you approve');
+  await expect(flow).not.toContainText('edit before approving');
   expect((await invoke('entry.get', { collection: 'chapters', id: 'CH6' })).entry.summary).toBe(
     before,
   );
@@ -996,6 +1000,22 @@ test('SB-1 Relevant to Session takes places and other characters present for a s
     .getByTestId('session-places')
     .selectOption([{ index: 0 }]);
   await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
+});
+
+test('A57 SB-1 with no chapter picked, Relevant to Session offers the chapter picker in place instead of a sentence pointing at Writing', async () => {
+  await writing().selectOption({ label: 'No chapter picked' });
+  await page.getByTestId('top-relevant').click();
+  await expect(relevant()).toBeVisible();
+  await expect(relevant()).not.toContainText('Pick a chapter in Writing');
+  await expect(relevant()).not.toContainText('Pick a point of view');
+  const picker = relevant().getByTestId('relevant-writing');
+  await expect(picker).toHaveAccessibleName('Chapter');
+  await picker.selectOption({ label: 'Chapter 6: The Letter, present (2045)' });
+  // The pick is the story time's chapter, so Writing follows and the desk opens on it.
+  await expect(writing()).toHaveValue('CH6|CH6-present');
+  await expect(relevant().getByTestId('relevant-strand')).toHaveCount(1);
+  await expect(relevant().getByTestId('relevant-writing')).toHaveCount(0);
+  await writing().selectOption({ label: 'No chapter picked' });
 });
 
 test('MS-2 SM-11 ticking Written in the chapter editor offers the summary on the Continuity checker', async () => {
