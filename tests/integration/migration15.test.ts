@@ -19,7 +19,7 @@ const indexNames = async (slug: string) =>
 
 describe('NB-4 migration 15 makes the notebook pages collection', () => {
   test('NB-4 the notebook pages migration is version 15', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(16);
+    expect(LATEST_SCHEMA_VERSION).toBe(17);
     expect(migrations[14]!.version).toBe(15);
   });
 
@@ -41,7 +41,7 @@ describe('NB-4 migration 15 makes the notebook pages collection', () => {
     expect(before).not.toContain(NOTEBOOK_PAGES);
 
     const open = await openBibleSession(store, slug);
-    expect(await schemaVersion(open.handle)).toBe(16);
+    expect(await schemaVersion(open.handle)).toBe(17);
     expect(await open.handle.collectionNames()).toEqual([...before, NOTEBOOK_PAGES].sort());
     expect(await open.handle.collection(NOTEBOOK_PAGES).countDocuments()).toBe(0);
     expect(await indexNames(slug)).toEqual(['_id_', ...NOTEBOOK_INDEXES.map((i) => i.name)].sort());

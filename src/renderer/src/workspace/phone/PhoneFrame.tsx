@@ -24,7 +24,6 @@ import { EntryList, ListsView, NewEntryForm, TrashView } from '../views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from '../culture';
 import type { CultureTab } from '../culture';
 import { WritingToolsScreen } from '../words';
-import { CaptureBox, captureNav } from '../capture';
 import { SettingsView } from '../settings';
 import { useYearBounds } from '../TopBar';
 import { typedNumber } from '../editable/model';
@@ -34,6 +33,7 @@ import { useKeyboardHold } from './keyboard';
 import { PhoneNavProvider, TABS, usePhoneNav } from './nav';
 import type { Page, Screen, Tab } from './nav';
 import { PhoneSheet } from './Sheet';
+import { PhoneCaptureBridge, PhoneCaptureScreen, openPhoneCapture } from './PhoneCapture';
 import './phone.css';
 
 interface BibleRef {
@@ -114,7 +114,7 @@ function Frame({ chooser, bible }: { chooser?: PhoneChooser; bible: string }) {
   return (
     <ZhNavProvider value={open}>
       <CloseFlush />
-      <CaptureBox />
+      <PhoneCaptureBridge />
       <div className="ph-frame" data-testid="workspace" data-tab={nav.tab}>
         <PhoneTopBar name={chooser?.current.name ?? bible} />
         {TABS.filter((t) => t === nav.tab).map((t) => (
@@ -252,8 +252,7 @@ function BottomBar() {
         type="button"
         className="ph-tab ph-add"
         aria-label="Add"
-        aria-haspopup="dialog"
-        onClick={() => captureNav.open()}
+        onClick={() => openPhoneCapture(nav)}
         data-testid="tab-add"
       >
         <Icon name="plus" />
@@ -443,6 +442,8 @@ function ScreenView(props: {
           <NotebookPageView id={page.arg ?? ''} onOpen={open} onClose={nav.back} />
         </div>,
       );
+    case 'capture':
+      return wide(<PhoneCaptureScreen />);
   }
 }
 

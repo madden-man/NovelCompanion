@@ -3,7 +3,7 @@ import type { ClaudeStatusWire } from '../../../shared/claude';
 import { collectionInfo } from '../../../shared/schema';
 import type { FiledEntry } from '../../../shared/domain/capture';
 import type { CaptureHint } from '../../../shared/domain/captureRouter';
-import { NO_MARKS, trayGroups } from '../../../shared/domain/tray';
+import { NO_MARKS, trayGroups, waitingPages } from '../../../shared/domain/tray';
 import type { OfferedPage, TrayGroup, TrayItem, TrayMarks } from '../../../shared/domain/tray';
 import type { Op } from '../../../shared/domain/undoRunner';
 import { useWriteGuard } from '../connection';
@@ -32,6 +32,7 @@ function yearWords(year: number | null | undefined): string {
 
 function groupHeading(g: TrayGroup): string {
   const day = notebookDate(g.date);
+  if (g.kind === 'phone') return `From the phone · ${day}`;
   return g.kind === 'day'
     ? `Kept lines · ${day}`
     : `Council about the story · ${g.title || 'Untitled'} · ${day} · ${yearWords(g.year)}`;
@@ -86,10 +87,12 @@ export function NotebookTray() {
       call('tray.state', {}),
       loadCaptureBible(call, settings.numbers.timelineEnd, { year: story.year }),
       call('claude.status', {}).catch(() => null),
+      // A58 U5 (PH-28): the sentences the phone keeps for the desk.
+      call('capture.waiting', {}),
     ]).then(
-      ([offered, m, b, s]) => {
+      ([offered, m, b, s, waiting]) => {
         if (!live) return;
-        setPages(offered.pages);
+        setPages([...offered.pages, ...waitingPages(waiting.lines)]);
         // A mark written while this read was out is newer than what it read; read again after it.
         if (marksWritten.current === written) setShownMarks(m);
         else setReread((n) => n + 1);
@@ -104,6 +107,9 @@ export function NotebookTray() {
       live = false;
     };
   }, [version, settings.numbers.timelineEnd, story.year, reread]);
+
+  // A58 U5 (PH-28): a sentence kept on the phone changes no entry, so a reload from elsewhere reads again.
+  useEffect(() => window.api.on('bible.reloaded', () => setReread((n) => n + 1)), []);
 
   const hints = useMemo(() => {
     const out: Record<string, Omit<CaptureHint, 'fact'>> = {};
@@ -329,7 +335,7 @@ export function NotebookTray() {
                       {firstOfLine && (
                         <blockquote className="capture-sent" data-testid="tray-line">
                           {i.lineText}
-                          {g.kind === 'day' && (
+                          {(g.kind === 'day' || g.kind === 'phone') && (
                             <span className="capture-kind"> ({yearWords(i.year)})</span>
                           )}
                         </blockquote>

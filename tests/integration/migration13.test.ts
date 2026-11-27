@@ -177,7 +177,7 @@ describe('A53 migration 13 on a copy of the fixture at version 12', () => {
   });
 
   test('A53 opening takes a snapshot of the version 12 bible first, then runs migration 13', async () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(16);
+    expect(LATEST_SCHEMA_VERSION).toBe(17);
     expect(await schemaVersion(open.handle)).toBe(LATEST_SCHEMA_VERSION);
     const before = (await open.snapshots!.list()).filter((s) => s.reason === 'migration');
     expect(before).toHaveLength(1);

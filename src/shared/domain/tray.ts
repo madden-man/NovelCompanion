@@ -20,10 +20,10 @@ export interface OfferedLine {
   speakerId: string | null;
 }
 
-/** A page the tray reads: a kept line, or a council about the story. */
+/** A page the tray reads: a kept line, a council about the story, or a sentence from the phone (A58). */
 export interface OfferedPage {
   id: string;
-  kind: 'kept' | 'council';
+  kind: 'kept' | 'council' | 'phone';
   title: string;
   date: string;
   /** A number is that year, null the whole book, absent no year known. */
@@ -37,8 +37,10 @@ export interface OfferedPage {
  * story (decision 12), a thread, research, a paper's or another voice's
  * line, an empty line, or a page in the trash.
  */
-export function offeredPages(pages: readonly NotebookPage[]): OfferedPage[] {
-  const out: OfferedPage[] = [];
+export function offeredPages(
+  pages: readonly NotebookPage[],
+): (OfferedPage & { kind: 'kept' | 'council' })[] {
+  const out: (OfferedPage & { kind: 'kept' | 'council' })[] = [];
   for (const p of pages) {
     if (p.deletedAt) continue;
     if (p.kind !== 'kept' && !(p.kind === 'council' && p.reading !== 'in')) continue;
@@ -56,6 +58,27 @@ export function offeredPages(pages: readonly NotebookPage[]): OfferedPage[] {
     });
   }
   return out;
+}
+
+/**
+ * A58 U5 (PH-28): the sentences the phone keeps for the desk, as pages of
+ * one line each, in the story year each was caught in. The line's ID is the
+ * stored one, so the tray's marks for it are the marks `waitingHandled`
+ * reads, and the phone sees a handled line leave its list.
+ */
+export function waitingPages(
+  lines: readonly { id: string; text: string; year: number; at: string }[],
+): OfferedPage[] {
+  return lines
+    .filter((l) => l.text.trim())
+    .map((l) => ({
+      id: `phone:${l.id}`,
+      kind: 'phone' as const,
+      title: '',
+      date: l.at,
+      year: l.year,
+      lines: [{ id: l.id, text: l.text, speakerId: null }],
+    }));
 }
 
 /** The key of a line as it is now: its ID and a hash of its text. */
@@ -100,9 +123,12 @@ export interface TrayItem {
 }
 
 export interface TrayGroup {
-  /** `day:2026-11-25` (the local day) for the day's kept lines, `council:<page ID>` for a council. */
+  /**
+   * `day:2026-11-25` (the local day) for the day's kept lines, `council:<page ID>` for a
+   * council, `phone:2026-11-25` for the day's sentences kept on the phone (A58).
+   */
   id: string;
-  kind: 'day' | 'council';
+  kind: 'day' | 'council' | 'phone';
   /** The newest page's date in the group. */
   date: string;
   /** A council's title; empty for a day. */
@@ -204,7 +230,9 @@ export function trayGroups(
     }
     if (!items.length) continue;
     const id =
-      page.kind === 'kept' ? `day:${localDay(page.date, opts.timeZone)}` : `council:${page.id}`;
+      page.kind === 'council'
+        ? `council:${page.id}`
+        : `${page.kind === 'kept' ? 'day' : 'phone'}:${localDay(page.date, opts.timeZone)}`;
     const have = groups.get(id);
     if (have) {
       have.items.push(...items);
@@ -212,7 +240,7 @@ export function trayGroups(
     }
     groups.set(id, {
       id,
-      kind: page.kind === 'kept' ? 'day' : 'council',
+      kind: page.kind === 'kept' ? 'day' : page.kind,
       date: page.date,
       title: page.kind === 'council' ? page.title : '',
       ...(page.kind === 'council' && page.year !== undefined ? { year: page.year } : {}),
