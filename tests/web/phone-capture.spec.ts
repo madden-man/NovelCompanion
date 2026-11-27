@@ -357,7 +357,10 @@ test('PH-28 sentences for Routes B and C are kept for the desk, never sent; they
 
   // Nothing went to Claude: the server has no Claude channel, and none was asked for.
   expect(channels.filter((c) => c.startsWith('claude.'))).toEqual([]);
-  for (const c of channels) expect(CHANNEL_REACH[c as Channel], c).toBe('phone');
+  // The shell's undo asks for the bridge's steps on every load (desk only, refused); not capture's.
+  for (const c of channels.filter((x) => x !== 'notebook.claimSteps')) {
+    expect(CHANNEL_REACH[c as Channel], c).toBe('phone');
+  }
 });
 
 test('PH-28 a sentence the desk handles leaves the phone at the next freshness check', async ({
