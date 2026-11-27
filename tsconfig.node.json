@@ -8,6 +8,7 @@
   "exclude": ["tests/e2e/**/*", "tests/journey/**/*", "tests/package/**/*"],
   "include": [
     "electron.vite.config.ts",
+    "vite.web.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
     "eslint.config.js",

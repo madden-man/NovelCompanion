@@ -40,7 +40,7 @@ export function watchBuild(deps: BuildWatchDeps): (id: string) => void {
   };
   return (id) => {
     if (waiting === id) return;
-    let done: string | null = null;
+    let done: string | null;
     try {
       done = deps.session.getItem(RELOADED_FOR);
     } catch {

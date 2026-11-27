@@ -317,18 +317,19 @@ export class WebTransport implements Api {
     }
     this.reached();
     const envelope = (payload ?? {}) as { result?: unknown; events?: unknown };
+    this.followRev(res.headers, sentAt);
+    // The request ran: its events reach the views even if its answer cannot be read.
+    if (Array.isArray(envelope.events)) {
+      for (const e of envelope.events as { event?: unknown; payload?: unknown }[]) {
+        if (isEventName(e?.event)) this.emit(e.event, e.payload);
+      }
+    }
     const result = parseResponse(channel, envelope.result);
     if (channel === 'bible.open' || channel === 'bible.current') {
       const open = (result as { bible: { id: string } | null }).bible;
       this.bible = open?.id ?? null;
       if (open) this.write(BIBLE_STORAGE, open.id);
       else this.remove(BIBLE_STORAGE);
-    }
-    this.followRev(res.headers, sentAt);
-    if (Array.isArray(envelope.events)) {
-      for (const e of envelope.events as { event?: unknown; payload?: unknown }[]) {
-        if (isEventName(e?.event)) this.emit(e.event, e.payload);
-      }
     }
     return result;
   }

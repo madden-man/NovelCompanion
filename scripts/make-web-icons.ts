@@ -40,16 +40,22 @@ function png(size: number): Buffer {
   for (let y = 0; y < size; y++) {
     raw[y * (size * 3 + 1)] = 0;
     for (let x = 0; x < size; x++) {
-      const sum = [0, 0, 0];
+      let [r, g, b] = [0, 0, 0];
       for (let j = 0; j < ss; j++) {
         for (let i = 0; i < ss; i++) {
-          const c = shade((x + (i + 0.5) / ss) / size, (y + (j + 0.5) / ss) / size);
-          for (let k = 0; k < 3; k++) sum[k]! += c[k]!;
+          const [cr = 0, cg = 0, cb = 0] = shade(
+            (x + (i + 0.5) / ss) / size,
+            (y + (j + 0.5) / ss) / size,
+          );
+          r += cr;
+          g += cg;
+          b += cb;
         }
       }
-      for (let k = 0; k < 3; k++) {
-        raw[y * (size * 3 + 1) + 1 + x * 3 + k] = Math.round(sum[k]! / (ss * ss));
-      }
+      const at = y * (size * 3 + 1) + 1 + x * 3;
+      raw[at] = Math.round(r / (ss * ss));
+      raw[at + 1] = Math.round(g / (ss * ss));
+      raw[at + 2] = Math.round(b / (ss * ss));
     }
   }
   const chunk = (type: string, data: Buffer) => {
