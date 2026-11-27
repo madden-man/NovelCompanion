@@ -1334,7 +1334,13 @@ export class Repository {
    */
   async setSceneOutline(
     text: string,
-    opts: { newVersion?: boolean; breaks?: SceneBreaks; years?: SceneYears } = {},
+    opts: {
+      newVersion?: boolean;
+      breaks?: SceneBreaks;
+      years?: SceneYears;
+      /** A58 (PH-10): the outline's `modifiedAt` the writer read (null: none stored); else `EntryMoved`. */
+      expectModifiedAt?: string | null;
+    } = {},
   ): Promise<SceneOutlineDoc> {
     const prev = this.sceneOutline();
     const clean = sceneYears({ years: opts.years ?? {} });
@@ -1353,6 +1359,13 @@ export class Repository {
     const days = this.bibleSettings().numbers.outlineVersionDays;
     // PH-6: the version, the outline and `rev` land together.
     await this.withRev(async (session) => {
+      if (opts.expectModifiedAt !== undefined) {
+        const stored = await this.bible
+          .collection<StoredDoc>('meta')
+          .findOne({ _id: SCENE_OUTLINE_ID }, { session });
+        const at = typeof stored?.modifiedAt === 'string' ? stored.modifiedAt : null;
+        if (at !== opts.expectModifiedAt) throw new EntryMoved();
+      }
       if (changed) {
         const versions = this.sceneVersions();
         let last = await versions.find({}, { session }).sort({ at: -1 }).limit(1).next();

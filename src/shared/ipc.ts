@@ -946,6 +946,12 @@ export const contract = {
       text: z.string().max(2_000_000),
       breaks: SceneBreaksWire.default({}),
       years: SceneYearsWire.default({}),
+      /**
+       * A58 (PH-10): the `modifiedAt` of the outline this text was typed on
+       * (null when none was stored); an outline changed since is refused, never
+       * overwritten.
+       */
+      expectModifiedAt: z.string().min(1).nullable().optional(),
     }),
     response: SceneOutlineWire,
   },

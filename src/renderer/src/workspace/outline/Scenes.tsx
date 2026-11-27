@@ -44,6 +44,7 @@ import { entryTitle } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
 import { call, callIn, plainError } from '../../api';
+import { ENTRY_MOVED_MESSAGE } from '../../../../shared/freshness';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { registerTextTarget, useUndo } from '../undo';
@@ -127,6 +128,10 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   const current = useRef<Flow | null>(null);
   const orderRef = useRef<readonly string[]>([]);
   const saved = useRef<SceneOutlineState | null>(null);
+  /** A58 (PH-10): the stored outline's `modifiedAt` that `saved` holds; every save names it. */
+  const base = useRef<string | null>(null);
+  /** A save was refused because the outline changed elsewhere: reloads keep saying so until a save lands. */
+  const moved = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstPending = useRef<number | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
@@ -185,11 +190,12 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       .then((r) => {
         if (!live) return;
         saved.current = stateOf(r);
+        base.current = r.modifiedAt;
         current.current = null;
         setFlow(null);
         setLoaded(saved.current);
         setStatus('saved');
-        setError(null);
+        setError(moved.current ? ENTRY_MOVED_MESSAGE : null);
       })
       .catch((e: unknown) => {
         if (!live) return;
@@ -226,9 +232,14 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       }
       setStatus('saving');
       // A whole-outline write, so it carries its bible and main refuses it in any other.
-      const run = callIn(bible, 'sceneOutline.set', target).then(
+      const run = callIn(bible, 'sceneOutline.set', {
+        ...target,
+        expectModifiedAt: base.current,
+      }).then(
         (r) => {
           saved.current = stateOf(r);
+          base.current = r.modifiedAt;
+          moved.current = false;
           lastError.current = null;
           setError(null);
           setSaves((n) => n + 1);
@@ -238,6 +249,11 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
           lastError.current = plainError(e);
           setError(lastError.current);
           setStatus('error');
+          // PH-10: changed elsewhere since this text was typed: the screen takes the newer outline.
+          if (lastError.current.includes(ENTRY_MOVED_MESSAGE)) {
+            moved.current = true;
+            setReloads((n) => n + 1);
+          }
           return false;
         },
       );
@@ -318,7 +334,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       const target = stored();
       // A57: only while this workspace's bible is still the open one.
       if (target && !sameState(saved.current, target) && undoLive()) {
-        void callIn(bible, 'sceneOutline.set', target);
+        void callIn(bible, 'sceneOutline.set', { ...target, expectModifiedAt: base.current });
       }
     },
     [closeTyping, undoLive, bible],
@@ -465,8 +481,9 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
   };
 
   /** After a restore the stored state is the new truth. */
-  const replace = useCallback((r: SceneOutlineState) => {
+  const replace = useCallback((r: SceneOutlineState & { modifiedAt?: string | null }) => {
     saved.current = stateOf(r);
+    if (r.modifiedAt !== undefined) base.current = r.modifiedAt;
     current.current = splitFlow(saved.current, orderRef.current);
     setFlow(current.current);
     setStatus('saved');

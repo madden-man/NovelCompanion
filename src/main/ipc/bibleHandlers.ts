@@ -295,8 +295,8 @@ export function bibleHandlers(
       return { time: saved, position: position() };
     },
     'sceneOutline.get': () => session().repo.sceneOutline(),
-    'sceneOutline.set': ({ text, breaks, years }) =>
-      session().repo.setSceneOutline(text, { breaks, years }),
+    'sceneOutline.set': ({ text, breaks, years, expectModifiedAt }) =>
+      session().repo.setSceneOutline(text, { breaks, years, expectModifiedAt }),
     'sceneOutline.versions': async () => ({
       versions: await session().repo.sceneOutlineVersions(),
     }),
