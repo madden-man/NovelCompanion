@@ -308,3 +308,8 @@ export function usePhoneNav(): PhoneNav {
   if (!v) throw new Error('usePhoneNav needs a PhoneNavProvider.');
   return v;
 }
+
+/** A58 U4: the phone's places, or null outside the phone frame (a desk screen). */
+export function usePhoneNavIfAny(): PhoneNav | null {
+  return useContext(Ctx);
+}
