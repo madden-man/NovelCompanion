@@ -176,6 +176,10 @@ export interface GridMarkers {
   onKeyDown: (ev: ReactKeyboardEvent<HTMLButtonElement>, id: string) => void;
   /** IP-4: the marker whose label is open as a field, if any. */
   renaming: string | null;
+  /** ARCH-6: nothing moves, renames or adds while the grid is read only. */
+  readOnly: boolean;
+  /** A57: move a marker a year back or forward, as Left and Right do (the marker bar). */
+  nudge: (id: string, delta: number) => void;
   startRename: (id: string) => void;
   /** Close the rename field and put the focus back on its marker. */
   endRename: () => void;
@@ -287,6 +291,10 @@ export function useGridMarkers(opts: {
     },
     cancelDrag: () => setDrag(null),
     renaming,
+    readOnly,
+    nudge: (id, delta) => {
+      if (!readOnly) void onMove(id, delta, 'span');
+    },
     startRename: (id) => {
       if (readOnly) return;
       setTip(null);
@@ -356,8 +364,14 @@ export function GridMarker(props: {
   onRename?: (title: string) => Promise<void>;
   /** In place of the double-click rename. */
   onDoubleClick?: () => void;
+  /**
+   * A57: while selected, a small bar over the marker with a year back, a year forward, rename
+   * and delete, each showing its key. `onDelete` moves the item to the trash after its confirm.
+   */
+  bar?: { onDelete: () => Promise<void> };
 }) {
   const { m, ctl, layout } = props;
+  const [asking, setAsking] = useState(false);
   const metrics = layout.metrics;
   const drag = ctl.drag;
   const dragging = drag?.id === m.id && drag.moved;
@@ -366,6 +380,8 @@ export function GridMarker(props: {
   const top = metrics.rowPad + m.lane * metrics.lane + (metrics.lane - size) / 2;
   const liveYear = dragging ? m.startYear + drag.delta : null;
   const renaming = ctl.renaming === m.id && props.onRename !== undefined;
+  const showBar =
+    props.bar !== undefined && props.selected && !ctl.readOnly && !dragging && !renaming;
   return (
     <>
       <button
@@ -391,7 +407,15 @@ export function GridMarker(props: {
         onPointerMove={ctl.onPointerMove}
         onPointerUp={ctl.onPointerUp}
         onPointerCancel={ctl.cancelDrag}
-        onKeyDown={(ev) => ctl.onKeyDown(ev, m.id)}
+        onKeyDown={(ev) => {
+          if ((ev.key === 'Delete' || ev.key === 'Backspace') && showBar) {
+            ev.preventDefault();
+            ctl.setTip(null);
+            setAsking(true);
+            return;
+          }
+          ctl.onKeyDown(ev, m.id);
+        }}
         onMouseEnter={() => ctl.setTip({ id: m.id, left: m.x, top })}
         onMouseLeave={() => ctl.setTip((t) => (t?.id === m.id ? null : t))}
         onFocus={() => {
@@ -411,6 +435,18 @@ export function GridMarker(props: {
           </span>
         )}
       </button>
+      {showBar && props.bar && (
+        <MarkerBar
+          m={m}
+          ctl={ctl}
+          top={top}
+          title={props.title ?? m.label}
+          canRename={props.onRename !== undefined}
+          asking={asking}
+          setAsking={setAsking}
+          onDelete={props.bar.onDelete}
+        />
+      )}
       {renaming && props.onRename && (
         <span
           className="wg-rename"
@@ -429,6 +465,129 @@ export function GridMarker(props: {
         </span>
       )}
     </>
+  );
+}
+
+/**
+ * A57: the bar over the selected marker. Each button shows the key that does the same on the
+ * focused marker. Delete asks first, in the bar, and names what goes to the trash.
+ */
+function MarkerBar(props: {
+  m: PlacedMarker;
+  ctl: GridMarkers;
+  top: number;
+  title: string;
+  canRename: boolean;
+  asking: boolean;
+  setAsking: (a: boolean) => void;
+  onDelete: () => Promise<void>;
+}) {
+  const { m, ctl, asking, setAsking } = props;
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (asking) keepRef.current?.focus();
+  }, [asking]);
+  const backToMarker = (from: HTMLElement) =>
+    from
+      .closest('.wg-scroll')
+      ?.querySelector<HTMLElement>(`.wg-marker[data-id="${CSS.escape(m.id)}"]`)
+      ?.focus();
+  const keep = (from: HTMLElement) => {
+    setAsking(false);
+    backToMarker(from);
+  };
+  return (
+    <div
+      className="wg-bar"
+      role="toolbar"
+      aria-label={`${props.title}, ${span(m.startYear, m.endYear)}`}
+      data-testid="marker-bar"
+      style={{ left: m.x + m.width / 2, top: props.top }}
+      onClick={(ev) => ev.stopPropagation()}
+      onKeyDown={(ev) => {
+        if (ev.key !== 'Escape' || !asking) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        keep(ev.currentTarget);
+      }}
+    >
+      {asking ? (
+        <>
+          <span className="wg-bar-ask">Move {props.title} to the trash?</span>
+          <button
+            type="button"
+            className="wg-bar-btn danger"
+            onClick={(ev) => {
+              const el = ev.currentTarget;
+              setError(null);
+              props.onDelete().then(
+                () => setAsking(false),
+                (e: unknown) => {
+                  setError(plainError(e));
+                  backToMarker(el);
+                },
+              );
+            }}
+          >
+            Trash it
+          </button>
+          <button
+            ref={keepRef}
+            type="button"
+            className="wg-bar-btn"
+            onClick={(ev) => keep(ev.currentTarget)}
+          >
+            Keep it
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="wg-bar-btn"
+            aria-label="A year earlier"
+            onClick={() => ctl.nudge(m.id, -1)}
+          >
+            ‹ <kbd>←</kbd>
+          </button>
+          <button
+            type="button"
+            className="wg-bar-btn"
+            aria-label="A year later"
+            onClick={() => ctl.nudge(m.id, 1)}
+          >
+            › <kbd>→</kbd>
+          </button>
+          {props.canRename && (
+            <button
+              type="button"
+              className="wg-bar-btn"
+              aria-label="Rename"
+              onClick={() => ctl.startRename(m.id)}
+            >
+              Rename <kbd>F2</kbd>
+            </button>
+          )}
+          <button
+            type="button"
+            className="wg-bar-btn danger"
+            aria-label="Delete"
+            onClick={() => {
+              ctl.setTip(null);
+              setAsking(true);
+            }}
+          >
+            Delete <kbd>Del</kbd>
+          </button>
+        </>
+      )}
+      {error && (
+        <span className="wg-bar-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -826,10 +985,17 @@ export function GridHeader(props: {
     backTo(renaming);
     setRenaming(null);
   };
+  // A57: one press makes one era, however many clicks land on the gap while it is made.
+  const making = useRef(false);
   const makeEra = async (gap: BandGap) => {
-    if (!edits || !canEdit) return;
-    const id = await edits.createInGap(gap);
-    if (id) setRenaming(id);
+    if (!edits || !canEdit || making.current) return;
+    making.current = true;
+    try {
+      const id = await edits.createInGap(gap);
+      if (id) setRenaming(id);
+    } finally {
+      making.current = false;
+    }
   };
 
   const renamed = renaming ? props.eras.find((e) => e.id === renaming) : undefined;
@@ -871,7 +1037,7 @@ export function GridHeader(props: {
         {canEdit &&
           gaps.map((g) => {
             const x = spanExtent(scale, g.startYear, g.endYear);
-            const words = `No era from ${span(g.startYear, g.endYear)}`;
+            // A57: every gap shows a "+ era" ghost; one click (or Enter) fills it.
             return (
               <button
                 key={`gap:${g.startYear}`}
@@ -880,25 +1046,19 @@ export function GridHeader(props: {
                 style={{ left: x.x, width: Math.max(2, x.width - 1) }}
                 data-from={g.startYear}
                 data-to={g.endYear}
-                aria-label={`${words}. Press Enter to add an era here`}
-                title={`${words}. Double-click or press Enter to add an era here.`}
-                onDoubleClick={() => void makeEra(g)}
-                onKeyDown={(ev) => {
-                  if (ev.key === 'Enter') {
-                    ev.preventDefault();
-                    void makeEra(g);
-                  }
-                }}
-              />
+                aria-label={`Add an era from ${span(g.startYear, g.endYear)}`}
+                onClick={() => void makeEra(g)}
+              >
+                <span className="wg-gap-text" aria-hidden="true">
+                  + era
+                </span>
+              </button>
             );
           })}
         {shown.map((era) => {
           if (era.endYear < scale.from || era.startYear > scale.to) return null;
           const x = spanExtent(scale, era.startYear, era.endYear);
           const live = drag.active?.key === era.id;
-          const keys = canEdit
-            ? ' Shift with Left or Right moves its start a year, Shift and Alt with Left or Right its end, F2 renames it.'
-            : '';
           return (
             <button
               key={era.id}
@@ -909,8 +1069,12 @@ export function GridHeader(props: {
               data-from={era.startYear}
               data-to={era.endYear}
               aria-label={`Era ${era.name}, ${span(era.startYear, era.endYear)}`}
-              title={`${era.name}, ${span(era.startYear, era.endYear)}.${keys}`}
-              onClick={() => props.onOpenEra(era.id)}
+              title={`${era.name}, ${span(era.startYear, era.endYear)}`}
+              onClick={(ev) => {
+                // The second click of a double-click (a rename, or a gap just filled) opens nothing.
+                if (ev.detail > 1) return;
+                props.onOpenEra(era.id);
+              }}
               onDoubleClick={() => startRename(era.id)}
               onKeyDown={(ev) => {
                 if (ev.key === 'F2') {
@@ -985,28 +1149,55 @@ export function GridHeader(props: {
   );
 }
 
-/** A row's track: the markers over the years; a click on an empty spot gives its year. */
+/**
+ * A row's track: the markers over the years; a click on an empty spot gives its year. On an
+ * addable track a "+ year" ghost follows the pointer over empty spots, so the click's year
+ * shows before the click (A57).
+ */
 export function GridTrack(props: {
   layout: GridLayout;
   onEmptyClick?: (year: number, e: ReactMouseEvent<HTMLDivElement>) => void;
   children?: ReactNode;
 }) {
   const { layout, onEmptyClick } = props;
+  const [ghost, setGhost] = useState<number | null>(null);
+  const yearOf = (e: { clientX: number; currentTarget: HTMLElement }) =>
+    yearAt(layout.scale, e.clientX - e.currentTarget.getBoundingClientRect().left);
   return (
     <div
       className={`wg-track${onEmptyClick ? ' addable' : ''}`}
       style={{ width: layout.width }}
+      onPointerMove={
+        onEmptyClick
+          ? (e) => {
+              const y = e.target === e.currentTarget && e.buttons === 0 ? yearOf(e) : null;
+              if (y !== ghost) setGhost(y);
+            }
+          : undefined
+      }
+      onPointerLeave={onEmptyClick ? () => setGhost(null) : undefined}
       onClick={
         onEmptyClick
           ? (e) => {
               if (e.target !== e.currentTarget) return;
-              const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
-              onEmptyClick(yearAt(layout.scale, x), e);
+              setGhost(null);
+              onEmptyClick(yearOf(e), e);
             }
           : undefined
       }
     >
       {props.children}
+      {onEmptyClick && ghost !== null && (
+        <span
+          className="wg-ghost num"
+          style={{ left: yearMid(layout.scale, ghost) }}
+          aria-hidden="true"
+          data-testid="track-ghost"
+          data-year={ghost}
+        >
+          + {ghost}
+        </span>
+      )}
     </div>
   );
 }
