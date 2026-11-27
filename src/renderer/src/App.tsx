@@ -8,7 +8,7 @@ import { Workspace } from './workspace/Workspace';
 import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
 import { useAppearance } from './appearance';
 import { MongoSettings } from './workspace/settings';
-import { flushOpenBible } from './workspace/undo';
+import { saveBeforeSwitch } from './workspace/undo';
 
 type BibleList = Response<'bible.list'>;
 type Bible = Response<'bible.open'>['bible'];
@@ -66,8 +66,9 @@ function Shell() {
     setError(null);
     setOpening(true);
     try {
-      // Pending edits land in the bible they were typed in, as on closing the window.
-      await flushOpenBible();
+      // Pending edits land in the bible they were typed in, as on closing the window;
+      // when one cannot be stored, this bible stays open and the error says what.
+      await saveBeforeSwitch();
       const { bible } = await window.api.invoke('bible.open', { slug: id });
       setCurrent(bible);
     } catch (e) {
@@ -81,6 +82,7 @@ function Shell() {
   const create = async (name: string): Promise<boolean> => {
     setError(null);
     try {
+      await saveBeforeSwitch();
       const slug = uniqueSlug(
         name,
         (list?.bibles ?? []).map((b) => b.id),
@@ -127,7 +129,7 @@ function Shell() {
           />
         )}
       </header>
-      <ConnectionBanner onOpened={(bible) => setCurrent(bible)} />
+      <ConnectionBanner onOpened={(bible) => setCurrent(bible)} beforeOpen={saveBeforeSwitch} />
       {error && (
         <p className="callout crit" role="alert">
           {error}

@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,12 +15,10 @@ import type { Op, UndoCommand, UndoIO } from '../../../shared/domain/undoRunner'
 import { undoIO } from '../../../shared/undoIO';
 import { questionCommand } from '../../../shared/domain/phoneQuestions';
 import { savedFieldText } from '../../../shared/domain/undoText';
-import { call } from '../api';
+import { call, callIn, setWorkspaceBible, writesSettled } from '../api';
+import { entryChainsSettled } from './editable/chains';
 
 export type { Op, UndoCommand };
-
-/** Undo writes go through the same IPC channels as every other write. */
-const io: UndoIO = undoIO(call);
 
 /**
  * A text box Cmd+Z can step through before the app's history (ED-3): a native
@@ -101,8 +100,11 @@ interface Undo {
    * the words alone.
    */
   toast(text: string, opts?: { undo?: boolean }): void;
-  /** Editors register a flush so a pending autosave lands before an undo. */
-  registerFlush(fn: () => Promise<void>): () => void;
+  /**
+   * Editors register a flush so a pending autosave lands before an undo. A
+   * flush resolves to what it could not save, in a few words, or nothing.
+   */
+  registerFlush(fn: Flush): () => void;
   /** Write every pending autosave now, for example before the app closes. */
   flush(): Promise<void>;
   /**
@@ -111,18 +113,61 @@ interface Undo {
    * then to the stored value, so typing elsewhere stays undoable (ED-3).
    */
   markSaved(saved: Record<string, unknown>): void;
+  /** A57: the bible this workspace was opened on; its writes carry it (`callIn`). */
+  bible: string | null;
+  /**
+   * A57: true while this workspace is mounted and its bible is the open one.
+   * A timer, a retry or a write on leaving goes ahead only while it is true.
+   */
+  live(): boolean;
 }
+
+/** A registered flush: resolves to what it could not save as a string, else to anything. */
+export type Flush = () => Promise<unknown>;
 
 const UndoContext = createContext<Undo | null>(null);
 
-let openBibleFlush: (() => Promise<void>) | null = null;
+let openBibleFlush: (() => Promise<string[]>) | null = null;
+
+/** The longest a bible switch waits for pending writes before it gives up and stays. */
+export const SWITCH_SAVE_LIMIT_MS = 12_000;
+
+/** A57: the pending edits could not all be stored, so the other bible did not open. */
+export class NotSavedError extends Error {
+  override name = 'NotSavedError';
+}
+
+/** A57: what a switch says when a write was still out when the wait ran out. */
+export const STILL_SAVING = 'Not saved: a change was still being written when the wait ran out.';
 
 /**
- * Saves the open bible's pending edits, the flush the window close runs. The
- * shell calls it before another bible opens, so no edit is sent to the wrong one.
+ * A57: save every pending edit of the open bible and wait for every write in
+ * flight, at most `SWITCH_SAVE_LIMIT_MS`. Every path that opens another bible
+ * (the header switcher, the Bibles screen, Import as a new bible, Restore, the
+ * read-only snapshot) awaits this first and stays where it is when it throws:
+ * the `NotSavedError` says what was not saved and why.
  */
-export function flushOpenBible(): Promise<void> {
-  return openBibleFlush ? openBibleFlush().catch(() => undefined) : Promise.resolve();
+export async function saveBeforeSwitch(): Promise<void> {
+  const work = (async () => {
+    const problems: string[] = openBibleFlush ? await openBibleFlush() : [];
+    do {
+      await entryChainsSettled();
+      problems.push(...(await writesSettled()));
+    } while (await entryChainsSettled());
+    return problems;
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), SWITCH_SAVE_LIMIT_MS);
+  });
+  try {
+    const r = await Promise.race([work, limit]);
+    if (r === 'late') throw new NotSavedError(STILL_SAVING);
+    const unique = [...new Set(r)];
+    if (unique.length) throw new NotSavedError(unique.join(' '));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -133,7 +178,20 @@ export function flushOpenBible(): Promise<void> {
  */
 export function UndoProvider({ children, bible }: { children: ReactNode; bible?: string }) {
   const manager = useRef(new UndoManager());
-  const flushes = useRef(new Set<() => Promise<void>>());
+  /** Undo writes go through the same IPC channels as every other write, from this bible. */
+  const io = useMemo<UndoIO>(() => undoIO((c, r) => callIn(bible, c, r)), [bible]);
+  const flushes = useRef(new Set<Flush>());
+  /** A57: this workspace's writes are the window's while it is mounted. */
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    setWorkspaceBible(bible ?? null);
+    return () => {
+      alive.current = false;
+      setWorkspaceBible(null, bible ?? undefined);
+    };
+  }, [bible]);
+  const live = useCallback(() => alive.current, []);
   const busy = useRef(Promise.resolve());
   /** The value the focused text field held when it was focused or last saved. */
   const savedValue = useRef<{ el: Element; value: string; nativeUndone: boolean } | null>(null);
@@ -170,12 +228,25 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
   const flushAll = useCallback(async () => {
     for (const f of [...flushes.current]) await f();
   }, []);
+  /** Every flush runs, even after one fails; the list says what each could not save. */
+  const flushForSwitch = useCallback(async () => {
+    const problems: string[] = [];
+    for (const f of [...flushes.current]) {
+      try {
+        const left = await f();
+        if (typeof left === 'string' && left) problems.push(left);
+      } catch (e) {
+        problems.push(plainErrorMessage(e));
+      }
+    }
+    return problems;
+  }, []);
   useEffect(() => {
-    openBibleFlush = flushAll;
+    openBibleFlush = flushForSwitch;
     return () => {
-      if (openBibleFlush === flushAll) openBibleFlush = null;
+      if (openBibleFlush === flushForSwitch) openBibleFlush = null;
     };
-  }, [flushAll]);
+  }, [flushForSwitch]);
 
   const step = useCallback(
     (direction: 'undo' | 'redo') => {
@@ -193,7 +264,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
       });
       return busy.current;
     },
-    [flushAll, refresh, setNotice],
+    [flushAll, refresh, setNotice, io],
   );
 
   /** Undo typing in the focused field when it has unsaved typing; true when it did. */
@@ -263,7 +334,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
     });
   }, [bible, record]);
 
-  const registerFlush = useCallback((fn: () => Promise<void>) => {
+  const registerFlush = useCallback((fn: Flush) => {
     flushes.current.add(fn);
     return () => {
       flushes.current.delete(fn);
@@ -297,8 +368,10 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
       registerFlush,
       flush: flushAll,
       markSaved,
+      bible: bible ?? null,
+      live,
     }),
-    [record, step, notice, toast, registerFlush, flushAll, markSaved, snapshot],
+    [record, step, notice, toast, registerFlush, flushAll, markSaved, snapshot, bible, live],
   );
 
   return <UndoContext.Provider value={value}>{children}</UndoContext.Provider>;

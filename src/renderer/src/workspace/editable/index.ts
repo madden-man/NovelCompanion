@@ -12,7 +12,6 @@ export {
   EntryEditable,
   entryOptions,
   listOptions,
-  onEntryChain,
   renameSpec,
   saveEntryField,
   useEditableSave,
@@ -22,6 +21,7 @@ export {
   valueCommand,
 } from './helpers';
 export type { EntryEditableProps, SaveEntryFieldOptions } from './helpers';
+export { entryChainsSettled, onEntryChain } from './chains';
 export {
   ADD_NEW_LABEL,
   addNewReducer,

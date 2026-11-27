@@ -12,9 +12,9 @@ import type { Handler } from './validate';
  */
 export function handle<C extends Channel>(channel: C, handler: Handler<C>): void {
   if (!isChannel(channel)) throw new Error(`Unknown channel: ${String(channel)}`);
-  ipcMain.handle(wireChannel(channel), async (_event, payload: unknown) => {
+  ipcMain.handle(wireChannel(channel), async (_event, payload: unknown, context: unknown) => {
     try {
-      return await runHandler(channel, handler, payload);
+      return await runHandler(channel, handler, payload, context);
     } catch (e) {
       throw new Error(plainErrorMessage(e), { cause: e });
     }
