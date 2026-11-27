@@ -1218,6 +1218,63 @@ test('A57 the filter box finds or adds: a new name offers New with its Enter key
   await expect(form).toHaveCount(0);
 });
 
+test('A57 an entry heading renames in place: click or F2 opens it, Enter or blur saves as one undo step, Escape cancels', async () => {
+  await openSection('places');
+  const box = page.getByTestId('find-or-add');
+  await box.fill('Gull Steps');
+  await box.press('Enter');
+  const editor = page.getByTestId('editor');
+  const heading = editor.getByRole('heading', { level: 2 });
+  await expect(heading).toContainText('Gull Steps');
+  const made = await currentEntry('places', 'Gull Steps');
+  const stored = async () =>
+    String((await invoke('entry.get', { collection: 'places', id: made._id })).entry.title);
+  const shown = heading.getByRole('button', { name: 'Title: Gull Steps' });
+  const input = heading.getByRole('textbox', { name: 'Title' });
+
+  // One click opens the name where it is shown; Enter saves it as one undo step.
+  await shown.click();
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('Gull Steps');
+  await input.fill('Gull Stairs');
+  await input.press('Enter');
+  await expect(input).toHaveCount(0);
+  await expect(heading).toHaveText('Gull Stairs');
+  await expect.poll(stored).toBe('Gull Stairs');
+  await expect(page.getByTestId('entry-list')).toContainText('Gull Stairs');
+  // The form's Title field follows the heading.
+  await expect(field(editor, 'title').locator('input')).toHaveValue('Gull Stairs');
+  expect((await undoLabels())[0]).toBe('Changed Title on Gull Stairs');
+
+  // F2 on the focused name opens it; Escape puts the old name back and writes nothing.
+  const again = heading.getByRole('button', { name: 'Title: Gull Stairs' });
+  await again.focus();
+  await page.keyboard.press('F2');
+  await expect(input).toBeFocused();
+  await input.fill('Gull Ladder');
+  await input.press('Escape');
+  await expect(input).toHaveCount(0);
+  await expect(heading).toHaveText('Gull Stairs');
+  expect(await stored()).toBe('Gull Stairs');
+
+  // Blur saves too, and an empty name is refused at the field.
+  await again.click();
+  await input.fill('');
+  await input.press('Enter');
+  await expect(heading.getByRole('alert')).toHaveText('Not saved: Title cannot be empty.');
+  await input.fill('Gull Landing');
+  await input.blur();
+  await expect(input).toHaveCount(0);
+  await expect.poll(stored).toBe('Gull Landing');
+
+  // Each save was one step: Undo takes the name back one save at a time.
+  await page.getByTestId('top-undo').click();
+  await expect.poll(stored).toBe('Gull Stairs');
+  await expect(heading).toHaveText('Gull Stairs');
+  await page.getByTestId('top-undo').click();
+  await expect.poll(stored).toBe('Gull Steps');
+});
+
 test('A57 a toast says what was done, with an Undo button that takes it back', async () => {
   // Move to trash from an entry page.
   await openSection('places');

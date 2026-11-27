@@ -19,6 +19,7 @@ import { call, plainError } from '../api';
 import { notSavedText } from '../../../shared/errors';
 import type { Entry } from './data';
 import { Field } from './fields';
+import { EntryEditable, renameSpec } from './editable';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
@@ -402,6 +403,7 @@ export function EntryPane(props: {
     );
   }
   const inTrash = Boolean(draft.deletedAt);
+  const heading = renameSpec(collection);
   const messages = { warnings: ed.warnings, issues: ed.issues };
   const warningCount = ed.warnings.length > 0 && (
     <span className="chip warn-chip" data-testid="warning-count">
@@ -432,10 +434,9 @@ export function EntryPane(props: {
     <>
       <section
         className="ws-editor"
-        // SM-1: a character page's own heading is the only name on it.
-        {...(collection === 'characters'
-          ? { 'aria-label': entryTitle(draft) }
-          : { 'aria-labelledby': 'editor-title' })}
+        // SM-1: a character page's own heading is the only name on it. The region keeps the
+        // plain title as its name, since the heading below holds an editable name.
+        aria-label={entryTitle(draft)}
         data-testid="editor"
         data-entry-id={id}
       >
@@ -444,7 +445,24 @@ export function EntryPane(props: {
             <div className="stack tight">
               <span className="eyebrow">{info.singular}</span>
               <h2 id="editor-title">
-                <Zh text={entryTitle(draft)} />
+                {/* A57, IP-13: the name is edited where it is shown, through the same rename
+                    as a list row: click or F2 opens it, Enter or blur saves, Escape cancels. */}
+                <EntryEditable
+                  collection={collection}
+                  id={id}
+                  entry={draft}
+                  kind="text"
+                  allowEmpty={false}
+                  path={heading.path}
+                  label={heading.label}
+                  extraPatch={heading.extraPatch}
+                  placeholder={entryTitle(draft)}
+                  display={() => <Zh text={entryTitle(draft)} />}
+                  onSaved={ed.adopt}
+                  testId="editor-heading"
+                  // Not the form field's path: the Title field below already answers to it.
+                  data-field="heading"
+                />
               </h2>
             </div>
           )}
