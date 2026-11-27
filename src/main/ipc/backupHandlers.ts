@@ -1,5 +1,6 @@
 import { writeFile, readFile } from 'node:fs/promises';
-import { createBible, dropBible } from '../db/bibles';
+import { createBible, dropBible, listBibles } from '../db/bibles';
+import { slugify } from '../../shared/bible';
 import type { OpenBible } from '../db/session';
 import { exportBibleJson, importBibleJson, readBibleFile } from '../backup/json';
 import { restoreSnapshot } from '../backup/restore';
@@ -72,7 +73,8 @@ export function backupHandlers(current: () => OpenBible | null, deps: BackupDeps
       const text = await readFile(path, 'utf8');
       const store = { client: s.handle.client, db: s.handle.db, close: async () => undefined };
       // Check the file completely before making the bible, so a bad file leaves nothing behind.
-      readBibleFile(text);
+      const file = readBibleFile(text);
+      if (!slug || !name) ({ slug, name } = freeName(await listBibles(store), file.bible.name));
       const handle = await createBible(store, slug, name);
       try {
         const docs = await importBibleJson(handle, text);
@@ -86,4 +88,19 @@ export function backupHandlers(current: () => OpenBible | null, deps: BackupDeps
       }
     },
   };
+}
+
+/** A57: the file's bible name and an ID no bible has yet, numbered when either is taken. */
+function freeName(
+  bibles: { _id: string; name: string }[],
+  base: string,
+): { slug: string; name: string } {
+  const ids = new Set(bibles.map((b) => b._id));
+  const names = new Set(bibles.map((b) => b.name));
+  const root = slugify(base).slice(0, 36) || 'imported';
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : `${base} ${n}`;
+    const slug = n === 1 ? root : `${root}-${n}`;
+    if (!ids.has(slug) && !names.has(name) && slug !== 'bibles') return { slug, name };
+  }
 }

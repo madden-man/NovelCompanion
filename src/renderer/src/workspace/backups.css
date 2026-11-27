@@ -1,0 +1,7 @@
+/* A57: Backups, the heading and its three actions on one row. */
+.backups-head {
+  justify-content: space-between;
+}
+.snapshot-table tr[aria-current='true'] > * {
+  background: var(--surface-2);
+}

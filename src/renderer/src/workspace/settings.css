@@ -1,0 +1,66 @@
+/* A57: Settings. A connection's state as a dot and a masked value. */
+.conn-head {
+  justify-content: space-between;
+}
+.conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-2);
+  font-size: 0.9rem;
+}
+.conn-status .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  flex: none;
+}
+.conn-status[data-state='ok'] .dot {
+  background: var(--good);
+  border-color: var(--good-ink);
+}
+.conn-status[data-state='bad'] .dot {
+  background: var(--critical);
+  border-color: var(--critical-ink);
+}
+.conn-status[data-state='busy'] .dot {
+  background: var(--warning);
+  border-color: var(--warning-ink);
+}
+.conn-field input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.conn-field input::placeholder {
+  color: var(--fg-2);
+  opacity: 1;
+}
+
+/* A57: a number setting read as a sentence, its fields inline with the unit words. */
+.number-sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--fg);
+}
+.number-sentence > .lab {
+  color: var(--fg);
+}
+.reset-chip {
+  font-variant-numeric: tabular-nums;
+}
+.keep-input {
+  width: 5.5em;
+}
+.template-preview {
+  color: var(--fg-2);
+  font-size: 0.85rem;
+}
+.instruction-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

@@ -1,10 +1,9 @@
 /**
  * A47 Settings groups for the open bible (IP-10, IP-11, IP-12, IP-14, IP-15):
  * the numbers, the cultural time unit, the templates, the default eras, and
- * Claude's instructions. Every value is an
- * `Editable` that saves on Enter or a pick, each change one undo step.
+ * Claude's instructions. Every value is an `Editable`, each change one undo step.
  */
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   CULTURE_UNITS,
   DEFAULT_LINK_TYPE_LABELS,
@@ -21,12 +20,14 @@ import {
   templateCommand,
 } from '../../../shared/undoCommands';
 import type { EraDefaultRow } from '../../../shared/undoCommands';
+import type { UndoCommand } from '../../../shared/domain/undoRunner';
 import { call, plainError } from '../api';
 import { WriteFieldset, useWriteGuard } from '../connection';
 import { useBibleSettings } from './bibleSettings';
 import { useUndo } from './undo';
 import { Editable } from './editable';
 import './vocab.css';
+import './settings.css';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -49,72 +50,72 @@ function NoteLine({ note, testId }: { note: Note; testId?: string }) {
   );
 }
 
-// IP-11: numbers
+// IP-11: numbers. A57: each group reads as a sentence of fields and unit words. The save
+// delay and the outline version interval are tuning: they left the screen, keep their defaults,
+// and a value stored earlier is still read.
 
-const NUMBER_FIELDS: {
-  key: keyof BibleNumbers;
-  label: string;
-  min: number;
-  max: number;
-  hint: string;
-}[] = [
+type NumberKey = keyof BibleNumbers;
+type NumberField = { key: NumberKey; label: string; min: number; max: number };
+type SentencePart = string | NumberField;
+
+const NUMBER_GROUPS: { id: string; title: string; parts: SentencePart[] }[] = [
   {
-    key: 'timelineStart',
-    label: 'First year of the timeline',
-    min: -10000,
-    max: 10000,
-    hint: 'Both grids start here.',
+    id: 'timeline',
+    title: 'Timeline',
+    parts: [
+      'From',
+      { key: 'timelineStart', label: 'First year of the timeline', min: -10000, max: 10000 },
+      'to',
+      { key: 'timelineEnd', label: 'Last year of the timeline', min: -10000, max: 10000 },
+    ],
   },
   {
-    key: 'timelineEnd',
-    label: 'Last year of the timeline',
-    min: -10000,
-    max: 10000,
-    hint: 'Both grids end here.',
+    id: 'window',
+    title: 'World window',
+    parts: [
+      { key: 'windowBefore', label: 'World window, years before', min: 0, max: 200 },
+      'years back,',
+      { key: 'windowAfter', label: 'World window, years after', min: 0, max: 200 },
+      'ahead',
+    ],
   },
   {
-    key: 'windowBefore',
-    label: 'World window, years before',
-    min: 0,
-    max: 200,
-    hint: 'Years before the story year the world window and the session selection take in.',
-  },
-  {
-    key: 'windowAfter',
-    label: 'World window, years after',
-    min: 0,
-    max: 200,
-    hint: 'Years after the story year the world window and the session selection look ahead.',
-  },
-  {
-    key: 'pickerReach',
-    label: 'Picker reach in years',
-    min: 0,
-    max: 100,
-    hint: 'Years either side of a moment the Relevant world events picker reaches.',
-  },
-  {
-    key: 'autosaveMs',
-    label: 'Autosave delay in milliseconds',
-    min: 100,
-    max: 750,
-    hint: 'How long a box waits after the last key before it saves. At most 750, so a forced quit loses less than a second of typing.',
-  },
-  {
-    key: 'outlineVersionDays',
-    label: 'Days between outline versions',
-    min: 1,
-    max: 365,
-    hint: 'A save opens a new outline version only when the latest one is older than this.',
+    id: 'reach',
+    title: 'Event pickers',
+    parts: [
+      'Reach',
+      { key: 'pickerReach', label: 'Picker reach in years', min: 0, max: 100 },
+      'years either side',
+    ],
   },
 ];
+
+const fieldsOf = (parts: SentencePart[]): NumberField[] =>
+  parts.filter((p): p is NumberField => typeof p !== 'string');
+
+/** One undo step for several numbers changed together (a group's reset). */
+function numbersCommand(
+  title: string,
+  keys: NumberKey[],
+  before: BibleNumbers,
+  after: BibleNumbers,
+): UndoCommand {
+  const parts = keys.map((k) => numberSettingCommand(call, k, before[k], after[k]));
+  const [only] = parts;
+  if (only && parts.length === 1) return only;
+  return {
+    label: `Reset the ${title.toLowerCase()}`,
+    undo: parts.flatMap((c) => c.undo),
+    redo: parts.flatMap((c) => c.redo),
+  };
+}
 
 export function NumbersSettings() {
   const settings = useBibleSettings();
   const undo = useUndo();
   const ro = useWriteGuard();
   const save = useCallback(
-    async (key: keyof BibleNumbers, next: number | null) => {
+    async (key: NumberKey, next: number | null) => {
       await undo.flush();
       const before = settings.numbers[key];
       const after = next ?? DEFAULT_NUMBERS[key];
@@ -124,27 +125,46 @@ export function NumbersSettings() {
     },
     [settings.numbers, undo],
   );
+  const reset = useCallback(
+    async (title: string, keys: NumberKey[]) => {
+      await undo.flush();
+      const before = settings.numbers;
+      const after = { ...before };
+      for (const k of keys) after[k] = DEFAULT_NUMBERS[k];
+      const changed = keys.filter((k) => before[k] !== after[k]);
+      if (!changed.length) return;
+      await call('settings.set', {
+        numbers: Object.fromEntries(changed.map((k) => [k, after[k]])),
+      });
+      undo.record(numbersCommand(title, changed, before, after));
+    },
+    [settings.numbers, undo],
+  );
   const [failed, setFailed] = useState<Note>(null);
   return (
     <div className="panel stack tight" data-testid="settings-numbers">
       <h4>Numbers</h4>
-      <p className="example-note">
-        Leave a box empty, or press Reset, to go back to the default shown beside it.
-      </p>
       <div className="settings-grid">
-        {NUMBER_FIELDS.map((f) => {
-          const value = settings.numbers[f.key];
-          const fallback = DEFAULT_NUMBERS[f.key];
+        {NUMBER_GROUPS.map((g) => {
+          const fields = fieldsOf(g.parts);
+          const changed = fields.some((f) => settings.numbers[f.key] !== DEFAULT_NUMBERS[f.key]);
+          const defaults = fields.map((f) => DEFAULT_NUMBERS[f.key]);
           return (
-            <NumberRow
-              key={f.key}
-              field={f}
-              value={value}
-              fallback={fallback}
+            <NumberSentence
+              key={g.id}
+              id={g.id}
+              title={g.title}
+              parts={g.parts}
+              values={settings.numbers}
+              changed={changed}
+              defaults={defaults}
               disabled={ro.off}
-              onSave={(next) => save(f.key, next)}
+              onSave={save}
               onReset={() =>
-                save(f.key, fallback).then(
+                reset(
+                  g.title,
+                  fields.map((f) => f.key),
+                ).then(
                   () => setFailed(null),
                   (e: unknown) => setFailed({ text: plainError(e), bad: true }),
                 )
@@ -158,46 +178,70 @@ export function NumbersSettings() {
   );
 }
 
-function NumberRow(props: {
-  field: (typeof NUMBER_FIELDS)[number];
-  value: number;
-  fallback: number;
+/** The reset button of a changed setting: it shows the value it puts back. */
+function ResetChip(props: { label: string; shown: string; disabled?: boolean; onClick(): void }) {
+  return (
+    <button
+      type="button"
+      className="btn small reset-chip"
+      disabled={props.disabled}
+      aria-label={props.label}
+      onClick={props.onClick}
+    >
+      <span aria-hidden="true">↺</span> {props.shown}
+    </button>
+  );
+}
+
+function NumberSentence(props: {
+  id: string;
+  title: string;
+  parts: SentencePart[];
+  values: BibleNumbers;
+  changed: boolean;
+  defaults: number[];
   disabled: boolean;
-  onSave: (next: number | null) => Promise<void>;
+  onSave: (key: NumberKey, next: number | null) => Promise<void>;
   onReset: () => void;
 }) {
-  const { field: f } = props;
-  const hintId = useId();
   return (
     <>
       <span className="settings-label" aria-hidden="true">
-        {f.label}
+        {props.title}
       </span>
-      <span className="settings-value" data-number={f.key}>
-        <Editable
-          kind="number"
-          label={f.label}
-          value={props.value}
-          allowEmpty
-          integer
-          min={f.min}
-          max={f.max}
-          placeholder={`Default ${props.fallback}`}
-          testId={`number-${f.key}`}
-          onSave={props.onSave}
-        />
-        <span className="settings-default" id={hintId}>
-          Default {props.fallback}. {f.hint}
+      <span className="settings-value" data-group={props.id}>
+        <span className="number-sentence">
+          {props.parts.map((p, i) =>
+            typeof p === 'string' ? (
+              <span key={i} className="lab">
+                {p}
+              </span>
+            ) : (
+              <span key={p.key} data-number={p.key}>
+                <Editable
+                  kind="number"
+                  label={p.label}
+                  value={props.values[p.key]}
+                  allowEmpty
+                  integer
+                  min={p.min}
+                  max={p.max}
+                  placeholder={String(DEFAULT_NUMBERS[p.key])}
+                  testId={`number-${p.key}`}
+                  onSave={(next) => props.onSave(p.key, next)}
+                />
+              </span>
+            ),
+          )}
         </span>
-        <button
-          type="button"
-          className="btn small"
-          disabled={props.disabled || props.value === props.fallback}
-          onClick={props.onReset}
-          aria-describedby={hintId}
-        >
-          Reset {f.label.toLowerCase()} to {props.fallback}
-        </button>
+        {props.changed && (
+          <ResetChip
+            label={`Reset ${props.title.toLowerCase()} to ${props.defaults.join(' and ')}`}
+            shown={props.defaults.join(', ')}
+            disabled={props.disabled}
+            onClick={props.onReset}
+          />
+        )}
       </span>
     </>
   );
@@ -217,9 +261,6 @@ export function CultureUnitSettings() {
   return (
     <div className="panel stack tight" data-testid="settings-culture-unit">
       <h4>Cultural time unit</h4>
-      <p className="example-note">
-        The span of years a cultural line covers, and the step of the Cultural data screen.
-      </p>
       <div className="settings-grid">
         <span className="settings-label" aria-hidden="true">
           Each cultural line covers
@@ -286,10 +327,6 @@ export function TemplateSettings() {
   return (
     <div className="panel stack tight" data-testid="settings-templates">
       <h4>Templates</h4>
-      <p className="example-note">
-        The names new things start with. In a title, {'{n}'} is the thing&apos;s number, so
-        &quot;Part {'{n}'}&quot; makes &quot;Part 2&quot;.
-      </p>
       <div className="settings-grid">
         {TEXT_TEMPLATES.map((f) => (
           <TemplateRow
@@ -321,6 +358,9 @@ export function TemplateSettings() {
   );
 }
 
+/** What a title template makes for the second of its kind: "Part {n}" makes "Part 2". */
+const example = (template: string) => template.replaceAll('{n}', '2');
+
 function TemplateRow(props: {
   label: string;
   value: string;
@@ -342,8 +382,17 @@ function TemplateRow(props: {
           testId={props.testId}
           onSave={props.onSave}
         />
+        {props.value.includes('{n}') && (
+          <span className="template-preview" aria-label={`For example ${example(props.value)}`}>
+            {example(props.value)}
+          </span>
+        )}
         {props.value !== props.fallback && (
-          <span className="settings-default">Default: {props.fallback}</span>
+          <ResetChip
+            label={`Reset ${props.label.toLowerCase()} to ${props.fallback}`}
+            shown={props.fallback}
+            onClick={() => void props.onSave(props.fallback)}
+          />
         )}
       </span>
     </>
@@ -394,9 +443,8 @@ export function EraDefaultSettings() {
   return (
     <div className="panel stack tight" data-testid="settings-era-defaults">
       <h4>Default eras for a new bible</h4>
-      <p className="example-note">A bible made from here starts with these eras.</p>
       {rows.length === 0 ? (
-        <p>No default eras. A new bible starts with none.</p>
+        <p>No default eras</p>
       ) : (
         <ol className="era-default-rows">
           {rows.map((r, i) => (
@@ -452,7 +500,7 @@ export function EraDefaultSettings() {
           onClick={() =>
             void run(
               write([...rows, { name: t.eraName, startYear: nextStart, endYear: nextStart + 9 }]),
-              `Added ${t.eraName}, ${nextStart} to ${nextStart + 9}. Rename it in place.`,
+              `Added ${t.eraName}, ${nextStart} to ${nextStart + 9}.`,
             )
           }
         >
@@ -465,6 +513,15 @@ export function EraDefaultSettings() {
 }
 
 // IP-15: Claude's instructions
+
+function LockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <rect x="2" y="5" width="8" height="6" rx="1" fill="currentColor" />
+      <path d="M4 5V3.5a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
 
 export function ClaudeInstructionsSettings() {
   const undo = useUndo();
@@ -495,10 +552,6 @@ export function ClaudeInstructionsSettings() {
   return (
     <div className="panel stack tight" data-testid="settings-instructions">
       <h4>Instructions for each feature</h4>
-      <p className="example-note">
-        What Claude is told before your material. Edit a box and leave it to save. The shared rules
-        under each box are always sent and cannot be changed.
-      </p>
       {items.map((i) => (
         <section
           key={i.feature}
@@ -509,20 +562,22 @@ export function ClaudeInstructionsSettings() {
           <div className="row tight">
             <h5>{i.label}</h5>
             <span className="example-note">{i.text === null ? 'Default' : 'Your own'}</span>
-            <button
-              type="button"
-              className="btn small"
-              disabled={ro.off || i.text === null}
-              {...ro.tip}
-              onClick={() =>
-                void set(i, null).then(
-                  () => setNote({ text: `Reset the instructions for ${i.label}.`, bad: false }),
-                  (e: unknown) => setNote({ text: plainError(e), bad: true }),
-                )
-              }
-            >
-              Reset {i.label} to default
-            </button>
+            {i.text !== null && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={ro.off}
+                {...ro.tip}
+                onClick={() =>
+                  void set(i, null).then(
+                    () => setNote({ text: `Reset the instructions for ${i.label}.`, bad: false }),
+                    (e: unknown) => setNote({ text: plainError(e), bad: true }),
+                  )
+                }
+              >
+                Reset {i.label} to default
+              </button>
+            )}
           </div>
           <Editable
             kind="rich"
@@ -533,7 +588,10 @@ export function ClaudeInstructionsSettings() {
             testId={`instructions-${i.feature}`}
             onSave={(next) => set(i, next.trim() ? next : null)}
           />
-          <span className="instruction-footer-label">Always added after it</span>
+          <span className="instruction-footer-label instruction-lock">
+            <LockIcon />
+            Shared rules, always sent
+          </span>
           <pre className="instruction-footer" data-testid={`instructions-footer-${i.feature}`}>
             {i.footer}
           </pre>

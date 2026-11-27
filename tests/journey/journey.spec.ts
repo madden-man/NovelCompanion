@@ -152,14 +152,8 @@ test('ARCH-8 a fresh install opens with no bibles, and a new empty bible is made
 
 test('BK-3 the fixture novel is loaded through Backups into a new bible, Tide Lines, which opens', async () => {
   await rail(page, 'Backups').click();
-  const form = page.locator('form', {
-    has: page.getByRole('heading', { name: /Load an exported bible/ }),
-  });
-  // Wait for the view to settle (its snapshot list loads), so the form keeps what is typed.
-  await expect(page.getByTestId('snapshot-row').first()).toBeVisible();
-  await form.getByLabel('Name of the new bible').fill('Tide Lines');
-  await expect(form.getByLabel('ID')).toHaveValue('tide-lines');
-  await form.getByTestId('backup-import').click();
+  // A57: Import opens the file dialog directly; the new bible takes the file's name.
+  await page.getByTestId('backup-import').click();
   // Loading writes every collection in one transaction; give it time on a busy machine.
   await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines', { timeout: 60_000 });
   expect(
@@ -1121,7 +1115,7 @@ test('BK-1 BK-2 a snapshot is taken, a character is edited, and restoring the sn
   await rail(page, 'Backups').click();
   const target = page.locator(`[data-testid="snapshot-row"][data-id="${id}"]`);
   await target.getByTestId('snapshot-restore').click();
-  await target.getByTestId('snapshot-confirm').click();
+  await page.getByTestId('snapshot-confirm').getByRole('button', { name: 'Replace' }).click();
   await expect(page.getByTestId('reload-notice')).toContainText('Restored the snapshot from');
   await expect
     .poll(

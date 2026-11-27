@@ -124,15 +124,15 @@ test('AI-6 ARCH-4 AI-7 the first use states what is sent; with no key the questi
 
 test('ARCH-4 the key is set in settings, checked, shown masked, and the models come from the live list', async () => {
   const settings = page.getByTestId('claude-settings');
-  await expect(settings.getByTestId('claude-key-status')).toContainText('No key is stored');
+  await expect(settings.getByTestId('claude-key-status')).toHaveText('No key');
   await settings.getByTestId('claude-key-input').fill('sk-ant-rejected-key-000000');
-  await settings.getByTestId('claude-key-save').click();
+  await settings.getByTestId('claude-key-input').press('Enter');
   await expect(settings.getByTestId('claude-key-note')).toContainText(
     'Anthropic rejected this key',
   );
-  await expect(settings.getByTestId('claude-key-status')).toContainText('No key is stored');
+  await expect(settings.getByTestId('claude-key-status')).toHaveText('No key');
   await settings.getByTestId('claude-key-input').fill(KEY);
-  await settings.getByTestId('claude-key-save').click();
+  await settings.getByTestId('claude-key-input').press('Enter');
   await expect(settings.getByTestId('claude-key-note')).toContainText('Anthropic accepted the key');
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
   await expect(settings.getByTestId('claude-key-input')).toHaveValue('');

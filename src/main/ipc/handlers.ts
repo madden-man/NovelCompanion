@@ -11,8 +11,6 @@ import { registerSessionClaude } from '../session/claude';
 import { runtimeSessionClaude } from '../claude/session';
 import {
   ALLOW_TEST_URI_ENV,
-  KEYCHAIN_ACCOUNT,
-  KEYCHAIN_SERVICE,
   KeychainMongoUriStore,
   MemoryMongoUriStore,
   TEST_URI_ENV,
@@ -73,9 +71,7 @@ function makeConnection(): ConnectionManager {
     localOnly: underTest,
     database: testDatabaseName(process.env, { isPackaged: app.isPackaged }),
     missingMessage:
-      lookup && !lookup.ok
-        ? lookup.message
-        : `No MongoDB connection string is stored in the keychain (service "${KEYCHAIN_SERVICE}", account "${KEYCHAIN_ACCOUNT}"). Paste one under MongoDB connection, then click Replace connection.`,
+      lookup && !lookup.ok ? lookup.message : 'No MongoDB connection string is stored.',
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
     onStatus: (status) => broadcast('connection.changed', status),
   });

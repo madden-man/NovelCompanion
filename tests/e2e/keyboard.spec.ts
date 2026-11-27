@@ -511,7 +511,7 @@ test('NF-2 ST-1 settings: the key, by keyboard', async () => {
   const settings = page.getByTestId('settings-view');
   await tabTo(settings.getByTestId('claude-key-input'));
   await page.keyboard.type(KEY);
-  await press(settings.getByTestId('claude-key-save'));
+  await page.keyboard.press('Enter');
   await expect(settings.getByTestId('claude-key-status')).toContainText('sk-ant-…cdef');
   expect(await unreachable()).toEqual([]);
 });
