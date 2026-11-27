@@ -124,6 +124,32 @@ The rule is `IP-19`; the brief is `docs/briefs/A57-common.md` and the design `mo
 - **Smaller shared pieces.** `LockIcon` in `sessions/Reimport.tsx` marks the manuscript text as read only. `timeline/gridShared.tsx` draws the "+ year" ghost that follows the pointer over an empty spot, the "+ era" in every gap and the selected marker's bar for both grids. `views.tsx` remembers the entry last open per section (`nc.lastOpen` in `localStorage`, eight IDs each) and draws the filter box's "+ New" row.
 - **CSS.** New rules sit in a file beside their screen, never in `app.css` or `theme.css`: new files `bibleMenu.css`, `workspace/entries.css` (find or add, empty states), `workspace/tree/tree.css` (stubs, drop zones, the key), `workspace/backups.css` and `workspace/settings.css`, and additions to `capture.css`, `culture.css`, `claude.css`, `editable/editable.css` (the pencil), `outline/outline.css`, `timeline/grid.css` and `sessions/alignment.css`. Rules only removed screens used were deleted from `app.css`.
 
+## The phone, A58 (2026-11-27, PH-1 to PH-39)
+
+The plan is `docs/PLAN-PWA.md` and the brief `docs/briefs/A58-common.md`. The phone runs the same renderer, built for the web, against one hosted function that runs the same handler table as Electron main on the same Atlas database. Decided by Tommy: a hosted function, the same `claude` Atlas user, no app lock.
+
+```
+iPhone PWA                         Mac
+same renderer, web build           Electron renderer
+window.api = fetch transport       window.api = preload (unchanged)
+        |  HTTPS, phone key                |  IPC
+Netlify function "rpc"             Electron main
+same handler table                 same handler table
+        \                                  /
+         Atlas novel_companion (one bible, two writers)
+```
+
+- **Where the code lives.** `src/main/host/` holds the `Host` interface and `electron.ts`, today's behaviour moved and nothing else changed; files elsewhere under `src/main` stay where they are. `registerHandlers` fills a plain `Map<Channel, Handler>`; `ipcMain` and the function are two adapters over it. `src/server/` holds the server host and `rpc(request: Request): Promise<Response>`, a plain Fetch handler. `netlify/functions/rpc.mts` wraps it for Netlify; `scripts/serve-web.ts` mounts it on a local port for development and tests, with a queue so it serves one request at a time as a function instance does. The web build is the renderer with a fetch transport that implements the same `Api` type as the preload, a manifest and a service worker (vite-plugin-pwa).
+- **Import rule.** `electron` and `@napi-rs/keyring` are imported only in the host files; an eslint rule enforces it. A bundle check fails if the function bundle holds `electron`, the keyring or `@anthropic-ai/claude-agent-sdk`, or the web bundle holds `mongodb` (PH-2).
+- **Channel marking.** Every channel in `src/shared/ipc.ts` is marked `phone` or `desk`, and a new channel is not done until it is marked; the unit walk fails on an unmarked one (PH-3). The function refuses `desk` channels in plain words; `test.*` is never registered on the server. The renderer asks `app.capabilities` and draws no control whose channel it may not use (PH-5).
+- **`rev` in every write path.** Each bible's `meta` holds `rev`, raised inside the write itself: the repository's commit and the list, meta, proposal, outline and notebook paths. A new write path raises it too, or the integration walk over `WRITE_CHANNELS` fails (PH-6). The function compares `rev` before each request and reloads the read model and search index when it moved; the desktop checks on focus and every 20 seconds while focused, the phone on `visibilitychange` and every 20 seconds while visible, and a move made elsewhere sends `bible.reloaded` (PH-7 to PH-9).
+- **Events.** The server host collects what a request broadcasts and answers `{ result, events }`; the transport hands the events to its listeners (PH-12). `app.closeRequested` on the phone is a flush on `visibilitychange: hidden` with a keepalive request under 64 KiB (PH-13).
+- **The phone key.** `NC_MONGODB_URI` and `NC_PHONE_KEY` live only in the site's environment and, on the Mac, the keychain (ARCH-5). No key set is 401 to everything; the comparison is constant time over digests; every answer is `no-store` and `noindex` (PH-14).
+- **Schema bump on any stored-shape change.** A change to the shape of any stored document raises the schema version with a migration, empty if need be, so a lagging side sees a version mismatch instead of a strict zod failure (PH-20). P2's `rev` is the first such bump.
+- **The function never migrates.** The server's bible open skips migrations: a bible older than the function answers "Open <bible name> on the Mac once.", a newer one "The phone app is updating." (PH-19). Migrations stay on the desk, after their snapshot. Before the first phone write of a UTC day the function dumps the bible into `novel_companion.phone_snapshots`, keeping 14 (PH-23).
+- **Build id.** Every answer carries the server's build id; a different one makes the client fetch the new service worker and reload when no field holds unsaved typing (PH-21).
+- **Tests.** Server packages are proved without a phone, against the memory replica set through `serve-web`. Phone layout and smoke specs run on WebKit with Playwright's iPhone descriptor; touch drags and pinches run on Chromium with CDP touch events, never synthesised mouse events; one spec runs the Electron app and the web client on the same test database (PH-38). What only the iPhone can check is a manual record (PH-39).
+
 ## App shell, A39 (2026-10-21)
 
 - **Rail (SM-6).** `Workspace.tsx`: nine screens (Characters, Family tree, Outline, World events, Backstory, Continuity checker, Questions, Cultural data, Writing tools; A53 renamed Sessions to Questions, view kind `questions`) in a `nav` with `data-testid="rail"`, which every e2e spec waits for as its ready marker, and an App menu (`AppMenu.tsx`, a `menu` of `menuitem`s) with the seven utilities (Search and filters, Review queue, Backups, Lists, Trash, Bibles, Settings) and the reference views (Place tree, Romanization, Glossary table). The raw section lists open from Search and filters ("List every ..."); the e2e `sectionList(page, plural)` helper does that, `screenTab(page, screen, tab)` opens a screen's tab, and `rail()` accepts "Timeline" as an alias of World events and throws on any other unknown name.
