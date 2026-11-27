@@ -104,6 +104,9 @@ function broadcast<E extends EventName>(event: E, payload: EventPayload<E>): voi
 const currentSummary = () =>
   current ? { id: current.session.handle.id, name: current.name } : null;
 
+/** A58: the open bible, for the hosted function's checks before each request. */
+export const openSession = (): OpenBible | null => current?.session ?? null;
+
 let flushed: (() => void) | null = null;
 
 /** Main registers what happens when the page says it flushed its pending edits on close. */
@@ -205,7 +208,12 @@ async function openBibleNow(slug: string): Promise<Response<'bible.open'>> {
   const bibles = await listBibles(s);
   const record = bibles.find((b) => b._id === slug);
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
-  const session = await openBibleForApp(s, slug, { snapshotRoot: snapshotRoot() });
+  const session = await openBibleForApp(s, slug, {
+    snapshotRoot: snapshotRoot(),
+    // A58 (PH-19): the hosted function never migrates, and the phone bridge runs on the desk only.
+    ...(app.hosted ? { neverMigrate: record.name } : {}),
+  });
+  if (app.hosted) return adopt(session, record.name, false);
   // A55 (NB-1): the bible is published to the phone under its world ID.
   const bridge = new BridgeService({
     store: new BridgeStore(s.bridge),
