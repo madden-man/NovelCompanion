@@ -29,6 +29,8 @@ export interface Host {
   setTheme(appearance: Appearance): void;
   /** Claude through the Agent SDK, which needs its bundled binary; null where it cannot run. */
   readonly claude: ClaudeHost | null;
+  /** A58: the hosted function, which never migrates a bible and runs no phone bridge. */
+  readonly hosted?: boolean;
 }
 
 export interface HostSecrets {

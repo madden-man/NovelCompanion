@@ -60,6 +60,30 @@ export interface SessionOptions {
    * migrations pending, stop with a plain message instead of running them.
    */
   readOnly?: boolean;
+  /**
+   * A58 (PH-19): the hosted function never migrates. The bible's name, said
+   * when its schema version is not this build's (`assertSameVersion`).
+   */
+  neverMigrate?: string;
+}
+
+/** A58 (PH-19): a bible at another schema version than this build, refused unmigrated. */
+export class VersionMismatchError extends Error {
+  override name = 'VersionMismatchError';
+  constructor(readonly kind: 'older' | 'newer', message: string) {
+    super(message);
+  }
+}
+
+/** A58 (PH-19): refuse a bible older or newer than this build; nothing is written. */
+export async function assertSameVersion(handle: BibleHandle, name: string): Promise<void> {
+  const have = await schemaVersion(handle);
+  if (have < LATEST_SCHEMA_VERSION) {
+    throw new VersionMismatchError('older', `Open ${name} on the Mac once.`);
+  }
+  if (have > LATEST_SCHEMA_VERSION) {
+    throw new VersionMismatchError('newer', 'The phone app is updating.');
+  }
 }
 
 /**
@@ -97,7 +121,9 @@ async function openBibleSessionOnce(
   options: SessionOptions,
 ): Promise<OpenBible> {
   const handle = await openBible(store, id);
-  if (options.readOnly) {
+  if (options.neverMigrate !== undefined) {
+    await assertSameVersion(handle, options.neverMigrate);
+  } else if (options.readOnly) {
     const have = await schemaVersion(handle);
     if (have < LATEST_SCHEMA_VERSION) {
       const pending = LATEST_SCHEMA_VERSION - have;

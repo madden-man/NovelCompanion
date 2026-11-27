@@ -1,0 +1,22 @@
+# A58 (PH-22): the phone's site. Nothing is linked or deployed from here; P5 makes the site.
+# Deploy previews and branch deploys are off in the site's settings: the Starter plan cannot
+# scope variables, so a preview of unreviewed code would hold the real connection string.
+[build]
+  # P4 adds the web build script.
+  command = "npm run build:web"
+  publish = "dist/web"
+
+[build.environment]
+  NODE_VERSION = "22"
+  ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# PH-14: the shell is never indexed either.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex"

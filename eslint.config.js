@@ -41,7 +41,7 @@ export default tseslint.config(
   {
     // A58: the handler table runs where Electron cannot, so only the host and the Electron
     // entry files may import Electron, the keychain or the Agent SDK.
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', 'netlify/**/*.mts'],
     ignores: [
       'src/main/host/electron.ts',
       'src/main/index.ts',
