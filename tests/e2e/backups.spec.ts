@@ -142,6 +142,44 @@ test('A57 Restore says what it replaces once, at the press, and Cancel or Escape
   ]);
 });
 
+test('A57 BK-2 with enough snapshots to scroll, the Restore confirm shows in view under the row pressed, and Cancel or Escape gives the focus back to its Restore button', async () => {
+  while ((await invoke('snapshot.list', {})).snapshots.length < 30) {
+    await invoke('snapshot.take', {});
+  }
+  await rail(page, 'Characters').click();
+  await rail(page, 'Backups').click();
+  const backups = page.getByTestId('backups-view');
+  const rows = backups.getByTestId('snapshot-row');
+  await expect(rows).toHaveCount(30);
+  // The table runs past the window.
+  await expect(rows.last()).not.toBeInViewport();
+  for (const row of [rows.first(), rows.nth(27)]) {
+    const restore = row.getByTestId('snapshot-restore');
+    await restore.click();
+    const confirm = page.getByTestId('snapshot-confirm');
+    await expect(confirm).toBeInViewport();
+    await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    // It sits in the row straight after the one pressed.
+    await expect(row.locator('xpath=following-sibling::tr[1]')).toHaveAttribute(
+      'data-testid',
+      'snapshot-confirm-row',
+    );
+    await page.keyboard.press('Escape');
+    await expect(confirm).toHaveCount(0);
+    await expect(restore).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(restore).toBeFocused();
+  }
+  expect((await places()).map((e) => e.entry.title).sort()).toEqual([
+    'Guangzhou',
+    'Portland',
+    'The Hale house',
+  ]);
+});
+
 test('A57 BK-3 Import as a new bible opens the file dialog directly and opens the bible it makes', async () => {
   await rail(page, 'Backups').click();
   await page.getByTestId('backup-import').click();
