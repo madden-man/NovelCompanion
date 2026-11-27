@@ -71,6 +71,7 @@ export type BibleChannel =
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
+  | 'entry.batch'
   | 'entry.lookup'
   | 'trash.list'
   | 'lists.get'
@@ -573,6 +574,14 @@ export function bibleHandlers(
         expectModifiedAt,
       })) as StoredDoc;
       return withWarnings(collection, entry);
+    },
+    'entry.batch': async ({ ops }) => {
+      const written = await session().repo.writeBatch(
+        ops.map((o) => (o.op === 'delete' ? { ...o, op: 'softDelete' as const } : o)),
+      );
+      return {
+        entries: written.map((entry, i) => withWarnings(ops[i]!.collection, entry)),
+      };
     },
     'entry.lookup': ({ ids }) => {
       const { model } = session();

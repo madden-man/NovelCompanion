@@ -28,7 +28,12 @@ import { BRIDGE_DOWN, worldIdFor } from '../../src/shared/bridge';
 import { blankEntry } from '../../src/shared/domain/blank';
 import { manifests } from '../../src/shared/schema';
 import { ELSEWHERE_MESSAGE, ENTRY_MOVED_MESSAGE } from '../../src/shared/freshness';
-import { UndoManager, editCommand, stepNotice } from '../../src/shared/domain/undoRunner';
+import {
+  UndoManager,
+  editCommand,
+  reorderCommand,
+  stepNotice,
+} from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
@@ -212,6 +217,72 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
     expect((await stored())?.title).toBe('Renamed again');
     expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
   });
+
+  test('PH-11 a step over several entries, one of them changed on the other side, writes none of them', async () => {
+    const slug = freshSlug('ph11-many');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const invoke = ipcFor(() => a);
+    const manager = new UndoManager();
+    const io = undoIO(invoke);
+    const ids = ['H1', 'H2', 'H3'];
+    // An earlier step, which must still undo after the refusal.
+    const h4 = (await invoke('entry.get', { collection: 'characters', id: 'H4' })).entry;
+    const h4After = (
+      await invoke('entry.update', { collection: 'characters', id: 'H4', patch: { role: 'Kept' } })
+    ).entry;
+    manager.record(editCommand('Changed Role on H4', 'characters', 'H4', h4, h4After));
+    const before = await Promise.all(
+      ids.map(async (id) => (await invoke('entry.get', { collection: 'characters', id })).entry),
+    );
+    for (const id of ids) {
+      await invoke('entry.update', {
+        collection: 'characters',
+        id,
+        patch: { role: `Filed ${id}` },
+      });
+    }
+    manager.record(
+      reorderCommand(
+        'Filed 3 facts',
+        'characters',
+        ids.map((id, i) => ({
+          id,
+          before: { role: before[i]!.role ?? null },
+          after: { role: `Filed ${id}` },
+        })),
+      ),
+    );
+
+    // The last entry of the step changes on the other side; A has not reloaded.
+    await b.repo.update('characters', 'H3', { title: 'Renamed elsewhere' });
+    const stored = async (id: string) =>
+      store.db.collection(`${slug}.characters`).findOne({ _id: id as never });
+    const at = await Promise.all(ids.map(stored));
+    const r = await manager.step('undo', io);
+    expect(r).toMatchObject({ status: 'skipped', why: 'moved', reason: ENTRY_MOVED_MESSAGE });
+    expect(await Promise.all(ids.map(stored))).toEqual(at);
+    expect(manager.stack.history().undo.map((c) => c.label)).toEqual(['Changed Role on H4']);
+    await a.repo.freshen();
+    expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H4'))?.role).toBe(h4.role);
+
+    // Once fresh, a step over several entries undoes and redoes as one.
+    manager.record(
+      reorderCommand('Moved two', 'characters', [
+        { id: 'H1', before: { role: 'Filed H1' }, after: { role: 'One' } },
+        { id: 'H2', before: { role: 'Filed H2' }, after: { role: 'Two' } },
+      ]),
+    );
+    await invoke('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'One' } });
+    await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { role: 'Two' } });
+    expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H1'))?.role).toBe('Filed H1');
+    expect((await stored('H2'))?.role).toBe('Filed H2');
+    expect(await manager.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H2'))?.role).toBe('Two');
+  });
 });
 
 /** A memory host with the recorded Claude, as `registerHandlers` gets from Electron under test. */
@@ -372,6 +443,15 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
     },
     'entry.restore': {
       run: () => call('entry.restore', { collection: 'places', id: state.place! }),
+    },
+    'entry.batch': {
+      run: () =>
+        call('entry.batch', {
+          ops: [
+            { op: 'update', collection: 'characters', id: 'H1', patch: { role: 'Batched' } },
+            { op: 'update', collection: 'characters', id: 'H2', patch: { role: 'Batched' } },
+          ],
+        }),
     },
     'lists.rename': {
       run: () =>

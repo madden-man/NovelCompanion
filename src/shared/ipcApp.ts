@@ -117,6 +117,8 @@ export const WRITE_CHANNELS = [
   'entry.update',
   'entry.delete',
   'entry.restore',
+  // A58 (PH-11): a multi-entry undo or redo step, all or nothing.
+  'entry.batch',
   'lists.rename',
   'lists.addItem',
   'lists.removeItem',

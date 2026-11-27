@@ -1,5 +1,5 @@
 import type { Channel, Request, Response } from './ipc';
-import type { Op, UndoIO } from './domain/undoRunner';
+import type { EntryOp, Op, UndoIO } from './domain/undoRunner';
 
 type Invoke = <C extends Channel>(channel: C, request: Request<C>) => Promise<Response<C>>;
 
@@ -71,6 +71,17 @@ export function undoIO(invoke: Invoke): UndoIO {
         case 'rename':
           await invoke('lists.rename', { listId: op.listId, itemId: op.itemId, label: op.label });
       }
+    },
+    async applyEntries(ops: EntryOp[]) {
+      const { entries } = await invoke('entry.batch', {
+        ops: ops.map((op) => ({
+          ...(op.kind === 'update' ? { op: 'update' as const, patch: op.patch } : { op: op.kind }),
+          collection: op.collection,
+          id: op.id,
+          ...expect(op.collection, op.id),
+        })),
+      });
+      ops.forEach((op, i) => saw(op.collection, op.id, entries[i]?.entry));
     },
   };
 }

@@ -33,11 +33,33 @@ export type Op =
 
 export type UndoCommand = Command<Op>;
 
+/** An op that writes one entry. */
+export type EntryOp = Extract<Op, { kind: 'update' | 'delete' | 'restore' }>;
+
+const isEntryOp = (op: Op): op is EntryOp =>
+  op.kind === 'update' || op.kind === 'delete' || op.kind === 'restore';
+
 export interface UndoIO {
   /** The stored entry, including one in the trash, or undefined. */
   get(collection: EntryCollection, id: string): Promise<Doc | undefined>;
   listLabel(listId: string, itemId: string): Promise<string | undefined>;
   apply(op: Op): Promise<void>;
+  /**
+   * A58 (PH-11): write several entry ops in one transaction, refused as a
+   * whole when any entry changed since its check read it.
+   */
+  applyEntries?(ops: EntryOp[]): Promise<void>;
+}
+
+/**
+ * The entry ops of a step that go through one batch write: two or more, each
+ * on its own entry. Null when the step writes them one by one.
+ */
+function batchOf(ops: readonly Op[], io: UndoIO): EntryOp[] | null {
+  if (!io.applyEntries) return null;
+  const entries = ops.filter(isEntryOp);
+  const keys = new Set(entries.map((o) => `${o.collection}/${o.id}`));
+  return entries.length > 1 && keys.size === entries.length ? entries : null;
 }
 
 /** A field edit: undo writes the old values back, redo the new ones. */
@@ -197,7 +219,14 @@ export class UndoManager {
       }
     }
     try {
-      for (const op of ops) await io.apply(op);
+      const batch = batchOf(ops, io);
+      if (batch) {
+        // PH-11: every entry is written in one transaction or none is, before the other writes.
+        await io.applyEntries!(batch);
+        for (const op of ops) if (!isEntryOp(op)) await io.apply(op);
+      } else {
+        for (const op of ops) await io.apply(op);
+      }
       return { status: 'applied', label: cmd.label };
     } catch (e) {
       if (movedElsewhere(e)) {

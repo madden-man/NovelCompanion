@@ -479,8 +479,15 @@ export class Repository {
   async writeBatch(
     ops: (
       | { op: 'create'; collection: EntryCollection; data: Record<string, unknown> }
-      | { op: 'update'; collection: EntryCollection; id: string; patch: Record<string, unknown> }
-      | { op: 'softDelete'; collection: EntryCollection; id: string }
+      | {
+          op: 'update';
+          collection: EntryCollection;
+          id: string;
+          patch: Record<string, unknown>;
+          expectModifiedAt?: string;
+        }
+      | { op: 'softDelete'; collection: EntryCollection; id: string; expectModifiedAt?: string }
+      | { op: 'restore'; collection: EntryCollection; id: string; expectModifiedAt?: string }
     )[],
     opts: { bulk?: string } = {},
   ): Promise<StoredDoc[]> {
@@ -496,11 +503,14 @@ export class Repository {
         if (seen.has(`${o.collection}:${o.id}`)) {
           throw new RepositoryError(`One batch changes ${o.id} twice.`);
         }
-        const prior = await this.current(o.collection, o.id);
+        // A58 (PH-11): every entry is checked before anything is written.
+        const prior = this.expected(await this.current(o.collection, o.id), o);
         change =
           o.op === 'update'
             ? this.buildUpdate(o.collection, prior, o.patch)
-            : this.buildSoftDelete(o.collection, prior);
+            : o.op === 'restore'
+              ? this.buildRestore(o.collection, prior)
+              : this.buildSoftDelete(o.collection, prior);
       }
       seen.add(`${o.collection}:${change.next._id}`);
       changes.push(change);
@@ -527,12 +537,16 @@ export class Repository {
     opts: Pick<WriteOptions, 'expectModifiedAt'> = {},
   ): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const prior = this.expected(await this.current(c, id), opts);
+    const change = this.buildRestore(c, this.expected(await this.current(c, id), opts));
+    await this.commit([change]);
+    return change.next as EntryOf<C>;
+  }
+
+  private buildRestore(c: EntryCollection, prior: StoredDoc): Change {
     if (!prior.deletedAt) throw new RepositoryError('This entry is not in the trash.');
     const { deletedAt: _cleared, ...rest } = prior;
     const doc = this.validate(c, { ...rest, modifiedAt: this.stamp(prior) });
-    await this.commit([{ collection: c, op: 'restore', next: doc as StoredDoc, prior }]);
-    return doc;
+    return { collection: c, op: 'restore', next: doc as StoredDoc, prior };
   }
 
   /** Read from the read model. Entries in the trash are hidden unless asked for. */

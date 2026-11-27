@@ -27,6 +27,7 @@ export const CHANNEL_REACH = {
   'entry.update': 'phone',
   'entry.delete': 'phone',
   'entry.restore': 'phone',
+  'entry.batch': 'phone',
   'entry.lookup': 'phone',
   'entry.purge': 'phone',
   'trash.list': 'phone',

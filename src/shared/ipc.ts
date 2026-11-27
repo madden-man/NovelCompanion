@@ -595,6 +595,34 @@ export const contract = {
   /** Move an entry to the trash (ED-5). */
   'entry.delete': { request: EntryRef.extend(Expect), response: WithWarnings },
   'entry.restore': { request: EntryRef.extend(Expect), response: WithWarnings },
+  /**
+   * A58 (PH-11): an undo or redo step that changes several entries, in one
+   * transaction. Every entry must still have the `modifiedAt` the step read,
+   * or nothing is written.
+   */
+  'entry.batch': {
+    request: z.strictObject({
+      ops: z
+        .array(
+          z.union([
+            z
+              .strictObject({
+                op: z.literal('update'),
+                collection: CollectionName,
+                id: EntryId,
+                patch: z.record(z.string(), z.unknown()),
+                ...Expect,
+              })
+              .superRefine(checkPatch),
+            EntryRef.extend({ op: z.literal('delete'), ...Expect }),
+            EntryRef.extend({ op: z.literal('restore'), ...Expect }),
+          ]),
+        )
+        .min(1)
+        .max(2000),
+    }),
+    response: z.strictObject({ entries: z.array(WithWarnings) }),
+  },
   /** Titles and sections for entry IDs, for link chips that may point anywhere. */
   'entry.lookup': {
     request: z.strictObject({ ids: z.array(EntryId).max(500) }),
