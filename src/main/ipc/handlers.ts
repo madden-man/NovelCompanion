@@ -73,6 +73,7 @@ function makeConnection(): ConnectionManager {
     missingMessage:
       lookup && !lookup.ok ? lookup.message : 'No MongoDB connection string is stored.',
     snapshotRoot: join(app.getPath('userData'), 'snapshots'),
+    lastBibleFile: join(app.getPath('userData'), 'last-bible.json'),
     onStatus: (status) => broadcast('connection.changed', status),
   });
 }
@@ -158,7 +159,42 @@ async function bibleCreate(slug: string, name: string): Promise<Response<'bible.
   return { bible: { id: handle.id, name: record?.name ?? name } };
 }
 
+let launchOpen: Promise<void> | null = null;
+
+/** A57: the first question about the current bible waits until the bible opened last has opened again. */
+function launched(): Promise<void> {
+  return (launchOpen ??= openLastBible());
+}
+
+/**
+ * A57: at launch the bible opened last opens again. With none, or when MongoDB
+ * cannot be reached, or the bible is gone or will not open, nothing opens and
+ * the window shows the bibles.
+ */
+async function openLastBible(): Promise<void> {
+  const slug = conn().lastBible;
+  if (!slug || current) return;
+  const s = await getStore();
+  if (!s.ok) return;
+  try {
+    if (!(await listBibles(s.store)).some((b) => b._id === slug)) {
+      conn().remember(null);
+      return;
+    }
+    await openBibleNow(slug);
+  } catch (e) {
+    // A log line for the developer console; the window shows the bibles (NF-3).
+    console.error('Novel Companion could not open the last bible:', e);
+  }
+}
+
 async function bibleOpen(slug: string): Promise<Response<'bible.open'>> {
+  // An open asked for while the last bible is still opening at launch goes after it.
+  await launched();
+  return openBibleNow(slug);
+}
+
+async function openBibleNow(slug: string): Promise<Response<'bible.open'>> {
   const s = await requireStore();
   const bibles = await listBibles(s);
   const record = bibles.find((b) => b._id === slug);
@@ -244,7 +280,9 @@ async function adopt(
     ...(readOnly ? { readOnly: true as const } : {}),
     ...(bridge && !readOnly ? { bridge } : {}),
   };
-  conn().lastBible = slug;
+  // A57: a bible opened from MongoDB opens again at the next launch; a snapshot is only remembered for now.
+  if (readOnly) conn().lastBible = slug;
+  else conn().remember(slug);
   const bible = { id: slug, name };
   broadcast('bibles.changed', { current: bible });
   return { bible };
@@ -288,7 +326,8 @@ async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>
  */
 async function retryConnection(): Promise<Response<'connection.retry'>> {
   const c = conn();
-  const reopen = current?.session.handle.id ?? null;
+  // A57: with nothing open (MongoDB was out of reach at launch), the bible opened last opens.
+  const reopen = current?.session.handle.id ?? c.lastBible;
   const r = await c.retry();
   if (r.ok) await reopenAfterSwitch(reopen);
   return c.status();
@@ -365,7 +404,10 @@ export function registerHandlers(): void {
     guard('bible.create', ({ slug, name }) => bibleCreate(slug, name)),
   );
   handle('bible.open', ({ slug }) => bibleOpen(slug));
-  handle('bible.current', () => ({ bible: currentSummary() }));
+  handle('bible.current', async () => {
+    await launched();
+    return { bible: currentSummary() };
+  });
   // A56 (FN-7): the page's undo history takes the steps the bridge made for its own bible.
   handle('notebook.claimSteps', ({ bible }) => ({
     steps:

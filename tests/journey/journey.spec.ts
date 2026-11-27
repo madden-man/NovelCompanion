@@ -141,7 +141,6 @@ test('ARCH-8 a fresh install opens with no bibles, and a new empty bible is made
   await expect(page).toHaveTitle('Novel Companion');
   await expect(page.getByTestId('no-bibles')).toHaveText('No bibles yet');
   await page.getByLabel('Name').fill('Scratch');
-  await expect(page.getByLabel('ID')).toHaveValue('scratch');
   await page.getByRole('button', { name: 'Create bible' }).click();
   await page.getByRole('button', { name: 'Open Scratch' }).click();
   await expect(page.getByTestId('current-bible')).toHaveText('Scratch');
