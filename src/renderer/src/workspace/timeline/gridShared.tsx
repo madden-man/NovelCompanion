@@ -382,6 +382,9 @@ export function GridMarker(props: {
   const renaming = ctl.renaming === m.id && props.onRename !== undefined;
   const showBar =
     props.bar !== undefined && props.selected && !ctl.readOnly && !dragging && !renaming;
+  // The delete confirm belongs to this selection: once the bar goes (the marker is deselected,
+  // dragged or renamed), the question ends with it and the bar opens fresh next time.
+  if (asking && !showBar) setAsking(false);
   return (
     <>
       <button
@@ -520,9 +523,26 @@ function MarkerBar(props: {
             className="wg-bar-btn danger"
             onClick={(ev) => {
               const el = ev.currentTarget;
+              const grid = el.closest<HTMLElement>('.wg-scroll');
+              // The marker goes with its item, so the focus moves to the next marker in reading
+              // order (or the one before it), or to the grid when it was the last one.
+              const at = ctl.order.indexOf(m.id);
+              const near = ctl.order[at + 1] ?? (at > 0 ? ctl.order[at - 1] : undefined);
               setError(null);
               props.onDelete().then(
-                () => setAsking(false),
+                () => {
+                  setAsking(false);
+                  const next =
+                    near === undefined
+                      ? null
+                      : grid?.querySelector<HTMLElement>(
+                          `.wg-marker[data-id="${CSS.escape(near)}"]`,
+                        );
+                  if (next && near !== undefined) {
+                    ctl.setCurrent(near);
+                    next.focus();
+                  } else grid?.focus();
+                },
                 (e: unknown) => {
                   setError(plainError(e));
                   backToMarker(el);
@@ -649,6 +669,7 @@ export function GridFrame(props: {
       data-from={layout.scale.from}
       data-to={layout.scale.to}
       style={{ ['--wg-label' as string]: `${LABEL_W}px` }}
+      tabIndex={-1}
       onKeyDown={props.onKeyDown}
     >
       <div className="wg-canvas" style={{ width: LABEL_W + layout.width, height: layout.height }}>

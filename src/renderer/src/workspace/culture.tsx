@@ -1213,15 +1213,16 @@ function PlaceDescriptionField(props: {
     });
   };
   return (
+    // The stored description is long text (Markdown, as on the place's own page), so it edits
+    // in the same rich box and keeps its paragraphs; its Chinese runs keep their glossary link.
     <Editable
-      kind="text"
+      kind="rich"
       label={`Description of ${props.name} in ${year}`}
       value={shown?.text ?? ''}
       placeholder={`What ${props.name} is like in ${year}`}
       disabled={props.disabled || !place}
       className="place-desc-field"
       testId="place-desc"
-      display={(t) => <Zh text={t} actions={false} />}
       onSave={(next) => save(next ?? '')}
     />
   );
@@ -1305,15 +1306,6 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
                   testId="place-name"
                   display={(t) => <Zh text={t || 'Untitled'} actions={false} />}
                 />{' '}
-                <span className="place-desc" data-testid="place-description">
-                  <PlaceDescriptionField
-                    place={place ?? null}
-                    name={name}
-                    year={year}
-                    shown={d}
-                    disabled={ro.off}
-                  />
-                </span>{' '}
                 <button
                   type="button"
                   className="btn small"
@@ -1324,6 +1316,15 @@ export function PlacesView(props: { embedded?: boolean } = {}) {
                 >
                   Edit {name}
                 </button>
+                <div className="place-desc" data-testid="place-description">
+                  <PlaceDescriptionField
+                    place={place ?? null}
+                    name={name}
+                    year={year}
+                    shown={d}
+                    disabled={ro.off}
+                  />
+                </div>
                 {open?.id === n.id && (
                   <RowEditor open={open} onClose={() => setOpen(null)} testId="place-editor" />
                 )}

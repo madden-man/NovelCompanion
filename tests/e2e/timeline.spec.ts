@@ -1215,6 +1215,37 @@ test('A57 the selected marker shows a bar: a year back and forward, rename and d
   expect((await getEvent('E10')).deletedAt).toBeFalsy();
 });
 
+test('A57 the marker bar delete confirm ends when the marker is deselected, and Trash it leaves the focus on the nearest marker', async () => {
+  await zoomTo('Close');
+  await showYear(2085);
+  const bar = grid().getByTestId('marker-bar');
+  await marker('E11').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E11');
+  await page.keyboard.press('Delete');
+  await expect(bar).toContainText('to the trash?');
+  // Selecting another marker ends the question.
+  await marker('E10').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E10');
+  await expect(bar).not.toContainText('to the trash?');
+  // Back on the first, the bar opens fresh, with the focus left on the marker.
+  await marker('E11').click();
+  await expect(inspector()).toHaveAttribute('data-entry-id', 'E11');
+  await expect(bar.locator('kbd')).toHaveText(['←', '→', 'F2', 'Del']);
+  await expect(bar.getByRole('button', { name: 'Keep it' })).toHaveCount(0);
+  await expect(marker('E11')).toBeFocused();
+  // Trash it moves the focus to the nearest marker on the grid, not the page.
+  await page.keyboard.press('Delete');
+  await bar.getByRole('button', { name: 'Trash it' }).click();
+  await expect(marker('E11')).toHaveCount(0);
+  await expect(grid().locator('.wg-marker:focus')).toHaveCount(1);
+  expect(
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id ?? null),
+  ).not.toBe('E11');
+  await blurAndUndo();
+  await expect(marker('E11')).toHaveCount(1);
+  expect((await getEvent('E11')).deletedAt).toBeFalsy();
+});
+
 test('IP-11 IP-4 the axis and the world around follow the bible’s numbers', async () => {
   const year = Number(
     await view()

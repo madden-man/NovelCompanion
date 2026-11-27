@@ -798,12 +798,12 @@ test('A57 places indent under their parent, and a description edits in place on 
   await expect(child).toHaveClass(/\bnested\b/);
   // The new place row names its content and shows its key.
   await expect(view.getByRole('button', { name: /^New place/ }).locator('kbd')).toHaveText('Enter');
-  // One click opens the description for the year shown; Enter saves it.
+  // One click opens the description for the year shown; Cmd+Enter saves it.
   const desc = child.getByTestId('place-desc');
   await expect(desc.getByTestId('place-desc-text')).toHaveText(
     'A narrow two-story house with a kitchen at the back.',
   );
-  await fillEditable(desc, 'A narrow house, kitchen at the back.');
+  await fillRich(desc, 'A narrow house, kitchen at the back.');
   const descriptions = async () =>
     (await invoke('entry.get', { collection: 'places', id: 'PLC2' })).entry.descriptions;
   await expect
@@ -826,12 +826,46 @@ test('A57 places indent under their parent, and a description edits in place on 
   const pier = view.locator(`li[data-place="${entry._id}"]`);
   await view.getByLabel('Year').fill('2040');
   await expect(pier.getByTestId('place-desc-text')).toHaveText('What Pier Nine is like in 2040');
-  await fillEditable(pier.getByTestId('place-desc'), 'Ferries to the coast.');
+  await fillRich(pier.getByTestId('place-desc'), 'Ferries to the coast.');
   await expect
     .poll(async () => (await invoke('entry.get', { collection: 'places', id: entry._id })).entry)
     .toMatchObject({
       descriptions: [{ startYear: 2040, endYear: null, text: 'Ferries to the coast.' }],
     });
+  await invoke('entry.delete', { collection: 'places', id: entry._id });
+});
+
+test('A57 a place description edited in place keeps its paragraphs, and its Chinese terms link to the glossary', async () => {
+  const two = 'Stilt houses over the 团圆 river.\n\nThe ferry runs at dawn.';
+  const { entry } = await invoke('entry.create', {
+    collection: 'places',
+    data: {
+      title: 'Ferry Landing',
+      parentId: 'PLC1',
+      descriptions: [{ startYear: null, endYear: null, text: two }],
+    },
+  });
+  const descriptions = async () =>
+    (await invoke('entry.get', { collection: 'places', id: entry._id })).entry.descriptions;
+  await screenTab(page, 'Cultural data', 'Places');
+  const view = page.getByTestId('cultural-data').getByTestId('places-view');
+  const desc = view.locator(`li[data-place="${entry._id}"]`).getByTestId('place-desc');
+  // Shown as two paragraphs; one click, one character, and leaving the box saves both.
+  await expect(desc.getByTestId('place-desc-text').locator('p')).toHaveCount(2);
+  await desc.getByTestId('place-desc-text').getByText('The ferry runs at dawn.').click();
+  const box = desc.getByRole('textbox');
+  await expect(box).toBeFocused();
+  await page.keyboard.press('End');
+  await page.keyboard.type('!');
+  await box.blur();
+  await expect(box).toHaveCount(0);
+  await expect.poll(descriptions).toEqual([{ startYear: null, endYear: null, text: `${two}!` }]);
+  await expect(desc.getByTestId('place-desc-text').locator('p')).toHaveCount(2);
+  // The term in the description links to its glossary entry.
+  const run = desc.getByRole('link', { name: /团圆/ });
+  await expect(run).toHaveAttribute('data-term', 'GL3');
+  await run.click();
+  await expect(page.getByTestId('editor').getByRole('heading', { name: '团圆' })).toBeVisible();
   await invoke('entry.delete', { collection: 'places', id: entry._id });
 });
 
