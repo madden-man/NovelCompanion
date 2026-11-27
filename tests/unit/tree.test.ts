@@ -465,7 +465,7 @@ describe('FT-2 in-tree actions', () => {
     expect(mate[0]!.data.familyIds).toEqual([]);
     expect(planAddRelative(g, { ...base, kind: 'person', anchorId: null }, ids())).toHaveLength(1);
     expect(() => planAddRelative(g, { ...base, kind: 'sibling', anchorId: 'X1' }, ids())).toThrow(
-      'Tomas Reyes has no known parents, so a sibling has no one to link to. Add a parent first.',
+      'Tomas Reyes has no known parents, so a sibling has no one to link to.',
     );
   });
 });
