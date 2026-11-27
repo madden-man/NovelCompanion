@@ -15,6 +15,8 @@ import { APPEARANCES } from '../../../shared/ipcApp';
 import type { Appearance, MongoSettingsWire } from '../../../shared/ipcApp';
 import { applyAppearance } from '../appearance';
 import { WriteFieldset, useConnection } from '../connection';
+import { useCapabilities } from '../capabilities';
+import { PhoneKeySettings } from './phoneKey';
 import { RomanizationSystems } from './romanizationSystems';
 import { BibleVocabularySettings, ClaudeInstructionsSettings } from './settingsGroups';
 import './settings.css';
@@ -45,17 +47,21 @@ function LoadFailed(props: { what: string; error: string; testId: string }) {
  * secret in the keychain (ARCH-5).
  */
 export function SettingsView() {
+  const can = useCapabilities();
   return (
     <section className="ws-wide stack" aria-labelledby="settings-title" data-testid="settings-view">
       <h2 id="settings-title">Settings</h2>
-      <ClaudeSettings />
+      {can('claude.status') && <ClaudeSettings />}
       <BibleSettings />
-      <div className="stack" data-testid="mongo-settings-section">
-        <h3>MongoDB</h3>
-        <div className="panel stack tight">
-          <MongoSettings title={<h4>Connection string</h4>} />
+      {can('mongo.status') && (
+        <div className="stack" data-testid="mongo-settings-section">
+          <h3>MongoDB</h3>
+          <div className="panel stack tight">
+            <MongoSettings title={<h4>Connection string</h4>} />
+          </div>
         </div>
-      </div>
+      )}
+      {can('phoneKey.status') && <PhoneKeySettings />}
       <AppearanceSettings />
     </section>
   );
@@ -63,12 +69,13 @@ export function SettingsView() {
 
 /** ST-1: settings kept in the open bible (GL-1 romanization, BK-1 snapshot count). */
 function BibleSettings() {
+  const can = useCapabilities();
   return (
     <div className="stack" data-testid="bible-settings">
       <h3>This bible</h3>
       <WriteFieldset className="stack">
         <RomanizationSettings />
-        <SnapshotSettings />
+        {can('snapshot.list') && <SnapshotSettings />}
       </WriteFieldset>
       <BibleVocabularySettings />
     </div>

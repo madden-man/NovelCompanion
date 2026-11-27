@@ -66,6 +66,7 @@ import { openBackstory } from '../backstory/nav';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { rasterize, standaloneSvg } from './exportImage';
+import { useCapabilities } from '../../capabilities';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
@@ -330,6 +331,7 @@ export function TreeView(props: {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(props.focus ?? null);
   const [view, setView] = useState<View | null>(null);
+  const can = useCapabilities();
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
   /** FT-11: the person being dragged and where they are right now, drawn live. */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -989,9 +991,11 @@ export function TreeView(props: {
           >
             Tidy layout
           </button>
-          <button type="button" className="btn small" onClick={() => void exportPng()}>
-            Export
-          </button>
+          {can('tree.export') && (
+            <button type="button" className="btn small" onClick={() => void exportPng()}>
+              Export
+            </button>
+          )}
           <button type="button" className="btn small" aria-pressed={full} onClick={toggleFull}>
             {full ? 'Exit full screen' : 'Full screen'}
           </button>

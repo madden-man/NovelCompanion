@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type * as ServerModule from '../src/server/index';
 import { importSource } from './import-source.ts';
+import { readBuildId } from './build-id.ts';
 
 /**
  * A58: the hosted function on a local port, for development and tests. `/rpc`
@@ -33,8 +34,10 @@ if (!process.env.NC_PHONE_KEY) console.warn('NC_PHONE_KEY is not set, so every r
 
 const rpc = server.createRpc({
   env: process.env,
-  // A no-op until the coordinator wires P2's `freshenOpenBible` here at merge.
-  freshen: async () => ({ moved: false }),
+  // PH-7: the open bible is made fresh before each request.
+  freshen: server.freshenOpenBible,
+  // PH-21: the id the last web build baked in, so the local server answers as the function would.
+  buildId: readBuildId(ROOT) ?? undefined,
 });
 const port = Number(values.port);
 server.webServer({ rpc, staticDir }).listen(port, values.host, () => {

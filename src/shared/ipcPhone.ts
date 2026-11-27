@@ -142,6 +142,13 @@ export const CHANNEL_REACH = {
   'settings.set': 'phone',
   'eraDefaults.get': 'phone',
   'eraDefaults.set': 'phone',
+  // A58 P4: what this client may use (PH-5) and what changed elsewhere (PH-9).
+  'app.capabilities': 'phone',
+  'bible.changes': 'phone',
+  // The phone key lives in the Mac's keychain (PH-15); the function reads its own from the site.
+  'phoneKey.status': 'desk',
+  'phoneKey.make': 'desk',
+  'phoneKey.copy': 'desk',
 } as const satisfies Record<Channel, Reach>;
 
 /** Every channel the phone may use, in the contract's marking order. */

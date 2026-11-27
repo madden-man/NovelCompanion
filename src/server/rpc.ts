@@ -18,6 +18,18 @@ import { takeDailyPhoneSnapshot } from './phoneSnapshots';
 /** PH-21: the header that carries the server's build id on every answer. */
 export const BUILD_HEADER = 'X-NC-Build';
 
+/**
+ * PH-9: the open bible's `rev` around a request, so the phone can tell a
+ * change made elsewhere from its own: `X-NC-Rev-Before` once the bible is
+ * fresh, `X-NC-Rev` after the handler, counting only this function's writes.
+ * Sent only when the request ran in the bible it named.
+ */
+export const REV_HEADERS = {
+  bible: 'X-NC-Rev-Bible',
+  before: 'X-NC-Rev-Before',
+  after: 'X-NC-Rev',
+} as const;
+
 /** What the phone sends: the channel, its request and context, and the bible it is on. */
 export const RpcBody = z.strictObject({
   channel: z.string().min(1),
@@ -78,6 +90,8 @@ export interface RpcDeps {
   freshen: () => Promise<{ moved: boolean }>;
   /** The clock for the daily phone snapshot (PH-23). */
   now?: () => Date;
+  /** PH-21: the build id baked in at build time; `NC_BUILD_ID`, then `COMMIT_REF`, then `dev` when absent. */
+  buildId?: string;
 }
 
 export type Rpc = ((request: Request) => Promise<Response>) & {
@@ -132,7 +146,7 @@ export function createRpc(deps: RpcDeps): Rpc {
     headers.set('Content-Type', 'application/json; charset=utf-8');
     headers.set('Cache-Control', 'no-store');
     headers.set('X-Robots-Tag', 'noindex');
-    headers.set(BUILD_HEADER, deps.env.NC_BUILD_ID || deps.env.COMMIT_REF || 'dev');
+    headers.set(BUILD_HEADER, deps.buildId || deps.env.NC_BUILD_ID || deps.env.COMMIT_REF || 'dev');
     return new Response(JSON.stringify(body), { status, headers });
   };
   const fail = (code: RpcErrorCode, error: string, extra?: Record<string, string>) =>
@@ -161,9 +175,19 @@ export function createRpc(deps: RpcDeps): Rpc {
           return fail('snapshot', NO_SNAPSHOT);
         }
       }
+      const before = session?.repo.rev;
       events.begin();
       const result = await run(channel, body.request, body.context);
-      return answer(200, { result, events: events.end() });
+      const after = openSession();
+      const revs =
+        session && after === session && body.bible === session.handle.id
+          ? {
+              [REV_HEADERS.bible]: session.handle.id,
+              [REV_HEADERS.before]: String(before),
+              [REV_HEADERS.after]: String(session.repo.rev),
+            }
+          : undefined;
+      return answer(200, { result, events: events.end() }, revs);
     } catch (e) {
       events.end();
       if (e instanceof VersionMismatchError) return fail(e.kind, e.message);

@@ -1,6 +1,7 @@
 import { Entry } from '@napi-rs/keyring';
 import { testMongoUri } from './host/uri';
 import type { MongoUriStore, UriLookup } from './host/uri';
+import type { PhoneKeyStore } from './host/phoneKey';
 
 // A58: the rules for the address and the test seams live in host/uri.ts, free of the
 // keychain, so the handler table loads in a process with no keychain. They are re-exported
@@ -53,5 +54,24 @@ export class KeychainMongoUriStore implements MongoUriStore {
   }
   set(uri: string): void {
     this.entry().setPassword(uri);
+  }
+}
+
+/** A58 (PH-15): the phone key the site's `NC_PHONE_KEY` must hold, in its own keychain item. */
+export const PHONE_KEY_SERVICE = 'novel-companion-phone-key';
+
+export class KeychainPhoneKeyStore implements PhoneKeyStore {
+  private entry(): Entry {
+    return new Entry(PHONE_KEY_SERVICE, KEYCHAIN_ACCOUNT);
+  }
+  get(): string | null {
+    try {
+      return this.entry().getPassword() || null;
+    } catch {
+      return null;
+    }
+  }
+  set(key: string): void {
+    this.entry().setPassword(key);
   }
 }

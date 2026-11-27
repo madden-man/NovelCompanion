@@ -7,6 +7,7 @@ import { uniqueSlug } from './bibleSlug';
 import { Workspace } from './workspace/Workspace';
 import { ConnectionBanner, ConnectionProvider, useConnection } from './connection';
 import { useAppearance } from './appearance';
+import { useCapabilities } from './capabilities';
 import { MongoSettings } from './workspace/settings';
 import { saveBeforeSwitch } from './workspace/undo';
 
@@ -31,6 +32,7 @@ function Shell() {
   const [notice, setNotice] = useState<string | null>(null);
   // ARCH-6: when the connection comes back (or goes), the list of bibles loads again.
   const connectionState = useConnection().status?.state;
+  const can = useCapabilities();
 
   useEffect(() => {
     let live = true;
@@ -104,10 +106,10 @@ function Shell() {
         <h2 id="bibles-heading">Bibles</h2>
         <BibleSwitcher list={list} current={current} opening={opening} onOpen={open} />
       </section>
-      {list?.connection === 'connected' && (
+      {list?.connection === 'connected' && can('bible.create') && (
         <NewBible taken={list.bibles.map((b) => b.id)} onError={setError} />
       )}
-      {list?.connection === 'unavailable' && !current && (
+      {list?.connection === 'unavailable' && !current && can('mongo.status') && (
         <section className="panel stack" aria-labelledby="mongo-launch-heading">
           <h2 id="mongo-launch-heading">MongoDB connection</h2>
           <MongoSettings />
@@ -124,7 +126,7 @@ function Shell() {
           <BibleMenu
             current={current}
             bibles={list?.bibles.length ? list.bibles : [current]}
-            canCreate={list?.connection === 'connected'}
+            canCreate={list?.connection === 'connected' && can('bible.create')}
             busy={opening}
             onOpen={open}
             onCreate={create}

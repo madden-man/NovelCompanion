@@ -11,6 +11,7 @@ import {
   isPhoneChannel,
 } from '../../src/shared/ipcPhone';
 import { bearerKey, keyMatches } from '../../src/server/rpc';
+import { readBuildId, writeBuildId } from '../../scripts/build-id';
 
 const ROOT = join(import.meta.dirname, '../..');
 
@@ -115,6 +116,8 @@ describe('PH-14 the phone key', () => {
 
 describe('PH-2 what the function bundle holds', () => {
   test('PH-2 the bundle of netlify/functions/rpc.mts holds no Electron, keyring or Agent SDK', async () => {
+    // PH-21: the function imports the build id the web build writes first, as on Netlify.
+    if (!readBuildId(ROOT)) writeBuildId(ROOT);
     const result = await build({
       entryPoints: [join(ROOT, 'netlify/functions/rpc.mts')],
       bundle: true,

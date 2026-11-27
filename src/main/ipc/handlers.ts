@@ -36,6 +36,7 @@ import { BridgeService } from '../bridge/service';
 import { BridgeStore } from '../db/bridge';
 import { worldForBible } from '../../shared/bridge';
 import { EntryMoved } from '../db/repository';
+import { pwaHandlers } from './pwaHandlers';
 
 /**
  * A58: the host this table was built for: the Electron main process, or a
@@ -477,6 +478,10 @@ export function registerHandlers(host: Host): HandlerTable {
     return { ok: true as const };
   });
   registerAppHandlers();
+  // A58 P4: capabilities, what changed elsewhere, and the phone key.
+  const pwa = pwaHandlers(app, () => current?.session ?? null);
+  for (const channel of Object.keys(pwa) as (keyof typeof pwa)[])
+    handle(channel, pwa[channel] as never);
   const handlers = bibleHandlers(() => current?.session ?? null, fileDeps);
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, guard(channel, handlers[channel] as Handler<BibleChannel>));
