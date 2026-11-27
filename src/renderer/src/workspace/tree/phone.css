@@ -1,0 +1,119 @@
+/* A58 U4: the family tree on the phone (PH-33). The tree fills the room
+   between the top and bottom bars and takes every finger on it, so the page
+   behind never scrolls or zooms. Theme tokens only; the desk never sees these. */
+:root[data-phone] .ph-frame .ws-tree-area.tree-screen {
+  position: fixed;
+  top: calc(var(--ph-top) + var(--ph-safe-top));
+  bottom: calc(var(--ph-bottom) + var(--ph-safe-bottom));
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  grid-column: auto;
+  grid-row: auto;
+}
+:root[data-phone] .ph-frame .tree-screen .tree-main.fill {
+  flex: 1 1 auto;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  padding: 8px var(--ph-gutter-right) 8px var(--ph-gutter-left);
+}
+:root[data-phone] .ph-frame .tree-bar {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .tree-bar .btn.small,
+:root[data-phone] .ph-frame .tree-ctl .btn.small,
+:root[data-phone] .ph-frame .tree-legend .btn.small {
+  min-height: var(--ph-target);
+  min-width: var(--ph-target);
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .tree-wrap {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+:root[data-phone] .ph-frame .tree-svg {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* The life states key stays a key; it wraps under the Legend button, and a
+   finger on the tree beside or under it still reaches the tree. */
+:root[data-phone] .ph-frame .tree-legend > .tree-key-row {
+  pointer-events: none;
+}
+:root[data-phone] .ph-frame .tree-key-row > .btn {
+  pointer-events: auto;
+}
+:root[data-phone] .ph-frame .tree-key {
+  font-size: 0.8rem;
+}
+:root[data-phone] .ph-frame .tree-legend .legend {
+  max-height: 50vh;
+}
+
+/* A person held up by a finger: an accent outline and a lit card. */
+:root[data-phone] .ph-frame .tnode.lifted .tnode-box {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 5;
+}
+/* The collapse control's 44 px target around its drawn circle. */
+:root[data-phone] .ph-frame .tnode-toggle circle.tnode-hit {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
+/* The person sheet: years, state, Open, and the family from the top down. */
+:root[data-phone] .ph-frame .ph-tree-person {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+:root[data-phone] .ph-frame .ph-tree-years {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-phone] .ph-frame .ph-tree-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+:root[data-phone] .ph-frame .ph-tree-rel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+:root[data-phone] .ph-frame .ph-tree-detail {
+  color: var(--fg-2);
+  font-size: 0.9rem;
+}
+:root[data-phone] .ph-frame .ph-tree-warnings > li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 0;
+}
+:root[data-phone] .ph-frame .ph-tree-warning {
+  margin: 0;
+}
+
+/* End years over the people, haloed in the tree's own surface. */
+:root[data-phone] .ph-frame .tree-labels .tunion-end {
+  paint-order: stroke;
+  stroke: var(--chart-surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}

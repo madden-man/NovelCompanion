@@ -17,5 +17,13 @@ export default defineConfig({
   reporter: 'list',
   forbidOnly: true,
   use: { serviceWorkers: 'block' },
-  projects: [{ name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } }],
+  projects: [
+    { name: 'iphone', use: { ...devices['iPhone 15'], serviceWorkers: 'block' } },
+    // A58 U4: real touch events (CDP Input.dispatchTouchEvent) for drags and pinches, at iPhone size.
+    {
+      name: 'touch',
+      testMatch: ['**/phone-tree.spec.ts'],
+      use: { ...devices['iPhone 15'], browserName: 'chromium', serviceWorkers: 'block' },
+    },
+  ],
 });

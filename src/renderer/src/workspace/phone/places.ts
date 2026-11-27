@@ -52,7 +52,13 @@ export type Page =
   /** A screen with up to two arguments (a person, a moment, a tab, a page ID). */
   | { kind: 'screen'; screen: Screen; arg?: string; arg2?: string; at?: number };
 
-export type Sheet = 'year' | 'bibles' | 'changes' | 'capturePick';
+export type Sheet =
+  | 'year'
+  | 'bibles'
+  | 'changes'
+  | 'capturePick'
+  // A58 U4: the family tree's person and warnings sheet.
+  | 'tree';
 
 export interface NavState {
   tab: Tab;

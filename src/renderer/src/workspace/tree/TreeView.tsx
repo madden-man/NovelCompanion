@@ -71,12 +71,19 @@ import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
 import { positionQueue } from './positionQueue';
+import { usePhone } from '../../phone';
+import { usePhoneNavIfAny } from '../phone/nav';
+import { PhoneTreeSheet } from './PhoneTreeSheet';
+import { useTreeTouch, zoomAbout } from './touch';
 import './tree.css';
+import './phone.css';
 
 type TreeData = Response<'tree.get'>;
 type View = { x: number; y: number; w: number; h: number };
 
 const PAD = 40;
+/** A58 U4: on the phone, Fit stops at this many view units per screen pixel, so names stay readable. */
+const READ_K = 1.25;
 /** A pointer that moves less than this many screen pixels is a click, not a drag (FT-11). */
 const DRAG_START = 4;
 /** A57: the drop zones a dragged person sees over another, in screen pixels. */
@@ -160,6 +167,10 @@ interface NodeProps {
   onCard: (card: { text: string; el: Element } | null) => void;
   /** A57: the + parent, + partner and + child stubs; absent while read-only. */
   onAdd?: (id: string, kind: StubKind) => void;
+  /** A58 U4: held up by a finger to be moved (phone). */
+  lifted?: boolean;
+  /** A58 U4: half a 44 px target in view units, for the collapse control (phone). */
+  hitR?: number;
 }
 
 type StubKind = 'parent' | 'partner' | 'child';
@@ -208,7 +219,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
   const h = NODE_H / stripes.length;
   return (
     <g
-      className={`tnode ${s.state}${s.state === 'alive' && s.dyingThisYear ? ' dying' : ''}${p.selected ? ' selected' : ''}${p.collapsed ? ' collapsed' : ''}`}
+      className={`tnode ${s.state}${s.state === 'alive' && s.dyingThisYear ? ' dying' : ''}${p.selected ? ' selected' : ''}${p.collapsed ? ' collapsed' : ''}${p.lifted ? ' lifted' : ''}`}
       transform={`translate(${p.x},${p.y})`}
       tabIndex={0}
       role="button"
@@ -270,7 +281,14 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
             }
           }}
         >
-          <circle cx={NODE_W - 14} cy={53} r={8} />
+          {p.hitR !== undefined && (
+            <circle className="tnode-hit" cx={NODE_W - 14} cy={53} r={Math.max(8, p.hitR)} />
+          )}
+          <circle
+            cx={NODE_W - 14}
+            cy={53}
+            r={p.hitR !== undefined ? Math.max(8, p.hitR * 0.55) : 8}
+          />
           <text x={NODE_W - 14} y={57} textAnchor="middle">
             {p.collapsed ? '+' : '−'}
           </text>
@@ -332,6 +350,9 @@ export function TreeView(props: {
   const [selected, setSelected] = useState<string | null>(props.focus ?? null);
   const [view, setView] = useState<View | null>(null);
   const can = useCapabilities();
+  /** A58 U4: on the phone the tree takes touch, and the inspector is a bottom sheet. */
+  const phone = usePhone();
+  const nav = usePhoneNavIfAny();
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
   /** FT-11: the person being dragged and where they are right now, drawn live. */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -493,7 +514,9 @@ export function TreeView(props: {
       if (moves.length) {
         const cmd = treeMoveCommand('Tidied the tree layout', call, moves, nameOf);
         undo.record(cmd);
-        setToast({ text: 'Layout tidied', cmd });
+        // A58 U4: on the phone the shell's toast carries the Undo button.
+        if (phone) undo.toast('Layout tidied');
+        else setToast({ text: 'Layout tidied', cmd });
       }
       setData((d) => (d ? { ...d, positions } : d));
       fitted.current = false;
@@ -621,6 +644,8 @@ export function TreeView(props: {
 
   /** The tree box's size when the view last matched it, so a resize keeps everyone in place. */
   const boxSize = useRef<{ w: number; h: number } | null>(null);
+  /** A58 U4: the tree box's width on screen, for the phone's 44 px collapse targets. */
+  const [boxW, setBoxW] = useState(0);
   const fit = useCallback(() => {
     const el = wrap.current;
     if (el && el.clientWidth > 0) boxSize.current = { w: el.clientWidth, h: el.clientHeight };
@@ -629,8 +654,23 @@ export function TreeView(props: {
     let h = bbox.height;
     if (w / h < ar) w = h * ar;
     else h = w / ar;
+    const cap = phone && el ? el.clientWidth * READ_K : Infinity;
+    if (w > cap) {
+      // A58 U4: a tree wider than the phone fits at a readable size, its top row in view.
+      const k = cap / w;
+      setView({ x: bbox.x + bbox.width / 2 - (w * k) / 2, y: bbox.y, w: w * k, h: h * k });
+      return;
+    }
     setView({ x: bbox.x - (w - bbox.width) / 2, y: bbox.y - (h - bbox.height) / 2, w, h });
-  }, [bbox]);
+  }, [bbox, phone]);
+  /** How narrow and how wide the view may get: the desk's bounds, or on the phone 3x in to the whole tree out. */
+  const zoomLimits = useCallback(() => {
+    const el = wrap.current;
+    if (!phone || !el || !el.clientWidth || !el.clientHeight) return { min: 120, max: 40_000 };
+    const ar = el.clientWidth / el.clientHeight;
+    const whole = Math.max(bbox.width, bbox.height * ar);
+    return { min: el.clientWidth / 3, max: Math.max(whole * 1.25, el.clientWidth * READ_K) };
+  }, [bbox, phone]);
 
   useEffect(() => {
     const sync = () => setFull(document.fullscreenElement === area.current);
@@ -666,6 +706,7 @@ export function TreeView(props: {
     if (!el) return;
     const w = el.clientWidth;
     const h = el.clientHeight;
+    setBoxW(w);
     const was = boxSize.current;
     boxSize.current = { w, h };
     if (!was || !was.w || !was.h || !w || !h || (was.w === w && was.h === h)) return;
@@ -686,16 +727,60 @@ export function TreeView(props: {
     }
   }, [layout, fit]);
 
-  const zoom = useCallback((factor: number, cx?: number, cy?: number) => {
-    setView((v) => {
-      if (!v) return v;
-      const px = cx ?? v.x + v.w / 2;
-      const py = cy ?? v.y + v.h / 2;
-      const w = Math.min(Math.max(v.w * factor, 120), 40_000);
-      const k = w / v.w;
-      return { x: px - (px - v.x) * k, y: py - (py - v.y) * k, w, h: v.h * k };
-    });
-  }, []);
+  const zoom = useCallback(
+    (factor: number, cx?: number, cy?: number) => {
+      const { min, max } = zoomLimits();
+      setView((v) =>
+        v ? zoomAbout(v, factor, { x: cx ?? v.x + v.w / 2, y: cy ?? v.y + v.h / 2 }, min, max) : v,
+      );
+    },
+    [zoomLimits],
+  );
+
+  /**
+   * A58 U4 (PH-33): the phone's gestures. A lifted person moves to a slot as
+   * the desk's drag does (moveTo), and a drop over another person is a move:
+   * the phone never links.
+   */
+  const touch = useTreeTouch({
+    svg,
+    view,
+    setView,
+    limits: zoomLimits,
+    canLift: phone && !ro.off,
+    at: (id) => layout?.nodes.get(id),
+    onDrag: (id, x, y) => setMoving({ id, x, y }),
+    onDrop: (id, x, y) => {
+      setMoving(null);
+      void moveTo(id, x, y);
+    },
+    onCancel: () => setMoving(null),
+  });
+  /** A58 U4: a tap on a person selects them and raises their sheet. */
+  const phoneSelect = useCallback(
+    (id: string) => {
+      if (touch.swallowClick()) return;
+      setSelected(id);
+      nav?.openSheet('tree');
+    },
+    [touch, nav],
+  );
+  // A58 U4: a finger on the tree never scrolls or zooms the page behind it (iOS).
+  useEffect(() => {
+    const el = wrap.current;
+    if (!phone || !el) return;
+    const stop = (e: Event) => e.preventDefault();
+    el.addEventListener('touchmove', stop, { passive: false });
+    el.addEventListener('gesturestart', stop);
+    el.addEventListener('gesturechange', stop);
+    el.addEventListener('contextmenu', stop);
+    return () => {
+      el.removeEventListener('touchmove', stop);
+      el.removeEventListener('gesturestart', stop);
+      el.removeEventListener('gesturechange', stop);
+      el.removeEventListener('contextmenu', stop);
+    };
+  }, [phone, data]);
 
   // Wheel zoom about the pointer; a native listener so the page does not scroll.
   useEffect(() => {
@@ -944,7 +1029,8 @@ export function TreeView(props: {
   };
 
   // A57: the inspector shows with a selection, the Add person form, or warnings to show.
-  const inspecting = Boolean(selected) || adding === 'person' || Boolean(data?.warnings.length);
+  const inspecting =
+    !phone && (Boolean(selected) || adding === 'person' || Boolean(data?.warnings.length));
   // The column changes in this commit: follow it before the paint, not a frame later,
   // or the tree is drawn centred in the new box for a moment and people jump sideways.
   useLayoutEffect(() => {
@@ -970,17 +1056,19 @@ export function TreeView(props: {
       {/* A45: no heading or count; the toolbar and the tree fill the middle column. */}
       <section className="tree-main fill" aria-label="Family tree">
         <div className="tree-bar" role="toolbar" aria-label="Family tree tools">
-          <button
-            type="button"
-            className="btn primary small"
-            onClick={() => setAdding('person')}
-            disabled={ro.off}
-            {...ro.tip}
-          >
-            Add person
-          </button>
+          {!phone && (
+            <button
+              type="button"
+              className="btn primary small"
+              onClick={() => setAdding('person')}
+              disabled={ro.off}
+              {...ro.tip}
+            >
+              Add person
+            </button>
+          )}
           <button type="button" className="btn small" onClick={fit}>
-            Fit to window
+            {phone ? 'Fit' : 'Fit to window'}
           </button>
           <button
             type="button"
@@ -996,14 +1084,19 @@ export function TreeView(props: {
               Export
             </button>
           )}
-          <button type="button" className="btn small" aria-pressed={full} onClick={toggleFull}>
-            {full ? 'Exit full screen' : 'Full screen'}
-          </button>
+          {!phone && (
+            <button type="button" className="btn small" aria-pressed={full} onClick={toggleFull}>
+              {full ? 'Exit full screen' : 'Full screen'}
+            </button>
+          )}
           {/* FT-6: the count clears the selection, so the inspector shows the warnings. */}
           <button
             type="button"
             className={`btn small tree-warn-count${data.warnings.length ? ' warn-chip' : ''}`}
-            onClick={showWarnings}
+            onClick={() => {
+              showWarnings();
+              nav?.openSheet('tree');
+            }}
             data-testid="tree-warn-count"
           >
             {data.warnings.length === 0
@@ -1040,10 +1133,10 @@ export function TreeView(props: {
             data-year={year}
             tabIndex={0}
             onKeyDown={onTreeKey}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
+            onPointerDown={phone ? touch.onPointerDown : onPointerDown}
+            onPointerMove={phone ? touch.onPointerMove : onPointerMove}
+            onPointerUp={phone ? touch.onPointerUp : endDrag}
+            onPointerCancel={phone ? touch.onPointerUp : endDrag}
           >
             <g className="tree-edges">
               {edges.unions.map((u) => (
@@ -1053,7 +1146,7 @@ export function TreeView(props: {
                     d={u.path}
                     data-type={u.type}
                   />
-                  {u.label && u.endYear !== null && (
+                  {u.label && u.endYear !== null && !phone && (
                     <text
                       className="tunion-end"
                       x={u.label.x}
@@ -1094,18 +1187,44 @@ export function TreeView(props: {
                       collapsed={collapsed.has(p.id)}
                       branch={hasBranch(graph, p.id)}
                       colors={colorOf(p.familyIds)}
-                      onSelect={setSelected}
+                      onSelect={phone ? phoneSelect : setSelected}
                       onToggle={toggle}
                       onMove={nudge}
-                      onCard={showCard}
-                      onAdd={ro.off ? undefined : addFrom}
+                      onCard={phone ? noCard : showCard}
+                      onAdd={ro.off || phone ? undefined : addFrom}
+                      lifted={touch.lifted === p.id}
+                      hitR={phone && view && boxW ? (22 * view.w) / boxW : undefined}
                     />
                   );
                 })}
             </g>
+            {phone && (
+              // A58 U4: end years drawn over the people, with a halo, so a
+              // couple's narrow gap never cuts them; a couple's sits above the row.
+              <g className="tree-labels">
+                {edges.unions.map((u) =>
+                  u.label && u.endYear !== null ? (
+                    <text
+                      key={u.id}
+                      className="tunion-end"
+                      data-union-label={u.id}
+                      x={u.label.x}
+                      y={
+                        (u.label.y - NODE_H / 2) % ROW_H === 0
+                          ? u.label.y - NODE_H / 2 - 5
+                          : u.label.y - 6
+                      }
+                      textAnchor="middle"
+                    >
+                      ended {u.endYear}
+                    </text>
+                  ) : null,
+                )}
+              </g>
+            )}
           </svg>
           {zones && <DropZones graph={graph} zones={zones} />}
-          {toast && toastLive && (
+          {toast && toastLive && !phone && (
             <div className="tree-toast" role="status" data-testid="tree-toast">
               <span>{toast.text}</span>
               <button
@@ -1161,7 +1280,20 @@ export function TreeView(props: {
           />
         </div>
       </section>
-      {inspecting && (
+      {phone && (
+        <PhoneTreeSheet
+          graph={graph}
+          selected={selected}
+          year={year}
+          hint={(id) => zhHint(graph.byId.get(id)?.chinese ?? '', glossary)}
+          collapsed={selected ? collapsed.has(selected) : false}
+          warnings={data.warnings}
+          onSelect={setSelected}
+          onToggle={toggle}
+          onOpen={(id) => props.onOpen('characters', id)}
+        />
+      )}
+      {inspecting && !phone && (
         <TreeInspector
           key={selected ?? 'none'}
           graph={graph}
@@ -1184,6 +1316,9 @@ export function TreeView(props: {
  * IP-12: how a family colour draws: one of the four series tokens (so it
  * follows the theme) or, for any other stored hex, the hex itself.
  */
+/** A58 U4: no hover card on the phone; the sheet shows the meaning. */
+const noCard = () => undefined;
+
 function familyShade(color: unknown): string {
   const token = familyToken(color);
   if (token) return token;
