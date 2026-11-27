@@ -2,10 +2,15 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { BibleSlug } from '../shared/bible';
 import { plainErrorMessage } from '../shared/errors';
-import { isChannel } from '../shared/ipc';
+import { isChannel, parseCallContext } from '../shared/ipc';
 import type { Channel } from '../shared/ipc';
-import { isWriteChannel } from '../shared/ipcApp';
-import { DESK_ONLY_MESSAGE, isPhoneChannel } from '../shared/ipcPhone';
+import { OtherBibleError, isWriteChannel } from '../shared/ipcApp';
+import {
+  DESK_ONLY_MESSAGE,
+  NO_BIBLE_MESSAGE,
+  isBibleFree,
+  isPhoneChannel,
+} from '../shared/ipcPhone';
 import { VersionMismatchError, assertSameVersion } from '../main/db/session';
 import { openSession, registerHandlers } from '../main/ipc/handlers';
 import { isConnectionError } from '../main/ipc/offline';
@@ -107,7 +112,8 @@ export function bearerKey(request: Request): string | null {
  * A58: the hosted function's one route, a plain Fetch handler. It serves the
  * desktop's handler table to the phone, one request at a time: the key first
  * (PH-14), a desk channel refused before anything runs (PH-4), then the asked
- * bible opened unmigrated (PH-19) and made fresh (PH-7), today's phone
+ * bible opened unmigrated (PH-19) and made fresh (PH-7), or, with no bible
+ * named, only the chooser's bible-free channels (PH-18), today's phone
  * snapshot before the first write (PH-23), and the handler, whose events
  * come back in the envelope (PH-12). Every answer is `no-store`, `noindex`
  * and carries the build id (PH-21).
@@ -144,25 +150,30 @@ export function createRpc(deps: RpcDeps): Rpc {
   async function serve(body: z.output<typeof RpcBody>): Promise<Response> {
     const channel = body.channel as Channel;
     try {
-      if (body.bible !== null) {
+      const context = parseCallContext(body.context);
+      if (body.bible === null) {
+        // The chooser: nothing a bible-free channel does reads the bible an earlier request opened.
+        if (!isBibleFree(channel)) return fail('refused', NO_BIBLE_MESSAGE);
+      } else {
         let open = (await run('bible.current', {})).bible;
         if (open?.id !== body.bible) open = (await run('bible.open', { slug: body.bible })).bible;
         // PH-19 on every request: the desk may have migrated the bible since it opened here.
         const session = openSession();
         if (session) await assertSameVersion(session.handle, open?.name ?? body.bible);
-      }
-      await deps.freshen();
-      const session = openSession();
-      if (session && isWriteChannel(channel)) {
-        try {
-          await takeDailyPhoneSnapshot(session.handle, now());
-        } catch (e) {
-          console.error('Novel Companion phone snapshot:', e);
-          return fail('snapshot', NO_SNAPSHOT);
+        // A57 on the phone: a write carries the bible it was made in, and it is the one checked above.
+        if (isWriteChannel(channel) && context.bible !== body.bible) throw new OtherBibleError();
+        await deps.freshen();
+        if (session && isWriteChannel(channel)) {
+          try {
+            await takeDailyPhoneSnapshot(session.handle, now());
+          } catch (e) {
+            console.error('Novel Companion phone snapshot:', e);
+            return fail('snapshot', NO_SNAPSHOT);
+          }
         }
       }
       events.begin();
-      const result = await run(channel, body.request, body.context);
+      const result = await run(channel, body.request, context);
       return answer(200, { result, events: events.end() });
     } catch (e) {
       events.end();

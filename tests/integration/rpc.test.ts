@@ -11,7 +11,12 @@ import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
 import { ALLOW_TEST_URI_ENV, TEST_DB_NAME_ENV, TEST_URI_ENV } from '../../src/main/host/uri';
 import { openSession } from '../../src/main/ipc/handlers';
 import { reloadSession } from '../../src/main/backup/restore';
-import { DESK_ONLY_MESSAGE, PHONE_CHANNELS } from '../../src/shared/ipcPhone';
+import {
+  BIBLE_FREE_CHANNELS,
+  DESK_ONLY_MESSAGE,
+  NO_BIBLE_MESSAGE,
+  PHONE_CHANNELS,
+} from '../../src/shared/ipcPhone';
 import type { Channel, CallContext, Request as ChannelRequest } from '../../src/shared/ipc';
 import { BUILD_HEADER, createRpc } from '../../src/server/rpc';
 import type { Rpc, RpcEnvelope, RpcError } from '../../src/server/rpc';
@@ -349,6 +354,57 @@ describe('PH-19 the function never migrates', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as RpcError).code).toBe('newer');
     await unchanged(bible, LATEST_SCHEMA_VERSION + 1, story);
+  });
+
+  test('PH-19 a write with no bible named is refused, so a bible the desk migrated is never written through an earlier open', async () => {
+    const bible = await fixture('ph19-null');
+    await ok(await call('entry.get', { collection: 'characters', id: 'H1' }, bible));
+    await store.db.collection('bibles').updateOne({ _id: bible } as never, {
+      $set: { schemaVersion: LATEST_SCHEMA_VERSION + 1 },
+    });
+    const story = await backstory(bible);
+    const patch = { collection: 'characters', id: 'H1', patch: { backstory: 'Never.' } } as const;
+    for (const res of [
+      await call('entry.update', patch, null),
+      await call('entry.update', patch, null, { bible }),
+    ]) {
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as RpcError).error).toBe(NO_BIBLE_MESSAGE);
+    }
+    // A read with no bible named is refused too: nothing from an earlier open is reachable.
+    const read = await call('entry.get', { collection: 'characters', id: 'H1' }, null);
+    expect(read.status).toBe(422);
+    expect(((await read.json()) as RpcError).error).toBe(NO_BIBLE_MESSAGE);
+    await unchanged(bible, LATEST_SCHEMA_VERSION + 1, story);
+  });
+});
+
+describe('PH-18 the chooser needs no bible; everything else names one', () => {
+  test('PH-18 the bible-free channels answer with bible null and take no snapshot or freshen', async () => {
+    const bible = await fixture('ph18-free');
+    await ok(await call('entry.get', { collection: 'characters', id: 'H1' }, bible));
+    freshenSaw.length = 0;
+    const list = await ok(await call('bible.list', {}, null));
+    expect((list.result as { bibles: { id: string }[] }).bibles.map((b) => b.id)).toContain(bible);
+    await ok(await call('app.ping', { message: 'hi' }, null));
+    expect(freshenSaw).toEqual([]);
+    for (const channel of BIBLE_FREE_CHANNELS) {
+      expect(PHONE_CHANNELS as readonly string[]).toContain(channel);
+    }
+  });
+
+  test('PH-18 a write must carry the bible it was made in, the same one the request names', async () => {
+    const bible = await fixture('ph18-ctx');
+    const story = await backstory(bible);
+    const res = await call(
+      'entry.update',
+      { collection: 'characters', id: 'H1', patch: { backstory: 'No context.' } },
+      bible,
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as RpcError).error).toMatch(/no longer open/);
+    expect(await backstory(bible)).toBe(story);
+    expect(await phoneSnapshotCount(bible)).toBe(0);
   });
 });
 

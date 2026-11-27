@@ -159,5 +159,30 @@ export function isPhoneChannel(channel: string): channel is Channel {
   return Object.hasOwn(CHANNEL_REACH, channel) && CHANNEL_REACH[channel as Channel] === 'phone';
 }
 
+/**
+ * A58 (PH-18, PH-19): the phone channels that read no bible: the bible
+ * chooser and the app's own questions. Only these run when a request names no
+ * bible (`bible: null`); every other channel is refused, so nothing a request
+ * reads or writes ever reaches a bible it did not name and check. Exactly the
+ * phone channels registered outside the bible handler table;
+ * tests/unit/ipc-phone.test.ts holds the two together.
+ */
+export const BIBLE_FREE_CHANNELS = [
+  'app.ping',
+  'bible.list',
+  'bible.open',
+  'bible.current',
+  'appearance.get',
+  'words.lookup',
+] as const satisfies readonly Channel[];
+
+const BIBLE_FREE: ReadonlySet<string> = new Set(BIBLE_FREE_CHANNELS);
+
+/** True when the channel runs with no bible named. */
+export const isBibleFree = (channel: string): boolean => BIBLE_FREE.has(channel);
+
+/** A58: what the function answers on a bible channel sent with no bible named. */
+export const NO_BIBLE_MESSAGE = 'No bible is open on the phone, so nothing was read or changed.';
+
 /** PH-4: what the function answers on a desk channel. */
 export const DESK_ONLY_MESSAGE = 'This works in the desktop app on the Mac.';
