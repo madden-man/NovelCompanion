@@ -95,8 +95,8 @@ const when = (iso: string): string => {
 
 /**
  * ARCH-6: shown on every screen when MongoDB cannot be reached or a snapshot
- * is open read-only. It says what happened, what to do next, and offers the
- * most recent local snapshot.
+ * is open read-only. It says what happened; the buttons are the next steps,
+ * and the snapshot button names the bible and the time of the snapshot it opens.
  */
 export function ConnectionBanner(props: {
   onOpened?: (bible: { id: string; name: string }) => void;
@@ -155,12 +155,6 @@ export function ConnectionBanner(props: {
         <>
           <strong>MongoDB cannot be reached</strong>
           <span data-testid="connection-message">{status.message}</span>
-          {status.snapshot && (
-            <span>
-              The most recent snapshot is of {status.snapshot.name}, taken{' '}
-              {when(status.snapshot.takenAt)}.
-            </span>
-          )}
         </>
       )}
       <div className="row tight">
@@ -181,7 +175,9 @@ export function ConnectionBanner(props: {
             disabled={busy !== null}
             data-testid="open-snapshot"
           >
-            {busy === 'open' ? 'Opening the snapshot' : 'Open the latest snapshot read-only'}
+            {busy === 'open'
+              ? 'Opening the snapshot'
+              : `Open ${status.snapshot.name} from ${when(status.snapshot.takenAt)} read-only`}
           </button>
         )}
       </div>

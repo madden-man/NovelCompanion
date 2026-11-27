@@ -1,5 +1,5 @@
 import { useWriteGuard } from '../connection';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { SNAPSHOT_REASON_LABELS } from '../../../shared/domain/snapshots';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
@@ -21,6 +21,13 @@ export function BackupsView() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Snapshot | null>(null);
+  /** Each row's Restore button, so Cancel and Escape give the focus back to the one pressed. */
+  const restoreButtons = useRef(new Map<string, HTMLButtonElement>());
+  const cancel = () => {
+    const back = confirm ? restoreButtons.current.get(confirm.id) : undefined;
+    setConfirm(null);
+    back?.focus();
+  };
 
   const [loads, setLoads] = useState(0);
   useEffect(() => {
@@ -148,52 +155,61 @@ export function BackupsView() {
             </thead>
             <tbody>
               {data.snapshots.map((s) => (
-                <tr
-                  key={s.id}
-                  data-testid="snapshot-row"
-                  data-id={s.id}
-                  aria-current={confirm?.id === s.id ? 'true' : undefined}
-                >
-                  <th scope="row">{formatTime(s.takenAt)}</th>
-                  <td>
-                    {SNAPSHOT_REASON_LABELS[s.reason]}
-                    {s.label ? `: ${s.label}` : ''}
-                  </td>
-                  <td>{total(s.counts)}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn small"
-                      disabled={busy || ro.off}
-                      {...ro.tip}
-                      aria-label={`Restore the snapshot from ${formatTime(s.takenAt)}`}
-                      data-testid="snapshot-restore"
-                      onClick={() => setConfirm(s)}
-                    >
-                      Restore
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={s.id}>
+                  <tr
+                    data-testid="snapshot-row"
+                    data-id={s.id}
+                    aria-current={confirm?.id === s.id ? 'true' : undefined}
+                  >
+                    <th scope="row">{formatTime(s.takenAt)}</th>
+                    <td>
+                      {SNAPSHOT_REASON_LABELS[s.reason]}
+                      {s.label ? `: ${s.label}` : ''}
+                    </td>
+                    <td>{total(s.counts)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={busy || ro.off}
+                        {...ro.tip}
+                        aria-label={`Restore the snapshot from ${formatTime(s.takenAt)}`}
+                        data-testid="snapshot-restore"
+                        ref={(el) => {
+                          if (el) restoreButtons.current.set(s.id, el);
+                          else restoreButtons.current.delete(s.id);
+                        }}
+                        onClick={() => setConfirm(s)}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                  {confirm?.id === s.id && !ro.off && (
+                    // BK-2: the confirm sits under the row that was pressed.
+                    <tr className="snapshot-confirm-row" data-testid="snapshot-confirm-row">
+                      <td colSpan={4}>
+                        <ConfirmLine
+                          action="Replace"
+                          keep="Cancel"
+                          testId="snapshot-confirm"
+                          onConfirm={() => restore(s)}
+                          onCancel={cancel}
+                        >
+                          <strong>
+                            Replace {bible ?? s.name ?? 'this bible'} with the snapshot from{' '}
+                            {formatTime(s.takenAt)}?
+                          </strong>{' '}
+                          Everything in it now is replaced. The present state is snapshotted first.
+                        </ConfirmLine>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-      {confirm && !ro.off && (
-        <ConfirmLine
-          key={confirm.id}
-          action="Replace"
-          keep="Cancel"
-          testId="snapshot-confirm"
-          onConfirm={() => restore(confirm)}
-          onCancel={() => setConfirm(null)}
-        >
-          <strong>
-            Replace {bible ?? confirm.name ?? 'this bible'} with the snapshot from{' '}
-            {formatTime(confirm.takenAt)}?
-          </strong>{' '}
-          Everything in it now is replaced. The present state is snapshotted first.
-        </ConfirmLine>
       )}
     </section>
   );

@@ -154,10 +154,24 @@ export class ClaudeRuntime {
     const key = this.deps.keys.get();
     const s = this.deps.settings.read();
     return {
-      key: { set: key !== null, masked: key ? maskKey(key) : null },
+      key: {
+        set: key !== null,
+        masked: key ? maskKey(key) : null,
+        checked: key !== null && !s.keyUnchecked,
+      },
       acknowledgedAt: bibleId ? (s.acknowledged[bibleId] ?? null) : null,
       models: modelsWithDefaults(s),
     };
+  }
+
+  /**
+   * ST-1: whether the stored key is known to work. False when it was saved
+   * without a check; true after a passing check or a run Anthropic answered.
+   */
+  markKey(checked: boolean): void {
+    const s = this.deps.settings.read();
+    if (s.keyUnchecked === !checked) return;
+    this.deps.settings.write({ ...s, keyUnchecked: !checked });
   }
 
   /** AI-6: the person has read what is sent to Anthropic, on the first use in this bible. */
@@ -413,6 +427,8 @@ export class ClaudeRuntime {
           return run;
         }
         if (!result) throw new ClaudeFailure('other');
+        // ST-1: Anthropic answered with this key, so it works.
+        if (this.deps.keys.get() === key) this.markKey(true);
         const finished = await l.finish(
           { text: result.text || streamed, structured: result.structured },
           sink,

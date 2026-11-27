@@ -10,11 +10,19 @@ import type { ConnectionStatus, MongoSettingsWire } from '../shared/ipcApp';
 import type { SnapshotInfo } from '../shared/domain/snapshots';
 import { BibleSlug } from '../shared/bible';
 
-/** NF-3, ARCH-6: what the window says when MongoDB cannot be reached. */
+/**
+ * NF-3, ARCH-6: what the window says when MongoDB cannot be reached. It says
+ * only what went wrong; Try again and the button naming the snapshot are the
+ * next steps beside it.
+ */
 export const UNREACHABLE = 'The app could not reach the MongoDB deployment.';
-const WITH_SNAPSHOT = ' Until then you can open the most recent local snapshot read-only.';
 const NO_SNAPSHOT =
   ' There is no local snapshot on this Mac yet, so there is nothing to open read-only.';
+
+/** NF-3, ARCH-6: the banner's message: what went wrong, and only that when a snapshot can open. */
+export function unavailableMessage(reason: string | null, hasSnapshot: boolean): string {
+  return `${reason ?? UNREACHABLE}${hasSnapshot ? '' : NO_SNAPSHOT}`;
+}
 
 /** Server types a write can go to. With none of these in the topology, writes cannot land. */
 const WRITABLE = new Set(['RSPrimary', 'Standalone', 'Mongos', 'LoadBalancer']);
@@ -137,7 +145,7 @@ export class ConnectionManager {
     const latest = await this.latest();
     return {
       state: 'unavailable',
-      message: `${this.message ?? UNREACHABLE}${latest ? WITH_SNAPSHOT : NO_SNAPSHOT}`,
+      message: unavailableMessage(this.message, latest !== null),
       snapshot: latest
         ? { bible: latest.bible, name: latest.name ?? latest.bible, takenAt: latest.takenAt }
         : null,

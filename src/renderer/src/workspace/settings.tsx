@@ -1,6 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { CLAUDE_FEATURES, DEFAULT_MODELS, FEATURE_INFO } from '../../../shared/claude';
+import {
+  CLAUDE_FEATURES,
+  DEFAULT_MODELS,
+  FEATURE_INFO,
+  keyStatusLine,
+  looksLikeKey,
+} from '../../../shared/claude';
 import type { ClaudeFeature } from '../../../shared/claude';
 import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
@@ -156,7 +162,7 @@ function SnapshotSettings() {
   );
 }
 
-type ConnState = 'ok' | 'bad' | 'busy' | 'none';
+type ConnState = 'ok' | 'unchecked' | 'bad' | 'busy' | 'none';
 
 /** A57: a connection's state as a dot and a masked value. Never a full key or string. */
 function ConnStatus(props: { state: ConnState; text: string; testId: string }) {
@@ -180,37 +186,57 @@ interface PasteTest {
   busy: boolean;
   /** Test a value; `again` tests it even when it was the last one tried. */
   run(value: string, again?: boolean): void;
+  /** Leaving the field: tests a new value only, and only one of the right shape. */
+  leave(value: string): void;
 }
 
 /**
  * A57: a secret that tests itself. A paste, Enter, or leaving the field with
  * something new in it runs `test`; the field clears once the value is stored.
- * The value lives only in this state and the password field, never in a log.
+ * A value given while a test runs is tested when that one returns, so the
+ * last paste always wins. The value lives only in this state and the
+ * password field, never in a log.
  */
-function usePasteTest(test: (value: string) => Promise<boolean>): PasteTest {
+function usePasteTest(
+  test: (value: string) => Promise<boolean>,
+  shaped: (value: string) => boolean = () => true,
+): PasteTest {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const tried = useRef<string | null>(null);
-  const running = useRef(false);
+  const running = useRef<string | null>(null);
+  const queued = useRef<string | null>(null);
   const run = (raw: string, again = false) => {
     const value = raw.trim();
-    if (!value || running.current || (!again && value === tried.current)) return;
+    if (!value) return;
+    if (running.current !== null) {
+      if (value !== running.current) queued.current = value;
+      return;
+    }
+    if (!again && value === tried.current) return;
     tried.current = value;
-    running.current = true;
+    running.current = value;
     setBusy(true);
     void test(value)
       .then((ok) => {
         if (ok) {
-          setDraft('');
+          // A newer paste in the field stays there for its own test.
+          setDraft((d) => (d.trim() === value ? '' : d));
           tried.current = null;
         }
       })
       .finally(() => {
-        running.current = false;
-        setBusy(false);
+        running.current = null;
+        const next = queued.current;
+        queued.current = null;
+        if (next !== null && next !== value) run(next, true);
+        else setBusy(false);
       });
   };
-  return { draft, setDraft, busy, run };
+  const leave = (raw: string) => {
+    if (shaped(raw.trim())) run(raw);
+  };
+  return { draft, setDraft, busy, run, leave };
 }
 
 /** A57: the paste-and-test field, used by Settings and the launch screen alike. */
@@ -247,7 +273,7 @@ function PasteField(props: {
           paste.setDraft(text);
           paste.run(text, true);
         }}
-        onBlur={() => paste.run(paste.draft)}
+        onBlur={() => paste.leave(paste.draft)}
         data-testid={props.testId}
       />
       {props.children}
@@ -415,6 +441,13 @@ function ClaudeSettings() {
         if (!live) return;
         setModels(m);
         setModelsFailed(null);
+        // ST-1: a live list checked the key, so a key saved unchecked reads Connected now.
+        if (m.live) {
+          call('claude.status', {}).then(
+            (s) => live && setStatus(s),
+            () => undefined,
+          );
+        }
       },
       (e: unknown) => {
         if (live) setModelsFailed(plainError(e));
@@ -437,7 +470,7 @@ function ClaudeSettings() {
       setNote({ text: plainError(e), bad: true });
       return false;
     }
-  });
+  }, looksLikeKey);
 
   const getKey = async () => {
     const r = await call('app.openExternal', { url: KEYS_URL });
@@ -480,17 +513,7 @@ function ClaudeSettings() {
       <div className="panel stack tight">
         <div className="row conn-head">
           <h4 id={ids.key}>Anthropic API key</h4>
-          <ConnStatus
-            state={paste.busy ? 'busy' : status.key.set ? 'ok' : 'none'}
-            text={
-              paste.busy
-                ? 'Testing'
-                : status.key.set
-                  ? `Connected · ${status.key.masked ?? ''}`
-                  : 'No key'
-            }
-            testId="claude-key-status"
-          />
+          <ConnStatus {...keyStatusLine(status.key, paste.busy)} testId="claude-key-status" />
         </div>
         <PasteField
           label={status.key.set ? 'Paste a new Anthropic key' : 'Paste an Anthropic key'}

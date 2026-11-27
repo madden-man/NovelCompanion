@@ -72,6 +72,7 @@ export function claudeHandlers(
         cached = await catalog.list(cleaned.key);
         cachedFor = { key: cleaned.key, at: Date.now() };
         keys.set(cleaned.key);
+        runtime.markKey(true);
         return {
           ok: true,
           message: 'Saved in the keychain. Anthropic accepted the key.',
@@ -91,16 +92,19 @@ export function claudeHandlers(
         cached = null;
         cachedFor = null;
         keys.set(cleaned.key);
+        // ST-1: stored, but not known to work; the status says so until a check or a run passes.
+        runtime.markKey(false);
         return {
           ok: true,
-          message:
-            'Saved in the keychain. The app could not reach Anthropic to check it, so the first run will.',
+          message: 'Saved in the keychain. The app could not reach Anthropic to check it.',
           status: runtime.status(bibleId()),
         };
       }
     },
     'claude.clearKey': () => {
       keys.clear();
+      // No key, so nothing waits for a check.
+      runtime.markKey(true);
       cached = null;
       cachedFor = null;
       return runtime.status(bibleId());
@@ -120,6 +124,8 @@ export function claudeHandlers(
       try {
         cached = await catalog.list(key);
         cachedFor = { key, at: Date.now() };
+        // ST-1: the list is a check of the key, so a key saved unchecked is now known to work.
+        if (keys.get() === key) runtime.markKey(true);
         return { models: cached, live: true, message: null };
       } catch (e) {
         const message = (e instanceof ClaudeFailure && LIST_MESSAGES[e.kind]) || LIST_FALLBACK;

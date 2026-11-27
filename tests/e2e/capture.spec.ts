@@ -853,3 +853,72 @@ test('A57 with no key, Alt+Enter and Add a Claude key open the key field in plac
   await page.keyboard.press('Escape');
   await expect(box()).toBeHidden();
 });
+
+/** AI-6 in a new bible: a key is set and nothing is confirmed yet. */
+async function openConsentBible() {
+  await invoke('bible.create', { slug: 'capture-consent', name: 'Capture consent' });
+  await invoke('bible.open', { slug: 'capture-consent' });
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  const seeded = await invoke('entry.list', { collection: 'eraStates', trash: 'exclude' });
+  for (const e of seeded.entries) {
+    await invoke('entry.delete', { collection: 'eraStates', id: e.entry._id });
+  }
+  for (const label of ['Portland', 'Guangzhou']) {
+    await invoke('lists.addItem', { listId: 'communities', label, parentId: null });
+  }
+  await invoke('storyTime.set', { time: { year: 2034 } });
+  await invoke('claude.setKey', { key: KEY });
+}
+
+test('A57 AI-6 with a key and no consent, Cmd+K opens the box with no sheet, and a Route A fact files without consent', async () => {
+  await openConsentBible();
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+  await page.keyboard.press('Meta+k');
+  await expect(box()).toBeVisible();
+  await expect(input()).toBeFocused();
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  await input().fill(YEE_HAW);
+  await expect(facts()).toHaveCount(1);
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  await input().press('Enter');
+  await expect(box().getByTestId('capture-filed')).toBeVisible();
+  await expect(page.getByTestId('claude-disclosure')).toHaveCount(0);
+  const lines = await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' });
+  expect(lines.entries.some((e) => /yee haw/i.test(String(e.entry.title)))).toBe(true);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+  await page.keyboard.press('Escape');
+  await expect(box()).toBeHidden();
+});
+
+test('A57 AI-6 the first Claude action opens the sheet; Not now and Escape keep the box and the text; Continue sends it', async () => {
+  const sheet = () => page.getByTestId('claude-disclosure');
+  await page.keyboard.press('Meta+k');
+  await expect(input()).toBeFocused();
+  await input().fill(MOVE);
+  await input().press('Alt+Enter');
+  await expect(sheet()).toBeVisible();
+  await sheet().getByRole('button', { name: 'Not now' }).click();
+  await expect(sheet()).toHaveCount(0);
+  await expect(box()).toBeVisible();
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
+  await expect(input()).toHaveText(MOVE);
+  await expect(input()).toBeFocused();
+  await expect(box().getByTestId('capture-run')).toHaveCount(0);
+  // Escape on the sheet is Not now too; the box stays open.
+  await input().press('Alt+Enter');
+  await expect(sheet()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toHaveCount(0);
+  await expect(box()).toBeVisible();
+  await expect(input()).toHaveText(MOVE);
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeNull();
+  // Continue confirms, and the press that asked goes ahead.
+  await input().press('Alt+Enter');
+  await sheet().getByTestId('claude-acknowledge').click();
+  await expect(sheet()).toHaveCount(0);
+  await expect(box().getByTestId('capture-run').first()).toHaveAttribute('data-route', 'full');
+  expect((await invoke('claude.status', {})).acknowledgedAt).toBeTruthy();
+  await expect(cards().first()).toBeVisible({ timeout: 10_000 });
+  await box().getByRole('button', { name: 'Close', exact: true }).first().click();
+  await expect(box()).toBeHidden();
+});

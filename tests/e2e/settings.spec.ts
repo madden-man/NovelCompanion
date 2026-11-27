@@ -249,6 +249,96 @@ test('A57 ST-1 a pasted key is tested at once, a rejected one is not stored, and
   }
 });
 
+/** ST-1: count the key tests main receives, each answered after `delayMs`. */
+async function slowKeyTests(delayMs: number): Promise<void> {
+  await app!.evaluate(({ ipcMain }, delay) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const seen = globalThis as { keyTests?: number; realSetKey?: (...a: unknown[]) => unknown };
+    seen.realSetKey ??= handlers.get('nc:claude.setKey')!;
+    const original = seen.realSetKey;
+    seen.keyTests = 0;
+    handlers.set('nc:claude.setKey', async (...args: unknown[]) => {
+      seen.keyTests! += 1;
+      await new Promise((r) => setTimeout(r, delay));
+      return original(...args);
+    });
+  }, delayMs);
+}
+const keyTests = () => app!.evaluate(() => (globalThis as { keyTests?: number }).keyTests ?? -1);
+
+test('A57 ST-1 a key Anthropic could not check is saved and reads Saved, not checked, until a check passes', async () => {
+  const view = await openSettings();
+  const status = view.getByTestId('claude-key-status');
+  await paste(view.getByTestId('claude-key-input'), 'sk-ant-offline-e2e-key-0123456789-wxyz');
+  await expect(status).toHaveText('Saved, not checked · sk-ant-…wxyz');
+  await expect(status).toHaveAttribute('data-state', 'unchecked');
+  await expect(status).not.toContainText('Connected');
+  await expect(view.getByTestId('claude-key-note')).toHaveText(
+    'Saved in the keychain. The app could not reach Anthropic to check it.',
+  );
+  expect((await invoke('claude.status', {})).key).toEqual({
+    set: true,
+    masked: 'sk-ant-…wxyz',
+    checked: false,
+  });
+  // It stays unchecked when Settings opens again.
+  await rail(page, 'Characters').click();
+  const again = await openSettings();
+  await expect(again.getByTestId('claude-key-status')).toHaveText(
+    'Saved, not checked · sk-ant-…wxyz',
+  );
+  // A key that passes the check reads Connected.
+  await paste(again.getByTestId('claude-key-input'), KEY);
+  await expect(again.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  await expect(again.getByTestId('claude-key-status')).toHaveAttribute('data-state', 'ok');
+});
+
+test('A57 ST-1 a second paste while a test runs is tested when the first returns, and the last one is stored', async () => {
+  const view = await openSettings();
+  await slowKeyTests(600);
+  const input = view.getByTestId('claude-key-input');
+  await paste(input, 'sk-ant-offline-e2e-key-0123456789-wxyz');
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Testing');
+  await paste(input, KEY);
+  await expect.poll(keyTests).toBe(2);
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  await expect(input).toHaveValue('');
+  expect((await invoke('claude.status', {})).key.masked).toBe('sk-ant-…cdef');
+});
+
+test('A57 ST-1 leaving the key field tests only a new key-shaped value', async () => {
+  const view = await openSettings();
+  await slowKeyTests(0);
+  const input = view.getByTestId('claude-key-input');
+  // Not the shape of a key: leaving the field sends nothing.
+  await input.fill('hello');
+  await input.blur();
+  await page.waitForTimeout(300);
+  expect(await keyTests()).toBe(0);
+  await expect(view.getByTestId('claude-key-status')).toHaveText('Connected · sk-ant-…cdef');
+  // A key that was pasted and refused is not tested again on leaving.
+  await input.fill('');
+  await paste(input, 'sk-ant-rejected-e2e-0123456789');
+  await expect(view.getByTestId('claude-key-note')).toContainText('rejected this key');
+  expect(await keyTests()).toBe(1);
+  await input.focus();
+  await input.blur();
+  await page.waitForTimeout(300);
+  expect(await keyTests()).toBe(1);
+  // A new key-shaped value is tested on leaving; Enter tests whatever is there.
+  await input.fill(KEY);
+  await input.blur();
+  await expect.poll(keyTests).toBe(2);
+  await expect(input).toHaveValue('');
+  await input.fill('hello');
+  await input.press('Enter');
+  await expect.poll(keyTests).toBe(3);
+  await expect(view.getByTestId('claude-key-note')).toContainText('sk-ant-');
+  await input.fill('');
+});
+
 test('A57 BK-1 snapshots to keep saves when left, takes digits only, and its reset shows 30', async () => {
   const view = await openSettings();
   const keep = view.getByTestId('settings-snapshot-keep');

@@ -462,18 +462,32 @@ test('FT-2 FT-4 the Zhou family, the in-laws, and the Archivist complete the tre
   // Tidy layout draws exactly that layout.
   await page.getByRole('button', { name: 'Tidy layout' }).click();
   const want = layoutByName(built);
+  // Wait for every person's stored place, then for the screen to draw them: the save lands
+  // in main before the tree re-renders from it, and under load a read can fall between.
   await expect
-    .poll(async () => (await invoke('tree.get', {})).positions?.[t.people[0]!.id])
-    .toEqual({ x: want[t.people[0]!.name]![0], y: want[t.people[0]!.name]![1] });
-  const shown = await page
-    .locator('g.tnode')
-    .evaluateAll((els) =>
-      els.map((e) => [e.getAttribute('aria-label')!.split(',')[0], e.getAttribute('transform')]),
+    .poll(async () => {
+      const now = await invoke('tree.get', {});
+      return Object.fromEntries(
+        now.people.map((p) => [p.name, [now.positions?.[p.id]?.x, now.positions?.[p.id]?.y]]),
+      );
+    })
+    .toEqual(want);
+  const drawn = () =>
+    page
+      .locator('g.tnode')
+      .evaluateAll((els) =>
+        Object.fromEntries(
+          els.map((e) => [
+            e.getAttribute('aria-label')!.split(',')[0],
+            e.getAttribute('transform'),
+          ]),
+        ),
+      );
+  await expect
+    .poll(drawn)
+    .toEqual(
+      Object.fromEntries(Object.entries(want).map(([n, [x, y]]) => [n, `translate(${x},${y})`])),
     );
-  for (const [name, transform] of shown) {
-    const [x, y] = want[name!]!;
-    expect(transform, name!).toBe(`translate(${x},${y})`);
-  }
   // FT-4: the adoptive link and both ended unions are drawn as such.
   await expect(page.locator('path.tlink.adoptive')).toHaveCount(1);
   await expect(page.locator('text.tunion-end')).toHaveText(['ended 2030', 'ended 2064']);

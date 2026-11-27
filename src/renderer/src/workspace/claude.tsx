@@ -288,8 +288,13 @@ function DisclosureSheet(props: {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
+    // Focus goes back to what was pressed (the field, a Send button) when the sheet closes.
+    const opener = document.activeElement;
     if (d && !d.open) d.showModal();
-    return () => d?.close();
+    return () => {
+      d?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
   }, []);
   const leave = props.onConfirm ? props.onDecline : props.onClose;
   return (

@@ -503,7 +503,7 @@ test('IP-16 ED-5 Delete forever asks for the title typed, then the entry is gone
   expect(await undoLabels()).toEqual(labels);
 });
 
-test('IP-16 Empty trash asks for the word empty, shows the count, and is not an undo step', async () => {
+test('A57 IP-16 Empty trash asks for the word empty, which stays in view while typing, shows the count, and is not an undo step', async () => {
   const ids: string[] = [];
   for (const title of ['Empty Dock One', 'Empty Dock Two']) {
     const { entry } = await invoke('entry.create', {
@@ -523,6 +523,12 @@ test('IP-16 Empty trash asks for the word empty, shows the count, and is not an 
   await expect(confirm).toContainText(`${count} entries will be deleted forever.`);
   const go = confirm.getByRole('button', { name: `Delete all ${count} entries forever` });
   await expect(go).toBeDisabled();
+  // A57: the word stays in view as the field's label once typing starts.
+  const word = confirm.getByTestId('hk-word');
+  await expect(word).toHaveText('empty');
+  await confirm.getByLabel('Type empty to confirm').pressSequentially('Em');
+  await expect(word).toBeVisible();
+  await expect(word).toHaveText('empty');
   await confirm.getByLabel('Type empty to confirm').fill('Empty');
   await go.click();
   await expect(page.getByTestId('trash-notice')).toHaveText(

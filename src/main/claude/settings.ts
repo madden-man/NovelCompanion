@@ -13,6 +13,11 @@ export const ClaudeSettings = z.object({
   models: z.partialRecord(ClaudeFeature, z.string().min(1).max(100)).default({}),
   /** AI-6: when the disclosure was confirmed, by bible ID (the first use in each bible). */
   acknowledged: z.record(z.string(), z.string()).default({}),
+  /**
+   * ST-1: the stored key was saved while Anthropic could not be reached, so it
+   * is not known to work. Cleared by a passing check or a run that Anthropic answers.
+   */
+  keyUnchecked: z.boolean().default(false),
 });
 export type ClaudeSettings = z.infer<typeof ClaudeSettings>;
 

@@ -160,7 +160,8 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     const turn = run.turns[0]!;
     expect(turn.status).toBe('failed');
     expect(turn.error).toEqual({ kind: 'noKey', message: ERROR_MESSAGES.noKey });
-    expect(turn.error!.message).toMatch(/Settings/);
+    // A57: the Open settings button beside the message is the next step; the message names none.
+    expect(turn.error!.message).not.toMatch(/Settings/);
     expect(needsSettings(turn.error!.kind)).toBe(true);
     expect(turn.question).toBe('How old is Margaret in 2040?');
     expect(r.fake.requests).toHaveLength(0);
@@ -180,7 +181,7 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     const good = await r.call('claude.setKey', { key: `  ${KEY}  ` });
     expect(good.ok).toBe(true);
     expect(keys.get()).toBe(KEY);
-    expect(good.status.key).toEqual({ set: true, masked: 'sk-ant-…cdef' });
+    expect(good.status.key).toEqual({ set: true, masked: 'sk-ant-…cdef', checked: true });
     expect(JSON.stringify(good)).not.toContain(KEY);
     expect(JSON.stringify(await r.call('claude.status', {}))).not.toContain(KEY);
     // Replace: an unreachable check still stores the new key and says so.
@@ -189,7 +190,45 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     expect(replaced.ok).toBe(true);
     expect(replaced.message).toMatch(/could not reach Anthropic/);
     expect(keys.get()).toBe(offline);
-    expect((await r.call('claude.clearKey', {})).key).toEqual({ set: false, masked: null });
+    expect((await r.call('claude.clearKey', {})).key).toEqual({
+      set: false,
+      masked: null,
+      checked: false,
+    });
+  });
+
+  test('A57 ST-1 a key saved while Anthropic cannot be reached is stored but not checked, and a run Anthropic answers checks it', async () => {
+    const offline = `${FAKE_OFFLINE_PREFIX}-replacement-9999`;
+    const saved = await r.call('claude.setKey', { key: offline });
+    expect(saved.ok).toBe(true);
+    expect(saved.message).toBe(
+      'Saved in the keychain. The app could not reach Anthropic to check it.',
+    );
+    expect(saved.status.key).toEqual({ set: true, masked: 'sk-ant-…9999', checked: false });
+    expect((await r.call('claude.status', {})).key.checked).toBe(false);
+    // The model list cannot be read with it either, so it stays unchecked.
+    expect((await r.call('claude.models', {})).live).toBe(false);
+    expect((await r.call('claude.status', {})).key.checked).toBe(false);
+    // A run Anthropic answers with this key proves it.
+    const id = runId();
+    await r.call('claude.ask', {
+      runId: id,
+      conversationId: null,
+      question: 'How old is Margaret in 2040?',
+    });
+    expect((await r.finished(id)).turns[0]!.status).toBe('done');
+    expect((await r.call('claude.status', {})).key.checked).toBe(true);
+    // A key that passes the check is checked at once; one saved unchecked again is not.
+    await r.call('claude.setKey', { key: offline });
+    expect((await r.call('claude.status', {})).key.checked).toBe(false);
+    expect((await r.call('claude.setKey', { key: KEY })).status.key.checked).toBe(true);
+  });
+
+  test('A57 ST-1 a live model list checks a key that was saved unchecked', async () => {
+    r.runtime.markKey(false);
+    expect((await r.call('claude.status', {})).key.checked).toBe(false);
+    expect((await r.call('claude.models', {})).live).toBe(true);
+    expect((await r.call('claude.status', {})).key.checked).toBe(true);
   });
 
   test('ARCH-4 DB-4 the model list is the live one, and the model set for a feature is the one the run uses', async () => {
