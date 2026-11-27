@@ -349,7 +349,7 @@ test('AI-6 a second bible asks for the disclosure again before its first use the
   // A second bible: the disclosure comes back before anything is sent.
   await invoke('bible.create', { slug: 'claude-second', name: 'Second' });
   await invoke('bible.open', { slug: 'claude-second' });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Second');
+  await expect(page.getByTestId('current-bible')).toContainText('Second');
   await expect(page.getByTestId('ask-claude')).toBeVisible();
   await page.keyboard.press('Meta+j');
   await expect(panel().getByTestId('claude-disclosure')).toBeVisible();
@@ -359,7 +359,7 @@ test('AI-6 a second bible asks for the disclosure again before its first use the
 
 test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in its own bible', async () => {
   await invoke('bible.open', { slug: SLUG });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Claude fixture');
+  await expect(page.getByTestId('current-bible')).toContainText('Claude fixture');
   // The reopened workspace must hold the panel's shortcut before Cmd+J is pressed.
   await expect(page.getByTestId('ask-claude')).toBeVisible();
   await page.keyboard.press('Meta+j');
@@ -367,7 +367,7 @@ test('AI-1 switching bibles mid-answer stops the run and saves it as stopped in 
   await ask('Tell me everything about the Hale family');
   await expect(lastTurn().getByTestId('claude-answer')).toContainText('who married in 1982.');
   await invoke('bible.open', { slug: 'claude-second' });
-  await expect(page.locator('p', { hasText: 'Open bible:' })).toContainText('Second');
+  await expect(page.getByTestId('current-bible')).toContainText('Second');
   await invoke('bible.open', { slug: SLUG });
   const { runs } = await invoke('claude.runs', { feature: 'panel' });
   expect(runs[0]).toMatchObject({

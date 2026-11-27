@@ -45,9 +45,6 @@ body {
   font-size: 1.4rem;
   margin: 0;
 }
-.app-head .lede {
-  margin: 0;
-}
 .sr-only {
   position: absolute;
   width: 1px;

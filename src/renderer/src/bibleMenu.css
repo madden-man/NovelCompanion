@@ -1,0 +1,97 @@
+/* A57: the open bible's name in the app header, which switches bibles and makes new ones. */
+.bible-menu {
+  position: relative;
+}
+.bible-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 40ch;
+}
+.bible-menu-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bible-menu-button::after {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--fg-2);
+}
+.bible-menu-button[aria-expanded='true']::after {
+  border-top: 0;
+  border-bottom: 6px solid var(--fg-2);
+}
+.bible-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  min-width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bible-menu-row {
+  font: inherit;
+  text-align: left;
+  padding: 6px 8px 6px 26px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.bible-menu-row:hover {
+  background: var(--surface-2);
+}
+.bible-menu-row[aria-current='true'] {
+  font-weight: 600;
+  background: var(--accent-soft);
+  position: relative;
+}
+.bible-menu-row[aria-current='true']::before {
+  content: '\2713';
+  position: absolute;
+  left: 8px;
+  color: var(--accent);
+}
+.bible-menu-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.bible-menu-row[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.bible-menu-new {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding: 6px 4px 2px;
+}
+.bible-menu-new input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+}

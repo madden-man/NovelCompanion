@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test } from '@playwright/test';
@@ -9,10 +9,13 @@ const ROOT = join(import.meta.dirname, '../..');
 
 let app: ElectronApplication;
 let page: Page;
+// Its own data folder, never the real one, so parallel files never share it. A57: kept across
+// relaunches in this file, so the bible used last opens again.
+const userData = mkdtempSync(join(tmpdir(), 'nc-e2e-app-'));
 
 test.describe.configure({ mode: 'serial' });
 
-test.beforeAll(async () => {
+async function start(): Promise<void> {
   // This file's database on the run's local MongoDB replica set (the write path
   // uses transactions), so the app never reads the keychain or reaches Atlas.
   const db = fileDb();
@@ -22,14 +25,15 @@ test.beforeAll(async () => {
       ...process.env,
       NOVEL_COMPANION_TEST_MONGODB_URI: db.uri,
       NOVEL_COMPANION_TEST_DB_NAME: db.name,
-      // Its own data folder, never the real one, so parallel files never share it.
-      NOVEL_COMPANION_USER_DATA: mkdtempSync(join(tmpdir(), 'nc-e2e-app-')),
+      NOVEL_COMPANION_USER_DATA: userData,
       ...HIDDEN_ENV,
     },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-});
+}
+
+test.beforeAll(start);
 
 test.afterAll(async () => {
   await app?.close();
@@ -186,8 +190,10 @@ test('ARCH-8 opening a bible makes it current and shows its name in the window',
 test('ARCH-8 a second bible made with the New bible form can be switched to', async () => {
   // With a bible open, the bible list and the New bible form live under Bibles in the rail.
   await rail(page, 'Bibles').click();
+  // A57: there is no ID to type and no rule about one; the ID comes from the name.
+  await expect(page.getByLabel('ID')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('The ID names the bible');
   await page.getByLabel('Name').fill('East Winds');
-  await expect(page.getByLabel('ID')).toHaveValue('east-winds');
   await page.getByRole('button', { name: 'Create bible' }).click();
   await expect(page.getByTestId('bible-list')).toContainText('East Winds');
   const list = await page.evaluate(() => window.api.invoke('bible.list', {}));
@@ -282,4 +288,87 @@ test('IP-13 the App menu lists every section under All sections; each opens its 
   await rename.locator('input').fill('Pier Ten');
   await rename.locator('input').press('Enter');
   await expect(list.getByRole('button', { name: /Pier Ten/ })).toBeVisible();
+});
+
+test('A57 the bible name in the header switches bibles and makes a new one from a name, by keyboard', async () => {
+  const button = page.getByTestId('bible-menu-button');
+  await expect(button.getByTestId('current-bible')).toHaveText('Tide Lines');
+  // Enter opens it on the open bible; ArrowDown moves to the next one; Enter opens that.
+  await button.focus();
+  await page.keyboard.press('Enter');
+  const menu = page.getByTestId('bible-menu');
+  await expect(menu.getByRole('button', { name: 'Tide Lines' })).toBeFocused();
+  await expect(menu.getByRole('button', { name: 'Tide Lines' })).toHaveAttribute(
+    'aria-current',
+    'true',
+  );
+  await page.keyboard.press('ArrowUp');
+  await expect(menu.getByRole('button', { name: 'East Winds' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('current-bible')).toHaveText('East Winds');
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+  // Escape closes it and gives the focus back.
+  await page.keyboard.press('ArrowDown');
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+
+  // A name typed in its last row makes a bible and opens it; a taken ID gets a number.
+  await page.keyboard.press('Enter');
+  await menu.getByTestId('bible-menu-new').fill('Tide Lines');
+  await page.keyboard.press('Enter');
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByTestId('rail')).toBeVisible();
+  expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual({
+    bible: { id: 'tide-lines-2', name: 'Tide Lines' },
+  });
+  // A name with no letters the ID can use still makes one.
+  await button.click();
+  await menu.getByTestId('bible-menu-new').fill('东风');
+  await menu.getByRole('button', { name: 'Create and open' }).click();
+  await expect(page.getByTestId('current-bible')).toHaveText('东风');
+  expect((await page.evaluate(() => window.api.invoke('bible.current', {}))).bible?.id).toBe(
+    'bible',
+  );
+  // Clicking away closes it.
+  await button.click();
+  await expect(menu).toBeVisible();
+  await page.getByRole('heading', { level: 1 }).click();
+  await expect(menu).toHaveCount(0);
+  await button.click();
+  await menu.getByRole('button', { name: 'Tide Lines' }).first().click();
+  await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines');
+});
+
+test('A57 a relaunch with the same data folder opens the bible used last', async () => {
+  const before = await page.evaluate(() => window.api.invoke('bible.current', {}));
+  expect(before.bible?.id).toBe('tide-lines');
+  await app.close();
+  await start();
+  await expect(page.getByTestId('rail')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('current-bible')).toHaveText('Tide Lines');
+  expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual(before);
+  await expect(page.getByTestId('no-bibles')).toHaveCount(0);
+});
+
+test('A57 when the bible used last is gone, the app starts on the bibles with no instructions', async () => {
+  await app.close();
+  writeFileSync(join(userData, 'last-bible.json'), JSON.stringify({ bible: 'gone-bible' }));
+  await start();
+  await expect(page.getByTestId('bible-list')).toContainText('Tide Lines', { timeout: 30_000 });
+  expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual({
+    bible: null,
+  });
+  await expect(page.getByTestId('bible-menu-button')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'New bible' })).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('Choose a bible');
+  await expect(page.locator('body')).not.toContainText('The ID names the bible');
+  // It is forgotten, so the next launch starts here too until a bible opens.
+  expect(JSON.parse(readFileSync(join(userData, 'last-bible.json'), 'utf8'))).toEqual({
+    bible: null,
+  });
+  await page.getByRole('button', { name: 'Open East Winds' }).click();
+  await expect(page.getByTestId('current-bible')).toHaveText('East Winds');
 });
