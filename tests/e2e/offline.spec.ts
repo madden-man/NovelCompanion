@@ -217,15 +217,40 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await openMargaret();
   const editor = page.getByTestId('editor');
   const role = () => field(page.getByTestId('editor'), 'role').getByRole('textbox').first();
+  const storedRole = async () =>
+    (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.role;
   await expect(editor.getByTestId('autosave').first()).toHaveText('Saved');
   await member.stop({ doCleanup: false, force: true });
 
-  // The lost connection shows on the next write, and the snapshot opens read-only mid-session.
+  // The lost connection shows on the next write.
   await role().fill('Offline town');
   await expect(editor.getByTestId('autosave').first()).toContainText('Not saved', {
     timeout: 60_000,
   });
   const banner = page.getByTestId('connection-banner');
+  await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
+  // A57: the snapshot does not open over typing that is not stored: the live bible stays
+  // open, the typing stays in the field, and the message says what was not saved.
+  await banner.getByTestId('open-snapshot').click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Not saved' })).toContainText(
+    'Not saved',
+    { timeout: 30_000 },
+  );
+  await expect(banner).toHaveAttribute('data-state', 'unavailable');
+  await expect(role()).toHaveText('Offline town');
+
+  // MongoDB is back: Try again, and the typing is stored with no further keystroke.
+  await member.start(true);
+  await banner.getByTestId('connection-retry').click();
+  await expect(page.getByTestId('connection-banner')).toHaveCount(0, { timeout: 60_000 });
+  await expect(editor.getByTestId('autosave').first()).toHaveText('Saved', { timeout: 30_000 });
+  expect(await storedRole()).toBe('Offline town');
+
+  // Gone again with nothing pending: the write that finds out is refused, and the snapshot opens read-only.
+  await member.stop({ doCleanup: false, force: true });
+  await expect(
+    invoke('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'Never sent' } }),
+  ).rejects.toThrow(/lost its connection/);
   await expect(banner).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
   await banner.getByTestId('open-snapshot').click();
   await expect(banner).toHaveAttribute('data-state', 'readOnly');
@@ -235,7 +260,7 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await expect(page.getByTestId('current-bible')).toHaveText(NAME);
   await openMargaret();
   await expect(role()).toBeDisabled();
-  await expect(role()).not.toHaveText('Offline town');
+  await expect(role()).not.toHaveText('Never sent');
 
   // MongoDB is back: Try again closes the snapshot and opens the live bible, writable again.
   await member.start(true);
@@ -249,10 +274,63 @@ test('ARCH-6 mid-session, the snapshot opens read-only, and Try again reopens th
   await expect(page.getByTestId('editor').getByTestId('autosave').first()).toHaveText('Saved', {
     timeout: 30_000,
   });
-  const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
-  expect(h1.entry.role).toBe('Back online');
+  expect(await storedRole()).toBe('Back online');
   await stop();
   await own.stop();
+});
+
+test('A57 ED-2 ARCH-6 a failed autosave is never tried again while a snapshot is open read-only, and the typing is stored once the live bible is back', async () => {
+  const own = await ownServer();
+  const member = own.servers[0]!;
+  try {
+    await start(own.getUri());
+    await invoke('bible.open', { slug: SLUG });
+    await openMargaret();
+    const editor = page.getByTestId('editor');
+    const role = () => field(page.getByTestId('editor'), 'role').getByRole('textbox').first();
+    await expect(editor.getByTestId('autosave').first()).toHaveText('Saved');
+    // Main notes when each entry write arrives, before it is guarded.
+    await app!.evaluate(({ ipcMain }) => {
+      const handlers = (
+        ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+      )._invokeHandlers;
+      const original = handlers.get('nc:entry.update')!;
+      const seen = globalThis as { updates?: number[] };
+      seen.updates = [];
+      handlers.set('nc:entry.update', (...args: unknown[]) => {
+        seen.updates!.push(Date.now());
+        return original(...args);
+      });
+    });
+    const updates = () => app!.evaluate(() => (globalThis as { updates?: number[] }).updates ?? []);
+    const now = () => app!.evaluate(() => Date.now());
+    await member.stop({ doCleanup: false, force: true });
+    await role().fill('Typed offline');
+    await expect(editor.getByTestId('autosave').first()).toContainText('Not saved', {
+      timeout: 60_000,
+    });
+    // The snapshot opens behind the editor, through main, with the typing still not stored.
+    await invoke('connection.openSnapshot', {});
+    const banner = page.getByTestId('connection-banner');
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+    const from = await now();
+    // What must not happen is a send, so this watches for one: three retries would all
+    // have gone within 1 + 2 + 3 seconds of the failure.
+    await page.waitForTimeout(6_500);
+    expect((await updates()).filter((t) => t >= from)).toEqual([]);
+    await expect(role()).toHaveText('Typed offline');
+
+    // MongoDB is back: Try again ends read-only, and the typing goes with no keystroke.
+    await member.start(true);
+    await banner.getByTestId('connection-retry').click();
+    await expect(page.getByTestId('connection-banner')).toHaveCount(0, { timeout: 60_000 });
+    await expect(editor.getByTestId('autosave').first()).toHaveText('Saved', { timeout: 30_000 });
+    const h1 = await invoke('entry.get', { collection: 'characters', id: 'H1' });
+    expect(h1.entry.role).toBe('Typed offline');
+  } finally {
+    await stop();
+    await own.stop();
+  }
 });
 
 /** A server of its own with the fixture bible, whose one member stops and starts with its data and port. */

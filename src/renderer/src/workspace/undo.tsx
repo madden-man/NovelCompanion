@@ -122,8 +122,8 @@ interface Undo {
   live(): boolean;
 }
 
-/** A registered flush: what it could not save, or nothing when everything is stored. */
-export type Flush = () => Promise<string | void>;
+/** A registered flush: resolves to what it could not save as a string, else to anything. */
+export type Flush = () => Promise<unknown>;
 
 const UndoContext = createContext<Undo | null>(null);
 
@@ -234,7 +234,7 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
     for (const f of [...flushes.current]) {
       try {
         const left = await f();
-        if (left) problems.push(left);
+        if (typeof left === 'string' && left) problems.push(left);
       } catch (e) {
         problems.push(plainErrorMessage(e));
       }

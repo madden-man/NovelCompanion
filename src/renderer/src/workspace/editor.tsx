@@ -126,8 +126,9 @@ export function useAutosave(collection: EntryCollection, id: string) {
     if (inflight.current) await inflight.current;
     // Loop so changes typed while a save was in flight go out next.
     for (;;) {
-      // A57: once the workspace has gone (another bible opened), nothing more is sent.
-      if (!undo.live()) return;
+      // A57: once the workspace has gone (another bible opened), nothing more is sent, and
+      // nothing while a snapshot is open read-only (ARCH-6); MongoDB coming back sends it.
+      if (!undo.live() || readOnly.current) return;
       const base = saved.current;
       const target = current.current;
       if (!base || !target) return;
@@ -266,7 +267,6 @@ export function useAutosave(collection: EntryCollection, id: string) {
     if (connection !== 'connected' || was === undefined || was === 'connected') return;
     retries.current = 0;
     if (!timer.current && unsaved() && mounted.current) void save();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection, save]);
 
   // Another writer (undo, a restore, a rename) changed something: reload when nothing is pending.

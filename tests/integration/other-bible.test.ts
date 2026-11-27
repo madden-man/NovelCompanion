@@ -49,7 +49,12 @@ function ipc() {
     const handler = handlers[channel as BibleChannel] as Handler<C> | undefined;
     if (!handler) throw new Error(`No bible handler for ${channel}`);
     const wire = JSON.parse(JSON.stringify(request)) as unknown;
-    const response = await runHandler(channel, guardHandler(channel, handler, guard), wire, context);
+    const response = await runHandler(
+      channel,
+      guardHandler(channel, handler, guard),
+      wire,
+      context,
+    );
     return JSON.parse(JSON.stringify(response)) as Response<C>;
   };
 }
@@ -127,9 +132,13 @@ describe('A57 main refuses a write made in another bible than the open one', () 
     const call = ipc();
     open = copy;
     await expect(
-      call('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'X' } }, {
-        bible: 'Not An ID!',
-      }),
+      call(
+        'entry.update',
+        { collection: 'characters', id: 'H1', patch: { role: 'X' } },
+        {
+          bible: 'Not An ID!',
+        },
+      ),
     ).rejects.toThrow(/request context is not valid/);
     expect(await storedRole(copy, 'H1')).toBe('Typed in the copy');
   });
