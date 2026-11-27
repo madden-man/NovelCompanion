@@ -154,6 +154,23 @@ test('A57 CC-1 CC-4 the check reads as one action and each finding button names 
   await expect(finding('place').getByTestId('finding-apply')).toHaveText(
     /^Chapter is right: \d+ bible changes?$/,
   );
+  // A finding with no change set says so on its button, which cannot be pressed.
+  const placeId = await findingId('place');
+  const prepared = (await entryOf('findings', placeId)).changeSet;
+  await invoke('entry.update', {
+    collection: 'findings',
+    id: placeId,
+    patch: { changeSet: [] },
+  });
+  const none = finding('place').getByTestId('finding-apply');
+  await expect(none).toHaveText('Chapter is right: no bible change prepared');
+  await expect(none).toBeDisabled();
+  await invoke('entry.update', {
+    collection: 'findings',
+    id: placeId,
+    patch: { changeSet: prepared },
+  });
+  await expect(finding('place').getByTestId('finding-apply')).toBeEnabled();
   // No tooltip explains a button.
   await expect(v.locator('[data-testid="finding-actions"] [title]')).toHaveCount(0);
 });
@@ -180,6 +197,39 @@ test('CC-4 ED-3 Chapter is right applies the change set the card shows as a diff
     )
     .toEqual({ year: 1958 });
   await expect(finding('age')).toHaveAttribute('data-state', 'open');
+});
+
+test('A57 CC-4 a double press of Chapter is right sends one resolution', async () => {
+  // Main answers slowly, so the second press lands while the first is out.
+  await app.evaluate(({ ipcMain }) => {
+    const handlers = (
+      ipcMain as unknown as { _invokeHandlers: Map<string, (...args: unknown[]) => unknown> }
+    )._invokeHandlers;
+    const channel = 'nc:continuity.resolve';
+    const original = handlers.get(channel)!;
+    const seen = globalThis as { resolves?: number };
+    seen.resolves = 0;
+    handlers.set(channel, async (...args: unknown[]) => {
+      seen.resolves! += 1;
+      await new Promise((r) => setTimeout(r, 400));
+      return original(...args);
+    });
+    (globalThis as { restoreResolve?: () => void }).restoreResolve = () =>
+      handlers.set(channel, original);
+  });
+  const p1 = finding('age');
+  await p1.getByTestId('finding-apply').dblclick();
+  await expect(p1).toHaveAttribute('data-state', 'manuscriptWins');
+  await page.waitForTimeout(600);
+  expect(await app.evaluate(() => (globalThis as { resolves?: number }).resolves)).toBe(1);
+  await p1.getByRole('button', { name: 'Undo' }).click();
+  await expect(finding('age')).toHaveAttribute('data-state', 'open');
+  await expect
+    .poll(
+      async () => (await invoke('entry.get', { collection: 'characters', id: 'H1' })).entry.birth,
+    )
+    .toEqual({ year: 1958 });
+  await app.evaluate(() => (globalThis as { restoreResolve?: () => void }).restoreResolve?.());
 });
 
 test('CC-4 SM-11 Bible is right makes a rewrite task with the lines and what must change, on the Continuity checker and on the chapter', async () => {

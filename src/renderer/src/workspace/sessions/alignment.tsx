@@ -444,11 +444,22 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
   const [note, setNote] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const diffCaptionId = useId();
+  /**
+   * A resolution on its way to main, or made and not yet drawn: a second press
+   * sends nothing. It frees when the finding's state changes (an undo puts it back
+   * open) or the call fails.
+   */
+  const resolving = useRef(false);
+  useEffect(() => {
+    resolving.current = false;
+  }, [f.state]);
 
   const resolve = async (
     action: 'manuscriptWins' | 'rewrite' | 'dismiss' | 'done',
     label: string,
   ) => {
+    if (resolving.current) return;
+    resolving.current = true;
     setError(null);
     setWarnings([]);
     try {
@@ -474,6 +485,7 @@ function FindingCard(props: { f: FindingWire; doc: Entry; onOpen: OpenEntry }) {
             : null,
       );
     } catch (e) {
+      resolving.current = false;
       setError(plainError(e));
     }
   };
