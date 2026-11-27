@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, nativeTheme, shell } from 'electron';
 import { listBibles } from '../db';
 import type { Store } from '../db';
 import { createBibleWithDefaults, openBibleForApp } from '../db/session';
@@ -8,40 +7,42 @@ import { checkExternalUrl } from '../links';
 import type { BackupDeps } from './backupHandlers';
 import type { SessionDeps } from './sessionHandlers';
 import { registerSessionClaude } from '../session/claude';
-import { runtimeSessionClaude } from '../claude/session';
 import {
   ALLOW_TEST_URI_ENV,
-  KeychainMongoUriStore,
   MemoryMongoUriStore,
   TEST_URI_ENV,
   testDatabaseName,
-  mongoUri,
+  testMongoUri,
   testDatabaseHonoured,
   testSeamsHonoured,
-} from '../secrets';
+} from '../host/uri';
+import type { Host } from '../host/types';
 import { ConnectionManager } from '../connection';
 import { openSnapshotReadOnly } from '../db/readOnly';
-import { FileAppSettingsStore } from '../appSettings';
+import { FileAppSettingsStore, MemoryAppSettingsStore } from '../appSettings';
 import type { AppSettingsStore } from '../appSettings';
 import { guardHandler } from './offline';
 import type { Channel } from '../../shared/ipc';
-import { wireEvent } from '../../shared/ipc';
 import type { EventName, EventPayload, Response } from '../../shared/ipc';
-import { handle } from './handle';
+import { claudeContract } from '../../shared/claude';
 import { exportTree } from './exportTree';
 import { lookupWords } from '../words/datamuse';
 import { BIBLE_CHANNELS, bibleHandlers, testHandlers } from './bibleHandlers';
 import type { BibleChannel } from './bibleHandlers';
-import type { Handler } from './validate';
-import { claudeDeps } from '../claude';
-import type { ClaudeRuntime } from '../claude';
-import { CLAUDE_CHANNELS, claudeHandlers } from '../claude/handlers';
+import { setHandler } from './validate';
+import type { Handler, HandlerTable } from './validate';
 import type { ClaudeChannel } from '../claude/handlers';
 import { BridgeService } from '../bridge/service';
 import { BridgeStore } from '../db/bridge';
 import { worldForBible } from '../../shared/bridge';
 
-let claudeRuntime: ClaudeRuntime | null = null;
+/**
+ * A58: the host this table was built for: the Electron main process, or a
+ * process with no Electron at all. Set by `registerHandlers`.
+ */
+let app: Host;
+let table: HandlerTable = new Map();
+let claudeRuntime: { stopAll(): Promise<void> } | null = null;
 let current: {
   session: OpenBible;
   name: string;
@@ -63,17 +64,17 @@ function makeConnection(): ConnectionManager {
     process.env[TEST_URI_ENV] !== undefined &&
     (!app.isPackaged || process.env[ALLOW_TEST_URI_ENV] === '1');
   // Under test this never reads the keychain: it returns the local test address or refuses it.
-  const lookup = underTest ? mongoUri(process.env, { isPackaged: app.isPackaged }) : null;
+  const lookup = underTest ? testMongoUri(process.env, { isPackaged: app.isPackaged }) : null;
   return new ConnectionManager({
     uris: underTest
       ? new MemoryMongoUriStore(lookup?.ok ? lookup.uri : null)
-      : new KeychainMongoUriStore(),
+      : app.secrets.mongoUris(),
     localOnly: underTest,
     database: testDatabaseName(process.env, { isPackaged: app.isPackaged }),
     missingMessage:
       lookup && !lookup.ok ? lookup.message : 'No MongoDB connection string is stored.',
-    snapshotRoot: join(app.getPath('userData'), 'snapshots'),
-    lastBibleFile: join(app.getPath('userData'), 'last-bible.json'),
+    snapshotRoot: snapshotRoot(),
+    lastBibleFile: app.userData ? join(app.userData, 'last-bible.json') : undefined,
     onStatus: (status) => broadcast('connection.changed', status),
   });
 }
@@ -91,8 +92,13 @@ async function requireStore(): Promise<Store> {
   return s.store;
 }
 
+/** `<userData>/snapshots`, or none on a host with no disk. */
+function snapshotRoot(): string | undefined {
+  return app.userData ? join(app.userData, 'snapshots') : undefined;
+}
+
 function broadcast<E extends EventName>(event: E, payload: EventPayload<E>): void {
-  for (const win of BrowserWindow.getAllWindows()) win.webContents.send(wireEvent(event), payload);
+  app.broadcast(event, payload);
 }
 
 const currentSummary = () =>
@@ -199,9 +205,7 @@ async function openBibleNow(slug: string): Promise<Response<'bible.open'>> {
   const bibles = await listBibles(s);
   const record = bibles.find((b) => b._id === slug);
   if (!record) throw new Error(`There is no bible with the ID "${slug}".`);
-  const session = await openBibleForApp(s, slug, {
-    snapshotRoot: join(app.getPath('userData'), 'snapshots'),
-  });
+  const session = await openBibleForApp(s, slug, { snapshotRoot: snapshotRoot() });
   // A55 (NB-1): the bible is published to the phone under its world ID.
   const bridge = new BridgeService({
     store: new BridgeStore(s.bridge),
@@ -304,12 +308,13 @@ async function openLatestSnapshot(): Promise<Response<'connection.openSnapshot'>
     }
   }
   const latest = await c.latest();
-  if (!latest) {
+  const root = snapshotRoot();
+  if (!latest || !root) {
     throw new Error(
       'There is no local snapshot on this Mac yet, so there is nothing to open read-only.',
     );
   }
-  const opened = await openSnapshotReadOnly(join(app.getPath('userData'), 'snapshots'), latest);
+  const opened = await openSnapshotReadOnly(root, latest);
   const { bible } = await adopt(
     opened.session,
     opened.snapshot.name ?? opened.snapshot.bible,
@@ -347,11 +352,23 @@ async function reopenAfterSwitch(slug: string | null): Promise<void> {
   }
 }
 
+/** A58: said when the host has no system browser to open a link in. */
+const NO_BROWSER = 'This link opens only in the desktop app.';
+
+/** A58: said when the host has no file dialogs, so no file can be chosen. */
+const NO_DIALOGS = 'Open the desktop app to choose a file.';
+
+const dialogs = () => {
+  if (!app.dialogs) throw new Error(NO_DIALOGS);
+  return app.dialogs;
+};
+
 /** Open an allowlisted link in the system browser. Used by IPC and by the window open handler. */
 export async function openExternal(url: string): Promise<Response<'app.openExternal'>> {
   const check = checkExternalUrl(url);
   if (!check.ok) return check;
-  await shell.openExternal(check.url);
+  if (!app.openExternal) return { ok: false, message: NO_BROWSER };
+  await app.openExternal(check.url);
   return { ok: true };
 }
 
@@ -366,36 +383,51 @@ const fileDeps: BackupDeps & SessionDeps = {
   async pickFile() {
     const forced = testPath('NOVEL_COMPANION_TEST_PICK_DOCUMENT');
     if (forced) return forced;
-    const result = await dialog.showOpenDialog({
+    return dialogs().openFile({
       title: 'Choose a Word document',
-      properties: ['openFile'],
       filters: [{ name: 'Word documents', extensions: ['docx'] }],
     });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
   },
   async pickSavePath(defaultName) {
     const forced = testPath('NOVEL_COMPANION_TEST_SAVE_PATH');
     if (forced) return forced;
-    const result = await dialog.showSaveDialog({
+    return dialogs().saveFile({
       title: 'Export the whole bible',
       defaultPath: defaultName,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
-    return result.canceled ? null : (result.filePath ?? null);
   },
   async pickBibleFile() {
     const forced = testPath('NOVEL_COMPANION_TEST_BIBLE_FILE');
     if (forced) return forced;
-    const result = await dialog.showOpenDialog({
+    return dialogs().openFile({
       title: 'Choose an exported bible',
-      properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
-    return result.canceled ? null : (result.filePaths[0] ?? null);
   },
 };
 
-export function registerHandlers(): void {
+/**
+ * A58: the channels only a host with Claude serves (the Agent SDK runs its
+ * bundled binary, which a hosted function cannot). Every other channel of
+ * the contract is in the table `registerHandlers` returns for any host.
+ */
+export const ELECTRON_ONLY_CHANNELS = Object.keys(claudeContract) as ClaudeChannel[];
+
+/** Put one channel's handler in the table being built. */
+function handle<C extends Channel>(channel: C, handler: Handler<C>): void {
+  setHandler(table, channel, handler);
+}
+
+/**
+ * A58: build the handler table for a host. Nothing here touches `ipcMain`:
+ * the Electron main process mounts the table with `mountHandlers`, and an
+ * HTTP function can serve the same table. Claude's channels are in it only
+ * when the host has Claude (`ELECTRON_ONLY_CHANNELS`).
+ */
+export function registerHandlers(host: Host): HandlerTable {
+  app = host;
+  table = new Map();
   handle('app.ping', ({ message }) => ({ message, receivedAt: new Date().toISOString() }));
   handle('app.openExternal', ({ url }) => openExternal(url));
   handle('bible.list', () => bibleList());
@@ -415,7 +447,7 @@ export function registerHandlers(): void {
         ? (current.bridge?.claimSteps() ?? [])
         : [],
   }));
-  handle('tree.export', (req) => exportTree(req));
+  handle('tree.export', (req) => exportTree(req, app.dialogs));
   // WT-1: the writing tools read Datamuse from main; nothing in the bible changes.
   handle('words.lookup', (req) => lookupWords(req));
   handle('app.flushed', () => {
@@ -427,27 +459,20 @@ export function registerHandlers(): void {
   for (const channel of BIBLE_CHANNELS) {
     handle(channel, guard(channel, handlers[channel] as Handler<BibleChannel>));
   }
-  // Claude (ARCH-4, AI-1 to AI-7).
-  const claudeSetup = claudeDeps({
-    isPackaged: app.isPackaged,
+  // Claude (ARCH-4, AI-1 to AI-7), where the host can run it.
+  const claudeSetup = app.claude?.attach({
     testSeams: seams(),
     testDatabase: testDatabaseHonoured(process.env, { isPackaged: app.isPackaged }),
-    userData: app.getPath('userData'),
-    appRoot: app.getAppPath(),
-    env: process.env,
-    version: app.getVersion(),
+    current: () => current?.session ?? null,
     emit: (e) => broadcast('claude.stream', e),
   });
-  claudeRuntime = claudeSetup.runtime;
-  // Chapter summaries (MS-2) run through the same runtime: streamed, stoppable, saved per
-  // AI-1, with the models from Claude settings (DB-4). Test builds get the recorded Claude
-  // from NOVEL_COMPANION_TEST_CLAUDE, like every other Claude feature.
-  registerSessionClaude(
-    runtimeSessionClaude(claudeSetup.runtime, () => current?.session ?? null, claudeSetup.keys),
-  );
-  const claude = claudeHandlers(() => current?.session ?? null, claudeSetup);
-  for (const channel of CLAUDE_CHANNELS) {
-    handle(channel, guard(channel, claude[channel] as Handler<ClaudeChannel>));
+  claudeRuntime = claudeSetup?.runtime ?? null;
+  if (claudeSetup) {
+    // Chapter summaries (MS-2) run through the same runtime.
+    registerSessionClaude(claudeSetup.sessionClaude);
+    for (const channel of ELECTRON_ONLY_CHANNELS) {
+      handle(channel, guard(channel, claudeSetup.handlers[channel] as Handler<ClaudeChannel>));
+    }
   }
   // The proposal seam for tests exists only outside a packaged app.
   if (!app.isPackaged) {
@@ -455,6 +480,7 @@ export function registerHandlers(): void {
     handle('test.propose', guard('test.propose', tests['test.propose']));
     handle('test.seed', guard('test.seed', tests['test.seed']));
   }
+  return table;
 }
 
 /**
@@ -473,11 +499,13 @@ function guard<C extends Channel>(channel: C, handler: Handler<C>): Handler<C> {
 
 let appSettings: AppSettingsStore | null = null;
 const settingsStore = (): AppSettingsStore =>
-  (appSettings ??= new FileAppSettingsStore(join(app.getPath('userData'), 'app-settings.json')));
+  (appSettings ??= app.userData
+    ? new FileAppSettingsStore(join(app.userData, 'app-settings.json'))
+    : new MemoryAppSettingsStore());
 
 /** ST-1: the window follows the appearance too (title bar, scroll bars, and `system`). */
 export function applyStoredAppearance(): void {
-  nativeTheme.themeSource = settingsStore().read().appearance;
+  app.setTheme(settingsStore().read().appearance);
 }
 
 /** ST-1 and ARCH-6: the connection, the connection string, and appearance. */
@@ -502,7 +530,7 @@ function registerAppHandlers(): void {
   handle('appearance.set', ({ appearance }) => {
     const store = settingsStore();
     store.write({ ...store.read(), appearance });
-    nativeTheme.themeSource = appearance;
+    app.setTheme(appearance);
     return { appearance };
   });
 }

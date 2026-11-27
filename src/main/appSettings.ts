@@ -36,3 +36,16 @@ export class FileAppSettingsStore implements AppSettingsStore {
     renameSync(tmp, this.path);
   }
 }
+
+/** A58: a host with no disk keeps the settings for as long as the process lives. */
+export class MemoryAppSettingsStore implements AppSettingsStore {
+  private settings = AppSettings.parse({});
+
+  read(): AppSettings {
+    return this.settings;
+  }
+
+  write(next: AppSettings): void {
+    this.settings = AppSettings.parse(next);
+  }
+}

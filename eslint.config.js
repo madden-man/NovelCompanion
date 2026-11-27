@@ -39,6 +39,32 @@ export default tseslint.config(
     rules: reactHooks.configs.recommended.rules,
   },
   {
+    // A58: the handler table runs where Electron cannot, so only the host and the Electron
+    // entry files may import Electron, the keychain or the Agent SDK.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: [
+      'src/main/host/electron.ts',
+      'src/main/index.ts',
+      'src/main/csp.ts',
+      'src/main/ipc/handle.ts',
+      'src/main/secrets.ts',
+      'src/main/claude/keys.ts',
+      'src/main/claude/sdk.ts',
+      'src/preload/index.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['electron', '@napi-rs/keyring', '@anthropic-ai/claude-agent-sdk'].map((name) => ({
+            name,
+            message: 'Only the host files may import this (A58). Reach it through Host.',
+          })),
+        },
+      ],
+    },
+  },
+  {
     files: ['tests/**/*.ts'],
     rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
   },
