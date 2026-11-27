@@ -18,7 +18,7 @@ import { runHandler } from '../main/ipc/validate';
 import type { HandlerTable } from '../main/ipc/validate';
 import { serverHost } from './host';
 import type { ServerEnv, WireEvent } from './host';
-import { takeDailyPhoneSnapshot } from './phoneSnapshots';
+import { takeDailyPhoneSnapshot, takePhoneSnapshot } from './phoneSnapshots';
 
 /** PH-21: the header that carries the server's build id on every answer. */
 export const BUILD_HEADER = 'X-NC-Build';
@@ -71,6 +71,9 @@ const KEY_REFUSED = 'The phone key was not accepted.';
 const NOT_UNDERSTOOD = 'The app could not read this request, so nothing changed. Reload the app.';
 const NO_SNAPSHOT =
   'The phone could not keep a copy of the bible for today, so nothing was saved. Try again.';
+/** BK-1 on the phone: a bulk change whose copy could not be kept is not made. */
+export const NO_BULK_SNAPSHOT =
+  'The phone could not keep a copy of the bible before this change, so nothing was changed. Try again.';
 
 export interface RpcDeps {
   /** Read on every request, so a changed key takes effect at once (PH-17). */
@@ -162,6 +165,18 @@ export function createRpc(deps: RpcDeps): Rpc {
         if (session) await assertSameVersion(session.handle, open?.name ?? body.bible);
         // A57 on the phone: a write carries the bible it was made in, and it is the one checked above.
         if (isWriteChannel(channel) && context.bible !== body.bible) throw new OtherBibleError();
+        // BK-1: the function has no snapshot folder, so a bulk change keeps a phone snapshot first.
+        if (session && !session.repo.beforeBulk) {
+          const handle = session.handle;
+          session.repo.beforeBulk = async () => {
+            try {
+              await takePhoneSnapshot(handle, 'bulk', now());
+            } catch (e) {
+              console.error('Novel Companion phone snapshot:', e);
+              throw new Error(NO_BULK_SNAPSHOT);
+            }
+          };
+        }
         await deps.freshen();
         if (session && isWriteChannel(channel)) {
           try {
