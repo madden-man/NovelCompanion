@@ -649,3 +649,51 @@ Suite counts: TO FILL BY ARCHITECT.
 | NF-3 | pending | `tests/unit/errors.test.ts` "A57 no failure message says to click or press Try again, or names Cmd+R", "A57 the connection messages beside Try again say only what went wrong"; `tests/e2e/offline.spec.ts` (the banner says what went wrong and the `connection-retry` button reads Try again). |
 | IP-1 (dates, headings) | pending | `tests/unit/editable.test.ts` "A57 a one-box date refuses what it cannot read as it is typed, and takes every format it reads"; `tests/e2e/editable.spec.ts` "A57 a date box refuses words as they are typed, says a half-typed date is not a date, and keeps the old value"; `tests/e2e/editing.spec.ts` "A57 an entry heading renames in place: click or F2 opens it, Enter or blur saves as one undo step, Escape cancels" (IP-13). |
 | Hidden runs | pending | `tests/e2e/tree.spec.ts` "FT-8 A26 A45 ..." asserts no window of a hidden run is visible while the page is full screen; `tests/journey/journey.spec.ts` 36 of 36 on the packaged app (956a9db). |
+
+## A58: Novel Companion on the phone (PH-1 to PH-39), 2026-11-27
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| PH-1 | pending | |
+| PH-2 | pending | |
+| PH-3 | pending | |
+| PH-4 | pending | |
+| PH-5 | pending | |
+| PH-6 | pending | |
+| PH-7 | pending | |
+| PH-8 | pending | |
+| PH-9 | pending | |
+| PH-10 | pending | |
+| PH-11 | pending | |
+| PH-12 | pending | |
+| PH-13 | pending | |
+| PH-14 | pending | |
+| PH-15 | pending | |
+| PH-16 | pending | |
+| PH-17 | pending | |
+| PH-18 | pending | |
+| PH-19 | pending | |
+| PH-20 | pending | |
+| PH-21 | pending | |
+| PH-22 | pending | |
+| PH-23 | pending | |
+| PH-24 | pending | |
+| PH-25 | pending | |
+| PH-26 | pending | |
+| PH-27 | pending | |
+| PH-28 | pending | |
+| PH-29 | pending | |
+| PH-30 | pending | |
+| PH-31 | pending | |
+| PH-32 | pending | |
+| PH-33 | pending | |
+| PH-34 | pending | |
+| PH-35 | pending | |
+| PH-36 | pending | |
+| PH-37 | pending | |
+| PH-38 | pending | |
+| PH-39 | pending | |
+| ARCH-1 (A58) | pending | |
+| ARCH-5 (A58) | pending | |
+| ARCH-6 (A58) | pending | |
+| NF-4 (A58) | pending | |
