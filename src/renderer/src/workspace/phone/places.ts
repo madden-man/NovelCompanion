@@ -49,7 +49,13 @@ export type Page =
   /** A screen with up to two arguments (a person, a moment, a tab, a page ID). */
   | { kind: 'screen'; screen: Screen; arg?: string; arg2?: string; at?: number };
 
-export type Sheet = 'year' | 'bibles' | 'changes';
+export type Sheet =
+  | 'year'
+  | 'bibles'
+  | 'changes'
+  /** A58 U2: a scene line's actions, and a chapter's. */
+  | 'outline-line'
+  | 'outline-chapter';
 
 export interface NavState {
   tab: Tab;

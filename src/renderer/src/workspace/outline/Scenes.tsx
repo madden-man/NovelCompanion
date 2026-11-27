@@ -58,6 +58,8 @@ import { Parts } from './Parts';
 import { ChapterMenu } from './ChapterMenu';
 import { StrandPopover, strandChipText } from './StrandPopover';
 import { clearOutlineFocus, useOpenOutline, waitingOutlineFocus } from './nav';
+import { isPhone } from '../../phone';
+import { PhoneOutline } from './PhoneOutline';
 
 type Outline = Response<'outline.get'>;
 type ChapterRow = Extract<Outline['rows'][number], { kind: 'chapter' }>;
@@ -1130,6 +1132,59 @@ export function SceneOutline(props: { onOpen: Open }) {
 
   const moving = grab?.mode === 'move' ? grab : null;
   const guide = grab?.mode === 'line' ? grab.guide : (moving?.slot?.guide ?? null);
+  // A58 U2: the phone's outline is one column over the same flow and writes.
+  if (isPhone() && outline && flow) {
+    return (
+      <PhoneOutline
+        chapters={chapters}
+        parts={parts}
+        flow={flow}
+        keys={keys}
+        firstScene={firstScene}
+        total={total}
+        status={{ key: scene.status, label }}
+        readOnly={ro.off}
+        type={scene.type}
+        step={scene.step}
+        save={scene.save}
+        onOpen={props.onOpen}
+        newChapterAt={(key, line) => void newChapterAt(key, line)}
+        addChapter={() => void addChapter()}
+        swap={swap}
+        canSwap={(id, by) => neighbourOf(placed, id, by) !== null}
+        trashChapter={(id) => void trashChapter(id)}
+        addDivider={addDivider}
+        removeDivider={removeDivider}
+        removeFirstDivider={removeFirstDivider}
+        notices={
+          <>
+            {(scene.error ?? writes.error ?? notice) && (
+              <p className="callout crit" role="alert">
+                {scene.error ?? writes.error ?? notice}
+              </p>
+            )}
+            {done && doneLive && (
+              <p className="callout scene-done" role="status" data-testid="scene-done">
+                <span>{done.text}</span>
+                <button
+                  type="button"
+                  className="btn small"
+                  data-testid="scene-done-undo"
+                  onClick={() => void undo.undo()}
+                >
+                  Undo
+                </button>
+              </p>
+            )}
+          </>
+        }
+        footer={<Parts writes={writes} />}
+        yearField={(n, shown, onCommit) => (
+          <SceneYear scene={n} shown={shown} disabled={ro.off} tip={ro.tip} onCommit={onCommit} />
+        )}
+      />
+    );
+  }
   return (
     <div className="ws-tree-area scenes" data-testid="outline-view">
       <section

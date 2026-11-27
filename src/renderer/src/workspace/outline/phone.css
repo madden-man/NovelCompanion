@@ -1,0 +1,294 @@
+/* A58 U2: the Outline on the phone, one column in page order. Only the web
+   build sets :root[data-phone] (src/renderer/src/phone.ts), so the desk never
+   sees these rules. Theme tokens only. */
+:root[data-phone] .ph-frame .ph-outline {
+  padding: 8px var(--ph-gutter-right) 24px var(--ph-gutter-left);
+}
+:root[data-phone] .ph-frame .ph-ol-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+:root[data-phone] .ph-frame .ph-ol-head h2 {
+  margin: 0;
+  flex: 1 1 auto;
+}
+:root[data-phone] .ph-frame .ph-ol-status {
+  color: var(--fg-2);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .ph-ol-list {
+  position: relative;
+}
+:root[data-phone] .ph-frame .ph-ol-list.dragging {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A section's divider: its name and its removal. */
+:root[data-phone] .ph-frame .ph-ol-divider {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 16px 0 4px;
+  padding-top: 8px;
+  border-top: 2px solid var(--border-strong);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+:root[data-phone] .ph-frame .ph-ol-divider > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .ph-ol-lead {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: var(--fg-2);
+}
+
+/* A chapter bar: its colour, its name and year, its menu. */
+:root[data-phone] .ph-frame .ph-ol-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 12px;
+  min-height: 56px;
+  border-left: 4px solid var(--series-1);
+  border-radius: var(--radius);
+  background: var(--series-1-soft);
+  color: var(--fg);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+:root[data-phone] .ph-frame .ph-ol-bar.series-2 {
+  border-left-color: var(--series-2);
+  background: var(--series-2-soft);
+}
+:root[data-phone] .ph-frame .ph-ol-bar.series-3 {
+  border-left-color: var(--series-3);
+  background: var(--series-3-soft);
+}
+:root[data-phone] .ph-frame .ph-ol-bar.series-4 {
+  border-left-color: var(--series-4);
+  background: var(--series-4-soft);
+}
+:root[data-phone] .ph-frame .ph-ol-grip {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  color: var(--fg-2);
+  letter-spacing: -2px;
+}
+:root[data-phone] .ph-frame .ph-ol-bar-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--ph-target);
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+:root[data-phone] .ph-frame .ph-ol-bar-title {
+  max-width: 100%;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+:root[data-phone] .ph-frame .ph-ol-bar-no {
+  color: var(--fg-2);
+  font-weight: 600;
+}
+:root[data-phone] .ph-frame .ph-ol-bar-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.9rem;
+  color: var(--fg-2);
+}
+:root[data-phone] .ph-frame .ph-ol-bar-year {
+  padding: 0 8px;
+  border: 1px solid var(--time);
+  border-radius: 10px;
+  background: var(--time-soft);
+  color: var(--fg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-phone] .ph-frame .ph-ol-written {
+  color: var(--good-ink);
+  font-weight: 600;
+}
+
+/* The scene lines under a bar, with the chapter's colour down their side. */
+:root[data-phone] .ph-frame .ph-ol-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 4px;
+  border-left: 4px solid var(--series-1);
+}
+:root[data-phone] .ph-frame .ph-ol-lines.series-2 {
+  border-left-color: var(--series-2);
+}
+:root[data-phone] .ph-frame .ph-ol-lines.series-3 {
+  border-left-color: var(--series-3);
+}
+:root[data-phone] .ph-frame .ph-ol-lines.series-4 {
+  border-left-color: var(--series-4);
+}
+:root[data-phone] .ph-frame .ph-ol-lines.lead {
+  border-left-color: var(--border-strong);
+}
+:root[data-phone] .ph-frame .ph-ol-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding-left: calc(var(--depth, 0) * 18px);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+:root[data-phone] .ph-frame .ph-ol-line.lifted,
+:root[data-phone] .ph-frame .ph-ol-bar.lifted {
+  position: relative;
+  z-index: 5;
+  box-shadow: var(--shadow);
+  background: var(--surface);
+  outline: 2px solid var(--accent);
+}
+:root[data-phone] .ph-frame .ph-ol-no {
+  flex: 0 0 auto;
+  width: 26px;
+  padding-top: 12px;
+  text-align: right;
+  color: var(--fg-2);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-phone] .ph-frame .ph-ol-text,
+:root[data-phone] .ph-frame .ph-ol-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--ph-target);
+  padding: 10px 6px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--fg);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+:root[data-phone] .ph-frame .ph-ol-text {
+  background: transparent;
+  border: 0;
+  cursor: text;
+  touch-action: manipulation;
+}
+:root[data-phone] .ph-frame .ph-ol-line:not(.scene) .ph-ol-text {
+  color: var(--fg-2);
+}
+:root[data-phone] .ph-frame .ph-ol-text.empty {
+  color: var(--fg-2);
+  font-style: italic;
+}
+:root[data-phone] .ph-frame .ph-ol-input {
+  resize: none;
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+:root[data-phone] .ph-frame .ph-ol-year {
+  flex: 0 0 auto;
+  padding-top: 12px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+:root[data-phone] .ph-frame .ph-ol-year.inherited {
+  color: var(--fg-2);
+}
+:root[data-phone] .ph-frame .ph-ol-end {
+  padding-left: 8px;
+}
+:root[data-phone] .ph-frame .ph-ol-add {
+  min-height: var(--ph-target);
+  min-width: var(--ph-target);
+  padding: 0 10px 0 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+:root[data-phone] .ph-frame .ph-ol-add .ph-icon {
+  width: 18px;
+  height: 18px;
+}
+:root[data-phone] .ph-frame .ph-ol-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 3px solid var(--accent);
+  pointer-events: none;
+  z-index: 6;
+}
+:root[data-phone] .ph-frame .ph-ol-foot {
+  margin: 16px 0;
+}
+
+/* The sheets: a line's and a chapter's actions. */
+:root[data-phone] .ph-frame .ph-ol-sheet-quote {
+  margin: 0 0 12px;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+:root[data-phone] .ph-frame .ph-ol-sheet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+:root[data-phone] .ph-frame .ph-ol-sheet-year {
+  margin-bottom: 12px;
+}
+:root[data-phone] .ph-frame .ph-ol-sheet-year .sl-year {
+  width: 100%;
+  min-height: var(--ph-target);
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+}
+:root[data-phone] .ph-frame .ph-ol-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--ph-target);
+  margin-bottom: 8px;
+}
+:root[data-phone] .ph-frame .ph-ol-check input {
+  width: 24px;
+  height: 24px;
+}
+:root[data-phone] .ph-frame .ph-row.danger {
+  color: var(--critical-ink);
+}
