@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import type * as ServerModule from '../src/server/index';
 import { importSource } from './import-source.ts';
 
 /**
@@ -22,7 +23,7 @@ const { values } = parseArgs({
   },
 });
 
-const server = await importSource<typeof import('../src/server/index')>('src/server/index.ts');
+const server = await importSource<typeof ServerModule>('src/server/index.ts');
 const staticDir = values.static
   ? resolve(values.static)
   : existsSync(join(ROOT, 'dist/web'))

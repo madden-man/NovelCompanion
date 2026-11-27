@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import type * as ServerModule from '../src/server/index';
 import { importSource } from './import-source.ts';
 
 /**
@@ -20,14 +21,15 @@ if (!bible || !uri) {
   process.exit(2);
 }
 
-const server = await importSource<typeof import('../src/server/index')>('src/server/index.ts');
+const server = await importSource<typeof ServerModule>('src/server/index.ts');
 const store = await server.connect(uri);
 try {
   const handle = await server.openBible(store, bible);
   if (!id) {
     const list = await server.listPhoneSnapshots(handle);
     if (!list.length) console.log(`${bible} has no phone snapshots.`);
-    for (const s of list) console.log(`${s._id}  ${s.takenAt}  ${s.reason}  version ${s.schemaVersion}`);
+    for (const s of list)
+      console.log(`${s._id}  ${s.takenAt}  ${s.reason}  version ${s.schemaVersion}`);
   } else {
     const { restored, safety } = await server.restorePhoneSnapshot(handle, id);
     console.log(`Restored ${bible} to the phone snapshot from ${restored.takenAt}.`);

@@ -123,7 +123,11 @@ export function createRpc(deps: RpcDeps): Rpc {
   const now = deps.now ?? (() => new Date());
   let tail: Promise<unknown> = Promise.resolve();
 
-  const answer = (status: number, body: RpcEnvelope | RpcError, extra: Record<string, string> = {}) => {
+  const answer = (
+    status: number,
+    body: RpcEnvelope | RpcError,
+    extra: Record<string, string> = {},
+  ) => {
     const headers = new Headers(extra);
     headers.set('Content-Type', 'application/json; charset=utf-8');
     headers.set('Cache-Control', 'no-store');

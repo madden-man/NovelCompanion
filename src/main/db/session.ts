@@ -70,7 +70,10 @@ export interface SessionOptions {
 /** A58 (PH-19): a bible at another schema version than this build, refused unmigrated. */
 export class VersionMismatchError extends Error {
   override name = 'VersionMismatchError';
-  constructor(readonly kind: 'older' | 'newer', message: string) {
+  constructor(
+    readonly kind: 'older' | 'newer',
+    message: string,
+  ) {
     super(message);
   }
 }

@@ -139,7 +139,10 @@ describe('PH-2 what the function bundle holds', () => {
     );
     expect(banned).toEqual([]);
     for (const host of ['src/main/host/electron.ts', 'src/main/secrets.ts']) {
-      expect(files.some((f) => f.endsWith(host)), host).toBe(false);
+      expect(
+        files.some((f) => f.endsWith(host)),
+        host,
+      ).toBe(false);
     }
   });
 });
