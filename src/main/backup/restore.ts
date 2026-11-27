@@ -1,13 +1,17 @@
 import type { OpenBible } from '../db/session';
 import type { SnapshotInfo } from '../../shared/domain/snapshots';
 import { replaceBible } from './dump';
+import { readRev } from '../db/rev';
 import { SnapshotError } from './snapshots';
 import { importBibleJson } from './json';
 
 /** Rebuild the read model and the search index from the database after a whole-bible change. */
 export async function reloadSession(open: OpenBible, message: string): Promise<void> {
+  // A58 (PH-8): the rev the whole-bible change left, read before loading.
+  const rev = await readRev(open.handle);
   await open.model.load(open.handle);
   open.search.rebuild(open.model);
+  open.repo.loadedAt(rev);
   open.repo.announceReload(message);
 }
 

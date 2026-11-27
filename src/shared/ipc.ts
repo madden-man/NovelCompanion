@@ -116,6 +116,8 @@ function checkPatch(
 }
 
 const EntryRef = z.strictObject({ collection: CollectionName, id: EntryId });
+/** A58 (PH-11): an undo or redo step writes only while the entry still has the `modifiedAt` it read. */
+const Expect = { expectModifiedAt: z.string().min(1).optional() };
 
 const ItemExtra = z.record(z.string(), z.union([z.string(), z.number()]));
 
@@ -585,13 +587,14 @@ export const contract = {
         collection: CollectionName,
         id: EntryId,
         patch: z.record(z.string(), z.unknown()),
+        ...Expect,
       })
       .superRefine(checkPatch),
     response: WithWarnings,
   },
   /** Move an entry to the trash (ED-5). */
-  'entry.delete': { request: EntryRef, response: WithWarnings },
-  'entry.restore': { request: EntryRef, response: WithWarnings },
+  'entry.delete': { request: EntryRef.extend(Expect), response: WithWarnings },
+  'entry.restore': { request: EntryRef.extend(Expect), response: WithWarnings },
   /** Titles and sections for entry IDs, for link chips that may point anywhere. */
   'entry.lookup': {
     request: z.strictObject({ ids: z.array(EntryId).max(500) }),
@@ -1194,7 +1197,12 @@ export const events = {
   /** The tree's stored positions changed: a move, a tidy, or an undo of one (FT-11, ED-3). */
   'tree.changed': z.strictObject({ bible: z.string() }),
   /** The whole bible was replaced by a restore or a file import; views reload everything. */
-  'bible.reloaded': z.strictObject({ bible: z.string(), message: z.string() }),
+  'bible.reloaded': z.strictObject({
+    bible: z.string(),
+    message: z.string(),
+    /** A58 (PH-8): it changed somewhere else; views redraw in place, typing kept. */
+    elsewhere: z.literal(true).optional(),
+  }),
   ...claudeEvents,
   ...appEvents,
   // a47-model

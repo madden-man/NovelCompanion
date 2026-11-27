@@ -23,20 +23,41 @@ export class ReadModel {
   /** target ID to the entries that refer to it; rebuilt after a write when next asked. */
   private reverse: Map<string, { collection: string; id: string; kind: string }[]> | null = null;
 
-  /** Load every collection of one bible (its prefixed collections only). */
+  /**
+   * A58 (PH-8): the puts and removes made while a load reads the database,
+   * replayed onto what it read, so a write that lands mid-load is never lost.
+   */
+  private midLoad: (() => void)[] | null = null;
+
+  /**
+   * Load every collection of one bible (its prefixed collections only). A58:
+   * the old contents stay readable until the new ones are all read, so a
+   * reload while the app runs never shows a half-loaded bible.
+   */
   async load(bible: BibleHandle): Promise<void> {
-    this.maps.clear();
-    this.reverse = null;
-    const names = await bible.collectionNames();
-    await Promise.all(
-      names.map(async (name) => {
-        const docs = await bible.collection<StoredDoc>(name).find({}).toArray();
-        this.maps.set(
-          name,
-          new Map(docs.map((d) => [String(d._id), { ...d, _id: String(d._id) }])),
-        );
-      }),
-    );
+    const replay: (() => void)[] = [];
+    this.midLoad = replay;
+    try {
+      const next = new Map<string, Map<string, StoredDoc>>();
+      const names = await bible.collectionNames();
+      await Promise.all(
+        names.map(async (name) => {
+          const docs = await bible.collection<StoredDoc>(name).find({}).toArray();
+          next.set(name, new Map(docs.map((d) => [String(d._id), { ...d, _id: String(d._id) }])));
+        }),
+      );
+      this.maps.clear();
+      for (const [name, docs] of next) this.maps.set(name, docs);
+      this.reverse = null;
+    } finally {
+      if (this.midLoad === replay) this.midLoad = null;
+    }
+    for (const op of replay) op();
+  }
+
+  /** A58: every document as it is now, by collection, to compare with after a reload. */
+  copy(): Map<string, Map<string, StoredDoc>> {
+    return new Map([...this.maps].map(([name, docs]) => [name, new Map(docs)]));
   }
 
   collections(): string[] {
@@ -55,11 +76,13 @@ export class ReadModel {
   put(collection: string, doc: StoredDoc): void {
     this.map(collection).set(doc._id, doc);
     this.reverse = null;
+    this.midLoad?.push(() => this.put(collection, doc));
   }
 
   remove(collection: string, id: string): void {
     this.maps.get(collection)?.delete(id);
     this.reverse = null;
+    this.midLoad?.push(() => this.remove(collection, id));
   }
 
   get(collection: string, id: string): StoredDoc | undefined {

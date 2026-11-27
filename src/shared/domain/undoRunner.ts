@@ -1,4 +1,5 @@
 import { plainErrorMessage } from '../errors';
+import { ENTRY_MOVED_MESSAGE } from '../freshness';
 /**
  * Replaying undo and redo steps through the write path (ED-3, ARCHITECTURE
  * rule 5). Every step records what it expects to find, and a step whose
@@ -119,8 +120,16 @@ export function renameCommand(
   };
 }
 
-/** Why a step was skipped: a newer change, an entry deleted forever, or a check that failed. */
-export type SkipWhy = 'changed' | 'gone' | 'error';
+/**
+ * Why a step was skipped: a newer change, an entry deleted forever, a check
+ * that failed, or (A58, PH-11) an entry that changed somewhere else after the
+ * check read it, which the write path refused.
+ */
+export type SkipWhy = 'changed' | 'gone' | 'error' | 'moved';
+
+/** PH-11: the write path refused the step because its entry moved elsewhere. */
+const movedElsewhere = (e: unknown): boolean =>
+  String((e as { message?: unknown } | null)?.message ?? e).includes(ENTRY_MOVED_MESSAGE);
 
 const GONE = 'the entry no longer exists';
 
@@ -191,6 +200,12 @@ export class UndoManager {
       for (const op of ops) await io.apply(op);
       return { status: 'applied', label: cmd.label };
     } catch (e) {
+      if (movedElsewhere(e)) {
+        // Like a newer change found by the check: dropped, and every other step stays.
+        if (direction === 'undo') this.stack.discardUndone();
+        else this.stack.discardDone();
+        return { status: 'skipped', label: cmd.label, reason: ENTRY_MOVED_MESSAGE, why: 'moved' };
+      }
       if (direction === 'undo') this.stack.revertUndo();
       else this.stack.revertRedo();
       return {
@@ -214,6 +229,8 @@ export function stepNotice(direction: 'undo' | 'redo', r: StepResult): string {
       if (r.why === 'gone')
         return `${verb} skipped: the entry no longer exists (it was deleted forever), so nothing was written.`;
       if (r.why === 'error') return `${verb} skipped: ${r.reason} Nothing was written.`;
+      if (r.why === 'moved')
+        return `${verb} skipped: this entry changed somewhere else since that step, so nothing was written.`;
       return `${verb} skipped: this field changed since that step, so nothing was overwritten (${r.reason}).`;
     case 'failed':
       return `Could not ${direction}: ${r.error}`;

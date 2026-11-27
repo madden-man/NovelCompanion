@@ -196,7 +196,13 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
         setError(plainError(e));
         setStatus('error');
       });
-    const off = window.api.on('bible.reloaded', () => setReloads((n) => n + 1));
+    const off = window.api.on('bible.reloaded', (e) => {
+      // A58 (PH-10): a change made elsewhere never takes typing not yet stored.
+      const typed = stored();
+      const dirty = typed !== null && !sameState(saved.current, typed);
+      if (e.elsewhere && (timer.current || inflight.current || dirty)) return;
+      setReloads((n) => n + 1);
+    });
     return () => {
       live = false;
       off();
