@@ -14,9 +14,7 @@ describe('phone places in the hash (PH-31)', () => {
       { kind: 'new', collection: 'places' },
     ];
     const hash = toHash(s);
-    expect(hash).toBe(
-      '#/people/e:characters:H1/s:tree:H1/s:backstory::01JX/l:places/n:places',
-    );
+    expect(hash).toBe('#/people/e:characters:H1/s:tree:H1/s:backstory::01JX/l:places/n:places');
     expect(fromHash(hash)).toEqual(s);
   });
 
