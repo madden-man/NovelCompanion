@@ -413,6 +413,33 @@ describe('PH-7 PH-8 freshen leaves no window', () => {
   });
 });
 
+describe('PH-8 every meta document changed elsewhere sends a change signal', () => {
+  test('PH-8 brief settings, the scene outline, snapshot settings and Claude instructions changed elsewhere each send settings; rev alone sends nothing', async () => {
+    const slug = freshSlug('ph8-meta');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const heard: string[] = [];
+    a.repo.onSettingsChange(() => heard.push('settings'));
+    for (const write of [
+      () => b.repo.setBriefSettings({ budget: 12_345 }),
+      () => b.repo.setSceneOutline('- Written elsewhere'),
+      () => b.repo.setSnapshotKeep(9),
+      () => b.repo.setClaudeInstructions('capture', 'Be brief.'),
+    ]) {
+      heard.length = 0;
+      await write();
+      expect(await a.repo.freshen()).toBe(true);
+      expect(heard).toEqual(['settings']);
+    }
+    expect(a.repo.briefSettings().budget).toBe(12_345);
+    heard.length = 0;
+    await b.repo.withRev(async () => undefined);
+    expect(await a.repo.freshen()).toBe(true);
+    expect(heard).toEqual([]);
+  });
+});
+
 describe('PH-6 a write and its rev raise land together', () => {
   /** The raise of `rev` fails, as a dropped connection would, after the write itself went out. */
   function failRaise(session: OpenBible): () => void {

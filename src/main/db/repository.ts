@@ -76,7 +76,7 @@ import type { ListAddProposal } from '../../shared/schema';
 import { NOTEBOOK_COLLECTION, NotebookPage } from '../../shared/schema';
 import type { NotebookOp } from '../../shared/domain/notebook';
 // A58
-import { ELSEWHERE_MESSAGE, ENTRY_MOVED_MESSAGE } from '../../shared/freshness';
+import { ELSEWHERE_MESSAGE, ENTRY_MOVED_MESSAGE, REV_META_ID } from '../../shared/freshness';
 import { RevTracker, raiseRev, readRev } from './rev';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
@@ -1140,7 +1140,11 @@ export class Repository {
       } else if (name === 'lists' || name === 'proposals') signals.add(name);
       else if (name === 'meta') {
         for (const c of changed) {
-          if (Object.hasOwn(META_SIGNALS, c.id)) signals.add(META_SIGNALS[c.id] as string);
+          if (c.id === REV_META_ID) continue;
+          // Every other meta document: its own setter's event, else the settings event.
+          signals.add(
+            Object.hasOwn(META_SIGNALS, c.id) ? (META_SIGNALS[c.id] as string) : 'settings',
+          );
         }
       }
     }
@@ -2400,7 +2404,10 @@ const STORY_TIME_ID = 'storyTime';
 
 /**
  * A58 (PH-8): the event a `meta` document changed elsewhere sends, the same
- * one its own setter sends here. `rev` and the rest send none.
+ * one its own setter sends here. `rev` sends none; any other meta document
+ * (brief settings, the scene outline, snapshot settings, Claude instructions,
+ * the tray marks, the bridge) sends `settings`, which the views that show
+ * one read again on.
  */
 const META_SIGNALS: Record<string, string> = {
   storyTime: 'storyTime',

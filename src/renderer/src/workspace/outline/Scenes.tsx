@@ -196,6 +196,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
         setLoaded(saved.current);
         setStatus('saved');
         setError(moved.current ? ENTRY_MOVED_MESSAGE : null);
+        // A58: the versions list reads again too, for a version made elsewhere.
+        setSaves((n) => n + 1);
       })
       .catch((e: unknown) => {
         if (!live) return;

@@ -3,7 +3,7 @@
  * the numbers, the cultural time unit, the templates, the default eras, and
  * Claude's instructions. Every value is an `Editable`, each change one undo step.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CULTURE_UNITS,
   DEFAULT_LINK_TYPE_LABELS,
@@ -547,10 +547,24 @@ export function ClaudeInstructionsSettings() {
   // An undo or redo writes the instructions from outside this screen; read them again after one.
   const steps = useStepKey();
   useEffect(load, [load, steps]);
+  // A58 (PH-8, PH-10): read again after a change elsewhere, unless a field here holds typing.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const again = () => {
+      const el = document.activeElement;
+      const typing =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement && el.isContentEditable);
+      if (!(typing && box.current?.contains(el))) load();
+    };
+    const offs = [window.api.on('settings.changed', again), window.api.on('bible.reloaded', again)];
+    return () => offs.forEach((off) => off());
+  }, [load]);
 
   if (!items) return <NoteLine note={note} />;
   return (
-    <div className="panel stack tight" data-testid="settings-instructions">
+    <div className="panel stack tight" data-testid="settings-instructions" ref={box}>
       <h4>Instructions for each feature</h4>
       {items.map((i) => (
         <section
