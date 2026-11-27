@@ -23,8 +23,14 @@ export class RunStore {
     return this.session.handle.collection<ClaudeRun>(COLLECTION);
   }
 
-  private remember(doc: ClaudeRun | null): ClaudeRun {
+  /** A58 (PH-6): every write here raises the bible's `rev`, like the repository's own writes. */
+  private raised(): Promise<void> {
+    return this.session.repo.noteWrite();
+  }
+
+  private async remember(doc: ClaudeRun | null): Promise<ClaudeRun> {
     if (!doc) throw new Error('That conversation is not saved.');
+    await this.raised();
     // A53: a run of a removed feature (a saved `briefs` run) is skipped, not an error.
     if (!ClaudeFeature.safeParse(doc.feature).success) return doc;
     const parsed = ClaudeRun.parse(doc);
@@ -36,6 +42,7 @@ export class RunStore {
   async create(run: ClaudeRun): Promise<ClaudeRun> {
     const doc = ClaudeRun.parse(run);
     await this.collection().insertOne(doc);
+    await this.raised();
     this.session.model.put(COLLECTION, doc as unknown as StoredDoc);
     return doc;
   }
@@ -102,6 +109,7 @@ export class RunStore {
   async remove(id: string): Promise<void> {
     const res = await this.collection().deleteOne({ _id: id });
     if (res.deletedCount !== 1) throw new Error('That conversation is not saved.');
+    await this.raised();
     this.session.model.remove(COLLECTION, id);
   }
 

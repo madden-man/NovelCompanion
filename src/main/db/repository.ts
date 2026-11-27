@@ -75,6 +75,9 @@ import type { ListAddProposal } from '../../shared/schema';
 // A55
 import { NOTEBOOK_COLLECTION, NotebookPage } from '../../shared/schema';
 import type { NotebookOp } from '../../shared/domain/notebook';
+// A58
+import { ELSEWHERE_MESSAGE, ENTRY_MOVED_MESSAGE } from '../../shared/freshness';
+import { RevTracker, raiseRev, readRev } from './rev';
 
 export type ChangeOp = 'create' | 'update' | 'softDelete' | 'restore';
 
@@ -148,6 +151,8 @@ const isDerived = (id: string): id is DerivedListId =>
  */
 export class Repository {
   private readonly emitter = new EventEmitter();
+  /** A58 (PH-6, PH-8): the bible's `rev` as this process has seen and moved it. */
+  private readonly revs = new RevTracker();
 
   constructor(
     private readonly bible: BibleHandle,
@@ -262,6 +267,7 @@ export class Repository {
   ): Promise<void> {
     const listUpdates = [...listsAfter];
     this.settleRegions(changes, listUpdates); // a47-model
+    let rev = 0;
     await this.transact(async (session) => {
       await this.writeChanges(changes, session);
       for (const list of listUpdates) {
@@ -270,8 +276,10 @@ export class Repository {
           .replaceOne({ _id: list._id }, list, { session, upsert: true });
       }
       await extra?.(session);
+      rev = await raiseRev(this.bible, session);
       await this.options.midTransaction?.(session);
     });
+    this.revs.wrote(rev);
     for (const list of listUpdates) this.model.put('lists', list as unknown as StoredDoc);
     for (const ch of changes) {
       this.model.put(ch.collection, ch.next);
@@ -327,6 +335,14 @@ export class Repository {
     const doc = await this.collection(c).findOne({ _id: id });
     if (!doc) throw new RepositoryError(`No ${c} entry has the ID ${id}.`);
     return doc;
+  }
+
+  /** A56, A58 (PH-11): the stored entry, unless it moved since the writer read it. */
+  private expected(prior: StoredDoc, opts: Pick<WriteOptions, 'expectModifiedAt'>): StoredDoc {
+    if (opts.expectModifiedAt !== undefined && String(prior.modifiedAt) !== opts.expectModifiedAt) {
+      throw new EntryMoved();
+    }
+    return prior;
   }
 
   private stamp(prior: StoredDoc): string {
@@ -449,10 +465,7 @@ export class Repository {
     opts: WriteOptions = {},
   ): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const prior = await this.current(c, id);
-    if (opts.expectModifiedAt !== undefined && String(prior.modifiedAt) !== opts.expectModifiedAt) {
-      throw new EntryMoved();
-    }
+    const prior = this.expected(await this.current(c, id), opts);
     const change = this.buildUpdate(c, prior, patch as Record<string, unknown>, opts);
     await this.commit([change]);
     return change.next as EntryOf<C>;
@@ -497,16 +510,24 @@ export class Repository {
   }
 
   /** Move to the trash (ED-5). Links are kept so a restore brings them back. */
-  async softDelete<C extends EntryCollection>(c: C, id: string): Promise<EntryOf<C>> {
+  async softDelete<C extends EntryCollection>(
+    c: C,
+    id: string,
+    opts: Pick<WriteOptions, 'expectModifiedAt'> = {},
+  ): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const change = this.buildSoftDelete(c, await this.current(c, id));
+    const change = this.buildSoftDelete(c, this.expected(await this.current(c, id), opts));
     await this.commit([change]);
     return change.next as EntryOf<C>;
   }
 
-  async restore<C extends EntryCollection>(c: C, id: string): Promise<EntryOf<C>> {
+  async restore<C extends EntryCollection>(
+    c: C,
+    id: string,
+    opts: Pick<WriteOptions, 'expectModifiedAt'> = {},
+  ): Promise<EntryOf<C>> {
     this.assertCollection(c);
-    const prior = await this.current(c, id);
+    const prior = this.expected(await this.current(c, id), opts);
     if (!prior.deletedAt) throw new RepositoryError('This entry is not in the trash.');
     const { deletedAt: _cleared, ...rest } = prior;
     const doc = this.validate(c, { ...rest, modifiedAt: this.stamp(prior) });
@@ -780,6 +801,7 @@ export class Repository {
       ...this.proposalGuard(input, target),
     });
     await this.proposals().insertOne(proposal);
+    await this.noteWrite();
     this.model.put('proposals', proposal as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return proposal;
@@ -823,6 +845,7 @@ export class Repository {
   private async saveProposal(p: Proposal): Promise<Proposal> {
     const res = await this.proposals().replaceOne({ _id: p._id, state: 'pending' }, p);
     if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    await this.noteWrite();
     this.model.put('proposals', p as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return p;
@@ -930,6 +953,7 @@ export class Repository {
     };
     const res = await this.proposals().replaceOne({ _id: id, state: 'pending' }, decided);
     if (res.matchedCount !== 1) throw new RepositoryError('This proposal was already decided.');
+    await this.noteWrite();
     this.model.put('proposals', decided as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return decided;
@@ -953,12 +977,101 @@ export class Repository {
 
   /** Tell views that the whole bible was replaced, after a restore or a file import. */
   announceReload(message: string): void {
-    this.emitter.emit('reload', message);
+    this.emitter.emit('reload', message, false);
   }
 
-  onReload(listener: (message: string) => void): () => void {
+  /** The bible was read again; `elsewhere` when it was because it changed somewhere else (PH-8). */
+  onReload(listener: (message: string, elsewhere: boolean) => void): () => void {
     this.emitter.on('reload', listener);
     return () => this.emitter.off('reload', listener);
+  }
+
+  // ---------- A58: rev, one number per bible (PH-6 to PH-9) ----------
+
+  /** The `rev` this process has caught up to. */
+  get rev(): number {
+    return this.revs.current;
+  }
+
+  /** The read model was (re)loaded after `rev` read this number. */
+  loadedAt(rev: number): void {
+    this.revs.loadedAt(rev);
+  }
+
+  /**
+   * PH-6: a write outside a transaction (a setting, a proposal, a saved
+   * Claude run) raises `rev` once it has landed.
+   */
+  async noteWrite(): Promise<void> {
+    this.revs.wrote(await raiseRev(this.bible));
+  }
+
+  private freshening: Promise<boolean> | null = null;
+
+  /**
+   * PH-7, PH-8: read `rev` (one small read). When it is not a number this
+   * process loaded or wrote, read the bible again, rebuild the search index,
+   * tell every view what changed, and answer true. One at a time.
+   */
+  freshen(): Promise<boolean> {
+    this.freshening ??= this.freshenOnce().finally(() => {
+      this.freshening = null;
+    });
+    return this.freshening;
+  }
+
+  private async freshenOnce(): Promise<boolean> {
+    const stored = await readRev(this.bible);
+    if (this.revs.settled(stored)) return false;
+    const before = this.model.copy();
+    await this.model.load(this.bible);
+    this.index.rebuild(this.model);
+    this.revs.loadedAt(stored);
+    this.announceChanges(before);
+    this.emitter.emit('reload', ELSEWHERE_MESSAGE, true);
+    return true;
+  }
+
+  /** After a reload from elsewhere, the same events a write here sends, for what differs. */
+  private announceChanges(before: Map<string, Map<string, StoredDoc>>): void {
+    const after = this.model.copy();
+    const signals = new Set<string>();
+    for (const name of new Set([...before.keys(), ...after.keys()])) {
+      const was = before.get(name) ?? new Map<string, StoredDoc>();
+      const now = after.get(name) ?? new Map<string, StoredDoc>();
+      const changed: { id: string; op: ChangeEvent['op'] }[] = [];
+      for (const [id, doc] of now) {
+        const old = was.get(id);
+        if (!old) changed.push({ id, op: 'create' });
+        else if (JSON.stringify(old) !== JSON.stringify(doc)) {
+          const op =
+            !old.deletedAt && doc.deletedAt
+              ? 'softDelete'
+              : old.deletedAt && !doc.deletedAt
+                ? 'restore'
+                : 'update';
+          changed.push({ id, op });
+        }
+      }
+      for (const id of was.keys()) if (!now.has(id)) changed.push({ id, op: 'purge' });
+      if (!changed.length) continue;
+      if (isEntryCollection(name) || name === NOTEBOOK_COLLECTION) {
+        for (const c of changed) {
+          this.emitter.emit('change', {
+            bible: this.bible.id,
+            collection: name,
+            id: c.id,
+            op: c.op,
+          } satisfies ChangeEvent);
+        }
+      } else if (name === 'lists' || name === 'proposals') signals.add(name);
+      else if (name === 'meta') {
+        for (const c of changed) {
+          if (Object.hasOwn(META_SIGNALS, c.id)) signals.add(META_SIGNALS[c.id] as string);
+        }
+      }
+    }
+    for (const signal of signals) this.emitter.emit(signal);
   }
 
   // ---------- story time (TM-3, stored in meta, never an entry) ----------
@@ -1258,10 +1371,12 @@ export class Repository {
       const id = removeId as string;
       await meta.deleteOne({ _id: id });
       this.model.remove('meta', id);
+      await this.noteWrite();
       return;
     }
     await meta.replaceOne({ _id: doc._id }, doc, { upsert: true });
     this.model.put('meta', doc);
+    await this.noteWrite();
   }
 
   // ---------- brief settings (SB-2 window, SB-6 budget), stored in meta ----------
@@ -1430,6 +1545,7 @@ export class Repository {
           questionIds: [...new Set([...held, ...purgedQuestions])].sort(),
         }
       : null;
+    let rev = 0;
     await this.transact(async (session) => {
       // A retried transaction counts again from nothing.
       counts.entries = 0;
@@ -1468,8 +1584,10 @@ export class Repository {
           .collection<StoredDoc>('meta')
           .replaceOne({ _id: BRIDGE_META_ID }, heldDoc, { session, upsert: true });
       }
+      rev = await raiseRev(this.bible, session);
       await this.options.midTransaction?.(session);
     });
+    this.revs.wrote(rev);
     if (heldDoc) this.model.put('meta', heldDoc);
     for (const it of items) {
       this.model.remove(it.collection, it.id);
@@ -1555,6 +1673,7 @@ export class Repository {
     }
     if (!changes.length) return 0;
     const target = this.bible.collection<StoredDoc>(NOTEBOOK_COLLECTION);
+    let rev = 0;
     await this.transact(async (session) => {
       for (const ch of changes) {
         if (!ch.prior) {
@@ -1572,8 +1691,10 @@ export class Repository {
           );
         }
       }
+      rev = await raiseRev(this.bible, session);
       await this.options.midTransaction?.(session);
     });
+    this.revs.wrote(rev);
     for (const ch of changes) {
       this.model.put(NOTEBOOK_COLLECTION, ch.next);
       this.index.upsert(NOTEBOOK_COLLECTION, ch.next);
@@ -1772,6 +1893,7 @@ export class Repository {
       },
     });
     await this.proposals().insertOne(proposal);
+    await this.noteWrite();
     this.model.put('proposals', proposal as unknown as StoredDoc);
     this.emitter.emit('proposals');
     return proposal;
@@ -2181,6 +2303,18 @@ export class Repository {
 
 const STORY_TIME_ID = 'storyTime';
 
+/**
+ * A58 (PH-8): the event a `meta` document changed elsewhere sends, the same
+ * one its own setter sends here. `rev` and the rest send none.
+ */
+const META_SIGNALS: Record<string, string> = {
+  storyTime: 'storyTime',
+  treeLayout: 'tree',
+  bibleSettings: 'settings',
+  [ROMANIZATION_META_ID]: 'lists',
+  communityNotes: 'lists',
+};
+
 /** One saved version of the scene outline (PL-5); `breaks` since A37, `years` since A39 (an older `ranges` is ignored). */
 interface SceneVersionDoc {
   _id: string;
@@ -2221,10 +2355,10 @@ export interface WriteOptions {
   expectModifiedAt?: string;
 }
 
-/** A56 (FN-7): the entry changed after the write was planned, so the write was skipped. */
+/** A56 (FN-7), A58 (PH-11): the entry changed after the write was planned, so the write was skipped. */
 export class EntryMoved extends RepositoryError {
   constructor() {
-    super('This entry changed after the change was planned, so it was left as it is.');
+    super(ENTRY_MOVED_MESSAGE);
     this.name = 'EntryMoved';
   }
 }

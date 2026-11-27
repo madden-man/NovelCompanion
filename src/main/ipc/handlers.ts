@@ -35,6 +35,7 @@ import type { ClaudeChannel } from '../claude/handlers';
 import { BridgeService } from '../bridge/service';
 import { BridgeStore } from '../db/bridge';
 import { worldForBible } from '../../shared/bridge';
+import { EntryMoved } from '../db/repository';
 
 /**
  * A58: the host this table was built for: the Electron main process, or a
@@ -240,6 +241,19 @@ export function bridgeFocus(): void {
   void current?.bridge?.focus();
 }
 
+/**
+ * A58 (PH-7, PH-8): make the open bible fresh. Reads its `rev` (one small
+ * read); when it is not a number this process loaded or wrote, the read model
+ * and the search index are read again, every view is told (`bible.reloaded`
+ * and the change events), the pocket is published again through the bridge's
+ * reload, and the answer is `{ moved: true }`. No open bible, or a read-only
+ * snapshot, answers `{ moved: false }`.
+ */
+export async function freshenOpenBible(): Promise<{ moved: boolean }> {
+  if (!current || current.readOnly) return { moved: false };
+  return { moved: await current.session.repo.freshen() };
+}
+
 /** Make an opened bible (or a read-only snapshot of one) the current one, and follow its changes. */
 async function adopt(
   session: OpenBible,
@@ -264,8 +278,8 @@ async function adopt(
   const offSettings = session.repo.onSettingsChange(() =>
     broadcast('settings.changed', { bible: slug }),
   );
-  const offReload = session.repo.onReload((message) =>
-    broadcast('bible.reloaded', { bible: slug, message }),
+  const offReload = session.repo.onReload((message, elsewhere) =>
+    broadcast('bible.reloaded', { bible: slug, message, ...(elsewhere ? { elsewhere } : {}) }),
   );
   const unsubscribe = () => {
     bridge?.stop();
@@ -490,11 +504,20 @@ export function registerHandlers(host: Host): HandlerTable {
  * A57: a write made in another bible than the open one is refused.
  */
 function guard<C extends Channel>(channel: C, handler: Handler<C>): Handler<C> {
-  return guardHandler(channel, handler, {
+  const guarded = guardHandler(channel, handler, {
     readOnly: () => current?.readOnly === true,
     lost: () => conn().lost(),
     openBible: () => current?.session.handle.id ?? null,
   });
+  return async (request, context) => {
+    try {
+      return await guarded(request, context);
+    } catch (e) {
+      // A58 (PH-11): a write planned against an entry that moved elsewhere: show the newer bible.
+      if (e instanceof EntryMoved) void freshenOpenBible().catch(() => undefined);
+      throw e;
+    }
+  };
 }
 
 let appSettings: AppSettingsStore | null = null;

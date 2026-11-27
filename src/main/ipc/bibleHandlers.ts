@@ -556,16 +556,22 @@ export function bibleHandlers(
         ? { ok: false, message: problem }
         : { ok: true, message: 'Follows the system.' };
     },
-    'entry.update': async ({ collection, id, patch }) => {
-      const entry = (await session().repo.update(collection, id, patch as never)) as StoredDoc;
+    'entry.update': async ({ collection, id, patch, expectModifiedAt }) => {
+      const entry = (await session().repo.update(collection, id, patch as never, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.delete': async ({ collection, id }) => {
-      const entry = (await session().repo.softDelete(collection, id)) as StoredDoc;
+    'entry.delete': async ({ collection, id, expectModifiedAt }) => {
+      const entry = (await session().repo.softDelete(collection, id, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
     },
-    'entry.restore': async ({ collection, id }) => {
-      const entry = (await session().repo.restore(collection, id)) as StoredDoc;
+    'entry.restore': async ({ collection, id, expectModifiedAt }) => {
+      const entry = (await session().repo.restore(collection, id, {
+        expectModifiedAt,
+      })) as StoredDoc;
       return withWarnings(collection, entry);
     },
     'entry.lookup': ({ ids }) => {
