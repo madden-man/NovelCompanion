@@ -152,10 +152,6 @@
 :root[data-phone] .ph-frame .ph-grid .wg-row-label {
   padding-left: 12px;
 }
-:root[data-phone] .ph-frame .ph-grid .wg-plus {
-  width: 28px;
-  height: 28px;
-}
 :root[data-phone] .ph-frame .ph-grid .wg-label:hover {
   background: var(--surface);
 }
@@ -249,38 +245,20 @@
 :root[data-lifted] .ph-frame .ph-grid .wg-era.dragging {
   box-shadow: var(--shadow);
 }
-/* Each row's add at the story year: a visible tap target in its cell. */
-.wg-cell-add {
-  all: unset;
-  position: absolute;
-  top: 50%;
-  z-index: 2;
-  width: 36px;
-  height: 36px;
-  transform: translate(-50%, -50%);
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border-strong);
+/* Each row's add is its held first cell, a "+" no marker can cover; what a tap
+   scrolls into view clears the fixed top and bottom bars. */
+:root[data-phone] .ph-frame .ph-grid .wg-row-label .wg-plus {
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  font-weight: 700;
-  color: var(--fg);
-  background: var(--surface);
-  cursor: pointer;
-  touch-action: manipulation;
+  font-size: 1.1rem;
 }
-.wg-cell-add::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-}
-.wg-cell-add:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.wg-cell-add:active {
+:root[data-phone] .ph-frame .ph-grid .wg-row-label:active {
   background: var(--accent-soft);
+}
+:root[data-phone] .ph-frame .wg-area :is(button, input, select, textarea, [tabindex]) {
+  scroll-margin-top: calc(var(--ph-top) + var(--ph-safe-top) + 12px);
+  scroll-margin-bottom: calc(var(--ph-bottom) + var(--ph-safe-bottom) + 12px);
 }
 /* The new event form: under the top bar, clear of the keyboard, the page's width. */
 :root[data-phone] .ph-frame .wg-add {

@@ -63,8 +63,8 @@ export function labelW(): number {
   return isPhone() ? PHONE_LABEL_W : LABEL_W;
 }
 
-/** A58 U3: on the phone every row, heading and era is at least a thumb tall (44 px). */
-export const PHONE_GRID_METRICS = { header: 80, groupHeading: 44, lane: 36, rowPad: 4 };
+/** A58 U3: on the phone every row, heading and era is at least a thumb tall (44 px under its 1 px rule). */
+export const PHONE_GRID_METRICS = { header: 80, groupHeading: 45, lane: 37, rowPad: 4 };
 
 /** A click that ends a touch drag can come late; it is swallowed this long (ms). */
 const TOUCH_CLICK_MS = 600;
