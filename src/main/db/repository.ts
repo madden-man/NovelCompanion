@@ -267,19 +267,22 @@ export class Repository {
   ): Promise<void> {
     const listUpdates = [...listsAfter];
     this.settleRegions(changes, listUpdates); // a47-model
-    let rev = 0;
-    await this.transact(async (session) => {
-      await this.writeChanges(changes, session);
-      for (const list of listUpdates) {
-        await this.bible
-          .collection<ListDoc>('lists')
-          .replaceOne({ _id: list._id }, list, { session, upsert: true });
-      }
-      await extra?.(session);
-      rev = await raiseRev(this.bible, session);
-      await this.options.midTransaction?.(session);
+    // PH-8: a freshen waits for this write, so it never reads its number before it is noted.
+    await this.tracked(async () => {
+      let rev = 0;
+      await this.transact(async (session) => {
+        await this.writeChanges(changes, session);
+        for (const list of listUpdates) {
+          await this.bible
+            .collection<ListDoc>('lists')
+            .replaceOne({ _id: list._id }, list, { session, upsert: true });
+        }
+        await extra?.(session);
+        rev = await raiseRev(this.bible, session);
+        await this.options.midTransaction?.(session);
+      });
+      this.revs.wrote(rev);
     });
-    this.revs.wrote(rev);
     for (const list of listUpdates) this.model.put('lists', list as unknown as StoredDoc);
     for (const ch of changes) {
       this.model.put(ch.collection, ch.next);
@@ -1023,14 +1026,28 @@ export class Repository {
    * unsaved when it was saved, and the other client always sees it.
    */
   async withRev<T>(write: (session: ClientSession) => Promise<T>): Promise<T> {
-    let rev = 0;
-    const out = await this.transact(async (session) => {
-      const result = await write(session);
-      rev = await raiseRev(this.bible, session);
-      return result;
+    return this.tracked(async () => {
+      let rev = 0;
+      const out = await this.transact(async (session) => {
+        const result = await write(session);
+        rev = await raiseRev(this.bible, session);
+        return result;
+      });
+      this.revs.wrote(rev);
+      return out;
     });
-    this.revs.wrote(rev);
-    return out;
+  }
+
+  /** Writes that raise `rev` and have not yet noted the number they made. */
+  private readonly writing = new Set<Promise<unknown>>();
+
+  /** PH-8: run a write that raises `rev`, so a freshen can wait until its number is noted. */
+  private tracked<T>(write: () => Promise<T>): Promise<T> {
+    const p = write();
+    this.writing.add(p);
+    const done = () => this.writing.delete(p);
+    p.then(done, done);
+    return p;
   }
 
   private freshening: Promise<boolean> | null = null;
@@ -1041,14 +1058,43 @@ export class Repository {
    * tell every view what changed, and answer true. One at a time.
    */
   freshen(): Promise<boolean> {
-    this.freshening ??= this.freshenOnce().finally(() => {
-      this.freshening = null;
+    const inFlight = this.freshening;
+    if (inFlight) {
+      // PH-8: the one in flight may have read rev before a write that landed since, so one more
+      // check runs after it; every caller that joins meanwhile shares that one.
+      this.followUp ??= inFlight
+        .then(
+          () => undefined,
+          () => undefined,
+        )
+        .then(() => {
+          this.followUp = null;
+          return this.freshen();
+        });
+      const followUp = this.followUp;
+      return inFlight.then(
+        async (moved) => (await followUp) || moved,
+        () => followUp,
+      );
+    }
+    const run = this.freshenOnce().finally(() => {
+      if (this.freshening === run) this.freshening = null;
     });
-    return this.freshening;
+    this.freshening = run;
+    return run;
   }
 
+  private followUp: Promise<boolean> | null = null;
+
   private async freshenOnce(): Promise<boolean> {
-    const stored = await readRev(this.bible);
+    let stored = 0;
+    // PH-8: never read rev while one of this process's writes may have committed but not yet
+    // noted its number, or that write would read as one made somewhere else.
+    for (let tries = 0; ; tries++) {
+      while (this.writing.size) await Promise.allSettled([...this.writing]);
+      stored = await readRev(this.bible);
+      if (!this.writing.size || tries >= 5) break;
+    }
     if (this.revs.settled(stored)) return false;
     const before = this.model.copy();
     await this.model.load(this.bible);
@@ -1576,49 +1622,52 @@ export class Repository {
           questionIds: [...new Set([...held, ...purgedQuestions])].sort(),
         }
       : null;
-    let rev = 0;
-    await this.transact(async (session) => {
-      // A retried transaction counts again from nothing.
-      counts.entries = 0;
-      if (notebookIds.length) {
-        const gone = await this.bible
-          .collection<StoredDoc>(NOTEBOOK_COLLECTION)
-          .deleteMany({ _id: { $in: notebookIds }, deletedAt: { $type: 'string' } } as Document, {
-            session,
-          });
-        if (gone.deletedCount !== notebookIds.length) {
-          throw new RepositoryError(
-            'A notebook page left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
-          );
+    // PH-8: a freshen waits for this write, so it never reads its number before it is noted.
+    await this.tracked(async () => {
+      let rev = 0;
+      await this.transact(async (session) => {
+        // A retried transaction counts again from nothing.
+        counts.entries = 0;
+        if (notebookIds.length) {
+          const gone = await this.bible
+            .collection<StoredDoc>(NOTEBOOK_COLLECTION)
+            .deleteMany({ _id: { $in: notebookIds }, deletedAt: { $type: 'string' } } as Document, {
+              session,
+            });
+          if (gone.deletedCount !== notebookIds.length) {
+            throw new RepositoryError(
+              'A notebook page left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
+            );
+          }
+          counts.entries += gone.deletedCount;
         }
-        counts.entries += gone.deletedCount;
-      }
-      const byCollection = new Map<EntryCollection, string[]>();
-      for (const it of items) {
-        byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
-      }
-      for (const [collection, ids] of byCollection) {
-        const gone = await this.collection(collection).deleteMany(
-          { _id: { $in: ids }, deletedAt: { $type: 'string' } } as Document,
-          { session },
-        );
-        if (gone.deletedCount !== ids.length) {
-          throw new RepositoryError(
-            'An entry left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
-          );
+        const byCollection = new Map<EntryCollection, string[]>();
+        for (const it of items) {
+          byCollection.set(it.collection, [...(byCollection.get(it.collection) ?? []), it.id]);
         }
-        counts.entries += gone.deletedCount;
-      }
-      // A56 (FN-7): a question deleted forever is never made again from the phone's page.
-      if (heldDoc) {
-        await this.bible
-          .collection<StoredDoc>('meta')
-          .replaceOne({ _id: BRIDGE_META_ID }, heldDoc, { session, upsert: true });
-      }
-      rev = await raiseRev(this.bible, session);
-      await this.options.midTransaction?.(session);
+        for (const [collection, ids] of byCollection) {
+          const gone = await this.collection(collection).deleteMany(
+            { _id: { $in: ids }, deletedAt: { $type: 'string' } } as Document,
+            { session },
+          );
+          if (gone.deletedCount !== ids.length) {
+            throw new RepositoryError(
+              'An entry left the trash while it was being deleted, so nothing was deleted. Look at the trash again.',
+            );
+          }
+          counts.entries += gone.deletedCount;
+        }
+        // A56 (FN-7): a question deleted forever is never made again from the phone's page.
+        if (heldDoc) {
+          await this.bible
+            .collection<StoredDoc>('meta')
+            .replaceOne({ _id: BRIDGE_META_ID }, heldDoc, { session, upsert: true });
+        }
+        rev = await raiseRev(this.bible, session);
+        await this.options.midTransaction?.(session);
+      });
+      this.revs.wrote(rev);
     });
-    this.revs.wrote(rev);
     if (heldDoc) this.model.put('meta', heldDoc);
     for (const it of items) {
       this.model.remove(it.collection, it.id);
@@ -1704,28 +1753,31 @@ export class Repository {
     }
     if (!changes.length) return 0;
     const target = this.bible.collection<StoredDoc>(NOTEBOOK_COLLECTION);
-    let rev = 0;
-    await this.transact(async (session) => {
-      for (const ch of changes) {
-        if (!ch.prior) {
-          await target.insertOne(ch.next, { session });
-          continue;
-        }
-        const res = await target.replaceOne(
-          { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
-          ch.next,
-          { session },
-        );
-        if (res.matchedCount !== 1) {
-          throw new RepositoryError(
-            'A notebook page changed somewhere else. The next pull reads it again.',
+    // PH-8: a freshen waits for this write, so it never reads its number before it is noted.
+    await this.tracked(async () => {
+      let rev = 0;
+      await this.transact(async (session) => {
+        for (const ch of changes) {
+          if (!ch.prior) {
+            await target.insertOne(ch.next, { session });
+            continue;
+          }
+          const res = await target.replaceOne(
+            { _id: ch.prior._id, modifiedAt: ch.prior.modifiedAt } as Document,
+            ch.next,
+            { session },
           );
+          if (res.matchedCount !== 1) {
+            throw new RepositoryError(
+              'A notebook page changed somewhere else. The next pull reads it again.',
+            );
+          }
         }
-      }
-      rev = await raiseRev(this.bible, session);
-      await this.options.midTransaction?.(session);
+        rev = await raiseRev(this.bible, session);
+        await this.options.midTransaction?.(session);
+      });
+      this.revs.wrote(rev);
     });
-    this.revs.wrote(rev);
     for (const ch of changes) {
       this.model.put(NOTEBOOK_COLLECTION, ch.next);
       this.index.upsert(NOTEBOOK_COLLECTION, ch.next);

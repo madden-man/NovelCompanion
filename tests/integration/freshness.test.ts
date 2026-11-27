@@ -330,6 +330,89 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
   });
 });
 
+describe('PH-7 PH-8 freshen leaves no window', () => {
+  test('PH-8 a freshen asked for while one is in flight still sees a write that landed after the first read rev', async () => {
+    const slug = freshSlug('ph8-join');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    // Hold the first freshen just after it read rev.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held = false;
+    const collection = a.handle.collection.bind(a.handle);
+    Object.assign(a.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'meta') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop !== 'findOne') return Reflect.get(target, prop, receiver) as unknown;
+            return async (...args: unknown[]) => {
+              const doc = await (target.findOne as (...x: unknown[]) => Promise<unknown>)(...args);
+              if (!held) {
+                held = true;
+                await gate;
+              }
+              return doc;
+            };
+          },
+        });
+      },
+    });
+    const first = a.repo.freshen();
+    await expect.poll(() => held).toBe(true);
+    await b.repo.update('characters', 'H1', { role: 'Written while A was reading' });
+    const joined = a.repo.freshen();
+    release();
+    expect(await first).toBe(false);
+    expect(await joined).toBe(true);
+    expect(a.repo.get('characters', 'H1')?.role).toBe('Written while A was reading');
+    Object.assign(a.handle, { collection });
+  });
+
+  test('PH-8 a freshen that reads rev just after this side committed, before it noted the number, does not take its own write for one made elsewhere', async () => {
+    const slug = freshSlug('ph8-own');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const reloads: boolean[] = [];
+    a.repo.onReload((_m, elsewhere) => reloads.push(elsewhere));
+    const client = a.handle.client;
+    const startSession = client.startSession.bind(client);
+    let fresh: Promise<boolean> | null = null;
+    Object.assign(client, {
+      startSession: (...args: Parameters<typeof startSession>) => {
+        const session = startSession(...args);
+        // Only the write's own session, never the driver's implicit ones.
+        if (args.length) return session;
+        const end = session.endSession.bind(session);
+        Object.assign(session, {
+          // After the commit, before the write notes its number: a freshen comes in.
+          endSession: async (...x: Parameters<typeof end>) => {
+            if (!fresh) {
+              console.log('HOOK rev', await readRev(a.handle), a.repo.rev);
+              fresh = a.repo.freshen();
+              await new Promise((r) => setTimeout(r, 300));
+              console.log('HOOK after', a.repo.rev);
+            }
+            return end(...x);
+          },
+        });
+        return session;
+      },
+    });
+    try {
+      await a.repo.update('characters', 'H1', { role: 'Mine' });
+    } finally {
+      Object.assign(client, { startSession });
+    }
+    expect(fresh).not.toBeNull();
+    expect(await fresh!).toBe(false);
+    expect(reloads).toEqual([]);
+    expect(await a.repo.freshen()).toBe(false);
+  });
+});
+
 describe('PH-6 a write and its rev raise land together', () => {
   /** The raise of `rev` fails, as a dropped connection would, after the write itself went out. */
   function failRaise(session: OpenBible): () => void {
