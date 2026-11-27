@@ -1395,13 +1395,11 @@ test('SM-1 TL-3 Birth is one box: a month and a full date save on Enter as one u
   const history = (await changes(page)).locator('li');
   await expect(history.first()).toHaveText('Changed Birth on Ruth Hale');
   await page.keyboard.press('Escape');
-  // A value it cannot read is refused at the box, and nothing is written.
+  // A value it cannot read never goes into the box (A57), and nothing is written.
   await shown.click();
   await birth.fill('March 1990');
-  await birth.press('Enter');
-  await expect(f.getByRole('alert')).toHaveText(
-    'Not saved: March 1990 is not a date. Write a year (1990), a year and month (1990-03), or a full date (1990-03-14).',
-  );
+  await expect(birth).toHaveValue('1990-03');
+  await expect(f.getByRole('alert')).toHaveCount(0);
   expect((await ruth()).birth).toEqual({ year: 1990, month: 3 });
   await birth.fill('1990-03-14');
   await birth.blur();
