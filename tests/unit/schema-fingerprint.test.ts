@@ -11,6 +11,7 @@ import {
 } from '../../src/shared/schema';
 import { ClaudeRun } from '../../src/shared/claude';
 import { RevDoc } from '../../src/shared/freshness';
+import { PhoneWaitsDoc } from '../../src/shared/phoneWaits';
 import { StoryTimeValue } from '../../src/shared/storyTime';
 
 /**
@@ -27,6 +28,7 @@ const STORED: Record<string, z.ZodType> = {
   'meta.bibleSettings': BibleSettings,
   'meta.storyTime': StoryTimeValue,
   'meta.rev': RevDoc,
+  'meta.phoneWaits': PhoneWaitsDoc,
 };
 
 /**
@@ -47,6 +49,32 @@ const FINGERPRINTS: Record<number, Record<string, string>> = {
     glossaryTerms: '03e45c6b3316c691',
     lists: '437468a4ea75172f',
     'meta.bibleSettings': 'd638ed4b72dcdf85',
+    'meta.rev': '9038fea824b8de8a',
+    'meta.storyTime': 'a34d0baa30af658b',
+    moments: 'c4f7a13f9501d1c8',
+    notebookPages: '00fd55d9ba0f9466',
+    openQuestions: '72c01837d43fe3d7',
+    parentLinks: 'af73207a6209e6ae',
+    parts: 'f187fc3e1fbb864a',
+    places: '8e51e25630fccc59',
+    proposals: '68fa78d42a525b46',
+    unions: '3547bef526b1aade',
+    worldEvents: 'a70a2ea87ac6e11c',
+  },
+
+  // A58 U5: the sentences that wait for the desk (`meta.phoneWaits`).
+  17: {
+    chapters: '86afcca688359b72',
+    characters: 'bd99affa55e39f7a',
+    conversations: '16d974f55e90985c',
+    culturalEntries: 'c974120697f028c7',
+    eraStates: 'a186008ee4897f03',
+    families: '839cea5615d63149',
+    findings: 'e86495d5de806c25',
+    glossaryTerms: '03e45c6b3316c691',
+    lists: '437468a4ea75172f',
+    'meta.bibleSettings': 'd638ed4b72dcdf85',
+    'meta.phoneWaits': 'f346454595119202',
     'meta.rev': '9038fea824b8de8a',
     'meta.storyTime': 'a34d0baa30af658b',
     moments: 'c4f7a13f9501d1c8',

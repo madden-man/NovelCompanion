@@ -339,6 +339,25 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
   /** Every write channel, each with a request that writes. A channel left out does not compile. */
   const WALK: Record<WriteChannel, Step> = {
     'tray.mark': { run: () => call('tray.mark', { keys: ['fact-1'], mark: 'dismissed' }) },
+    // A58 U5 (PH-28): a sentence kept for the desk, then taken back.
+    'capture.wait': {
+      run: async () => {
+        const { lines } = await call('capture.wait', {
+          lines: [{ text: 'The tram to the coast was free on Sundays.', year: 2034 }],
+        });
+        state.waiting = lines.at(-1)!.id;
+      },
+    },
+    'capture.takeBack': {
+      setup: async () => {
+        if (state.waiting) return;
+        const { lines } = await call('capture.wait', {
+          lines: [{ text: 'The ferry to Macau stopped running in winter.', year: 2034 }],
+        });
+        state.waiting = lines.at(-1)!.id;
+      },
+      run: () => call('capture.takeBack', { ids: [state.waiting!] }),
+    },
     'bible.create': {
       run: () => call('bible.create', { slug: state.newBible!, name: 'Made in the walk' }),
       get bible() {

@@ -111,6 +111,9 @@ export const appEvents = {
 export const WRITE_CHANNELS = [
   // A56 (FN-3, FN-4): the tray's marks, in meta.
   'tray.mark',
+  // A58 U5 (PH-28): sentences that wait for the desk, in meta.
+  'capture.wait',
+  'capture.takeBack',
   'bible.create',
   'entry.create',
   'entry.createMany',

@@ -107,6 +107,10 @@ export const CHANNEL_REACH = {
   // The From the notebook tray is on the Mac (PH-28).
   'tray.state': 'desk',
   'tray.mark': 'desk',
+  // A58 U5 (PH-28): the phone keeps what needs Claude here; the desk's tray reads it.
+  'capture.waiting': 'phone',
+  'capture.wait': 'phone',
+  'capture.takeBack': 'phone',
   'session.relevant': 'phone',
   'brief.settings.get': 'phone',
   'brief.settings.set': 'phone',

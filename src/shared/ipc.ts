@@ -18,6 +18,7 @@ import { continuityContract } from './ipcContinuity';
 import { appContract, appEvents } from './ipcApp';
 import { wordsContract } from './ipcWords';
 import { notebookContract } from './ipcNotebook';
+import { captureContract } from './ipcCapture';
 import type { EntryCollection } from './schema';
 // a47-guard
 import { guardContract } from './ipcGuard';
@@ -1108,6 +1109,8 @@ export const contract = {
   ...wordsContract,
   // A55
   ...notebookContract,
+  // A58 U5: sentences that wait for the desk (src/shared/ipcCapture.ts).
+  ...captureContract,
   /** M7 sessions and manuscript (src/shared/ipcSession.ts). */
   ...sessionContract,
   ...claudeContract,

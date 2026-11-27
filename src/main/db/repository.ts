@@ -1,6 +1,16 @@
 import { BRIDGE_META_ID } from '../../shared/bridge';
 import { withMarks } from '../../shared/domain/tray';
 import type { TrayMarks } from '../../shared/domain/tray';
+import {
+  PHONE_WAITS_FULL,
+  PHONE_WAITS_MAX,
+  PHONE_WAITS_META_ID,
+  PhoneWaitsDoc,
+  WaitingLine,
+  readWaits,
+  withWaits,
+} from '../../shared/phoneWaits';
+import type { WaitingInput } from '../../shared/phoneWaits';
 import { EventEmitter } from 'node:events';
 import { monotonicFactory } from 'ulid';
 import type { ClientSession, Collection, Document } from 'mongodb';
@@ -1748,6 +1758,44 @@ export class Repository {
   }
 
   private trayWrites: Promise<void> = Promise.resolve();
+
+  /** A58 U5 (PH-28): the sentences waiting for the desk, kept in the `meta` document `phoneWaits`. */
+  phoneWaits(): WaitingLine[] {
+    return readWaits(this.model.get('meta', PHONE_WAITS_META_ID));
+  }
+
+  /**
+   * A58 U5 (PH-28): keep sentences for the desk, and take some back. A new
+   * line gets its ID and time here; a line given with its ID (undo of a take
+   * back, redo of a keep) comes back as it was. One at a time, as the tray's
+   * marks are, so two phones never lose each other's lines. Not an entry
+   * write and never a notebook page, so the notebook pull leaves it alone.
+   */
+  setPhoneWaits(
+    add: readonly WaitingInput[],
+    drop: readonly string[] = [],
+  ): Promise<WaitingLine[]> {
+    const run = this.trayWrites.then(async () => {
+      const at = this.now().toISOString();
+      const lines = add.map((l) =>
+        WaitingLine.parse({
+          id: l.id ?? newId(),
+          text: l.text.trim(),
+          year: l.year,
+          at: l.at ?? at,
+        }),
+      );
+      const next = withWaits(this.phoneWaits(), lines, drop);
+      if (next.length > PHONE_WAITS_MAX) throw new RepositoryError(PHONE_WAITS_FULL);
+      await this.writeMeta(PhoneWaitsDoc.parse({ _id: PHONE_WAITS_META_ID, lines: next }));
+      return next;
+    });
+    this.trayWrites = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   /** Records the first time; a second call keeps the first. */
   async markBridgeSince(ms: number): Promise<number> {

@@ -27,9 +27,9 @@ const revDoc = (slug: string) =>
   store.db.collection(`${slug}.meta`).findOne({ _id: REV_META_ID as never });
 
 describe('PH-6 PH-20 migration 16 adds the rev counter', () => {
-  test('PH-20 the schema version is 16, the rev migration last', () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(16);
-    expect(migrations.at(-1)!.version).toBe(16);
+  test('PH-20 the rev migration is version 16', () => {
+    expect(LATEST_SCHEMA_VERSION).toBe(17);
+    expect(migrations[15]!.version).toBe(16);
   });
 
   test('PH-6 a new bible starts with rev in meta', async () => {
@@ -48,7 +48,7 @@ describe('PH-6 PH-20 migration 16 adds the rev counter', () => {
     const metaBefore = await bible.collection('meta').find({}).sort({ _id: 1 }).toArray();
 
     const open = await openBibleSession(store, slug);
-    expect(await schemaVersion(open.handle)).toBe(16);
+    expect(await schemaVersion(open.handle)).toBe(17);
     expect(await revDoc(slug)).toEqual({ _id: REV_META_ID, rev: 0 });
     const metaAfter = await bible
       .collection('meta')
@@ -59,7 +59,7 @@ describe('PH-6 PH-20 migration 16 adds the rev counter', () => {
 
     await open.repo.setStoryTime({ year: 2040 });
     expect(await readRev(open.handle)).toBe(1);
-    await migrations.at(-1)!.up(open.handle);
+    await migrations[15]!.up(open.handle);
     await migrate(open.handle);
     expect(await readRev(open.handle)).toBe(1);
   });

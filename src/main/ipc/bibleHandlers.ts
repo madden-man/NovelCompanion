@@ -58,6 +58,7 @@ import {
 } from '../../shared/domain/notebook';
 import { offeredPages } from '../../shared/domain/tray';
 import type { TrayMarks } from '../../shared/domain/tray';
+import { waitingHandled } from '../../shared/phoneWaits';
 import { placeAndDescendants } from '../../shared/domain/searchFilters';
 import { notebookAccepts, notebookPageView } from '../bridge/views';
 import type { GuardChannel } from './guardHandlers';
@@ -135,7 +136,11 @@ export type BibleChannel =
   | 'notebook.relevant'
   | 'notebook.offered'
   | 'tray.state'
-  | 'tray.mark';
+  | 'tray.mark'
+  // A58 U5
+  | 'capture.waiting'
+  | 'capture.wait'
+  | 'capture.takeBack';
 
 /** Channels that exist only outside a packaged app. */
 export type TestChannel = 'test.propose' | 'test.seed';
@@ -698,7 +703,25 @@ export function bibleHandlers(
     'notebook.offered': () => ({ pages: offeredPages(session().repo.notebookPages()) }),
     'tray.state': () => copyMarks(session().repo.trayMarks()),
     'tray.mark': async ({ keys, mark }) => copyMarks(await session().repo.setTrayMarks(keys, mark)),
+    // A58 U5 (PH-28): the sentences waiting for the desk, each with whether the tray handled it.
+    'capture.waiting': () => waitingWire(session().repo),
+    'capture.wait': async ({ lines }) => {
+      const { repo } = session();
+      await repo.setPhoneWaits(lines);
+      return waitingWire(repo);
+    },
+    'capture.takeBack': async ({ ids }) => {
+      const { repo } = session();
+      await repo.setPhoneWaits([], ids);
+      return waitingWire(repo);
+    },
   };
+}
+
+/** PH-28: every waiting sentence, with whether the tray has handled it. */
+function waitingWire(repo: OpenBible['repo']) {
+  const marks = repo.trayMarks();
+  return { lines: repo.phoneWaits().map((l) => ({ ...l, handled: waitingHandled(l, marks) })) };
 }
 
 /** The tray's marks as the wire takes them (plain arrays). */
