@@ -592,3 +592,38 @@ test('FN-7 a question changed by a pull the page could not hear (while it reload
   await page.getByTestId('top-undo').click();
   await expect.poll(async () => (await q()).state).toBe('open');
 });
+
+test('PH-28 a sentence waiting from the phone shows as a tray card under From the phone, files with File it, and leaves the waiting list', async () => {
+  const LINE = 'Teenagers in Portland begin to wear paper masks in 2047.';
+  // The phone keeps it through the same channel it uses (capture.wait), here from the desk's window.
+  const { lines } = await invoke('capture.wait', { lines: [{ text: LINE, year: 2047 }] });
+  const id = lines.find((l) => l.text === LINE)!.id;
+  expect((await invoke('capture.waiting', {})).lines.find((l) => l.id === id)?.handled).toBe(false);
+  await rail(page, 'Characters').click();
+  await openTray();
+  const group = tray().getByTestId('tray-group').filter({ hasText: LINE });
+  await expect(group).toHaveAttribute('data-group', /^phone:\d{4}-\d{2}-\d{2}$/);
+  await expect(group.locator('h3')).toContainText('From the phone');
+  await expect(item(LINE).getByTestId('tray-line')).toContainText('story year 2047');
+  await expect(item(LINE).getByTestId('capture-fact')).toHaveAttribute('data-stand', 'local');
+  const before = await captures();
+  await group.getByTestId('tray-file').click();
+  await expect(tray().getByTestId('tray-filed')).toBeVisible();
+  await expect(item(LINE)).toHaveCount(0);
+  const made = async () =>
+    (await invoke('entry.list', { collection: 'culturalEntries', trash: 'exclude' })).entries
+      .map((e) => e.entry as Record<string, unknown>)
+      .filter((e) => /paper masks/i.test(String(e.title)) && e.startYear === 2047);
+  await expect.poll(async () => (await made()).length).toBe(1);
+  // Handled on the desk: the phone's waiting list no longer holds it.
+  expect((await invoke('capture.waiting', {})).lines.find((l) => l.id === id)?.handled).toBe(true);
+  // Undo offers it again, and it waits again for the phone too.
+  await page.getByTestId('top-undo').click();
+  await expect.poll(async () => (await made()).length).toBe(0);
+  await expect(item(LINE)).toHaveCount(1);
+  await expect
+    .poll(async () => (await invoke('capture.waiting', {})).lines.find((l) => l.id === id)?.handled)
+    .toBe(false);
+  // Nothing went to Claude.
+  expect(await captures()).toBe(before);
+});

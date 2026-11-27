@@ -112,6 +112,17 @@ export const captureNav = {
     sendHandler ? sendHandler(r) : Promise.resolve('not sent'),
 };
 
+/** A58 U5: the phone's capture page opens whenever the box is asked for (+, a prefill). */
+export const useCaptureOpen = (): boolean => useBoxOpen();
+
+/** A58 U5: the phone's capture page hears a prefill as the box does. */
+export function onCapturePrefill(listener: (text: string) => void): () => void {
+  prefillListeners.add(listener);
+  return () => {
+    prefillListeners.delete(listener);
+  };
+}
+
 function useBoxOpen(): boolean {
   return useSyncExternalStore(
     (l) => {
@@ -271,13 +282,13 @@ function standOf(routed: Routed, runs: readonly RunState[], i: number): FactStan
 }
 
 /** A57: what the writer set on a sentence while typing, kept by the sentence's text. */
-interface EditMark {
+export interface EditMark {
   choice?: FactChoice;
   ticked?: boolean;
 }
-type EditMarks = Record<string, EditMark>;
+export type EditMarks = Record<string, EditMark>;
 
-interface TypedRouting {
+export interface TypedRouting {
   facts: CaptureFact[];
   choices: FactChoice[];
   ticks: boolean[];
@@ -290,13 +301,13 @@ const NO_PREVIEW: TypedRouting = { facts: [], choices: [], ticks: [] };
  * again with its chips, so a chip stays with its sentence when another changes.
  */
 /** A57: what a routing would file or send, to tell whether the box shows what Enter would do. */
-function routingKey(r: TypedRouting): string {
+export function routingKey(r: TypedRouting): string {
   return JSON.stringify(
     r.facts.map((f, i) => [f.text, f.route, f.asks, f.drafts, r.ticks[i] ?? true]),
   );
 }
 
-function routeTyped(
+export function routeTyped(
   body: string,
   bible: CaptureBible,
   storyYear: number,

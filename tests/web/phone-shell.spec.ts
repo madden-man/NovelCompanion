@@ -233,7 +233,8 @@ test('PH-30 the bottom bar: People, Outline, World, Search and +, 44 px targets,
   await bar.getByRole('button', { name: 'People' }).tap();
   await expect(page.getByTestId('entry-list')).toBeVisible();
   await bar.getByRole('button', { name: 'Add' }).tap();
-  await expect(page.getByRole('dialog').first()).toBeVisible();
+  // A58 U5: + opens capture as a page over the tab.
+  await expect(page.locator('[data-testid="phone-capture"]:visible')).toBeVisible();
 });
 
 test('PH-31 a person opens as a page; back, browser back and a reload all keep the place', async ({

@@ -108,6 +108,9 @@ export function NotebookTray() {
     };
   }, [version, settings.numbers.timelineEnd, story.year, reread]);
 
+  // A58 U5 (PH-28): a sentence kept on the phone changes no entry, so a reload from elsewhere reads again.
+  useEffect(() => window.api.on('bible.reloaded', () => setReread((n) => n + 1)), []);
+
   const hints = useMemo(() => {
     const out: Record<string, Omit<CaptureHint, 'fact'>> = {};
     for (const [k, c] of Object.entries(choices)) if (Object.keys(c.hint).length) out[k] = c.hint;
