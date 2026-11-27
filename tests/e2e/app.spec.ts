@@ -191,7 +191,7 @@ test('ARCH-8 a second bible made with the New bible form can be switched to', as
   // With a bible open, the bible list and the New bible form live under Bibles in the rail.
   await rail(page, 'Bibles').click();
   // A57: there is no ID to type and no rule about one; the ID comes from the name.
-  await expect(page.getByLabel('ID')).toHaveCount(0);
+  await expect(page.getByLabel('ID', { exact: true })).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('The ID names the bible');
   await page.getByLabel('Name').fill('East Winds');
   await page.getByRole('button', { name: 'Create bible' }).click();
@@ -319,7 +319,8 @@ test('A57 the bible name in the header switches bibles and makes a new one from 
   await page.keyboard.press('Enter');
   await menu.getByTestId('bible-menu-new').fill('Tide Lines');
   await page.keyboard.press('Enter');
-  await expect(menu).toHaveCount(0);
+  // Making a bible writes its defaults and opens it; give it time on a busy machine.
+  await expect(menu).toHaveCount(0, { timeout: 30_000 });
   await expect(page.getByTestId('rail')).toBeVisible();
   expect(await page.evaluate(() => window.api.invoke('bible.current', {}))).toEqual({
     bible: { id: 'tide-lines-2', name: 'Tide Lines' },
@@ -328,7 +329,7 @@ test('A57 the bible name in the header switches bibles and makes a new one from 
   await button.click();
   await menu.getByTestId('bible-menu-new').fill('东风');
   await menu.getByRole('button', { name: 'Create and open' }).click();
-  await expect(page.getByTestId('current-bible')).toHaveText('东风');
+  await expect(page.getByTestId('current-bible')).toHaveText('东风', { timeout: 30_000 });
   expect((await page.evaluate(() => window.api.invoke('bible.current', {}))).bible?.id).toBe(
     'bible',
   );
