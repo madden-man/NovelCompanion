@@ -492,6 +492,10 @@ test('A57 CR-6 Enter before the preview shows files nothing; the next Enter does
   await expect(box().getByTestId('capture-file')).toHaveText('Send 1 to Claude Enter');
   await input().fill('The Kessler crowd stops tipping by 2071.');
   await input().press('Alt+Enter');
+  // The press only placed the new text; the box is still the typing view.
+  await expect(box().getByTestId('capture-file')).toHaveAttribute('data-current', 'true');
+  await expect(facts().first()).toContainText('by 2071');
+  await expect(box()).toHaveAttribute('data-phase', 'edit');
   await input().fill('');
   await expect(facts()).toHaveCount(0);
   await expect(box()).toHaveAttribute('data-phase', 'edit');
