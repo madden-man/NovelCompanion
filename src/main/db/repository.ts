@@ -324,9 +324,8 @@ export class Repository {
           u.next,
           { session },
         );
-        if (res.matchedCount !== 1) {
-          throw new RepositoryError('This entry changed somewhere else. Reload it and try again.');
-        }
+        // A58 (PH-11): written elsewhere after it was read; the guard freshens the bible.
+        if (res.matchedCount !== 1) throw new EntryMoved();
       }
     }
   }

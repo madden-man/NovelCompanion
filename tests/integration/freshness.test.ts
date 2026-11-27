@@ -8,6 +8,7 @@ import type { Store } from '../../src/main/db';
 import { openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
 import { readRev } from '../../src/main/db/rev';
+import { EntryMoved } from '../../src/main/db/repository';
 import { BridgeService } from '../../src/main/bridge/service';
 import { BridgeStore } from '../../src/main/db/bridge';
 import { claudeHandlers } from '../../src/main/claude/handlers';
@@ -216,6 +217,49 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
     expect(redo).toMatchObject({ status: 'skipped', why: 'moved' });
     expect((await stored())?.title).toBe('Renamed again');
     expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
+  });
+
+  test('PH-11 an entry changed elsewhere between the read and the commit is refused as moved, so undo skips it', async () => {
+    const slug = freshSlug('ph11-race');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const manager = new UndoManager();
+    const io = undoIO(ipcFor(() => a));
+    const before = a.repo.get('characters', 'H1')!;
+    const after = await a.repo.update('characters', 'H1', { role: 'Mine' });
+    manager.record(editCommand('Changed Role on H1', 'characters', 'H1', before, after));
+    // The other side writes H1 just after this side read it from MongoDB.
+    const collection = a.handle.collection.bind(a.handle);
+    let armed = true;
+    Object.assign(a.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'characters') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop !== 'findOne') return Reflect.get(target, prop, receiver) as unknown;
+            return async (...args: unknown[]) => {
+              const doc = await (target.findOne as (...a: unknown[]) => Promise<unknown>)(...args);
+              if (armed) {
+                armed = false;
+                await b.repo.update('characters', 'H1', { title: 'Renamed elsewhere' });
+              }
+              return doc;
+            };
+          },
+        });
+      },
+    });
+    const r = await manager.step('undo', io);
+    expect(r).toMatchObject({ status: 'skipped', why: 'moved', reason: ENTRY_MOVED_MESSAGE });
+    const stored = await store.db.collection(`${slug}.characters`).findOne({ _id: 'H1' as never });
+    expect(stored?.role).toBe('Mine');
+    expect(stored?.title).toBe('Renamed elsewhere');
+    armed = true;
+    await expect(a.repo.update('characters', 'H1', { role: 'Again' })).rejects.toBeInstanceOf(
+      EntryMoved,
+    );
   });
 
   test('PH-11 a step over several entries, one of them changed on the other side, writes none of them', async () => {
