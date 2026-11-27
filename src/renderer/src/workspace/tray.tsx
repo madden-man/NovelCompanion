@@ -75,6 +75,8 @@ export function NotebookTray() {
   const [keyOpen, setKeyOpen] = useState(false);
   /** AI-6: the Send to Claude pressed before consent; Continue sends it, Not now drops it. */
   const [ackFor, setAckFor] = useState<(() => void) | null>(null);
+  /** Bumped when a reload's marks were dropped, so a fresh read follows it. */
+  const [reread, setReread] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -88,8 +90,9 @@ export function NotebookTray() {
       ([offered, m, b, s]) => {
         if (!live) return;
         setPages(offered.pages);
-        // A mark written while this read was out is newer than what it read.
+        // A mark written while this read was out is newer than what it read; read again after it.
         if (marksWritten.current === written) setShownMarks(m);
+        else setReread((n) => n + 1);
         setBible(b);
         setStatus(s);
       },
@@ -100,7 +103,7 @@ export function NotebookTray() {
     return () => {
       live = false;
     };
-  }, [version, settings.numbers.timelineEnd, story.year]);
+  }, [version, settings.numbers.timelineEnd, story.year, reread]);
 
   const hints = useMemo(() => {
     const out: Record<string, Omit<CaptureHint, 'fact'>> = {};
@@ -210,6 +213,12 @@ export function NotebookTray() {
         void sentMark
           .then(() => call('tray.mark', { keys: [i.key], mark: null }))
           .then(setMarks, () => undefined);
+      },
+      // FN-6: handed back at a close while its run went on, then filed in the box: it leaves again.
+      onFiled: () => {
+        void call('tray.mark', { keys: [i.key], mark: 'sent' }).then(setMarks, (e: unknown) =>
+          setMessage(plainError(e)),
+        );
       },
     });
     if (result === 'sent') {

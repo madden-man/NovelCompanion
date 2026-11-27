@@ -91,6 +91,11 @@ export interface CaptureSendRequest {
    * offers it again. Never called once it is filed or kept for review.
    */
   onUnfiled?: () => void;
+  /**
+   * Called when the box files the sentence after it was handed back: the box
+   * was closed while its run was still going, then opened again and filed.
+   */
+  onFiled?: () => void;
 }
 /** What came of a hand-over: sent to Claude, the box busy with another capture, or not sent. */
 export type CaptureSendResult = 'sent' | 'busy' | 'not sent';
@@ -354,6 +359,11 @@ export function CaptureBox() {
   const settled = useRef(false);
   /** A56 (FN-6): the tray's hand-over still waiting to be filed; called back if it is not. */
   const handOver = useRef<(() => void) | null>(null);
+  /**
+   * The tray's hand-over the box still holds after handing it back: closed
+   * while its run was going, the capture stays in the box and may yet be filed.
+   */
+  const handedFrom = useRef<CaptureSendRequest | null>(null);
   const releaseHandOver = useCallback(() => {
     const back = handOver.current;
     handOver.current = null;
@@ -452,6 +462,7 @@ export function CaptureBox() {
     fetched.current = new Set();
     handled.current = new Set();
     settled.current = false;
+    handedFrom.current = null;
   }, []);
 
   /** KB-7: write the open question; null (with the reason shown) when it could not be saved. */
@@ -684,6 +695,8 @@ export function CaptureBox() {
   ): Promise<boolean> => {
     const body = from ? from.text.trim() : text.trim();
     if (!body || phase !== 'edit' || busy || ro.off) return false;
+    // A new capture: nothing the box held before is still in it.
+    handedFrom.current = null;
     const storyTime: StoryTimeValue = from ? { year: from.year } : time.value;
     const firstChoices: FactChoice[] = from?.hint ? [{ hint: from.hint, typed: {} }] : [];
     setMessage(null);
@@ -818,6 +831,7 @@ export function CaptureBox() {
       await saveAsQuestion(body);
     }
     if (ok && from?.onUnfiled) handOver.current = from.onUnfiled;
+    if (ok && from) handedFrom.current = from;
     return ok;
   };
 
@@ -832,6 +846,20 @@ export function CaptureBox() {
     sendHandler = async (r) => {
       if (stateRef.current.phase !== 'edit' || stateRef.current.busy) {
         setBoxOpen(true);
+        // FN-6: the box still holds this sentence, handed back when it closed while running.
+        // Sending it again takes it back: filed it stays gone, closed it comes back again.
+        const held = handedFrom.current;
+        if (
+          stateRef.current.phase === 'routed' &&
+          !stateRef.current.busy &&
+          held &&
+          !handOver.current &&
+          held.text.trim() === r.text.trim()
+        ) {
+          handOver.current = r.onUnfiled ?? null;
+          handedFrom.current = r;
+          return 'sent';
+        }
         return 'busy';
       }
       setBoxOpen(true);
@@ -943,8 +971,12 @@ export function CaptureBox() {
       setNotFiled(approved.failed.length);
       setPhase('filed');
       // A56 (FN-6): filed, the tray's sentence stays gone; nothing filed, it goes back.
-      if (merged.filed.length) handOver.current = null;
-      else releaseHandOver();
+      if (merged.filed.length) {
+        // Handed back at a close while running, then filed: the tray takes it out again.
+        if (!handOver.current) handedFrom.current?.onFiled?.();
+        handOver.current = null;
+      } else releaseHandOver();
+      handedFrom.current = null;
       const notes: string[] = [];
       if (local.failed.length) {
         notes.push(
@@ -1002,6 +1034,7 @@ export function CaptureBox() {
     });
     // Review later keeps the tray's sentence (its proposals wait in the review queue).
     handOver.current = null;
+    handedFrom.current = null;
     if (!kept.length) return close();
     const body = kept.length === routed.facts.length ? routed.text : textOf(kept);
     settled.current = true;
