@@ -191,7 +191,6 @@ export function CommunityView() {
   const ageGroups = useMemo(() => ageGroupOptions(ageList), [ageList]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const ids = { community: useId() };
   const keepButton = useRef<HTMLButtonElement | null>(null);
@@ -260,7 +259,7 @@ export function CommunityView() {
       );
       setConfirmRemove(false);
       setPicked('');
-      setNotice(
+      undo.toast(
         lines.length === 0
           ? `Removed ${chosen.label}.`
           : `Removed ${chosen.label} and its ${lines.length === 1 ? 'line' : `${lines.length} lines`}.`,
@@ -298,7 +297,7 @@ export function CommunityView() {
       const title = entryTitle(e);
       await call('entry.delete', { collection: 'culturalEntries', id: e._id });
       undo.record(deleteCommand('culturalEntries', e._id, title));
-      setNotice(`Removed ${title}.`);
+      undo.toast(`Removed ${title}.`);
     });
 
   const saveUnit = useEditableSave<string | null>({
@@ -458,11 +457,6 @@ export function CommunityView() {
       {error && (
         <p className="callout crit" role="alert">
           {error}
-        </p>
-      )}
-      {notice && (
-        <p className="example-note" role="status" data-testid="culture-notice">
-          {notice}
         </p>
       )}
       {!chosen ? (

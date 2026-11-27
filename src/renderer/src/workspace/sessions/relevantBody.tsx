@@ -818,7 +818,7 @@ function DeskEvents(props: {
     setError(null);
     const categoryId = categories?.items[0]?.id;
     if (!categoryId) {
-      setError('Add an event category on the Lists screen first.');
+      setError('No event category yet.');
       return;
     }
     try {

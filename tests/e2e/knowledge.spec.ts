@@ -346,7 +346,7 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
   // Remove moves it to the trash; Cmd+Z brings it back.
   await line().getByRole('button', { name: 'Remove Shipyard apprenticeships' }).click();
   await expect(line()).toHaveCount(0);
-  await expect(culture().getByTestId('culture-notice')).toHaveText(
+  await expect(page.getByTestId('undo-notice')).toHaveText(
     'Removed Shipyard apprenticeships.',
   );
   await page.keyboard.press('Meta+z');
@@ -399,7 +399,7 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await expect(confirm).not.toContainText('Undo');
   await confirm.getByRole('button', { name: 'Remove SF Bay' }).click();
   await expect(confirm).toHaveCount(0);
-  await expect(culture().getByTestId('culture-notice')).toHaveText(
+  await expect(page.getByTestId('undo-notice')).toHaveText(
     'Removed SF Bay and its 2 lines.',
   );
   await expect(culture().getByLabel('Community', { exact: true })).not.toContainText('SF Bay');
@@ -624,7 +624,7 @@ test('A57 Communities has no intro: the stepper buttons name the spans they go t
   const line = group('all').locator('.cu-line').filter({ hasText: 'Lantern walks' });
   await expect(line).toHaveCount(1);
   await line.getByRole('button', { name: 'Remove Lantern walks' }).click();
-  await expect(culture().getByTestId('culture-notice')).toHaveText('Removed Lantern walks.');
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed Lantern walks.');
   await expect(culture()).not.toContainText('Cmd+Z');
 });
 

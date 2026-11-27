@@ -535,13 +535,11 @@ test('SM-9 ED-3 IP-1 a field edit in the dialog saves over IPC on Enter or blur,
   await expect.poll(async () => (await getMoment('Z3-lives-1')).year).toBe(2029);
   await expect(dialog().getByTestId('moment-age')).toHaveText('41');
   await expect(marker('Z3-lives-1')).toHaveAttribute('data-year', '2029');
-  // A year that is not a number is refused in plain words at the field and writes nothing.
+  // A57: the year box takes digits only, so letters never reach it and nothing is written.
   await openEditable(year);
   await year.locator('input').fill('soon');
-  await year.locator('input').press('Enter');
-  await expect(momentDialog('Z3-lives-1').getByRole('alert')).toHaveText(
-    'Not saved: soon is not a year. Write it as digits, for example 2045.',
-  );
+  await expect(year.locator('input')).toHaveValue('2029');
+  await expect(momentDialog('Z3-lives-1').getByRole('alert')).toHaveCount(0);
   await year.locator('input').press('Escape');
   await expect(year.locator('input')).toHaveCount(0);
   await expect(dialog()).toBeVisible();
