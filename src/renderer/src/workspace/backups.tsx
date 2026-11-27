@@ -5,6 +5,7 @@ import type { Response } from '../../../shared/ipc';
 import { call, plainError } from '../api';
 import { formatTime } from './format';
 import { ConfirmLine } from './housekeeping';
+import { saveBeforeSwitch } from './undo';
 import './backups.css';
 
 type Snapshots = Response<'snapshot.list'>;
@@ -67,6 +68,8 @@ export function BackupsView() {
   const restore = async (s: Snapshot) => {
     setError(null);
     setMessage(null);
+    // A57: pending edits are stored before the bible is replaced, or nothing is replaced.
+    await saveBeforeSwitch();
     await call('snapshot.restore', { id: s.id });
     setConfirm(null);
     setLoads((n) => n + 1);
@@ -114,6 +117,8 @@ export function BackupsView() {
             data-testid="backup-import"
             onClick={() =>
               void act(async () => {
+                // A57: pending edits are stored in this bible before the new one opens.
+                await saveBeforeSwitch();
                 const r = await call('backup.import', {});
                 if (!r.bible) return null;
                 await call('bible.open', { slug: r.bible.id });

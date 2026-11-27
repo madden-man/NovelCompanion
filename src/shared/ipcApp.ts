@@ -170,6 +170,21 @@ export const isWriteChannel = (channel: string): boolean => WRITES.has(channel);
 export const READ_ONLY_REASON =
   'This is a read-only snapshot, because MongoDB cannot be reached. Nothing can be changed or saved until the connection is back.';
 
+/** A57: a write made in a bible that is no longer the open one, refused by main. */
+export const OTHER_BIBLE_MESSAGE =
+  'This change was made in a bible that is no longer open, so it was not saved.';
+
+/**
+ * A57: main refuses a write whose bible is not the open bible. Typed, so a
+ * test or a caller can tell it from any other refusal; its message is plain.
+ */
+export class OtherBibleError extends Error {
+  override name = 'OtherBibleError';
+  constructor() {
+    super(OTHER_BIBLE_MESSAGE);
+  }
+}
+
 /** ARCH-6, NF-3: a write that failed because MongoDB went away mid-session. */
 export const CONNECTION_LOST_MESSAGE =
   'The app lost its connection to MongoDB, so this change was not saved.';

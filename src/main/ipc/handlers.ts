@@ -461,11 +461,13 @@ export function registerHandlers(): void {
  * ARCH-6: every bible and Claude channel runs through this. A write
  * while a snapshot is open read-only is refused before it runs; a request
  * that fails because MongoDB went away says so and marks the connection lost.
+ * A57: a write made in another bible than the open one is refused.
  */
 function guard<C extends Channel>(channel: C, handler: Handler<C>): Handler<C> {
   return guardHandler(channel, handler, {
     readOnly: () => current?.readOnly === true,
     lost: () => conn().lost(),
+    openBible: () => current?.session.handle.id ?? null,
   });
 }
 

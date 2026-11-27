@@ -100,6 +100,8 @@ const when = (iso: string): string => {
  */
 export function ConnectionBanner(props: {
   onOpened?: (bible: { id: string; name: string }) => void;
+  /** A57: saves pending edits before the snapshot opens; throws to keep the live bible open. */
+  beforeOpen?: () => Promise<void>;
 }) {
   const { status, setStatus } = useConnection();
   const [busy, setBusy] = useState<'retry' | 'open' | null>(null);
@@ -123,6 +125,7 @@ export function ConnectionBanner(props: {
     setBusy('open');
     setError(null);
     try {
+      await props.beforeOpen?.();
       const r = await call('connection.openSnapshot', {});
       setStatus(r.status);
       props.onOpened?.(r.bible);

@@ -4,18 +4,35 @@ import {
   events,
   isChannel,
   isEventName,
+  parseCallContext,
   parseRequest,
   parseResponse,
   wireChannel,
   wireEvent,
 } from '../shared/ipc';
-import type { Api, Channel, EventName, EventPayload, Request, Response } from '../shared/ipc';
+import type {
+  Api,
+  CallContext,
+  Channel,
+  EventName,
+  EventPayload,
+  Request,
+  Response,
+} from '../shared/ipc';
 
-/** Generic invoke: validates the request before sending and the response after. */
-async function invoke<C extends Channel>(channel: C, request: Request<C>): Promise<Response<C>> {
+/**
+ * Generic invoke: validates the request before sending and the response after.
+ * The context (A57: the bible a write was made in) travels beside the request.
+ */
+async function invoke<C extends Channel>(
+  channel: C,
+  request: Request<C>,
+  context?: CallContext,
+): Promise<Response<C>> {
   if (!isChannel(channel)) throw new Error(`Unknown channel: ${String(channel)}`);
   const parsed = parseRequest(channel, request);
-  const raw: unknown = await ipcRenderer.invoke(wireChannel(channel), parsed);
+  const extra = context === undefined ? [] : [parseCallContext(context)];
+  const raw: unknown = await ipcRenderer.invoke(wireChannel(channel), parsed, ...extra);
   return parseResponse(channel, raw);
 }
 

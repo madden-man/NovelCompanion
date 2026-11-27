@@ -17,11 +17,12 @@ import { createCommand, editCommand } from '../../../../shared/domain/undoRunner
 import type { Op, UndoCommand } from '../../../../shared/domain/undoRunner';
 import type { FieldWarning } from '../../../../shared/domain/warnings';
 import { listAddCommand } from '../../../../shared/undoCommands';
-import { call } from '../../api';
+import { call, callIn } from '../../api';
 import { useReadOnly } from '../../connection';
 import { useList, useStore } from '../data';
 import type { Entry } from '../data';
 import { useUndo } from '../undo';
+import { onEntryChain } from './chains';
 import { Editable } from './Editable';
 import type { EditableCommonProps, EditableKindProps } from './Editable';
 import { emptyMessage, fieldLabel, mergeCommands, patchForPath } from './model';
@@ -44,31 +45,6 @@ export interface SaveEntryFieldOptions {
   extraPatch?: (next: unknown, entry: Doc) => Doc;
   /** The item Add new made on the way; its step joins this one. */
   added?: AddedItem;
-}
-
-const entryChains = new Map<string, Promise<unknown>>();
-
-/**
- * One write to an entry at a time (ED-2, IP-1). Main reads an entry before it
- * writes it, so two writes to the same entry in flight together can refuse one
- * of them; the autosave and every in-place save of an entry queue here.
- */
-export function onEntryChain<T>(
-  collection: EntryCollection,
-  id: string,
-  write: () => Promise<T>,
-): Promise<T> {
-  const key = `${collection}/${id}`;
-  const next = (entryChains.get(key) ?? Promise.resolve()).then(write);
-  const tail = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  entryChains.set(key, tail);
-  void tail.then(() => {
-    if (entryChains.get(key) === tail) entryChains.delete(key);
-  });
-  return next;
 }
 
 /**
@@ -109,7 +85,11 @@ async function writeEntryField(
         : said,
     );
   }
-  const r = await call('entry.update', { collection: o.collection, id: o.id, patch });
+  const r = await callIn(undo.bible, 'entry.update', {
+    collection: o.collection,
+    id: o.id,
+    patch,
+  });
   const after = r.entry as Entry;
   const label = o.label ?? fieldLabel(o.collection, o.path);
   const step = editCommand(

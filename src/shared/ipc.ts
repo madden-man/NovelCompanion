@@ -1242,8 +1242,32 @@ export function parseResponse<C extends Channel>(channel: C, payload: unknown): 
   return result.data as Response<C>;
 }
 
+/**
+ * A57: what travels beside a request. `bible` is the bible the renderer's
+ * workspace was opened on; main refuses a write carrying one that is not the
+ * open bible (`src/main/ipc/offline.ts`), so no write lands in another bible.
+ */
+export const CallContext = z.strictObject({ bible: BibleSlug.optional() });
+export type CallContext = z.infer<typeof CallContext>;
+
+/** The context sent with a request, or an invalid request error. */
+export function parseCallContext(raw: unknown): CallContext {
+  if (raw === undefined || raw === null) return {};
+  const result = CallContext.safeParse(raw);
+  if (!result.success) {
+    throw new IpcValidationError(
+      `The request context is not valid: ${z.prettifyError(result.error)}`,
+    );
+  }
+  return result.data;
+}
+
 /** The shape of `window.api`, the only thing the preload exposes. */
 export interface Api {
-  invoke<C extends Channel>(channel: C, request: Request<C>): Promise<Response<C>>;
+  invoke<C extends Channel>(
+    channel: C,
+    request: Request<C>,
+    context?: CallContext,
+  ): Promise<Response<C>>;
   on<E extends EventName>(event: E, listener: (payload: EventPayload<E>) => void): () => void;
 }

@@ -69,6 +69,7 @@ import { rasterize, standaloneSvg } from './exportImage';
 import { Editable, mergeCommands, saveEntryField } from '../editable';
 import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
+import { positionQueue } from './positionQueue';
 import './tree.css';
 
 type TreeData = Response<'tree.get'>;
@@ -370,15 +371,27 @@ export function TreeView(props: {
   const fitted = useRef(false);
   /** The positions as last read or written, the base each queued position write builds on. */
   const stored = useRef<TreeData['positions']>(null);
+  /** A57: position writes queued or running, and how many were ever queued. */
+  const queue = useRef(positionQueue());
+  /** A57: a read set aside while writes were queued, read again once they are done. */
+  const reloadTree = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let live = true;
-    const load = () =>
+    const load = () => {
+      const ticket = queue.current.ticket();
       void call('tree.get', {}).then((r) => {
         if (!live) return;
+        // A read from before a queued write landed would set the queue's base back and
+        // drop that write's move from the next one: it is read again when the queue is idle.
+        const take = queue.current.fresh(ticket);
+        if (take === 'again') return load();
+        if (take === 'skip') return;
         stored.current = r.positions ?? null;
         setData(r);
       });
+    };
+    reloadTree.current = load;
     load();
     // A move written by an undo step (or another window) reaches the screen through this event.
     const off = window.api.on('tree.changed', load);
@@ -407,6 +420,7 @@ export function TreeView(props: {
    */
   const savePositions = useCallback(
     (build: (base: TreeData['positions']) => NonNullable<TreeData['positions']>) => {
+      queue.current.enter();
       const next = writes.current.then(async () => {
         const base = stored.current;
         const positions = build(base);
@@ -414,7 +428,11 @@ export function TreeView(props: {
         stored.current = positions;
         return { base, positions };
       });
-      writes.current = next.catch(() => undefined);
+      writes.current = next
+        .catch(() => undefined)
+        .finally(() => {
+          if (queue.current.leave()) reloadTree.current();
+        });
       return next;
     },
     [],

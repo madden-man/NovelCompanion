@@ -43,7 +43,7 @@ import type { Response } from '../../../../shared/ipc';
 import { entryTitle } from '../../../../shared/schema';
 import type { EntryCollection } from '../../../../shared/schema';
 import { useWriteGuard } from '../../connection';
-import { call, plainError } from '../../api';
+import { call, callIn, plainError } from '../../api';
 import { useEntries, useStore } from '../data';
 import { useStoryTime } from '../storyTime';
 import { registerTextTarget, useUndo } from '../undo';
@@ -153,7 +153,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
    * step (or an undo step put it back), so Cmd+Z in the box steps the app's
    * history rather than the box's own.
    */
-  const { record, markSaved } = undo;
+  const { record, markSaved, live: undoLive, bible } = undo;
   const markFocused = useCallback(() => {
     const el = document.activeElement;
     const key = el instanceof HTMLTextAreaElement ? el.dataset.section : undefined;
@@ -209,6 +209,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
     closeTyping();
     if (inflight.current) await inflight.current;
     for (;;) {
+      // A57: once the workspace has gone (another bible opened), nothing more is sent.
+      if (!undoLive()) return false;
       const target = stored();
       if (target === null) return true;
       if (sameState(saved.current, target)) {
@@ -217,7 +219,8 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
         return true;
       }
       setStatus('saving');
-      const run = call('sceneOutline.set', target).then(
+      // A whole-outline write, so it carries its bible and main refuses it in any other.
+      const run = callIn(bible, 'sceneOutline.set', target).then(
         (r) => {
           saved.current = stateOf(r);
           lastError.current = null;
@@ -243,7 +246,7 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
         return true;
       }
     }
-  }, [closeTyping]);
+  }, [closeTyping, undoLive, bible]);
 
   const schedule = useCallback(() => {
     if (readOnly) return;
@@ -307,15 +310,19 @@ function useSceneDoc(order: readonly string[] | null, readOnly: boolean) {
       if (timer.current) clearTimeout(timer.current);
       closeTyping();
       const target = stored();
-      if (target && !sameState(saved.current, target)) void call('sceneOutline.set', target);
+      // A57: only while this workspace's bible is still the open one.
+      if (target && !sameState(saved.current, target) && undoLive()) {
+        void callIn(bible, 'sceneOutline.set', target);
+      }
     },
-    [closeTyping],
+    [closeTyping, undoLive, bible],
   );
 
   // An undo or redo writes what is pending first, and outline steps reach this flow.
   useEffect(() => {
     const off = undo.registerFlush(async () => {
-      await save();
+      if (await save()) return undefined;
+      return `Not saved: the scene outline. ${lastError.current ?? ''}`.trim();
     });
     const failed = () => new Error(lastError.current ?? 'The scene outline was not saved.');
     live.current = {

@@ -1,4 +1,9 @@
-import { CONNECTION_LOST_MESSAGE, READ_ONLY_REASON, isWriteChannel } from '../../shared/ipcApp';
+import {
+  CONNECTION_LOST_MESSAGE,
+  OtherBibleError,
+  READ_ONLY_REASON,
+  isWriteChannel,
+} from '../../shared/ipcApp';
 import type { Channel } from '../../shared/ipc';
 import { ReadOnlyError } from '../db/readOnly';
 import type { Handler } from './validate';
@@ -40,6 +45,8 @@ export interface OfflineGuard {
   readOnly(): boolean;
   /** MongoDB went away during this request. */
   lost(): void;
+  /** A57: the ID of the open bible, or null with none open. */
+  openBible?(): string | null;
 }
 
 /**
@@ -49,6 +56,10 @@ export interface OfflineGuard {
  * the connection lost so the window can offer to try again or open the
  * latest snapshot. Nothing is ever reported as saved when it was not: the
  * handler's own result is returned only when it finished.
+ *
+ * A57: a write that carries the bible it was made in runs only while that
+ * bible is the open one; any other is refused with `OtherBibleError` before
+ * it runs, so a late autosave never lands in a bible opened since.
  */
 export function guardHandler<C extends Channel>(
   channel: C,
@@ -56,10 +67,18 @@ export function guardHandler<C extends Channel>(
   guard: OfflineGuard,
 ): Handler<C> {
   const write = isWriteChannel(channel);
-  return async (request) => {
+  return async (request, context) => {
     if (write && guard.readOnly()) throw new Error(READ_ONLY_REASON);
+    if (
+      write &&
+      context?.bible !== undefined &&
+      guard.openBible &&
+      context.bible !== guard.openBible()
+    ) {
+      throw new OtherBibleError();
+    }
     try {
-      return await handler(request);
+      return await handler(request, context);
     } catch (e) {
       if (e instanceof ReadOnlyError) throw new Error(READ_ONLY_REASON, { cause: e });
       if (isConnectionError(e)) {
