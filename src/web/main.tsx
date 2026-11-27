@@ -4,6 +4,7 @@ import '../renderer/src/theme.css';
 import '../renderer/src/app.css';
 import { App } from '../renderer/src/App';
 import { presetCapabilities } from '../renderer/src/capabilities';
+import { setPhone } from '../renderer/src/phone';
 import { saveBeforeSwitch } from '../renderer/src/workspace/undo';
 // PH-21: the same file the function imports, written by this build (scripts/build-id.ts).
 import buildInfo from '../generated/build-id.json';
@@ -43,6 +44,8 @@ const transport = new WebTransport({
 // The renderer reaches the bible only through `window.api`, as on the desk (ARCH-1 rule 3).
 Object.defineProperty(window, 'api', { value: transport, configurable: false, writable: false });
 presetCapabilities(PHONE_CHANNELS, LOCAL_CHANNELS);
+// A58 U1: the phone's shell, layout and CSS (`usePhone`, `:root[data-phone]`).
+setPhone(true);
 attachLifecycle(transport, document, window);
 transport.onBuildChanged(
   watchBuild({

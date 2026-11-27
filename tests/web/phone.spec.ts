@@ -94,22 +94,20 @@ test('PH-16 PH-12 the accepted key is kept, the fixture novel loads, and an entr
 test('PH-5 PH-26 no control whose channel is desk only is drawn on the phone', async ({ page }) => {
   await openFixture(page, server.url);
   const shell = page.getByTestId('workspace');
-  // The rail: no Continuity checker (the alignment check and the Word import).
-  await expect(page.getByTestId('rail-main')).toContainText('Characters');
-  await expect(
-    page.getByTestId('rail-main').getByRole('button', { name: 'Continuity checker' }),
-  ).toHaveCount(0);
-  // The status bar: no Ask Claude, and the Claude panel is not mounted.
-  await expect(shell.getByRole('button', { name: /Ask Claude/ })).toHaveCount(0);
-  // The App menu: no Review queue, From the notebook or Backups.
-  await page.getByTestId('app-menu-button').click();
-  const menu = page.getByTestId('app-menu');
-  await expect(menu).toBeVisible();
-  for (const gone of ['Review queue', 'From the notebook', 'Backups']) {
-    await expect(menu.getByRole('menuitem', { name: gone })).toHaveCount(0);
+  // A58 U1: the rail and the App menu became the bottom bar and the bible menu's More.
+  await page.getByTestId('bible-menu-button').click();
+  const more = page.getByTestId('bible-sheet');
+  await expect(more.getByTestId('phone-more')).toContainText('Family tree');
+  // No Continuity checker (the alignment check and the Word import), Review queue,
+  // From the notebook or Backups.
+  for (const gone of ['Continuity checker', 'Review queue', 'From the notebook', 'Backups']) {
+    await expect(more.getByRole('button', { name: gone })).toHaveCount(0);
   }
-  await expect(menu.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
-  await menu.getByRole('menuitem', { name: 'Settings' }).click();
+  // The chooser: no New bible.
+  await expect(page.getByTestId('bible-menu-new')).toHaveCount(0);
+  // No Ask Claude, and the Claude panel is not mounted.
+  await expect(shell.getByRole('button', { name: /Ask Claude/ })).toHaveCount(0);
+  await more.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByTestId('settings-view');
   await expect(settings).toBeVisible();
   for (const id of [
@@ -121,13 +119,9 @@ test('PH-5 PH-26 no control whose channel is desk only is drawn on the phone', a
     await expect(settings.getByTestId(id)).toHaveCount(0);
   }
   await expect(settings.getByTestId('appearance-settings')).toBeVisible();
-  // The Bibles screen: no New bible.
-  await page.getByTestId('app-menu-button').click();
-  await page.getByTestId('app-menu').getByRole('menuitem', { name: 'Bibles' }).click();
-  await expect(page.getByRole('heading', { name: 'Bibles' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'New bible' })).toHaveCount(0);
   // The family tree: no Export.
-  await page.getByTestId('rail-main').getByRole('button', { name: 'Family tree' }).click();
+  await page.getByTestId('bible-menu-button').click();
+  await page.getByTestId('phone-more').getByRole('button', { name: 'Family tree' }).click();
   await expect(page.getByRole('button', { name: 'Tidy layout' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export', exact: true })).toHaveCount(0);
 });

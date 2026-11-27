@@ -1,0 +1,561 @@
+/* A58 U1: the phone's shell. Every rule is under :root[data-phone], which only
+   the web build sets (src/renderer/src/phone.ts), so the desktop never sees
+   them. Theme tokens only, so both themes follow theme.css. Safe areas: the
+   top bar clears the notch, the bottom bar the home indicator.
+
+   Sizes other packages may use:
+     --ph-top     the top bar's height under the notch
+     --ph-bottom  the bottom bar's height above the home indicator
+     --ph-gutter  the side gutter, safe areas included
+     --ph-target  the smallest thumb target, 44px */
+:root[data-phone] {
+  --ph-top: 52px;
+  --ph-bottom: 58px;
+  --ph-target: 44px;
+  --ph-safe-top: env(safe-area-inset-top, 0px);
+  --ph-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ph-gutter-left: max(16px, env(safe-area-inset-left, 0px));
+  --ph-gutter-right: max(16px, env(safe-area-inset-right, 0px));
+  --ph-gutter: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+:root[data-phone] body {
+  padding: 0;
+  font-size: 16px;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+:root[data-phone][data-sheet] body {
+  overflow: hidden;
+}
+
+/* The app around the frame: content runs between the two fixed bars. */
+:root[data-phone] .shell {
+  padding: calc(16px + var(--ph-safe-top)) var(--ph-gutter-right) calc(16px + var(--ph-safe-bottom))
+    var(--ph-gutter-left);
+}
+:root[data-phone] .shell.wide {
+  padding: calc(var(--ph-top) + var(--ph-safe-top)) 0
+    calc(var(--ph-bottom) + var(--ph-safe-bottom) + 24px);
+  gap: 0;
+}
+:root[data-phone] .shell.wide > .callout,
+:root[data-phone] .shell.wide > [data-testid='connection-banner'] {
+  margin: 8px var(--ph-gutter-right) 0 var(--ph-gutter-left);
+}
+
+/* PH-32: every field 16px or more, so iOS does not zoom into it. */
+:root[data-phone] input,
+:root[data-phone] select,
+:root[data-phone] textarea,
+:root[data-phone] [contenteditable],
+:root[data-phone] .editable-sizer,
+:root[data-phone] .rich-text-input {
+  font-size: max(16px, 1em);
+}
+:root[data-phone] .ph-frame select,
+:root[data-phone] .ph-frame input:not([type='checkbox'], [type='radio'], [type='range']) {
+  min-height: var(--ph-target);
+}
+
+/* PH-35: no key hints on the phone; the keys are not there. */
+:root[data-phone] kbd {
+  display: none;
+}
+
+.ph-frame {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+/* ---- the top bar (PH-29) ---- */
+.ph-top {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--ph-top) + var(--ph-safe-top));
+  padding: var(--ph-safe-top) max(4px, env(safe-area-inset-right, 0px)) 0
+    max(4px, env(safe-area-inset-left, 0px));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  /* While the keyboard is up iOS moves the visual viewport; the bar follows it. */
+  transform: translateY(var(--ph-vv-top, 0px));
+}
+.ph-icon-btn,
+.ph-bible,
+.ph-year,
+.ph-tab,
+.ph-row {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.ph-icon-btn:focus-visible,
+.ph-bible:focus-visible,
+.ph-year:focus-visible,
+.ph-tab:focus-visible,
+.ph-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ph-icon-btn {
+  flex: 0 0 auto;
+  width: var(--ph-target);
+  height: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-icon-btn:active:not([disabled]),
+.ph-bible:active,
+.ph-year:active,
+.ph-row:active:not([disabled]) {
+  background: var(--surface-2);
+}
+.ph-icon-btn[disabled] {
+  color: var(--fg-2);
+  opacity: 0.5;
+  cursor: default;
+}
+.ph-bible {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--ph-target);
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-align: left;
+}
+.ph-bible-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ph-chevron {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--fg-2);
+}
+.ph-year {
+  flex: 0 0 auto;
+  height: 36px;
+  min-width: var(--ph-target);
+  padding: 0 10px;
+  margin: 0 2px;
+  border: 1px solid var(--time);
+  border-radius: 18px;
+  background: var(--time-soft);
+  color: var(--fg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- the bottom bar (PH-30) ---- */
+.ph-bottom {
+  position: fixed;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 env(safe-area-inset-right, 0px) var(--ph-safe-bottom) env(safe-area-inset-left, 0px);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+:root[data-phone][data-keyboard] .ph-bottom {
+  display: none;
+}
+.ph-tab {
+  min-height: var(--ph-bottom);
+  min-width: var(--ph-target);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--fg-2);
+  border-radius: 0;
+}
+.ph-tab[aria-current='page'] {
+  color: var(--accent);
+}
+.ph-tab-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.ph-add .ph-icon {
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  border-radius: 50%;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.ph-add .ph-tab-label {
+  display: none;
+}
+
+/* ---- the screens ---- */
+.ph-screen[hidden] {
+  display: none;
+}
+:root[data-phone] .ph-frame .ws-list,
+:root[data-phone] .ph-frame .ws-editor,
+:root[data-phone] .ph-frame .ws-wide-area,
+:root[data-phone] .ph-frame .ws-wide {
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .ws-list,
+:root[data-phone] .ph-frame .ws-editor,
+:root[data-phone] .ph-frame .ws-wide-area {
+  padding: 12px var(--ph-gutter-right) 12px var(--ph-gutter-left);
+}
+:root[data-phone] .ph-frame .ws-wide-area > .ws-wide {
+  padding: 0;
+}
+:root[data-phone] .ph-frame h2 {
+  font-size: 1.35rem;
+}
+/* Thumb-sized buttons on every screen of the frame. */
+:root[data-phone] .ph-frame .btn {
+  min-height: var(--ph-target);
+  padding: 8px 14px;
+  font-size: 1rem;
+}
+:root[data-phone] .ph-frame .btn.small {
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 0.95rem;
+}
+
+/* People and every section list (PH-31): rows a thumb can hit. */
+:root[data-phone] .ph-frame .ws-list {
+  gap: 10px;
+}
+:root[data-phone] .ph-frame .list-head h2 {
+  font-size: 1.35rem;
+}
+:root[data-phone] .ph-frame .ws-list input[type='search'] {
+  width: 100%;
+}
+:root[data-phone] .ph-frame .entry-list {
+  gap: 0;
+}
+:root[data-phone] .ph-frame .entry-list > li + li {
+  border-top: 1px solid var(--border);
+}
+:root[data-phone] .ph-frame .entry-row {
+  min-height: 52px;
+  padding: 10px 4px;
+  justify-content: center;
+  border-radius: 0;
+}
+:root[data-phone] .ph-frame .entry-row:hover {
+  background: transparent;
+}
+:root[data-phone] .ph-frame .entry-row:active {
+  background: var(--surface-2);
+}
+
+/* The entry page (PH-32): the page is the card, so no card inside it. */
+:root[data-phone] .ph-frame .editor-head {
+  flex-wrap: wrap;
+}
+:root[data-phone] .ph-frame .char-page {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+:root[data-phone] .ph-frame .char-name {
+  font-size: 1.5rem;
+}
+:root[data-phone] .ph-frame .char-line {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+:root[data-phone] .ph-frame .editable-labelled {
+  display: flex;
+}
+:root[data-phone] .ph-frame .editable-text {
+  min-height: 28px;
+}
+/* Every value edits on a tap; the pencil shows without a pointer to hover. */
+:root[data-phone] .ph-frame .editable > .editable-text::after {
+  opacity: 0.6;
+}
+:root[data-phone] .ph-frame .editable[data-save-state='saved'] > .editable-text::after,
+:root[data-phone] .ph-frame .editable.is-disabled > .editable-text::after {
+  opacity: 0;
+}
+:root[data-phone] .ph-frame .editable-inline > .editable-text::after,
+:root[data-phone] .ph-frame .editable-labelled > .editable-text::after {
+  position: static;
+  margin-left: 6px;
+}
+:root[data-phone] .ph-frame .chip-remove {
+  min-width: 32px;
+  min-height: 32px;
+}
+:root[data-phone] .ph-frame .rich-text {
+  max-width: none;
+}
+:root[data-phone] .ph-frame .rich-text-input {
+  max-height: 60vh;
+}
+/* A box with text is as tall as its text until it is typed in; then it takes the desk's room. */
+:root[data-phone] .ph-frame .rich-text:not(:focus-within) .rich-text-input.rich-prose,
+:root[data-phone] .ph-frame .rich-text:not(:focus-within) .rich-text-input.rich-notes {
+  min-height: calc(1.55em * 2 + 18px);
+}
+/* An empty box is one line until it is typed in, so the page does not run on. */
+:root[data-phone]
+  .ph-frame
+  .rich-text.is-empty:not(:focus-within)
+  .rich-text-input.rich-text-input {
+  min-height: calc(1.55em + 18px);
+}
+:root[data-phone] .ph-frame .entry-tools {
+  margin-top: 16px;
+}
+
+/* Search: the field, then the folded filters two by two, then the results. */
+:root[data-phone] .ph-frame .search-filters > summary {
+  min-height: var(--ph-target);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+:root[data-phone] .ph-frame .search-results {
+  max-height: none;
+  overflow: visible;
+}
+:root[data-phone] .ph-frame .search-results .entry-row {
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 0;
+}
+:root[data-phone] .ph-frame .search-results li {
+  padding: 0;
+}
+:root[data-phone] .ph-frame [data-testid='search-view'] input[type='search'] {
+  width: 100%;
+}
+:root[data-phone] .ph-frame [aria-label='Search filters'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+:root[data-phone] .ph-frame [aria-label='Search filters'] .field {
+  min-width: 0;
+}
+:root[data-phone] .ph-frame [aria-label='Search filters'] select,
+:root[data-phone] .ph-frame [aria-label='Search filters'] input {
+  width: 100%;
+}
+
+/* ---- the toast (the status bar's notices) ---- */
+.ph-toast-slot {
+  position: fixed;
+  z-index: 45;
+  left: var(--ph-gutter-left);
+  right: var(--ph-gutter-right);
+  bottom: calc(var(--ph-bottom) + var(--ph-safe-bottom) + 8px);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.ph-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+.ph-toast .btn {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
+
+/* ---- the bottom sheet ---- */
+.ph-sheet-layer {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+}
+.ph-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  animation: ph-fade 160ms ease-out;
+}
+.ph-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: calc(100% - var(--ph-safe-top) - 24px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--fg);
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease-out;
+  animation: ph-rise 200ms ease-out;
+  outline: none;
+}
+.ph-sheet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ph-sheet-grab {
+  flex: 0 0 auto;
+  padding: 8px var(--ph-gutter-right) 4px var(--ph-gutter-left);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  touch-action: none;
+  cursor: grab;
+}
+.ph-sheet-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-strong);
+}
+.ph-sheet-title {
+  align-self: stretch;
+  margin: 4px 0;
+  font-size: 1.15rem;
+}
+.ph-sheet-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px var(--ph-gutter-right) calc(16px + var(--ph-safe-bottom)) var(--ph-gutter-left);
+}
+.ph-sheet-note {
+  margin: 0;
+  color: var(--fg-2);
+}
+@keyframes ph-rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes ph-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-sheet,
+  .ph-sheet-scrim {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Lists inside sheets: the chooser, More, All sections, Changes. */
+.ph-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ph-list > li + li {
+  border-top: 1px solid var(--border);
+}
+.ph-row {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 4px;
+  text-align: left;
+  font-size: 1.05rem;
+  border-radius: 0;
+}
+.ph-row[aria-current='true'] {
+  color: var(--accent);
+  font-weight: 700;
+}
+.ph-row[aria-current='true']::after {
+  content: ' \2713';
+}
+.ph-row[disabled] {
+  opacity: 0.6;
+}
+.ph-group {
+  margin: 18px 0 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+.ph-changes > li {
+  padding: 10px 4px;
+}
+.ph-changes > li.redo {
+  color: var(--fg-2);
+}
+.ph-changes > li.empty {
+  color: var(--fg-2);
+}
+
+/* The year sheet; U3 puts the dial here. */
+.ph-year-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+.ph-year-sheet .field {
+  font-size: 0.95rem;
+}
+.ph-year-input {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.ph-year-sheet input[type='range'] {
+  min-height: var(--ph-target);
+  width: 100%;
+}
+.ph-year-sheet select {
+  width: 100%;
+}

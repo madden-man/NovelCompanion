@@ -19,23 +19,12 @@ export function TopBar(props: {
   relevantActive?: boolean;
 }) {
   const story = useStoryTime();
-  const characters = useEntries('characters');
   const strands = useStrandOptions();
   const time = story.time ?? { year: story.year };
   const view = useYearView(time);
   const [yearDraft, setYearDraft] = useState<string | null>(null);
   const ids = { year: useId(), slider: useId(), writing: useId() };
-
-  const bounds = useMemo(() => {
-    const ys = [story.year, ...strands.map((s) => s.year).filter((y): y is number => y !== null)];
-    for (const c of characters) {
-      for (const d of [c.birth, c.death] as unknown[]) {
-        if (d && typeof d === 'object' && 'year' in d)
-          ys.push(Number((d as { year: number }).year));
-      }
-    }
-    return { min: Math.min(...ys), max: Math.max(...ys) };
-  }, [characters, strands, story.year]);
+  const bounds = useYearBounds();
 
   const writing = strands.find(
     (s) => s.chapterId === time.chapterId && s.strandId === time.strandId,
@@ -125,6 +114,23 @@ export function TopBar(props: {
       </div>
     </section>
   );
+}
+
+/** The story year slider's range: every birth, death and strand year, and the year shown. */
+export function useYearBounds(): { min: number; max: number } {
+  const story = useStoryTime();
+  const characters = useEntries('characters');
+  const strands = useStrandOptions();
+  return useMemo(() => {
+    const ys = [story.year, ...strands.map((s) => s.year).filter((y): y is number => y !== null)];
+    for (const c of characters) {
+      for (const d of [c.birth, c.death] as unknown[]) {
+        if (d && typeof d === 'object' && 'year' in d)
+          ys.push(Number((d as { year: number }).year));
+      }
+    }
+    return { min: Math.min(...ys), max: Math.max(...ys) };
+  }, [characters, strands, story.year]);
 }
 
 /**
