@@ -21,6 +21,7 @@ import { notebookContract } from './ipcNotebook';
 import type { EntryCollection } from './schema';
 // a47-guard
 import { guardContract } from './ipcGuard';
+import { pwaContract } from './ipcPwa';
 
 const BibleSummary = z.strictObject({ id: z.string().min(1), name: z.string().min(1) });
 
@@ -1114,6 +1115,8 @@ export const contract = {
   ...continuityContract,
   // a47-guard: housekeeping (IP-16) and the manuscript lock (IP-18), src/shared/ipcGuard.ts.
   ...guardContract,
+  // A58 P4: capabilities, freshness and the phone key (src/shared/ipcPwa.ts).
+  ...pwaContract,
   // a47-model
   /** IP-8: move a list item to `index` in the stored order (the order every list and select shows). */
   'lists.move': {

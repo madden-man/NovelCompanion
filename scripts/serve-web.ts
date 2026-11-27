@@ -33,8 +33,8 @@ if (!process.env.NC_PHONE_KEY) console.warn('NC_PHONE_KEY is not set, so every r
 
 const rpc = server.createRpc({
   env: process.env,
-  // A no-op until the coordinator wires P2's `freshenOpenBible` here at merge.
-  freshen: async () => ({ moved: false }),
+  // PH-7: the open bible is made fresh before each request.
+  freshen: server.freshenOpenBible,
 });
 const port = Number(values.port);
 server.webServer({ rpc, staticDir }).listen(port, values.host, () => {

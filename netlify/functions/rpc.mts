@@ -1,3 +1,4 @@
+import { freshenOpenBible } from '../../src/main/ipc/handlers';
 import { createRpc } from '../../src/server/rpc';
 
 /**
@@ -6,8 +7,8 @@ import { createRpc } from '../../src/server/rpc';
  */
 const rpc = createRpc({
   env: process.env,
-  // A no-op until the coordinator wires P2's `freshenOpenBible` here at merge.
-  freshen: async () => ({ moved: false }),
+  // PH-7: the open bible is made fresh before each request.
+  freshen: freshenOpenBible,
 });
 
 export default (request: Request): Promise<Response> => rpc(request);

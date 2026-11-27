@@ -4,3 +4,4 @@ export { webServer } from './node';
 export { listPhoneSnapshots, restorePhoneSnapshot } from './phoneSnapshots';
 export { connect } from '../main/db/connection';
 export { openBible } from '../main/db/bibles';
+export { freshenOpenBible } from '../main/ipc/handlers';

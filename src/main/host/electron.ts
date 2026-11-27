@@ -1,9 +1,9 @@
-import { BrowserWindow, app, dialog, nativeTheme, shell } from 'electron';
+import { BrowserWindow, app, clipboard, dialog, nativeTheme, shell } from 'electron';
 import { wireEvent } from '../../shared/ipc';
 import { claudeDeps } from '../claude';
 import { claudeHandlers } from '../claude/handlers';
 import { runtimeSessionClaude } from '../claude/session';
-import { KeychainMongoUriStore } from '../secrets';
+import { KeychainMongoUriStore, KeychainPhoneKeyStore } from '../secrets';
 import type { Host } from './types';
 
 /**
@@ -15,7 +15,11 @@ export function electronHost(): Host {
   return {
     userData: app.getPath('userData'),
     isPackaged: app.isPackaged,
-    secrets: { mongoUris: () => new KeychainMongoUriStore() },
+    secrets: {
+      mongoUris: () => new KeychainMongoUriStore(),
+      phoneKey: () => new KeychainPhoneKeyStore(),
+    },
+    copyText: (text) => clipboard.writeText(text),
     broadcast(event, payload) {
       for (const win of BrowserWindow.getAllWindows())
         win.webContents.send(wireEvent(event), payload);

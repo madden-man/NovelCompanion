@@ -5,6 +5,7 @@ import type { ClaudeChannel } from '../claude/handlers';
 import type { OpenBible } from '../db/session';
 import type { Handler } from '../ipc/validate';
 import type { SessionClaude } from '../session/claude';
+import type { PhoneKeyStore } from './phoneKey';
 import type { MongoUriStore } from './uri';
 
 /**
@@ -31,6 +32,8 @@ export interface Host {
   readonly claude: ClaudeHost | null;
   /** A58: the hosted function, which never migrates a bible and runs no phone bridge. */
   readonly hosted?: boolean;
+  /** A58 (PH-15): put text on the system clipboard; absent where there is none. */
+  readonly copyText?: (text: string) => void;
 }
 
 export interface HostSecrets {
@@ -40,6 +43,8 @@ export interface HostSecrets {
    * key store belongs to `claude`, since only Claude reads it.
    */
   mongoUris(): MongoUriStore;
+  /** A58 (PH-15): where the phone key is kept (the keychain on the Mac); absent on the server. */
+  phoneKey?(): PhoneKeyStore;
 }
 
 export interface FileFilter {
