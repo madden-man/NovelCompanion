@@ -1202,6 +1202,100 @@ test('A57 Tidy layout runs at once as one undo step, and the Undo on its notice 
   await expect.poll(async () => (await stored())?.[strangerId]).toEqual(t.positions?.[strangerId]);
 });
 
+/** A57: nudge A Stranger off the layout so Tidy layout has something to move; the stored positions before and after. */
+async function nudgeStranger() {
+  const stored = async () => (await invoke('tree.get', {})).positions;
+  const t = await invoke('tree.get', {});
+  const id = t.people.find((p) => p.name === 'A Stranger')!.id;
+  await node('A Stranger').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect.poll(async () => (await stored())?.[id]).not.toEqual(t.positions?.[id]);
+  return { stored, id, first: t.positions, nudged: await stored() };
+}
+
+test('A57 a step taken after Tidy layout hides its notice, so its Undo never undoes that later step', async () => {
+  const { stored, id, first, nudged } = await nudgeStranger();
+  await tidyLayout();
+  const toast = page.getByTestId('tree-toast');
+  await expect(toast).toContainText('Layout tidied');
+  await expect.poll(stored).not.toEqual(nudged);
+  const tidied = await stored();
+  // A nudge inside the notice's time is its own step on top; the notice goes with its Undo.
+  await node('A Stranger').focus();
+  await page.keyboard.press('Alt+ArrowRight');
+  await expect(toast).toHaveCount(0);
+  await expect.poll(async () => (await stored())?.[id]).not.toEqual(tidied?.[id]);
+  // Undo takes the nudge back and the tidy stays; two more undo the tidy and the first nudge.
+  await undoStep();
+  await expect.poll(stored).toEqual(tidied);
+  await undoStep();
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+  await expect(toast).toHaveCount(0);
+});
+
+test('A57 an undo after Tidy layout hides its notice, so its Undo never undoes an older step', async () => {
+  const { stored, first, nudged } = await nudgeStranger();
+  await tidyLayout();
+  const toast = page.getByTestId('tree-toast');
+  await expect(toast).toContainText('Layout tidied');
+  await expect.poll(stored).not.toEqual(nudged);
+  // Cmd+Z undoes the tidy; the notice naming it goes, so it cannot undo the nudge underneath.
+  await undoStep();
+  await expect.poll(stored).toEqual(nudged);
+  await expect(toast).toHaveCount(0);
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+});
+
+test('A57 a double click on Tidy layout records one step', async () => {
+  const { stored, first, nudged } = await nudgeStranger();
+  await page.getByRole('button', { name: 'Tidy layout' }).dblclick();
+  await expect(page.getByTestId('tree-toast')).toContainText('Layout tidied');
+  await expect(page.getByRole('button', { name: 'Tidy layout' })).toBeEnabled();
+  await expect.poll(stored).not.toEqual(nudged);
+  const history = (await changes(page)).locator('li');
+  // Newest first: one tidy on top of the nudge, not two.
+  await expect(history.first()).toHaveText('Tidied the tree layout');
+  await expect(history.nth(1)).toHaveText('Moved A Stranger');
+  await page.keyboard.press('Escape');
+  await undoStep();
+  await expect.poll(stored).toEqual(nudged);
+  await undoStep();
+  await expect.poll(stored).toEqual(first);
+});
+
+test('A57 the Add person birth year box takes digits only, empty means unknown, and no rule text shows', async () => {
+  await page.getByRole('button', { name: 'Add person', exact: true }).click();
+  const form = inspector().getByTestId('add-form');
+  const born = form.getByLabel('Birth year');
+  await expect(born).not.toHaveAttribute('placeholder');
+  await expect(born).toHaveAttribute('inputmode', 'numeric');
+  await born.fill('1.5');
+  await expect(born).toHaveValue('15');
+  await born.fill('1e3');
+  await expect(born).toHaveValue('13');
+  await born.fill('');
+  await born.pressSequentially('19x9-5');
+  await expect(born).toHaveValue('1995');
+  await born.fill('');
+  // Empty is an unknown year: the person is added with no birth.
+  await form.getByLabel('Name').fill('Year Unknown');
+  await form.getByRole('button', { name: 'Add the person' }).click();
+  await expect(node('Year Unknown')).toHaveCount(1);
+  const person = (await invoke('tree.get', {})).people.find((p) => p.name === 'Year Unknown')!;
+  expect(person.birth).toEqual({ unknown: true });
+  await expect(page.getByTestId('tree-view')).not.toContainText('whole number');
+  await undoStep();
+  await expect(node('Year Unknown')).toHaveCount(0);
+  // A sibling of someone with no parents: the form says what is so and names no button.
+  await select('Tomas Reyes');
+  await inspector().getByRole('button', { name: 'Add sibling', exact: true }).click();
+  const note = inspector().getByTestId('add-form').locator('.callout.warn');
+  await expect(note).toHaveText('Tomas Reyes has no known parents.');
+  await inspector().getByTestId('add-form').getByRole('button', { name: 'Cancel' }).click();
+});
+
 test('A57 the inspector shows only with a selection, the Add person form, or warnings, and the people stay put as it comes and goes', async () => {
   await page.getByRole('button', { name: 'Fit to window' }).click();
   await clearSelection();
