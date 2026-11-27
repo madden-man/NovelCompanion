@@ -326,10 +326,6 @@
 :root[data-phone] .ph-frame .rich-text {
   max-width: none;
 }
-/* An empty box is one line until it is typed in, so the page does not run on. */
-:root[data-phone] .ph-frame .rich-text.is-empty:not(:focus-within) .rich-text-input {
-  min-height: calc(1.55em + 18px);
-}
 :root[data-phone] .ph-frame .rich-text-input {
   max-height: 60vh;
 }
@@ -337,6 +333,13 @@
 :root[data-phone] .ph-frame .rich-text:not(:focus-within) .rich-text-input.rich-prose,
 :root[data-phone] .ph-frame .rich-text:not(:focus-within) .rich-text-input.rich-notes {
   min-height: calc(1.55em * 2 + 18px);
+}
+/* An empty box is one line until it is typed in, so the page does not run on. */
+:root[data-phone]
+  .ph-frame
+  .rich-text.is-empty:not(:focus-within)
+  .rich-text-input.rich-text-input {
+  min-height: calc(1.55em + 18px);
 }
 :root[data-phone] .ph-frame .entry-tools {
   margin-top: 16px;
@@ -350,6 +353,10 @@
   font-weight: 600;
   color: var(--fg-2);
   cursor: pointer;
+}
+:root[data-phone] .ph-frame .search-results {
+  max-height: none;
+  overflow: visible;
 }
 :root[data-phone] .ph-frame .search-results .entry-row {
   min-height: 52px;
