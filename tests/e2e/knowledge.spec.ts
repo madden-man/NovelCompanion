@@ -346,9 +346,7 @@ test('CU-1 A42 ED-3 a line is added under an age group with Enter, edited direct
   // Remove moves it to the trash; Cmd+Z brings it back.
   await line().getByRole('button', { name: 'Remove Shipyard apprenticeships' }).click();
   await expect(line()).toHaveCount(0);
-  await expect(page.getByTestId('undo-notice')).toHaveText(
-    'Removed Shipyard apprenticeships.',
-  );
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed Shipyard apprenticeships.');
   await page.keyboard.press('Meta+z');
   await expect(line()).toBeVisible();
   // Then the note edit, the decade, the age group, the rename, and the add itself, one step each.
@@ -399,9 +397,7 @@ test('A42 a community is added, renamed, and removed with its lines, and Undo br
   await expect(confirm).not.toContainText('Undo');
   await confirm.getByRole('button', { name: 'Remove SF Bay' }).click();
   await expect(confirm).toHaveCount(0);
-  await expect(page.getByTestId('undo-notice')).toHaveText(
-    'Removed SF Bay and its 2 lines.',
-  );
+  await expect(page.getByTestId('undo-notice')).toHaveText('Removed SF Bay and its 2 lines.');
   await expect(culture().getByLabel('Community', { exact: true })).not.toContainText('SF Bay');
   await expect.poll(titles).toEqual([]);
   // One Undo: the community is back in the list with both lines.
