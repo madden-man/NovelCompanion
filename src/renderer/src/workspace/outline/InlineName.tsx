@@ -87,11 +87,6 @@ export function InlineName(props: {
       ref={button}
       type="button"
       className={`ol-name${props.className ? ` ${props.className}` : ''}`}
-      title={
-        props.onMove
-          ? 'Click or press Enter to rename. Alt+Up and Alt+Down move it.'
-          : 'Click or press Enter to rename.'
-      }
       aria-keyshortcuts={props.onMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
       disabled={props.disabled}
       data-testid={props.testId}

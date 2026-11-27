@@ -41,10 +41,7 @@ export function Parts(props: { writes: OutlineWrites }) {
   return (
     <details className="outline-parts" data-testid="outline-parts">
       <summary>Parts</summary>
-      <p className="example-note">
-        A part is a section of chapters; its title is the divider above its first chapter.
-      </p>
-      {parts.length === 0 && <p>No parts yet. New part makes the first.</p>}
+      {parts.length === 0 && <p>No parts yet.</p>}
       <ul className="bp-parts">
         {parts.map((part) => (
           <li key={part._id} className="bp-part" data-testid="bp-part" data-part={part._id}>
