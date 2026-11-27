@@ -12,6 +12,7 @@ export {
   EntryEditable,
   entryOptions,
   listOptions,
+  onEntryChain,
   renameSpec,
   saveEntryField,
   useEditableSave,

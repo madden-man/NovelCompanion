@@ -115,6 +115,16 @@ interface Undo {
 
 const UndoContext = createContext<Undo | null>(null);
 
+let openBibleFlush: (() => Promise<void>) | null = null;
+
+/**
+ * Saves the open bible's pending edits, the flush the window close runs. The
+ * shell calls it before another bible opens, so no edit is sent to the wrong one.
+ */
+export function flushOpenBible(): Promise<void> {
+  return openBibleFlush ? openBibleFlush().catch(() => undefined) : Promise.resolve();
+}
+
 /**
  * Session undo and redo (ED-3): at least 50 steps, Cmd+Z and Shift+Cmd+Z.
  * Inside a text field holding unsaved typing, the keys undo the typing (the
@@ -160,6 +170,12 @@ export function UndoProvider({ children, bible }: { children: ReactNode; bible?:
   const flushAll = useCallback(async () => {
     for (const f of [...flushes.current]) await f();
   }, []);
+  useEffect(() => {
+    openBibleFlush = flushAll;
+    return () => {
+      if (openBibleFlush === flushAll) openBibleFlush = null;
+    };
+  }, [flushAll]);
 
   const step = useCallback(
     (direction: 'undo' | 'redo') => {

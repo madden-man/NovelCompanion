@@ -19,7 +19,7 @@ import { call, plainError } from '../api';
 import { notSavedText } from '../../../shared/errors';
 import type { Entry } from './data';
 import { Field } from './fields';
-import { EntryEditable, renameSpec } from './editable';
+import { EntryEditable, onEntryChain, renameSpec } from './editable';
 import { formatTime } from './format';
 import { useUndo } from './undo';
 import { CharacterPage } from './character';
@@ -39,6 +39,9 @@ export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 
  */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
 export const AUTOSAVE_MAX_WAIT_MS = 700;
+/** A save that failed is tried again after this, then twice this, then three times (ED-2). */
+const AUTOSAVE_RETRY_MS = 1000;
+const AUTOSAVE_RETRIES = 3;
 
 /**
  * Autosave for one entry (ED-2): every change updates the draft at once and
@@ -58,6 +61,9 @@ export function useAutosave(collection: EntryCollection, id: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstPending = useRef<number | null>(null);
   const inflight = useRef<Promise<void> | null>(null);
+  const retries = useRef(0);
+  /** Typing that is not stored yet, a failed save included. */
+  const unsaved = () => current.current !== null && current.current !== saved.current;
 
   const [reloads, setReloads] = useState(0);
   const reload = useCallback(() => setReloads((n) => n + 1), []);
@@ -126,9 +132,13 @@ export function useAutosave(collection: EntryCollection, id: string) {
       }
       setIssues([]);
       setStatus('saving');
-      const run = call('entry.update', { collection, id, patch: forward }).then(
+      // Queued behind any in-place save of this entry (a heading rename), never beside it.
+      const run = onEntryChain(collection, id, () =>
+        call('entry.update', { collection, id, patch: forward }),
+      ).then(
         (r) => {
           const entry = r.entry as Entry;
+          retries.current = 0;
           saved.current = entry;
           setWarnings(r.warnings);
           setError(null);
@@ -157,6 +167,11 @@ export function useAutosave(collection: EntryCollection, id: string) {
         (e: unknown) => {
           setError(plainError(e));
           setStatus('error');
+          // The typing is kept and sent again; a flush or closing the editor sends it too.
+          if (retries.current < AUTOSAVE_RETRIES && !timer.current) {
+            retries.current += 1;
+            timer.current = setTimeout(() => void save(), AUTOSAVE_RETRY_MS * retries.current);
+          }
           return false;
         },
       );
@@ -186,7 +201,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
   );
 
   const flush = useCallback(async () => {
-    if (timer.current || inflight.current) await save();
+    if (timer.current || inflight.current || unsaved()) await save();
   }, [save]);
 
   useEffect(() => undo.registerFlush(flush), [undo, flush]);
@@ -194,7 +209,7 @@ export function useAutosave(collection: EntryCollection, id: string) {
   // Save what is pending when the editor closes.
   useEffect(
     () => () => {
-      if (timer.current) void save();
+      if (timer.current || unsaved()) void save();
     },
     [save],
   );
@@ -403,7 +418,12 @@ export function EntryPane(props: {
     );
   }
   const inTrash = Boolean(draft.deletedAt);
-  const heading = renameSpec(collection);
+  // A family's or an era's heading shows its title, so it edits the title; its Name field
+  // below edits the name. Every other heading edits what a list row's rename does.
+  const heading =
+    collection === 'families' || collection === 'eraStates'
+      ? { path: 'title', label: 'Title', extraPatch: undefined }
+      : renameSpec(collection);
   const messages = { warnings: ed.warnings, issues: ed.issues };
   const warningCount = ed.warnings.length > 0 && (
     <span className="chip warn-chip" data-testid="warning-count">
