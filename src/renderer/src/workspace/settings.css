@@ -25,6 +25,9 @@
   background: var(--critical);
   border-color: var(--critical-ink);
 }
+.conn-status[data-state='unchecked'] .dot {
+  border-color: var(--warning-ink);
+}
 .conn-status[data-state='busy'] .dot {
   background: var(--warning);
   border-color: var(--warning-ink);

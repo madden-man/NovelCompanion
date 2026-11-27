@@ -10,6 +10,8 @@ import {
   ERROR_MESSAGES,
   FEATURE_INFO,
   claudeContract,
+  keyStatusLine,
+  looksLikeKey,
   maskKey,
   needsSettings,
 } from '../../src/shared/claude';
@@ -216,6 +218,37 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     expect(cleanKey('sk-proj-123').ok).toBe(false);
   });
 
+  test('A57 ST-1 a key saved without a check reads Saved, not checked, never Connected, and the status carries no instruction', () => {
+    const masked = 'sk-ant-…cdef';
+    expect(keyStatusLine({ set: true, masked, checked: true }, false)).toEqual({
+      state: 'ok',
+      text: 'Connected · sk-ant-…cdef',
+    });
+    const unchecked = keyStatusLine({ set: true, masked, checked: false }, false);
+    expect(unchecked).toEqual({ state: 'unchecked', text: 'Saved, not checked · sk-ant-…cdef' });
+    expect(unchecked.text).not.toMatch(/Connected|Paste|Try|Check it/);
+    expect(keyStatusLine({ set: false, masked: null, checked: false }, false)).toEqual({
+      state: 'none',
+      text: 'No key',
+    });
+    expect(keyStatusLine({ set: true, masked, checked: false }, true).text).toBe('Testing');
+  });
+
+  test('A57 ST-1 only a key-shaped value is tested when the field is left', () => {
+    expect(looksLikeKey('sk-ant-api03-abcdefgh')).toBe(true);
+    expect(looksLikeKey('  sk-ant-api03-abcdefgh  ')).toBe(true);
+    for (const v of [
+      '',
+      'sk-ant-',
+      'sk-ant-abc',
+      'hello',
+      'sk-proj-0123456789',
+      'sk-ant-ab cdefghij',
+    ]) {
+      expect(looksLikeKey(v), v).toBe(false);
+    }
+  });
+
   test('ARCH-4 ARCH-5 the keychain service is novel-companion-anthropic', () => {
     expect(ANTHROPIC_KEYCHAIN_SERVICE).toBe('novel-companion-anthropic');
   });
@@ -226,10 +259,12 @@ describe('ARCH-4 ARCH-5 the API key', () => {
     store.write({
       models: { panel: 'claude-haiku-5-5' },
       acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
+      keyUnchecked: false,
     });
     expect(store.read().models.panel).toBe('claude-haiku-5-5');
     expect(Object.keys(JSON.parse(readFileSync(path, 'utf8')) as object).sort()).toEqual([
       'acknowledged',
+      'keyUnchecked',
       'models',
     ]);
     // A53: a model saved for a feature the app no longer has is dropped; the rest still reads.
@@ -240,14 +275,17 @@ describe('ARCH-4 ARCH-5 the API key', () => {
         acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
       }),
     );
+    // ST-1: a file written before keyUnchecked existed reads as a checked key.
     expect(store.read()).toEqual({
       models: { panel: 'claude-haiku-5-5' },
       acknowledged: { eastwinds: '2026-10-11T00:00:00.000Z' },
+      keyUnchecked: false,
     });
     // A missing or broken file reads as the defaults.
     expect(new FileSettingsStore(join(path, 'nope.json')).read()).toEqual({
       models: {},
       acknowledged: {},
+      keyUnchecked: false,
     });
   });
 
@@ -270,12 +308,16 @@ describe('DB-4 model per feature', () => {
       capture: 'claude-sonnet-5-5',
       captureFast: 'claude-haiku-5-5',
     });
-    expect(modelsWithDefaults({ models: { panel: 'claude-haiku-5-5' }, acknowledged: {} })).toEqual(
-      {
-        ...DEFAULT_MODELS,
-        panel: 'claude-haiku-5-5',
-      },
-    );
+    expect(
+      modelsWithDefaults({
+        models: { panel: 'claude-haiku-5-5' },
+        acknowledged: {},
+        keyUnchecked: false,
+      }),
+    ).toEqual({
+      ...DEFAULT_MODELS,
+      panel: 'claude-haiku-5-5',
+    });
   });
 
   test('AI-6 the disclosure names every feature and what it sends', () => {
@@ -292,9 +334,9 @@ describe('DB-4 model per feature', () => {
     );
     // Its instructions are editable (IP-15) and its model a setting (DB-4), as for every feature.
     expect(Object.keys(FEATURES)).toContain('captureFast');
-    expect(modelsWithDefaults({ models: {}, acknowledged: {} }).captureFast).toBe(
-      'claude-haiku-5-5',
-    );
+    expect(
+      modelsWithDefaults({ models: {}, acknowledged: {}, keyUnchecked: false }).captureFast,
+    ).toBe('claude-haiku-5-5');
   });
 });
 

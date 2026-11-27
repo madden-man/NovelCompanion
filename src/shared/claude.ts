@@ -206,11 +206,34 @@ export type ClaudeStreamEvent = z.infer<typeof ClaudeStreamEvent>;
 
 /** Settings and sign-in status as the settings screen shows them. The key is never sent in full. */
 export const ClaudeStatusWire = z.strictObject({
-  key: z.strictObject({ set: z.boolean(), masked: z.string().nullable() }),
+  /** `checked` is false for a key saved while Anthropic could not be reached (ST-1). */
+  key: z.strictObject({ set: z.boolean(), masked: z.string().nullable(), checked: z.boolean() }),
   acknowledgedAt: z.string().nullable(),
   models: z.record(ClaudeFeature, z.string()),
 });
 export type ClaudeStatusWire = z.infer<typeof ClaudeStatusWire>;
+
+/** ST-1: a value shaped like an Anthropic key, worth testing when the field is left. */
+export function looksLikeKey(value: string): boolean {
+  return /^sk-ant-\S{8,}$/.test(value.trim());
+}
+
+/**
+ * ST-1 (A57): the key's state beside its field, as a dot and a short status.
+ * A key saved while Anthropic could not be reached is not Connected until a
+ * check or a run passes.
+ */
+export function keyStatusLine(
+  key: ClaudeStatusWire['key'],
+  testing: boolean,
+): { state: 'ok' | 'unchecked' | 'busy' | 'none'; text: string } {
+  if (testing) return { state: 'busy', text: 'Testing' };
+  if (!key.set) return { state: 'none', text: 'No key' };
+  const masked = key.masked ?? '';
+  return key.checked
+    ? { state: 'ok', text: `Connected · ${masked}` }
+    : { state: 'unchecked', text: `Saved, not checked · ${masked}` };
+}
 
 /**
  * IP-15: one feature's instructions as Settings shows them: the default, the
