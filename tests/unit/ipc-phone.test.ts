@@ -4,7 +4,10 @@ import { build } from 'esbuild';
 import { describe, expect, test } from 'vitest';
 import { CHANNELS } from '../../src/shared/ipc';
 import { claudeContract } from '../../src/shared/claude';
+import { isWriteChannel } from '../../src/shared/ipcApp';
+import { BIBLE_CHANNELS } from '../../src/main/ipc/bibleHandlers';
 import {
+  BIBLE_FREE_CHANNELS,
   CHANNEL_REACH,
   DESK_CHANNELS,
   PHONE_CHANNELS,
@@ -160,5 +163,16 @@ describe('ARCH-8 the function uses only novel_companion', () => {
       )
       .map((f) => relative(ROOT, f));
     expect(hits).toEqual([]);
+  });
+});
+
+describe('PH-18 the channels that run with no bible named', () => {
+  test('PH-18 BIBLE_FREE_CHANNELS is exactly the phone channels outside the bible handler table', () => {
+    const bible = new Set<string>(BIBLE_CHANNELS);
+    // `bible.changes` (P4) sits outside the bible handler table but reads the open bible, so it needs one named.
+    const outside = PHONE_CHANNELS.filter((c) => !bible.has(c) && c !== 'bible.changes');
+    expect([...BIBLE_FREE_CHANNELS].sort()).toEqual([...outside].sort());
+    for (const c of BIBLE_FREE_CHANNELS) expect(isWriteChannel(c), c).toBe(false);
+    expect(BIBLE_FREE_CHANNELS).not.toContain('bible.changes');
   });
 });

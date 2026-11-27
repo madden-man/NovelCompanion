@@ -98,13 +98,20 @@ function SnapshotSettings() {
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
-    call('snapshot.list', {}).then(
-      (r) => {
-        setKeep(r.keep);
-        setDraft(String(r.keep));
-      },
-      (e: unknown) => setFailed(plainError(e)),
-    );
+    // A58 (PH-8, PH-10): read again after a change elsewhere, unless the field holds typing.
+    const load = () => {
+      if (document.activeElement?.getAttribute('data-testid') === 'settings-snapshot-keep') return;
+      call('snapshot.list', {}).then(
+        (r) => {
+          setKeep(r.keep);
+          setDraft(String(r.keep));
+        },
+        (e: unknown) => setFailed(plainError(e)),
+      );
+    };
+    load();
+    const offs = [window.api.on('settings.changed', load), window.api.on('bible.reloaded', load)];
+    return () => offs.forEach((off) => off());
   }, []);
   const save = async (raw: string) => {
     if (keep === null) return;

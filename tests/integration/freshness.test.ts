@@ -8,9 +8,11 @@ import type { Store } from '../../src/main/db';
 import { openBibleSession } from '../../src/main/db/session';
 import type { OpenBible } from '../../src/main/db/session';
 import { readRev } from '../../src/main/db/rev';
+import { EntryMoved } from '../../src/main/db/repository';
 import { BridgeService } from '../../src/main/bridge/service';
 import { BridgeStore } from '../../src/main/db/bridge';
 import { claudeHandlers } from '../../src/main/claude/handlers';
+import { RunStore } from '../../src/main/claude/store';
 import { runtimeSessionClaude } from '../../src/main/claude/session';
 import { ClaudeRuntime } from '../../src/main/claude/runtime';
 import { FakeClaudeClient, FakeModelCatalog, loadRecordings } from '../../src/main/claude/fake';
@@ -28,7 +30,12 @@ import { BRIDGE_DOWN, worldIdFor } from '../../src/shared/bridge';
 import { blankEntry } from '../../src/shared/domain/blank';
 import { manifests } from '../../src/shared/schema';
 import { ELSEWHERE_MESSAGE, ENTRY_MOVED_MESSAGE } from '../../src/shared/freshness';
-import { UndoManager, editCommand, stepNotice } from '../../src/shared/domain/undoRunner';
+import {
+  UndoManager,
+  editCommand,
+  reorderCommand,
+  stepNotice,
+} from '../../src/shared/domain/undoRunner';
 import { undoIO } from '../../src/shared/undoIO';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
@@ -212,6 +219,294 @@ describe('PH-7 PH-8 two repositories on one database see each other’s writes',
     expect((await stored())?.title).toBe('Renamed again');
     expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
   });
+
+  test('PH-11 an entry changed elsewhere between the read and the commit is refused as moved, so undo skips it', async () => {
+    const slug = freshSlug('ph11-race');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const manager = new UndoManager();
+    const io = undoIO(ipcFor(() => a));
+    const before = a.repo.get('characters', 'H1')!;
+    const after = await a.repo.update('characters', 'H1', { role: 'Mine' });
+    manager.record(editCommand('Changed Role on H1', 'characters', 'H1', before, after));
+    // The other side writes H1 just after this side read it from MongoDB.
+    const collection = a.handle.collection.bind(a.handle);
+    let armed = true;
+    Object.assign(a.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'characters') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop !== 'findOne') return Reflect.get(target, prop, receiver) as unknown;
+            return async (...args: unknown[]) => {
+              const doc = await (target.findOne as (...a: unknown[]) => Promise<unknown>)(...args);
+              if (armed) {
+                armed = false;
+                await b.repo.update('characters', 'H1', { title: 'Renamed elsewhere' });
+              }
+              return doc;
+            };
+          },
+        });
+      },
+    });
+    const r = await manager.step('undo', io);
+    expect(r).toMatchObject({ status: 'skipped', why: 'moved', reason: ENTRY_MOVED_MESSAGE });
+    const stored = await store.db.collection(`${slug}.characters`).findOne({ _id: 'H1' as never });
+    expect(stored?.role).toBe('Mine');
+    expect(stored?.title).toBe('Renamed elsewhere');
+    armed = true;
+    await expect(a.repo.update('characters', 'H1', { role: 'Again' })).rejects.toBeInstanceOf(
+      EntryMoved,
+    );
+  });
+
+  test('PH-11 a step over several entries, one of them changed on the other side, writes none of them', async () => {
+    const slug = freshSlug('ph11-many');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const invoke = ipcFor(() => a);
+    const manager = new UndoManager();
+    const io = undoIO(invoke);
+    const ids = ['H1', 'H2', 'H3'];
+    // An earlier step, which must still undo after the refusal.
+    const h4 = (await invoke('entry.get', { collection: 'characters', id: 'H4' })).entry;
+    const h4After = (
+      await invoke('entry.update', { collection: 'characters', id: 'H4', patch: { role: 'Kept' } })
+    ).entry;
+    manager.record(editCommand('Changed Role on H4', 'characters', 'H4', h4, h4After));
+    const before = await Promise.all(
+      ids.map(async (id) => (await invoke('entry.get', { collection: 'characters', id })).entry),
+    );
+    for (const id of ids) {
+      await invoke('entry.update', {
+        collection: 'characters',
+        id,
+        patch: { role: `Filed ${id}` },
+      });
+    }
+    manager.record(
+      reorderCommand(
+        'Filed 3 facts',
+        'characters',
+        ids.map((id, i) => ({
+          id,
+          before: { role: before[i]!.role ?? null },
+          after: { role: `Filed ${id}` },
+        })),
+      ),
+    );
+
+    // The last entry of the step changes on the other side; A has not reloaded.
+    await b.repo.update('characters', 'H3', { title: 'Renamed elsewhere' });
+    const stored = async (id: string) =>
+      store.db.collection(`${slug}.characters`).findOne({ _id: id as never });
+    const at = await Promise.all(ids.map(stored));
+    const r = await manager.step('undo', io);
+    expect(r).toMatchObject({ status: 'skipped', why: 'moved', reason: ENTRY_MOVED_MESSAGE });
+    expect(await Promise.all(ids.map(stored))).toEqual(at);
+    expect(manager.stack.history().undo.map((c) => c.label)).toEqual(['Changed Role on H4']);
+    await a.repo.freshen();
+    expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H4'))?.role).toBe(h4.role);
+
+    // Once fresh, a step over several entries undoes and redoes as one.
+    manager.record(
+      reorderCommand('Moved two', 'characters', [
+        { id: 'H1', before: { role: 'Filed H1' }, after: { role: 'One' } },
+        { id: 'H2', before: { role: 'Filed H2' }, after: { role: 'Two' } },
+      ]),
+    );
+    await invoke('entry.update', { collection: 'characters', id: 'H1', patch: { role: 'One' } });
+    await invoke('entry.update', { collection: 'characters', id: 'H2', patch: { role: 'Two' } });
+    expect(await manager.step('undo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H1'))?.role).toBe('Filed H1');
+    expect((await stored('H2'))?.role).toBe('Filed H2');
+    expect(await manager.step('redo', io)).toMatchObject({ status: 'applied' });
+    expect((await stored('H2'))?.role).toBe('Two');
+  });
+});
+
+describe('PH-7 PH-8 freshen leaves no window', () => {
+  test('PH-8 a freshen asked for while one is in flight still sees a write that landed after the first read rev', async () => {
+    const slug = freshSlug('ph8-join');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    // Hold the first freshen just after it read rev.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held = false;
+    const collection = a.handle.collection.bind(a.handle);
+    Object.assign(a.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'meta') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop !== 'findOne') return Reflect.get(target, prop, receiver) as unknown;
+            return async (...args: unknown[]) => {
+              const doc = await (target.findOne as (...x: unknown[]) => Promise<unknown>)(...args);
+              if (!held) {
+                held = true;
+                await gate;
+              }
+              return doc;
+            };
+          },
+        });
+      },
+    });
+    const first = a.repo.freshen();
+    await expect.poll(() => held).toBe(true);
+    await b.repo.update('characters', 'H1', { role: 'Written while A was reading' });
+    const joined = a.repo.freshen();
+    release();
+    expect(await first).toBe(false);
+    expect(await joined).toBe(true);
+    expect(a.repo.get('characters', 'H1')?.role).toBe('Written while A was reading');
+    Object.assign(a.handle, { collection });
+  });
+
+  test('PH-8 a freshen that reads rev just after this side committed, before it noted the number, does not take its own write for one made elsewhere', async () => {
+    const slug = freshSlug('ph8-own');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const reloads: boolean[] = [];
+    a.repo.onReload((_m, elsewhere) => reloads.push(elsewhere));
+    const client = a.handle.client;
+    const startSession = client.startSession.bind(client);
+    let fresh: Promise<boolean> | null = null;
+    Object.assign(client, {
+      startSession: (...args: Parameters<typeof startSession>) => {
+        const session = startSession(...args);
+        // Only the write's own session, never the driver's implicit ones.
+        if (args.length) return session;
+        const end = session.endSession.bind(session);
+        Object.assign(session, {
+          // After the commit, before the write notes its number: a freshen comes in.
+          endSession: async (...x: Parameters<typeof end>) => {
+            if (!fresh) {
+              fresh = a.repo.freshen();
+              await new Promise((r) => setTimeout(r, 300));
+            }
+            return end(...x);
+          },
+        });
+        return session;
+      },
+    });
+    try {
+      await a.repo.update('characters', 'H1', { role: 'Mine' });
+    } finally {
+      Object.assign(client, { startSession });
+    }
+    expect(fresh).not.toBeNull();
+    expect(await fresh!).toBe(false);
+    expect(reloads).toEqual([]);
+    expect(await a.repo.freshen()).toBe(false);
+  });
+});
+
+describe('PH-8 every meta document changed elsewhere sends a change signal', () => {
+  test('PH-8 brief settings, the scene outline, snapshot settings and Claude instructions changed elsewhere each send settings; rev alone sends nothing', async () => {
+    const slug = freshSlug('ph8-meta');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const b = await openBibleSession(other, slug);
+    const heard: string[] = [];
+    a.repo.onSettingsChange(() => heard.push('settings'));
+    for (const write of [
+      () => b.repo.setBriefSettings({ budget: 12_345 }),
+      () => b.repo.setSceneOutline('- Written elsewhere'),
+      () => b.repo.setSnapshotKeep(9),
+      () => b.repo.setClaudeInstructions('capture', 'Be brief.'),
+    ]) {
+      heard.length = 0;
+      await write();
+      expect(await a.repo.freshen()).toBe(true);
+      expect(heard).toEqual(['settings']);
+    }
+    expect(a.repo.briefSettings().budget).toBe(12_345);
+    heard.length = 0;
+    await b.repo.withRev(async () => undefined);
+    expect(await a.repo.freshen()).toBe(true);
+    expect(heard).toEqual([]);
+  });
+});
+
+describe('PH-6 a write and its rev raise land together', () => {
+  /** The raise of `rev` fails, as a dropped connection would, after the write itself went out. */
+  function failRaise(session: OpenBible): () => void {
+    const collection = session.handle.collection.bind(session.handle);
+    const restore = () => Object.assign(session.handle, { collection });
+    Object.assign(session.handle, {
+      collection: (name: string) => {
+        const c = collection(name);
+        if (name !== 'meta') return c;
+        return new Proxy(c, {
+          get(target, prop, receiver) {
+            if (prop === 'findOneAndUpdate') {
+              return () => Promise.reject(new Error('The raise of rev failed.'));
+            }
+            return Reflect.get(target, prop, receiver) as unknown;
+          },
+        });
+      },
+    });
+    return restore;
+  }
+
+  test('PH-6 when rev cannot be raised, a setting, a proposal and a saved Claude run are not written either, so nothing reads as unsaved that was saved', async () => {
+    const slug = freshSlug('ph6-atomic');
+    await loadFixture(store, slug);
+    const a = await openBibleSession(store, slug);
+    const runs = new RunStore(a);
+    const revBefore = await readRev(a.handle);
+    const restore = failRaise(a);
+    try {
+      await expect(a.repo.setStoryTime({ year: 2077 })).rejects.toThrow();
+      await expect(
+        a.repo.propose({
+          source: 'claude',
+          op: 'update',
+          collection: 'characters',
+          targetId: 'H1',
+          data: { role: 'Proposed' },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        runs.create({
+          _id: 'run-atomic-0000001',
+          feature: 'panel',
+          title: 'A question',
+          createdAt: '2026-11-27T10:00:00.000Z',
+          modifiedAt: '2026-11-27T10:00:00.000Z',
+          turns: [],
+        }),
+      ).rejects.toThrow();
+      await expect(a.repo.setSceneOutline('A scene written.')).rejects.toThrow();
+    } finally {
+      restore();
+    }
+    const db = (c: string) => store.db.collection(`${slug}.${c}`);
+    expect(await db('meta').findOne({ _id: 'storyTime' as never })).toBeNull();
+    expect(await db('meta').findOne({ _id: 'sceneOutline' as never })).toBeNull();
+    expect(await db('sceneOutlineVersions').countDocuments()).toBe(0);
+    expect(await db('proposals').countDocuments({ 'data.role': 'Proposed' })).toBe(0);
+    expect(await db('conversations').countDocuments({ _id: 'run-atomic-0000001' as never })).toBe(
+      0,
+    );
+    expect(a.repo.storyTime()).toBeNull();
+    expect(await readRev(a.handle)).toBe(revBefore);
+    // With the raise working again, the same writes land and move rev.
+    await a.repo.setStoryTime({ year: 2077 });
+    expect(await readRev(a.handle)).toBe(revBefore + 1);
+    expect(await a.repo.freshen()).toBe(false);
+  });
 });
 
 /** A memory host with the recorded Claude, as `registerHandlers` gets from Electron under test. */
@@ -372,6 +667,15 @@ describe('PH-6 every write channel moves rev, through the handler table main ser
     },
     'entry.restore': {
       run: () => call('entry.restore', { collection: 'places', id: state.place! }),
+    },
+    'entry.batch': {
+      run: () =>
+        call('entry.batch', {
+          ops: [
+            { op: 'update', collection: 'characters', id: 'H1', patch: { role: 'Batched' } },
+            { op: 'update', collection: 'characters', id: 'H2', patch: { role: 'Batched' } },
+          ],
+        }),
     },
     'lists.rename': {
       run: () =>

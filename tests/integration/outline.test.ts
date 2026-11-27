@@ -5,6 +5,7 @@ import type { OpenBible } from '../../src/main/db/session';
 import { freshSlug, localStore } from '../helpers/db';
 import { ipcFor } from '../helpers/ipc';
 import { loadFixture } from '../helpers/loadFixture';
+import { ENTRY_MOVED_MESSAGE } from '../../src/shared/freshness';
 import type { Invoke } from '../helpers/t5';
 import { entriesWritten, entryStamps } from '../helpers/entryWrites';
 
@@ -327,5 +328,41 @@ describe('PL-5 SM-5 the scene outline over IPC', () => {
       .findOne({ _id: 'sceneOutline' });
     expect(meta).toMatchObject({ breaks: { CH1: 1, CH2: 4 }, years: {} });
     expect(meta).not.toHaveProperty('ranges');
+  });
+});
+
+describe('PH-10 PH-11 the scene outline is never overwritten from an older base', () => {
+  test('PH-10 a save typed on the outline as it was is refused once it changed somewhere else, and nothing is written', async () => {
+    const own = await openBibleSession(
+      store,
+      (await loadFixture(store, freshSlug('outline-base'))).id,
+    );
+    const other = await openBibleSession(store, own.handle.id);
+    const call = ipcFor(() => own);
+    // No outline stored yet: null is the base.
+    const first = await call('sceneOutline.set', { text: '- Desk one', expectModifiedAt: null });
+    expect(first.modifiedAt).toBeTruthy();
+    const second = await call('sceneOutline.set', {
+      text: '- Desk two',
+      expectModifiedAt: first.modifiedAt,
+    });
+    // The phone writes the outline; the desk still holds `second` as its base.
+    await other.repo.setSceneOutline('- Written on the phone');
+    await expect(
+      call('sceneOutline.set', { text: '- Desk three', expectModifiedAt: second.modifiedAt }),
+    ).rejects.toThrow(ENTRY_MOVED_MESSAGE);
+    await expect(
+      call('sceneOutline.set', { text: '- Desk three', expectModifiedAt: null }),
+    ).rejects.toThrow(ENTRY_MOVED_MESSAGE);
+    const stored = await own.handle.collection('meta').findOne({ _id: 'sceneOutline' as never });
+    expect(stored?.text).toBe('- Written on the phone');
+    // Once fresh, the newer base saves.
+    await own.repo.freshen();
+    const now = await call('sceneOutline.get', {});
+    expect(now.text).toBe('- Written on the phone');
+    expect(
+      (await call('sceneOutline.set', { text: '- Desk three', expectModifiedAt: now.modifiedAt }))
+        .text,
+    ).toBe('- Desk three');
   });
 });

@@ -11,17 +11,26 @@ import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
 import { ALLOW_TEST_URI_ENV, TEST_DB_NAME_ENV, TEST_URI_ENV } from '../../src/main/host/uri';
 import { openSession } from '../../src/main/ipc/handlers';
 import { reloadSession } from '../../src/main/backup/restore';
-import { DESK_ONLY_MESSAGE, PHONE_CHANNELS } from '../../src/shared/ipcPhone';
+import {
+  BIBLE_FREE_CHANNELS,
+  DESK_ONLY_MESSAGE,
+  NO_BIBLE_MESSAGE,
+  PHONE_CHANNELS,
+} from '../../src/shared/ipcPhone';
 import type { Channel, CallContext, Request as ChannelRequest } from '../../src/shared/ipc';
-import { BUILD_HEADER, createRpc } from '../../src/server/rpc';
+import { BUILD_HEADER, NO_BULK_SNAPSHOT, createRpc } from '../../src/server/rpc';
 import type { Rpc, RpcEnvelope, RpcError } from '../../src/server/rpc';
 import type { ServerEnv } from '../../src/server/host';
 import { webServer } from '../../src/server/node';
 import {
   PHONE_SNAPSHOTS,
   PHONE_SNAPSHOT_KEEP,
+  PHONE_SNAPSHOT_KEEP_OTHER,
+  PHONE_SNAPSHOT_PARTS,
   listPhoneSnapshots,
   restorePhoneSnapshot,
+  takeDailyPhoneSnapshot,
+  takePhoneSnapshot,
 } from '../../src/server/phoneSnapshots';
 import { freshSlug, localStore } from '../helpers/db';
 import { loadFixture } from '../helpers/loadFixture';
@@ -350,6 +359,57 @@ describe('PH-19 the function never migrates', () => {
     expect(((await res.json()) as RpcError).code).toBe('newer');
     await unchanged(bible, LATEST_SCHEMA_VERSION + 1, story);
   });
+
+  test('PH-19 a write with no bible named is refused, so a bible the desk migrated is never written through an earlier open', async () => {
+    const bible = await fixture('ph19-null');
+    await ok(await call('entry.get', { collection: 'characters', id: 'H1' }, bible));
+    await store.db.collection('bibles').updateOne({ _id: bible } as never, {
+      $set: { schemaVersion: LATEST_SCHEMA_VERSION + 1 },
+    });
+    const story = await backstory(bible);
+    const patch = { collection: 'characters', id: 'H1', patch: { backstory: 'Never.' } } as const;
+    for (const res of [
+      await call('entry.update', patch, null),
+      await call('entry.update', patch, null, { bible }),
+    ]) {
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as RpcError).error).toBe(NO_BIBLE_MESSAGE);
+    }
+    // A read with no bible named is refused too: nothing from an earlier open is reachable.
+    const read = await call('entry.get', { collection: 'characters', id: 'H1' }, null);
+    expect(read.status).toBe(422);
+    expect(((await read.json()) as RpcError).error).toBe(NO_BIBLE_MESSAGE);
+    await unchanged(bible, LATEST_SCHEMA_VERSION + 1, story);
+  });
+});
+
+describe('PH-18 the chooser needs no bible; everything else names one', () => {
+  test('PH-18 the bible-free channels answer with bible null and take no snapshot or freshen', async () => {
+    const bible = await fixture('ph18-free');
+    await ok(await call('entry.get', { collection: 'characters', id: 'H1' }, bible));
+    freshenSaw.length = 0;
+    const list = await ok(await call('bible.list', {}, null));
+    expect((list.result as { bibles: { id: string }[] }).bibles.map((b) => b.id)).toContain(bible);
+    await ok(await call('app.ping', { message: 'hi' }, null));
+    expect(freshenSaw).toEqual([]);
+    for (const channel of BIBLE_FREE_CHANNELS) {
+      expect(PHONE_CHANNELS as readonly string[]).toContain(channel);
+    }
+  });
+
+  test('PH-18 a write must carry the bible it was made in, the same one the request names', async () => {
+    const bible = await fixture('ph18-ctx');
+    const story = await backstory(bible);
+    const res = await call(
+      'entry.update',
+      { collection: 'characters', id: 'H1', patch: { backstory: 'No context.' } },
+      bible,
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as RpcError).error).toMatch(/no longer open/);
+    expect(await backstory(bible)).toBe(story);
+    expect(await phoneSnapshotCount(bible)).toBe(0);
+  });
 });
 
 describe('PH-23 a daily phone snapshot', () => {
@@ -422,6 +482,120 @@ describe('PH-23 a daily phone snapshot', () => {
     expect(list.at(-1)!.day).toBe('2026-10-02');
     // Another bible's snapshots are its own.
     expect(await phoneSnapshotCount(other)).toBe(1);
+  });
+});
+
+describe('PH-23 BK-1 phone snapshots hold under load and size', () => {
+  const snapshotsOf = (bible: string) =>
+    store.db
+      .collection(PHONE_SNAPSHOTS)
+      .find({ bible })
+      .project({ reason: 1, day: 1, parts: 1 })
+      .toArray();
+
+  test('PH-23 two instances taking the day snapshot at once keep one', async () => {
+    const bible = await fixture('ph23-race');
+    const handle = await openBible(store, bible);
+    const at = new Date('2026-11-29T09:00:00.000Z');
+    const taken = await Promise.all([
+      takeDailyPhoneSnapshot(handle, at),
+      takeDailyPhoneSnapshot(handle, at),
+      takeDailyPhoneSnapshot(handle, at),
+    ]);
+    expect(taken.filter(Boolean)).toHaveLength(1);
+    expect(await phoneSnapshotCount(bible)).toBe(1);
+  });
+
+  test('PH-23 restore and bulk snapshots keep their own few and never push out a daily one', async () => {
+    const bible = await fixture('ph23-kinds');
+    const handle = await openBible(store, bible);
+    for (let d = 1; d <= PHONE_SNAPSHOT_KEEP; d++) {
+      await takePhoneSnapshot(
+        handle,
+        'daily',
+        new Date(`2026-10-${String(d).padStart(2, '0')}T08:00:00Z`),
+      );
+    }
+    for (let i = 0; i < PHONE_SNAPSHOT_KEEP_OTHER + 2; i++) {
+      await takePhoneSnapshot(handle, 'bulk', new Date(`2026-11-20T08:00:0${i}Z`));
+      await takePhoneSnapshot(handle, 'restore', new Date(`2026-11-21T08:00:0${i}Z`));
+    }
+    const list = await listPhoneSnapshots(handle);
+    const count = (reason: string) => list.filter((s) => s.reason === reason).length;
+    expect(count('daily')).toBe(PHONE_SNAPSHOT_KEEP);
+    expect(count('bulk')).toBe(PHONE_SNAPSHOT_KEEP_OTHER);
+    expect(count('restore')).toBe(PHONE_SNAPSHOT_KEEP_OTHER);
+    expect(list.filter((s) => s.reason === 'daily').at(-1)!.day).toBe('2026-10-01');
+  });
+
+  test('PH-23 a dump larger than one document is kept in parts and restores whole', async () => {
+    const bible = await fixture('ph23-parts');
+    const handle = await openBible(store, bible);
+    const at = new Date('2026-11-29T10:00:00.000Z');
+    const info = await takePhoneSnapshot(handle, 'daily', at, 1024);
+    const [doc] = await snapshotsOf(bible);
+    expect(doc?.parts).toBeGreaterThan(1);
+    expect(
+      await store.db.collection(PHONE_SNAPSHOT_PARTS).countDocuments({ snapshot: info._id }),
+    ).toBe(doc?.parts);
+    await handle.collection('characters').updateOne({ _id: 'H1' } as never, {
+      $set: { backstory: 'Changed after the snapshot.' },
+    });
+    await restorePhoneSnapshot(handle, info._id, at);
+    expect(await backstory(bible)).toBe(
+      'A schoolteacher who kept every letter the family ever sent.',
+    );
+  });
+
+  test('BK-1 a bulk change from the phone keeps a bulk phone snapshot first, and is refused when it cannot', async () => {
+    const bible = await fixture('bk1-phone');
+    clock = new Date('2026-11-30T09:00:00.000Z');
+    const made = await ok(
+      await call(
+        'entry.create',
+        { collection: 'places', data: { title: 'Gone soon' } } as never,
+        bible,
+        { bible },
+      ),
+    );
+    const id = (made.result as { entry: { _id: string } }).entry._id;
+    await ok(await call('entry.delete', { collection: 'places', id }, bible, { bible }));
+    expect((await snapshotsOf(bible)).map((s) => s.reason)).toEqual(['daily']);
+    await ok(await call('entry.purge', { collection: 'places', id }, bible, { bible }));
+    expect((await snapshotsOf(bible)).map((s) => s.reason).sort()).toEqual(['bulk', 'daily']);
+
+    // A copy that cannot be kept refuses the change.
+    const other = (
+      await ok(
+        await call(
+          'entry.create',
+          { collection: 'places', data: { title: 'Stays' } } as never,
+          bible,
+          { bible },
+        ),
+      )
+    ).result as { entry: { _id: string } };
+    await ok(
+      await call('entry.delete', { collection: 'places', id: other.entry._id }, bible, { bible }),
+    );
+    await store.db.command({
+      collMod: PHONE_SNAPSHOTS,
+      validator: { reason: { $ne: 'bulk' } },
+      validationLevel: 'strict',
+    });
+    try {
+      const res = await call('trash.empty', {}, bible, { bible });
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as RpcError).error).toBe(NO_BULK_SNAPSHOT);
+    } finally {
+      await store.db.command({ collMod: PHONE_SNAPSHOTS, validator: {} });
+    }
+    const left = await (
+      await openBible(store, bible)
+    )
+      .collection('places')
+      .findOne({ _id: other.entry._id } as never);
+    expect(left?.deletedAt).toBeTruthy();
   });
 });
 

@@ -71,6 +71,7 @@ export type BibleChannel =
   | 'entry.update'
   | 'entry.delete'
   | 'entry.restore'
+  | 'entry.batch'
   | 'entry.lookup'
   | 'trash.list'
   | 'lists.get'
@@ -294,8 +295,8 @@ export function bibleHandlers(
       return { time: saved, position: position() };
     },
     'sceneOutline.get': () => session().repo.sceneOutline(),
-    'sceneOutline.set': ({ text, breaks, years }) =>
-      session().repo.setSceneOutline(text, { breaks, years }),
+    'sceneOutline.set': ({ text, breaks, years, expectModifiedAt }) =>
+      session().repo.setSceneOutline(text, { breaks, years, expectModifiedAt }),
     'sceneOutline.versions': async () => ({
       versions: await session().repo.sceneOutlineVersions(),
     }),
@@ -573,6 +574,14 @@ export function bibleHandlers(
         expectModifiedAt,
       })) as StoredDoc;
       return withWarnings(collection, entry);
+    },
+    'entry.batch': async ({ ops }) => {
+      const written = await session().repo.writeBatch(
+        ops.map((o) => (o.op === 'delete' ? { ...o, op: 'softDelete' as const } : o)),
+      );
+      return {
+        entries: ops.map((o, i) => withWarnings(o.collection, written[i] as StoredDoc)),
+      };
     },
     'entry.lookup': ({ ids }) => {
       const { model } = session();

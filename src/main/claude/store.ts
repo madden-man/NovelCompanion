@@ -1,5 +1,6 @@
 import { ClaudeFeature, ClaudeRun, ClaudeTurn } from '../../shared/claude';
 import type { ClaudeRunSummary } from '../../shared/claude';
+import type { ClientSession } from 'mongodb';
 import type { OpenBible } from '../db/session';
 import type { StoredDoc } from '../readmodel';
 
@@ -23,14 +24,22 @@ export class RunStore {
     return this.session.handle.collection<ClaudeRun>(COLLECTION);
   }
 
-  /** A58 (PH-6): every write here raises the bible's `rev`, like the repository's own writes. */
-  private raised(): Promise<void> {
-    return this.session.repo.noteWrite();
+  /**
+   * A58 (PH-6): every write here raises the bible's `rev` in the same
+   * transaction, like the repository's own writes. A conversation that is not
+   * saved writes nothing.
+   */
+  private written(
+    write: (session: ClientSession) => Promise<ClaudeRun | null>,
+  ): Promise<ClaudeRun> {
+    return this.session.repo.withRev(async (session) => {
+      const doc = await write(session);
+      if (!doc) throw new Error('That conversation is not saved.');
+      return doc;
+    });
   }
 
-  private async remember(doc: ClaudeRun | null): Promise<ClaudeRun> {
-    if (!doc) throw new Error('That conversation is not saved.');
-    await this.raised();
+  private remember(doc: ClaudeRun): ClaudeRun {
     // A53: a run of a removed feature (a saved `briefs` run) is skipped, not an error.
     if (!ClaudeFeature.safeParse(doc.feature).success) return doc;
     const parsed = ClaudeRun.parse(doc);
@@ -41,18 +50,20 @@ export class RunStore {
   /** A new run with its first turn. */
   async create(run: ClaudeRun): Promise<ClaudeRun> {
     const doc = ClaudeRun.parse(run);
-    await this.collection().insertOne(doc);
-    await this.raised();
+    await this.session.repo.withRev((session) => this.collection().insertOne(doc, { session }));
     this.session.model.put(COLLECTION, doc as unknown as StoredDoc);
     return doc;
   }
 
   /** Add a turn to a saved conversation, leaving its other turns alone. */
   async pushTurn(runId: string, turn: ClaudeTurn, at: string): Promise<ClaudeRun> {
-    const doc = await this.collection().findOneAndUpdate(
-      { _id: runId },
-      { $push: { turns: ClaudeTurn.parse(turn) }, $set: { modifiedAt: at } },
-      { returnDocument: 'after' },
+    const push = ClaudeTurn.parse(turn);
+    const doc = await this.written((session) =>
+      this.collection().findOneAndUpdate(
+        { _id: runId },
+        { $push: { turns: push }, $set: { modifiedAt: at } },
+        { returnDocument: 'after', session },
+      ),
     );
     return this.remember(doc);
   }
@@ -66,10 +77,12 @@ export class RunStore {
   ): Promise<ClaudeRun> {
     const set: Record<string, unknown> = { 'turns.$': ClaudeTurn.parse(turn), modifiedAt: at };
     if (output !== undefined) set.output = output;
-    const doc = await this.collection().findOneAndUpdate(
-      { _id: runId, 'turns.id': turn.id },
-      { $set: set },
-      { returnDocument: 'after' },
+    const doc = await this.written((session) =>
+      this.collection().findOneAndUpdate(
+        { _id: runId, 'turns.id': turn.id },
+        { $set: set },
+        { returnDocument: 'after', session },
+      ),
     );
     return this.remember(doc);
   }
@@ -87,29 +100,34 @@ export class RunStore {
   async rename(id: string, title: string, at: string): Promise<ClaudeRun> {
     const clean = title.replace(/\s+/g, ' ').trim();
     if (!clean) throw new Error('A conversation needs a title.');
-    const doc = await this.collection().findOneAndUpdate(
-      { _id: id },
-      { $set: { title: clean, modifiedAt: at } },
-      { returnDocument: 'after' },
+    const doc = await this.written((session) =>
+      this.collection().findOneAndUpdate(
+        { _id: id },
+        { $set: { title: clean, modifiedAt: at } },
+        { returnDocument: 'after', session },
+      ),
     );
     return this.remember(doc);
   }
 
   /** Take every message out of a conversation and its output; the title stays. */
   async clear(id: string, at: string): Promise<ClaudeRun> {
-    const doc = await this.collection().findOneAndUpdate(
-      { _id: id },
-      { $set: { turns: [], modifiedAt: at }, $unset: { output: '' } },
-      { returnDocument: 'after' },
+    const doc = await this.written((session) =>
+      this.collection().findOneAndUpdate(
+        { _id: id },
+        { $set: { turns: [], modifiedAt: at }, $unset: { output: '' } },
+        { returnDocument: 'after', session },
+      ),
     );
     return this.remember(doc);
   }
 
   /** Delete a conversation and everything in it. The proposals it made stay in the review queue. */
   async remove(id: string): Promise<void> {
-    const res = await this.collection().deleteOne({ _id: id });
-    if (res.deletedCount !== 1) throw new Error('That conversation is not saved.');
-    await this.raised();
+    await this.session.repo.withRev(async (session) => {
+      const res = await this.collection().deleteOne({ _id: id }, { session });
+      if (res.deletedCount !== 1) throw new Error('That conversation is not saved.');
+    });
     this.session.model.remove(COLLECTION, id);
   }
 

@@ -1,6 +1,6 @@
 import { NotebookPageView } from '../notebook';
 import { WriteFieldset } from '../../connection';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Request, Response } from '../../../../shared/ipc';
 import { characterName } from '../../../../shared/domain/timeline';
 import { call, plainError } from '../../api';
@@ -95,8 +95,19 @@ export function BriefSettings({ onChanged }: { onChanged?: () => void }) {
   const [s, setS] = useState<Response<'brief.settings.get'> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ids = { window: useId(), budget: useId() };
+  const box = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
-    void call('brief.settings.get', {}).then(setS);
+    // A58 (PH-8, PH-10): read again after a change elsewhere, unless a field here holds typing;
+    // leaving that field saves it, and the answer is the whole settings as stored.
+    const load = () => {
+      const typing = document.activeElement;
+      if (!(typing instanceof HTMLInputElement && box.current?.contains(typing))) {
+        void call('brief.settings.get', {}).then(setS);
+      }
+    };
+    load();
+    const offs = [window.api.on('settings.changed', load), window.api.on('bible.reloaded', load)];
+    return () => offs.forEach((off) => off());
   }, []);
   if (!s) return null;
   const save = async (patch: { window?: number; budget?: number }) => {
@@ -123,6 +134,7 @@ export function BriefSettings({ onChanged }: { onChanged?: () => void }) {
             type="number"
             min={0}
             max={200}
+            key={s.window}
             defaultValue={s.window}
             onBlur={(e) => void save({ window: Number(e.target.value) })}
           />
@@ -133,6 +145,7 @@ export function BriefSettings({ onChanged }: { onChanged?: () => void }) {
             id={ids.budget}
             type="number"
             min={0}
+            key={s.budget}
             defaultValue={s.budget}
             onBlur={(e) => void save({ budget: Number(e.target.value) })}
           />
@@ -146,7 +159,7 @@ export function BriefSettings({ onChanged }: { onChanged?: () => void }) {
     </WriteFieldset>
   );
   return (
-    <details className="sunken" data-testid="brief-settings">
+    <details className="sunken" data-testid="brief-settings" ref={box}>
       <summary>Brief settings</summary>
       {fields}
     </details>
