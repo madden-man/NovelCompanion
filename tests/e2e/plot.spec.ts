@@ -861,9 +861,10 @@ test('A57 the chapter menu lists Move up, Move down, New chapter at this line an
   await expect.poll(chapterIds).toEqual(ids);
 });
 
-test('A57 Tab and Shift+Tab indent and outdent a scene line beside Cmd+] and Cmd+[, and after Escape Tab leaves the text', async () => {
+test('A57 PL-5 while editing, Tab and Shift+Tab indent and outdent a scene line beside Cmd+] and Cmd+[, and after Escape Tab leaves the text', async () => {
   const eight = section('CH8');
   const was = await eight.inputValue();
+  // The pointer puts the caret in, so the writer is editing.
   await eight.click();
   await eight.press('Meta+ArrowDown');
   await eight.press('Enter');
@@ -877,12 +878,86 @@ test('A57 Tab and Shift+Tab indent and outdent a scene line beside Cmd+] and Cmd
   await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
   await page.keyboard.press('Meta+[');
   await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
-  // Escape, then Tab moves on to the bar beside it.
+  // Escape ends editing: Cmd+] and Cmd+[ still work, and Tab moves on to the bar beside it.
   await page.keyboard.press('Escape');
+  await page.keyboard.press('Meta+]');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Meta+[');
+  await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
   await page.keyboard.press('Tab');
   await expect(bar('CH8')).toBeFocused();
   await expect(eight).toHaveValue(`${was}\n- Noor on the stairs`);
   await expect.poll(async () => (await stored()).text).toContain('- Noor on the stairs');
+  // Put the text back.
+  await eight.fill(was);
+  await bar('CH8').focus();
+  await expect.poll(async () => (await stored()).text).not.toContain('Noor on the stairs');
+});
+
+/** The last scene year field in a chapter's row, just before its text in the Tab order. */
+const lastYearIn = (id: string) =>
+  view().locator(`[data-row="${id}"] [data-testid="scene-year"]`).last();
+
+test('A57 PL-5 focus that arrives by Tab in a scene field with words leaves on the next Tab and changes nothing', async () => {
+  const three = section('CH3');
+  const was = await three.inputValue();
+  expect(was).toMatch(/\w/);
+  const before = (await stored()).text;
+  await lastYearIn('CH3').focus();
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(bar('CH3')).toBeFocused();
+  await expect(three).toHaveValue(was);
+  // Shift+Tab back into the text, and Shift+Tab again leaves it the other way, still unchanged.
+  await page.keyboard.press('Shift+Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(lastYearIn('CH3')).toBeFocused();
+  await expect(three).toHaveValue(was);
+  expect((await stored()).text).toBe(before);
+});
+
+test('A57 PL-5 a fresh bullet made with Enter indents on Tab', async () => {
+  const three = section('CH3');
+  const was = await three.inputValue();
+  // Focus arrives by Tab; Enter makes a fresh, empty bullet and starts editing.
+  await lastYearIn('CH3').focus();
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(three).toHaveValue(`${was}\n- `);
+  await page.keyboard.press('Tab');
+  await expect(three).toBeFocused();
+  await expect(three).toHaveValue(`${was}\n  - `);
+  await page.keyboard.press('Shift+Tab');
+  await expect(three).toHaveValue(`${was}\n- `);
+  await expect(bar('CH3')).toHaveCount(1);
+  // Put the text back.
+  await three.fill(was);
+  await bar('CH3').focus();
+  await expect.poll(async () => (await stored()).text).not.toMatch(/Wedding in the rain\n\s*- \n/);
+});
+
+test('A57 PL-5 Tab cannot indent a line past the cap', async () => {
+  const eight = section('CH8');
+  const was = await eight.inputValue();
+  await eight.click();
+  await eight.press('Meta+ArrowDown');
+  await eight.press('Enter');
+  await eight.pressSequentially('Noor on the stairs');
+  // One level under the scene above, and no deeper however often Tab is pressed.
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab');
+  await expect(eight).toBeFocused();
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  await page.keyboard.press('Meta+]');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs`);
+  // Under that line, the next one goes one level deeper still, and stops there.
+  await eight.press('Enter');
+  await eight.pressSequentially('the banister');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab');
+  await expect(eight).toHaveValue(`${was}\n  - Noor on the stairs\n    - the banister`);
   // Put the text back.
   await eight.fill(was);
   await bar('CH8').focus();

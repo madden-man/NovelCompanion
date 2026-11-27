@@ -56,7 +56,17 @@ test.beforeAll(async () => {
       fixture[c]!.map((d) => ({ collection: c as never, data: strip(d) })),
     );
   }
+  // PL-5: the Outline's scene fields hold text, so a Tab that indented instead of leaving would trap the walk.
+  await invoke('sceneOutline.set', { text: OUTLINE, breaks: { CH1: 0, CH2: 2, CH3: 4 } });
 });
+
+const OUTLINE = [
+  '- Mara reads the archive door',
+  '  - She finds the key',
+  '- Two kitchens at dawn',
+  '- The kettle',
+  '- Wedding in the rain',
+].join('\n');
 
 test.afterAll(async () => {
   await app?.close();
@@ -202,6 +212,8 @@ test('NF-2 SM-6 KB-8 every screen in the rail and every App menu item opens from
     const left = await unreachable();
     if (left.length) missed[screen] = left;
   }
+  // Tabbing through the Outline's scene text left every line as it was (PL-5).
+  expect((await invoke('sceneOutline.get', {})).text).toBe(OUTLINE);
   // The second tabs of Continuity checker and Cultural data, by the arrow keys.
   for (const [screen, tab] of [
     ['Continuity checker', 'Manuscript'],
