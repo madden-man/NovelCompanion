@@ -1000,9 +1000,13 @@ test('IP-3 each field in the popover writes the writing strand as one undo step:
   );
   await undo();
   await expect.poll(async () => (await strandsOf('CH2'))[0]!.characterIds).toEqual(['H3', 'Z3']);
-  expect(
-    (await invoke('entry.get', { collection: 'characters', id: wen })).entry.deletedAt,
-  ).toBeTruthy();
+  // The undo puts the strand back first, then sends the new character to the trash.
+  await expect
+    .poll(
+      async () =>
+        (await invoke('entry.get', { collection: 'characters', id: wen })).entry.deletedAt,
+    )
+    .toBeTruthy();
   await undo();
   await expect
     .poll(async () => (await strandsOf('CH2'))[0]!.characterIds)
