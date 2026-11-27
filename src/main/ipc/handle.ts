@@ -3,7 +3,7 @@ import { plainErrorMessage } from '../../shared/errors';
 import { isChannel, wireChannel } from '../../shared/ipc';
 import type { Channel } from '../../shared/ipc';
 import { runHandler } from './validate';
-import type { Handler } from './validate';
+import type { Handler, HandlerTable } from './validate';
 
 /**
  * Register a handler for one channel of the contract. Both sides are
@@ -19,4 +19,9 @@ export function handle<C extends Channel>(channel: C, handler: Handler<C>): void
       throw new Error(plainErrorMessage(e), { cause: e });
     }
   });
+}
+
+/** A58: serve the whole handler table on `ipcMain`, each channel under its wire name. */
+export function mountHandlers(table: HandlerTable): void {
+  for (const [channel, handler] of table) handle(channel, handler);
 }

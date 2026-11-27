@@ -4,8 +4,8 @@ import type { TopologyDescriptionChangedEvent } from 'mongodb';
 import { connect } from './db/connection';
 import type { Store } from './db/connection';
 import { latestSnapshot } from './db/readOnly';
-import { cleanMongoUri, maskMongoUri } from './secrets';
-import type { MongoUriStore } from './secrets';
+import { cleanMongoUri, maskMongoUri } from './host/uri';
+import type { MongoUriStore } from './host/uri';
 import type { ConnectionStatus, MongoSettingsWire } from '../shared/ipcApp';
 import type { SnapshotInfo } from '../shared/domain/snapshots';
 import { BibleSlug } from '../shared/bible';
@@ -34,8 +34,8 @@ export interface ConnectionDeps {
   localOnly: boolean;
   /** Said when no connection string is stored at all. */
   missingMessage: string;
-  /** `<userData>/snapshots`, where BK-1 snapshots are kept. */
-  snapshotRoot: string;
+  /** `<userData>/snapshots`, where BK-1 snapshots are kept; none on a host with no disk (A58). */
+  snapshotRoot?: string;
   /** A57: `<userData>/last-bible.json`, the bible opened last, so the next launch opens it again. */
   lastBibleFile?: string;
   connect?: (uri: string) => Promise<Store>;
@@ -154,7 +154,8 @@ export class ConnectionManager {
 
   /** The most recent local snapshot, of the bible last open when it has one. */
   latest(): Promise<SnapshotInfo | null> {
-    return latestSnapshot(this.deps.snapshotRoot, this.lastBible);
+    const root = this.deps.snapshotRoot;
+    return root ? latestSnapshot(root, this.lastBible) : Promise.resolve(null);
   }
 
   /** ARCH-6: a request failed because MongoDB went away. */

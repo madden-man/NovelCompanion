@@ -1,7 +1,9 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, session } from 'electron';
 import { applyContentSecurityPolicy } from './csp';
-import { testDatabaseHonoured } from './secrets';
+import { testDatabaseHonoured } from './host/uri';
+import { electronHost } from './host/electron';
+import { mountHandlers } from './ipc/handle';
 import {
   applyStoredAppearance,
   bridgeFocus,
@@ -164,7 +166,8 @@ const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined
 void app.whenReady().then(() => {
   lockDownSession();
   applyContentSecurityPolicy(isDev);
-  registerHandlers();
+  // A58: the handler table is built for the Electron host and served on ipcMain.
+  mountHandlers(registerHandlers(electronHost()));
   applyStoredAppearance();
   createWindow();
   app.on('activate', () => {
