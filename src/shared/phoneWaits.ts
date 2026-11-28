@@ -14,9 +14,15 @@ import type { TrayMarks } from './domain/tray';
 /** The `meta` document that holds the waiting sentences. */
 export const PHONE_WAITS_META_ID = 'phoneWaits';
 
-/** The most sentences that may wait at once; more is refused in plain words. */
+/**
+ * The most sentences that may wait at once; more is refused in plain words.
+ * Only lines the desk has not handled count, and the store never holds more
+ * than this many: the oldest handled lines make room for new ones.
+ */
 export const PHONE_WAITS_MAX = 500;
-export const PHONE_WAITS_FULL = `More than ${PHONE_WAITS_MAX} sentences are waiting for the Mac. File or dismiss some there first.`;
+export const PHONE_WAITS_FULL = `No more than ${PHONE_WAITS_MAX} sentences can be waiting for the Mac at once. File or dismiss some there first.`;
+/** Take back of a line the desk filed, dismissed or sent: it stays for the desk. */
+export const PHONE_WAITS_HANDLED = 'The Mac has already handled this sentence.';
 
 const Year = z.int().min(-10000).max(10000);
 
@@ -84,6 +90,36 @@ export function withWaits(
   const have = new Set(out.map((l) => l.id));
   for (const l of add) if (!have.has(l.id) && !gone.has(l.id)) out.push(l);
   return out;
+}
+
+/**
+ * The lines to store after a change: refused when more than the limit would
+ * wait, or when a line to take out has been handled on the desk (its text
+ * would come back to the phone and could be filed twice). When the store would
+ * hold more than the limit, the oldest handled lines are left out.
+ */
+export function nextWaits(
+  lines: readonly WaitingLine[],
+  add: readonly WaitingLine[],
+  drop: readonly string[],
+  marks: TrayMarks,
+): { lines: WaitingLine[] } | { refused: string } {
+  const handled = (l: WaitingLine) => waitingHandled(l, marks);
+  if (lines.some((l) => drop.includes(l.id) && handled(l))) return { refused: PHONE_WAITS_HANDLED };
+  const next = withWaits(lines, add, drop);
+  if (next.filter((l) => !handled(l)).length > PHONE_WAITS_MAX)
+    return { refused: PHONE_WAITS_FULL };
+  const over = next.length - PHONE_WAITS_MAX;
+  if (over <= 0) return { lines: next };
+  const added = new Set(add.map((l) => l.id));
+  const gone = new Set(
+    next
+      .filter((l) => handled(l) && !added.has(l.id))
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .slice(0, over)
+      .map((l) => l.id),
+  );
+  return { lines: next.filter((l) => !gone.has(l.id)) };
 }
 
 /** What the channels answer: every stored line, with whether the desk has handled it. */

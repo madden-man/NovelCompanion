@@ -2,13 +2,11 @@ import { BRIDGE_META_ID } from '../../shared/bridge';
 import { withMarks } from '../../shared/domain/tray';
 import type { TrayMarks } from '../../shared/domain/tray';
 import {
-  PHONE_WAITS_FULL,
-  PHONE_WAITS_MAX,
   PHONE_WAITS_META_ID,
   PhoneWaitsDoc,
   WaitingLine,
+  nextWaits,
   readWaits,
-  withWaits,
 } from '../../shared/phoneWaits';
 import type { WaitingInput } from '../../shared/phoneWaits';
 import { EventEmitter } from 'node:events';
@@ -1885,10 +1883,10 @@ export class Repository {
           at: l.at ?? at,
         }),
       );
-      const next = withWaits(this.phoneWaits(), lines, drop);
-      if (next.length > PHONE_WAITS_MAX) throw new RepositoryError(PHONE_WAITS_FULL);
-      await this.writeMeta(PhoneWaitsDoc.parse({ _id: PHONE_WAITS_META_ID, lines: next }));
-      return next;
+      const next = nextWaits(this.phoneWaits(), lines, drop, this.trayMarks());
+      if ('refused' in next) throw new RepositoryError(next.refused);
+      await this.writeMeta(PhoneWaitsDoc.parse({ _id: PHONE_WAITS_META_ID, lines: next.lines }));
+      return next.lines;
     });
     this.trayWrites = run.then(
       () => undefined,
