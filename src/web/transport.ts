@@ -17,8 +17,10 @@ import type {
   Response,
 } from '../shared/ipc';
 import { APPEARANCES, isWriteChannel } from '../shared/ipcApp';
-import { isBibleFree } from '../shared/ipcPhone';
 import type { Appearance, ConnectionStatus } from '../shared/ipcApp';
+import { isBibleFree } from '../shared/ipcPhone';
+import { ReadStore } from './readStore';
+import type { StoredAnswer } from './readStore';
 
 /**
  * A58 P4: `window.api` on the phone. The same `Api` the preload exposes,
@@ -51,8 +53,21 @@ export const PHONE_FRESHEN_MS = 20_000;
 /** PH-9: entries stored this long before the last check are asked again, for clocks that differ. */
 export const CLOCK_MARGIN_MS = 5 * 60_000;
 
+/** PH-25: a read waits this long for the function before the phone serves what it read before. */
+export const READ_TIMEOUT_MS = 15_000;
+/** PH-25: while the connection is lost, a read tries the function this long first. */
+export const OFFLINE_PROBE_MS = 4000;
+
 export const KEY_REFUSED = 'The phone key was not accepted.';
 export const NO_CONNECTION = 'The phone has no connection to the bible.';
+/** PH-25: the banner while the phone shows what it read before. */
+export const OFFLINE_READ_ONLY =
+  'The phone has no connection, so it shows what it read before and nothing can be changed.';
+/** PH-25: a read with no connection and nothing stored for it. */
+export const NOT_STORED =
+  'This was not opened on the phone before, so it cannot be shown without a connection.';
+/** PH-25: a write asked for while the phone is read-only. */
+export const OFFLINE_WRITE = 'The phone has no connection, so this change was not saved.';
 const NOT_UNDERSTOOD = 'The answer could not be read, so nothing is shown as saved. Try again.';
 /** A write sent while the connection broke before its answer came back: it may have been stored. */
 export const WRITE_LOST =
@@ -69,6 +84,17 @@ export const LOCAL_CHANNELS = [
 type LocalChannel = (typeof LOCAL_CHANNELS)[number];
 const isLocal = (c: Channel): c is LocalChannel =>
   (LOCAL_CHANNELS as readonly string[]).includes(c);
+
+/** PH-25: reads whose answers are never kept: `bible.changes` asks about a moment, not a screen. */
+const NEVER_STORED: ReadonlySet<string> = new Set<Channel>(['bible.changes']);
+
+/** PH-25: a read channel whose last answer the phone keeps for reading without a connection. */
+export const isStoredRead = (c: Channel): boolean =>
+  !isWriteChannel(c) && !isLocal(c) && !NEVER_STORED.has(c);
+
+/** PH-25: the bible a stored answer belongs to; '' for reads that read no bible. */
+const storeBible = (channel: Channel, bible: string | null): string =>
+  isBibleFree(channel) && channel !== 'bible.current' ? '' : (bible ?? '');
 
 /** A request the function refused, with its code (`key`, `desk`, `older`, `refused`, ...). */
 export class RpcCallError extends Error {
@@ -89,6 +115,8 @@ export interface TransportDeps {
   /** Where `/rpc` lives; the page's own origin by default. */
   endpoint?: string;
   now?: () => number;
+  /** PH-25: where the answers of reads are kept; none keeps nothing, as before L1. */
+  reads?: ReadStore;
 }
 
 type Listener = (payload: unknown) => void;
@@ -107,9 +135,11 @@ export class WebTransport implements Api {
   private keepaliveUntil = 0;
   private keepaliveBytes = 0;
   private readonly now: () => number;
+  private readonly reads: ReadStore;
 
   constructor(private readonly deps: TransportDeps) {
     this.now = deps.now ?? (() => Date.now());
+    this.reads = deps.reads ?? new ReadStore(null);
     this.bible = this.read(BIBLE_STORAGE);
   }
 
@@ -126,7 +156,9 @@ export class WebTransport implements Api {
   async signIn(raw: string): Promise<void> {
     const key = raw.trim();
     if (!key || /\s/.test(key)) throw new RpcCallError(KEY_REFUSED, 'key', 401);
-    await this.send('bible.list', {}, undefined, key);
+    await this.send('bible.list', {}, undefined, key, false);
+    // PH-25: what was read under another key is not kept under this one.
+    if (this.read(KEY_STORAGE) !== key) await this.reads.clear();
     this.write(KEY_STORAGE, key);
   }
 
@@ -136,6 +168,8 @@ export class WebTransport implements Api {
     this.remove(BIBLE_STORAGE);
     this.bible = null;
     this.rev = null;
+    // PH-25: the bible's content leaves the phone with the key.
+    void this.reads.clear();
     for (const fn of [...this.signedOut]) fn();
   }
 
@@ -165,6 +199,10 @@ export class WebTransport implements Api {
     if (key === null) {
       this.signOut();
       throw new RpcCallError(KEY_REFUSED, 'key', 401);
+    }
+    // PH-25: nothing is written while the phone shows what it read before.
+    if (this.status.state === 'readOnly' && isWriteChannel(channel)) {
+      throw new RpcCallError(OFFLINE_WRITE, 'unreachable', 0);
     }
     try {
       return await this.send(channel, parsed, ctx, key);
@@ -253,7 +291,9 @@ export class WebTransport implements Api {
         return this.status;
       case 'connection.retry': {
         const key = this.read(KEY_STORAGE);
-        if (key !== null) await this.send('bible.list', {}, undefined, key).catch(() => undefined);
+        if (key !== null) {
+          await this.send('bible.list', {}, undefined, key, false).catch(() => undefined);
+        }
         return this.status;
       }
       case 'app.flushed':
@@ -278,10 +318,13 @@ export class WebTransport implements Api {
     request: unknown,
     context: CallContext | undefined,
     key: string,
+    /** PH-25: false when a stored answer must not stand in (a key being tried, Try again). */
+    fromStore = true,
   ): Promise<Response<C>> {
     // PH-19: the chooser's channels name no bible, so one bible the function refuses blocks only itself.
     const chooser = isBibleFree(channel) && channel !== 'bible.current';
     const bible = chooser ? null : (context?.bible ?? this.bible);
+    const stored = isStoredRead(channel);
     const body = JSON.stringify({
       channel,
       request,
@@ -289,13 +332,22 @@ export class WebTransport implements Api {
       bible,
     });
     const size = new TextEncoder().encode(body).length;
-    const keepalive =
+    let keepalive =
       this.now() < this.keepaliveUntil &&
       size < KEEPALIVE_BUDGET &&
       this.keepaliveBytes + size < KEEPALIVE_BUDGET;
     const sentAt = this.now();
     let res: globalThis.Response;
     if (keepalive) this.keepaliveBytes += size;
+    // PH-25: a read that hangs counts as no connection; a write is never cut off.
+    const abort = stored && !keepalive && typeof AbortController !== 'undefined';
+    const ctrl = abort ? new AbortController() : null;
+    const timer = ctrl
+      ? setTimeout(
+          () => ctrl.abort(),
+          this.status.state === 'connected' ? READ_TIMEOUT_MS : OFFLINE_PROBE_MS,
+        )
+      : null;
     try {
       res = await this.deps.fetch(this.deps.endpoint ?? '/rpc', {
         method: 'POST',
@@ -304,12 +356,15 @@ export class WebTransport implements Api {
         cache: 'no-store',
         credentials: 'omit',
         ...(keepalive ? { keepalive: true } : {}),
+        ...(ctrl ? { signal: ctrl.signal } : {}),
       });
     } catch {
-      this.lost(NO_CONNECTION);
-      throw new RpcCallError(NO_CONNECTION, 'unreachable', 0);
+      if (keepalive) this.keepaliveBytes -= size;
+      keepalive = false;
+      return await this.unreachable(channel, request, bible, stored && fromStore);
     } finally {
       if (keepalive) this.keepaliveBytes -= size;
+      if (timer !== null) clearTimeout(timer);
     }
     const build = res.headers.get(BUILD_HEADER);
     if (build && build !== this.deps.buildId) {
@@ -329,17 +384,19 @@ export class WebTransport implements Api {
     const { error, code } = (payload ?? {}) as { error?: unknown; code?: unknown };
     // ARCH-6: an answer that is not the function's (a gateway's 502 or 504, a page) is a lost connection.
     if (payload === undefined || (res.status >= 500 && typeof code !== 'string')) {
-      this.lost(NO_CONNECTION);
-      throw new RpcCallError(
-        isWriteChannel(channel) ? WRITE_LOST : NO_CONNECTION,
-        'unreachable',
-        res.status,
-      );
+      // PH-25: a read falls back on what the phone read before, as with no network at all.
+      if (!isWriteChannel(channel)) {
+        return await this.unreachable(channel, request, bible, stored && fromStore);
+      }
+      const usable = await this.reads.ready();
+      this.lost(usable ? OFFLINE_READ_ONLY : NO_CONNECTION, usable);
+      throw new RpcCallError(WRITE_LOST, 'unreachable', res.status);
     }
     if (!res.ok) {
       const message = typeof error === 'string' ? error : NOT_UNDERSTOOD;
       const why = typeof code === 'string' ? code : 'refused';
-      if (why === 'unreachable') this.lost(message);
+      // The function answered but cannot reach MongoDB: the banner, as on the desk.
+      if (why === 'unreachable') this.lost(message, false);
       else this.reached();
       throw new RpcCallError(message, why, res.status);
     }
@@ -355,11 +412,13 @@ export class WebTransport implements Api {
     } catch (e) {
       invalid = e;
     }
-    if (result !== undefined && (channel === 'bible.open' || channel === 'bible.current')) {
-      const open = (result as { bible: { id: string } | null }).bible;
-      this.bible = open?.id ?? null;
-      if (open) this.write(BIBLE_STORAGE, open.id);
-      else this.remove(BIBLE_STORAGE);
+    if (result !== undefined) this.opened(channel, result);
+    // PH-25: the live answer replaces the stored one, with the `rev` it was read at.
+    if (result !== undefined && stored && this.read(KEY_STORAGE) === key) {
+      const revBible = res.headers.get(REV_HEADERS.bible);
+      const rev = Number(res.headers.get(REV_HEADERS.after));
+      const at = revBible !== null && revBible === bible && Number.isInteger(rev) ? rev : null;
+      void this.reads.put(storeBible(channel, bible), channel, request, result, at);
     }
     // The request ran: its events reach the views even if its answer cannot be read.
     if (Array.isArray(envelope.events)) {
@@ -383,6 +442,8 @@ export class WebTransport implements Api {
     const before = Number(headers.get(REV_HEADERS.before));
     const after = Number(headers.get(REV_HEADERS.after));
     if (!bible || !Number.isInteger(before) || !Number.isInteger(after)) return;
+    // PH-25: stored answers read before a change made elsewhere are dropped.
+    void this.reads.observe(bible, before, after);
     const was = this.rev;
     // An answer older than one already seen (requests run in parallel) changes nothing.
     if (was?.bible === bible && after < was.known) return;
@@ -417,21 +478,77 @@ export class WebTransport implements Api {
     this.emit('bible.reloaded', { bible, message: ELSEWHERE_MESSAGE, elsewhere: true });
   }
 
-  private lost(message: string): void {
-    if (this.status.state === 'unavailable' && this.status.message === message) return;
-    this.status = { state: 'unavailable', message, snapshot: null };
+  /** A bible opened (or the one used last): later requests name it. */
+  private opened(channel: Channel, result: unknown): void {
+    if (channel !== 'bible.open' && channel !== 'bible.current') return;
+    const open = (result as { bible: { id: string } | null }).bible;
+    this.bible = open?.id ?? null;
+    if (open) this.write(BIBLE_STORAGE, open.id);
+    else this.remove(BIBLE_STORAGE);
+  }
+
+  /**
+   * PH-25: the function could not be reached at all (no network, or a read
+   * that hung). With a store, the phone turns read-only and a read is served
+   * from what it read before; with none, it is ARCH-6's banner as before.
+   */
+  private async unreachable<C extends Channel>(
+    channel: C,
+    request: unknown,
+    bible: string | null,
+    serve: boolean,
+  ): Promise<Response<C>> {
+    const usable = await this.reads.ready();
+    this.lost(usable ? OFFLINE_READ_ONLY : NO_CONNECTION, usable);
+    if (!serve || !usable) throw new RpcCallError(NO_CONNECTION, 'unreachable', 0);
+    const where = storeBible(channel, bible);
+    const hit = await this.reads.get(where, channel, request);
+    let result: Response<C> | undefined;
+    try {
+      if (hit) result = parseResponse(channel, hit.value);
+    } catch {
+      // Stored by another build in another shape: as good as nothing stored.
+    }
+    if (!hit || result === undefined) throw new RpcCallError(NOT_STORED, 'unreachable', 0);
+    this.opened(channel, result);
+    if (where) this.shownFrom(where, hit);
+    return result;
+  }
+
+  /**
+   * PH-25: a view now shows an answer read at `hit.rev`, so the phone's known
+   * `rev` is no newer than that: back online, a change made meanwhile is told
+   * apart and every view asks again (PH-9).
+   */
+  private shownFrom(bible: string, hit: StoredAnswer): void {
+    if (hit.rev === null) return;
+    const was = this.rev;
+    if (!was || was.bible !== bible) this.rev = { bible, known: hit.rev, at: hit.at };
+    else if (hit.rev < was.known)
+      this.rev = { bible, known: hit.rev, at: Math.min(was.at, hit.at) };
+  }
+
+  private lost(message: string, readOnly: boolean): void {
+    const state = readOnly ? 'readOnly' : 'unavailable';
+    if (this.status.state === state && this.status.message === message) return;
+    this.status = { state, message, snapshot: null };
     this.emit('connection.changed', this.status);
   }
 
   private reached(): void {
     if (this.status.state === 'connected') return;
+    const wasReadOnly = this.status.state === 'readOnly';
     this.status = { state: 'connected', message: null, snapshot: null };
     this.emit('connection.changed', this.status);
+    // PH-25: back from reading what was stored, the bible is checked for changes made meanwhile.
+    if (wasReadOnly) void this.checkFreshness();
   }
 
-  /** ARCH-6 on the phone: the browser says it went offline or came back. */
+  /** ARCH-6 on the phone: the browser says it went offline. */
   offline(): void {
-    this.lost(NO_CONNECTION);
+    void this.reads
+      .ready()
+      .then((usable) => this.lost(usable ? OFFLINE_READ_ONLY : NO_CONNECTION, usable));
   }
 
   private read(name: string): string | null {

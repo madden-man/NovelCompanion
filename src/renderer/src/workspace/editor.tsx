@@ -113,8 +113,11 @@ export function useAutosave(collection: EntryCollection, id: string) {
         setError(null);
         setStatus('saved');
       })
-      .catch(() => {
-        if (live) setStatus('missing');
+      .catch((e: unknown) => {
+        if (!live) return;
+        // A58 L1: the phone with no connection and nothing stored says so; the entry is not gone.
+        setError((e as { code?: unknown }).code === 'unreachable' ? plainError(e) : null);
+        setStatus('missing');
       });
     return () => {
       live = false;
@@ -463,7 +466,7 @@ export function EntryPane(props: {
   if (ed.status === 'missing') {
     return (
       <div className="ws-editor">
-        <p className="callout warn">This entry no longer exists.</p>
+        <p className="callout warn">{ed.error ?? 'This entry no longer exists.'}</p>
         <button type="button" className="btn" onClick={props.onClosed}>
           Back to the list
         </button>
@@ -686,7 +689,7 @@ export function EmbeddedEditor(props: {
   if (ed.status === 'missing') {
     return (
       <div className="row">
-        <p className="callout warn">This entry no longer exists.</p>
+        <p className="callout warn">{ed.error ?? 'This entry no longer exists.'}</p>
         {close}
       </div>
     );

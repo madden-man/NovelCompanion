@@ -15,6 +15,7 @@ import { attachLifecycle } from './lifecycle';
 import { registerServiceWorker, updateServiceWorker } from './serviceWorker';
 import { PHONE_CHANNELS } from '../shared/ipcPhone';
 import { LOCAL_CHANNELS, WebTransport } from './transport';
+import { ReadStore, browserIndexedDb, indexedDbBackend } from './readStore';
 
 /** Storage that may refuse (private browsing): the app still runs, keeping nothing. */
 function storage(kind: 'localStorage' | 'sessionStorage'): Storage {
@@ -41,6 +42,8 @@ const transport = new WebTransport({
   fetch: window.fetch.bind(window),
   storage: storage('localStorage'),
   buildId: buildInfo.id,
+  // PH-25: what the phone read, for reading without a connection; none in private browsing.
+  reads: new ReadStore(indexedDbBackend(browserIndexedDb())),
 });
 // The renderer reaches the bible only through `window.api`, as on the desk (ARCH-1 rule 3).
 Object.defineProperty(window, 'api', { value: transport, configurable: false, writable: false });

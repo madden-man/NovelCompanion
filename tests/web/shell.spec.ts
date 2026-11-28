@@ -86,9 +86,10 @@ test.describe('with the service worker', () => {
     await page.reload();
     const banner = page.getByTestId('connection-banner');
     await expect(banner).toBeVisible();
-    await expect(banner).toHaveAttribute('data-state', 'unavailable');
-    await expect(banner.getByTestId('connection-message')).toHaveText(
-      'The phone has no connection to the bible.',
+    // A58 L1 (PH-25): the phone keeps what it read, so the lost connection is read-only.
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+    await expect(banner.getByTestId('read-only-reason')).toHaveText(
+      'The phone has no connection, so it shows what it read before and nothing can be changed.',
     );
     await expect(page.getByTestId('open-snapshot')).toHaveCount(0);
     await expect(page.getByTestId('key-gate')).toHaveCount(0);
@@ -113,9 +114,8 @@ test('PH-24 an edit made while the connection is lost is not shown as saved and 
   await f.locator('input').press('Enter');
   await expect(page.getByTestId('connection-banner')).toBeVisible();
   // The field stays open with the typing and says it was not stored.
-  await expect(f.locator('.editable-error')).toContainText(
-    'The phone has no connection to the bible.',
-  );
+  // A58 L1: once a read has found no connection the phone refuses the write itself, in its own words.
+  await expect(f.locator('.editable-error')).toContainText('The phone has no connection');
   await expect(f.locator('input')).toHaveValue('Ruth Hale Offline');
   server = await startWebServer(db, {}, port);
   expect((await stored('H4')).names.full).toBe('Ruth Hale');
