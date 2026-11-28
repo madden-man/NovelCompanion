@@ -567,10 +567,17 @@ test('PH-35 every target on People, a person, a place, Search, the top bar and t
 test('PH-35 PH-37 the first-run chooser rows run full width with 44 px Open buttons, and Try again on the connection banner is 44 px', async ({
   page,
 }) => {
+  // A first run: no bible open yet, so the chooser shows (the function may hold one from earlier tests).
+  await page.route('**/rpc', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { channel?: string };
+    if (body.channel !== 'bible.current') return route.continue();
+    await route.fulfill({ json: { result: { bible: null }, events: [] } });
+  });
   await page.goto(server.url);
   await pasteKey(page);
   const open = page.getByRole('button', { name: 'Open Fixture novel' });
   await expect(open).toBeVisible();
+  await page.unroute('**/rpc');
   await expect(page.getByRole('button', { name: 'Open Second novel' })).toBeVisible();
   const main = page.locator('main');
   await noSidewaysScroll(page);
@@ -589,8 +596,11 @@ test('PH-35 PH-37 the first-run chooser rows run full width with 44 px Open butt
   const banner = page.getByTestId('connection-banner');
   for (const where of ['chooser', 'workspace']) {
     if (where === 'workspace') {
-      await open.tap();
-      await expect(page.getByTestId('workspace')).toBeVisible();
+      // Back online, the app may reopen the function's bible itself.
+      const workspace = page.getByTestId('workspace');
+      await expect(open.or(workspace)).toBeVisible();
+      if (await open.isVisible()) await open.tap();
+      await expect(workspace).toBeVisible();
     }
     await page.route('**/rpc', (r) => r.abort());
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
