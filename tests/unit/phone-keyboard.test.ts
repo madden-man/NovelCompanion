@@ -1,6 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { shouldKeep } from '../../src/renderer/src/workspace/phone/geometry';
-import { attachKeyboard } from '../../src/renderer/src/workspace/phone/keyboard';
+
+/** keyboard.ts is DOM code, outside the node typecheck, so it is loaded by a path TypeScript does not follow. */
+const KEYBOARD = '../../src/renderer/src/workspace/phone/keyboard';
+type AttachKeyboard = (win: unknown, doc: unknown) => () => void;
+let attachKeyboard: AttachKeyboard;
 
 /** A58 U1 (PH-32): the keyboard hold scrolls to the field when it is needed, not on the writer's own scroll. */
 describe('when the keyboard hold scrolls (PH-32)', () => {
@@ -36,7 +40,7 @@ class FakeElement {
   isContentEditable = false;
   constructor(public rect: { top: number; bottom: number; height: number }) {}
   getBoundingClientRect() {
-    return this.rect as DOMRect;
+    return this.rect;
   }
 }
 class FakeInput extends FakeElement {
@@ -44,7 +48,10 @@ class FakeInput extends FakeElement {
 }
 
 describe('the keyboard hold on a phone (PH-32)', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
+    ({ attachKeyboard } = (await import(/* @vite-ignore */ KEYBOARD)) as {
+      attachKeyboard: AttachKeyboard;
+    });
     const g = globalThis as Record<string, unknown>;
     g.HTMLElement ??= FakeElement;
     g.HTMLInputElement ??= FakeInput;
@@ -72,7 +79,7 @@ describe('the keyboard hold on a phone (PH-32)', () => {
         removeAttribute: () => {},
       },
     });
-    const detach = attachKeyboard(win as unknown as Window, doc as unknown as Document);
+    const detach = attachKeyboard(win, doc);
     doc.dispatchEvent(new Event('focusin'));
     vi.advanceTimersByTime(400);
     // The field shows over the whole window: nothing to do yet.

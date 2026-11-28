@@ -57,7 +57,7 @@ describe('the field above the keyboard (PH-32)', () => {
 describe('the shell stylesheet (A58 U1)', () => {
   it('takes every colour from a theme token, so both themes follow', () => {
     const css = readFileSync(
-      join(__dirname, '../../src/renderer/src/workspace/phone/phone.css'),
+      join(import.meta.dirname, '../../src/renderer/src/workspace/phone/phone.css'),
       'utf8',
     ).replace(/\/\*[\s\S]*?\*\//g, '');
     expect(css.match(/rgba?\(|hsla?\(|#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
