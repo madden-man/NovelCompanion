@@ -68,12 +68,19 @@
   padding-right: 0;
 }
 :root[data-phone] .ph-frame .bs-name-link {
+  flex: 0 1 auto;
+  min-width: var(--ph-target);
   display: inline-flex;
   align-items: center;
   min-height: var(--ph-target);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+:root[data-phone] .ph-frame .bs-row-text .bs-zh {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 :root[data-phone] .ph-frame .bs-row-text {
   min-width: 0;
@@ -139,4 +146,7 @@
 }
 :root[data-phone] .ph-frame .bs-moment-page .bs-dialog-foot .btn {
   min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .bs-moment-page .bs-dialog-title {
+  flex: none;
 }

@@ -418,11 +418,14 @@ export function ageIn(p: { birth: StoryDate | null; death: StoryDate | null }, y
  * lifespan bar: a one-lane row is 36px, a two-lane row 58px (A50, back from the A49 sizes).
  */
 export const BACKSTORY_METRICS: GridMetrics = { ...GRID_METRICS, rowPad: 7 };
-/** A58 U6: on the phone a one-lane row and a family heading are 44px, a thumb's target. */
+/**
+ * A58 U6: on the phone a one-lane row and a family heading are 45px, so each is a thumb's 44px
+ * target above its 1px rule.
+ */
 export const PHONE_BACKSTORY_METRICS: GridMetrics = {
   ...BACKSTORY_METRICS,
-  rowPad: 11,
-  groupHeading: 44,
+  rowPad: 12,
+  groupHeading: 45,
 };
 
 /**

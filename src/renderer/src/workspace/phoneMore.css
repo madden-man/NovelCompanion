@@ -23,6 +23,60 @@
   margin: 0;
 }
 
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  .btn.small {
+  min-height: var(--ph-target);
+}
+/* A colour well and a short number field are a thumb wide. */
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  input[type='color'],
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  input.num {
+  min-width: var(--ph-target);
+}
+
 /* app.css turns every .row into a column under 400px; on these screens a row stays a row and
    wraps, so a stepper or a pair of buttons sits side by side. */
 :root[data-phone]
@@ -139,6 +193,9 @@
   flex: 1 1 0;
   min-width: 0;
   height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .vocab-add > input:not(.num) {
+  flex-basis: 140px;
 }
 :root[data-phone] .ph-frame .cu-add .btn,
 :root[data-phone] .ph-frame .vocab-add .btn {

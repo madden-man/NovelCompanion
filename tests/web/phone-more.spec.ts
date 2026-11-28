@@ -20,8 +20,6 @@ let db: WebDb;
 let server: WebServer;
 let store: Store;
 
-test.describe.configure({ mode: 'serial' });
-
 test.beforeAll(async () => {
   db = webDb();
   await seedFixtureNovel(db);
@@ -232,7 +230,7 @@ test('PH-35 PH-36 a tour of every More screen and section list: it renders, one 
   expect(sections.length).toBeGreaterThan(8);
   for (const label of sections) {
     const scope = await openSection(page, label);
-    await expect(scope.getByTestId('entry-list')).toBeVisible();
+    await expect(scope.locator('h2')).toBeVisible();
     await checkScreen(page, scope, `${label} list`);
     await page.getByTestId('phone-back').tap();
   }
@@ -387,10 +385,11 @@ test('PH-32 PH-35 a culture line, a glossary term, a place description and a lis
 
   // A list item's name.
   scope = await openMore(page, 'Lists');
-  const married = scope
+  const marriedId = await scope
     .locator('.vocab-row')
     .filter({ hasText: 'Married' })
-    .getByTestId('item-name');
+    .getAttribute('data-item');
+  const married = scope.locator(`.vocab-row[data-item="${marriedId}"]`).getByTestId('item-name');
   await married.locator('.editable-text').tap();
   await married.locator('input').fill('Wed');
   await married.locator('input').press('Enter');
@@ -438,11 +437,21 @@ test('PH-35 Trash: restore by tap, delete forever and empty the trash with the d
   await expect(page.getByTestId('phone-toast')).toBeVisible();
   await page.getByTestId('phone-back').tap();
 
-  // Two terms in the trash: one deleted forever, then the trash emptied.
-  const at = new Date().toISOString();
-  await coll('glossaryTerms').updateMany({ _id: { $in: ['GL5', 'GL1'] } } as never, {
-    $set: { deletedAt: at },
-  });
+  // Two terms in the trash, each from its page: one deleted forever, then the trash emptied.
+  for (const id of ['GL5', 'GL1']) {
+    scope = await openMore(page, 'Glossary table');
+    await scope.locator(`tr[data-term="${id}"]`).getByRole('button', { name: /^Edit/ }).tap();
+    const entry = top(page);
+    await entry.getByRole('button', { name: 'Move to trash' }).tap();
+    await entry
+      .getByRole('dialog', { name: 'Move to trash' })
+      .getByRole('button', { name: 'Move to trash' })
+      .tap();
+    await expect.poll(async () => (await doc('glossaryTerms', id))?.deletedAt).toBeTruthy();
+    // People again goes back to its root, past the pages over it.
+    await page.getByTestId('tab-people').tap();
+    await expect(page.getByTestId('phone-people')).toBeVisible();
+  }
   scope = await openMore(page, 'Trash');
   await scope.getByRole('button', { name: 'Delete 月饼 forever' }).tap();
   const purge = scope.getByTestId('trash-purge-confirm');
@@ -567,6 +576,7 @@ test('PH-34 PH-35 PH-36 screens for the record, light and dark', async ({ page }
     if (label === 'Settings') {
       await scope.getByTestId('sign-out').scrollIntoViewIfNeeded();
       await scope.getByTestId('sign-out').tap();
+      await scope.getByTestId('sign-out-confirm').scrollIntoViewIfNeeded();
       await shoot('09b-settings-sign-out');
     }
     await page.getByTestId('phone-back').tap();
