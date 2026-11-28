@@ -118,6 +118,12 @@ export function PhoneNavProvider(props: { bible: string; children: ReactNode }) 
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
       const h = held(e.state, bible);
+      if (!h && e.state && typeof e.state === 'object' && 'nc' in e.state) {
+        // An entry left from another bible: stay in this one, where we are.
+        window.history.replaceState({ nc: navRef.current, bible }, '', toHash(navRef.current));
+        setSheet(null);
+        return;
+      }
       let next = h ? h.nc : fromHash(window.location.hash);
       const cur = navRef.current;
       const stack = cur.stacks[cur.tab];

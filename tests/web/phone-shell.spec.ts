@@ -198,6 +198,25 @@ test('PH-37 the chooser lists every bible and opens the one picked', async ({ pa
   await expect(page.getByTestId('entry-list')).toContainText('Margaret Hale');
 });
 
+test('PH-37 the browser back after picking another bible stays in it, on no page of the old one', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  await openCharacter(page, /^Margaret Hale/);
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-bibles').getByRole('button', { name: 'Second novel' }).tap();
+  await expect(page.getByTestId('current-bible')).toHaveText('Second novel');
+  await expect(page.getByTestId('list-empty')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('current-bible')).toHaveText('Second novel');
+  await expect(page.getByTestId('list-empty')).toBeVisible();
+  await expect(page.locator('[data-testid="editor"]:visible')).toHaveCount(0);
+  await expect(page.getByTestId('phone-back')).toHaveCount(0);
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-bibles').getByRole('button', { name: 'Fixture novel' }).tap();
+  await expect(page.getByTestId('entry-list')).toContainText('Margaret Hale');
+});
+
 test('PH-30 the bottom bar: People, Outline, World, Search and +, 44 px targets, fixed while the page scrolls', async ({
   page,
 }) => {
