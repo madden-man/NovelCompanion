@@ -342,8 +342,10 @@ export function PhoneCaptureScreen() {
         try {
           setWaiting((await call('capture.wait', { lines: keep })).lines);
           kept = true;
-          for (const f of keepFacts) delete keepIds[f.text];
-          writeDraft({ keepIds });
+          const done = new Set(keepFacts.map((f) => f.text));
+          writeDraft({
+            keepIds: Object.fromEntries(Object.entries(keepIds).filter(([t]) => !done.has(t))),
+          });
         } catch (e) {
           keepError = plainError(e);
         }
