@@ -297,6 +297,34 @@ test('PH-34 Backstory: one thumb row of controls, no story time header, and the 
   expect(await sidewaysScroll(page)).toBe(false);
 });
 
+test('PH-34 Backstory: a name too long for its cell ends in an ellipsis, never cut mid-letter', async ({
+  page,
+}) => {
+  onIphone();
+  await openFixture(page, server.url);
+  const scope = await openMore(page, 'Backstory');
+  const grid = scope.getByTestId('backstory-grid');
+  await expect(grid.locator('.bs-row').first()).toBeVisible();
+  const cut = await grid.evaluate((root) =>
+    [...root.querySelectorAll<HTMLElement>('.bs-row-text .bs-name-link, .bs-row-text .bs-zh')]
+      .filter((el) => el.scrollWidth > el.clientWidth + 1)
+      .map((el) => {
+        const s = getComputedStyle(el);
+        return {
+          text: el.textContent ?? '',
+          ellipsis:
+            s.textOverflow === 'ellipsis' &&
+            s.whiteSpace === 'nowrap' &&
+            s.overflowX === 'hidden' &&
+            !s.display.includes('flex'),
+        };
+      }),
+  );
+  // The fixture has names that do not fit (Iris Hale-Zhou), and each one shows its ellipsis.
+  expect(cut.length).toBeGreaterThan(0);
+  expect(cut.filter((c) => !c.ellipsis)).toEqual([]);
+});
+
 test('PH-34 PH-31 Backstory: the row "+" is a 44 px target that adds a moment as a page with back; a marker opens its page; nothing drags', async ({
   page,
 }) => {
