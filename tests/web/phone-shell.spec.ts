@@ -13,6 +13,7 @@ import {
   webDb,
 } from './server';
 import type { WebDb, WebServer } from './server';
+import { noSidewaysScroll, smallTargets } from './layout';
 
 /**
  * A58 U1: the phone's shell on WebKit at iPhone 15 size, through the local
@@ -197,6 +198,25 @@ test('PH-37 the chooser lists every bible and opens the one picked', async ({ pa
   await expect(page.getByTestId('entry-list')).toContainText('Margaret Hale');
 });
 
+test('PH-37 the browser back after picking another bible stays in it, on no page of the old one', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  await openCharacter(page, /^Margaret Hale/);
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-bibles').getByRole('button', { name: 'Second novel' }).tap();
+  await expect(page.getByTestId('current-bible')).toHaveText('Second novel');
+  await expect(page.getByTestId('list-empty')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('current-bible')).toHaveText('Second novel');
+  await expect(page.getByTestId('list-empty')).toBeVisible();
+  await expect(page.locator('[data-testid="editor"]:visible')).toHaveCount(0);
+  await expect(page.getByTestId('phone-back')).toHaveCount(0);
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-bibles').getByRole('button', { name: 'Fixture novel' }).tap();
+  await expect(page.getByTestId('entry-list')).toContainText('Margaret Hale');
+});
+
 test('PH-30 the bottom bar: People, Outline, World, Search and +, 44 px targets, fixed while the page scrolls', async ({
   page,
 }) => {
@@ -285,6 +305,27 @@ test('PH-31 a person opens as a page; back, browser back and a reload all keep t
   await fresh.getByTestId('phone-back').tap();
   await expect(fresh.getByTestId('entry-list')).toBeVisible();
   await fresh.close();
+});
+
+test('PH-31 after switching tabs, the browser back steps back within the tab showing, not to the other tab', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  await openCharacter(page, /^Margaret Hale/);
+  await page.getByTestId('tab-outline').tap();
+  const open = page
+    .locator('[data-testid="chapter-bar"][data-chapter="CH2"]')
+    .getByTestId('chapter-open');
+  await open.tap();
+  await expect(page.locator('[data-testid="editor"][data-entry-id="CH2"]')).toBeVisible();
+  await page.getByTestId('tab-people').tap();
+  await expect(page.getByTestId('character-page')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('entry-list')).toBeVisible();
+  await expect(page.getByTestId('tab-people')).toHaveAttribute('aria-current', 'page');
+  // The Outline kept its chapter.
+  await page.getByTestId('tab-outline').tap();
+  await expect(page.locator('[data-testid="editor"][data-entry-id="CH2"]')).toBeVisible();
 });
 
 test('PH-32 one tap opens a text field, a year, a select and a rich field, each saved through /rpc', async ({
@@ -468,6 +509,58 @@ test('PH-35 Undo and Redo are thumb-sized buttons that step a change back and fo
   await expect.poll(async () => (await character('H2')).names.full).toBe('Peter Hale Senior');
   await undo.tap();
   await expect.poll(async () => (await character('H2')).names.full).toBe('Peter Hale');
+});
+
+test('PH-35 every target on People, a person, a place, Search, the top bar and the toast is 44 px, with no sideways scroll', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  const frame = page.locator('.ph-frame');
+  const misses: string[] = [];
+  const check = async (what: string, scope: Locator = frame) => {
+    await noSidewaysScroll(page);
+    misses.push(...(await smallTargets(scope)).map((m) => `${what}: ${m}`));
+  };
+  await page.getByTestId('entry-list').waitFor();
+  await check('people');
+  const person = await openCharacter(page, /^Daniel Hale/);
+  await expect(person.locator('.chip-remove').first()).toBeVisible();
+  await check('person');
+  await person.getByRole('button', { name: 'Add family' }).tap();
+  await check('person, adding family');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-sections').getByRole('button', { name: 'Places' }).tap();
+  await page
+    .locator('[data-testid="entry-list"]:visible')
+    .getByRole('button', { name: /^Portland/ })
+    .tap();
+  await expect(page.locator('[data-testid="editor"]:visible')).toHaveAttribute(
+    'data-entry-id',
+    'PLC1',
+  );
+  await check('place');
+  await page.getByTestId('tab-search').tap();
+  await page.keyboard.type('Hale');
+  await expect(page.getByTestId('search-results')).toBeVisible();
+  await page.getByTestId('search-filters').locator('summary').tap();
+  await expect(page.getByRole('group', { name: 'Search filters' })).toBeVisible();
+  await check('search');
+  // The toast a move to the trash shows, with its Undo button.
+  await page.getByTestId('tab-people').tap();
+  await page.getByTestId('tab-people').tap();
+  await openCharacter(page, /^Peter Hale/);
+  await page.getByRole('button', { name: 'Move to trash', exact: true }).tap();
+  await page
+    .getByRole('dialog', { name: 'Move to trash' })
+    .getByRole('button', { name: 'Move to trash' })
+    .tap();
+  const toast = page.getByTestId('phone-toast');
+  await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
+  await check('toast', toast);
+  await toast.getByRole('button', { name: 'Undo' }).tap();
+  await expect.poll(async () => (await character('H2'))?.names.full).toBe('Peter Hale');
+  expect(misses).toEqual([]);
 });
 
 test('PH-35 no key hints on the phone: no kbd shows on any of these screens', async ({ page }) => {

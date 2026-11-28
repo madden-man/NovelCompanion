@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent } from 'react';
+import { installHoldGuard, lockScroll } from '../phone/hold';
 
 /** How long a finger rests before the thing under it lifts. */
 export const HOLD_MS = 450;
@@ -33,6 +34,9 @@ export function useHold<P>(handlers: HoldHandlers<P>) {
   const blockClick = useRef(false);
 
   useEffect(() => () => stop.current?.(), []);
+  // Safari decides at a touch's start whether a listener may stop the scroll, so the
+  // page's guard is in place before the first touch, and a lift takes its lock.
+  useEffect(() => installHoldGuard(), []);
 
   const start = useCallback((e: ReactTouchEvent | ReactPointerEvent, payload: P) => {
     if ((e.target as Element).closest?.('[data-no-hold]')) return;
@@ -48,10 +52,14 @@ export function useHold<P>(handlers: HoldHandlers<P>) {
     const from = { x: first.clientX, y: first.clientY };
     let at = { ...from };
     let lifted = false;
+    let release: (() => void) | null = null;
     const timer = window.setTimeout(() => {
       lifted = h.current.lift(payload, at.x, at.y);
       if (!lifted) end();
-      else navigator.vibrate?.(10);
+      else {
+        release = lockScroll();
+        navigator.vibrate?.(10);
+      }
     }, HOLD_MS);
 
     const moved = (x: number, y: number, ev: Event) => {
@@ -92,6 +100,8 @@ export function useHold<P>(handlers: HoldHandlers<P>) {
       window.clearTimeout(timer);
       stop.current = null;
       lifted = false;
+      release?.();
+      release = null;
       if (touch) {
         window.removeEventListener('touchmove', onTouchMove);
         window.removeEventListener('touchend', onTouchEnd);

@@ -3,6 +3,7 @@ import type { CDPSession, Locator, Page } from '@playwright/test';
 import type { Store } from '../../src/main/db';
 import { SLUG, connectTo, openFixture, seedFixtureNovel, startWebServer, webDb } from './server';
 import type { WebDb, WebServer } from './server';
+import { noSidewaysScroll, smallTargets } from './layout';
 
 /**
  * A58 U2: the Outline, the chapter page and Relevant to Session on the phone,
@@ -82,29 +83,6 @@ const box = async (l: Locator) => {
   if (!b) throw new Error('The element has no box.');
   return b;
 };
-
-/** The page never scrolls sideways. */
-async function noSidewaysScroll(page: Page): Promise<void> {
-  const { scroll, client } = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    client: document.documentElement.clientWidth,
-  }));
-  expect(scroll).toBeLessThanOrEqual(client);
-}
-
-/** Every button on screen inside `scope` is at least 44 px each way. */
-async function smallTargets(scope: Locator): Promise<string[]> {
-  return scope.evaluate((root) =>
-    [...root.querySelectorAll<HTMLElement>('button, select, input:not([type="checkbox"])')]
-      .filter((el) => el.getClientRects().length > 0)
-      .map((el) => ({ el, r: el.getBoundingClientRect() }))
-      .filter(({ r }) => r.width < 43.5 || r.height < 43.5)
-      .map(
-        ({ el, r }) =>
-          `${el.tagName} ${el.getAttribute('aria-label') ?? el.textContent?.trim()} ${Math.round(r.width)}x${Math.round(r.height)}`,
-      ),
-  );
-}
 
 /** Sentences that tell the reader how to use a screen (IP-19, the A57 rule). */
 const INSTRUCTION =
@@ -329,6 +307,29 @@ test('PH-35 the chapter menu by tap: move, written, a new section, a new chapter
   await expect(page.getByTestId('new-chapter')).toBeVisible();
 });
 
+test('PH-31 a reload with a line or chapter sheet open comes back to the Outline with the sheet closed', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'webkit', 'Layout runs on WebKit.');
+  await openOutline(page);
+  const lineSheet = page.getByTestId('line-sheet');
+  const chapterSheet = page.getByTestId('chapter-sheet');
+  await line(page, 'CH1', 0).getByTestId('ph-line-more').tap();
+  await expect(lineSheet).toBeVisible();
+  await page.reload();
+  await expect(line(page, 'CH1', 0)).toBeVisible();
+  await expect(lineSheet).toHaveCount(0);
+  await bar(page, 'CH2').getByTestId('chapter-more').tap();
+  await expect(chapterSheet).toBeVisible();
+  await page.reload();
+  await expect(bar(page, 'CH2')).toBeVisible();
+  await expect(chapterSheet).toHaveCount(0);
+  // Opened again, the sheet knows its chapter.
+  await bar(page, 'CH2').getByTestId('chapter-more').tap();
+  await expect(chapterSheet.getByTestId('chapter-move-down')).toBeEnabled();
+});
+
 test('PH-31 a chapter opens as a page, its fields edit on one tap, and back returns to the same place', async ({
   page,
   browserName,
@@ -350,6 +351,8 @@ test('PH-31 a chapter opens as a page, its fields edit on one tap, and back retu
   await expect(editor.getByText('Summary may be out of date')).toHaveCount(0);
   await expect(editor.getByText('Re-import')).toHaveCount(0);
   await noSidewaysScroll(page);
+  expect(await smallTargets(editor)).toEqual([]);
+  expect(await smallTargets(page.getByTestId('phone-top-bar'))).toEqual([]);
   const summary = editor
     .locator('[data-field="summary"]')
     .locator('textarea, [contenteditable="true"], .editable-text')
@@ -457,6 +460,29 @@ test('PH-31 Relevant to Session opens from a chapter, on that chapter', async ({
   await expect(page.locator('[data-testid="editor"][data-entry-id="CH3"]')).toBeVisible();
 });
 
+test('PH-31 Relevant to Session on a chapter: the year chip fits its year, and an empty box shows its whole placeholder', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'webkit', 'Layout runs on WebKit.');
+  await openOutline(page);
+  await bar(page, 'CH1').getByTestId('chapter-more').tap();
+  await page.getByTestId('chapter-sheet').getByTestId('ph-chapter-relevant').tap();
+  const view = page.getByTestId('relevant-view');
+  await expect(view.getByTestId('relevant-strand')).toBeVisible();
+  const chip = view.locator(':scope > .row > .chip.time');
+  await expect(chip).toHaveText('2075');
+  expect((await box(chip)).width).toBeLessThan(120);
+  const empties = view.locator('.rich-text.is-empty .rich-text-input[data-placeholder]:visible');
+  expect(await empties.count()).toBeGreaterThan(0);
+  const cut = await empties.evaluateAll((els) =>
+    els
+      .filter((el) => el.scrollHeight > el.clientHeight + 1)
+      .map((el) => `${el.getAttribute('data-placeholder')} ${el.scrollHeight}>${el.clientHeight}`),
+  );
+  expect(cut).toEqual([]);
+});
+
 test('PH-35 nothing on the Outline shows only on hover: menus, grips, the + and the dividers', async ({
   page,
   browserName,
@@ -532,6 +558,21 @@ async function holdAndDrag(page: Page, cdp: CDPSession, from: Point, to: Point) 
   await touch(cdp, 'touchEnd');
 }
 
+test('PH-35 the Outline has a touchmove guard that can stop the scroll before any touch starts @touch', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'Listeners are read through CDP on Chromium.');
+  await openOutline(page);
+  const cdp = await touches(page);
+  const { result } = await cdp.send('Runtime.evaluate', { expression: 'document' });
+  const { listeners } = await cdp.send('DOMDebugger.getEventListeners', {
+    objectId: result.objectId as string,
+  });
+  const guards = listeners.filter((l) => l.type === 'touchmove' && !l.passive);
+  expect(guards.length).toBeGreaterThan(0);
+});
+
 test('PH-35 a scene line held lifts and moves, into another chapter too @touch', async ({
   page,
   browserName,
@@ -571,7 +612,7 @@ test('PH-35 a chapter bar held drags the line between it and the chapter above @
   await expect.poll(async () => (await stored(page)).breaks.CH2).toBe(2);
   expect(await storedLines(page)).toEqual(OUTLINE);
   await expect(line(page, 'CH2', 0)).toContainText('The ledger');
-  // A plain tap still opens the chapter.
+  // The drop did not also open the chapter.
   await expect(page.locator('[data-testid="editor"]:visible')).toHaveCount(0);
 });
 
