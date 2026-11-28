@@ -2,7 +2,9 @@
  * A58 (PH-24): the phone's service worker. It precaches the app shell (the
  * page, its scripts and styles, the manifest and icons) so the app opens with
  * no connection. The bible itself is never cached here: `/rpc` always goes to
- * the network, and a lost connection shows the ARCH-6 banner. Built by
+ * the network (POSTs with the phone key), and a lost connection shows the
+ * ARCH-6 banner. What the phone read is kept by the transport instead, in
+ * IndexedDB, and cleared with the key (PH-25, `readStore.ts`). Built by
  * `vite.web.config.ts`, which fills in the build id and the file list.
  */
 declare const __NC_BUILD_ID__: string;

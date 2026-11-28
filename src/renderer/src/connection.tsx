@@ -52,7 +52,10 @@ export const READ_ONLY_NOTE_ID = 'read-only-reason';
 
 /** ARCH-6: the reason writes are off, or null when they are on. */
 export function useReadOnly(): string | null {
-  return useContext(Ctx).status?.state === 'readOnly' ? READ_ONLY_REASON : null;
+  const status = useContext(Ctx).status;
+  if (status?.state !== 'readOnly') return null;
+  // A58 L1: the phone reads what it stored, with no snapshot; its message says why.
+  return status.snapshot ? READ_ONLY_REASON : (status.message ?? READ_ONLY_REASON);
 }
 
 /**
@@ -146,12 +149,11 @@ export function ConnectionBanner(props: {
     >
       {readOnly ? (
         <>
-          <strong>Read-only snapshot</strong>
+          <strong>{status.snapshot ? 'Read-only snapshot' : 'No connection'}</strong>
           <span id={READ_ONLY_NOTE_ID} data-testid="read-only-reason">
             {status.snapshot
-              ? `You are looking at the snapshot of ${status.snapshot.name} taken ${when(status.snapshot.takenAt)}. `
-              : ''}
-            {READ_ONLY_REASON}
+              ? `You are looking at the snapshot of ${status.snapshot.name} taken ${when(status.snapshot.takenAt)}. ${READ_ONLY_REASON}`
+              : (status.message ?? READ_ONLY_REASON)}
           </span>
         </>
       ) : (
