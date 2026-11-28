@@ -13,6 +13,7 @@ import {
   webDb,
 } from './server';
 import type { WebDb, WebServer } from './server';
+import { noSidewaysScroll, smallTargets } from './layout';
 
 /**
  * A58 U1: the phone's shell on WebKit at iPhone 15 size, through the local
@@ -468,6 +469,58 @@ test('PH-35 Undo and Redo are thumb-sized buttons that step a change back and fo
   await expect.poll(async () => (await character('H2')).names.full).toBe('Peter Hale Senior');
   await undo.tap();
   await expect.poll(async () => (await character('H2')).names.full).toBe('Peter Hale');
+});
+
+test('PH-35 every target on People, a person, a place, Search, the top bar and the toast is 44 px, with no sideways scroll', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  const frame = page.locator('.ph-frame');
+  const misses: string[] = [];
+  const check = async (what: string, scope: Locator = frame) => {
+    await noSidewaysScroll(page);
+    misses.push(...(await smallTargets(scope)).map((m) => `${what}: ${m}`));
+  };
+  await page.getByTestId('entry-list').waitFor();
+  await check('people');
+  const person = await openCharacter(page, /^Daniel Hale/);
+  await expect(person.locator('.chip-remove').first()).toBeVisible();
+  await check('person');
+  await person.getByRole('button', { name: 'Add family' }).tap();
+  await check('person, adding family');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('bible-menu-button').tap();
+  await page.getByTestId('phone-sections').getByRole('button', { name: 'Places' }).tap();
+  await page
+    .locator('[data-testid="entry-list"]:visible')
+    .getByRole('button', { name: /^Portland/ })
+    .tap();
+  await expect(page.locator('[data-testid="editor"]:visible')).toHaveAttribute(
+    'data-entry-id',
+    'PLC1',
+  );
+  await check('place');
+  await page.getByTestId('tab-search').tap();
+  await page.keyboard.type('Hale');
+  await expect(page.getByTestId('search-results')).toBeVisible();
+  await page.getByTestId('search-filters').locator('summary').tap();
+  await expect(page.getByRole('group', { name: 'Search filters' })).toBeVisible();
+  await check('search');
+  // The toast a move to the trash shows, with its Undo button.
+  await page.getByTestId('tab-people').tap();
+  await page.getByTestId('tab-people').tap();
+  await openCharacter(page, /^Peter Hale/);
+  await page.getByRole('button', { name: 'Move to trash', exact: true }).tap();
+  await page
+    .getByRole('dialog', { name: 'Move to trash' })
+    .getByRole('button', { name: 'Move to trash' })
+    .tap();
+  const toast = page.getByTestId('phone-toast');
+  await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
+  await check('toast', toast);
+  await toast.getByRole('button', { name: 'Undo' }).tap();
+  await expect.poll(async () => (await character('H2'))?.names.full).toBe('Peter Hale');
+  expect(misses).toEqual([]);
 });
 
 test('PH-35 no key hints on the phone: no kbd shows on any of these screens', async ({ page }) => {

@@ -3,6 +3,7 @@ import type { CDPSession, Locator, Page } from '@playwright/test';
 import type { Store } from '../../src/main/db';
 import { SLUG, connectTo, openFixture, seedFixtureNovel, startWebServer, webDb } from './server';
 import type { WebDb, WebServer } from './server';
+import { noSidewaysScroll, smallTargets } from './layout';
 
 /**
  * A58 U2: the Outline, the chapter page and Relevant to Session on the phone,
@@ -82,29 +83,6 @@ const box = async (l: Locator) => {
   if (!b) throw new Error('The element has no box.');
   return b;
 };
-
-/** The page never scrolls sideways. */
-async function noSidewaysScroll(page: Page): Promise<void> {
-  const { scroll, client } = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    client: document.documentElement.clientWidth,
-  }));
-  expect(scroll).toBeLessThanOrEqual(client);
-}
-
-/** Every button on screen inside `scope` is at least 44 px each way. */
-async function smallTargets(scope: Locator): Promise<string[]> {
-  return scope.evaluate((root) =>
-    [...root.querySelectorAll<HTMLElement>('button, select, input:not([type="checkbox"])')]
-      .filter((el) => el.getClientRects().length > 0)
-      .map((el) => ({ el, r: el.getBoundingClientRect() }))
-      .filter(({ r }) => r.width < 43.5 || r.height < 43.5)
-      .map(
-        ({ el, r }) =>
-          `${el.tagName} ${el.getAttribute('aria-label') ?? el.textContent?.trim()} ${Math.round(r.width)}x${Math.round(r.height)}`,
-      ),
-  );
-}
 
 /** Sentences that tell the reader how to use a screen (IP-19, the A57 rule). */
 const INSTRUCTION =
@@ -350,6 +328,8 @@ test('PH-31 a chapter opens as a page, its fields edit on one tap, and back retu
   await expect(editor.getByText('Summary may be out of date')).toHaveCount(0);
   await expect(editor.getByText('Re-import')).toHaveCount(0);
   await noSidewaysScroll(page);
+  expect(await smallTargets(editor)).toEqual([]);
+  expect(await smallTargets(page.getByTestId('phone-top-bar'))).toEqual([]);
   const summary = editor
     .locator('[data-field="summary"]')
     .locator('textarea, [contenteditable="true"], .editable-text')
@@ -571,7 +551,7 @@ test('PH-35 a chapter bar held drags the line between it and the chapter above @
   await expect.poll(async () => (await stored(page)).breaks.CH2).toBe(2);
   expect(await storedLines(page)).toEqual(OUTLINE);
   await expect(line(page, 'CH2', 0)).toContainText('The ledger');
-  // A plain tap still opens the chapter.
+  // The drop did not also open the chapter.
   await expect(page.locator('[data-testid="editor"]:visible')).toHaveCount(0);
 });
 

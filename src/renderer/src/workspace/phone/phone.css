@@ -58,6 +58,20 @@
 :root[data-phone] .ph-frame input:not([type='checkbox'], [type='radio'], [type='range']) {
   min-height: var(--ph-target);
 }
+/* WebKit draws a native select at its own height unless told one. */
+:root[data-phone] .ph-frame select:not([multiple], [size]) {
+  height: var(--ph-target);
+}
+/* A radio or a checkbox is hit through its label, so the label is the thumb's target. */
+:root[data-phone] .ph-frame label:has(> input[type='radio']) {
+  min-height: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .check-label {
+  min-height: var(--ph-target);
+}
 
 /* PH-35: no key hints on the phone; the keys are not there. */
 :root[data-phone] kbd {
@@ -156,12 +170,12 @@
 }
 .ph-year {
   flex: 0 0 auto;
-  height: 36px;
+  height: var(--ph-target);
   min-width: var(--ph-target);
-  padding: 0 10px;
+  padding: 0 12px;
   margin: 0 2px;
   border: 1px solid var(--time);
-  border-radius: 18px;
+  border-radius: 22px;
   background: var(--time-soft);
   color: var(--fg);
   font-weight: 700;
@@ -247,7 +261,7 @@
   font-size: 1rem;
 }
 :root[data-phone] .ph-frame .btn.small {
-  min-height: 40px;
+  min-height: var(--ph-target);
   padding: 6px 12px;
   font-size: 0.95rem;
 }
@@ -303,8 +317,13 @@
 :root[data-phone] .ph-frame .editable-labelled {
   display: flex;
 }
-:root[data-phone] .ph-frame .editable-text {
-  min-height: 28px;
+/* A value that becomes a field on a tap is a thumb's target, however short its text. */
+:root[data-phone] .ph-frame .editable-inline > .editable-text,
+:root[data-phone] .ph-frame .editable-labelled > .editable-text {
+  min-height: var(--ph-target);
+  min-width: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
 }
 /* Every value edits on a tap; the pencil shows without a pointer to hover. */
 :root[data-phone] .ph-frame .editable > .editable-text::after {
@@ -320,8 +339,11 @@
   margin-left: 6px;
 }
 :root[data-phone] .ph-frame .chip-remove {
-  min-width: 32px;
-  min-height: 32px;
+  min-width: var(--ph-target);
+  min-height: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 :root[data-phone] .ph-frame .rich-text {
   max-width: none;
@@ -408,7 +430,7 @@
 }
 .ph-toast .btn {
   flex: 0 0 auto;
-  min-height: 40px;
+  min-height: var(--ph-target);
 }
 
 /* ---- the bottom sheet ---- */
