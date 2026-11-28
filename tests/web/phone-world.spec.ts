@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { CDPSession, Locator, Page, TestInfo } from '@playwright/test';
 import type { Store } from '../../src/main/db';
@@ -523,6 +525,44 @@ test('PH-36 the year sheet, the year view, the World screen and its filters carr
   await page.getByTestId('cell-add').first().tap();
   seen.push(...(await instructionLines(page)));
   expect(seen).toEqual([]);
+});
+
+test('PH-29 PH-34 screens for the record, light and dark', async ({ page }, info) => {
+  onlyOn(info, 'iphone');
+  test.skip(!process.env.NC_PHONE_SCREENS, 'Set NC_PHONE_SCREENS=1 to save the screens.');
+  const dir = join(import.meta.dirname, '../../docs/phone-screens/u3');
+  mkdirSync(dir, { recursive: true });
+  await openFixture(page, server.url);
+  await setYear(page, 2040);
+  const shot = async (name: string) => {
+    await page.waitForTimeout(300);
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.screenshot({ path: join(dir, `${name}-${scheme}.png`) });
+    }
+  };
+  await page.getByTestId('phone-year').tap();
+  await expect(page.getByTestId('year-sheet')).toBeVisible();
+  await shot('01-year-sheet');
+  await page.getByTestId('sheet-open-year').tap();
+  await expect(page.getByTestId('year-page')).toBeVisible();
+  await shot('02-year-view');
+  await page.getByTestId('phone-back').tap();
+  const grid = await openWorld(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await shot('03-world');
+  const forties = grid.locator('.wg-era', { hasText: 'The forties' });
+  await forties.scrollIntoViewIfNeeded();
+  await forties.tap();
+  await shot('04-world-grid-era-selected');
+  await page.getByTestId('world-filter').tap();
+  await expect(page.getByTestId('world-filters')).toBeVisible();
+  await shot('06-world-filters');
+  await page.goBack();
+  await expect(page.getByTestId('world-filters')).toHaveCount(0);
+  await grid.getByTestId('cell-add').first().tap();
+  await expect(page.getByTestId('grid-add')).toBeVisible();
+  await shot('05-world-add-event');
 });
 
 // ---------- Chromium with real touch events ----------
