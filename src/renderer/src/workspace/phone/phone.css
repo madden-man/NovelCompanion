@@ -230,6 +230,10 @@
 .ph-add .ph-tab-label {
   display: none;
 }
+.ph-add[aria-current='page'] .ph-icon {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 
 /* ---- the screens ---- */
 .ph-screen[hidden] {

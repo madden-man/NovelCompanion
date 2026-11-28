@@ -153,6 +153,29 @@ test('PH-27 PH-30 the + opens capture as a page with the field focused and the s
   await expect(page.getByTestId('entry-list')).toBeVisible();
 });
 
+test('PH-30 while capture is the page showing, + is the one tab lit; back lights the tab under it again', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  const bar = page.getByTestId('phone-bottom-bar');
+  const lit = bar.locator('[aria-current="page"]');
+  await page.getByTestId('tab-world').tap();
+  await expect(page.getByTestId('tab-world')).toHaveAttribute('aria-current', 'page');
+  await openCapture(page);
+  await expect(lit).toHaveCount(1);
+  await expect(page.getByTestId('tab-add')).toHaveAttribute('aria-current', 'page');
+  expect(
+    await page
+      .getByTestId('tab-add')
+      .locator('.ph-icon')
+      .evaluate((el) => getComputedStyle(el).outlineStyle),
+  ).toBe('solid');
+  await page.getByTestId('phone-back').tap();
+  await expect(capture(page)).toHaveCount(0);
+  await expect(lit).toHaveCount(1);
+  await expect(page.getByTestId('tab-world')).toHaveAttribute('aria-current', 'page');
+});
+
 test('PH-26 PH-36 no Claude control, no Claude word and no instruction anywhere on the phone capture; 44 px targets, 16 px fields, no sideways scroll', async ({
   page,
 }) => {
