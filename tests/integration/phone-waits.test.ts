@@ -127,6 +127,56 @@ describe('PH-28 sentences that wait for the desk', () => {
     expect((await invoke('capture.waiting', {})).lines).toEqual(have);
   });
 
+  test('PH-28 capture.takeBack refuses a line the desk has handled, and keeps it for the desk', async () => {
+    const { lines } = await invoke('capture.wait', {
+      lines: [{ text: 'Handled already.', year: 2034 }],
+    });
+    const line = lines.find((l) => l.text === 'Handled already.')!;
+    const key = factKey(line.id, line.text, 0);
+    await invoke('tray.mark', { keys: [key], mark: 'filed' });
+    await expect(invoke('capture.takeBack', { ids: [line.id] })).rejects.toThrow(
+      'The Mac has already handled this sentence.',
+    );
+    const after = (await invoke('capture.waiting', {})).lines.find((l) => l.id === line.id);
+    expect(after).toMatchObject({ text: 'Handled already.', handled: true });
+    // Undo on the desk clears the mark: it waits again and can be taken back.
+    await invoke('tray.mark', { keys: [key], mark: null });
+    const back = await invoke('capture.takeBack', { ids: [line.id] });
+    expect(back.lines.some((l) => l.id === line.id)).toBe(false);
+  });
+
+  test('PH-28 only unhandled lines count toward the limit; the oldest handled lines make room', async () => {
+    const own = freshSlug('ph28cap');
+    await loadFixture(store, own);
+    const s = await openBibleSession(store, own);
+    const call = ipcFor(() => s);
+    const first = await call('capture.wait', {
+      lines: Array.from({ length: PHONE_WAITS_MAX }, (_, i) => ({ text: `Old ${i}.`, year: 2034 })),
+    });
+    // The desk files every one of them.
+    await call('tray.mark', {
+      keys: first.lines.map((l) => factKey(l.id, l.text, 0)),
+      mark: 'filed',
+    });
+    // Nothing waits, so the phone can keep another, and the store stays at the limit.
+    const next = await call('capture.wait', { lines: [{ text: 'New one.', year: 2034 }] });
+    expect(next.lines.filter((l) => !l.handled).map((l) => l.text)).toEqual(['New one.']);
+    expect(next.lines).toHaveLength(PHONE_WAITS_MAX);
+    expect(next.lines.some((l) => l.text === 'Old 0.')).toBe(false);
+    expect(next.lines.some((l) => l.text === `Old ${PHONE_WAITS_MAX - 1}.`)).toBe(true);
+    // Unhandled lines past the limit are still refused, in words that are true.
+    await expect(
+      call('capture.wait', {
+        lines: Array.from({ length: PHONE_WAITS_MAX }, (_, i) => ({
+          text: `More ${i}.`,
+          year: 2034,
+        })),
+      }),
+    ).rejects.toThrow(
+      `No more than ${PHONE_WAITS_MAX} sentences can be waiting for the Mac at once.`,
+    );
+  });
+
   test('PH-28 the notebook pull, which trashes pages its rows no longer make, leaves the waiting sentences alone', async () => {
     const world = worldIdFor(slug)!;
     const service = new BridgeService({

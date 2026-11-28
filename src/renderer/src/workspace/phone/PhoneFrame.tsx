@@ -113,7 +113,7 @@ function Frame({ chooser, bible }: { chooser?: PhoneChooser; bible: string }) {
   return (
     <ZhNavProvider value={open}>
       <CloseFlush />
-      <PhoneCaptureBridge />
+      <PhoneCaptureBridge bible={bible} />
       <div className="ph-frame" data-testid="workspace" data-tab={nav.tab}>
         <PhoneTopBar name={chooser?.current.name ?? bible} />
         {TABS.filter((t) => t === nav.tab).map((t) => (

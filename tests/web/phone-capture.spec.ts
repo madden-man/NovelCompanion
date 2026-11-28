@@ -381,6 +381,127 @@ test('PH-28 a sentence the desk handles leaves the phone at the next freshness c
   expect((await storedWaits()).map((l) => l.text)).toContain(TRAM);
 });
 
+test('PH-27 a half-typed sentence stays in the field after Back, another tab and a reload, and goes once it is cleared', async ({
+  page,
+}) => {
+  const HALF = 'Teenagers in Portland start to';
+  await openFixture(page, server.url);
+  await openCapture(page);
+  await input(page).fill(HALF);
+  await page.getByTestId('phone-back').tap();
+  await expect(capture(page)).toHaveCount(0);
+  await openCapture(page);
+  await expect(input(page)).toHaveText(HALF);
+  // Another tab, then + again.
+  await page.getByTestId('tab-world').tap();
+  await expect(capture(page)).toHaveCount(0);
+  await openCapture(page);
+  await expect(input(page)).toHaveText(HALF);
+  // Hidden and brought back, then reloaded as iOS does after it drops the app.
+  await setVisible(page, false);
+  await setVisible(page, true);
+  await page.reload();
+  await expect(input(page)).toHaveText(HALF);
+  // Cleared by the writer: a reload keeps it cleared.
+  await input(page).fill('');
+  await page.reload();
+  await expect(capture(page)).toBeVisible();
+  await expect(input(page)).toHaveText('');
+});
+
+test('PH-28 a keep whose answer is lost is sent again with the same ID: the desk gets the sentence once, and the field is empty after a reload', async ({
+  page,
+}) => {
+  const LINE = 'The Kessler crowd stops tipping by 2072.';
+  await openFixture(page, server.url);
+  let lose = true;
+  await page.route('**/rpc', async (route) => {
+    const channel = (JSON.parse(route.request().postData() ?? '{}') as { channel?: string })
+      .channel;
+    if (channel === 'capture.wait' && lose) {
+      lose = false;
+      // The server stores it, and the answer never reaches the phone.
+      await route.fetch();
+      await route.abort('failed');
+      return;
+    }
+    await route.continue();
+  });
+  await openCapture(page);
+  await type(page, LINE, 1);
+  await fileButton(page).tap();
+  await expect(capture(page).getByRole('alert')).toContainText('Not kept for the Mac');
+  await expect(input(page)).toContainText(LINE);
+  expect((await storedWaits()).filter((l) => l.text === LINE)).toHaveLength(1);
+  // The connection comes back at the next check.
+  await setVisible(page, false);
+  await setVisible(page, true);
+  await expect(fileButton(page)).toBeEnabled();
+  await expect(fileButton(page)).toHaveAttribute('data-current', 'true');
+  await fileButton(page).tap();
+  await expect(page.getByTestId('phone-toast')).toContainText('1 waiting for the Mac');
+  expect((await storedWaits()).filter((l) => l.text === LINE)).toHaveLength(1);
+  await expect(waitingLines(page).filter({ hasText: LINE })).toHaveCount(1);
+  await expect(input(page)).toHaveText('');
+  await page.reload();
+  await expect(capture(page)).toBeVisible();
+  await expect(input(page)).toHaveText('');
+});
+
+test('PH-28 Take back of a sentence the Mac has just handled is refused: it stays for the desk and does not return to the field', async ({
+  page,
+}) => {
+  const LINE = 'The Kessler crowd stops tipping by 2073.';
+  await openFixture(page, server.url);
+  await openCapture(page);
+  await type(page, LINE, 1);
+  await fileButton(page).tap();
+  await expect(waitingLines(page).filter({ hasText: LINE })).toHaveCount(1);
+  const line = (await storedWaits()).find((l) => l.text === LINE)!;
+  // The desk files it; the phone has not checked since.
+  const desk = await openBibleSession(store, SLUG);
+  await desk.repo.setTrayMarks([factKey(line.id, line.text, 0)], 'filed');
+  await waitingLines(page).filter({ hasText: LINE }).getByTestId('phone-waiting-take-back').tap();
+  await expect(capture(page).getByRole('alert')).toContainText(
+    'The Mac has already handled this sentence.',
+  );
+  await expect(input(page)).toHaveText('');
+  expect((await storedWaits()).map((l) => l.text)).toContain(LINE);
+});
+
+test('PH-27 capture waits for the bible story time: a sentence kept at once goes under the story year, never another', async ({
+  page,
+}) => {
+  const LINE = 'The Kessler crowd stops tipping by 2074.';
+  await openFixture(page, server.url);
+  const storyYear = Number((await page.getByTestId('phone-year').innerText()).trim());
+  await openCapture(page);
+  let slow = true;
+  await page.route('**/rpc', async (route) => {
+    const channel = (JSON.parse(route.request().postData() ?? '{}') as { channel?: string })
+      .channel;
+    if (channel === 'storyTime.get' && slow) {
+      slow = false;
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+    await route.continue();
+  });
+  // A reload on the capture page reads the story time again, slowly this time.
+  await page.reload();
+  await expect(capture(page)).toBeVisible();
+  // Until it is read, the head names no year, so it never shows another one first.
+  expect(await capture(page).getByTestId('phone-capture-year').innerText()).not.toMatch(/\d/);
+  await input(page).fill(LINE);
+  await expect(facts(page)).toHaveCount(1);
+  await fileButton(page).tap();
+  await expect
+    .poll(async () => (await storedWaits()).find((l) => l.text === LINE)?.year)
+    .toBe(storyYear);
+  await expect(capture(page).getByTestId('phone-capture-year')).toHaveText(
+    `Story year ${storyYear}`,
+  );
+});
+
 test('PH-27 PH-28 screens for the record, light and dark', async ({ page }) => {
   test.skip(!process.env.NC_PHONE_SCREENS, 'Set NC_PHONE_SCREENS=1 to save the screens.');
   const dir = join(import.meta.dirname, '../../docs/phone-screens/u5');
