@@ -39,6 +39,8 @@ import { useEraEdits, useTitleRename } from '../timeline/gridShared';
 import type { MovePart } from '../timeline/gridShared';
 import './backstory.css';
 import { useBibleSettings } from '../bibleSettings';
+import { usePhone } from '../../phone';
+import './phone.css';
 
 const ZOOMS: { zoom: Zoom; label: string }[] = [
   { zoom: 'fit', label: 'Whole span' },
@@ -71,7 +73,16 @@ export function BackstoryView(props: {
   openedAt?: number;
   /** Opens an entry in its section: an era picked in the era band. */
   onOpen?: (collection: EntryCollection, id: string) => void;
+  /**
+   * A58 U6: the phone opens a moment as a page of its own (PH-31). With this set, a marker's
+   * tap and a new moment call it instead of opening the dialog over the grid.
+   */
+  onMomentPage?: (momentId: string) => void;
+  /** A58 U6: this is that page: `momentId` alone, with Previous and Next swapping it. */
+  momentPage?: { onStep: (momentId: string) => void; onClose: () => void };
 }) {
+  const phone = usePhone();
+  const page = props.momentPage;
   const story = useStoryTime();
   const year = story.year;
   const undo = useUndo();
@@ -95,7 +106,8 @@ export function BackstoryView(props: {
   const [selected, setSelected] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [freshKey, setFreshKey] = useState(0);
-  const [zoom, setZoom] = useState<Zoom>('fit');
+  // A58 U6 (PH-34): the phone starts close enough that the grid scrolls sideways.
+  const [zoom, setZoom] = useState<Zoom>(phone ? 'default' : 'fit');
   const [error, setError] = useState<string | null>(null);
   const [trashed, setTrashed] = useState<{ title: string; id: string } | null>(null);
   // A50: a moment asked for, until the moments and the people are loaded to find it in.
@@ -277,6 +289,10 @@ export function BackstoryView(props: {
       const { entry } = await call('entry.create', { collection: 'moments', data });
       const who = grid.people.get(characterId)?.name ?? 'someone';
       undo.record(createCommand('moments', entry._id, `a moment for ${who} in ${at}`));
+      if (props.onMomentPage) {
+        props.onMomentPage(entry._id);
+        return;
+      }
       setPicked(characterId);
       setSelected(entry._id);
       setFocusId(entry._id);
@@ -464,19 +480,67 @@ export function BackstoryView(props: {
     setSelected(t.id);
   };
 
+  if (page) {
+    // A58 U6: the moment's page; a moment not on the grid says so, as the head does.
+    const m = loaded ? grid.moments.find((x) => x.id === props.momentId) : undefined;
+    const mine = m ? momentsOf(grid.moments, m.characterId) : [];
+    const at = m ? mine.findIndex((x) => x.id === m.id) : -1;
+    const before = at > 0 ? mine[at - 1] : undefined;
+    const after = at >= 0 && at < mine.length - 1 ? mine[at + 1] : undefined;
+    return (
+      <div className="bs-area bs-moment-area stack" data-testid="backstory-moment-page">
+        {error && (
+          <p className="callout crit" role="alert">
+            {error}
+          </p>
+        )}
+        {m ? (
+          <MomentDialog
+            key={m.id}
+            page
+            moment={m}
+            person={grid.people.get(m.characterId) ?? null}
+            people={everyone}
+            events={events}
+            fresh={false}
+            freshKey={0}
+            onOpenTitle={() => undefined}
+            onSave={(field, value, added) => save(m.id, field, value, added)}
+            onPickEvent={(e) => pickEvent(m.id, e)}
+            onTrashed={page.onClose}
+            onClose={page.onClose}
+            onPrev={before ? () => page.onStep(before.id) : null}
+            onNext={after ? () => page.onStep(after.id) : null}
+          />
+        ) : (
+          loaded && (
+            <p className="bs-missing" data-testid="moment-missing">
+              That moment is not on the grid. It may be in the trash.
+            </p>
+          )
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="bs-area stack" data-testid="backstory-view">
       <div className="list-head">
         <h2 id="backstory-title">Backstory</h2>
-        <span className="row tight">
-          <span className="chip time" data-testid="backstory-time">
-            Story time {year}
-          </span>
-          <button type="button" className="btn small" onClick={story.openDialog}>
-            Change
-          </button>
+        <span className="row tight bs-head-tools">
+          {/* A58 U6: the phone's top bar holds the story year, so it is not said again here. */}
+          {!phone && (
+            <>
+              <span className="chip time" data-testid="backstory-time">
+                Story time {year}
+              </span>
+              <button type="button" className="btn small" onClick={story.openDialog}>
+                Change
+              </button>
+            </>
+          )}
           <span className="row tight wg-toolbar bs-zoom" role="group" aria-label="Zoom">
-            <span className="wg-toolbar-label">Zoom</span>
+            {!phone && <span className="wg-toolbar-label">Zoom</span>}
             {ZOOMS.map((z) => (
               <button
                 key={z.zoom}
@@ -512,32 +576,37 @@ export function BackstoryView(props: {
           {error}
         </p>
       )}
-      <BackstoryGrid
-        grid={grid}
-        eras={eras}
-        span={span}
-        zoom={zoom}
-        storyYear={year}
-        writing={writing}
-        pickedId={picked}
-        personId={viewing}
-        selectedMomentId={selected}
-        readOnly={ro.off}
-        onPick={pick}
-        onLeavePerson={showEveryone}
-        onPickMoment={(id, characterId) => {
-          setPicked(characterId);
-          setSelected(id);
-        }}
-        onOpenMoment={openTitle}
-        onOpenEra={(id) => props.onOpen?.('eraStates', id)}
-        onMove={move}
-        onCreate={create}
-        onLifeEnd={lifeEnd}
-        onOpenPerson={props.onOpen ? (id) => props.onOpen?.('characters', id) : undefined}
-        onRename={renameMoment}
-        eraEdits={eraEdits}
-      />
+      {/* A58 U6: on the phone the grid waits for the moments, so it opens scrolled to the
+          story year on the span they make, not on the span before they came. */}
+      {(!phone || loaded) && (
+        <BackstoryGrid
+          grid={grid}
+          eras={eras}
+          span={span}
+          zoom={zoom}
+          storyYear={year}
+          writing={writing}
+          pickedId={picked}
+          personId={viewing}
+          selectedMomentId={selected}
+          readOnly={ro.off}
+          onPick={pick}
+          onLeavePerson={showEveryone}
+          onPickMoment={(id, characterId) => {
+            if (props.onMomentPage) return props.onMomentPage(id);
+            setPicked(characterId);
+            setSelected(id);
+          }}
+          onOpenMoment={props.onMomentPage ? (id) => props.onMomentPage?.(id) : openTitle}
+          onOpenEra={(id) => props.onOpen?.('eraStates', id)}
+          onMove={move}
+          onCreate={create}
+          onLifeEnd={lifeEnd}
+          onOpenPerson={props.onOpen ? (id) => props.onOpen?.('characters', id) : undefined}
+          onRename={renameMoment}
+          eraEdits={eraEdits}
+        />
+      )}
       <div className="legend" aria-label="Grid legend">
         <span>
           <span className="bs-key life" aria-hidden="true" />

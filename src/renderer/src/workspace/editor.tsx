@@ -29,6 +29,7 @@ import { ChapterStrands } from './outline/ChapterPage';
 import { Zh, useWorkspaceOpen } from './Zh';
 import { useBibleSettings } from './bibleSettings';
 import { autosaveMaxMs } from '../../../shared/schema/settings';
+import { useCapabilities } from '../capabilities';
 
 export type SaveStatus = 'loading' | 'saved' | 'pending' | 'saving' | 'error' | 'missing';
 
@@ -440,9 +441,13 @@ export function EntryPane(props: {
   onWritten?: (chapterId: string) => void;
   /** SM-1: the relatives line opens the family tree on this person. */
   onOpenTree?: (characterId: string) => void;
+  /** A58 U2: what the phone adds under a chapter's fields. */
+  footer?: ReactNode;
 }) {
   const { collection, id } = props;
   const ed = useAutosave(collection, id);
+  // A58 (PH-5): the desk's import and alignment parts show only where their channels work.
+  const can = useCapabilities();
   // A55 (NB-8): a page from the phone open across the screen, and the row to focus when it closes.
   const [notebookPage, setNotebookPage] = useState<string | null>(null);
   const [notebookReturn, setNotebookReturn] = useState<string | null>(null);
@@ -483,6 +488,9 @@ export function EntryPane(props: {
       ? { path: 'title', label: 'Title', extraPatch: undefined }
       : renameSpec(collection);
   const messages = { warnings: ed.warnings, issues: ed.issues };
+  const fields = editableFields(manifest).filter(
+    (spec) => spec.name !== 'summaryOutOfDate' || can('manuscript.read'),
+  );
   const warningCount = ed.warnings.length > 0 && (
     <span className="chip warn-chip" data-testid="warning-count">
       {ed.warnings.length === 1
@@ -580,7 +588,7 @@ export function EntryPane(props: {
           <>
             <form className="editor-fields" onSubmit={(e) => e.preventDefault()}>
               <WriteFieldset>
-                {editableFields(manifest).map((spec) =>
+                {fields.map((spec) =>
                   collection === 'chapters' && spec.name === 'strands' ? (
                     // KB-3, A40: the strands with ages and places.
                     <ChapterStrands
@@ -606,7 +614,8 @@ export function EntryPane(props: {
             </form>
           </>
         )}
-        {collection === 'chapters' && !inTrash && (
+        {props.footer}
+        {collection === 'chapters' && !inTrash && can('continuity.findings') && (
           <ChapterAlignment key={id} chapterId={id} onOpen={props.onOpen} />
         )}
         {collection === 'characters' && (

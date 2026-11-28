@@ -1,0 +1,451 @@
+/* A58 U6: the bible menu's More screens on the phone (PH-35, PH-36): Cultural data, Romanization,
+   Glossary table, Place tree, Questions, Writing tools, Lists, Trash, Settings, the section lists
+   and Changes. One column, 44px targets, tight spacing. Every rule is under :root[data-phone],
+   which only the web build sets, so the desk never sees them. Theme tokens only. */
+
+:root[data-phone] .ph-frame .ph-page .ws-wide-area > .ws-wide.stack,
+:root[data-phone] .ph-frame .ph-page .ws-wide.stack {
+  gap: 10px;
+}
+:root[data-phone] .ph-frame .ph-page h2 {
+  margin: 0;
+}
+:root[data-phone] .ph-frame .ph-page h3 {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+}
+:root[data-phone] .ph-frame .ph-page .panel {
+  padding: 10px 12px;
+  gap: 6px;
+}
+:root[data-phone] .ph-frame .ph-page .panel > h3,
+:root[data-phone] .ph-frame .ph-page .panel > h4 {
+  margin: 0;
+}
+
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  .btn.small {
+  min-height: var(--ph-target);
+}
+/* A colour well and a short number field are a thumb wide. */
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  input[type='color'],
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  input.num {
+  min-width: var(--ph-target);
+}
+
+/* app.css turns every .row into a column under 400px; on these screens a row stays a row and
+   wraps, so a stepper or a pair of buttons sits side by side. */
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  .row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* A select is a thumb's height: drawn by the page, since WebKit keeps its own menu height. */
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  select {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: var(--ph-target);
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--fg);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-2) 50%),
+    linear-gradient(135deg, var(--fg-2) 50%, transparent 50%);
+  background-position:
+    right 18px center,
+    right 12px center;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+}
+
+/* Every value a tap opens is a thumb's height. */
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  .editable
+  > .editable-text {
+  min-height: var(--ph-target);
+  min-width: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+}
+:root[data-phone]
+  .ph-frame
+  .ph-page:is(
+    [data-screen='backstory'],
+    [data-screen='questions'],
+    [data-screen='culture'],
+    [data-screen='words'],
+    [data-screen='places'],
+    [data-screen='romanization'],
+    [data-screen='glossary'],
+    [data-screen='lists'],
+    [data-screen='trash'],
+    [data-screen='settings'],
+    [data-screen='section']
+  )
+  .editable-rich
+  > .editable-text {
+  display: block;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* Add rows: the field and its button side by side, one thumb high. */
+:root[data-phone] .ph-frame .cu-add,
+:root[data-phone] .ph-frame .vocab-add {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .cu-add input,
+:root[data-phone] .ph-frame .vocab-add > input:not(.num) {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .vocab-add > input:not(.num) {
+  flex-basis: 140px;
+}
+:root[data-phone] .ph-frame .cu-add .btn,
+:root[data-phone] .ph-frame .vocab-add .btn {
+  flex: none;
+  min-height: var(--ph-target);
+}
+
+/* ---- Cultural data ---- */
+/* The tabs are one row that scrolls sideways when it does not fit. */
+:root[data-phone] .ph-frame .screen-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+:root[data-phone] .ph-frame .screen-tabs::-webkit-scrollbar {
+  display: none;
+}
+:root[data-phone] .ph-frame .screen-tabs [role='tab'] {
+  flex: 1 0 auto;
+  min-height: var(--ph-target);
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .cu-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .cu-toolbar > .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .cu-toolbar select {
+  width: 100%;
+}
+/* The stepper: back, the years shown and forward in one row; the rest under it. */
+:root[data-phone] .ph-frame .cu-stepper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+:root[data-phone] .ph-frame .cu-stepper > .btn.small {
+  min-height: var(--ph-target);
+  white-space: nowrap;
+}
+:root[data-phone] .ph-frame .cu-stepper .cu-unit {
+  min-width: 5.5em;
+}
+:root[data-phone] .ph-frame .cu-stepper > [data-testid='culture-to-story'],
+:root[data-phone] .ph-frame .cu-stepper > .cu-unit-setting {
+  grid-column: 1 / -1;
+  margin-left: 0;
+}
+:root[data-phone] .ph-frame .cu-groups {
+  gap: 10px;
+}
+:root[data-phone] .ph-frame .cu-line-head {
+  align-items: flex-start;
+  gap: 2px;
+}
+:root[data-phone] .ph-frame .cu-line-head .btn.small {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .cu-line-head > .btn.small + .btn.small {
+  margin-top: 4px;
+}
+
+/* ---- Place tree, Romanization ---- */
+:root[data-phone] .ph-frame .cu-place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+:root[data-phone] .ph-frame .cu-place .place-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .cu-place > .btn.small {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .cu-place > .place-desc {
+  flex: 1 0 100%;
+}
+:root[data-phone] .ph-frame .cu-place.nested {
+  margin-left: 0 !important;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+}
+:root[data-phone] .ph-frame [data-testid='romanization-flagged'] .link-btn {
+  min-height: var(--ph-target);
+}
+
+/* ---- Glossary table: each term a card, its fields in two columns ---- */
+:root[data-phone] .ph-frame .glossary-wrap {
+  overflow: visible;
+}
+:root[data-phone] .ph-frame .glossary-wrap table,
+:root[data-phone] .ph-frame .glossary-wrap tbody {
+  display: block;
+  width: 100%;
+}
+:root[data-phone] .ph-frame .glossary-wrap thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+:root[data-phone] .ph-frame .glossary-wrap tr[data-term] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+:root[data-phone] .ph-frame .glossary-wrap td {
+  display: block;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+:root[data-phone] .ph-frame .glossary-wrap td:nth-child(4) {
+  grid-column: 1 / -1;
+}
+:root[data-phone] .ph-frame .glossary-wrap td:nth-child(5) .btn.small {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .glossary-wrap .row-editor-tr,
+:root[data-phone] .ph-frame .glossary-wrap .row-editor-tr > td {
+  display: block;
+}
+
+/* ---- Lists: a row is the grip, the name and Remove; the grip lifts after a hold ---- */
+:root[data-phone] .ph-frame .lists-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+:root[data-phone] .ph-frame .vocab-row {
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 0;
+  border-radius: 0;
+  border-width: 0 0 1px;
+  border-color: var(--border);
+  background: var(--surface);
+}
+:root[data-phone] .ph-frame .vocab-row .vocab-name {
+  flex: 1 1 auto;
+}
+:root[data-phone] .ph-frame .vocab-row .vocab-usage {
+  flex: none;
+  font-size: 0.8rem;
+}
+:root[data-phone] .ph-frame .vocab-row .vocab-actions .btn.small {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .vocab-row:has(.vocab-ages, .vocab-years, [data-testid='item-parent']),
+:root[data-phone] .ph-frame .vocab-row:has([data-testid='item-weight']) {
+  flex-wrap: wrap;
+}
+:root[data-phone] .ph-frame .vocab-row .drag-handle {
+  flex: none;
+  width: var(--ph-target);
+  height: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+:root[data-phone] .ph-frame .vocab-row.lifted {
+  position: relative;
+  z-index: 5;
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+  opacity: 0.95;
+}
+:root[data-phone] .ph-frame .vocab-row.lifted .drag-handle {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+:root[data-phone] .ph-frame .vocab-add > label:not(.sr-only) {
+  align-self: center;
+}
+:root[data-phone] .ph-frame .vocab-add > input.num {
+  width: 4.5em;
+}
+
+/* ---- Trash ---- */
+:root[data-phone] .ph-frame .trash-list li {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+:root[data-phone] .ph-frame .trash-list li > .row {
+  flex-wrap: nowrap;
+}
+:root[data-phone] .ph-frame .trash-list li > .row > .btn.small,
+:root[data-phone] .ph-frame [data-testid='trash-empty-all'] {
+  flex: 1 1 0;
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame .hk-confirm-row input {
+  flex: 1 1 100%;
+}
+:root[data-phone] .ph-frame .hk-confirm .btn.small,
+:root[data-phone] .ph-frame .ph-page .confirm .btn.small {
+  min-height: var(--ph-target);
+}
+
+/* ---- Settings: the sentences of numbers, tight ---- */
+:root[data-phone] .ph-frame [data-testid='settings-view'] .number-sentence {
+  gap: 0 6px;
+}
+:root[data-phone] .ph-frame [data-testid='settings-view'] fieldset.panel label.row {
+  min-height: var(--ph-target);
+  align-items: center;
+}
+:root[data-phone] .ph-frame [data-testid='settings-view'] .btn.small {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame [data-testid='phone-sign-out'] .confirm .row {
+  flex-wrap: nowrap;
+}
+:root[data-phone] .ph-frame [data-testid='phone-sign-out'] .confirm .btn {
+  flex: 1 1 0;
+}
+
+/* ---- Questions, Writing tools ---- */
+:root[data-phone] .ph-frame .ph-page[data-screen='questions'] select,
+:root[data-phone] .ph-frame .ph-page[data-screen='words'] select {
+  width: 100%;
+}
+
+/* ---- Changes (the bible menu's undo history) ---- */
+:root[data-phone] .ph-changes > li {
+  min-height: var(--ph-target);
+  display: flex;
+  align-items: center;
+  line-height: 1.3;
+}
+:root[data-phone] .ph-changes > li.redo {
+  font-style: italic;
+}

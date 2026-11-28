@@ -13,6 +13,8 @@ import { PovExtras } from './povPickers';
 import { RelevantBody } from './relevantBody';
 import { useOverrides } from './overrides';
 import type { OpenEntry, SelectionView } from './common';
+import { usePhone } from '../../phone';
+import './phone.css';
 
 export type BriefInput = Request<'session.relevant'>['input'];
 
@@ -177,12 +179,15 @@ export function RelevantView({
   onOpen,
   onBackstory,
   onOpenTree,
+  onOpenPage,
 }: {
   onOpen: OpenEntry;
   /** SM-10: Their backstory on a tile opens Backstory with that person picked. */
   onBackstory: (characterId: string) => void;
   /** IP-2: a tile's family line opens the tree at that person. */
   onOpenTree?: (characterId: string) => void;
+  /** A58 U2: the phone opens a notebook page as a page of its own. */
+  onOpenPage?: (pageId: string) => void;
 }) {
   const story = useStoryTime();
   const time = story.time ?? { year: story.year };
@@ -201,6 +206,11 @@ export function RelevantView({
   const sel: SelectionView | null = result?.selection ?? null;
   // A56 (FN-9): a page from the notebook opens across the desk; Close comes back.
   const [notebookPage, setNotebookPage] = useState<string | null>(null);
+  // A58 U2: the phone keeps the chapter picker in view, showing the chapter picked.
+  const phone = usePhone();
+  const picked = strands.find(
+    (o) => o.chapterId === time.chapterId && (!time.strandId || o.strandId === time.strandId),
+  );
 
   if (notebookPage) {
     return (
@@ -216,15 +226,16 @@ export function RelevantView({
         <h2>Relevant to Session</h2>
         {sel && <span className="chip time">{sel.year}</span>}
       </div>
-      {!time.chapterId && (
+      {(!time.chapterId || phone) && (
         <div className="field narrow">
           {/* A57: the chapter picker in place, not a sentence pointing at Writing. */}
           <label htmlFor={writingId}>Chapter</label>
           <select
             id={writingId}
-            value=""
+            value={phone ? (picked?.key ?? '') : ''}
             onChange={(e) => {
               const s = strands.find((o) => o.key === e.target.value);
+              if (!s && phone) story.set({ year: time.year });
               if (s) {
                 story.set({
                   year: s.year ?? time.year,
@@ -242,8 +253,15 @@ export function RelevantView({
               </option>
             ))}
           </select>
-          <label htmlFor={povId}>Point of view in {time.year}</label>
-          <select id={povId} value={pov ?? ''} onChange={(e) => setPov(e.target.value || null)}>
+          <label htmlFor={povId} hidden={!!time.chapterId}>
+            Point of view in {time.year}
+          </label>
+          <select
+            id={povId}
+            hidden={!!time.chapterId}
+            value={pov ?? ''}
+            onChange={(e) => setPov(e.target.value || null)}
+          >
             <option value="">No point of view</option>
             {[...characters]
               .sort((a, b) => characterName(a).localeCompare(characterName(b)))
@@ -253,7 +271,7 @@ export function RelevantView({
                 </option>
               ))}
           </select>
-          {pov && (
+          {pov && !time.chapterId && (
             <PovExtras
               pov={pov}
               placeIds={placeIds}
@@ -278,7 +296,7 @@ export function RelevantView({
           onOpenTree={onOpenTree}
           onRemove={remove}
           onKeep={keep}
-          onOpenPage={setNotebookPage}
+          onOpenPage={onOpenPage ?? setNotebookPage}
           writing={time.chapterId ? { chapterId: time.chapterId, strandId: time.strandId } : null}
         />
       )}
