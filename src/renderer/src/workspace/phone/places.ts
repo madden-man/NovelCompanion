@@ -61,7 +61,10 @@ export type Sheet =
   | 'capturePick'
   | 'world-filters'
   // A58 U4: the family tree's person and warnings sheet.
-  | 'tree';
+  | 'tree'
+  /** A58 U2: a scene line's actions, and a chapter's. */
+  | 'outline-line'
+  | 'outline-chapter';
 
 export interface NavState {
   tab: Tab;

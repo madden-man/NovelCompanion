@@ -17,6 +17,7 @@ import { useOpenBackstory } from '../backstory/nav';
 import { TreeView } from '../tree/TreeView';
 import { OutlineView } from '../plot';
 import { useOpenOutline } from '../outline/nav';
+import { ChapterPageLinks } from '../outline/PhoneOutline';
 import { ZhNavProvider } from '../Zh';
 import { EntryList, ListsView, NewEntryForm, TrashView } from '../views';
 import { CulturalDataView, GlossaryTable, PlacesView, RomanizationView } from '../culture';
@@ -366,6 +367,7 @@ function PageView({ page, open }: { page: Page; open: Open }) {
           onOpen={open}
           onClosed={nav.back}
           onOpenTree={tree}
+          footer={page.collection === 'chapters' ? <ChapterPageLinks id={page.id} /> : undefined}
         />
       );
     case 'new':
@@ -430,6 +432,7 @@ function ScreenView(props: {
             nav.push({ kind: 'screen', screen: 'backstory', arg: characterId, at: Date.now() })
           }
           onOpenTree={tree}
+          onOpenPage={(id) => nav.push({ kind: 'screen', screen: 'notebook', arg: id })}
         />,
       );
     case 'places':

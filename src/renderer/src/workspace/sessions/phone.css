@@ -1,0 +1,29 @@
+/* A58 U2: Relevant to Session on the phone. Only the web build sets
+   :root[data-phone], so the desk never sees these rules. One column, and
+   every control a thumb's size. */
+:root[data-phone] .ph-frame [data-testid='relevant-view'] button,
+:root[data-phone] .ph-frame [data-testid='relevant-view'] select,
+:root[data-phone] .ph-frame [data-testid='relevant-view'] summary {
+  min-height: var(--ph-target);
+}
+:root[data-phone] .ph-frame [data-testid='relevant-view'] button {
+  min-width: var(--ph-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: left;
+}
+:root[data-phone] .ph-frame [data-testid='relevant-view'] summary {
+  display: flex;
+  align-items: center;
+}
+:root[data-phone] .ph-frame [data-testid='relevant-view'] .field.narrow {
+  max-width: none;
+}
+:root[data-phone] .ph-frame [data-testid='relevant-view'] .btn.small {
+  min-height: var(--ph-target);
+}
+/* WebKit draws a native select at its own height unless told one. */
+:root[data-phone] .ph-frame [data-testid='relevant-view'] select {
+  height: var(--ph-target);
+}
