@@ -15,6 +15,7 @@
     "build": "electron-vite build",
     "build:web": "vite build -c vite.web.config.ts",
     "web:local": "node scripts/web-local.ts",
+    "walkthrough:phone": "node scripts/build-phone-walkthrough.ts",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
