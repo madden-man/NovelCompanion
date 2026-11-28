@@ -39,6 +39,17 @@ const WHOLE: Readonly<Record<string, string>> = {
   'brief.settings.set': 'brief.settings.get',
 };
 
+/** Every write channel whose answer is kept as a read's, to the read it repeats. */
+export const WRITTEN_READ_CHANNELS: Readonly<Record<string, string>> = {
+  ...WHOLE,
+  'entry.create': 'entry.get',
+  'entry.update': 'entry.get',
+  'entry.delete': 'entry.get',
+  'entry.restore': 'entry.get',
+  'entry.createMany': 'entry.get',
+  'entry.batch': 'entry.get',
+};
+
 export function writtenReads(channel: string, request: unknown, result: unknown): WrittenRead[] {
   const whole = WHOLE[channel];
   if (whole) return [{ channel: whole, request: {}, value: result }];

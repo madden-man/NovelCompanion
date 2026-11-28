@@ -1,3 +1,4 @@
+import { PLAIN } from '../shared/errors';
 import { ELSEWHERE_MESSAGE } from '../shared/freshness';
 import {
   events,
@@ -18,9 +19,9 @@ import type {
 } from '../shared/ipc';
 import { APPEARANCES, isWriteChannel } from '../shared/ipcApp';
 import type { Appearance, ConnectionStatus } from '../shared/ipcApp';
-import { isBibleFree } from '../shared/ipcPhone';
-import { ReadStore } from './readStore';
-import type { StoredAnswer } from './readStore';
+import { NO_BIBLE_MESSAGE, isBibleFree } from '../shared/ipcPhone';
+import { ReadStore, answerKey } from './readStore';
+import type { StoredAnswer, StoredRead } from './readStore';
 import { writtenReads } from './writeAnswers';
 
 /**
@@ -63,6 +64,16 @@ export const OFFLINE_PROBE_MS = 4000;
  * the phone's writes have been quiet this long; each write starts it again.
  */
 export const REFRESH_QUIET_MS = 2000;
+/**
+ * PH-25: a pass over every flagged answer starts at most this often, and runs
+ * to its end before the next one starts. Between passes only the screen
+ * showing and the entries a change names are read again.
+ */
+export const REFRESH_PASS_GAP_MS = 5 * 60_000;
+/** PH-9: answers that cross a write of the phone's own wait for it at most this long. */
+export const WRITE_HOLD_MS = 30_000;
+/** PH-25: how many reads the transport remembers the place of, for the screen showing. */
+const SCREEN_READS = 2000;
 
 export const KEY_REFUSED = 'The phone key was not accepted.';
 export const NO_CONNECTION = 'The phone has no connection to the bible.';
@@ -102,6 +113,31 @@ export const isStoredRead = (c: Channel): boolean =>
 const storeBible = (channel: Channel, bible: string | null): string =>
   isBibleFree(channel) && channel !== 'bible.current' ? '' : (bible ?? '');
 
+/**
+ * PH-25: a refusal in the function's own plain words about what was asked (a
+ * purged entry: "No characters entry has the ID H1."), not a failure of the
+ * database or of the request itself. The kept answer of that read goes.
+ */
+const GENERIC_REFUSALS: ReadonlySet<string> = new Set([...Object.values(PLAIN), NO_BIBLE_MESSAGE]);
+const isGone = (status: number, code: string, message: string): boolean =>
+  status === 422 && code === 'refused' && !GENERIC_REFUSALS.has(message);
+
+/** PH-25: true when a read's request names one of the changed entries (`id` to its collections). */
+function namesChange(request: unknown, changed: ReadonlyMap<string, ReadonlySet<string>>): boolean {
+  if (typeof request === 'string') return changed.has(request);
+  if (Array.isArray(request)) return request.some((v) => namesChange(v, changed));
+  if (request === null || typeof request !== 'object') return false;
+  const o = request as Record<string, unknown>;
+  const collection = typeof o.collection === 'string' ? o.collection : null;
+  return Object.entries(o).some(([k, v]) => {
+    if (k === 'collection') return false;
+    if (typeof v === 'string' && collection !== null) {
+      return changed.get(v)?.has(collection) ?? false;
+    }
+    return namesChange(v, changed);
+  });
+}
+
 /** A request the function refused, with its code (`key`, `desk`, `older`, `refused`, ...). */
 export class RpcCallError extends Error {
   constructor(
@@ -123,6 +159,8 @@ export interface TransportDeps {
   now?: () => number;
   /** PH-25: where the answers of reads are kept; none keeps nothing, as before L1. */
   reads?: ReadStore;
+  /** PH-25: the place showing (the page's hash), so the reads of the screen showing are known. */
+  place?: () => string;
 }
 
 type Listener = (payload: unknown) => void;
@@ -144,14 +182,24 @@ export class WebTransport implements Api {
   private readonly reads: ReadStore;
   /** PH-25: reads in flight whose answers the store keeps. */
   private readonly reading = new Set<Promise<unknown>>();
-  /** PH-9: the phone's own writes in flight. */
-  private writing = 0;
+  /** PH-9: the phone's own writes in flight for less than `WRITE_HOLD_MS`. */
+  private holding = 0;
   /** PH-9: `rev` headers that came back while a write of the phone's own was in flight. */
   private held: { bible: string; before: number; after: number; sentAt: number }[] = [];
-  /** PH-25: the background refresh of flagged answers: its quiet timer, its pass, and its turn. */
+  /** PH-25: the background refresh of flagged answers: its quiet timer, its run, and its turn. */
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshing: Promise<void> | null = null;
   private refreshTurn = 0;
+  /** PH-25: flagged reads to read again at the next quiet moment: the screen showing, the entries a change named. */
+  private readonly urgent = new Set<string>();
+  /** PH-25: the pass over every flagged answer under way, with the keys it has still to read, newest first. */
+  private pass: { bible: string; keys: string[] } | null = null;
+  /** PH-25: when the last pass started, and the timer for the next. */
+  private passAt: number;
+  private passTimer: ReturnType<typeof setTimeout> | null = null;
+  /** PH-25: the place each read was last asked from by a view, by answer key. */
+  private readonly screen = new Map<string, string>();
+  private readonly place: () => string;
   /** A refresh came due while a write was out: it runs once the writes answered. */
   private refreshAfterWrites = false;
   private visible = true;
@@ -159,10 +207,17 @@ export class WebTransport implements Api {
   constructor(private readonly deps: TransportDeps) {
     this.now = deps.now ?? (() => Date.now());
     this.reads = deps.reads ?? new ReadStore(null);
+    this.place =
+      deps.place ?? (() => (globalThis as { location?: { hash: string } }).location?.hash ?? '');
     this.bible = this.read(BIBLE_STORAGE);
-    // PH-25: answers flagged in an earlier launch are read again in this one.
-    void this.reads.ready().then((usable) => {
-      if (usable) this.refreshLater();
+    // PH-25: a change seen from now on waits its turn for the pass; answers flagged in an
+    // earlier launch are read again in this one at the first quiet moment.
+    this.passAt = this.now();
+    void this.reads.ready().then(async (usable) => {
+      if (!usable) return;
+      const bible = this.bible;
+      if (bible !== null && (await this.reads.flagged(bible)).length) this.passAt = -Infinity;
+      this.refreshLater();
     });
   }
 
@@ -188,6 +243,9 @@ export class WebTransport implements Api {
   /** PH-17: the key was refused, so it is forgotten with the bible the phone was on. */
   signOut(): void {
     this.stopRefresh();
+    this.urgent.clear();
+    this.pass = null;
+    this.screen.clear();
     this.remove(KEY_STORAGE);
     this.remove(BIBLE_STORAGE);
     this.bible = null;
@@ -228,6 +286,7 @@ export class WebTransport implements Api {
     if (this.status.state === 'readOnly' && isWriteChannel(channel)) {
       throw new RpcCallError(OFFLINE_WRITE, 'unreachable', 0);
     }
+    if (isStoredRead(channel)) this.seen(channel, parsed, ctx);
     try {
       return await this.track(channel, this.send(channel, parsed, ctx, key));
     } catch (e) {
@@ -333,7 +392,31 @@ export class WebTransport implements Api {
     return this.refreshTimer !== null || this.refreshing !== null;
   }
 
+  /** PH-25: true while the next pass over every flagged answer waits its turn. For tests. */
+  get passWaiting(): boolean {
+    return this.passTimer !== null;
+  }
+
   // ---------- inside ----------
+
+  /** PH-25: a view asked this read from the place showing now. */
+  private seen(channel: Channel, request: unknown, context: CallContext | undefined): void {
+    const chooser = isBibleFree(channel) && channel !== 'bible.current';
+    const bible = chooser ? null : (context?.bible ?? this.bible);
+    const key = answerKey(storeBible(channel, bible), channel, request);
+    this.screen.delete(key);
+    this.screen.set(key, this.place());
+    if (this.screen.size > SCREEN_READS) {
+      const [oldest] = this.screen.keys();
+      if (oldest !== undefined) this.screen.delete(oldest);
+    }
+  }
+
+  /** PH-25: the reads the screen showing asked, read again at the next quiet moment if flagged. */
+  private screenFirst(): void {
+    const here = this.place();
+    for (const [key, place] of this.screen) if (place === here) this.urgent.add(key);
+  }
 
   private track<T>(channel: Channel, sent: Promise<T>): Promise<T> {
     if (!isStoredRead(channel)) return sent;
@@ -350,7 +433,8 @@ export class WebTransport implements Api {
    * PH-25: the phone's own write was stored at `after`. Nothing kept is
    * dropped: what the write's own answer holds is kept as its read's answer in
    * this same step, everything else of the bible read before it is flagged,
-   * and the flagged answers are read again once the writes go quiet.
+   * the screen showing is read again once the writes go quiet, and the rest
+   * waits for the next pass.
    */
   private wrote(
     headers: Headers,
@@ -369,6 +453,7 @@ export class WebTransport implements Api {
       // An answer of another shape holds no read; the refresh reads the page again.
     }
     void this.reads.wrote(bible, after, written);
+    this.screenFirst();
     this.refreshLater();
   }
 
@@ -387,17 +472,35 @@ export class WebTransport implements Api {
     this.refreshTurn++;
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;
+    if (this.passTimer !== null) clearTimeout(this.passTimer);
+    this.passTimer = null;
+  }
+
+  /** PH-25: the next pass, when its turn comes, if anything is still flagged. */
+  private async passLater(bible: string): Promise<void> {
+    if (this.passTimer !== null || !this.visible || this.status.state !== 'connected') return;
+    if (!(await this.reads.flagged(bible)).length) return;
+    if (this.passTimer !== null || !this.visible || this.status.state !== 'connected') return;
+    const wait = Math.max(0, this.passAt + REFRESH_PASS_GAP_MS - this.now());
+    this.passTimer = setTimeout(() => {
+      this.passTimer = null;
+      this.refreshLater();
+    }, wait);
   }
 
   /**
-   * PH-25: read the flagged answers of the bible again, one request at a
-   * time, the most recently stored first, until none is left. A write, hiding
-   * the app or losing the connection ends the pass at once; the flags stay in
-   * the store, so the next quiet moment, reconnect or launch carries on.
+   * PH-25: read flagged answers of the bible again, one request at a time,
+   * the most recently stored first. First what is urgent (the screen showing,
+   * the entries a change named); then the pass over every flagged answer:
+   * one starts at most every `REFRESH_PASS_GAP_MS`, and the one started is
+   * carried on to its end before another starts, so the oldest answers get
+   * their turn. A write, hiding the app or losing the connection stops the
+   * run at once; the flags and the pass's keys stay, so the next quiet
+   * moment, reconnect or launch carries on.
    */
   private refresh(): void {
     if (this.refreshing) {
-      // One pass at a time; the one running ends at this turn, and a new one follows it.
+      // One run at a time; the one running ends at this turn, and a new one follows it.
       void this.refreshing.then(() => this.refreshLater());
       return;
     }
@@ -405,25 +508,49 @@ export class WebTransport implements Api {
     const live = (bible: string) =>
       turn === this.refreshTurn &&
       this.visible &&
-      this.writing === 0 &&
+      this.holding === 0 &&
       this.status.state === 'connected' &&
       this.bible === bible;
     const run = (async () => {
       const bible = this.bible;
       const key = this.read(KEY_STORAGE);
-      if (this.writing > 0) this.refreshAfterWrites = true;
+      if (this.holding > 0) this.refreshAfterWrites = true;
       if (bible === null || key === null || !live(bible)) return;
-      const tried = new Set<string>();
+      const again = (next: StoredRead) =>
+        isChannel(next.channel)
+          ? this.track(next.channel, this.send(next.channel, next.request, { bible }, key, false))
+              .then(() => true)
+              // Only a lost connection leaves it to read again; an answer that could not be read does not.
+              .catch((e: unknown) => !(e instanceof RpcCallError && e.code === 'unreachable'))
+          : Promise.resolve(true);
+      // Urgent first, each once.
       for (;;) {
-        const [next] = await this.reads.flagged(bible, tried);
-        if (!next || !live(bible) || this.read(KEY_STORAGE) !== key) return;
-        tried.add(next.key);
-        if (!isChannel(next.channel)) continue;
-        await this.track(
-          next.channel,
-          this.send(next.channel, next.request, { bible }, key, false),
-        ).catch(() => undefined);
+        const [next] = await this.reads.flaggedAmong(bible, this.urgent);
+        if (!next) break;
+        if (!live(bible) || this.read(KEY_STORAGE) !== key) return;
+        if (await again(next)) this.urgent.delete(next.key);
+        else return;
       }
+      this.urgent.clear();
+      if (this.pass?.bible !== bible) {
+        this.pass = null;
+        if (this.now() < this.passAt + REFRESH_PASS_GAP_MS) return void this.passLater(bible);
+        const keys = (await this.reads.flagged(bible)).map((r) => r.key);
+        if (!keys.length || !live(bible)) return;
+        this.pass = { bible, keys };
+        this.passAt = this.now();
+      }
+      const pass = this.pass;
+      for (;;) {
+        const [next] = await this.reads.flaggedAmong(bible, new Set(pass.keys));
+        if (!next) break;
+        if (!live(bible) || this.read(KEY_STORAGE) !== key || this.pass !== pass) return;
+        // A read the connection lost stays first; one answered or refused leaves the pass.
+        if (!(await again(next))) return;
+        pass.keys = pass.keys.filter((k) => k !== next.key);
+      }
+      if (this.pass === pass) this.pass = null;
+      void this.passLater(bible);
     })();
     this.refreshing = run.finally(() => {
       this.refreshing = null;
@@ -467,12 +594,21 @@ export class WebTransport implements Api {
     fromStore = true,
   ): Promise<Response<C>> {
     if (!isWriteChannel(channel)) return this.request(channel, request, context, key, fromStore);
-    // PH-9: answers that come back while the phone's own write is out wait for it (`followRev`).
-    this.writing++;
+    // PH-9: answers that come back while the phone's own write is out wait for it (`followRev`),
+    // at most `WRITE_HOLD_MS`: a write that hangs is not cut off or sent again, but waits no more.
+    let holds = true;
+    this.holding++;
+    const done = () => {
+      if (!holds) return;
+      holds = false;
+      if (--this.holding === 0) this.release();
+    };
+    const timer = setTimeout(done, WRITE_HOLD_MS);
     try {
       return await this.request(channel, request, context, key, fromStore);
     } finally {
-      if (--this.writing === 0) this.release();
+      clearTimeout(timer);
+      done();
     }
   }
 
@@ -558,6 +694,10 @@ export class WebTransport implements Api {
     if (!res.ok) {
       const message = typeof error === 'string' ? error : NOT_UNDERSTOOD;
       const why = typeof code === 'string' ? code : 'refused';
+      // PH-25: what the read reads is gone (a purged entry): it is not served offline or asked again.
+      if (stored && isGone(res.status, why, message) && this.read(KEY_STORAGE) === key) {
+        void this.reads.drop(storeBible(channel, bible), channel, request);
+      }
       // The function answered but cannot reach MongoDB: the banner, as on the desk.
       if (why === 'unreachable') this.lost(message, false);
       else this.reached();
@@ -623,7 +763,7 @@ export class WebTransport implements Api {
     if (!bible || !Number.isInteger(before) || !Number.isInteger(after)) return;
     // While the phone's own write is out, an answer may count it before the write's
     // own answer does: it waits, and is weighed in `rev` order once the writes answered.
-    if (this.writing > 0) {
+    if (this.holding > 0) {
       this.held.push({ bible, before, after, sentAt });
       return;
     }
@@ -668,6 +808,17 @@ export class WebTransport implements Api {
     } catch {
       // Each view still hears the reload below and asks again what it shows.
     }
+    // PH-25: what the change names and the screen showing are read again at once; the rest waits its pass.
+    this.screenFirst();
+    if (changes.length) {
+      const changed = new Map<string, Set<string>>();
+      for (const c of changes)
+        changed.set(c.id, (changed.get(c.id) ?? new Set()).add(c.collection));
+      for (const r of await this.reads.flagged(bible)) {
+        if (namesChange(r.request, changed)) this.urgent.add(r.key);
+      }
+    }
+    this.refreshLater();
     for (const c of changes) this.emit('bible.changed', { bible, ...c });
     for (const e of [
       'lists.changed',

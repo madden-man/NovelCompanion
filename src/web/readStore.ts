@@ -255,17 +255,26 @@ export class ReadStore {
    * those in `skip`. The transport reads them again one at a time.
    */
   flagged(bible: string, skip: ReadonlySet<string> = new Set()): Promise<StoredRead[]> {
-    return this.run([], async () =>
-      // Newest first; stored in the same millisecond, the later one first.
-      [...this.index.values()]
-        .reverse()
-        .filter((m) => m.bible === bible && !skip.has(m.key) && this.isStale(m))
-        .sort((x, y) => y.at - x.at)
-        .flatMap((m) => {
-          const read = readOf(m.key);
-          return read ? [{ key: m.key, ...read }] : [];
-        }),
-    );
+    return this.run([], async () => this.pick(bible, (key) => !skip.has(key)));
+  }
+
+  /**
+   * PH-25: the flagged reads of `bible` among `keys`, the most recently
+   * stored first. The transport reads the screen showing and the entries a
+   * change names this way, and carries a pass it started on to its end.
+   */
+  flaggedAmong(bible: string, keys: ReadonlySet<string>): Promise<StoredRead[]> {
+    return this.run([], async () => (keys.size ? this.pick(bible, (key) => keys.has(key)) : []));
+  }
+
+  /** PH-25: the function says what this read reads is gone (a purged entry): its answer goes. */
+  drop(bible: string, channel: string, request: unknown): Promise<void> {
+    return this.run(undefined, async (b) => {
+      const key = answerKey(bible, channel, request);
+      if (!this.index.has(key)) return;
+      await b.remove([key]);
+      this.forget([key]);
+    });
   }
 
   /** PH-17: a refused key, another key or sign-out: nothing read is kept on the phone. */
@@ -281,6 +290,18 @@ export class ReadStore {
         this.ok = false;
       }
     });
+  }
+
+  /** The flagged reads of `bible` that `take` keeps, newest first; stored in the same millisecond, the later one first. */
+  private pick(bible: string, take: (key: string) => boolean): StoredRead[] {
+    return [...this.index.values()]
+      .reverse()
+      .filter((m) => m.bible === bible && take(m.key) && this.isStale(m))
+      .sort((x, y) => y.at - x.at)
+      .flatMap((m) => {
+        const read = readOf(m.key);
+        return read ? [{ key: m.key, ...read }] : [];
+      });
   }
 
   private isStale(m: AnswerMeta): boolean {

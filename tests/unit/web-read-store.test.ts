@@ -9,9 +9,14 @@ import {
   OFFLINE_READ_ONLY,
   OFFLINE_WRITE,
   READ_TIMEOUT_MS,
+  REFRESH_PASS_GAP_MS,
   REFRESH_QUIET_MS,
+  WRITE_HOLD_MS,
   WebTransport,
 } from '../../src/web/transport';
+import { WRITTEN_READ_CHANNELS } from '../../src/web/writeAnswers';
+import { PLAIN } from '../../src/shared/errors';
+import { DEFAULT_BIBLE_SETTINGS } from '../../src/shared/schema/settings';
 
 /** A58 L1 (PH-25): the phone's store of what it read, and the transport serving from it. */
 
@@ -319,7 +324,12 @@ const hits = (title: string) => ({
 });
 
 /** A transport over a fake `/rpc` and a store in maps, with the phone on East Winds. */
-function rig(reply: (b: Record<string, unknown>) => Answer | Promise<Answer>, store = true) {
+function rig(
+  reply: (b: Record<string, unknown>) => Answer | Promise<Answer>,
+  store = true,
+  /** The place showing (the page's hash); one place for every read when not given. */
+  place: () => string = () => '#/',
+) {
   const sent: Record<string, unknown>[] = [];
   const m = new Map<string, string>([
     [KEY_STORAGE, 'k-1'],
@@ -352,6 +362,7 @@ function rig(reply: (b: Record<string, unknown>) => Answer | Promise<Answer>, st
     fetch: fetch as unknown as typeof globalThis.fetch,
     storage,
     buildId: 'b-1',
+    place,
     ...(reads ? { reads } : {}),
   });
   const states: string[] = [];
@@ -552,14 +563,21 @@ describe('PH-25 the transport reads from the store without a connection', () => 
 
 /**
  * The function as the phone sees it while visiting East Winds: 72 reads to
- * keep (the bible, the Outline, the community notes, 60 people, 9 searches),
- * `entry.update` and `community.notes.set` answering with what they wrote, and
- * a hook to hold any one answer back.
+ * keep (the bible, the Outline, the community notes, 60 people, each on its
+ * own page, 9 searches on the Search page, which is the screen showing at the
+ * end), `entry.update` and `community.notes.set` answering with what they
+ * wrote, and a hook to hold any one answer back.
  */
 function visitRig() {
   const fn = {
     rev: 3,
     down: false,
+    /** The place showing on the phone. */
+    place: '#/',
+    /** What `bible.changes` answers. */
+    changes: [] as { collection: string; id: string; op: 'update' }[],
+    /** `entry.get` of these ids is refused with this message (a purged entry, a database failure). */
+    refused: new Map<string, string>(),
     roles: {} as Record<string, string>,
     notes: { c1: 'Fishing families' } as Record<string, string>,
     /** Answers held back until `release` (for the requests `hold` picks). */
@@ -593,7 +611,7 @@ function visitRig() {
       case 'bible.list':
         return ok({ connection: 'connected', bibles: [EAST] });
       case 'bible.changes':
-        return ok({ changes: [] });
+        return ok({ bible: 'east', at: '2026-11-27T00:00:00.000Z', changes: fn.changes });
       case 'bible.current':
         return ok({ bible: EAST }, at);
       case 'outline.get':
@@ -601,40 +619,52 @@ function visitRig() {
       case 'community.notes.get':
         return ok({ notes: { ...fn.notes } }, at);
       case 'entry.get':
+        if (fn.refused.has(r.id as string)) {
+          return { status: 422, body: { error: fn.refused.get(r.id as string), code: 'refused' } };
+        }
         return ok(entry(r.id as string), at);
       default:
         return ok(hits(`rev ${fn.rev} ${String(r.query)}`), at);
     }
   };
-  const r = rig((b) => {
-    if (!String(b.channel).match(/\.(update|set)$/) && b.channel !== 'bible.list') {
-      fn.reads++;
-      fn.onRead?.(b, fn.reads);
-    }
-    if (fn.hold?.(b)) {
-      return new Promise<Answer>((resolve) => {
-        fn.held.push({
-          body: b,
-          release: () => resolve(answer(b)),
-          commit: () => {
-            const a = answer(b);
-            return { deliver: () => resolve(a) };
-          },
+  const r = rig(
+    (b) => {
+      if (!String(b.channel).match(/\.(update|set)$/) && b.channel !== 'bible.list') {
+        fn.reads++;
+        fn.onRead?.(b, fn.reads);
+      }
+      if (fn.hold?.(b)) {
+        return new Promise<Answer>((resolve) => {
+          fn.held.push({
+            body: b,
+            release: () => resolve(answer(b)),
+            commit: () => {
+              const a = answer(b);
+              return { deliver: () => resolve(a) };
+            },
+          });
         });
-      });
-    }
-    return answer(b);
-  });
+      }
+      return answer(b);
+    },
+    true,
+    () => fn.place,
+  );
   const people = Array.from({ length: 60 }, (_v, i) => ({
     collection: 'characters' as const,
     id: `H${i}`,
   }));
   const queries = ['ruth', 'hale', 'peter', 'zhou', 'lan', 'margaret', 'daniel', 'okafor', 'sea'];
   async function visitAll() {
+    fn.place = '#/';
     await r.t.invoke('bible.current', {});
     await r.t.invoke('outline.get', {});
     await r.t.invoke('community.notes.get', {});
-    for (const p of people) await r.t.invoke('entry.get', p);
+    for (const p of people) {
+      fn.place = `#/people/e:characters:${p.id}`;
+      await r.t.invoke('entry.get', p);
+    }
+    fn.place = '#/search';
     for (const q of queries) await r.t.invoke('search.query', { query: q });
     await r.t.readsSettled();
   }
@@ -651,6 +681,142 @@ function visitRig() {
       .filter((b) => !String(b.channel).match(/\.(update|set)$/) && b.channel !== 'bible.list');
   return { ...r, fn, people, queries, visitAll, write, readsSince };
 }
+
+const entryAnswer = (id: string, extra: Record<string, unknown> = {}) => ({
+  entry: { _id: id, modifiedAt: '2026-11-27T10:00:00.000Z', ...extra },
+  warnings: [],
+});
+const entryRead = (collection: string, id: string) => ({
+  channel: 'entry.get',
+  request: { collection, id },
+  before: entryAnswer(id, { modifiedAt: '2026-11-26T10:00:00.000Z' }),
+});
+const position = { year: 1912, source: 'storyTime', chapterId: null };
+const outline = (text: string) => ({
+  text,
+  breaks: {},
+  years: {},
+  modifiedAt: '2026-11-27T10:00:00.000Z',
+});
+const romanization = (systemId: string | null) => ({
+  languages: [
+    { id: 'L1', label: 'Mandarin', systemId, kind: systemId ? 'pinyin' : null, note: null },
+  ],
+  systems: [{ id: 'S1', label: 'Pinyin' }],
+});
+
+/**
+ * One example per write channel in `writeAnswers.ts`: its request, its
+ * answer, and the reads that answer repeats, with what each read before.
+ */
+const WRITE_SAMPLES: Record<
+  string,
+  {
+    request: unknown;
+    answer: unknown;
+    reads: { channel: string; request: unknown; before: unknown }[];
+  }
+> = {
+  'entry.create': {
+    request: { collection: 'families', data: { title: 'Okafor', name: 'Okafor' } },
+    answer: entryAnswer('F9', { title: 'Okafor', name: 'Okafor' }),
+    reads: [entryRead('families', 'F9')],
+  },
+  'entry.update': {
+    request: { collection: 'characters', id: 'H4', patch: { role: 'Keeps the letters' } },
+    answer: entryAnswer('H4', { role: 'Keeps the letters' }),
+    reads: [entryRead('characters', 'H4')],
+  },
+  'entry.delete': {
+    request: { collection: 'characters', id: 'H4' },
+    answer: entryAnswer('H4', { deletedAt: '2026-11-27T10:00:00.000Z' }),
+    reads: [entryRead('characters', 'H4')],
+  },
+  'entry.restore': {
+    request: { collection: 'characters', id: 'H4' },
+    answer: entryAnswer('H4', { role: 'Back' }),
+    reads: [entryRead('characters', 'H4')],
+  },
+  'entry.createMany': {
+    request: {
+      items: [
+        { collection: 'families', data: { title: 'Zhou', name: 'Zhou' } },
+        { collection: 'families', data: { title: 'Lan', name: 'Lan' } },
+      ],
+    },
+    answer: {
+      entries: [entryAnswer('F10', { name: 'Zhou' }), entryAnswer('F11', { name: 'Lan' })],
+    },
+    reads: [entryRead('families', 'F10'), entryRead('families', 'F11')],
+  },
+  'entry.batch': {
+    request: {
+      ops: [
+        { op: 'update', collection: 'characters', id: 'H4', patch: { role: 'Sails' } },
+        { op: 'delete', collection: 'places', id: 'P2' },
+      ],
+    },
+    answer: {
+      entries: [
+        entryAnswer('H4', { role: 'Sails' }),
+        entryAnswer('P2', { deletedAt: '2026-11-27T10:00:00.000Z' }),
+      ],
+    },
+    reads: [entryRead('characters', 'H4'), entryRead('places', 'P2')],
+  },
+  'storyTime.set': {
+    request: { time: { year: 1912 } },
+    answer: { time: { year: 1912 }, position },
+    reads: [
+      {
+        channel: 'storyTime.get',
+        request: {},
+        before: { time: null, position: { ...position, year: null, source: 'none' } },
+      },
+    ],
+  },
+  'sceneOutline.set': {
+    request: { text: '- The harbour', breaks: {}, years: {} },
+    answer: outline('- The harbour'),
+    reads: [{ channel: 'sceneOutline.get', request: {}, before: outline('- Before') }],
+  },
+  'sceneOutline.restore': {
+    request: { id: 'V1' },
+    answer: outline('- As it was'),
+    reads: [{ channel: 'sceneOutline.get', request: {}, before: outline('- Before') }],
+  },
+  'romanization.set': {
+    request: { languageId: 'L1', systemId: 'S1' },
+    answer: romanization('S1'),
+    reads: [{ channel: 'romanization.get', request: {}, before: romanization(null) }],
+  },
+  'community.notes.set': {
+    request: { communityId: 'c1', text: 'Boat builders' },
+    answer: { notes: { c1: 'Boat builders' } },
+    reads: [
+      {
+        channel: 'community.notes.get',
+        request: {},
+        before: { notes: { c1: 'Fishing families' } },
+      },
+    ],
+  },
+  'settings.set': {
+    request: { cultureUnit: 'five' },
+    answer: { ...DEFAULT_BIBLE_SETTINGS, cultureUnit: 'five' },
+    reads: [{ channel: 'settings.get', request: {}, before: DEFAULT_BIBLE_SETTINGS }],
+  },
+  'eraDefaults.set': {
+    request: { rows: [{ name: 'Republic', startYear: 1912, endYear: 1949 }] },
+    answer: { rows: [{ name: 'Republic', startYear: 1912, endYear: 1949 }] },
+    reads: [{ channel: 'eraDefaults.get', request: {}, before: { rows: [] } }],
+  },
+  'brief.settings.set': {
+    request: { window: 5 },
+    answer: { window: 5, budget: 40_000 },
+    reads: [{ channel: 'brief.settings.get', request: {}, before: { window: 3, budget: 40_000 } }],
+  },
+};
 
 describe('PH-25 the phone`s own writes keep what it read, and the refresh reads it again when quiet', () => {
   test('PH-25 after one write every screen visited before still reads offline, the edited page shows the edit at once, and a launch offline reopens the bible', async () => {
@@ -696,26 +862,39 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
     }
   });
 
-  test('PH-25 every write channel that answers with what it wrote keeps that as its read at once', async () => {
-    vi.useFakeTimers();
-    try {
-      const v = visitRig();
-      await v.visitAll();
-      await v.t.invoke(
-        'community.notes.set',
-        { communityId: 'c1', text: 'Boat builders' },
-        { bible: 'east' },
-      );
-      v.fn.down = true;
-      expect(await v.t.invoke('community.notes.get', {})).toEqual({
-        notes: { c1: 'Boat builders' },
+  test.each(Object.entries(WRITTEN_READ_CHANNELS))(
+    'PH-25 the write channel %s keeps its own answer as the %s answer at once, read offline',
+    async (channel, read) => {
+      const sample = WRITE_SAMPLES[channel]!;
+      expect(sample.reads.every((r) => r.channel === read)).toBe(true);
+      let rev = 3;
+      let down = false;
+      const { t, reads } = rig((b) => {
+        if (down) return 'network-down';
+        if (b.channel === channel) return ok(sample.answer, revs('east', rev, ++rev));
+        const i = sample.reads.findIndex(
+          (r) => r.channel === b.channel && stableJson(r.request) === stableJson(b.request),
+        );
+        return ok(sample.reads[i]?.before, revs('east', rev, rev));
       });
-    } finally {
-      vi.useRealTimers();
-    }
+      // Each read visited first, with what it answered before the write.
+      for (const r of sample.reads) await t.invoke(r.channel as 'entry.get', r.request as never);
+      await reads!.settled();
+      await t.invoke(channel as 'entry.update', sample.request as never, { bible: 'east' });
+      down = true;
+      const answers = (sample.answer as { entries?: unknown[] }).entries ?? [sample.answer];
+      expect(answers).toHaveLength(sample.reads.length);
+      for (const [n, r] of sample.reads.entries()) {
+        expect(await t.invoke(r.channel as 'entry.get', r.request as never)).toEqual(answers[n]);
+      }
+    },
+  );
+
+  test('PH-25 the write table names every write channel whose answer is kept, and only those', () => {
+    expect(Object.keys(WRITE_SAMPLES).sort()).toEqual(Object.keys(WRITTEN_READ_CHANNELS).sort());
   });
 
-  test('PH-25 the refresh waits for quiet: one write, ten writes 700 ms apart, and a minute of typing each cost one pass after the last write, one request at a time', async () => {
+  test('PH-25 the phone`s own typing reads again only the screen showing, once after the last write; the rest waits for one pass when its turn comes, one request at a time', async () => {
     vi.useFakeTimers();
     try {
       const v = visitRig();
@@ -735,6 +914,14 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
           h.release();
         }
       }, 1);
+      const settle = async () => {
+        for (let i = 0; i < 400 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(5);
+        await v.t.readsSettled();
+      };
+      // The searches as the views sent them, with the limit the contract adds.
+      const searches = v.sent
+        .filter((b) => b.channel === 'search.query')
+        .map((b) => stableJson([b.channel, b.request]));
       const pass = async (writes: number) => {
         const from = v.sent.length;
         for (let i = 0; i < writes; i++) {
@@ -744,22 +931,27 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
         // Nothing read while typing, nor in the quiet window after it.
         expect(v.readsSince(from)).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
-        for (let i = 0; i < 200 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(5);
-        await v.t.readsSettled();
-        const read = v.readsSince(from).map((b) => JSON.stringify([b.channel, b.request]));
-        // Each kept answer once, the page just written not at all: 71 of 72.
-        expect(new Set(read).size).toBe(read.length);
-        expect(read).not.toContain(
-          JSON.stringify(['entry.get', { collection: 'characters', id: 'H4' }]),
-        );
-        expect(await v.reads!.flagged('east')).toEqual([]);
+        await settle();
+        const read = v.readsSince(from).map((b) => stableJson([b.channel, b.request]));
         expect(v.reads!.size.answers).toBe(72);
-        return read.length;
+        return read;
       };
-      expect(await pass(1)).toBe(71);
-      expect(await pass(10)).toBe(71);
-      // A minute of typing: an autosave every 700 ms.
-      expect(await pass(86)).toBe(71);
+      // The Search page is showing: its nine searches, each once, and nothing else.
+      for (const writes of [1, 10, 86])
+        expect((await pass(writes)).sort()).toEqual([...searches].sort());
+      // The rest stays flagged, still served offline, until the pass's turn.
+      expect(await v.reads!.flagged('east')).toHaveLength(62);
+      const from = v.sent.length;
+      await vi.advanceTimersByTimeAsync(REFRESH_PASS_GAP_MS);
+      await settle();
+      const rest = v.readsSince(from).map((b) => stableJson([b.channel, b.request]));
+      // One pass: each flagged answer once, the page just written not at all.
+      expect(rest).toHaveLength(62);
+      expect(new Set(rest).size).toBe(62);
+      expect(rest).not.toContain(
+        JSON.stringify(['entry.get', { collection: 'characters', id: 'H4' }]),
+      );
+      expect(await v.reads!.flagged('east')).toEqual([]);
       expect(most).toBe(1);
       clearInterval(pump);
     } finally {
@@ -767,7 +959,7 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
     }
   }, 30_000);
 
-  test('PH-25 the refresh reads the most recently stored first, stops at once when the app is hidden or the connection drops, and carries on from the flags on reconnect', async () => {
+  test('PH-25 the refresh reads the screen showing first, newest first, stops at once when the app is hidden or the connection drops, and carries on from the flags on reconnect', async () => {
     vi.useFakeTimers();
     try {
       const v = visitRig();
@@ -806,11 +998,16 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
       // Offline, a flagged answer is still served.
       expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 3 });
 
-      // Back: Try again, and the rest are read again, once each.
+      // Back: Try again; the screen showing is read again at once, the rest at the pass's turn.
       v.fn.onRead = null;
       v.fn.down = false;
       await v.t.invoke('connection.retry', {});
       await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await v.t.readsSettled();
+      // Try again's freshness check read the bible itself again too.
+      expect(await v.reads!.flagged('east')).toHaveLength(61);
+      await vi.advanceTimersByTimeAsync(REFRESH_PASS_GAP_MS);
+      for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
       await v.t.readsSettled();
       expect(await v.reads!.flagged('east')).toEqual([]);
       expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 4 });
@@ -855,6 +1052,8 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
       const w = visitRig();
       await w.visitAll();
       await w.write('H4', 'x');
+      await w.reads!.settled();
+      w.t.hidden();
       const t2 = new WebTransport({
         fetch: w.t['deps'].fetch,
         storage: w.storage,
@@ -937,28 +1136,168 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
     }
   });
 
-  test('PH-25 a change made elsewhere keeps what was read before it, flagged, and reads it again in the background', async () => {
+  test('PH-25 a change made elsewhere reads again at once only the entries it names and the screen showing; the rest stays flagged until one pass reads it', async () => {
     vi.useFakeTimers();
     try {
       const v = visitRig();
       await v.visitAll();
       const reloaded = vi.fn();
       v.t.on('bible.reloaded', reloaded);
-      // The desk writes twice; the phone's freshness check sees it.
+      const settle = async () => {
+        for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+        await v.t.readsSettled();
+      };
+      const read = (from: number) =>
+        v.readsSince(from).map((b) => stableJson([b.channel, b.request]));
+      // The searches as the views sent them, with the limit the contract adds.
+      const searches = v.sent
+        .filter((b) => b.channel === 'search.query')
+        .map((b) => stableJson([b.channel, b.request]));
+      const h7 = JSON.stringify(['entry.get', { collection: 'characters', id: 'H7' }]);
+      // The desk edits Peter (H7) twice; the phone's freshness check sees it.
       v.fn.rev = 5;
+      v.fn.changes = [{ collection: 'characters', id: 'H7', op: 'update' }];
       await v.t.checkFreshness();
       expect(reloaded).toHaveBeenCalledTimes(1);
       await v.reads!.settled();
       expect(v.reads!.size.answers).toBe(72);
       expect(await v.reads!.flagged('east')).toHaveLength(71);
-      const from = v.sent.length;
+      let from = v.sent.length;
       await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
-      for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
-      await v.t.readsSettled();
+      await settle();
+      expect(read(from).sort()).toEqual([h7, ...searches].sort());
+      expect(await v.reads!.flagged('east')).toHaveLength(61);
+      // Another change inside the gap: the check, what changed, the screen; still no pass.
+      v.fn.rev = 6;
+      v.fn.changes = [];
+      from = v.sent.length;
+      await v.t.checkFreshness();
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await settle();
+      const other = read(from).filter((r) => !searches.includes(r));
+      expect(other.map((r) => (JSON.parse(r) as string[])[0])).toEqual([
+        'bible.current',
+        'bible.changes',
+      ]);
+      expect(v.t.passWaiting).toBe(true);
+      // The pass's turn: everything still flagged, once each.
+      from = v.sent.length;
+      await vi.advanceTimersByTimeAsync(REFRESH_PASS_GAP_MS);
+      await settle();
       expect(await v.reads!.flagged('east')).toEqual([]);
-      expect(v.readsSince(from)).toHaveLength(71);
+      expect(new Set(read(from)).size).toBe(read(from).length);
+      expect(read(from)).toHaveLength(62);
+      expect(v.t.passWaiting).toBe(false);
       v.fn.down = true;
-      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 5 });
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 6 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 with the desk writing every 20 s and every read taking a second, the pass over the rest is never started again before it ends, so the oldest answers get their turn', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      v.fn.hold = (b) => b.channel !== 'entry.update';
+      // The function takes a second over each read.
+      const pump = setInterval(() => v.fn.held.splice(0, 1)[0]?.release(), 1000);
+      const at: { at: number; read: string }[] = [];
+      const from = v.sent.length;
+      v.fn.onRead = (b) => at.push({ at: Date.now(), read: stableJson([b.channel, b.request]) });
+      const start = Date.now();
+      // Ten minutes of the desk writing every 20 s, the phone visible beside it.
+      for (let i = 0; i < 30; i++) {
+        v.fn.rev++;
+        v.fn.changes = [{ collection: 'characters', id: `H${i}`, op: 'update' }];
+        void v.t.checkFreshness();
+        await vi.advanceTimersByTimeAsync(20_000);
+      }
+      const outline = at.filter((r) => r.read.startsWith('["outline.get"'));
+      // The oldest kept answers are read while the desk keeps writing, once in ten minutes.
+      expect(outline).toHaveLength(1);
+      expect(outline[0]!.at - start).toBeLessThan(2 * REFRESH_PASS_GAP_MS);
+      // Every kept answer was read again at least once.
+      const kept = new Set(
+        at.filter((r) => !r.read.startsWith('["bible.changes"')).map((r) => r.read),
+      );
+      expect(kept.size).toBe(72);
+      // Far below one read a second: the edits' own reads and two passes.
+      expect(v.readsSince(from).length).toBeLessThan(30 * 12 + 2 * 72);
+      clearInterval(pump);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 30_000);
+
+  test('PH-25 an answer the function says is gone (an entry purged on the desk) is dropped: not served offline and not asked again; a refusal of another kind keeps it', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      const settle = async () => {
+        for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+        await v.t.readsSettled();
+      };
+      const h7 = { collection: 'characters', id: 'H7' };
+      const h8 = { collection: 'characters', id: 'H8' };
+      const asked = (id: string) =>
+        v.sent.filter((b) => b.channel === 'entry.get' && (b.request as { id: string }).id === id)
+          .length;
+      // The desk purges H7; H8's read meets a database failure.
+      v.fn.refused.set('H7', 'No characters entry has the ID H7.');
+      v.fn.refused.set('H8', PLAIN.database);
+      v.fn.rev = 5;
+      await v.t.checkFreshness();
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS + REFRESH_PASS_GAP_MS);
+      await settle();
+      expect([asked('H7'), asked('H8')]).toEqual([2, 2]);
+      expect(await v.reads!.get('east', 'entry.get', h7)).toBeNull();
+      expect(await v.reads!.get('east', 'entry.get', h8)).toMatchObject({ stale: true });
+      expect((await v.reads!.flagged('east')).map((r) => r.request)).toEqual([h8]);
+      // The next change and the next pass: H7 is not asked again; H8 is.
+      v.fn.rev = 6;
+      await v.t.checkFreshness();
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS + REFRESH_PASS_GAP_MS);
+      await settle();
+      expect([asked('H7'), asked('H8')]).toEqual([2, 3]);
+      // Offline, the purged page is not served; the other one is.
+      v.fn.down = true;
+      await expect(v.t.invoke('entry.get', h7)).rejects.toMatchObject({ message: NOT_STORED });
+      expect(await v.t.invoke('entry.get', h8)).toMatchObject({ entry: { _id: 'H8' } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-9 a write that hangs holds the answers that cross it for at most WRITE_HOLD_MS: a change made elsewhere is then noticed, and the write is neither failed nor sent again', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      const reloaded = vi.fn();
+      v.t.on('bible.reloaded', reloaded);
+      v.fn.hold = (b) => b.channel === 'entry.update';
+      let settled = false;
+      const write = v.write('H5', 'b').finally(() => (settled = true));
+      await vi.waitFor(() => expect(v.fn.held).toHaveLength(1));
+      // The desk writes while the phone's write hangs.
+      v.fn.rev = 5;
+      await v.t.checkFreshness();
+      await vi.advanceTimersByTimeAsync(WRITE_HOLD_MS - 100);
+      expect(reloaded).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.waitFor(() => expect(reloaded).toHaveBeenCalledTimes(1));
+      expect(settled).toBe(false);
+      // A later check is weighed at once.
+      v.fn.rev = 6;
+      await v.t.checkFreshness();
+      await vi.waitFor(() => expect(reloaded).toHaveBeenCalledTimes(2));
+      expect(v.sent.filter((b) => b.channel === 'entry.update')).toHaveLength(1);
+      v.fn.held.splice(0)[0]!.release();
+      await expect(write).resolves.toMatchObject({ entry: { _id: 'H5', role: 'b' } });
+      expect(v.sent.filter((b) => b.channel === 'entry.update')).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
