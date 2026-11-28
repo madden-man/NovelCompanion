@@ -637,3 +637,41 @@ test('PH-35 a plain swipe scrolls the Outline and moves nothing @touch', async (
   await expect(page.getByTestId('ph-line-input')).toHaveCount(0);
   await expect(page.getByTestId('drop-guide')).toHaveCount(0);
 });
+
+test('PH-29 IP-5 a strand row in the year view opens the Outline with its chapter in view', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'webkit', 'Layout runs on WebKit.');
+  await openFixture(page, server.url);
+  const { bible } = await invoke<{ bible: { id: string } }>(page, 'bible.current', {});
+  // An outline long enough that Noor (chapter 8) is far below the first screen.
+  const text = Array.from({ length: 48 }, (_, i) => `- Scene ${i + 1}`).join('\n');
+  const breaks = { CH1: 0, CH2: 6, CH3: 12, CH4: 18, CH5: 24, CH6: 30, CH7: 36, CH8: 42 };
+  await invoke(page, 'sceneOutline.set', { text, breaks }, { bible: bible.id });
+  await page.getByTestId('tab-outline').tap();
+  await expect(bar(page, 'CH1')).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(bar(page, 'CH8')).not.toBeInViewport();
+
+  // Noor's strand is set in 2085; its row in the year view opens the Outline.
+  await page.getByTestId('tab-people').tap();
+  await page.getByTestId('phone-year').tap();
+  const sheet = page.getByTestId('year-sheet');
+  await sheet.getByTestId('sheet-year').fill('2085');
+  await sheet.getByTestId('sheet-year').press('Enter');
+  await expect(page.getByTestId('phone-year')).toHaveText('2085');
+  await sheet.getByTestId('sheet-open-year').tap();
+  const strand = page
+    .getByTestId('year-page')
+    .getByTestId('year-strand')
+    .filter({ hasText: 'Noor' });
+  await strand.tap();
+  await expect(page.getByTestId('workspace')).toHaveAttribute('data-tab', 'outline');
+  await expect(bar(page, 'CH8')).toBeInViewport();
+  // Clear of the fixed top bar and bottom bar.
+  const height = page.viewportSize()!.height;
+  const b = await box(bar(page, 'CH8'));
+  expect(b.y).toBeGreaterThanOrEqual(52);
+  expect(b.y + b.height).toBeLessThanOrEqual(height - 58);
+});

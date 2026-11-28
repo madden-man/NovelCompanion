@@ -29,6 +29,7 @@ import { usePhoneNav } from '../phone/nav';
 import { PhoneSheet } from '../phone/Sheet';
 import { useOutlineWrites } from './actions';
 import { useHold } from './holdDrag';
+import { useOpenOutline, waitingOutlineFocus } from './nav';
 import {
   blockLength,
   deleteLine,
@@ -164,6 +165,35 @@ export function PhoneOutline(p: PhoneOutlineProps) {
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   });
+
+  // IP-5: a strand row (the year view) opens the Outline on its chapter. The page is the
+  // document's scroll, so the bar comes into view once its tab shows and its scroll is restored.
+  const [show, setShow] = useState<{ id: string; at: number } | null>(() => {
+    const id = waitingOutlineFocus();
+    return id ? { id, at: Date.now() } : null;
+  });
+  useOpenOutline((id) => setShow({ id, at: Date.now() }));
+  useEffect(() => {
+    if (!show) return;
+    let frame = 0;
+    let tries = 0;
+    const find = () => {
+      const el = list.current?.querySelector<HTMLElement>(
+        `[data-testid="chapter-bar"][data-chapter="${CSS.escape(show.id)}"]`,
+      );
+      if (el && el.getClientRects().length > 0) {
+        el.scrollIntoView({ block: 'center', behavior: 'instant' });
+        setShow(null);
+      } else if (++tries < 60) {
+        frame = requestAnimationFrame(find);
+      } else {
+        // A chapter the outline does not hold (gone to the trash since) is let go.
+        setShow(null);
+      }
+    };
+    frame = requestAnimationFrame(find);
+    return () => cancelAnimationFrame(frame);
+  }, [show]);
 
   const changeDrag = (d: Drag | null) => {
     dragRef.current = d;
