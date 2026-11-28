@@ -288,6 +288,27 @@ test('PH-31 a person opens as a page; back, browser back and a reload all keep t
   await fresh.close();
 });
 
+test('PH-31 after switching tabs, the browser back steps back within the tab showing, not to the other tab', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  await openCharacter(page, /^Margaret Hale/);
+  await page.getByTestId('tab-outline').tap();
+  const open = page
+    .locator('[data-testid="chapter-bar"][data-chapter="CH2"]')
+    .getByTestId('chapter-open');
+  await open.tap();
+  await expect(page.locator('[data-testid="editor"][data-entry-id="CH2"]')).toBeVisible();
+  await page.getByTestId('tab-people').tap();
+  await expect(page.getByTestId('character-page')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('entry-list')).toBeVisible();
+  await expect(page.getByTestId('tab-people')).toHaveAttribute('aria-current', 'page');
+  // The Outline kept its chapter.
+  await page.getByTestId('tab-outline').tap();
+  await expect(page.locator('[data-testid="editor"][data-entry-id="CH2"]')).toBeVisible();
+});
+
 test('PH-32 one tap opens a text field, a year, a select and a rich field, each saved through /rpc', async ({
   page,
 }) => {

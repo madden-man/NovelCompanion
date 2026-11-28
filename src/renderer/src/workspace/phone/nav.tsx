@@ -88,9 +88,8 @@ export function PhoneNavProvider(props: { bible: string; children: ReactNode }) 
     const h = held(window.history.state, bible);
     return h ? h.nc : fromHash(window.location.hash);
   });
-  const [sheet, setSheet] = useState<Sheet | null>(
-    () => held(window.history.state, bible)?.sheet ?? null,
-  );
+  // A reload comes back with the sheet closed: what it was opened on does not survive one.
+  const [sheet, setSheet] = useState<Sheet | null>(null);
   const navRef = useRef(nav);
   const sheetRef = useRef(sheet);
   useLayoutEffect(() => {
@@ -113,19 +112,27 @@ export function PhoneNavProvider(props: { bible: string; children: ReactNode }) 
   // The first entry holds the place, so a reload, back or forward can read it.
   useEffect(() => {
     const h = held(window.history.state, bible);
-    write('replace', navRef.current, h ? { prev: h.prev, sheet: h.sheet } : {});
+    write('replace', navRef.current, h ? { prev: h.prev } : {});
   }, [bible, write]);
 
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
       const h = held(e.state, bible);
-      const next = h ? h.nc : fromHash(window.location.hash);
+      let next = h ? h.nc : fromHash(window.location.hash);
+      const cur = navRef.current;
+      const stack = cur.stacks[cur.tab];
+      // An entry from before a tab switch names the other tab: step back within this one.
+      if (next.tab !== cur.tab && stack.length > 0) {
+        next = { ...cur, stacks: { ...cur.stacks, [cur.tab]: stack.slice(0, -1) } };
+        window.history.replaceState({ nc: next, bible }, '', toHash(next));
+      }
       if (stateKey(next) !== stateKey(navRef.current)) {
         scrolls.current.set(stateKey(navRef.current), window.scrollY);
         pendingScroll.current = scrolls.current.get(stateKey(next)) ?? 0;
         setNav(next);
       }
-      setSheet(h?.sheet ?? null);
+      // Back closes a sheet; forward does not reopen one, whose subject is gone.
+      setSheet(null);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);

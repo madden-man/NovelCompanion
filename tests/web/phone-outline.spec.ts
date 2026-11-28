@@ -307,6 +307,29 @@ test('PH-35 the chapter menu by tap: move, written, a new section, a new chapter
   await expect(page.getByTestId('new-chapter')).toBeVisible();
 });
 
+test('PH-31 a reload with a line or chapter sheet open comes back to the Outline with the sheet closed', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'webkit', 'Layout runs on WebKit.');
+  await openOutline(page);
+  const lineSheet = page.getByTestId('line-sheet');
+  const chapterSheet = page.getByTestId('chapter-sheet');
+  await line(page, 'CH1', 0).getByTestId('ph-line-more').tap();
+  await expect(lineSheet).toBeVisible();
+  await page.reload();
+  await expect(line(page, 'CH1', 0)).toBeVisible();
+  await expect(lineSheet).toHaveCount(0);
+  await bar(page, 'CH2').getByTestId('chapter-more').tap();
+  await expect(chapterSheet).toBeVisible();
+  await page.reload();
+  await expect(bar(page, 'CH2')).toBeVisible();
+  await expect(chapterSheet).toHaveCount(0);
+  // Opened again, the sheet knows its chapter.
+  await bar(page, 'CH2').getByTestId('chapter-more').tap();
+  await expect(chapterSheet.getByTestId('chapter-move-down')).toBeEnabled();
+});
+
 test('PH-31 a chapter opens as a page, its fields edit on one tap, and back returns to the same place', async ({
   page,
   browserName,
