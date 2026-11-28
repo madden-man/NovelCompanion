@@ -45,3 +45,28 @@ export function pinchView(
     h,
   };
 }
+
+/** Where a card or a label sits across the view's x axis, in view units. */
+export type Span = { left: number; right: number };
+
+/**
+ * The widest view from `x0`, up to `maxW`, whose right edge cuts none of
+ * `spans` in two: it ends `gap` past the last whole one. Null when no such
+ * edge leaves at least half of `maxW`.
+ */
+export function wholeWidth(x0: number, maxW: number, spans: Span[], gap = 8): number | null {
+  const whole = (c: number) => spans.every((s) => s.right + gap <= c || s.left >= c);
+  if (whole(x0 + maxW)) return maxW;
+  const cuts = spans
+    .map((s) => s.right + gap)
+    .filter((c) => c <= x0 + maxW && c - x0 >= maxW / 2)
+    .sort((a, b) => b - a);
+  for (const c of cuts) if (whole(c)) return c - x0;
+  return null;
+}
+
+/** About how wide an end year label draws, in view units (11 px type, its halo included). */
+export const labelSpan = (x: number, text: string): Span => {
+  const w = text.length * 7 + 4;
+  return { left: x - w / 2, right: x + w / 2 };
+};
