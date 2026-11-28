@@ -3,6 +3,7 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import type { Document } from 'mongodb';
 import type { Store } from '../../src/main/db';
 import { BRIDGE_UP } from '../../src/shared/bridge';
+import { openBibleSession } from '../../src/main/db/session';
 import type { Invoke } from '../helpers/t5';
 import { readFixture } from '../helpers/loadFixture';
 import { ENTRY_COLLECTIONS } from '../../src/shared/schema';
@@ -624,6 +625,41 @@ test('PH-28 a sentence waiting from the phone shows as a tray card under From th
   await expect
     .poll(async () => (await invoke('capture.waiting', {})).lines.find((l) => l.id === id)?.handled)
     .toBe(false);
+  // Nothing went to Claude.
+  expect(await captures()).toBe(before);
+});
+
+test('PH-28 a sentence the phone keeps while the tray is open shows there at the next check; a Route B or C one offers Send to Claude and Dismiss', async () => {
+  const LINE = 'Zhou Lan moved to Vancouver when Seattle started rationing water.';
+  if (!(await tray().isVisible())) await openTray();
+  await expect(item(LINE)).toHaveCount(0);
+  const before = await captures();
+  // The phone's own write: another client's repository on the same bible, as the function is.
+  const phone = await openBibleSession(store, SLUG);
+  const [kept] = await phone.repo
+    .setPhoneWaits([{ text: LINE, year: 2036 }])
+    .then((l) => l.filter((x) => x.text === LINE));
+  // The desk finds it at its next freshness check (PH-8) and the open tray reads again.
+  await focusWindow();
+  const card = item(LINE);
+  await expect(card).toHaveCount(1);
+  await expect(
+    tray().getByTestId('tray-group').filter({ hasText: LINE }).locator('h3'),
+  ).toContainText('From the phone');
+  await expect(card.getByTestId('tray-line')).toContainText('story year 2036');
+  await expect(card.getByTestId('capture-fact')).toHaveAttribute('data-stand', 'unsent');
+  await expect(card.getByTestId('capture-send-fact')).toHaveText('Send to Claude');
+  await expect(card.getByTestId('capture-send-fact')).toBeEnabled();
+  await expect(card.getByTestId('tray-dismiss')).toHaveText('Dismiss');
+  // Dismiss handles it: gone from the tray, and no longer waiting on the phone.
+  await card.getByTestId('tray-dismiss').click();
+  await expect(item(LINE)).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await invoke('capture.waiting', {})).lines.find((l) => l.id === kept!.id)?.handled,
+    )
+    .toBe(true);
   // Nothing went to Claude.
   expect(await captures()).toBe(before);
 });
