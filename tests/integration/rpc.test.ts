@@ -22,6 +22,7 @@ import { BUILD_HEADER, NO_BULK_SNAPSHOT, createRpc } from '../../src/server/rpc'
 import type { Rpc, RpcEnvelope, RpcError } from '../../src/server/rpc';
 import type { ServerEnv } from '../../src/server/host';
 import { webServer } from '../../src/server/node';
+import { BIBLE_STORAGE, KEY_STORAGE, WebTransport } from '../../src/web/transport';
 import {
   PHONE_SNAPSHOTS,
   PHONE_SNAPSHOT_KEEP,
@@ -380,6 +381,82 @@ describe('PH-19 the function never migrates', () => {
     expect(read.status).toBe(422);
     expect(((await read.json()) as RpcError).error).toBe(NO_BIBLE_MESSAGE);
     await unchanged(bible, LATEST_SCHEMA_VERSION + 1, story);
+  });
+});
+
+describe('PH-19 PH-37 one bible older or newer than the function blocks only itself', () => {
+  for (const [kind, version, message] of [
+    ['older', LATEST_SCHEMA_VERSION - 1, 'Open Fixture novel on the Mac once.'],
+    ['newer', LATEST_SCHEMA_VERSION + 1, 'The phone app is updating.'],
+  ] as const) {
+    test(`PH-19 PH-37 with a remembered bible ${kind} than the function, the chooser lists and opens another, and the phone forgets that one`, async () => {
+      const good = await fixture(`ph37-good-${kind}`);
+      const stuck = await fixture(`ph37-${kind}`);
+      await store.db.collection('bibles').updateOne({ _id: stuck } as never, {
+        $set: { schemaVersion: version },
+      });
+      // The function's answers when that bible is still named.
+      const list = await call('bible.list', {}, stuck);
+      expect(list.status).toBe(200);
+      const caps = await call('app.capabilities', {}, stuck);
+      expect(caps.status).toBe(200);
+      const current = await call('bible.current', {}, stuck);
+      expect(current.status).toBe(409);
+      expect(await current.json()).toEqual({ error: message, code: kind });
+
+      // The phone's transport on the real handler.
+      const kept = new Map([
+        [KEY_STORAGE, KEY],
+        [BIBLE_STORAGE, stuck],
+      ]);
+      const phone = new WebTransport({
+        fetch: ((_url: unknown, init?: RequestInit) =>
+          rpc(new Request('http://localhost/rpc', init))) as typeof fetch,
+        storage: {
+          getItem: (k) => kept.get(k) ?? null,
+          setItem: (k, v) => void kept.set(k, v),
+          removeItem: (k) => void kept.delete(k),
+        },
+        buildId: 'build-p3-test',
+      });
+      const bibles = (await phone.invoke('bible.list', {})).bibles.map((b) => b.id);
+      expect(bibles).toEqual(expect.arrayContaining([good, stuck]));
+      await expect(phone.invoke('bible.current', {})).rejects.toMatchObject({
+        code: kind,
+        message,
+      });
+      expect(kept.has(BIBLE_STORAGE)).toBe(false);
+      await expect(phone.invoke('bible.open', { slug: stuck })).rejects.toMatchObject({
+        code: kind,
+        message,
+      });
+      const opened = await phone.invoke('bible.open', { slug: good });
+      expect(opened.bible?.id).toBe(good);
+      expect(kept.get(BIBLE_STORAGE)).toBe(good);
+      expect((await phone.invoke('bible.current', {})).bible?.id).toBe(good);
+      expect(
+        (await phone.invoke('entry.get', { collection: 'characters', id: 'H1' })).entry,
+      ).toBeTruthy();
+      const record = (await listBibles(store)).find((b) => b._id === stuck);
+      expect(record?.schemaVersion).toBe(version);
+    });
+  }
+});
+
+describe('PH-5 what the hosted function answers to app.capabilities', () => {
+  test('PH-5 the function answers exactly the phone channels, and no desk channel', async () => {
+    const res = await ok(await call('app.capabilities', {}, null));
+    const { channels } = res.result as { channels: string[] };
+    expect([...channels].sort()).toEqual([...PHONE_CHANNELS].sort());
+    for (const desk of [
+      'claude.ask',
+      'phoneKey.copy',
+      'phoneKey.make',
+      'snapshot.list',
+      'test.seed',
+    ]) {
+      expect(channels).not.toContain(desk);
+    }
   });
 });
 

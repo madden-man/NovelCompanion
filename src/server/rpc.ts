@@ -169,17 +169,20 @@ export function createRpc(deps: RpcDeps): Rpc {
     try {
       const context = parseCallContext(body.context);
       let session: ReturnType<typeof openSession> = null;
-      if (body.bible === null) {
+      // PH-19: the chooser's channels need no bible, so a remembered bible older or newer
+      // than the function never blocks the list or the opening of another one.
+      const bible = isBibleFree(channel) && channel !== 'bible.current' ? null : body.bible;
+      if (bible === null) {
         // The chooser: nothing a bible-free channel does reads the bible an earlier request opened.
         if (!isBibleFree(channel)) return fail('refused', NO_BIBLE_MESSAGE);
       } else {
         let open = (await run('bible.current', {})).bible;
-        if (open?.id !== body.bible) open = (await run('bible.open', { slug: body.bible })).bible;
+        if (open?.id !== bible) open = (await run('bible.open', { slug: bible })).bible;
         // PH-19 on every request: the desk may have migrated the bible since it opened here.
         session = openSession();
-        if (session) await assertSameVersion(session.handle, open?.name ?? body.bible);
+        if (session) await assertSameVersion(session.handle, open?.name ?? bible);
         // A57 on the phone: a write carries the bible it was made in, and it is the one checked above.
-        if (isWriteChannel(channel) && context.bible !== body.bible) throw new OtherBibleError();
+        if (isWriteChannel(channel) && context.bible !== bible) throw new OtherBibleError();
         // BK-1: the function has no snapshot folder, so a bulk change keeps a phone snapshot first.
         if (session && !session.repo.beforeBulk) {
           const handle = session.handle;
@@ -207,7 +210,7 @@ export function createRpc(deps: RpcDeps): Rpc {
       const result = await run(channel, body.request, context);
       const after = openSession();
       const revs =
-        session && after === session && body.bible === session.handle.id
+        session && after === session && bible === session.handle.id
           ? {
               [REV_HEADERS.bible]: session.handle.id,
               [REV_HEADERS.before]: String(before),

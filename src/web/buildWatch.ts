@@ -6,7 +6,7 @@
  * disagree cannot loop.
  */
 export interface BuildWatchDeps {
-  /** True while a field holds typing (a focused text field). */
+  /** True while a field holds typing: a focused text field, or one typed in that still holds text. */
   isTyping: () => boolean;
   /** Store every pending edit; throws when one could not be stored. */
   save: () => Promise<void>;
@@ -62,4 +62,44 @@ export function typingIn(doc: {
   return el.matches(
     'textarea, select, [contenteditable=""], [contenteditable="true"], input:not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="reset"]):not([type="range"])',
   );
+}
+
+interface TypedField {
+  readonly isConnected: boolean;
+  readonly value?: unknown;
+  readonly isContentEditable?: boolean;
+  readonly textContent?: string | null;
+}
+
+/** The text a field holds: an input's or textarea's value, or a rich text field's text. */
+const textOf = (el: TypedField): string | null =>
+  typeof el.value === 'string' ? el.value : el.isContentEditable ? (el.textContent ?? '') : null;
+
+/**
+ * PH-21: typing not yet stored can sit in a field that lost focus (the
+ * capture box while a chip's sheet is open, a dialog's field). A field the
+ * person typed in holds the reload while it is on screen with text in it;
+ * a focused text field always does.
+ */
+export function trackTyping(doc: {
+  activeElement: { matches(selector: string): boolean } | null;
+  addEventListener(type: 'input', fn: (e: { target: unknown }) => void, capture?: boolean): void;
+}): () => boolean {
+  const typed = new Set<TypedField>();
+  doc.addEventListener(
+    'input',
+    (e) => {
+      const el = e.target as TypedField | null;
+      if (el && textOf(el) !== null) typed.add(el);
+    },
+    true,
+  );
+  return () => {
+    if (typingIn(doc)) return true;
+    for (const el of [...typed]) {
+      if (!el.isConnected) typed.delete(el);
+      else if (textOf(el)) return true;
+    }
+    return false;
+  };
 }

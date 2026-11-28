@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Store } from '../../src/main/db';
+import { LATEST_SCHEMA_VERSION } from '../../src/main/db/migrations';
+import { loadFixture } from '../helpers/loadFixture';
 import { field, fillEditable } from '../e2e/helpers';
 import {
   SLUG,
@@ -146,4 +148,34 @@ test('PH-17 a changed key signs the phone out: the key is forgotten, the bible l
   await expect(page.getByRole('button', { name: 'Open Fixture novel' })).toBeVisible();
   await server.stop();
   server = await startWebServer(db, {}, port);
+});
+
+test('PH-19 PH-37 a remembered bible older than the function leaves the chooser in view with that bible refused by name, and another opens', async ({
+  page,
+}) => {
+  const old = 'tide-lines';
+  await loadFixture(store, old);
+  await store.db.collection('bibles').updateOne({ _id: old } as never, {
+    $set: { name: 'Tide Lines', schemaVersion: LATEST_SCHEMA_VERSION - 1 },
+  });
+  await page.goto(server.url);
+  await page.evaluate(
+    ([key, bible]) => {
+      localStorage.setItem('nc.phoneKey', key!);
+      localStorage.setItem('nc.phone.bible', bible!);
+    },
+    [TEST_KEY, old],
+  );
+  await page.reload();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Open Tide Lines on the Mac once.' }),
+  ).toBeVisible();
+  await expect(page.getByTestId('bible-list')).toContainText('Tide Lines');
+  await expect(page.getByTestId('workspace')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('nc.phone.bible'))).toBeNull();
+  await page.getByRole('button', { name: 'Open Fixture novel' }).click();
+  await expect(page.getByTestId('workspace')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('nc.phone.bible'))).toBe(SLUG);
+  const record = await store.db.collection('bibles').findOne({ _id: old } as never);
+  expect(record?.schemaVersion).toBe(LATEST_SCHEMA_VERSION - 1);
 });

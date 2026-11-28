@@ -60,15 +60,20 @@ export class KeychainMongoUriStore implements MongoUriStore {
 /** A58 (PH-15): the phone key the site's `NC_PHONE_KEY` must hold, in its own keychain item. */
 export const PHONE_KEY_SERVICE = 'novel-companion-phone-key';
 
+/** PH-15: the keychain refused the read, which is not the same as no key: Make a key stays away. */
+export const PHONE_KEY_UNREADABLE =
+  'The keychain could not be read, so the phone key is not shown.';
+
 export class KeychainPhoneKeyStore implements PhoneKeyStore {
   private entry(): Entry {
     return new Entry(PHONE_KEY_SERVICE, KEYCHAIN_ACCOUNT);
   }
+  /** No item is null (the keyring answers null for no entry); any other failure throws. */
   get(): string | null {
     try {
       return this.entry().getPassword() || null;
-    } catch {
-      return null;
+    } catch (e) {
+      throw new Error(PHONE_KEY_UNREADABLE, { cause: e });
     }
   }
   set(key: string): void {

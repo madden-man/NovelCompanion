@@ -39,7 +39,15 @@ function Shell() {
   useEffect(() => {
     let live = true;
     const load = () => {
-      Promise.all([window.api.invoke('bible.list', {}), window.api.invoke('bible.current', {})])
+      // A58 (PH-19): on the phone, a remembered bible the function will not open leaves the
+      // chooser in view with the reason; the desk never answers with these codes.
+      const current = window.api.invoke('bible.current', {}).catch((e: unknown) => {
+        const code = (e as { code?: unknown } | null)?.code;
+        if (code !== 'older' && code !== 'newer') throw e;
+        if (live) setError(plainError(e));
+        return { bible: null };
+      });
+      Promise.all([window.api.invoke('bible.list', {}), current])
         .then(([l, c]) => {
           if (!live) return;
           setList(l);
