@@ -165,7 +165,8 @@ function PhoneTopBar({ name }: { name: string }) {
   const nav = usePhoneNav();
   const story = useStoryTime();
   const undo = useUndo();
-  const year = String((story.time ?? { year: story.year }).year);
+  // A58 U6: no year until the bible's story time is read, so the bar never shows another one first.
+  const year = story.stored ? String((story.time ?? { year: story.year }).year) : '';
   const nextUndo = undo.history.undo[0]?.label;
   const nextRedo = undo.history.redo[0]?.label;
   return (
@@ -233,6 +234,11 @@ function PhoneTopBar({ name }: { name: string }) {
 /** PH-30: People, Outline, World, Search and +, above the home indicator. */
 function BottomBar() {
   const nav = usePhoneNav();
+  // A58 U6: a screen from the bible menu or a section list belongs to no tab, so none shows active.
+  const top = nav.top;
+  const away =
+    top?.kind === 'section' ||
+    (top?.kind === 'screen' && MORE.some((m) => m.screen === top.screen));
   const pick = (tab: Tab) => {
     if (tab !== 'search' || nav.tab === 'search') {
       nav.switchTab(tab);
@@ -249,7 +255,7 @@ function BottomBar() {
           key={it.tab}
           type="button"
           className="ph-tab"
-          aria-current={nav.tab === it.tab ? 'page' : undefined}
+          aria-current={nav.tab === it.tab && !away ? 'page' : undefined}
           onClick={() => pick(it.tab)}
           data-testid={`tab-${it.tab}`}
         >
@@ -309,6 +315,7 @@ function TabView(props: { tab: Tab; open: Open; query: string; onQuery: (q: stri
           key={`${i}:${pageKey(page)}`}
           className="ph-screen ph-page"
           hidden={i !== stack.length - 1}
+          data-screen={page.kind === 'screen' ? page.screen : page.kind}
           data-testid="phone-page"
         >
           <PageView page={page} open={open} />
@@ -411,6 +418,15 @@ function ScreenView(props: {
           momentId={page.arg2}
           openedAt={page.at}
           onOpen={open}
+          // A58 U6: a moment is a page of its own; Previous and Next swap it.
+          onMomentPage={(id) =>
+            nav.push({ kind: 'screen', screen: 'backstory', arg2: id, at: Date.now() })
+          }
+          momentPage={
+            page.arg2
+              ? { onStep: (id) => nav.replaceTop({ ...page, arg2: id }), onClose: nav.back }
+              : undefined
+          }
         />
       );
     case 'questions':

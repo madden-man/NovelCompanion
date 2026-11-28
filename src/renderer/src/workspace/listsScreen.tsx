@@ -36,8 +36,11 @@ import type { SaveInfo } from './editable';
 import { typedNumber } from './editable/model';
 import { ListSelect } from './listSelect';
 import { ColourBox } from './colourBox';
+import { usePhone } from '../phone';
+import { useHoldLift } from './phone/holdLift';
 import './vocab.css';
 import './entries.css';
+import './phoneMore.css';
 
 type Item = WireList['items'][number];
 type Note = { text: string; bad: boolean } | null;
@@ -160,6 +163,15 @@ function ListPanel({ list }: { list: WireList }) {
   }, [moved, list.items]);
 
   const fail = (e: unknown) => setMessage({ text: plainError(e), bad: true });
+  // A58 U6 (PH-35): on the phone the grip lifts its row after a hold; the drop is one step.
+  const phone = usePhone();
+  const lift = useHoldLift({
+    disabled: !phone || ro.off,
+    onDrop: (id, to) => {
+      const item = list.items.find((i) => i.id === id);
+      if (item) void move(item, to, null);
+    },
+  });
 
   const move = async (item: Item, index: number, dir: 'up' | 'down' | null) => {
     setMessage(null);
@@ -263,8 +275,13 @@ function ListPanel({ list }: { list: WireList }) {
             {list.items.map((item, index) => (
               <li
                 key={item.id}
-                className={`vocab-row${over === item.id ? ' drop-target' : ''}${dragging === item.id || picked === item.id ? ' dragging' : ''}`}
+                className={`vocab-row${over === item.id ? ' drop-target' : ''}${dragging === item.id || picked === item.id ? ' dragging' : ''}${lift.lifted?.id === item.id ? ' lifted' : ''}`}
                 data-item={item.id}
+                style={
+                  lift.lifted?.id === item.id
+                    ? { transform: `translateY(${lift.lifted.dy}px)` }
+                    : undefined
+                }
                 onKeyDown={(e) => {
                   // A57: Alt+Up and Alt+Down move the row from anywhere in it but an open field.
                   if (!e.altKey || e.metaKey || e.ctrlKey || ro.off) return;
@@ -292,7 +309,8 @@ function ListPanel({ list }: { list: WireList }) {
               >
                 <span
                   className="drag-handle"
-                  draggable={!ro.off}
+                  draggable={!ro.off && !phone}
+                  {...lift.grip(item.id, index)}
                   role="button"
                   tabIndex={ro.off ? -1 : 0}
                   aria-label={`Move ${item.label}`}
@@ -459,6 +477,7 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
   const ids = { add: useId(), parent: useId(), from: useId(), to: useId() };
   const hierarchical = HIERARCHICAL.has(list._id);
   const isAges = list._id === 'ageGroups';
+  const phone = usePhone();
 
   const add = async (e: FormEvent) => {
     e.preventDefault();
@@ -540,7 +559,8 @@ function AddRow(props: { list: WireList; onMessage: (n: Note) => void }) {
         aria-label={`Add to ${list.label}`}
         disabled={!label.trim()}
       >
-        <kbd>Enter</kbd>
+        {/* A58 U6: the phone has no Enter key to show, so the button says what it does. */}
+        {phone ? 'Add' : <kbd>Enter</kbd>}
       </button>
     </form>
   );
