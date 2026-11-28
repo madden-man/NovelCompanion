@@ -61,32 +61,52 @@
   overscroll-behavior-x: contain;
 }
 :root[data-phone] .ph-frame .bs-scroll {
-  --wg-label: 150px !important;
+  --wg-label: 188px !important;
 }
 :root[data-phone] .ph-frame .bs-row-cell {
-  padding-left: 10px;
+  padding-left: 8px;
   padding-right: 0;
+  gap: 0;
 }
-/* A name too long for the cell ends in an ellipsis: block level, one line as tall as a thumb. */
+/* The names a row is told apart by: the name wraps onto a second line before it is cut, and
+   ends in an ellipsis only when two lines cannot hold it. The link stays a thumb's height. */
+:root[data-phone] .ph-frame .bs-row-text:not(.bs-person-text) {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 6px;
+  container-type: inline-size;
+}
 :root[data-phone] .ph-frame .bs-name-link {
   flex: 0 1 auto;
-  display: block;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
   min-height: var(--ph-target);
-  line-height: var(--ph-target);
+  max-height: var(--ph-target);
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.25;
+}
+:root[data-phone] .ph-frame .bs-name-link > .bs-name-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
+/* The Chinese name is shown whole or not at all, never cut. */
 :root[data-phone] .ph-frame .bs-row-text .bs-zh {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
   white-space: nowrap;
+  overflow: visible;
 }
-:root[data-phone] .ph-frame .bs-row-text {
-  min-width: 0;
-  overflow: hidden;
+@container (max-width: 96px) {
+  :root[data-phone] .ph-frame .bs-row-text .bs-zh {
+    display: none;
+  }
 }
 /* The row's "+": a thumb's square at the end of the name cell. */
 :root[data-phone] .ph-frame .bs-row-add {
@@ -103,9 +123,12 @@
 :root[data-phone] .ph-frame .bs-row-add:active {
   background: var(--surface-2);
 }
-:root[data-phone] .ph-frame .bs-row-label:hover,
-:root[data-phone] .ph-frame .bs-row-cell:hover {
+:root[data-phone] .ph-frame .bs-row-label:hover {
   background: transparent;
+}
+/* The held cell keeps its own ground under a finger, so the track never shows through it. */
+:root[data-phone] .ph-frame .bs-row-cell:hover {
+  background: var(--surface);
 }
 /* A marker is small to see but a thumb's size to tap. */
 :root[data-phone] .ph-frame .bs-marker {

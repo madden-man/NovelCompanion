@@ -297,7 +297,7 @@ test('PH-34 Backstory: one thumb row of controls, no story time header, and the 
   expect(await sidewaysScroll(page)).toBe(false);
 });
 
-test('PH-34 Backstory: a name too long for its cell ends in an ellipsis, never cut mid-letter', async ({
+test('PH-34 Backstory: the held names tell the fixture people apart, wrapping before they are cut, and a Chinese name shows whole', async ({
   page,
 }) => {
   onIphone();
@@ -305,24 +305,74 @@ test('PH-34 Backstory: a name too long for its cell ends in an ellipsis, never c
   const scope = await openMore(page, 'Backstory');
   const grid = scope.getByTestId('backstory-grid');
   await expect(grid.locator('.bs-row').first()).toBeVisible();
-  const cut = await grid.evaluate((root) =>
-    [...root.querySelectorAll<HTMLElement>('.bs-row-text .bs-name-link, .bs-row-text .bs-zh')]
-      .filter((el) => el.scrollWidth > el.clientWidth + 1)
-      .map((el) => {
-        const s = getComputedStyle(el);
-        return {
-          text: el.textContent ?? '',
-          ellipsis:
-            s.textOverflow === 'ellipsis' &&
-            s.whiteSpace === 'nowrap' &&
-            s.overflowX === 'hidden' &&
-            !s.display.includes('flex'),
-        };
-      }),
+  const rows = await grid.evaluate((root) =>
+    [...root.querySelectorAll<HTMLElement>('.bs-row:not(.bs-person-row)')].map((row) => {
+      const cell = row.querySelector<HTMLElement>('.bs-row-cell')!.getBoundingClientRect();
+      const link = row.querySelector<HTMLElement>('.bs-name-link')!;
+      const l = link.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(link);
+      const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      const zh = row.querySelector<HTMLElement>('.bs-zh');
+      const z = zh?.getBoundingClientRect();
+      const plus = row.querySelector<HTMLElement>('.bs-row-add')?.getBoundingClientRect();
+      return {
+        name: link.textContent ?? '',
+        lines,
+        whole: l.right <= cell.right + 1 && link.scrollWidth <= link.clientWidth + 1,
+        inRow: l.top >= cell.top - 1 && l.bottom <= cell.bottom + 1,
+        tall: l.height >= 43.5,
+        zh: zh
+          ? {
+              text: zh.textContent ?? '',
+              shown: z!.width > 0 && getComputedStyle(zh).display !== 'none',
+              uncut:
+                zh.scrollWidth <= zh.clientWidth + 1 && z!.right <= (plus?.left ?? cell.right) + 1,
+              noEllipsis: getComputedStyle(zh).textOverflow !== 'ellipsis',
+            }
+          : null,
+      };
+    }),
   );
-  // The fixture has names that do not fit (Iris Hale-Zhou), and each one shows its ellipsis.
-  expect(cut.length).toBeGreaterThan(0);
-  expect(cut.filter((c) => !c.ellipsis)).toEqual([]);
+  expect(rows.length).toBeGreaterThanOrEqual(13);
+  // Every fixture name fits in two lines, so none is cut: the Zhou rows read in full.
+  expect(rows.filter((r) => r.lines > 2 || !r.whole || !r.inRow || !r.tall)).toEqual([]);
+  expect(rows.filter((r) => r.name.startsWith('Zhou')).map((r) => r.name)).toEqual([
+    'Zhou Meiling',
+    'Zhou Wei',
+    'Zhou Lan',
+    'Zhou Jun',
+  ]);
+  // A Chinese name is whole, never a stray dot: Iris Hale-Zhou shows 晓曦.
+  const zh = rows.flatMap((r) => (r.zh ? [{ name: r.name, ...r.zh }] : []));
+  expect(zh.map((z) => z.text)).toContain('晓曦');
+  expect(zh.filter((z) => !z.shown || !z.uncut || !z.noEllipsis)).toEqual([]);
+  // A one-line name sits in the middle of its thumb-tall link.
+  const first = grid.locator('.bs-row:not(.bs-person-row) .bs-name-link').first();
+  const centred = await first.evaluate((el) => {
+    const l = el.getBoundingClientRect();
+    const t = el.querySelector('.bs-name-text')!.getBoundingClientRect();
+    return Math.abs(t.top - l.top - (l.bottom - t.bottom));
+  });
+  expect(centred).toBeLessThanOrEqual(2);
+  // A finger left on a held name cell never makes it see-through.
+  const cell = grid.locator('.bs-row:not(.bs-person-row) .bs-row-cell').first();
+  const ground = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await cell.hover();
+  expect(await cell.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(ground);
+  // The last resort: a name two lines cannot hold ends in an ellipsis on its second line.
+  const clamped = await first.evaluate((el) => {
+    const text = el.querySelector<HTMLElement>('.bs-name-text')!;
+    text.textContent = 'Margaret Eleanor Whitcombe-Hale of the Upper Columbia River';
+    const s = getComputedStyle(text);
+    return {
+      height: el.getBoundingClientRect().height,
+      clamp: s.getPropertyValue('-webkit-line-clamp'),
+      overflow: s.overflowY,
+      inside: text.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom + 0.5,
+    };
+  });
+  expect(clamped).toEqual({ height: 44, clamp: '2', overflow: 'hidden', inside: true });
 });
 
 test('PH-34 PH-31 Backstory: the row "+" is a 44 px target that adds a moment as a page with back; a marker opens its page; nothing drags', async ({

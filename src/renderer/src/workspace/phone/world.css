@@ -30,6 +30,8 @@
   min-width: 0;
 }
 :root[data-phone] .ph-frame .wg-around .we-col {
+  /* Each row as tall as its titles; the desk's columns share a width instead. */
+  flex: none;
   flex-direction: row;
   align-items: baseline;
   min-width: 0;
@@ -46,6 +48,10 @@
 :root[data-phone] .ph-frame .wg-around .we-year {
   flex: none;
   width: 3.5em;
+}
+:root[data-phone] .ph-frame .wg-around .we-events {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 :root[data-phone] .ph-frame .wg-around .we-event {
   min-height: var(--ph-target);

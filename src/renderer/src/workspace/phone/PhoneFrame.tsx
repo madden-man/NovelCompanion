@@ -236,7 +236,10 @@ function BottomBar() {
   const nav = usePhoneNav();
   // A58 U6: a screen from the bible menu or a section list belongs to no tab, so none shows active.
   const top = nav.top;
+  // PH-30: while capture is the page showing, + is the one lit.
+  const capturing = top?.kind === 'screen' && top.screen === 'capture';
   const away =
+    capturing ||
     top?.kind === 'section' ||
     (top?.kind === 'screen' && MORE.some((m) => m.screen === top.screen));
   const pick = (tab: Tab) => {
@@ -267,6 +270,7 @@ function BottomBar() {
         type="button"
         className="ph-tab ph-add"
         aria-label="Add"
+        aria-current={capturing ? 'page' : undefined}
         onClick={() => openPhoneCapture(nav)}
         data-testid="tab-add"
       >

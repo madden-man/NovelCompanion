@@ -8,6 +8,7 @@ import {
   connectTo,
   openCharacter,
   openFixture,
+  pasteKey,
   seedFixtureNovel,
   startWebServer,
   webDb,
@@ -561,6 +562,55 @@ test('PH-35 every target on People, a person, a place, Search, the top bar and t
   await toast.getByRole('button', { name: 'Undo' }).tap();
   await expect.poll(async () => (await character('H2'))?.names.full).toBe('Peter Hale');
   expect(misses).toEqual([]);
+});
+
+test('PH-35 PH-37 the first-run chooser rows run full width with 44 px Open buttons, and Try again on the connection banner is 44 px', async ({
+  page,
+}) => {
+  // A first run: no bible open yet, so the chooser shows (the function may hold one from earlier tests).
+  await page.route('**/rpc', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}') as { channel?: string };
+    if (body.channel !== 'bible.current') return route.continue();
+    await route.fulfill({ json: { result: { bible: null }, events: [] } });
+  });
+  await page.goto(server.url);
+  await pasteKey(page);
+  const open = page.getByRole('button', { name: 'Open Fixture novel' });
+  await expect(open).toBeVisible();
+  await page.unroute('**/rpc');
+  await expect(page.getByRole('button', { name: 'Open Second novel' })).toBeVisible();
+  const main = page.locator('main');
+  await noSidewaysScroll(page);
+  expect(await smallTargets(main)).toEqual([]);
+  // Each bible is a row as wide as the screen between its gutters, its Open button the whole row.
+  const width = page.viewportSize()!.width;
+  for (const row of await page.getByTestId('bible-list').locator('li').all()) {
+    const r = await box(row);
+    expect(r.width).toBeGreaterThanOrEqual(width - 2 * 16 - 1);
+    const b = await box(row.getByRole('button'));
+    expect(b.width).toBeGreaterThanOrEqual(r.width - 1);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+  }
+
+  // The connection goes on the chooser, then inside a bible: Try again is a thumb's target each time.
+  const banner = page.getByTestId('connection-banner');
+  for (const where of ['chooser', 'workspace']) {
+    if (where === 'workspace') {
+      // Back online, the app may reopen the function's bible itself.
+      const workspace = page.getByTestId('workspace');
+      await expect(open.or(workspace)).toBeVisible();
+      if (await open.isVisible()) await open.tap();
+      await expect(workspace).toBeVisible();
+    }
+    await page.route('**/rpc', (r) => r.abort());
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await expect(banner).toBeVisible();
+    expect(await smallTargets(banner), where).toEqual([]);
+    await noSidewaysScroll(page);
+    await page.unroute('**/rpc');
+    await banner.getByTestId('connection-retry').tap();
+    await expect(banner).toHaveCount(0);
+  }
 });
 
 test('PH-35 no key hints on the phone: no kbd shows on any of these screens', async ({ page }) => {
