@@ -37,15 +37,11 @@ test('PH-15 Settings shows the phone key masked, with Make a key when none is se
   await box.getByTestId('phone-key-copy').click();
   await expect(box.getByTestId('phone-key-note')).toHaveText('Copied.');
   // The whole stored key is what reached the clipboard seam (main's stand-in for the clipboard).
-  const seam = await app.evaluate(
-    (_electron, name) => {
-      const s = (globalThis as Record<string, unknown>)[name] as
-        | { store: { get(): string | null }; copied: string | null }
-        | undefined;
-      return { stored: s?.store.get() ?? null, copied: s?.copied ?? null };
-    },
-    TEST_PHONE_KEY_SEAM,
-  );
+  const seam = await app.evaluate((_electron, name) => {
+    const s = (globalThis as Record<string, unknown>)[name] as
+      { store: { get(): string | null }; copied: string | null } | undefined;
+    return { stored: s?.store.get() ?? null, copied: s?.copied ?? null };
+  }, TEST_PHONE_KEY_SEAM);
   expect(seam.stored).toMatch(/^[A-Za-z0-9_-]{32}$/);
   expect(seam.copied).toBe(seam.stored);
   // The page never holds the whole key: only the masked form comes back.

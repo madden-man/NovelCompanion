@@ -155,11 +155,9 @@ test('PH-19 PH-37 a remembered bible older than the function leaves the chooser 
 }) => {
   const old = 'tide-lines';
   await loadFixture(store, old);
-  await store.db
-    .collection('bibles')
-    .updateOne({ _id: old } as never, {
-      $set: { name: 'Tide Lines', schemaVersion: LATEST_SCHEMA_VERSION - 1 },
-    });
+  await store.db.collection('bibles').updateOne({ _id: old } as never, {
+    $set: { name: 'Tide Lines', schemaVersion: LATEST_SCHEMA_VERSION - 1 },
+  });
   await page.goto(server.url);
   await page.evaluate(
     ([key, bible]) => {
