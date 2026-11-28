@@ -1240,8 +1240,8 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
         for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
         await v.t.readsSettled();
       };
-      const h7 = { collection: 'characters', id: 'H7' };
-      const h8 = { collection: 'characters', id: 'H8' };
+      const h7 = { collection: 'characters', id: 'H7' } as const;
+      const h8 = { collection: 'characters', id: 'H8' } as const;
       const asked = (id: string) =>
         v.sent.filter((b) => b.channel === 'entry.get' && (b.request as { id: string }).id === id)
           .length;
