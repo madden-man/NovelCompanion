@@ -243,7 +243,7 @@ const STEPS: Step[] = [
         'How',
         'The bible sheet: the chooser, the sections, then More; each screen opens as a page.',
       ],
-      ['Grids', 'Backstory scrolls sideways with the names held; a long name ends in an ellipsis.'],
+      ['Grids', 'Backstory scrolls sideways with the names held; a long name wraps onto a second line.'],
       ['Criteria', 'PH-34, PH-35, PH-37'],
     ],
   },
