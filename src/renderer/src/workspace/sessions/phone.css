@@ -31,3 +31,7 @@
 :root[data-phone] .ph-frame [data-testid='relevant-view'] > .row > .chip.time {
   align-self: flex-start;
 }
+/* The strand's year edits on a tap: the pill stays small, its target reaches past it. */
+:root[data-phone] .ph-frame [data-testid='relevant-view'] .rel-head-year .editable-text {
+  margin-block: -10px;
+}
