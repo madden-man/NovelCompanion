@@ -512,6 +512,21 @@ async function holdAndDrag(page: Page, cdp: CDPSession, from: Point, to: Point) 
   await touch(cdp, 'touchEnd');
 }
 
+test('PH-35 the Outline has a touchmove guard that can stop the scroll before any touch starts @touch', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'Listeners are read through CDP on Chromium.');
+  await openOutline(page);
+  const cdp = await touches(page);
+  const { result } = await cdp.send('Runtime.evaluate', { expression: 'document' });
+  const { listeners } = await cdp.send('DOMDebugger.getEventListeners', {
+    objectId: result.objectId as string,
+  });
+  const guards = listeners.filter((l) => l.type === 'touchmove' && !l.passive);
+  expect(guards.length).toBeGreaterThan(0);
+});
+
 test('PH-35 a scene line held lifts and moves, into another chapter too @touch', async ({
   page,
   browserName,
