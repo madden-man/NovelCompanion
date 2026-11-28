@@ -9,7 +9,7 @@ let attachKeyboard: AttachKeyboard;
 /** A58 U1 (PH-32): the keyboard hold scrolls to the field when it is needed, not on the writer's own scroll. */
 describe('when the keyboard hold scrolls (PH-32)', () => {
   const field = {};
-  it('scrolls for a new field, the keyboard coming up, or the keyboard changing height', () => {
+  it('scrolls for a new field, the keyboard coming up, or the view changing height', () => {
     expect(shouldKeep(null, { field, keyboard: false, height: 852 })).toBe(true);
     expect(
       shouldKeep(
@@ -23,13 +23,16 @@ describe('when the keyboard hold scrolls (PH-32)', () => {
     expect(
       shouldKeep({ field, keyboard: true, height: 500 }, { field, keyboard: true, height: 456 }),
     ).toBe(true);
+    expect(
+      shouldKeep({ field, keyboard: false, height: 659 }, { field, keyboard: false, height: 330 }),
+    ).toBe(true);
   });
   it('leaves the page be on a scroll alone, and with nothing to type in', () => {
     expect(
       shouldKeep({ field, keyboard: true, height: 500 }, { field, keyboard: true, height: 500 }),
     ).toBe(false);
     expect(
-      shouldKeep({ field, keyboard: false, height: 700 }, { field, keyboard: false, height: 852 }),
+      shouldKeep({ field, keyboard: false, height: 852 }, { field, keyboard: false, height: 852 }),
     ).toBe(false);
     expect(shouldKeep(null, { field: null, keyboard: true, height: 500 })).toBe(false);
   });
