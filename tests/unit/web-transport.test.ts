@@ -492,6 +492,18 @@ describe('PH-21 typing not yet stored outside a focused field', () => {
     expect(holds()).toBe(false);
     doc.activeElement = field();
     expect(holds()).toBe(true);
+    doc.activeElement = null;
+    // A rich text field (contenteditable) holds it by its text.
+    const rich = {
+      isConnected: true,
+      isContentEditable: true,
+      textContent: 'In 1979',
+      matches: () => true,
+    };
+    input!({ target: rich });
+    expect(holds()).toBe(true);
+    rich.textContent = '';
+    expect(holds()).toBe(false);
   });
 });
 

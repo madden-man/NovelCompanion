@@ -67,7 +67,13 @@ export function typingIn(doc: {
 interface TypedField {
   readonly isConnected: boolean;
   readonly value?: unknown;
+  readonly isContentEditable?: boolean;
+  readonly textContent?: string | null;
 }
+
+/** The text a field holds: an input's or textarea's value, or a rich text field's text. */
+const textOf = (el: TypedField): string | null =>
+  typeof el.value === 'string' ? el.value : el.isContentEditable ? (el.textContent ?? '') : null;
 
 /**
  * PH-21: typing not yet stored can sit in a field that lost focus (the
@@ -84,7 +90,7 @@ export function trackTyping(doc: {
     'input',
     (e) => {
       const el = e.target as TypedField | null;
-      if (el && typeof el.value === 'string') typed.add(el);
+      if (el && textOf(el) !== null) typed.add(el);
     },
     true,
   );
@@ -92,7 +98,7 @@ export function trackTyping(doc: {
     if (typingIn(doc)) return true;
     for (const el of [...typed]) {
       if (!el.isConnected) typed.delete(el);
-      else if (typeof el.value === 'string' && el.value !== '') return true;
+      else if (textOf(el)) return true;
     }
     return false;
   };

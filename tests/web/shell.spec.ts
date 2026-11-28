@@ -190,10 +190,12 @@ test('PH-21 a new build id never reloads while a field off focus still holds typ
   expect(await page.evaluate(() => (window as unknown as { __before?: boolean }).__before)).toBe(
     true,
   );
-  await expect(box).toHaveValue('Margaret kept a diary in 1979.');
+  await expect(box).toHaveText('Margaret kept a diary in 1979.');
   // The box is emptied (as filing does): the app reloads at the next moment.
   const loaded = page.waitForEvent('load');
-  await box.fill('');
+  await box.click();
+  await box.press('ControlOrMeta+a');
+  await box.press('Backspace');
   await box.evaluate((el) => (el as HTMLElement).blur());
   await loaded;
   await expect(page.getByTestId('workspace')).toBeVisible();
