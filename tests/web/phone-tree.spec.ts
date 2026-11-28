@@ -654,15 +654,15 @@ test('PH-33 PH-35 zoomed out, the collapse control keeps off the age and goes wh
   // the person sheet's Collapse branch stands in for it.
   expect(await toggles()).toEqual([]);
   // A hold on the right third of a card, where the control was, lifts that person.
-  const daniel = await rectOf(person(page, 'Daniel Hale').locator('.tnode-box'));
-  const right = { x: daniel.x + (daniel.width * 5) / 6, y: daniel.y + daniel.height * 0.7 };
-  const was = await drawnAt(page, 'Daniel Hale');
+  const card = await rectOf(person(page, 'Margaret Hale').locator('.tnode-box'));
+  const right = { x: card.x + (card.width * 5) / 6, y: card.y + card.height * 0.7 };
+  const was = await drawnAt(page, 'Margaret Hale');
   await f.down(right);
   await page.waitForTimeout(700);
-  await expect(person(page, 'Daniel Hale')).toHaveClass(/\blifted\b/);
+  await expect(person(page, 'Margaret Hale')).toHaveClass(/\blifted\b/);
   await f.up();
-  await expect(person(page, 'Daniel Hale')).not.toHaveClass(/\blifted\b/);
-  expect(await drawnAt(page, 'Daniel Hale')).toEqual(was);
+  await expect(person(page, 'Margaret Hale')).not.toHaveClass(/\blifted\b/);
+  expect(await drawnAt(page, 'Margaret Hale')).toEqual(was);
 });
 
 test('PH-33 PH-35 zoomed out to the limit, a tap on the right of a card opens the person, not a branch', async ({
@@ -679,15 +679,15 @@ test('PH-33 PH-35 zoomed out to the limit, a tap on the right of a card opens th
     last = w;
   }
   await expect(svgOf(page).locator('.tnode-toggle')).toHaveCount(0);
-  const daniel = await rectOf(person(page, 'Daniel Hale').locator('.tnode-box'));
-  await page.touchscreen.tap(daniel.x + (daniel.width * 5) / 6, daniel.y + daniel.height * 0.7);
+  const card = await rectOf(person(page, 'Margaret Hale').locator('.tnode-box'));
+  await page.touchscreen.tap(card.x + (card.width * 5) / 6, card.y + card.height * 0.7);
   const sheet = page.getByTestId('tree-sheet');
-  await expect(sheet.getByRole('heading', { name: 'Daniel Hale' })).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: 'Margaret Hale' })).toBeVisible();
   // The sheet's Collapse branch stands in for the control.
   await sheet.getByRole('button', { name: 'Collapse branch' }).tap();
-  await expect(person(page, 'Daniel Hale')).toHaveAttribute('aria-expanded', 'false');
+  await expect(person(page, 'Margaret Hale')).toHaveAttribute('aria-expanded', 'false');
   await sheet.getByRole('button', { name: 'Expand branch' }).tap();
-  await expect(person(page, 'Daniel Hale')).toHaveAttribute('aria-expanded', 'true');
+  await expect(person(page, 'Margaret Hale')).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('PH-33 a lifted person keeps the finger: the tree holds pointer capture, and a drag over the bottom bar and back still drops in the tree', async ({
