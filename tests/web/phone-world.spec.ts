@@ -345,6 +345,36 @@ test('PH-34 the World grid scrolls sideways while its first column stays at the 
   await noSideways(page);
 });
 
+test('PH-34 the world around the year: with an event in range, no two year rows overlap and the title stays inside its row', async ({
+  page,
+}, info) => {
+  onlyOn(info, 'iphone');
+  await openFixture(page, server.url);
+  // The five years around 2044 hold "Grid batteries replace the last coal plant in Guangdong", two lines at this width.
+  await setYear(page, 2044);
+  await openWorld(page);
+  const strip = page.getByTestId('world-around-strip');
+  const event = strip.locator('.we-col[data-year="2042"] .we-event');
+  await expect(event).toHaveText(/Grid batteries/);
+  const rows = await strip.locator('.we-col').all();
+  expect(rows.length).toBe(5);
+  const boxes = await Promise.all(rows.map(box));
+  for (let i = 1; i < boxes.length; i++) {
+    const a = boxes[i - 1]!;
+    const b = boxes[i]!;
+    expect(a.y + a.height).toBeLessThanOrEqual(b.y + 0.5);
+  }
+  const row = await box(strip.locator('.we-col[data-year="2042"]'));
+  const title = await box(event);
+  expect(title.y).toBeGreaterThanOrEqual(row.y - 0.5);
+  expect(title.y + title.height).toBeLessThanOrEqual(row.y + row.height + 0.5);
+  expect(title.x + title.width).toBeLessThanOrEqual(row.x + row.width + 0.5);
+  // The year and the title sit side by side, never one over the other.
+  const year = await box(strip.locator('.we-col[data-year="2042"] .we-year'));
+  expect(year.x + year.width).toBeLessThanOrEqual(title.x + 0.5);
+  await noSideways(page);
+});
+
 test('PH-34 an event added by a tap in a cell is saved through /rpc and opens as its page', async ({
   page,
 }, info) => {
