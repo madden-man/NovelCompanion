@@ -41,21 +41,31 @@ const OUTLINE = [
 const BREAKS = { CH1: 0, CH2: 3, CH3: 5, CH4: 6, CH5: 6, CH6: 6, CH7: 6, CH8: 6 };
 
 type Stored = { text: string; breaks: Record<string, number> };
-type Api = { api: { invoke: (channel: string, req: unknown) => Promise<unknown> } };
+type Api = {
+  api: { invoke: (channel: string, req: unknown, context?: unknown) => Promise<unknown> };
+};
 
 /** A channel through the page's own transport, as the app sends it. */
-const invoke = <T>(page: Page, channel: string, req: unknown): Promise<T> =>
-  page.evaluate(([c, r]) => (window as unknown as Api).api.invoke(c as string, r) as Promise<T>, [
-    channel,
-    req,
-  ] as const);
+const invoke = <T>(page: Page, channel: string, req: unknown, context?: unknown): Promise<T> =>
+  page.evaluate(
+    ([c, r, x]) =>
+      (window as unknown as Api).api.invoke(c as string, r, x ?? undefined) as Promise<T>,
+    [channel, req, context ?? null] as const,
+  );
 const stored = (page: Page) => invoke<Stored>(page, 'sceneOutline.get', {});
 const storedLines = async (page: Page) => (await stored(page)).text.split('\n');
 
 /** The fixture with the test's outline, then the Outline tab. */
 async function openOutline(page: Page): Promise<Locator> {
   await openFixture(page, server.url);
-  await invoke(page, 'sceneOutline.set', { text: OUTLINE.join('\n'), breaks: BREAKS });
+  // A write carries the bible it was made in (A57); the function refuses one that does not.
+  const { bible } = await invoke<{ bible: { id: string } }>(page, 'bible.current', {});
+  await invoke(
+    page,
+    'sceneOutline.set',
+    { text: OUTLINE.join('\n'), breaks: BREAKS },
+    { bible: bible.id },
+  );
   await page.getByTestId('tab-outline').tap();
   const view = page.getByTestId('outline-view');
   await expect(view.getByTestId('ph-line').first()).toBeVisible();
