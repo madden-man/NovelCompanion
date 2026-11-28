@@ -1,18 +1,18 @@
 /* A58 U3: the story year dial (the year sheet) and the year view page. Theme tokens only. */
 
-.ph-dial {
+:root[data-phone] .ph-frame .ph-dial {
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding-top: 4px;
 }
-.ph-dial-row,
-.ph-yp-head {
+:root[data-phone] .ph-frame .ph-dial-row,
+:root[data-phone] .ph-frame .ph-yp-head {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.ph-step {
+:root[data-phone] .ph-frame .ph-step {
   flex: none;
   min-width: 52px;
   height: 56px;
@@ -30,15 +30,15 @@
   -webkit-user-select: none;
   user-select: none;
 }
-.ph-step:active {
+:root[data-phone] .ph-frame .ph-step:active {
   background: var(--time-soft);
   border-color: var(--time);
 }
-.ph-step:focus-visible {
+:root[data-phone] .ph-frame .ph-step:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-:root[data-phone] .ph-dial .ph-dial-year {
+:root[data-phone] .ph-frame .ph-dial .ph-dial-year {
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
@@ -53,56 +53,67 @@
   background: var(--time-soft);
   color: var(--fg);
 }
-.ph-dial-era {
+:root[data-phone] .ph-frame .ph-dial-era {
   margin: -6px 0 0;
   text-align: center;
   font-weight: 600;
   color: var(--fg);
 }
-.ph-dial input[type='range'] {
+:root[data-phone] .ph-frame .ph-dial input[type='range'] {
   width: 100%;
   min-height: var(--ph-target);
 }
-.ph-dial .field {
+:root[data-phone] .ph-frame .ph-dial .field {
   font-size: 0.95rem;
   min-width: 0;
 }
-.ph-dial select {
+:root[data-phone] .ph-frame .ph-dial select {
   width: 100%;
+  /* A styled border lets WebKit size the list to the thumb target. */
+  -webkit-appearance: menulist-button;
+  appearance: menulist-button;
+  box-sizing: border-box;
+  height: var(--ph-target);
+  min-height: var(--ph-target);
+  padding: 0 10px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
 }
-.ph-dial-date,
-.ph-dial-age {
+:root[data-phone] .ph-frame .ph-dial-date,
+:root[data-phone] .ph-frame .ph-dial-age {
   display: grid;
   gap: 8px;
   align-items: end;
 }
-.ph-dial-age {
+:root[data-phone] .ph-frame .ph-dial-age {
   align-items: start;
 }
-.ph-dial-date {
+:root[data-phone] .ph-frame .ph-dial-date {
   grid-template-columns: 1fr 1fr auto;
 }
-.ph-dial-age {
+:root[data-phone] .ph-frame .ph-dial-age {
   grid-template-columns: minmax(0, 1fr) 5.5em;
 }
-.ph-dial-date input,
-.ph-dial-age input {
+:root[data-phone] .ph-frame .ph-dial-date input,
+:root[data-phone] .ph-frame .ph-dial-age input {
   width: 100%;
   box-sizing: border-box;
   text-align: center;
 }
-.ph-dial-more {
+:root[data-phone] .ph-frame .ph-dial-more {
   align-self: flex-start;
 }
 
 /* The year view page. */
-.ph-yearpage {
+:root[data-phone] .ph-frame .ph-yearpage {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px var(--ph-gutter-right) 12px var(--ph-gutter-left);
 }
-.ph-yp-head {
+:root[data-phone] .ph-frame .ph-yp-head {
   justify-content: space-between;
 }
 :root[data-phone] .ph-frame .ph-yp-year {
@@ -111,7 +122,7 @@
   text-align: center;
   font-size: 2rem;
 }
-.ph-yp-row {
+:root[data-phone] .ph-frame .ph-yp-row {
   width: 100%;
   min-height: 52px;
   padding: 10px 4px;
@@ -129,46 +140,46 @@
   cursor: pointer;
   touch-action: manipulation;
 }
-.ph-yp-row:active {
+:root[data-phone] .ph-frame .ph-yp-row:active {
   background: var(--surface-2);
 }
-.ph-yp-row:focus-visible {
+:root[data-phone] .ph-frame .ph-yp-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.ph-yp-row.formative .ph-yp-name {
+:root[data-phone] .ph-frame .ph-yp-row.formative .ph-yp-name {
   font-weight: 700;
 }
-.ph-yp-era {
+:root[data-phone] .ph-frame .ph-yp-era {
   padding: 10px 12px;
   border: 1px solid var(--time);
   border-radius: 12px;
   background: var(--time-soft);
   font-weight: 600;
 }
-.ph-yp-name {
+:root[data-phone] .ph-frame .ph-yp-name {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.ph-yp-side {
+:root[data-phone] .ph-frame .ph-yp-side {
   flex: none;
   max-width: 50%;
   text-align: right;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-.ph-yp-sub {
+:root[data-phone] .ph-frame .ph-yp-sub {
   color: var(--fg-2);
   font-size: 0.85rem;
 }
-.ph-yp-none {
+:root[data-phone] .ph-frame .ph-yp-none {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 6px 0;
 }
-.ph-yp-empty {
+:root[data-phone] .ph-frame .ph-yp-empty {
   margin: 0;
   padding: 6px 4px;
   color: var(--fg-2);

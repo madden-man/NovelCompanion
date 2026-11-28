@@ -53,12 +53,12 @@
 }
 
 /* The controls: one thumb row. */
-.ph-world-bar {
+:root[data-phone] .ph-frame .ph-world-bar {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.ph-seg {
+:root[data-phone] .ph-frame .ph-seg {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -66,7 +66,7 @@
   border-radius: var(--radius);
   overflow: hidden;
 }
-.ph-seg-btn {
+:root[data-phone] .ph-frame .ph-seg-btn {
   flex: 1 1 0;
   min-width: 0;
   min-height: var(--ph-target);
@@ -79,24 +79,24 @@
   touch-action: manipulation;
   cursor: pointer;
 }
-.ph-seg-btn + .ph-seg-btn {
+:root[data-phone] .ph-frame .ph-seg-btn + .ph-seg-btn {
   border-left: 1px solid var(--border-strong);
 }
-.ph-seg-btn[aria-pressed='true'] {
+:root[data-phone] .ph-frame .ph-seg-btn[aria-pressed='true'] {
   background: var(--accent-soft);
   color: var(--fg);
 }
-.ph-seg-btn:focus-visible {
+:root[data-phone] .ph-frame .ph-seg-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.ph-filter-btn {
+:root[data-phone] .ph-frame .ph-filter-btn {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.ph-count {
+:root[data-phone] .ph-frame .ph-count {
   min-width: 22px;
   height: 22px;
   padding: 0 6px;
@@ -108,37 +108,49 @@
   color: var(--accent-ink);
   background: var(--accent);
 }
-.ph-world-filters {
+:root[data-phone] .ph-frame .ph-world-filters {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.ph-world-filters .wg-categories {
+:root[data-phone] .ph-frame .ph-world-filters .wg-categories {
   flex-direction: column;
   align-items: stretch;
 }
-.ph-world-filters select {
+:root[data-phone] .ph-frame .ph-world-filters select {
   width: 100%;
+  /* A styled border lets WebKit size the list to the thumb target. */
+  -webkit-appearance: menulist-button;
+  appearance: menulist-button;
+  box-sizing: border-box;
+  height: var(--ph-target);
+  min-height: var(--ph-target);
+  padding: 0 10px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
 }
-.ph-world-filters .wg-regions {
+:root[data-phone] .ph-frame .ph-world-filters .wg-regions {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.ph-world-filters .wg-regions > .btn {
+:root[data-phone] .ph-frame .ph-world-filters .wg-regions > .btn {
   flex: none;
   width: auto;
+  min-height: var(--ph-target);
 }
-.ph-world-filters .wg-toolbar-label {
+:root[data-phone] .ph-frame .ph-world-filters .wg-toolbar-label {
   flex-basis: 100%;
 }
-.ph-world-filters .btn[aria-pressed='true'] {
+:root[data-phone] .ph-frame .ph-world-filters .btn[aria-pressed='true'] {
   background: var(--accent-soft);
   border-color: var(--accent);
 }
-.ph-world-filters .btn[aria-pressed='false'] {
+:root[data-phone] .ph-frame .ph-world-filters .btn[aria-pressed='false'] {
   background: transparent;
   border-style: dashed;
 }

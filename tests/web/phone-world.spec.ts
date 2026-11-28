@@ -86,6 +86,23 @@ async function instructionLines(page: Page): Promise<string[]> {
     .filter((l) => l && INSTRUCTION.test(l));
 }
 
+/** Every control showing in `root` is a 44 px thumb target, each named in a failure. */
+async function thumbTargets(root: Locator): Promise<void> {
+  const controls = await root.locator('button:visible, input:visible, select:visible').all();
+  expect(controls.length).toBeGreaterThan(0);
+  const small: string[] = [];
+  for (const c of controls) {
+    const b = await box(c);
+    if (b.height < 44 || b.width < 44) {
+      const name = await c.evaluate(
+        (el) => el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent,
+      );
+      small.push(`${name} ${Math.round(b.width)}x${Math.round(b.height)}`);
+    }
+  }
+  expect(small).toEqual([]);
+}
+
 const noSideways = async (page: Page) =>
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
@@ -116,12 +133,9 @@ test('PH-29 the year sheet sets the year by stepper and by typing; the top bar p
   await pill.tap();
   const sheet = page.getByTestId('year-sheet');
   await expect(sheet.getByTestId('sheet-era')).toHaveText('The forties');
-  // Every control of the dial is a thumb target.
-  for (const id of ['year-step--10', 'year-step--1', 'sheet-year', 'year-step-1', 'year-step-10']) {
-    const b = await box(sheet.getByTestId(id));
-    expect(b.height).toBeGreaterThanOrEqual(44);
-    expect(b.width).toBeGreaterThanOrEqual(44);
-  }
+  // Every control of the dial is a thumb target: the steppers, the year box,
+  // the slider, the Person and Writing lists, the age box and the buttons.
+  await thumbTargets(sheet);
   // The year box is large and at least 16 px, so iOS does not zoom.
   expect(
     await sheet
@@ -150,6 +164,8 @@ test('PH-29 the year sheet sets the year by stepper and by typing; the top bar p
   // Month and day only when asked for.
   await expect(sheet.getByTestId('sheet-month')).toHaveCount(0);
   await sheet.getByTestId('sheet-add-month').tap();
+  // With month and day showing, they and Year only are thumb targets too.
+  await thumbTargets(sheet);
   await sheet.getByTestId('sheet-month').fill('3');
   await expect
     .poll(() =>
@@ -216,6 +232,65 @@ test('PH-29 the year view lists the fixture people with their ages for the year,
   await expect(view).toBeVisible();
   await page.getByTestId('phone-back').tap();
   await expect(page.getByTestId('entry-list')).toBeVisible();
+});
+
+test('PH-29 the year sheet slider and the Writing list move the year; a strand in the year view opens the Outline', async ({
+  page,
+}, info) => {
+  onlyOn(info, 'iphone');
+  await openFixture(page, server.url);
+  await setYear(page, 2040);
+  const pill = page.getByTestId('phone-year');
+  const storedTime = () =>
+    page.evaluate(async () => (await window.api.invoke('storyTime.get', {})).time);
+  await pill.tap();
+  const sheet = page.getByTestId('year-sheet');
+
+  // The slider spans the bible's years and moves the pill, the era and the stored year.
+  const slider = sheet.getByTestId('sheet-year-slider');
+  await expect(slider).toHaveValue('2040');
+  const min = Number(await slider.getAttribute('min'));
+  const max = Number(await slider.getAttribute('max'));
+  expect(min).toBeLessThan(2040);
+  expect(max).toBeGreaterThan(2051);
+  await slider.fill('2051');
+  await expect(pill).toHaveText('2051');
+  await expect(sheet.getByTestId('sheet-era')).toHaveText('The fifties');
+  await expect.poll(() => storedYear(page)).toBe(2051);
+
+  // Writing: a strand sets its year and is kept with the time; none keeps the year.
+  const writing = sheet.getByTestId('sheet-writing');
+  await writing.selectOption({ label: 'Chapter 2: Two Kitchens, backstory (2032)' });
+  await expect(pill).toHaveText('2032');
+  await expect
+    .poll(storedTime)
+    .toMatchObject({ year: 2032, chapterId: 'CH2', strandId: 'CH2-backstory' });
+  await expect(writing).toHaveValue('CH2|CH2-backstory');
+  // A step keeps the strand it was set from.
+  await sheet.getByTestId('year-step-1').tap();
+  await expect.poll(storedTime).toMatchObject({ year: 2033, chapterId: 'CH2' });
+  await writing.selectOption({ label: 'No chapter picked' });
+  await expect(pill).toHaveText('2033');
+  await expect.poll(async () => (await storedTime())?.chapterId).toBeUndefined();
+
+  // The year view's strands: CH5 is set in 2040, and its row opens the Outline.
+  await sheet.getByTestId('sheet-year').fill('2040');
+  await sheet.getByTestId('sheet-year').press('Enter');
+  await expect(pill).toHaveText('2040');
+  await sheet.getByTestId('sheet-open-year').tap();
+  const view = page.getByTestId('year-page');
+  await expect(view).toBeVisible();
+  const strand = view.getByTestId('year-strand').filter({ hasText: 'Candles' });
+  await expect(strand).toHaveCount(1);
+  await expect(strand).toContainText('present, primary');
+  expect((await box(strand)).height).toBeGreaterThanOrEqual(44);
+  await strand.tap();
+  await expect(page.getByTestId('workspace')).toHaveAttribute('data-tab', 'outline');
+  await expect(page.locator('[data-testid="outline-view"]:visible')).toBeVisible();
+  await expect(page.locator('[data-testid="chapter-bar"][data-chapter="CH5"]:visible')).toHaveCount(
+    1,
+  );
+  await noSideways(page);
 });
 
 test('PH-34 the World grid scrolls sideways while its first column stays at the left edge; the document does not', async ({
@@ -393,6 +468,8 @@ test('PH-35 no hover-only control on the World screen: the adds, the era ends an
   const sheet = page.getByTestId('world-filters');
   await expect(sheet).toBeVisible();
   await expect(sheet.getByLabel('Category')).toBeVisible();
+  // Every filter, the Category list among them, is a thumb target.
+  await thumbTargets(sheet);
   await sheet.getByRole('button', { name: 'China' }).tap();
   await page.goBack();
   await expect(page.getByTestId('world-filter-count')).toHaveText('1');
@@ -533,6 +610,10 @@ test('PH-35 a marker lifts only after a hold; a swipe that starts on it scrolls 
   page,
 }, info) => {
   onlyOn(info, 'touch');
+  await page.addInitScript(() => {
+    const w = window as unknown as { lastPointer?: number };
+    window.addEventListener('pointerdown', (e) => (w.lastPointer = e.pointerId), true);
+  });
   await openFixture(page, server.url);
   await setYear(page, 2040);
   const grid = await openWorld(page);
@@ -549,8 +630,39 @@ test('PH-35 a marker lifts only after a hold; a swipe that starts on it scrolls 
     .poll(async () => Math.abs((await grid.evaluate((el) => el.scrollLeft)) - left0))
     .toBeGreaterThan(40);
   await page.waitForTimeout(600);
-  const stored = (await store.db
-    .collection(`${SLUG}.worldEvents`)
-    .findOne({ _id: id as never })) as unknown as { start: { year: number } };
-  expect(stored.start.year).toBe(year0);
+  const storedYearOf = async () =>
+    (
+      (await store.db
+        .collection(`${SLUG}.worldEvents`)
+        .findOne({ _id: id as never })) as unknown as { start: { year: number } }
+    ).start.year;
+  expect(await storedYearOf()).toBe(year0);
+
+  // Hold, then drag two years: the event moves, held by the finger, the grid
+  // does not scroll, nothing opens, and one Undo puts it back.
+  const held = grid.locator(`.wg-marker[data-id="${id}"]`);
+  await held.scrollIntoViewIfNeeded();
+  const ppy = Number(await grid.getAttribute('data-ppy'));
+  const h = await box(held);
+  const from = { x: h.x + h.width / 2, y: h.y + h.height / 2 };
+  const by = from.x + ppy * 2 < (page.viewportSize()?.width ?? 0) - 20 ? 2 : -2;
+  const left1 = await grid.evaluate((el) => el.scrollLeft);
+  await touch(cdp, 'touchStart', from.x, from.y);
+  await page.waitForTimeout(600);
+  // Lifted: the marker holds the finger's pointer.
+  expect(
+    await held.evaluate((el) =>
+      el.hasPointerCapture((window as unknown as { lastPointer: number }).lastPointer),
+    ),
+  ).toBe(true);
+  for (let i = 1; i <= 12; i++) {
+    await touch(cdp, 'touchMove', from.x + (ppy * by * i) / 12, from.y);
+    await page.waitForTimeout(16);
+  }
+  await touch(cdp, 'touchEnd', from.x + ppy * by, from.y);
+  await expect.poll(storedYearOf).toBe(year0 + by);
+  expect(Math.abs((await grid.evaluate((el) => el.scrollLeft)) - left1)).toBeLessThan(2);
+  await expect(page.locator('[data-testid="editor"]:visible')).toHaveCount(0);
+  await page.getByTestId('phone-undo').tap();
+  await expect.poll(storedYearOf).toBe(year0);
 });
