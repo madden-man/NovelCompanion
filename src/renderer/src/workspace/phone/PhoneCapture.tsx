@@ -37,6 +37,7 @@ import { RichText } from '../richText/RichText';
 import { useStoryTime } from '../storyTime';
 import { useUndo } from '../undo';
 import { useWorkspaceOpen } from '../Zh';
+import { readDraft, setDraftBible, writeDraft } from './captureDraft';
 import { usePhoneNav } from './nav';
 import type { PhoneNav } from './nav';
 import { PhoneSheet } from './Sheet';
@@ -84,7 +85,9 @@ let pendingPrefill: string | null = null;
  * Mounted in the phone's frame in place of the desk's box: anything that asks
  * for the box (`captureNav.open`, with or without a prefill) opens the page.
  */
-export function PhoneCaptureBridge() {
+export function PhoneCaptureBridge({ bible }: { bible: string }) {
+  // The draft the capture page reads belongs to this bible; set before the page draws.
+  setDraftBible(bible);
   const nav = usePhoneNav();
   const asked = useCaptureOpen();
   const navRef = useRef(nav);
@@ -153,17 +156,21 @@ export function PhoneCaptureScreen() {
   const ro = useWriteGuard();
   const nav = usePhoneNav();
   const open = useWorkspaceOpen();
+  // Nothing is placed, filed or kept before the bible's story time is read, so never under another year.
+  const ready = story.stored !== null;
   const time: StoryTimeValue = story.time ?? { year: story.year };
   const year = time.year;
   const timeKey = JSON.stringify(time);
 
+  // The draft outlives the page (Back, another tab, a dropped app); a prefill lands only in an empty field.
   const [text, setText] = useState(() => {
-    const t = pendingPrefill ?? '';
+    const t = readDraft().text || (pendingPrefill ?? '');
     pendingPrefill = null;
     return t;
   });
   const [quietText, setQuietText] = useState(text);
-  const [marks, setMarks] = useState<EditMarks>({});
+  const [marks, setMarks] = useState<EditMarks>(() => readDraft().marks);
+  useEffect(() => writeDraft({ text, marks }), [text, marks]);
   const [bible, setBible] = useState<CaptureBible | null>(null);
   const [waiting, setWaiting] = useState<WaitingLineWire[] | null>(null);
   const [filed, setFiled] = useState<FiledEntry[]>([]);
@@ -199,6 +206,7 @@ export function PhoneCaptureScreen() {
 
   // The bible the typing is placed against: read on opening and after each write.
   useEffect(() => {
+    if (!ready) return;
     let live = true;
     loadCaptureBible(
       call,
@@ -215,7 +223,7 @@ export function PhoneCaptureScreen() {
     return () => {
       live = false;
     };
-  }, [version, timeKey, settings.numbers.timelineEnd]);
+  }, [version, timeKey, settings.numbers.timelineEnd, ready]);
 
   // PH-28: what waits for the desk, read again when the bible changes here or elsewhere.
   useEffect(() => {
@@ -257,7 +265,7 @@ export function PhoneCaptureScreen() {
   const waits = toFile.some((f) => openAsks(f, choiceAt(f.index)).length > 0);
   const toKeep = facts.filter((f) => f.route !== 'local');
   const pressOff =
-    busy || ro.off || !current || waits || (toFile.length === 0 && toKeep.length === 0);
+    busy || ro.off || !ready || !current || waits || (toFile.length === 0 && toKeep.length === 0);
 
   /** A chip or tick changed: kept by the sentence's text, so typing elsewhere keeps it. */
   const markEdit = (i: number, change: (m: EditMark) => EditMark) => {
@@ -319,8 +327,10 @@ export function PhoneCaptureScreen() {
       const failed = new Set(
         (filing?.failed ?? []).map((x) => owner[Number(x.id.replace('draft ', ''))] ?? -1),
       );
+      // A sentence pressed again after an answer was lost goes under the same ID, so it is kept once.
+      const keepIds = { ...readDraft().keepIds };
       const keep: WaitingInput[] = keepFacts.map((f) => ({
-        id: newNestedId(),
+        id: (keepIds[f.text] ??= newNestedId()),
         text: f.text,
         year,
         at: new Date().toISOString(),
@@ -328,9 +338,12 @@ export function PhoneCaptureScreen() {
       let kept = false;
       let keepError: string | null = null;
       if (keep.length) {
+        writeDraft({ keepIds });
         try {
           setWaiting((await call('capture.wait', { lines: keep })).lines);
           kept = true;
+          for (const f of keepFacts) delete keepIds[f.text];
+          writeDraft({ keepIds });
         } catch (e) {
           keepError = plainError(e);
         }
@@ -412,7 +425,7 @@ export function PhoneCaptureScreen() {
           onClick={() => nav.openSheet('year')}
           data-testid="phone-capture-year"
         >
-          Story year {year}
+          {ready ? `Story year ${year}` : 'Story year'}
         </button>
       </header>
       <RichText

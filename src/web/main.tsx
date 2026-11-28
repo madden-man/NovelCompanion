@@ -6,6 +6,7 @@ import { App } from '../renderer/src/App';
 import { presetCapabilities } from '../renderer/src/capabilities';
 import { setPhone } from '../renderer/src/phone';
 import { saveBeforeSwitch } from '../renderer/src/workspace/undo';
+import { clearDrafts } from '../renderer/src/workspace/phone/captureDraft';
 // PH-21: the same file the function imports, written by this build (scripts/build-id.ts).
 import buildInfo from '../generated/build-id.json';
 import { typingIn, watchBuild } from './buildWatch';
@@ -47,6 +48,7 @@ presetCapabilities(PHONE_CHANNELS, LOCAL_CHANNELS);
 // A58 U1: the phone's shell, layout and CSS (`usePhone`, `:root[data-phone]`).
 setPhone(true);
 attachLifecycle(transport, document, window);
+transport.onSignedOut(clearDrafts);
 transport.onBuildChanged(
   watchBuild({
     isTyping: () => typingIn(document),
