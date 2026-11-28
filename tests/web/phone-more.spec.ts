@@ -576,7 +576,9 @@ test('PH-34 PH-35 PH-36 screens for the record, light and dark', async ({ page }
     if (label === 'Settings') {
       await scope.getByTestId('sign-out').scrollIntoViewIfNeeded();
       await scope.getByTestId('sign-out').tap();
-      await scope.getByTestId('sign-out-confirm').scrollIntoViewIfNeeded();
+      await scope
+        .getByTestId('sign-out-confirm')
+        .evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
       await shoot('09b-settings-sign-out');
     }
     await page.getByTestId('phone-back').tap();

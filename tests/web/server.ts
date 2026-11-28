@@ -136,6 +136,8 @@ export async function openFixture(page: Page, url: string): Promise<void> {
   await expect(open.or(workspace)).toBeVisible();
   if (await open.isVisible()) await open.click();
   await expect(workspace).toBeVisible();
+  // A58 U6: the top bar shows the year once the bible's story time is read.
+  await expect(page.getByTestId('phone-year')).toHaveText(/\d/);
 }
 
 /** The character page of one of the fixture's people, from the Characters list. */

@@ -156,7 +156,8 @@ function PhoneTopBar({ name }: { name: string }) {
   const nav = usePhoneNav();
   const story = useStoryTime();
   const undo = useUndo();
-  const year = String((story.time ?? { year: story.year }).year);
+  // A58 U6: no year until the bible's story time is read, so the bar never shows another one first.
+  const year = story.stored ? String((story.time ?? { year: story.year }).year) : '';
   const nextUndo = undo.history.undo[0]?.label;
   const nextRedo = undo.history.redo[0]?.label;
   return (
