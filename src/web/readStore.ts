@@ -2,14 +2,19 @@
  * A58 L1 (PH-25): the phone's store of what it read. The transport keeps the
  * last answer of every read channel here, keyed by bible, channel and the
  * request, with the bible's `rev` it was read at, and serves those answers
- * read-only when the phone has no connection. Writes are never kept.
+ * read-only when the phone has no connection. A write's answer is kept only
+ * as the answer of the read it repeats (`writtenReads` in `writeAnswers.ts`).
  *
  * Layout (IndexedDB `nc-phone-reads`, version 1):
  * - `meta`: `{ key, bible, channel, rev, at, size }` per answer, small, read
  *   whole when the store opens, so sizes, eviction and drops never read a value;
  * - `values`: `{ key, value }`, the answer as JSON text;
- * - `bibles`: `{ bible, rev, floor }`, the newest `rev` seen for a bible and the
- *   `rev` below which its answers were dropped as stale.
+ * - `bibles`: `{ bible, rev, floor, stale }`, the newest `rev` seen for a bible,
+ *   the `rev` of the last change made elsewhere that the phone saw, and the `rev`
+ *   below which its answers predate a change, the phone's own or another's.
+ *   Those answers are flagged, never dropped: they are still served with no
+ *   connection, and the transport reads them again in the background. A row
+ *   from before `stale` existed reads it as `floor`.
  *
  * Nothing here ever throws to the caller: a store that cannot open (private
  * browsing, blocked IndexedDB) is simply not usable, and the phone works as it
@@ -33,13 +38,32 @@ export interface BibleMark {
   bible: string;
   /** The newest `rev` the phone has seen for this bible. */
   rev: number;
-  /** Answers read below this `rev` are stale and never stored again. */
+  /** Answers read below this `rev` predate a change made elsewhere. */
   floor: number;
+  /** Answers read below this `rev` predate a change: kept, flagged, and read again when there is time. */
+  stale: number;
+}
+
+/** A stored read, as the transport asks it again. */
+export interface StoredRead {
+  key: string;
+  channel: string;
+  request: unknown;
+}
+
+/** A read whose answer a write's own answer already holds (`entry.update` returns the entry). */
+export interface WrittenRead {
+  channel: string;
+  request: unknown;
+  value: unknown;
 }
 
 /** Where the store keeps its records. IndexedDB on the phone, a map in tests. */
 export interface ReadBackend {
-  load(): Promise<{ metas: AnswerMeta[]; bibles: BibleMark[] }>;
+  load(): Promise<{
+    metas: AnswerMeta[];
+    bibles: (Omit<BibleMark, 'stale'> & { stale?: number })[];
+  }>;
   value(key: string): Promise<string | undefined>;
   put(meta: AnswerMeta, value: string): Promise<void>;
   remove(keys: string[]): Promise<void>;
@@ -56,6 +80,13 @@ export interface StoredAnswer {
   value: unknown;
   rev: number | null;
   at: number;
+  /** Read before a change the phone knows of; served with no connection all the same. */
+  stale: boolean;
+  /**
+   * The bible's `rev` a view showing this answer is as good as drawn at: the
+   * newest seen when only the phone's own writes came after it, else `rev`.
+   */
+  current: number | null;
 }
 
 /** JSON with object keys sorted, so the same request is always the same key. */
@@ -108,7 +139,7 @@ export class ReadStore {
               this.index.set(m.key, m);
               this.total += m.size;
             }
-            for (const b of bibles) this.marks.set(b.bible, b);
+            for (const b of bibles) this.marks.set(b.bible, { ...b, stale: b.stale ?? b.floor });
             return true;
           },
           () => (this.ok = false),
@@ -143,57 +174,50 @@ export class ReadStore {
         this.forget([meta.key]);
         return null;
       }
-      return { value: JSON.parse(text) as unknown, rev: meta.rev, at: meta.at };
-    });
-  }
-
-  /** Keep the live answer of a read, replacing the one before it. */
-  put(bible: string, channel: string, request: unknown, value: unknown, rev: number | null) {
-    return this.run(undefined, async (b) => {
-      const key = answerKey(bible, channel, request);
       const mark = this.marks.get(bible);
-      // Read before a change made elsewhere that is already known: stale on arrival.
-      if (bible && mark && (rev === null || rev < mark.floor)) return;
-      const text = JSON.stringify(value);
-      if (text === undefined || text.length > this.limits.answer) {
-        if (this.index.has(key)) {
-          await b.remove([key]);
-          this.forget([key]);
-        }
-        return;
-      }
-      const meta: AnswerMeta = { key, bible, channel, rev, at: this.now(), size: text.length };
-      await b.put(meta, text);
-      this.forget([key]);
-      this.index.set(key, meta);
-      this.total += meta.size;
-      await this.evict(b);
+      const stale = this.isStale(meta);
+      const elsewhere = meta.rev === null || (mark !== undefined && meta.rev < mark.floor);
+      return {
+        value: JSON.parse(text) as unknown,
+        rev: meta.rev,
+        at: meta.at,
+        stale,
+        current: elsewhere || !mark ? meta.rev : Math.max(meta.rev ?? 0, mark.rev),
+      };
     });
   }
 
   /**
+   * Keep the live answer of a read, replacing the one before it, unless the
+   * one kept was read at a newer `rev` (a read answered late, after a write
+   * whose own answer already holds the newer text). An answer read before a
+   * change the phone knows of is still kept when nothing newer is: flagged,
+   * it reads offline as the screen read online.
+   */
+  put(bible: string, channel: string, request: unknown, value: unknown, rev: number | null) {
+    return this.run(undefined, (b) => this.keep(b, bible, channel, request, value, rev));
+  }
+
+  /**
    * PH-25: an answer came back for `bible` with these `rev` headers. When the
-   * bible moved somewhere else (its `rev` before this request is not the
-   * newest the phone saw), every answer read before that is dropped, so a
-   * stale answer never outlives the reload. The phone's own writes move
-   * `rev` from the number it saw, which drops nothing.
+   * bible moved somewhere else (its `rev` before this request is newer than
+   * the newest the phone saw), every answer read before that is flagged, kept
+   * for reading with no connection and read again in the background. The
+   * transport holds back the headers of answers that cross the phone's own
+   * writes and hands them over in `rev` order once those writes have
+   * answered, so the phone's own writes, which move `rev` from the number it
+   * saw, flag nothing here.
    */
   observe(bible: string, before: number, after: number) {
     return this.run(undefined, async (b) => {
       const mark = this.marks.get(bible);
-      if (mark && before < mark.floor) return;
       let floor = mark?.floor ?? 0;
-      if (!mark || before !== mark.rev) {
-        const stale = [...this.index.values()]
-          .filter((m) => m.bible === bible && (m.rev === null || m.rev < before))
-          .map((m) => m.key);
-        if (stale.length) await b.remove(stale);
-        this.forget(stale);
+      let stale = mark?.stale ?? 0;
+      if (!mark || before > mark.rev) {
         floor = Math.max(floor, before);
+        stale = Math.max(stale, before);
       }
-      const next = { bible, rev: Math.max(mark?.rev ?? 0, after), floor };
-      await b.mark(next);
-      this.marks.set(bible, next);
+      await this.setMark(b, { bible, rev: Math.max(mark?.rev ?? 0, after), floor, stale });
     });
   }
 
@@ -203,34 +227,41 @@ export class ReadStore {
   }
 
   /**
-   * PH-25: the phone's own write to `bible` was stored at `after`. Every
-   * answer read before it may now be out of date, and the views do not all
-   * read again (an entry page shows the write's own answer, a page left is
-   * gone), so those answers are dropped and answers read before `after` are
-   * never kept again. The reads dropped come back, newest first, for the
-   * transport to ask again.
+   * PH-25: the phone's own write to `bible` was stored at `after`. Nothing is
+   * dropped: every answer read before it is flagged, and the reads the
+   * write's own answer holds (`written`) are kept at `after` in the same
+   * step, so the page just edited reads offline as it did online at once.
    */
-  wrote(bible: string, after: number): Promise<{ channel: string; request: unknown }[]> {
-    return this.run([], async (b) => {
+  wrote(bible: string, after: number, written: readonly WrittenRead[] = []): Promise<void> {
+    return this.run(undefined, async (b) => {
       const mark = this.marks.get(bible);
-      const stale = [...this.index.values()]
-        .filter((m) => m.bible === bible && (m.rev === null || m.rev < after))
-        .sort((x, y) => y.at - x.at);
-      const keys = stale.map((m) => m.key);
-      if (keys.length) await b.remove(keys);
-      this.forget(keys);
-      const next = {
+      await this.setMark(b, {
         bible,
-        rev: Math.max(mark?.rev ?? 0, after),
-        floor: Math.max(mark?.floor ?? 0, after),
-      };
-      await b.mark(next);
-      this.marks.set(bible, next);
-      return stale.flatMap((m) => {
-        const read = readOf(m.key);
-        return read ? [read] : [];
+        // `rev` itself moves when the transport hands over the write's headers (`observe`).
+        rev: mark?.rev ?? after,
+        floor: mark?.floor ?? 0,
+        stale: Math.max(mark?.stale ?? 0, after),
       });
+      for (const w of written) await this.keep(b, bible, w.channel, w.request, w.value, after);
     });
+  }
+
+  /**
+   * PH-25: the flagged reads of `bible`, the most recently stored first, less
+   * those in `skip`. The transport reads them again one at a time.
+   */
+  flagged(bible: string, skip: ReadonlySet<string> = new Set()): Promise<StoredRead[]> {
+    return this.run([], async () =>
+      // Newest first; stored in the same millisecond, the later one first.
+      [...this.index.values()]
+        .reverse()
+        .filter((m) => m.bible === bible && !skip.has(m.key) && this.isStale(m))
+        .sort((x, y) => y.at - x.at)
+        .flatMap((m) => {
+          const read = readOf(m.key);
+          return read ? [{ key: m.key, ...read }] : [];
+        }),
+    );
   }
 
   /** PH-17: a refused key, another key or sign-out: nothing read is kept on the phone. */
@@ -246,6 +277,47 @@ export class ReadStore {
         this.ok = false;
       }
     });
+  }
+
+  private isStale(m: AnswerMeta): boolean {
+    if (!m.bible) return false;
+    const mark = this.marks.get(m.bible);
+    return m.rev === null || (mark !== undefined && m.rev < mark.stale);
+  }
+
+  private async setMark(b: ReadBackend, next: BibleMark): Promise<void> {
+    const was = this.marks.get(next.bible);
+    if (was && was.rev === next.rev && was.floor === next.floor && was.stale === next.stale) return;
+    await b.mark(next);
+    this.marks.set(next.bible, next);
+  }
+
+  private async keep(
+    b: ReadBackend,
+    bible: string,
+    channel: string,
+    request: unknown,
+    value: unknown,
+    rev: number | null,
+  ): Promise<void> {
+    const key = answerKey(bible, channel, request);
+    const kept = this.index.get(key);
+    // Never an older answer over a newer one; with no `rev` to compare, the kept one stays.
+    if (bible && kept && (rev === null || (kept.rev !== null && rev < kept.rev))) return;
+    const text = JSON.stringify(value);
+    if (text === undefined || text.length > this.limits.answer) {
+      if (kept) {
+        await b.remove([key]);
+        this.forget([key]);
+      }
+      return;
+    }
+    const meta: AnswerMeta = { key, bible, channel, rev, at: this.now(), size: text.length };
+    await b.put(meta, text);
+    this.forget([key]);
+    this.index.set(key, meta);
+    this.total += meta.size;
+    await this.evict(b);
   }
 
   private async evict(b: ReadBackend): Promise<void> {

@@ -19,8 +19,9 @@ import type {
 import { APPEARANCES, isWriteChannel } from '../shared/ipcApp';
 import type { Appearance, ConnectionStatus } from '../shared/ipcApp';
 import { isBibleFree } from '../shared/ipcPhone';
-import { ReadStore, answerKey } from './readStore';
+import { ReadStore } from './readStore';
 import type { StoredAnswer } from './readStore';
+import { writtenReads } from './writeAnswers';
 
 /**
  * A58 P4: `window.api` on the phone. The same `Api` the preload exposes,
@@ -57,10 +58,11 @@ export const CLOCK_MARGIN_MS = 5 * 60_000;
 export const READ_TIMEOUT_MS = 15_000;
 /** PH-25: while the connection is lost, a read tries the function this long first. */
 export const OFFLINE_PROBE_MS = 4000;
-/** PH-25: after the phone's own write, the views read again first; what they did not is asked after this. */
-export const REREAD_DELAY_MS = 300;
-/** PH-25: at most this many answers a write dropped are asked again; the rest read as not stored. */
-export const REREAD_LIMIT = 60;
+/**
+ * PH-25: answers read before a change are read again in the background once
+ * the phone's writes have been quiet this long; each write starts it again.
+ */
+export const REFRESH_QUIET_MS = 2000;
 
 export const KEY_REFUSED = 'The phone key was not accepted.';
 export const NO_CONNECTION = 'The phone has no connection to the bible.';
@@ -142,14 +144,26 @@ export class WebTransport implements Api {
   private readonly reads: ReadStore;
   /** PH-25: reads in flight whose answers the store keeps. */
   private readonly reading = new Set<Promise<unknown>>();
-  /** PH-25: answers the phone's own writes dropped, to ask again, by answer key. */
-  private readonly again = new Map<string, { bible: string; channel: string; request: unknown }>();
-  private rereading: Promise<void> | null = null;
+  /** PH-9: the phone's own writes in flight. */
+  private writing = 0;
+  /** PH-9: `rev` headers that came back while a write of the phone's own was in flight. */
+  private held: { bible: string; before: number; after: number; sentAt: number }[] = [];
+  /** PH-25: the background refresh of flagged answers: its quiet timer, its pass, and its turn. */
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshing: Promise<void> | null = null;
+  private refreshTurn = 0;
+  /** A refresh came due while a write was out: it runs once the writes answered. */
+  private refreshAfterWrites = false;
+  private visible = true;
 
   constructor(private readonly deps: TransportDeps) {
     this.now = deps.now ?? (() => Date.now());
     this.reads = deps.reads ?? new ReadStore(null);
     this.bible = this.read(BIBLE_STORAGE);
+    // PH-25: answers flagged in an earlier launch are read again in this one.
+    void this.reads.ready().then((usable) => {
+      if (usable) this.refreshLater();
+    });
   }
 
   // ---------- the phone key (PH-16, PH-17) ----------
@@ -173,6 +187,7 @@ export class WebTransport implements Api {
 
   /** PH-17: the key was refused, so it is forgotten with the bible the phone was on. */
   signOut(): void {
+    this.stopRefresh();
     this.remove(KEY_STORAGE);
     this.remove(BIBLE_STORAGE);
     this.bible = null;
@@ -278,6 +293,8 @@ export class WebTransport implements Api {
    * and the page is asked to flush what it holds, as on the desk's close.
    */
   hidden(): void {
+    this.visible = false;
+    this.stopRefresh();
     this.keepalive();
     if (this.bible !== null) this.emit('app.closeRequested', { hasBible: true, quitting: false });
   }
@@ -290,22 +307,30 @@ export class WebTransport implements Api {
   /** The app is visible again: writes go out as normal requests. */
   shown(): void {
     this.keepaliveUntil = 0;
+    this.visible = true;
+    this.refreshLater();
   }
 
   /**
-   * PH-25: resolves once every read in flight has landed in the store and the
-   * answers the phone's own writes dropped were asked again, so what the phone
-   * shows offline is what it showed a moment before.
+   * PH-25: resolves once every read in flight, and a background refresh
+   * already running, has landed in the store, so what the phone shows offline
+   * is what it showed a moment before. A refresh still waiting for the
+   * phone's writes to go quiet is not waited for.
    */
   async readsSettled(): Promise<void> {
     for (;;) {
       if (this.reading.size) await Promise.all(this.reading);
-      else if (this.rereading) await this.rereading;
+      else if (this.refreshing) await this.refreshing;
       else {
         await this.reads.settled();
-        if (!this.reading.size && !this.rereading) return;
+        if (!this.reading.size && !this.refreshing) return;
       }
     }
+  }
+
+  /** PH-25: true while a background refresh waits for quiet or runs. For tests. */
+  get refreshPending(): boolean {
+    return this.refreshTimer !== null || this.refreshing !== null;
   }
 
   // ---------- inside ----------
@@ -322,46 +347,86 @@ export class WebTransport implements Api {
   }
 
   /**
-   * PH-25: the phone's own write was stored. The answers read before it are
-   * dropped (an entry page redraws from the write's own answer and a page
-   * left never reads again), and asked again once the views had their turn,
-   * so the store holds what the phone shows. One that cannot be asked again
-   * reads as not stored, never as it was before the write.
+   * PH-25: the phone's own write was stored at `after`. Nothing kept is
+   * dropped: what the write's own answer holds is kept as its read's answer in
+   * this same step, everything else of the bible read before it is flagged,
+   * and the flagged answers are read again once the writes go quiet.
    */
-  private wrote(headers: Headers, bible: string | null): void {
+  private wrote(
+    headers: Headers,
+    bible: string | null,
+    channel: Channel,
+    request: unknown,
+    result: unknown,
+  ): void {
     const after = Number(headers.get(REV_HEADERS.after));
     if (bible === null || headers.get(REV_HEADERS.bible) !== bible || !Number.isInteger(after))
       return;
-    void this.reads.wrote(bible, after).then((dropped) => {
-      for (const read of dropped.slice(0, REREAD_LIMIT)) {
-        this.again.set(answerKey(bible, read.channel, read.request), { bible, ...read });
-      }
-      this.reread();
-    });
+    let written: ReturnType<typeof writtenReads> = [];
+    try {
+      if (result !== undefined) written = writtenReads(channel, request, result);
+    } catch {
+      // An answer of another shape holds no read; the refresh reads the page again.
+    }
+    void this.reads.wrote(bible, after, written);
+    this.refreshLater();
   }
 
-  private reread(): void {
-    if (this.rereading || this.again.size === 0) return;
+  /** PH-25: the background refresh runs once the phone's writes have been quiet a while. */
+  private refreshLater(): void {
+    this.refreshTurn++;
+    if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      this.refresh();
+    }, REFRESH_QUIET_MS);
+  }
+
+  /** PH-25: hidden, offline or signed out: no refresh request goes out from now on. */
+  private stopRefresh(): void {
+    this.refreshTurn++;
+    if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+  }
+
+  /**
+   * PH-25: read the flagged answers of the bible again, one request at a
+   * time, the most recently stored first, until none is left. A write, hiding
+   * the app or losing the connection ends the pass at once; the flags stay in
+   * the store, so the next quiet moment, reconnect or launch carries on.
+   */
+  private refresh(): void {
+    if (this.refreshing) {
+      // One pass at a time; the one running ends at this turn, and a new one follows it.
+      void this.refreshing.then(() => this.refreshLater());
+      return;
+    }
+    const turn = this.refreshTurn;
+    const live = (bible: string) =>
+      turn === this.refreshTurn &&
+      this.visible &&
+      this.writing === 0 &&
+      this.status.state === 'connected' &&
+      this.bible === bible;
     const run = (async () => {
-      await new Promise((resolve) => setTimeout(resolve, REREAD_DELAY_MS));
-      for (const [k, read] of this.again) {
-        this.again.delete(k);
-        // With no connection, what was dropped stays dropped and reads as not stored.
-        if (this.status.state !== 'connected') {
-          this.again.clear();
-          break;
-        }
-        if (read.bible !== this.bible || !this.hasKey()) continue;
-        if (await this.reads.has(read.bible, read.channel, read.request)) continue;
-        if (!isChannel(read.channel)) continue;
-        await this.invoke(read.channel, read.request as never, { bible: read.bible }).catch(
-          () => undefined,
-        );
+      const bible = this.bible;
+      const key = this.read(KEY_STORAGE);
+      if (this.writing > 0) this.refreshAfterWrites = true;
+      if (bible === null || key === null || !live(bible)) return;
+      const tried = new Set<string>();
+      for (;;) {
+        const [next] = await this.reads.flagged(bible, tried);
+        if (!next || !live(bible) || this.read(KEY_STORAGE) !== key) return;
+        tried.add(next.key);
+        if (!isChannel(next.channel)) continue;
+        await this.track(
+          next.channel,
+          this.send(next.channel, next.request, { bible }, key, false),
+        ).catch(() => undefined);
       }
     })();
-    this.rereading = run.finally(() => {
-      this.rereading = null;
-      this.reread();
+    this.refreshing = run.finally(() => {
+      this.refreshing = null;
     });
   }
 
@@ -401,6 +466,23 @@ export class WebTransport implements Api {
     /** PH-25: false when a stored answer must not stand in (a key being tried, Try again). */
     fromStore = true,
   ): Promise<Response<C>> {
+    if (!isWriteChannel(channel)) return this.request(channel, request, context, key, fromStore);
+    // PH-9: answers that come back while the phone's own write is out wait for it (`followRev`).
+    this.writing++;
+    try {
+      return await this.request(channel, request, context, key, fromStore);
+    } finally {
+      if (--this.writing === 0) this.release();
+    }
+  }
+
+  private async request<C extends Channel>(
+    channel: C,
+    request: unknown,
+    context: CallContext | undefined,
+    key: string,
+    fromStore: boolean,
+  ): Promise<Response<C>> {
     // PH-19: the chooser's channels name no bible, so one bible the function refuses blocks only itself.
     const chooser = isBibleFree(channel) && channel !== 'bible.current';
     const bible = chooser ? null : (context?.bible ?? this.bible);
@@ -417,6 +499,7 @@ export class WebTransport implements Api {
       size < KEEPALIVE_BUDGET &&
       this.keepaliveBytes + size < KEEPALIVE_BUDGET;
     const sentAt = this.now();
+    const keyKept = this.read(KEY_STORAGE) === key;
     let res: globalThis.Response;
     if (keepalive) this.keepaliveBytes += size;
     // PH-25: a read that hangs counts as no connection; a write is never cut off.
@@ -482,11 +565,8 @@ export class WebTransport implements Api {
     }
     this.reached();
     const envelope = (payload ?? {}) as { result?: unknown; events?: unknown };
-    this.followRev(res.headers, sentAt);
-    // Before the write's events reach the views, so their reads after it are kept.
-    if (isWriteChannel(channel)) this.wrote(res.headers, bible);
-    // The bible opened is the one later requests name, before its events reach the views:
-    // a view that reloads on `bibles.changed` must ask about the new bible (A58 U1).
+    // PH-17: an answer landing after sign-out changes nothing the phone knows.
+    if (!keyKept || this.read(KEY_STORAGE) === key) this.followRev(res.headers, sentAt);
     let result: Response<C> | undefined;
     let invalid: unknown = null;
     try {
@@ -494,6 +574,12 @@ export class WebTransport implements Api {
     } catch (e) {
       invalid = e;
     }
+    // Before the write's events reach the views, so the page just edited is kept at once.
+    if (isWriteChannel(channel) && this.read(KEY_STORAGE) === key) {
+      this.wrote(res.headers, bible, channel, request, result);
+    }
+    // The bible opened is the one later requests name, before its events reach the views:
+    // a view that reloads on `bibles.changed` must ask about the new bible (A58 U1).
     if (result !== undefined) this.opened(channel, result);
     // PH-25: a bible opened by a request that named none is the one a launch with no
     // connection reopens, so it is read once under its own name.
@@ -535,7 +621,28 @@ export class WebTransport implements Api {
     const before = Number(headers.get(REV_HEADERS.before));
     const after = Number(headers.get(REV_HEADERS.after));
     if (!bible || !Number.isInteger(before) || !Number.isInteger(after)) return;
-    // PH-25: stored answers read before a change made elsewhere are dropped.
+    // While the phone's own write is out, an answer may count it before the write's
+    // own answer does: it waits, and is weighed in `rev` order once the writes answered.
+    if (this.writing > 0) {
+      this.held.push({ bible, before, after, sentAt });
+      return;
+    }
+    this.followRevNow(bible, before, after, sentAt);
+  }
+
+  /** PH-9: the phone's writes have all answered: the answers held meanwhile, in `rev` order. */
+  private release(): void {
+    const held = this.held.sort((x, y) => x.before - y.before || x.after - y.after);
+    this.held = [];
+    for (const h of held) this.followRevNow(h.bible, h.before, h.after, h.sentAt);
+    if (this.refreshAfterWrites) {
+      this.refreshAfterWrites = false;
+      this.refreshLater();
+    }
+  }
+
+  private followRevNow(bible: string, before: number, after: number, sentAt: number): void {
+    // PH-25: stored answers read before a change made elsewhere are flagged.
     void this.reads.observe(bible, before, after);
     const was = this.rev;
     // An answer older than one already seen (requests run in parallel) changes nothing.
@@ -614,14 +721,16 @@ export class WebTransport implements Api {
    * apart and every view asks again (PH-9).
    */
   private shownFrom(bible: string, hit: StoredAnswer): void {
-    if (hit.rev === null) return;
+    // An answer older only than the phone's own writes shows nothing changed elsewhere.
+    const rev = hit.current;
+    if (rev === null) return;
     const was = this.rev;
-    if (!was || was.bible !== bible) this.rev = { bible, known: hit.rev, at: hit.at };
-    else if (hit.rev < was.known)
-      this.rev = { bible, known: hit.rev, at: Math.min(was.at, hit.at) };
+    if (!was || was.bible !== bible) this.rev = { bible, known: rev, at: hit.at };
+    else if (rev < was.known) this.rev = { bible, known: rev, at: Math.min(was.at, hit.at) };
   }
 
   private lost(message: string, readOnly: boolean): void {
+    this.stopRefresh();
     const state = readOnly ? 'readOnly' : 'unavailable';
     if (this.status.state === state && this.status.message === message) return;
     this.status = { state, message, snapshot: null };
@@ -635,6 +744,8 @@ export class WebTransport implements Api {
     this.emit('connection.changed', this.status);
     // PH-25: back from reading what was stored, the bible is checked for changes made meanwhile.
     if (wasReadOnly) void this.checkFreshness();
+    // PH-25: what is flagged is read again, carrying on where a pass stopped.
+    this.refreshLater();
   }
 
   /** ARCH-6 on the phone: the browser says it went offline. */
