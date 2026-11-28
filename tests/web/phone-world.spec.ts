@@ -306,6 +306,50 @@ test('PH-34 an event added by a tap in a cell is saved through /rpc and opens as
   await expect(page.locator('[data-testid="editor"]:visible')).toContainText('Tide barrier opens');
 });
 
+test('PH-34 a row with an event at the story year still takes a new event by a tap on its +', async ({
+  page,
+}, info) => {
+  onlyOn(info, 'iphone');
+  await openFixture(page, server.url);
+  await setYear(page, 2040);
+  const grid = await openWorld(page);
+  // The test before left "Tide barrier opens" at 2040 in this row.
+  const row = grid.locator('.wg-row', {
+    has: page.locator('.wg-marker[aria-label^="Tide barrier opens"]'),
+  });
+  await expect(row).toHaveCount(1);
+  const add = row.getByTestId('cell-add');
+  // The + is a thumb target that the marker in the story year does not cover.
+  const b = await box(add);
+  expect(b.width).toBeGreaterThanOrEqual(44);
+  expect(b.height).toBeGreaterThanOrEqual(44);
+  const hit = await add.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return at !== null && el.contains(at);
+  });
+  expect(hit).toBe(true);
+  // Scrolled to the foot of the page, a tap on the + still lands clear of the bars.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await add.tap();
+  const form = page.getByTestId('grid-add');
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel('Year', { exact: true })).toHaveValue('2040');
+  await form.getByLabel('Title').fill('Second barrier opens');
+  await form.getByRole('button', { name: 'Save' }).tap();
+  await expect
+    .poll(async () =>
+      store.db.collection(`${SLUG}.worldEvents`).countDocuments({
+        title: { $in: ['Tide barrier opens', 'Second barrier opens'] },
+        'start.year': 2040,
+      }),
+    )
+    .toBe(2);
+  await expect(page.locator('[data-testid="editor"]:visible')).toContainText(
+    'Second barrier opens',
+  );
+});
+
 test('PH-35 no hover-only control on the World screen: the adds, the era ends and the filters show without a pointer', async ({
   page,
 }, info) => {
@@ -319,13 +363,10 @@ test('PH-35 no hover-only control on the World screen: the adds, the era ends an
     .poll(async () => [await adds.count(), await grid.locator('.wg-row').count()])
     .toEqual([7, 7]);
   for (const a of (await adds.all()).slice(0, 3)) {
-    const target = await a.evaluate((el) => {
-      const r = el.getBoundingClientRect();
-      const b = getComputedStyle(el, '::before');
-      return { w: r.width - 2 * parseFloat(b.left), h: r.height - 2 * parseFloat(b.top) };
-    });
-    expect(target.w).toBeGreaterThanOrEqual(44);
-    expect(target.h).toBeGreaterThanOrEqual(44);
+    const b = await box(a);
+    expect(b.width).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+    await expect(a.locator('.wg-plus')).toBeVisible();
   }
   await expect(grid.locator('.wg-row-label .wg-plus').first()).toBeVisible();
   // Rows, headings and eras are thumb tall.

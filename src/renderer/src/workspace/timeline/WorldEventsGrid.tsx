@@ -237,6 +237,9 @@ export function WorldEventsGrid(props: {
               aria-label={`${line.row.label}, add an event in ${storyYear}`}
               disabled={props.readOnly}
               onClick={() => openDraft(line.row.key, storyYear, line.y + line.height)}
+              // A58 U3: on the phone the held first cell is the row's add, a thumb target no marker covers.
+              data-testid={phone ? 'cell-add' : undefined}
+              data-row={phone ? line.row.key : undefined}
             >
               <span className="wg-row-name">{line.row.label}</span>
               {!props.readOnly && (
@@ -253,20 +256,6 @@ export function WorldEventsGrid(props: {
                   : (year) => openDraft(line.row.key, year, line.y + line.height)
               }
             >
-              {phone && !props.readOnly && storyYear >= scale.from && storyYear <= scale.to && (
-                // A58 U3: the phone has no pointer to hover; each row shows its add at the story year.
-                <button
-                  type="button"
-                  className="wg-cell-add"
-                  style={{ left: yearMid(scale, storyYear) }}
-                  aria-label={`Add an event in ${line.row.label}, ${storyYear}`}
-                  data-testid="cell-add"
-                  data-row={line.row.key}
-                  onClick={() => openDraft(line.row.key, storyYear, line.y + line.height)}
-                >
-                  <span aria-hidden="true">+</span>
-                </button>
-              )}
               {markers(line)}
             </GridTrack>
           </div>
