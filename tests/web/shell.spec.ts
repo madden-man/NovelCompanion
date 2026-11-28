@@ -114,9 +114,8 @@ test('PH-24 an edit made while the connection is lost is not shown as saved and 
   await f.locator('input').press('Enter');
   await expect(page.getByTestId('connection-banner')).toBeVisible();
   // The field stays open with the typing and says it was not stored.
-  await expect(f.locator('.editable-error')).toContainText(
-    'The phone has no connection to the bible.',
-  );
+  // A58 L1: once a read has found no connection the phone refuses the write itself, in its own words.
+  await expect(f.locator('.editable-error')).toContainText('The phone has no connection');
   await expect(f.locator('input')).toHaveValue('Ruth Hale Offline');
   server = await startWebServer(db, {}, port);
   expect((await stored('H4')).names.full).toBe('Ruth Hale');
