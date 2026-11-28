@@ -310,6 +310,62 @@ test('PH-25 an edit open when the connection goes is refused and keeps its typin
   expect((await stored('H3')).names.full).not.toBe('Daniel Hale Offline');
 });
 
+test("PH-25 the phone's own edits read offline as they did online: an entry page and the People list", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await openFixture(page, server.url);
+  await installed(page);
+  const list = page.getByTestId('entry-list');
+  await expect(list.getByRole('button', { name: /^Peter Hale/ })).toBeVisible();
+  await settled(list);
+
+  // An "In the story" edit on Ruth's page, saved when the phone goes back.
+  const person = await openCharacter(page, /^Ruth Hale/);
+  await settled(person);
+  const role = person.locator('[data-field="role"] .rich-text-input');
+  await role.tap();
+  await page.keyboard.type('Keeps the letters Margaret left.');
+  await page.getByTestId('phone-back').tap();
+  await expect.poll(async () => (await stored('H4')).role ?? '').toContain('Keeps the letters');
+
+  // Someone renamed from the phone: the People list shows the new name.
+  const renamed = await page.evaluate(() =>
+    window.api
+      .invoke(
+        'entry.update',
+        { collection: 'characters', id: 'H2', patch: { title: 'Peter Hale-Okafor' } },
+        { bible: 'fixture-novel' },
+      )
+      .then(() => 'saved'),
+  );
+  expect(renamed).toBe('saved');
+  await expect(list.getByRole('button', { name: /^Peter Hale-Okafor/ })).toBeVisible();
+  const online = await settled(list);
+  // What the phone holds once its reads have landed.
+  await page.evaluate(() =>
+    (window.api as unknown as { readsSettled?: () => Promise<void> }).readsSettled?.(),
+  );
+
+  const port = Number(new URL(server.url).port);
+  await server.stop();
+  try {
+    await page.reload();
+    const banner = page.getByTestId('connection-banner');
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+    await expect(list.getByRole('button').first()).toBeVisible();
+    expect(await settled(list)).toBe(online);
+    await expect(list.getByRole('button', { name: /^Peter Hale-Okafor/ })).toBeVisible();
+    const again = await openCharacter(page, /^Ruth Hale/);
+    await settled(again);
+    await expect(again.locator('[data-field="role"]')).toContainText(
+      'Keeps the letters Margaret left.',
+    );
+  } finally {
+    server = await startWebServer(db, {}, port);
+  }
+});
+
 test('PH-25 PH-17 a refused key clears the store with the key', async ({ page }) => {
   await openFixture(page, server.url);
   await openCharacter(page, /^Margaret Hale/);

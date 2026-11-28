@@ -19,7 +19,7 @@ import type {
 import { APPEARANCES, isWriteChannel } from '../shared/ipcApp';
 import type { Appearance, ConnectionStatus } from '../shared/ipcApp';
 import { isBibleFree } from '../shared/ipcPhone';
-import { ReadStore } from './readStore';
+import { ReadStore, answerKey } from './readStore';
 import type { StoredAnswer } from './readStore';
 
 /**
@@ -57,6 +57,10 @@ export const CLOCK_MARGIN_MS = 5 * 60_000;
 export const READ_TIMEOUT_MS = 15_000;
 /** PH-25: while the connection is lost, a read tries the function this long first. */
 export const OFFLINE_PROBE_MS = 4000;
+/** PH-25: after the phone's own write, the views read again first; what they did not is asked after this. */
+export const REREAD_DELAY_MS = 300;
+/** PH-25: at most this many answers a write dropped are asked again; the rest read as not stored. */
+export const REREAD_LIMIT = 60;
 
 export const KEY_REFUSED = 'The phone key was not accepted.';
 export const NO_CONNECTION = 'The phone has no connection to the bible.';
@@ -136,6 +140,11 @@ export class WebTransport implements Api {
   private keepaliveBytes = 0;
   private readonly now: () => number;
   private readonly reads: ReadStore;
+  /** PH-25: reads in flight whose answers the store keeps. */
+  private readonly reading = new Set<Promise<unknown>>();
+  /** PH-25: answers the phone's own writes dropped, to ask again, by answer key. */
+  private readonly again = new Map<string, { bible: string; channel: string; request: unknown }>();
+  private rereading: Promise<void> | null = null;
 
   constructor(private readonly deps: TransportDeps) {
     this.now = deps.now ?? (() => Date.now());
@@ -205,7 +214,7 @@ export class WebTransport implements Api {
       throw new RpcCallError(OFFLINE_WRITE, 'unreachable', 0);
     }
     try {
-      return await this.send(channel, parsed, ctx, key);
+      return await this.track(channel, this.send(channel, parsed, ctx, key));
     } catch (e) {
       // The bible used last is gone: the phone starts on the chooser instead.
       if (channel === 'bible.current' && e instanceof RpcCallError && e.code === 'refused') {
@@ -283,7 +292,78 @@ export class WebTransport implements Api {
     this.keepaliveUntil = 0;
   }
 
+  /**
+   * PH-25: resolves once every read in flight has landed in the store and the
+   * answers the phone's own writes dropped were asked again, so what the phone
+   * shows offline is what it showed a moment before.
+   */
+  async readsSettled(): Promise<void> {
+    for (;;) {
+      if (this.reading.size) await Promise.all(this.reading);
+      else if (this.rereading) await this.rereading;
+      else {
+        await this.reads.settled();
+        if (!this.reading.size && !this.rereading) return;
+      }
+    }
+  }
+
   // ---------- inside ----------
+
+  private track<T>(channel: Channel, sent: Promise<T>): Promise<T> {
+    if (!isStoredRead(channel)) return sent;
+    const done = sent.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.reading.add(done);
+    void done.then(() => this.reading.delete(done));
+    return sent;
+  }
+
+  /**
+   * PH-25: the phone's own write was stored. The answers read before it are
+   * dropped (an entry page redraws from the write's own answer and a page
+   * left never reads again), and asked again once the views had their turn,
+   * so the store holds what the phone shows. One that cannot be asked again
+   * reads as not stored, never as it was before the write.
+   */
+  private wrote(headers: Headers, bible: string | null): void {
+    const after = Number(headers.get(REV_HEADERS.after));
+    if (bible === null || headers.get(REV_HEADERS.bible) !== bible || !Number.isInteger(after))
+      return;
+    void this.reads.wrote(bible, after).then((dropped) => {
+      for (const read of dropped.slice(0, REREAD_LIMIT)) {
+        this.again.set(answerKey(bible, read.channel, read.request), { bible, ...read });
+      }
+      this.reread();
+    });
+  }
+
+  private reread(): void {
+    if (this.rereading || this.again.size === 0) return;
+    const run = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, REREAD_DELAY_MS));
+      for (const [k, read] of this.again) {
+        this.again.delete(k);
+        // With no connection, what was dropped stays dropped and reads as not stored.
+        if (this.status.state !== 'connected') {
+          this.again.clear();
+          break;
+        }
+        if (read.bible !== this.bible || !this.hasKey()) continue;
+        if (await this.reads.has(read.bible, read.channel, read.request)) continue;
+        if (!isChannel(read.channel)) continue;
+        await this.invoke(read.channel, read.request as never, { bible: read.bible }).catch(
+          () => undefined,
+        );
+      }
+    })();
+    this.rereading = run.finally(() => {
+      this.rereading = null;
+      this.reread();
+    });
+  }
 
   private async local(channel: LocalChannel, request: unknown): Promise<unknown> {
     switch (channel) {
@@ -403,6 +483,8 @@ export class WebTransport implements Api {
     this.reached();
     const envelope = (payload ?? {}) as { result?: unknown; events?: unknown };
     this.followRev(res.headers, sentAt);
+    // Before the write's events reach the views, so their reads after it are kept.
+    if (isWriteChannel(channel)) this.wrote(res.headers, bible);
     // The bible opened is the one later requests name, before its events reach the views:
     // a view that reloads on `bibles.changed` must ask about the new bible (A58 U1).
     let result: Response<C> | undefined;
@@ -413,6 +495,17 @@ export class WebTransport implements Api {
       invalid = e;
     }
     if (result !== undefined) this.opened(channel, result);
+    // PH-25: a bible opened by a request that named none is the one a launch with no
+    // connection reopens, so it is read once under its own name.
+    const opening = channel === 'bible.open' || (channel === 'bible.current' && bible === null);
+    if (result !== undefined && opening && this.bible !== null) {
+      const read = this.reads
+        .ready()
+        .then((usable) =>
+          usable ? this.invoke('bible.current', {}).then(() => undefined) : undefined,
+        );
+      void this.track('bible.current', read).catch(() => undefined);
+    }
     // PH-25: the live answer replaces the stored one, with the `rev` it was read at.
     if (result !== undefined && stored && this.read(KEY_STORAGE) === key) {
       const revBible = res.headers.get(REV_HEADERS.bible);

@@ -75,6 +75,18 @@ export function answerKey(bible: string, channel: string, request: unknown): str
   return `${bible}\u0000${channel}\u0000${stableJson(request ?? {})}`;
 }
 
+/** The channel and request an answer key was made from, or null when it cannot be read back. */
+function readOf(key: string): { channel: string; request: unknown } | null {
+  const a = key.indexOf('\u0000');
+  const b = a < 0 ? -1 : key.indexOf('\u0000', a + 1);
+  if (b < 0) return null;
+  try {
+    return { channel: key.slice(a + 1, b), request: JSON.parse(key.slice(b + 1)) as unknown };
+  } catch {
+    return null;
+  }
+}
+
 export class ReadStore {
   private readonly index = new Map<string, AnswerMeta>();
   private readonly marks = new Map<string, BibleMark>();
@@ -182,6 +194,42 @@ export class ReadStore {
       const next = { bible, rev: Math.max(mark?.rev ?? 0, after), floor };
       await b.mark(next);
       this.marks.set(bible, next);
+    });
+  }
+
+  /** True when an answer for this read is kept now, after every operation asked for so far. */
+  has(bible: string, channel: string, request: unknown): Promise<boolean> {
+    return this.run(false, async () => this.index.has(answerKey(bible, channel, request)));
+  }
+
+  /**
+   * PH-25: the phone's own write to `bible` was stored at `after`. Every
+   * answer read before it may now be out of date, and the views do not all
+   * read again (an entry page shows the write's own answer, a page left is
+   * gone), so those answers are dropped and answers read before `after` are
+   * never kept again. The reads dropped come back, newest first, for the
+   * transport to ask again.
+   */
+  wrote(bible: string, after: number): Promise<{ channel: string; request: unknown }[]> {
+    return this.run([], async (b) => {
+      const mark = this.marks.get(bible);
+      const stale = [...this.index.values()]
+        .filter((m) => m.bible === bible && (m.rev === null || m.rev < after))
+        .sort((x, y) => y.at - x.at);
+      const keys = stale.map((m) => m.key);
+      if (keys.length) await b.remove(keys);
+      this.forget(keys);
+      const next = {
+        bible,
+        rev: Math.max(mark?.rev ?? 0, after),
+        floor: Math.max(mark?.floor ?? 0, after),
+      };
+      await b.mark(next);
+      this.marks.set(bible, next);
+      return stale.flatMap((m) => {
+        const read = readOf(m.key);
+        return read ? [read] : [];
+      });
     });
   }
 

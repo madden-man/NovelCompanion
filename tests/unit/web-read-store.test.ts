@@ -261,6 +261,100 @@ function rig(reply: (b: Record<string, unknown>) => Answer, store = true) {
 }
 
 describe('PH-25 the transport reads from the store without a connection', () => {
+  test("PH-25 the phone's own write drops the answers read before it and asks them again, so offline shows the edit", async () => {
+    let down = false;
+    let rev = 3;
+    let title = 'Ruth Hale';
+    const { t, sent, reads } = rig((b) => {
+      if (down) return 'network-down';
+      if (b.channel === 'search.query') {
+        const { query } = b.request as { query: string };
+        return ok(hits(`${title} ${query}`), revs('east', rev, rev));
+      }
+      title = 'Ruth Hale-Okafor';
+      return ok(
+        { entry: { _id: 'H4', modifiedAt: '2026-11-27T00:00:00Z' }, warnings: [] },
+        revs('east', rev, ++rev),
+      );
+    });
+    await t.invoke('search.query', { query: 'ruth' });
+    await t.invoke('search.query', { query: 'hale' });
+    await t.readsSettled();
+    await t.invoke(
+      'entry.update',
+      { collection: 'characters', id: 'H4', patch: { title: 'Ruth Hale-Okafor' } },
+      { bible: 'east' },
+    );
+    await t.readsSettled();
+    // Both answers were read again after the write.
+    expect(
+      sent
+        .slice(-2)
+        .map((b) => (b.request as { query: string }).query)
+        .sort(),
+    ).toEqual(['hale', 'ruth']);
+    down = true;
+    expect(await t.invoke('search.query', { query: 'ruth' })).toEqual(
+      hits('Ruth Hale-Okafor ruth'),
+    );
+    expect(await reads!.has('east', 'search.query', Q('hale'))).toBe(true);
+  });
+
+  test('PH-25 a bible opened from the chooser is read once under its own name, so a launch with no connection reopens it', async () => {
+    let down = false;
+    const { t, storage } = rig((b) => {
+      if (down) return 'network-down';
+      if (b.channel === 'bible.open') return ok({ bible: EAST });
+      return ok({ bible: b.bible === 'east' ? EAST : null }, revs('east', 3, 3));
+    });
+    storage.map.delete('nc.phone.bible');
+    await t.invoke('bible.open', { slug: 'east' });
+    await t.readsSettled();
+    down = true;
+    expect(await t.invoke('bible.current', {})).toEqual({ bible: EAST });
+  });
+
+  test('PH-25 an answer the phone could not read again after its own write reads as not stored, never as before', async () => {
+    const { backend } = memoryBackend();
+    const store = new ReadStore(backend);
+    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
+    await store.put('west', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
+    expect(await store.wrote('east', 4)).toEqual([{ channel: 'search.query', request: Q('ruth') }]);
+    expect(await store.get('east', 'search.query', Q('ruth'))).toBeNull();
+    expect(await store.get('west', 'search.query', Q('ruth'))).not.toBeNull();
+    // An answer read before the write and arriving after it is never kept.
+    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
+    expect(await store.has('east', 'search.query', Q('ruth'))).toBe(false);
+    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale-Okafor'), 4);
+    expect((await store.get('east', 'search.query', Q('ruth')))?.value).toEqual(
+      hits('Ruth Hale-Okafor'),
+    );
+    // A write that changed nothing drops nothing.
+    expect(await store.wrote('east', 4)).toEqual([]);
+
+    let down = false;
+    const { t, reads } = rig((b) => {
+      if (down) return 'network-down';
+      if (b.channel === 'search.query') return ok(hits('Ruth Hale'), revs('east', 3, 3));
+      down = true;
+      return ok(
+        { entry: { _id: 'H4', modifiedAt: '2026-11-27T00:00:00Z' }, warnings: [] },
+        revs('east', 3, 4),
+      );
+    });
+    await t.invoke('search.query', { query: 'ruth' });
+    await reads!.settled();
+    await t.invoke(
+      'entry.update',
+      { collection: 'characters', id: 'H4', patch: { title: 'x' } },
+      { bible: 'east' },
+    );
+    await t.readsSettled();
+    await expect(t.invoke('search.query', { query: 'ruth' })).rejects.toMatchObject({
+      message: NOT_STORED,
+    });
+  });
+
   test('PH-25 a read visited before is served read-only, an unvisited one fails in plain words, and writes are refused here', async () => {
     let down = false;
     let rev = 3;
