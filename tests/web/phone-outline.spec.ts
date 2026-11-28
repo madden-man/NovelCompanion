@@ -460,6 +460,29 @@ test('PH-31 Relevant to Session opens from a chapter, on that chapter', async ({
   await expect(page.locator('[data-testid="editor"][data-entry-id="CH3"]')).toBeVisible();
 });
 
+test('PH-31 Relevant to Session on a chapter: the year chip fits its year, and an empty box shows its whole placeholder', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'webkit', 'Layout runs on WebKit.');
+  await openOutline(page);
+  await bar(page, 'CH1').getByTestId('chapter-more').tap();
+  await page.getByTestId('chapter-sheet').getByTestId('ph-chapter-relevant').tap();
+  const view = page.getByTestId('relevant-view');
+  await expect(view.getByTestId('relevant-strand')).toBeVisible();
+  const chip = view.locator(':scope > .row > .chip.time');
+  await expect(chip).toHaveText('2075');
+  expect((await box(chip)).width).toBeLessThan(120);
+  const empties = view.locator('.rich-text.is-empty .rich-text-input[data-placeholder]:visible');
+  expect(await empties.count()).toBeGreaterThan(0);
+  const cut = await empties.evaluateAll((els) =>
+    els
+      .filter((el) => el.scrollHeight > el.clientHeight + 1)
+      .map((el) => `${el.getAttribute('data-placeholder')} ${el.scrollHeight}>${el.clientHeight}`),
+  );
+  expect(cut).toEqual([]);
+});
+
 test('PH-35 nothing on the Outline shows only on hover: menus, grips, the + and the dividers', async ({
   page,
   browserName,

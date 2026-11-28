@@ -27,3 +27,7 @@
 :root[data-phone] .ph-frame [data-testid='relevant-view'] select {
   height: var(--ph-target);
 }
+/* The year beside the heading is as wide as the year, not the column. */
+:root[data-phone] .ph-frame [data-testid='relevant-view'] > .row > .chip.time {
+  align-self: flex-start;
+}

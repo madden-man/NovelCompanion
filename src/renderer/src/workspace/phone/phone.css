@@ -356,12 +356,22 @@
 :root[data-phone] .ph-frame .rich-text:not(:focus-within) .rich-text-input.rich-notes {
   min-height: calc(1.55em * 2 + 18px);
 }
-/* An empty box is one line until it is typed in, so the page does not run on. */
+/* An empty box is as tall as its placeholder until it is typed in, so the page does not
+   run on and the placeholder is whole: the placeholder and the empty line share one cell. */
 :root[data-phone]
   .ph-frame
   .rich-text.is-empty:not(:focus-within)
   .rich-text-input.rich-text-input {
   min-height: calc(1.55em + 18px);
+  display: grid;
+}
+:root[data-phone] .ph-frame .rich-text.is-empty:not(:focus-within) .rich-text-input > *,
+:root[data-phone]
+  .ph-frame
+  .rich-text.is-empty:not(:focus-within)
+  .rich-text-input[data-placeholder]::before {
+  grid-area: 1 / 1;
+  position: static;
 }
 :root[data-phone] .ph-frame .entry-tools {
   margin-top: 16px;
@@ -442,7 +452,7 @@
 .ph-sheet-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--scrim);
   animation: ph-fade 160ms ease-out;
 }
 .ph-sheet {

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fromHash, rootState, toHash } from '../../src/renderer/src/workspace/phone/places';
 import { scrollToShow } from '../../src/renderer/src/workspace/phone/geometry';
@@ -49,5 +51,15 @@ describe('the field above the keyboard (PH-32)', () => {
   });
   it('shows the top of a box taller than the room', () => {
     expect(scrollToShow({ top: 300, bottom: 1000 }, view)).toBe(240);
+  });
+});
+
+describe('the shell stylesheet (A58 U1)', () => {
+  it('takes every colour from a theme token, so both themes follow', () => {
+    const css = readFileSync(
+      join(__dirname, '../../src/renderer/src/workspace/phone/phone.css'),
+      'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css.match(/rgba?\(|hsla?\(|#[0-9a-f]{3,8}\b/gi) ?? []).toEqual([]);
   });
 });
