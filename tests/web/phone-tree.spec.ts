@@ -242,11 +242,58 @@ test('PH-33 the tree fills the screen between the bars, its tools in one thumb r
   ).toBe('none');
 });
 
+/**
+ * What the tree's edges cut in two, by screen boxes: any end year at either
+ * edge, and any card at the left edge. (A tree wider than a readable view
+ * goes on past the right edge, where its rows need not line up.)
+ */
+async function cutAtTheEdges(page: Page): Promise<string[]> {
+  return svgOf(page).evaluate((svg) => {
+    const r = svg.getBoundingClientRect();
+    const out: string[] = [];
+    const across = (b: DOMRect, x: number) => b.left < x - 0.5 && b.right > x + 0.5;
+    for (const el of svg.querySelectorAll('[data-union-label]')) {
+      const b = el.getBoundingClientRect();
+      if (b.width && (across(b, r.left) || across(b, r.right)))
+        out.push(`${el.textContent} ${Math.round(b.left)} to ${Math.round(b.right)}`);
+    }
+    for (const el of svg.querySelectorAll('.tnode-box')) {
+      const b = el.getBoundingClientRect();
+      if (b.width && across(b, r.left)) {
+        const name = el.closest('.tnode')?.getAttribute('aria-label') ?? '';
+        out.push(`${name.split(',')[0]} ${Math.round(b.left)} to ${Math.round(b.right)}`);
+      }
+    }
+    return out;
+  });
+}
+
 test('PH-33 labels are whole at the default zoom and readable at fit', async ({ page }) => {
   webkitOnly();
   await openTree(page);
   const svg = svgOf(page);
   const r = await rectOf(svg);
+  // At the default view no end year and no card at the left is cut by the
+  // tree's edges, the leftmost people are in view, and the top row sits near the top.
+  expect(await cutAtTheEdges(page)).toEqual([]);
+  const boxes = await svg.evaluate((el) =>
+    [...el.querySelectorAll('.tnode-box')].map((b) => b.getBoundingClientRect().toJSON()),
+  );
+  const left = Math.min(...boxes.map((b) => b.left));
+  const top = Math.min(...boxes.map((b) => b.top));
+  expect(left).toBeGreaterThanOrEqual(r.x);
+  expect(left).toBeLessThan(r.x + 60);
+  expect(top).toBeGreaterThanOrEqual(r.y);
+  expect(top).toBeLessThan(r.y + 60);
+  await expect(person(page, 'Margaret Hale')).toBeInViewport({ ratio: 1 });
+  const inView = await svg.evaluate((el) => {
+    const s = el.getBoundingClientRect();
+    return [...el.querySelectorAll('[data-union-label]')].filter((l) => {
+      const b = l.getBoundingClientRect();
+      return b.left >= s.left && b.right <= s.right && b.top >= s.top && b.bottom <= s.bottom;
+    }).length;
+  });
+  expect(inView).toBeGreaterThan(0);
   // End years are drawn over the people, whole.
   const ends = svg.locator('[data-union-label]');
   expect(await ends.count()).toBeGreaterThan(0);
@@ -262,8 +309,10 @@ test('PH-33 labels are whole at the default zoom and readable at fit', async ({ 
   expect(hidden).toBe(0);
   // No name is cut short in the fixture.
   for (const n of await svg.locator('.tnode-name').allTextContents()) expect(n).not.toMatch(/…$/);
-  // At fit the names and years are drawn at a readable size.
+  // At fit the names and years are drawn at a readable size, and none is cut.
+  await page.locator('.tree-ctl:visible').getByRole('button', { name: 'Zoom in' }).tap();
   await page.locator('.tree-bar:visible').getByRole('button', { name: 'Fit' }).tap();
+  expect(await cutAtTheEdges(page)).toEqual([]);
   const sizes = await svg.evaluate((el) =>
     [...el.querySelectorAll('.tnode-name, .tnode-years')]
       .map((t) => t.getBoundingClientRect().height)
@@ -363,7 +412,7 @@ test('PH-36 no instruction text on the tree, its sheet or its legend', async ({ 
   await page.locator('.tree-legend:visible').getByRole('button', { name: 'Legend' }).tap();
   expect(await instructionLines(page)).toEqual([]);
   await page.locator('.tree-legend:visible').getByRole('button', { name: 'Hide legend' }).tap();
-  await person(page, 'Zhou Lan').tap();
+  await person(page, 'Margaret Hale').tap();
   await expect(page.getByTestId('tree-sheet')).toBeVisible();
   expect(await instructionLines(page)).toEqual([]);
   await page.goBack();
@@ -526,13 +575,13 @@ test('PH-33 a drop over another person is a move and makes no link; no drop zone
   const seen = rpcChannels(page);
   const f = await Fingers.on(page);
   const links0 = await linkCount();
-  const id = await personId(page, 'Zhou Lan');
-  const from = await centre(person(page, 'Zhou Lan').locator('.tnode-box'));
+  const id = await personId(page, 'Ruth Hale');
+  const from = await centre(person(page, 'Ruth Hale').locator('.tnode-box'));
   const to = await centre(person(page, 'Peter Hale').locator('.tnode-box'));
   const ontoAt = await drawnAt(page, 'Peter Hale');
   await f.down(from);
   await page.waitForTimeout(700);
-  await expect(person(page, 'Zhou Lan')).toHaveClass(/\blifted\b/);
+  await expect(person(page, 'Ruth Hale')).toHaveClass(/\blifted\b/);
   await f.move([from], [to], 10);
   // Over another person: no parent, partner or child zones on the phone.
   await expect(page.getByTestId('tree-zones')).toHaveCount(0);
@@ -547,6 +596,139 @@ test('PH-33 a drop over another person is a move and makes no link; no drop zone
   expect((await positions())[id]?.y).toBe(ontoAt.y);
   expect(await drawnAt(page, 'Peter Hale')).toEqual(ontoAt);
   await page.getByTestId('phone-undo').click();
+});
+
+test('PH-33 PH-35 zoomed out, the collapse control keeps off the age and goes when it cannot fit; a hold on the card lifts the person', async ({
+  page,
+}) => {
+  touchOnly();
+  await openTree(page);
+  const f = await Fingers.on(page);
+  const m = await centre(svgOf(page));
+  /** Each collapse control drawn: its target's size and whether its circle covers the age. */
+  const toggles = () =>
+    svgOf(page).evaluate((svg) =>
+      [...svg.querySelectorAll('.tnode-toggle')].map((t) => {
+        const hit = t.querySelector('.tnode-hit')!.getBoundingClientRect();
+        const drawn = t.querySelector('circle:not(.tnode-hit)')!.getBoundingClientRect();
+        const card = t.closest('.tnode')!;
+        const state = card.querySelector('.tnode-state')!.getBoundingClientRect();
+        const box = card.querySelector('.tnode-box')!.getBoundingClientRect();
+        return {
+          name: (card.getAttribute('aria-label') ?? '').split(',')[0],
+          hit: Math.min(hit.width, hit.height),
+          coversAge: drawn.top < state.bottom - 1 && drawn.left < state.right,
+          // How far up the card the target reaches, as a share of its height.
+          reach: (box.bottom - Math.max(hit.top, box.top)) / box.height,
+        };
+      }),
+    );
+  const pinchOut = async () => {
+    const p0 = [
+      { x: m.x - 80, y: m.y },
+      { x: m.x + 80, y: m.y },
+    ];
+    const p1 = [
+      { x: m.x - 20, y: m.y },
+      { x: m.x + 20, y: m.y },
+    ];
+    await f.down(...p0);
+    await f.move(p0, p1);
+    await f.up();
+  };
+  // At every zoom on the way out, a control shown is a whole 44 px target
+  // that keeps off the age and to the lower part of its card.
+  let last = (await viewOf(page)).w;
+  for (let i = 0; i < 6; i++) {
+    for (const t of await toggles()) {
+      expect(t.hit, t.name).toBeGreaterThanOrEqual(44);
+      expect(t.coversAge, t.name).toBe(false);
+      expect(t.reach, t.name).toBeLessThanOrEqual(0.75);
+    }
+    await pinchOut();
+    const w = (await viewOf(page)).w;
+    if (Math.abs(w - last) < 0.5) break;
+    last = w;
+  }
+  // At the outer limit no 44 px target fits on a card, so the control goes;
+  // the person sheet's Collapse branch stands in for it.
+  expect(await toggles()).toEqual([]);
+  // A hold on the right third of a card, where the control was, lifts that person.
+  const daniel = await rectOf(person(page, 'Daniel Hale').locator('.tnode-box'));
+  const right = { x: daniel.x + (daniel.width * 5) / 6, y: daniel.y + daniel.height * 0.7 };
+  const was = await drawnAt(page, 'Daniel Hale');
+  await f.down(right);
+  await page.waitForTimeout(700);
+  await expect(person(page, 'Daniel Hale')).toHaveClass(/\blifted\b/);
+  await f.up();
+  await expect(person(page, 'Daniel Hale')).not.toHaveClass(/\blifted\b/);
+  expect(await drawnAt(page, 'Daniel Hale')).toEqual(was);
+});
+
+test('PH-33 PH-35 zoomed out to the limit, a tap on the right of a card opens the person, not a branch', async ({
+  page,
+}) => {
+  webkitOnly();
+  await openTree(page);
+  const out = page.locator('.tree-ctl:visible').getByRole('button', { name: 'Zoom out' });
+  let last = (await viewOf(page)).w;
+  for (let i = 0; i < 12; i++) {
+    await out.tap();
+    const w = (await viewOf(page)).w;
+    if (Math.abs(w - last) < 0.5) break;
+    last = w;
+  }
+  await expect(svgOf(page).locator('.tnode-toggle')).toHaveCount(0);
+  const daniel = await rectOf(person(page, 'Daniel Hale').locator('.tnode-box'));
+  await page.touchscreen.tap(daniel.x + (daniel.width * 5) / 6, daniel.y + daniel.height * 0.7);
+  const sheet = page.getByTestId('tree-sheet');
+  await expect(sheet.getByRole('heading', { name: 'Daniel Hale' })).toBeVisible();
+  // The sheet's Collapse branch stands in for the control.
+  await sheet.getByRole('button', { name: 'Collapse branch' }).tap();
+  await expect(person(page, 'Daniel Hale')).toHaveAttribute('aria-expanded', 'false');
+  await sheet.getByRole('button', { name: 'Expand branch' }).tap();
+  await expect(person(page, 'Daniel Hale')).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('PH-33 a lifted person keeps the finger: the tree holds pointer capture, and a drag over the bottom bar and back still drops in the tree', async ({
+  page,
+}) => {
+  touchOnly();
+  await page.addInitScript(() => {
+    const w = window as unknown as { lastPointer?: number };
+    window.addEventListener('pointerdown', (e) => (w.lastPointer = e.pointerId), true);
+  });
+  await openTree(page);
+  const f = await Fingers.on(page);
+  const id = await personId(page, 'Ruth Hale');
+  const was = await drawnAt(page, 'Ruth Hale');
+  const from = await centre(person(page, 'Ruth Hale').locator('.tnode-box'));
+  const k = (await viewOf(page)).w / (await rectOf(svgOf(page))).width;
+  const bar = await rectOf(page.getByTestId('phone-bottom-bar'));
+  const below = { x: from.x, y: bar.y + bar.height / 2 };
+  const to = { x: from.x, y: from.y + ROW_H / k };
+  const captured = () =>
+    svgOf(page).evaluate((svg) =>
+      svg.hasPointerCapture((window as unknown as { lastPointer: number }).lastPointer),
+    );
+  await f.down(from);
+  await page.waitForTimeout(700);
+  await expect(person(page, 'Ruth Hale')).toHaveClass(/\blifted\b/);
+  expect(await captured()).toBe(true);
+  // Out over the bottom bar, where the tabs take taps of their own.
+  await f.move([from], [below], 12);
+  expect(await captured()).toBe(true);
+  await expect(person(page, 'Ruth Hale')).toHaveClass(/\blifted\b/);
+  // And back into the tree, one row down from where they were.
+  await f.move([below], [to], 12);
+  await f.up();
+  await expect.poll(async () => (await positions())[id]?.y).toBe(was.y + ROW_H);
+  const stored = (await positions())[id]!;
+  expect(await drawnAt(page, 'Ruth Hale')).toEqual({ x: stored.x, y: stored.y });
+  // No tab changed under the finger, and one undo puts them back.
+  await expect(page.getByTestId('workspace')).toHaveAttribute('data-tab', 'people');
+  await page.getByTestId('phone-undo').click();
+  await expect.poll(() => drawnAt(page, 'Ruth Hale')).toEqual(was);
 });
 
 test('PH-33 screens for the record, light and dark', async ({ page }) => {

@@ -298,7 +298,7 @@ export function PhoneNavProvider(props: { bible: string; children: ReactNode }) 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 }
 
-/** A58 U3: the phone's places, or null on the desk, for screens both share. */
+/** A58 U3, U4: the phone's places, or null on the desk, for screens both share. */
 export function useOptionalPhoneNav(): PhoneNav | null {
   return useContext(Ctx);
 }
@@ -307,9 +307,4 @@ export function usePhoneNav(): PhoneNav {
   const v = useContext(Ctx);
   if (!v) throw new Error('usePhoneNav needs a PhoneNavProvider.');
   return v;
-}
-
-/** A58 U4: the phone's places, or null outside the phone frame (a desk screen). */
-export function usePhoneNavIfAny(): PhoneNav | null {
-  return useContext(Ctx);
 }

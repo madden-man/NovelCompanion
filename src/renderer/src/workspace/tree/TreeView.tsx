@@ -72,9 +72,11 @@ import { ColourBox } from '../colourBox';
 import { ListSelect } from '../listSelect';
 import { positionQueue } from './positionQueue';
 import { usePhone } from '../../phone';
-import { usePhoneNavIfAny } from '../phone/nav';
+import { useOptionalPhoneNav } from '../phone/nav';
 import { PhoneTreeSheet } from './PhoneTreeSheet';
 import { useTreeTouch, zoomAbout } from './touch';
+import { labelSpan, wholeWidth } from './pinch';
+import type { Span } from './pinch';
 import './tree.css';
 import './phone.css';
 
@@ -173,6 +175,15 @@ interface NodeProps {
   hitR?: number;
 }
 
+/**
+ * A58 U4: the widest the phone's collapse target may be, in view units. Past
+ * it (zoomed far out) a 44 px target would cover the card, so the control
+ * goes and the person sheet's Collapse branch stands in for it.
+ */
+const TOGGLE_FIT_R = NODE_H / 2;
+/** A58 U4: the phone's drawn collapse circle stops short of the age above it. */
+const TOGGLE_DRAWN_R = 11;
+
 type StubKind = 'parent' | 'partner' | 'child';
 const STUB_W = 62;
 const STUB_H = 18;
@@ -261,7 +272,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
       <text className="tnode-state" x={NODE_W - 8} y={38} textAnchor="end" data-testid="node-state">
         {stateText(s)}
       </text>
-      {p.branch && (
+      {p.branch && (p.hitR === undefined || p.hitR <= TOGGLE_FIT_R) && (
         <g
           className="tnode-toggle"
           data-export="skip"
@@ -287,7 +298,7 @@ const TreeNode = memo(function TreeNode(p: NodeProps) {
           <circle
             cx={NODE_W - 14}
             cy={53}
-            r={p.hitR !== undefined ? Math.max(8, p.hitR * 0.55) : 8}
+            r={p.hitR !== undefined ? Math.min(TOGGLE_DRAWN_R, Math.max(8, p.hitR * 0.55)) : 8}
           />
           <text x={NODE_W - 14} y={57} textAnchor="middle">
             {p.collapsed ? '+' : '−'}
@@ -352,7 +363,7 @@ export function TreeView(props: {
   const can = useCapabilities();
   /** A58 U4: on the phone the tree takes touch, and the inspector is a bottom sheet. */
   const phone = usePhone();
-  const nav = usePhoneNavIfAny();
+  const nav = useOptionalPhoneNav();
   const [exportNote, setExportNote] = useState<{ text: string; bad: boolean } | null>(null);
   /** FT-11: the person being dragged and where they are right now, drawn live. */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -646,6 +657,11 @@ export function TreeView(props: {
   const boxSize = useRef<{ w: number; h: number } | null>(null);
   /** A58 U4: the tree box's width on screen, for the phone's 44 px collapse targets. */
   const [boxW, setBoxW] = useState(0);
+  /** A58 U4: the end year labels, read by Fit without refitting when they change. */
+  const unionsRef = useRef(edges?.unions);
+  useEffect(() => {
+    unionsRef.current = edges?.unions;
+  }, [edges]);
   const fit = useCallback(() => {
     const el = wrap.current;
     if (el && el.clientWidth > 0) boxSize.current = { w: el.clientWidth, h: el.clientHeight };
@@ -656,13 +672,24 @@ export function TreeView(props: {
     else h = w / ar;
     const cap = phone && el ? el.clientWidth * READ_K : Infinity;
     if (w > cap) {
-      // A58 U4: a tree wider than the phone fits at a readable size, its top row in view.
-      const k = cap / w;
-      setView({ x: bbox.x + bbox.width / 2 - (w * k) / 2, y: bbox.y, w: w * k, h: h * k });
+      // A58 U4: a tree wider than the phone fits at a readable size from its
+      // top left. Its right edge falls in a gap that cuts no card or end year,
+      // or where the rows are staggered, one that cuts no end year.
+      const cards: Span[] = [...(layout?.nodes.values() ?? [])].map((n) => ({
+        left: n.x,
+        right: n.x + NODE_W,
+      }));
+      const labels: Span[] = [];
+      for (const u of unionsRef.current ?? []) {
+        if (u.label && u.endYear !== null) labels.push(labelSpan(u.label.x, `ended ${u.endYear}`));
+      }
+      const vw =
+        wholeWidth(bbox.x, cap, [...cards, ...labels]) ?? wholeWidth(bbox.x, cap, labels) ?? cap;
+      setView({ x: bbox.x, y: bbox.y, w: vw, h: (vw * h) / w });
       return;
     }
     setView({ x: bbox.x - (w - bbox.width) / 2, y: bbox.y - (h - bbox.height) / 2, w, h });
-  }, [bbox, phone]);
+  }, [bbox, phone, layout]);
   /** How narrow and how wide the view may get: the desk's bounds, or on the phone 3x in to the whole tree out. */
   const zoomLimits = useCallback(() => {
     const el = wrap.current;
@@ -1312,13 +1339,13 @@ export function TreeView(props: {
   );
 }
 
+/** A58 U4: no hover card on the phone; the sheet shows the meaning. */
+const noCard = () => undefined;
+
 /**
  * IP-12: how a family colour draws: one of the four series tokens (so it
  * follows the theme) or, for any other stored hex, the hex itself.
  */
-/** A58 U4: no hover card on the phone; the sheet shows the meaning. */
-const noCard = () => undefined;
-
 function familyShade(color: unknown): string {
   const token = familyToken(color);
   if (token) return token;
