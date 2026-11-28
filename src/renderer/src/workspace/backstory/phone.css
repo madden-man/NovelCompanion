@@ -78,20 +78,24 @@
 }
 :root[data-phone] .ph-frame .bs-name-link {
   flex: 0 1 auto;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-box-pack: center;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
   min-width: 0;
   min-height: var(--ph-target);
   max-height: var(--ph-target);
-  padding: 2px 0;
   overflow: hidden;
   white-space: normal;
-  overflow-wrap: break-word;
   line-height: 1.25;
+}
+:root[data-phone] .ph-frame .bs-name-link > .bs-name-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 /* The Chinese name is shown whole or not at all, never cut. */
 :root[data-phone] .ph-frame .bs-row-text .bs-zh {
@@ -119,9 +123,12 @@
 :root[data-phone] .ph-frame .bs-row-add:active {
   background: var(--surface-2);
 }
-:root[data-phone] .ph-frame .bs-row-label:hover,
-:root[data-phone] .ph-frame .bs-row-cell:hover {
+:root[data-phone] .ph-frame .bs-row-label:hover {
   background: transparent;
+}
+/* The held cell keeps its own ground under a finger, so the track never shows through it. */
+:root[data-phone] .ph-frame .bs-row-cell:hover {
+  background: var(--surface);
 }
 /* A marker is small to see but a thumb's size to tap. */
 :root[data-phone] .ph-frame .bs-marker {

@@ -298,7 +298,8 @@ export function BackstoryGrid(props: {
               props.onOpenPerson?.(p.id);
             }}
           >
-            {p.name}
+            {/* A58: the phone clamps the name to two lines inside a thumb-tall link. */}
+            <span className="bs-name-text">{p.name}</span>
           </a>
         ) : (
           <span className="bs-name">{p.name}</span>

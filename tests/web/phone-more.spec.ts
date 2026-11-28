@@ -347,20 +347,32 @@ test('PH-34 Backstory: the held names tell the fixture people apart, wrapping be
   const zh = rows.flatMap((r) => (r.zh ? [{ name: r.name, ...r.zh }] : []));
   expect(zh.map((z) => z.text)).toContain('晓曦');
   expect(zh.filter((z) => !z.shown || !z.uncut || !z.noEllipsis)).toEqual([]);
+  // A one-line name sits in the middle of its thumb-tall link.
+  const first = grid.locator('.bs-row:not(.bs-person-row) .bs-name-link').first();
+  const centred = await first.evaluate((el) => {
+    const l = el.getBoundingClientRect();
+    const t = el.querySelector('.bs-name-text')!.getBoundingClientRect();
+    return Math.abs(t.top - l.top - (l.bottom - t.bottom));
+  });
+  expect(centred).toBeLessThanOrEqual(2);
+  // A finger left on a held name cell never makes it see-through.
+  const cell = grid.locator('.bs-row:not(.bs-person-row) .bs-row-cell').first();
+  const ground = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await cell.hover();
+  expect(await cell.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(ground);
   // The last resort: a name two lines cannot hold ends in an ellipsis on its second line.
-  const clamped = await grid
-    .locator('.bs-row:not(.bs-person-row) .bs-name-link')
-    .first()
-    .evaluate((el) => {
-      el.textContent = 'Margaret Eleanor Whitcombe-Hale of the Upper Columbia River';
-      const s = getComputedStyle(el);
-      return {
-        height: el.getBoundingClientRect().height,
-        clamp: s.getPropertyValue('-webkit-line-clamp'),
-        overflow: s.overflowY,
-      };
-    });
-  expect(clamped).toEqual({ height: 44, clamp: '2', overflow: 'hidden' });
+  const clamped = await first.evaluate((el) => {
+    const text = el.querySelector<HTMLElement>('.bs-name-text')!;
+    text.textContent = 'Margaret Eleanor Whitcombe-Hale of the Upper Columbia River';
+    const s = getComputedStyle(text);
+    return {
+      height: el.getBoundingClientRect().height,
+      clamp: s.getPropertyValue('-webkit-line-clamp'),
+      overflow: s.overflowY,
+      inside: text.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom + 0.5,
+    };
+  });
+  expect(clamped).toEqual({ height: 44, clamp: '2', overflow: 'hidden', inside: true });
 });
 
 test('PH-34 PH-31 Backstory: the row "+" is a 44 px target that adds a moment as a page with back; a marker opens its page; nothing drags', async ({
