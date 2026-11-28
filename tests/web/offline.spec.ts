@@ -79,6 +79,41 @@ const storeCounts = (page: Page) =>
       }),
   );
 
+/** How many kept answers of a bible are flagged as read before a change, to be read again. */
+const flaggedCount = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const req = indexedDB.open('nc-phone-reads', 1);
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const d = req.result;
+          const t = d.transaction(['meta', 'bibles'], 'readonly');
+          const metas = t.objectStore('meta').getAll();
+          const bibles = t.objectStore('bibles').getAll();
+          t.oncomplete = () => {
+            d.close();
+            const marks = new Map(
+              (bibles.result as { bible: string; floor: number; stale?: number }[]).map((b) => [
+                b.bible,
+                b.stale ?? b.floor,
+              ]),
+            );
+            resolve(
+              (metas.result as { bible: string; rev: number | null }[]).filter(
+                (m) => m.bible && (m.rev === null || m.rev < (marks.get(m.bible) ?? 0)),
+              ).length,
+            );
+          };
+        };
+      }),
+  );
+
+const readsSettled = (page: Page) =>
+  page.evaluate(() =>
+    (window.api as unknown as { readsSettled: () => Promise<void> }).readsSettled(),
+  );
+
 const tab = (page: Page, name: string) => page.getByTestId(`tab-${name}`);
 
 /** A screen's text once its reads have all answered: the same on two looks in a row. */
@@ -361,6 +396,96 @@ test("PH-25 the phone's own edits read offline as they did online: an entry page
     await expect(again.locator('[data-field="role"]')).toContainText(
       'Keeps the letters Margaret left.',
     );
+  } finally {
+    server = await startWebServer(db, {}, port);
+  }
+});
+
+test("PH-25 offline straight after the phone's own edit: the edited page shows it, every screen visited before reads as it did, a reload reopens the bible, and the refresh carries on once back", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await openFixture(page, server.url);
+  await installed(page);
+  const before = await test.step('visit every screen online', () => visitAll(page));
+  await readsSettled(page);
+  const kept = (await storeCounts(page)).meta ?? 0;
+  expect(kept).toBeGreaterThan(10);
+  expect(await flaggedCount(page)).toBe(0);
+
+  // The phone's own write, then the connection goes inside the quiet window, before any refresh.
+  const role = 'Kept the harbour ledger for her father.';
+  const saved = await page.evaluate(
+    (text) =>
+      window.api
+        .invoke(
+          'entry.update',
+          { collection: 'characters', id: 'H4', patch: { role: text } },
+          { bible: 'fixture-novel' },
+        )
+        .then(() => 'saved'),
+    role,
+  );
+  expect(saved).toBe('saved');
+  const port = Number(new URL(server.url).port);
+  await server.stop();
+  try {
+    // Nothing kept went: the screens visited before are flagged, not dropped.
+    const after = await storeCounts(page);
+    expect(after.meta).toBeGreaterThanOrEqual(kept);
+    expect(await flaggedCount(page)).toBeGreaterThan(0);
+
+    // iOS ends the app; it opens again with no connection.
+    await page.reload();
+    const banner = page.getByTestId('connection-banner');
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+    await expect(page.getByTestId('workspace')).toBeVisible();
+    await expect(page.getByTestId('key-gate')).toHaveCount(0);
+    const list = page.getByTestId('entry-list');
+    await expect(list.getByRole('button', { name: /^Ruth Hale/ })).toBeVisible();
+    const person = await openCharacter(page, /^Ruth Hale/);
+    await settled(person);
+    await expect(person.locator('[data-field="role"]')).toContainText(role);
+    await expect(page.getByText(NOT_STORED)).toHaveCount(0);
+    await page.getByTestId('phone-back').tap();
+    // Every other screen reads as it was read, never "not stored".
+    expect(asReadOnly(await outline(page))).toBe(asReadOnly(before.outline));
+    expect(asReadOnly(await world(page))).toBe(asReadOnly(before.world));
+    expect(asReadOnly(await search(page, 'Ruth'))).toBe(asReadOnly(before.search));
+    expect(asReadOnly(await openTree(page))).toBe(asReadOnly(before.tree));
+    expect(asReadOnly(await openYearPage(page))).toBe(asReadOnly(before.year));
+    await expect(page.getByText(NOT_STORED)).toHaveCount(0);
+    await expect(banner).toHaveAttribute('data-state', 'readOnly');
+  } finally {
+    server = await startWebServer(db, {}, port);
+  }
+
+  // Back: Try again, and what is flagged is read again in the background until none is left.
+  const sent: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().endsWith('/rpc')) sent.push(r.postData() ?? '');
+  });
+  await page.getByTestId('connection-banner').getByTestId('connection-retry').tap();
+  await expect(page.getByTestId('connection-banner')).toHaveCount(0);
+  await expect.poll(() => flaggedCount(page), { timeout: 60_000 }).toBe(0);
+  // At most one read per kept answer, plus the views' own and Try again.
+  expect(sent.length).toBeLessThanOrEqual(kept + 20);
+});
+
+test('PH-25 a bible opened from the chooser reopens with no connection', async ({ page }) => {
+  await page.goto(server.url);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('nc.phone.bible'))).toBeNull();
+  await openFixture(page, server.url);
+  await installed(page);
+  await readsSettled(page);
+  const port = Number(new URL(server.url).port);
+  await server.stop();
+  try {
+    await page.reload();
+    await expect(page.getByTestId('connection-banner')).toHaveAttribute('data-state', 'readOnly');
+    await expect(page.getByTestId('workspace')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open Fixture novel' })).toHaveCount(0);
+    await expect(page.getByTestId('entry-list').getByRole('button').first()).toBeVisible();
   } finally {
     server = await startWebServer(db, {}, port);
   }

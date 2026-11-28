@@ -162,6 +162,7 @@ test('PH-21 a new build id reloads the app only once no field holds typing', asy
   expect(await page.evaluate(() => (window as unknown as { __after?: boolean }).__after)).toBe(
     true,
   );
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('PH-21 a new build id never reloads while a field off focus still holds typing not yet stored', async ({
@@ -199,4 +200,5 @@ test('PH-21 a new build id never reloads while a field off focus still holds typ
   await box.evaluate((el) => (el as HTMLElement).blur());
   await loaded;
   await expect(page.getByTestId('workspace')).toBeVisible();
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

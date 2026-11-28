@@ -9,6 +9,7 @@ import {
   OFFLINE_READ_ONLY,
   OFFLINE_WRITE,
   READ_TIMEOUT_MS,
+  REFRESH_QUIET_MS,
   WebTransport,
 } from '../../src/web/transport';
 
@@ -72,7 +73,13 @@ describe('PH-25 the read store', () => {
     await store.put('east', 'tree.get', {}, { v: 1 }, 3);
     clock = 20;
     await store.put('east', 'tree.get', {}, { v: 2 }, 3);
-    expect(await store.get('east', 'tree.get', {})).toEqual({ value: { v: 2 }, rev: 3, at: 20 });
+    expect(await store.get('east', 'tree.get', {})).toEqual({
+      value: { v: 2 },
+      rev: 3,
+      at: 20,
+      stale: false,
+      current: 3,
+    });
     expect(store.size.answers).toBe(1);
     expect(store.size.chars).toBe(JSON.stringify({ v: 2 }).length);
     const again = new ReadStore(mem.backend);
@@ -101,7 +108,7 @@ describe('PH-25 the read store', () => {
     expect(mem.values.size).toBe(2);
   });
 
-  test('PH-25 a change made elsewhere drops what was read before it; the phone`s own write drops nothing', async () => {
+  test('PH-25 a change made elsewhere flags what was read before it and keeps it; the phone`s own write flags nothing there', async () => {
     const mem = memoryBackend();
     const store = new ReadStore(mem.backend);
     await store.observe('east', 5, 5);
@@ -111,22 +118,114 @@ describe('PH-25 the read store', () => {
     await store.put('', 'bible.list', {}, { v: 'list' }, null);
     // The phone's own write: 5 to 6.
     await store.observe('east', 5, 6);
-    expect(await store.get('east', 'tree.get', {})).not.toBeNull();
+    expect((await store.get('east', 'tree.get', {}))?.stale).toBe(false);
     await store.observe('east', 6, 6);
-    expect(await store.get('east', 'tree.get', {})).not.toBeNull();
+    expect((await store.get('east', 'tree.get', {}))?.stale).toBe(false);
     // The desk wrote twice meanwhile: the phone sees 8 before its read.
     await store.observe('east', 8, 8);
-    expect(await store.get('east', 'tree.get', {})).toBeNull();
-    expect(await store.get('east', 'outline.get', {})).toBeNull();
-    // Other bibles and the bible list stay.
-    expect(await store.get('west', 'tree.get', {})).not.toBeNull();
-    expect(await store.get('', 'bible.list', {})).not.toBeNull();
-    // A read answered before the change, arriving late, is not kept.
-    await store.put('east', 'tree.get', {}, { v: 'late' }, 6);
-    expect(await store.get('east', 'tree.get', {})).toBeNull();
+    // Kept, flagged, and shown as read at 5, so back online the change is told apart.
+    expect(await store.get('east', 'tree.get', {})).toMatchObject({
+      value: { v: 'tree' },
+      stale: true,
+      current: 5,
+    });
+    expect((await store.get('east', 'outline.get', {}))?.stale).toBe(true);
+    expect((await store.flagged('east')).map((r) => r.channel).sort()).toEqual([
+      'outline.get',
+      'tree.get',
+    ]);
+    // Other bibles and the bible list are not flagged.
+    expect((await store.get('west', 'tree.get', {}))?.stale).toBe(false);
+    expect((await store.get('', 'bible.list', {}))?.stale).toBe(false);
+    // A read answered before the change, arriving late, never replaces a newer answer.
     await store.put('east', 'tree.get', {}, { v: 'fresh' }, 8);
-    expect((await store.get('east', 'tree.get', {}))?.value).toEqual({ v: 'fresh' });
-    expect(mem.bibles.get('east')).toEqual({ bible: 'east', rev: 8, floor: 8 });
+    await store.put('east', 'tree.get', {}, { v: 'late' }, 6);
+    expect(await store.get('east', 'tree.get', {})).toMatchObject({
+      value: { v: 'fresh' },
+      stale: false,
+    });
+    expect(mem.bibles.get('east')).toEqual({ bible: 'east', rev: 8, floor: 8, stale: 8 });
+    expect(store.size.answers).toBe(4);
+  });
+
+  test("PH-25 the phone's own write keeps every answer, flags those read before it, and keeps what its own answer holds at once", async () => {
+    const mem = memoryBackend();
+    let clock = 0;
+    const store = new ReadStore(mem.backend, undefined, () => (clock += 1));
+    await store.observe('east', 3, 3);
+    await store.put('east', 'bible.current', {}, { bible: EAST }, 3);
+    await store.put('east', 'outline.get', {}, { v: 'outline' }, 3);
+    await store.put('east', 'settings.get', {}, { v: 'settings' }, 3);
+    for (let i = 0; i < 69; i++) {
+      await store.put('east', 'entry.get', { collection: 'characters', id: `H${i}` }, { i }, 3);
+    }
+    await store.put('west', 'outline.get', {}, { v: 'west' }, 3);
+    expect(store.size.answers).toBe(73);
+    const h4 = { collection: 'characters', id: 'H4' };
+    await store.wrote('east', 4, [{ channel: 'entry.get', request: h4, value: { i: 'edited' } }]);
+    // The transport hands over the write's own `rev` headers once it answered.
+    await store.observe('east', 3, 4);
+    // Nothing went: 72 of East Winds and one of West.
+    expect(store.size.answers).toBe(73);
+    expect(await store.get('east', 'entry.get', h4)).toMatchObject({
+      value: { i: 'edited' },
+      rev: 4,
+      stale: false,
+    });
+    for (const channel of ['bible.current', 'outline.get', 'settings.get']) {
+      // Read before the write: kept, flagged, and as good as current (only the phone wrote since).
+      expect(await store.get('east', channel, {})).toMatchObject({ stale: true, current: 4 });
+    }
+    const flagged = await store.flagged('east');
+    expect(flagged).toHaveLength(71);
+    // The most recently stored first.
+    expect(flagged[0]).toMatchObject({
+      channel: 'entry.get',
+      request: { collection: 'characters', id: 'H68' },
+    });
+    expect(flagged.at(-1)?.channel).toBe('bible.current');
+    expect(await store.flagged('west')).toEqual([]);
+    // An entry read before the write, answered late, does not replace the write's own answer.
+    await store.put('east', 'entry.get', h4, { i: 'late' }, 3);
+    expect((await store.get('east', 'entry.get', h4))?.value).toEqual({ i: 'edited' });
+    // Read again after the write: no longer flagged.
+    await store.put('east', 'outline.get', {}, { v: 'outline 2' }, 4);
+    expect(await store.get('east', 'outline.get', {})).toMatchObject({ stale: false });
+    expect(await store.flagged('east')).toHaveLength(70);
+  });
+
+  test('PH-25 the flags live in the store: they survive a reopen, and a store written before them opens with its answers', async () => {
+    const mem = memoryBackend();
+    const store = new ReadStore(mem.backend);
+    await store.observe('east', 3, 3);
+    await store.put('east', 'outline.get', {}, { v: 'outline' }, 3);
+    await store.wrote('east', 4);
+    await store.observe('east', 3, 4);
+    const again = new ReadStore(mem.backend);
+    expect((await again.flagged('east')).map((r) => r.channel)).toEqual(['outline.get']);
+    expect(await again.get('east', 'outline.get', {})).toMatchObject({ stale: true, current: 4 });
+
+    // The layout as the last build wrote it: a mark with no `stale`.
+    const old = memoryBackend();
+    const key = answerKey('east', 'outline.get', {});
+    await old.backend.put(
+      { key, bible: 'east', channel: 'outline.get', rev: 5, at: 1, size: 14 },
+      JSON.stringify({ v: 'outline' }),
+    );
+    const key2 = answerKey('east', 'tree.get', {});
+    await old.backend.put(
+      { key: key2, bible: 'east', channel: 'tree.get', rev: 7, at: 2, size: 11 },
+      JSON.stringify({ v: 'tree' }),
+    );
+    old.bibles.set('east', { bible: 'east', rev: 7, floor: 6 } as BibleMark);
+    const opened = new ReadStore(old.backend);
+    expect(await opened.ready()).toBe(true);
+    expect(await opened.get('east', 'outline.get', {})).toMatchObject({
+      value: { v: 'outline' },
+      stale: true,
+      current: 5,
+    });
+    expect(await opened.get('east', 'tree.get', {})).toMatchObject({ stale: false, current: 7 });
   });
 
   test('PH-25 clear empties every part of the store', async () => {
@@ -220,7 +319,7 @@ const hits = (title: string) => ({
 });
 
 /** A transport over a fake `/rpc` and a store in maps, with the phone on East Winds. */
-function rig(reply: (b: Record<string, unknown>) => Answer, store = true) {
+function rig(reply: (b: Record<string, unknown>) => Answer | Promise<Answer>, store = true) {
   const sent: Record<string, unknown>[] = [];
   const m = new Map<string, string>([
     [KEY_STORAGE, 'k-1'],
@@ -235,7 +334,7 @@ function rig(reply: (b: Record<string, unknown>) => Answer, store = true) {
   const fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     sent.push(body);
-    const a = reply(body);
+    const a = await reply(body);
     if (a === 'network-down') throw new TypeError('Load failed');
     if (a === 'hang') {
       return await new Promise<Response>((_res, rej) => {
@@ -261,45 +360,6 @@ function rig(reply: (b: Record<string, unknown>) => Answer, store = true) {
 }
 
 describe('PH-25 the transport reads from the store without a connection', () => {
-  test("PH-25 the phone's own write drops the answers read before it and asks them again, so offline shows the edit", async () => {
-    let down = false;
-    let rev = 3;
-    let title = 'Ruth Hale';
-    const { t, sent, reads } = rig((b) => {
-      if (down) return 'network-down';
-      if (b.channel === 'search.query') {
-        const { query } = b.request as { query: string };
-        return ok(hits(`${title} ${query}`), revs('east', rev, rev));
-      }
-      title = 'Ruth Hale-Okafor';
-      return ok(
-        { entry: { _id: 'H4', modifiedAt: '2026-11-27T00:00:00Z' }, warnings: [] },
-        revs('east', rev, ++rev),
-      );
-    });
-    await t.invoke('search.query', { query: 'ruth' });
-    await t.invoke('search.query', { query: 'hale' });
-    await t.readsSettled();
-    await t.invoke(
-      'entry.update',
-      { collection: 'characters', id: 'H4', patch: { title: 'Ruth Hale-Okafor' } },
-      { bible: 'east' },
-    );
-    await t.readsSettled();
-    // Both answers were read again after the write.
-    expect(
-      sent
-        .slice(-2)
-        .map((b) => (b.request as { query: string }).query)
-        .sort(),
-    ).toEqual(['hale', 'ruth']);
-    down = true;
-    expect(await t.invoke('search.query', { query: 'ruth' })).toEqual(
-      hits('Ruth Hale-Okafor ruth'),
-    );
-    expect(await reads!.has('east', 'search.query', Q('hale'))).toBe(true);
-  });
-
   test('PH-25 a bible opened from the chooser is read once under its own name, so a launch with no connection reopens it', async () => {
     let down = false;
     const { t, storage } = rig((b) => {
@@ -312,47 +372,6 @@ describe('PH-25 the transport reads from the store without a connection', () => 
     await t.readsSettled();
     down = true;
     expect(await t.invoke('bible.current', {})).toEqual({ bible: EAST });
-  });
-
-  test('PH-25 an answer the phone could not read again after its own write reads as not stored, never as before', async () => {
-    const { backend } = memoryBackend();
-    const store = new ReadStore(backend);
-    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
-    await store.put('west', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
-    expect(await store.wrote('east', 4)).toEqual([{ channel: 'search.query', request: Q('ruth') }]);
-    expect(await store.get('east', 'search.query', Q('ruth'))).toBeNull();
-    expect(await store.get('west', 'search.query', Q('ruth'))).not.toBeNull();
-    // An answer read before the write and arriving after it is never kept.
-    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale'), 3);
-    expect(await store.has('east', 'search.query', Q('ruth'))).toBe(false);
-    await store.put('east', 'search.query', Q('ruth'), hits('Ruth Hale-Okafor'), 4);
-    expect((await store.get('east', 'search.query', Q('ruth')))?.value).toEqual(
-      hits('Ruth Hale-Okafor'),
-    );
-    // A write that changed nothing drops nothing.
-    expect(await store.wrote('east', 4)).toEqual([]);
-
-    let down = false;
-    const { t, reads } = rig((b) => {
-      if (down) return 'network-down';
-      if (b.channel === 'search.query') return ok(hits('Ruth Hale'), revs('east', 3, 3));
-      down = true;
-      return ok(
-        { entry: { _id: 'H4', modifiedAt: '2026-11-27T00:00:00Z' }, warnings: [] },
-        revs('east', 3, 4),
-      );
-    });
-    await t.invoke('search.query', { query: 'ruth' });
-    await reads!.settled();
-    await t.invoke(
-      'entry.update',
-      { collection: 'characters', id: 'H4', patch: { title: 'x' } },
-      { bible: 'east' },
-    );
-    await t.readsSettled();
-    await expect(t.invoke('search.query', { query: 'ruth' })).rejects.toMatchObject({
-      message: NOT_STORED,
-    });
   });
 
   test('PH-25 a read visited before is served read-only, an unvisited one fails in plain words, and writes are refused here', async () => {
@@ -419,8 +438,11 @@ describe('PH-25 the transport reads from the store without a connection', () => 
     await vi.waitFor(() => expect(reloaded).toHaveBeenCalled());
     expect(sent.map((b) => b.channel)).toContain('bible.current');
     await reads!.settled();
-    // The stale answer did not outlive the reload.
-    expect(await reads!.get('east', 'search.query', Q('ruth'))).toBeNull();
+    // The answer read before the change is kept, flagged, for reading offline until it is read again.
+    expect(await reads!.get('east', 'search.query', Q('ruth'))).toMatchObject({
+      value: hits('rev 3'),
+      stale: true,
+    });
     expect(await t.invoke('search.query', { query: 'ruth' })).toEqual(hits('rev 7'));
     await reads!.settled();
     expect((await reads!.get('east', 'search.query', Q('ruth')))?.value).toEqual(hits('rev 7'));
@@ -523,5 +545,461 @@ describe('PH-25 the transport reads from the store without a connection', () => 
     t.signOut();
     await reads!.settled();
     expect(mem.values.size).toBe(0);
+  });
+});
+
+// ---------- the phone's own writes and the background refresh ----------
+
+/**
+ * The function as the phone sees it while visiting East Winds: 72 reads to
+ * keep (the bible, the Outline, the community notes, 60 people, 9 searches),
+ * `entry.update` and `community.notes.set` answering with what they wrote, and
+ * a hook to hold any one answer back.
+ */
+function visitRig() {
+  const fn = {
+    rev: 3,
+    down: false,
+    roles: {} as Record<string, string>,
+    notes: { c1: 'Fishing families' } as Record<string, string>,
+    /** Answers held back until `release` (for the requests `hold` picks). */
+    hold: null as ((b: Record<string, unknown>) => boolean) | null,
+    held: [] as {
+      body: Record<string, unknown>;
+      /** Run the request on the function now and answer it. */
+      release: () => void;
+      /** Run it on the function now; its answer arrives when `deliver` is called. */
+      commit: () => { deliver: () => void };
+    }[],
+    onRead: null as ((b: Record<string, unknown>, n: number) => void) | null,
+    reads: 0,
+  };
+  const entry = (id: string) => ({
+    entry: { _id: id, modifiedAt: '2026-11-27T00:00:00Z', role: fn.roles[id] ?? '' },
+    warnings: [],
+  });
+  const answer = (b: Record<string, unknown>): Answer => {
+    if (fn.down) return 'network-down';
+    const r = b.request as Record<string, unknown>;
+    const at = revs('east', fn.rev, fn.rev);
+    switch (b.channel) {
+      case 'entry.update': {
+        fn.roles[r.id as string] = (r.patch as { role: string }).role;
+        return ok(entry(r.id as string), revs('east', fn.rev, ++fn.rev));
+      }
+      case 'community.notes.set':
+        fn.notes[r.communityId as string] = r.text as string;
+        return ok({ notes: { ...fn.notes } }, revs('east', fn.rev, ++fn.rev));
+      case 'bible.list':
+        return ok({ connection: 'connected', bibles: [EAST] });
+      case 'bible.changes':
+        return ok({ changes: [] });
+      case 'bible.current':
+        return ok({ bible: EAST }, at);
+      case 'outline.get':
+        return ok({ order: 'reading', years: [], cursorYear: fn.rev, rows: [] }, at);
+      case 'community.notes.get':
+        return ok({ notes: { ...fn.notes } }, at);
+      case 'entry.get':
+        return ok(entry(r.id as string), at);
+      default:
+        return ok(hits(`rev ${fn.rev} ${String(r.query)}`), at);
+    }
+  };
+  const r = rig((b) => {
+    if (!String(b.channel).match(/\.(update|set)$/) && b.channel !== 'bible.list') {
+      fn.reads++;
+      fn.onRead?.(b, fn.reads);
+    }
+    if (fn.hold?.(b)) {
+      return new Promise<Answer>((resolve) => {
+        fn.held.push({
+          body: b,
+          release: () => resolve(answer(b)),
+          commit: () => {
+            const a = answer(b);
+            return { deliver: () => resolve(a) };
+          },
+        });
+      });
+    }
+    return answer(b);
+  });
+  const people = Array.from({ length: 60 }, (_v, i) => ({
+    collection: 'characters' as const,
+    id: `H${i}`,
+  }));
+  const queries = ['ruth', 'hale', 'peter', 'zhou', 'lan', 'margaret', 'daniel', 'okafor', 'sea'];
+  async function visitAll() {
+    await r.t.invoke('bible.current', {});
+    await r.t.invoke('outline.get', {});
+    await r.t.invoke('community.notes.get', {});
+    for (const p of people) await r.t.invoke('entry.get', p);
+    for (const q of queries) await r.t.invoke('search.query', { query: q });
+    await r.t.readsSettled();
+  }
+  const write = (id: string, role: string) =>
+    r.t.invoke(
+      'entry.update',
+      { collection: 'characters', id, patch: { role } },
+      { bible: 'east' },
+    );
+  /** Requests sent from `from` on that read (not writes, not Try again). */
+  const readsSince = (from: number) =>
+    r.sent
+      .slice(from)
+      .filter((b) => !String(b.channel).match(/\.(update|set)$/) && b.channel !== 'bible.list');
+  return { ...r, fn, people, queries, visitAll, write, readsSince };
+}
+
+describe('PH-25 the phone`s own writes keep what it read, and the refresh reads it again when quiet', () => {
+  test('PH-25 after one write every screen visited before still reads offline, the edited page shows the edit at once, and a launch offline reopens the bible', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      expect(v.reads!.size.answers).toBe(72);
+      await v.write('H4', 'Keeps the letters');
+      // The connection goes inside the quiet window, before any refresh.
+      v.fn.down = true;
+      await v.reads!.settled();
+      expect(v.reads!.size.answers).toBe(72);
+      // The page just edited reads as it did online.
+      expect(await v.t.invoke('entry.get', { collection: 'characters', id: 'H4' })).toMatchObject({
+        entry: { role: 'Keeps the letters' },
+      });
+      // Everything else reads as it was read, the Outline and the notes included: never "not stored".
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 3 });
+      expect(await v.t.invoke('community.notes.get', {})).toEqual({
+        notes: { c1: 'Fishing families' },
+      });
+      for (const p of v.people) await expect(v.t.invoke('entry.get', p)).resolves.toBeTruthy();
+      for (const q of v.queries) {
+        expect(await v.t.invoke('search.query', { query: q })).toEqual(hits(`rev 3 ${q}`));
+      }
+      expect(await v.t.invoke('bible.current', {})).toEqual({ bible: EAST });
+
+      // The app is opened again, still offline: the bible used last and the edit are there.
+      const again = new WebTransport({
+        fetch: v.t['deps'].fetch,
+        storage: v.storage,
+        buildId: 'b-1',
+        reads: new ReadStore(v.mem.backend),
+      });
+      expect(await again.invoke('bible.current', {})).toEqual({ bible: EAST });
+      expect(await again.invoke('entry.get', { collection: 'characters', id: 'H4' })).toMatchObject(
+        { entry: { role: 'Keeps the letters' } },
+      );
+      expect(await again.invoke('outline.get', {})).toMatchObject({ cursorYear: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 every write channel that answers with what it wrote keeps that as its read at once', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      await v.t.invoke(
+        'community.notes.set',
+        { communityId: 'c1', text: 'Boat builders' },
+        { bible: 'east' },
+      );
+      v.fn.down = true;
+      expect(await v.t.invoke('community.notes.get', {})).toEqual({
+        notes: { c1: 'Boat builders' },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 the refresh waits for quiet: one write, ten writes 700 ms apart, and a minute of typing each cost one pass after the last write, one request at a time', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      let inFlight = 0;
+      let most = 0;
+      v.fn.hold = (b) => {
+        if (b.channel === 'entry.update') return false;
+        // Count reads out at once: each is answered on the next tick.
+        inFlight++;
+        most = Math.max(most, inFlight);
+        return true;
+      };
+      const pump = setInterval(() => {
+        for (const h of v.fn.held.splice(0)) {
+          inFlight--;
+          h.release();
+        }
+      }, 1);
+      const pass = async (writes: number) => {
+        const from = v.sent.length;
+        for (let i = 0; i < writes; i++) {
+          await v.write('H4', `role ${i}`);
+          await vi.advanceTimersByTimeAsync(i === writes - 1 ? REFRESH_QUIET_MS - 1 : 700);
+        }
+        // Nothing read while typing, nor in the quiet window after it.
+        expect(v.readsSince(from)).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        for (let i = 0; i < 200 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(5);
+        await v.t.readsSettled();
+        const read = v.readsSince(from).map((b) => JSON.stringify([b.channel, b.request]));
+        // Each kept answer once, the page just written not at all: 71 of 72.
+        expect(new Set(read).size).toBe(read.length);
+        expect(read).not.toContain(
+          JSON.stringify(['entry.get', { collection: 'characters', id: 'H4' }]),
+        );
+        expect(await v.reads!.flagged('east')).toEqual([]);
+        expect(v.reads!.size.answers).toBe(72);
+        return read.length;
+      };
+      expect(await pass(1)).toBe(71);
+      expect(await pass(10)).toBe(71);
+      // A minute of typing: an autosave every 700 ms.
+      expect(await pass(86)).toBe(71);
+      expect(most).toBe(1);
+      clearInterval(pump);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 30_000);
+
+  test('PH-25 the refresh reads the most recently stored first, stops at once when the app is hidden or the connection drops, and carries on from the flags on reconnect', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      await v.write('H4', 'x');
+      const from = v.sent.length;
+      v.fn.onRead = (_b, n) => {
+        if (n === v.fn.reads && v.readsSince(from).length === 3) v.t.hidden();
+      };
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await v.t.readsSettled();
+      await vi.advanceTimersByTimeAsync(10 * REFRESH_QUIET_MS);
+      // Hidden after the third: nothing more went out.
+      const first = v.readsSince(from);
+      expect(first).toHaveLength(3);
+      // The newest kept first: the last searches.
+      expect(first.map((b) => (b.request as { query: string }).query)).toEqual([
+        'sea',
+        'okafor',
+        'daniel',
+      ]);
+      expect(await v.reads!.flagged('east')).toHaveLength(68);
+
+      // Shown again: it carries on; the connection drops after three more.
+      v.fn.onRead = () => {
+        if (v.readsSince(from).length === 6) v.fn.down = true;
+      };
+      v.t.shown();
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await v.t.readsSettled();
+      await vi.advanceTimersByTimeAsync(10 * REFRESH_QUIET_MS);
+      // The sixth found no connection: that one failed, nothing went out after it.
+      expect(v.readsSince(from)).toHaveLength(6);
+      expect((await v.t.invoke('connection.status', {})).state).toBe('readOnly');
+      expect(await v.reads!.flagged('east')).toHaveLength(66);
+      // Offline, a flagged answer is still served.
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 3 });
+
+      // Back: Try again, and the rest are read again, once each.
+      v.fn.onRead = null;
+      v.fn.down = false;
+      await v.t.invoke('connection.retry', {});
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await v.t.readsSettled();
+      expect(await v.reads!.flagged('east')).toEqual([]);
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 4 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 the flags survive a launch: a launch offline serves them, and the refresh carries on once the connection is back', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      await v.write('H4', 'x');
+      v.fn.down = true;
+      await v.reads!.settled();
+      // iOS ends the app inside the quiet window; it is opened again offline.
+      const launch = () =>
+        new WebTransport({
+          fetch: v.t['deps'].fetch,
+          storage: v.storage,
+          buildId: 'b-1',
+          reads: new ReadStore(v.mem.backend),
+        });
+      const t = launch();
+      expect(await t.invoke('bible.current', {})).toEqual({ bible: EAST });
+      expect(await t.invoke('outline.get', {})).toMatchObject({ cursorYear: 3 });
+      const from = v.sent.length;
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await t.readsSettled();
+      // Still offline: the pass stops at its first request.
+      expect(v.sent.length - from).toBeLessThanOrEqual(1);
+      expect((await new ReadStore(v.mem.backend).flagged('east')).length).toBe(71);
+      v.fn.down = false;
+      await t.invoke('connection.retry', {});
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      for (let i = 0; i < 50 && t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+      await t.readsSettled();
+      expect(await new ReadStore(v.mem.backend).flagged('east')).toEqual([]);
+
+      // And a launch online carries on by itself.
+      const w = visitRig();
+      await w.visitAll();
+      await w.write('H4', 'x');
+      const t2 = new WebTransport({
+        fetch: w.t['deps'].fetch,
+        storage: w.storage,
+        buildId: 'b-1',
+        reads: new ReadStore(w.mem.backend),
+      });
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      for (let i = 0; i < 50 && t2.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+      await t2.readsSettled();
+      expect(await new ReadStore(w.mem.backend).flagged('east')).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-9 PH-25 a refresh or a read answered across the phone`s own write never reloads; a change made elsewhere meanwhile still does', async () => {
+    vi.useFakeTimers();
+    try {
+      for (const kind of ['read', 'refresh'] as const) {
+        const v = visitRig();
+        await v.visitAll();
+        const reloaded = vi.fn();
+        v.t.on('bible.reloaded', reloaded);
+        // For a refresh: something flagged, so one runs.
+        if (kind === 'refresh') {
+          await v.write('H4', 'a');
+          await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS - 50);
+        }
+        v.fn.hold = (b) => b.channel === 'search.query' || b.channel === 'entry.update';
+        let read: Promise<unknown> | null = null;
+        if (kind === 'refresh') await vi.advanceTimersByTimeAsync(50);
+        else read = v.t.invoke('search.query', { query: 'ruth' });
+        await vi.waitFor(() => expect(v.fn.held).toHaveLength(1));
+        // The phone writes while that read is out.
+        const write = v.write('H5', 'b');
+        await vi.waitFor(() => expect(v.fn.held).toHaveLength(2));
+        const [r, w] = v.fn.held.splice(0);
+        // The write commits on the function first, then the read is answered counting it,
+        // and only then does the write's own answer arrive.
+        const late = w!.commit();
+        r!.release();
+        if (read) await read;
+        await vi.advanceTimersByTimeAsync(0);
+        await v.reads!.settled();
+        late.deliver();
+        await write;
+        v.fn.hold = null;
+        await v.reads!.settled();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reloaded).not.toHaveBeenCalled();
+        expect(v.sent.map((b) => b.channel)).not.toContain('bible.changes');
+        // Nothing was flagged as changed elsewhere: the Outline is as good as current.
+        const top = kind === 'refresh' ? 5 : 4;
+        expect(
+          await v.reads!.get('east', 'outline.get', { order: 'reading', cursorYear: null }),
+        ).toMatchObject({ stale: true, current: top });
+      }
+
+      // The desk writes while the phone's write and a read are out: still told apart.
+      const v = visitRig();
+      await v.visitAll();
+      const reloaded = vi.fn();
+      v.t.on('bible.reloaded', reloaded);
+      v.fn.hold = (b) => b.channel === 'search.query' || b.channel === 'entry.update';
+      const read = v.t.invoke('search.query', { query: 'ruth' });
+      await vi.waitFor(() => expect(v.fn.held).toHaveLength(1));
+      const write = v.write('H5', 'b');
+      await vi.waitFor(() => expect(v.fn.held).toHaveLength(2));
+      const [r, w] = v.fn.held.splice(0);
+      const late = w!.commit(); // 3 to 4, the phone's
+      v.fn.rev = 5; // the desk's
+      r!.release(); // read at 5
+      await read;
+      late.deliver();
+      await write;
+      v.fn.hold = null;
+      await vi.waitFor(() => expect(reloaded).toHaveBeenCalledTimes(1));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 a change made elsewhere keeps what was read before it, flagged, and reads it again in the background', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      const reloaded = vi.fn();
+      v.t.on('bible.reloaded', reloaded);
+      // The desk writes twice; the phone's freshness check sees it.
+      v.fn.rev = 5;
+      await v.t.checkFreshness();
+      expect(reloaded).toHaveBeenCalledTimes(1);
+      await v.reads!.settled();
+      expect(v.reads!.size.answers).toBe(72);
+      expect(await v.reads!.flagged('east')).toHaveLength(71);
+      const from = v.sent.length;
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+      await v.t.readsSettled();
+      expect(await v.reads!.flagged('east')).toEqual([]);
+      expect(v.readsSince(from)).toHaveLength(71);
+      v.fn.down = true;
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 5 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('PH-25 PH-17 a refresh answer landing after sign-out is not kept, and no refresh goes out without a store', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      await v.write('H4', 'a');
+      v.fn.hold = (b) => b.channel === 'search.query';
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      await vi.waitFor(() => expect(v.fn.held).toHaveLength(1));
+      v.t.signOut();
+      v.fn.held.splice(0)[0]!.release();
+      await v.t.readsSettled();
+      await v.reads!.settled();
+      expect([v.mem.metas.size, v.mem.values.size, v.mem.bibles.size]).toEqual([0, 0, 0]);
+      const before = v.sent.length;
+      await vi.advanceTimersByTimeAsync(10 * REFRESH_QUIET_MS);
+      expect(v.sent.length).toBe(before);
+
+      // Private browsing: a write is a write, nothing is read again after it.
+      const { t, sent } = rig(
+        (b) =>
+          b.channel === 'entry.update'
+            ? ok({ entry: { _id: 'H4', modifiedAt: 'x' }, warnings: [] }, revs('east', 3, 4))
+            : ok(hits('x'), revs('east', 4, 4)),
+        false,
+      );
+      await t.invoke('search.query', { query: 'ruth' });
+      await t.invoke(
+        'entry.update',
+        { collection: 'characters', id: 'H4', patch: { role: 'a' } },
+        { bible: 'east' },
+      );
+      await vi.advanceTimersByTimeAsync(10 * REFRESH_QUIET_MS);
+      expect(sent.map((b) => b.channel)).toEqual(['search.query', 'entry.update']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
