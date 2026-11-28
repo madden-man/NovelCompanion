@@ -937,6 +937,33 @@ describe('PH-25 the phone`s own writes keep what it read, and the refresh reads 
     }
   });
 
+  test('PH-25 a change made elsewhere keeps what was read before it, flagged, and reads it again in the background', async () => {
+    vi.useFakeTimers();
+    try {
+      const v = visitRig();
+      await v.visitAll();
+      const reloaded = vi.fn();
+      v.t.on('bible.reloaded', reloaded);
+      // The desk writes twice; the phone's freshness check sees it.
+      v.fn.rev = 5;
+      await v.t.checkFreshness();
+      expect(reloaded).toHaveBeenCalledTimes(1);
+      await v.reads!.settled();
+      expect(v.reads!.size.answers).toBe(72);
+      expect(await v.reads!.flagged('east')).toHaveLength(71);
+      const from = v.sent.length;
+      await vi.advanceTimersByTimeAsync(REFRESH_QUIET_MS);
+      for (let i = 0; i < 50 && v.t.refreshPending; i++) await vi.advanceTimersByTimeAsync(10);
+      await v.t.readsSettled();
+      expect(await v.reads!.flagged('east')).toEqual([]);
+      expect(v.readsSince(from)).toHaveLength(71);
+      v.fn.down = true;
+      expect(await v.t.invoke('outline.get', {})).toMatchObject({ cursorYear: 5 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('PH-25 PH-17 a refresh answer landing after sign-out is not kept, and no refresh goes out without a store', async () => {
     vi.useFakeTimers();
     try {

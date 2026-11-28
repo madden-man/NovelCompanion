@@ -206,18 +206,22 @@ export class ReadStore {
    * transport holds back the headers of answers that cross the phone's own
    * writes and hands them over in `rev` order once those writes have
    * answered, so the phone's own writes, which move `rev` from the number it
-   * saw, flag nothing here.
+   * saw, flag nothing here. True when this flagged an answer kept.
    */
-  observe(bible: string, before: number, after: number) {
-    return this.run(undefined, async (b) => {
+  observe(bible: string, before: number, after: number): Promise<boolean> {
+    return this.run(false, async (b) => {
       const mark = this.marks.get(bible);
       let floor = mark?.floor ?? 0;
       let stale = mark?.stale ?? 0;
-      if (!mark || before > mark.rev) {
+      const elsewhere = !mark || before > mark.rev;
+      if (elsewhere) {
         floor = Math.max(floor, before);
         stale = Math.max(stale, before);
       }
       await this.setMark(b, { bible, rev: Math.max(mark?.rev ?? 0, after), floor, stale });
+      if (!elsewhere) return false;
+      for (const m of this.index.values()) if (m.bible === bible && this.isStale(m)) return true;
+      return false;
     });
   }
 

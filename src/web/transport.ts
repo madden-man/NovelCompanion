@@ -642,8 +642,10 @@ export class WebTransport implements Api {
   }
 
   private followRevNow(bible: string, before: number, after: number, sentAt: number): void {
-    // PH-25: stored answers read before a change made elsewhere are flagged.
-    void this.reads.observe(bible, before, after);
+    // PH-25: stored answers read before a change made elsewhere are flagged, and read again.
+    void this.reads.observe(bible, before, after).then((flagged) => {
+      if (flagged) this.refreshLater();
+    });
     const was = this.rev;
     // An answer older than one already seen (requests run in parallel) changes nothing.
     if (was?.bible === bible && after < was.known) return;
