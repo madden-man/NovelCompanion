@@ -163,3 +163,38 @@ test('PH-21 a new build id reloads the app only once no field holds typing', asy
     true,
   );
 });
+
+test('PH-21 a new build id never reloads while a field off focus still holds typing not yet stored', async ({
+  page,
+}) => {
+  await openFixture(page, server.url);
+  await page.getByTestId('tab-add').tap();
+  const box = page
+    .locator('[data-testid="phone-capture"]:visible')
+    .getByTestId('phone-capture-input');
+  await expect(box).toBeFocused();
+  await box.fill('Margaret kept a diary in 1979.');
+  // Focus leaves the box, as when a chip opens its sheet: the sentence is not filed yet.
+  await box.evaluate((el) => (el as HTMLElement).blur());
+  await expect(box).not.toBeFocused();
+  await page.evaluate(() => ((window as unknown as { __before: boolean }).__before = true));
+  await page.route('**/rpc', async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({
+      response: res,
+      headers: { ...res.headers(), 'x-nc-build': 'newest-build' },
+    });
+  });
+  await setVisible(page, true);
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => (window as unknown as { __before?: boolean }).__before)).toBe(
+    true,
+  );
+  await expect(box).toHaveValue('Margaret kept a diary in 1979.');
+  // The box is emptied (as filing does): the app reloads at the next moment.
+  const loaded = page.waitForEvent('load');
+  await box.fill('');
+  await box.evaluate((el) => (el as HTMLElement).blur());
+  await loaded;
+  await expect(page.getByTestId('workspace')).toBeVisible();
+});

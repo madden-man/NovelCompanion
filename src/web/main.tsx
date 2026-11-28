@@ -8,7 +8,7 @@ import { setPhone } from '../renderer/src/phone';
 import { saveBeforeSwitch } from '../renderer/src/workspace/undo';
 // PH-21: the same file the function imports, written by this build (scripts/build-id.ts).
 import buildInfo from '../generated/build-id.json';
-import { typingIn, watchBuild } from './buildWatch';
+import { trackTyping, watchBuild } from './buildWatch';
 import { KeyGate } from './KeyGate';
 import { attachLifecycle } from './lifecycle';
 import { registerServiceWorker, updateServiceWorker } from './serviceWorker';
@@ -47,9 +47,10 @@ presetCapabilities(PHONE_CHANNELS, LOCAL_CHANNELS);
 // A58 U1: the phone's shell, layout and CSS (`usePhone`, `:root[data-phone]`).
 setPhone(true);
 attachLifecycle(transport, document, window);
+const holdsTyping = trackTyping(document);
 transport.onBuildChanged(
   watchBuild({
-    isTyping: () => typingIn(document),
+    isTyping: holdsTyping,
     save: saveBeforeSwitch,
     reload: () => window.location.reload(),
     updateWorker: updateServiceWorker,

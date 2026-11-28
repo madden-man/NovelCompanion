@@ -142,3 +142,18 @@ describe('ARCH-8 the per-file test database name is honoured only where the test
     expect(testDatabaseName({ [TEST_URI_ENV]: LOCAL }, { isPackaged: false })).toBeNull();
   });
 });
+
+describe('PH-15 the phone key in the keychain', () => {
+  test('PH-15 no phone key stored reads as none, and a keychain that cannot be read is an error, not none', async () => {
+    const { KeychainPhoneKeyStore } = await import('../../src/main/secrets');
+    const keys = new KeychainPhoneKeyStore();
+    getPassword.mockImplementationOnce(() => null);
+    expect(keys.get()).toBeNull();
+    getPassword.mockImplementationOnce(() => {
+      throw new Error('User interaction is not allowed.');
+    });
+    expect(() => keys.get()).toThrow(
+      'The keychain could not be read, so the phone key is not shown.',
+    );
+  });
+});

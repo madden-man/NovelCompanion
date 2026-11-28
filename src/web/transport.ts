@@ -16,7 +16,8 @@ import type {
   Request,
   Response,
 } from '../shared/ipc';
-import { APPEARANCES } from '../shared/ipcApp';
+import { APPEARANCES, isWriteChannel } from '../shared/ipcApp';
+import { isBibleFree } from '../shared/ipcPhone';
 import type { Appearance, ConnectionStatus } from '../shared/ipcApp';
 
 /**
@@ -53,6 +54,9 @@ export const CLOCK_MARGIN_MS = 5 * 60_000;
 export const KEY_REFUSED = 'The phone key was not accepted.';
 export const NO_CONNECTION = 'The phone has no connection to the bible.';
 const NOT_UNDERSTOOD = 'The answer could not be read, so nothing is shown as saved. Try again.';
+/** A write sent while the connection broke before its answer came back: it may have been stored. */
+export const WRITE_LOST =
+  'The connection broke before the answer came back, so this change may already be saved.';
 
 /** Channels the phone answers itself: its connection state, its close flow, its appearance. */
 export const LOCAL_CHANNELS = [
@@ -173,6 +177,14 @@ export class WebTransport implements Api {
           return await this.send(channel, parsed, ctx, key);
         }
       }
+      // PH-19: a bible older or newer than the function is not opened again at the next launch.
+      if (
+        channel === 'bible.current' &&
+        e instanceof RpcCallError &&
+        /^(older|newer)$/.test(e.code)
+      ) {
+        this.remove(BIBLE_STORAGE);
+      }
       throw e;
     }
   };
@@ -267,7 +279,9 @@ export class WebTransport implements Api {
     context: CallContext | undefined,
     key: string,
   ): Promise<Response<C>> {
-    const bible = context?.bible ?? this.bible;
+    // PH-19: the chooser's channels name no bible, so one bible the function refuses blocks only itself.
+    const chooser = isBibleFree(channel) && channel !== 'bible.current';
+    const bible = chooser ? null : (context?.bible ?? this.bible);
     const body = JSON.stringify({
       channel,
       request,
@@ -310,10 +324,19 @@ export class WebTransport implements Api {
     try {
       payload = await res.json();
     } catch {
-      throw new RpcCallError(NOT_UNDERSTOOD, 'invalid', res.status);
+      payload = undefined;
+    }
+    const { error, code } = (payload ?? {}) as { error?: unknown; code?: unknown };
+    // ARCH-6: an answer that is not the function's (a gateway's 502 or 504, a page) is a lost connection.
+    if (payload === undefined || (res.status >= 500 && typeof code !== 'string')) {
+      this.lost(NO_CONNECTION);
+      throw new RpcCallError(
+        isWriteChannel(channel) ? WRITE_LOST : NO_CONNECTION,
+        'unreachable',
+        res.status,
+      );
     }
     if (!res.ok) {
-      const { error, code } = (payload ?? {}) as { error?: unknown; code?: unknown };
       const message = typeof error === 'string' ? error : NOT_UNDERSTOOD;
       const why = typeof code === 'string' ? code : 'refused';
       if (why === 'unreachable') this.lost(message);
@@ -361,7 +384,9 @@ export class WebTransport implements Api {
     const after = Number(headers.get(REV_HEADERS.after));
     if (!bible || !Number.isInteger(before) || !Number.isInteger(after)) return;
     const was = this.rev;
-    if (!was || was.bible !== bible || before === was.known) {
+    // An answer older than one already seen (requests run in parallel) changes nothing.
+    if (was?.bible === bible && after < was.known) return;
+    if (!was || was.bible !== bible || before <= was.known) {
       this.rev = { bible, known: after, at: sentAt };
       return;
     }

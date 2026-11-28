@@ -10,6 +10,16 @@ import type { PhoneKeyStore } from '../host/phoneKey';
 import { testDatabaseHonoured } from '../host/uri';
 import type { Handler } from './validate';
 
+/**
+ * PH-15 under test: where Copy puts the key instead of the system clipboard,
+ * beside the store that holds it, on `globalThis` in main so a test reads both back.
+ */
+export const TEST_PHONE_KEY_SEAM = '__ncPhoneKeySeam';
+export interface PhoneKeySeam {
+  store: PhoneKeyStore;
+  copied: string | null;
+}
+
 type PwaChannel =
   'app.capabilities' | 'bible.changes' | 'phoneKey.status' | 'phoneKey.make' | 'phoneKey.copy';
 
@@ -24,15 +34,20 @@ export function pwaHandlers(
 ): { [C in PwaChannel]: Handler<C> } {
   const opts = { isPackaged: host.isPackaged };
   const underTest = testDatabaseHonoured(process.env, opts);
-  let memory: MemoryPhoneKeyStore | null = null;
+  let seam: PhoneKeySeam | null = null;
+  const testSeam = (): PhoneKeySeam => {
+    if (!seam) {
+      seam = { store: new MemoryPhoneKeyStore(), copied: null };
+      (globalThis as Record<string, unknown>)[TEST_PHONE_KEY_SEAM] = seam;
+    }
+    return seam;
+  };
   const store = (): PhoneKeyStore | null =>
-    underTest ? (memory ??= new MemoryPhoneKeyStore()) : (host.secrets.phoneKey?.() ?? null);
-  /** The last key copied under test, held in memory instead of the system clipboard. */
-  let copied: string | null = null;
+    underTest ? testSeam().store : (host.secrets.phoneKey?.() ?? null);
   const copy = (text: string): boolean => {
     if (underTest) {
-      copied = text;
-      return copied !== null;
+      testSeam().copied = text;
+      return true;
     }
     if (!host.copyText) return false;
     host.copyText(text);

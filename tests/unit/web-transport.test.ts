@@ -2,13 +2,15 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 import { describe, expect, test, vi } from 'vitest';
 import { ELSEWHERE_MESSAGE } from '../../src/shared/freshness';
-import { RELOADED_FOR, watchBuild } from '../../src/web/buildWatch';
+import { RELOADED_FOR, trackTyping, watchBuild } from '../../src/web/buildWatch';
 import {
+  BIBLE_STORAGE,
   KEEPALIVE_BUDGET,
   KEY_REFUSED,
   KEY_STORAGE,
   NO_CONNECTION,
   RpcCallError,
+  WRITE_LOST,
   WebTransport,
 } from '../../src/web/transport';
 import { readBuildId, writeBuildId } from '../../scripts/build-id';
@@ -16,7 +18,10 @@ import { readBuildId, writeBuildId } from '../../scripts/build-id';
 const ROOT = join(import.meta.dirname, '../..');
 
 type Sent = { body: Record<string, unknown>; init: RequestInit };
-type Answer = { status?: number; body: unknown; headers?: Record<string, string> } | 'network-down';
+type Answer =
+  | { status?: number; body: unknown; headers?: Record<string, string> }
+  | { status: number; raw: string; headers?: Record<string, string> }
+  | 'network-down';
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const m = new Map(Object.entries(seed));
@@ -41,6 +46,12 @@ function rig(
     sent.push({ body, init: init ?? {} });
     const a = reply(body);
     if (a === 'network-down') throw new TypeError('Load failed');
+    if ('raw' in a) {
+      return new Response(a.raw, {
+        status: a.status,
+        headers: { 'X-NC-Build': 'b-1', ...a.headers },
+      });
+    }
     return new Response(JSON.stringify(a.body), {
       status: a.status ?? 200,
       headers: { 'Content-Type': 'application/json', 'X-NC-Build': 'b-1', ...a.headers },
@@ -356,6 +367,131 @@ describe('PH-21 a stale installed app', () => {
     fail = false;
     timers.shift()!();
     await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('PH-19 one bible the function will not open', () => {
+  test('PH-19 PH-37 the chooser channels carry no bible, and a remembered bible that is older or newer is forgotten', async () => {
+    for (const code of ['older', 'newer'] as const) {
+      const message =
+        code === 'older' ? 'Open Tide Lines on the Mac once.' : 'The phone app is updating.';
+      const { t, sent, storage } = rig(
+        (b) => {
+          if (b.bible === 'tide') return { status: 409, body: { error: message, code } };
+          if (b.channel === 'bible.list') return ok({ bibles: [], connection: 'connected' });
+          if (b.channel === 'app.capabilities') return ok({ channels: [] });
+          return ok({ bible: b.channel === 'bible.open' ? { id: 'east', name: 'East' } : null });
+        },
+        { [KEY_STORAGE]: 'k-1', [BIBLE_STORAGE]: 'tide' },
+      );
+      await t.invoke('bible.list', {});
+      await t.invoke('app.capabilities', {});
+      await expect(t.invoke('bible.current', {})).rejects.toMatchObject({ code, message });
+      expect(storage.map.has(BIBLE_STORAGE)).toBe(false);
+      await t.invoke('bible.open', { slug: 'east' });
+      expect(storage.map.get(BIBLE_STORAGE)).toBe('east');
+      expect(sent.map((s) => [s.body.channel, s.body.bible])).toEqual([
+        ['bible.list', null],
+        ['app.capabilities', null],
+        ['bible.current', 'tide'],
+        ['bible.open', null],
+      ]);
+    }
+  });
+});
+
+describe('PH-24 an answer that is not the function’s', () => {
+  test('PH-24 a gateway answer that is not JSON, or a 5xx with no code, shows the ARCH-6 banner', async () => {
+    let answer: Answer = {
+      status: 502,
+      raw: '<html>Bad gateway</html>',
+      headers: { 'Content-Type': 'text/html' },
+    };
+    const { t } = rig(() => answer);
+    const states: unknown[] = [];
+    t.on('connection.changed', (s) => states.push(s));
+    await expect(t.invoke('bible.list', {})).rejects.toMatchObject({
+      code: 'unreachable',
+      message: NO_CONNECTION,
+    });
+    expect(await t.invoke('connection.status', {})).toEqual({
+      state: 'unavailable',
+      message: NO_CONNECTION,
+      snapshot: null,
+    });
+    expect(states).toHaveLength(1);
+    answer = { status: 500, body: { errorMessage: 'Task timed out' } };
+    await expect(t.invoke('bible.list', {})).rejects.toMatchObject({ code: 'unreachable' });
+    answer = { status: 200, raw: '<!doctype html><title>Novel Companion</title>' };
+    await expect(t.invoke('bible.list', {})).rejects.toMatchObject({ code: 'unreachable' });
+    answer = ok({ bibles: [], connection: 'connected' });
+    await t.invoke('bible.list', {});
+    expect((await t.invoke('connection.status', {})).state).toBe('connected');
+  });
+
+  test('PH-24 a write whose answer was lost is sent once and says it may be saved', async () => {
+    const { t, sent } = rig(() => ({ status: 504, raw: 'Gateway Timeout' }));
+    await expect(
+      t.invoke('entry.update', { ...H1, patch: { role: 'x' } }, { bible: 'east' }),
+    ).rejects.toMatchObject({ code: 'unreachable', message: WRITE_LOST });
+    expect(sent).toHaveLength(1);
+    expect((await t.invoke('connection.status', {})).message).toBe(NO_CONNECTION);
+  });
+});
+
+describe('PH-9 answers out of order', () => {
+  test('PH-9 an answer older than one already seen never reloads, and rev never goes back', async () => {
+    const answers = [
+      revs('east', 5, 5),
+      revs('east', 5, 6),
+      revs('east', 5, 5),
+      revs('east', 6, 6),
+    ];
+    const { t, sent } = rig(() => ok({ bible: { id: 'east', name: 'East' } }, [], answers.shift()));
+    const reloads: unknown[] = [];
+    t.on('bible.reloaded', (e) => reloads.push(e));
+    // The bible opens at 5; the phone's own write takes it to 6; a read sent before the write is answered late.
+    await t.invoke('bible.current', {});
+    await t.invoke('bible.current', {});
+    await t.invoke('bible.current', {});
+    await t.checkFreshness();
+    expect(reloads).toEqual([]);
+    expect(sent.some((s) => s.body.channel === 'bible.changes')).toBe(false);
+  });
+});
+
+describe('PH-21 typing not yet stored outside a focused field', () => {
+  test('PH-21 a field typed in that still holds text holds the reload, focused or not', () => {
+    type El = { isConnected: boolean; value: string; matches: (s: string) => boolean };
+    const field = (value = ''): El => ({ isConnected: true, value, matches: () => true });
+    let input: ((e: { target: unknown }) => void) | null = null;
+    const doc = {
+      activeElement: null as El | null,
+      addEventListener: (type: string, fn: (e: { target: unknown }) => void) => {
+        if (type === 'input') input = fn;
+      },
+    };
+    const holds = trackTyping(doc);
+    const capture = field();
+    const search = field('saved text shown in a field');
+    expect(holds()).toBe(false);
+    capture.value = 'A sentence not yet filed';
+    input!({ target: capture });
+    // Focus left the box (a chip opened a sheet): the text is still there, so the reload waits.
+    expect(holds()).toBe(true);
+    // Filed: the box is empty again.
+    capture.value = '';
+    expect(holds()).toBe(false);
+    capture.value = 'Another';
+    expect(holds()).toBe(true);
+    // The box left the screen.
+    capture.isConnected = false;
+    expect(holds()).toBe(false);
+    // Text the person never typed in does not hold it; a focused field still does.
+    expect(search.value).not.toBe('');
+    expect(holds()).toBe(false);
+    doc.activeElement = field();
+    expect(holds()).toBe(true);
   });
 });
 
